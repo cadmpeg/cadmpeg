@@ -697,6 +697,23 @@ pub struct StringValue {
     pub source_offset: u64,
 }
 
+/// Canonical UUID text spanning one or more contiguous bounded OM records.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObjectUuidValue {
+    /// Globally unique value identity.
+    pub id: String,
+    /// Zero-based indexed-section ordinal within the container.
+    pub section_ordinal: u32,
+    /// Exact UUID text.
+    pub uuid: String,
+    /// Bounded OM records intersected by the complete UUID frame.
+    pub records: Vec<String>,
+    /// Directory entry containing the OM section.
+    pub source_entry: String,
+    /// Absolute file offset of the `03 26` marker.
+    pub source_offset: u64,
+}
+
 /// Tagged reference family serialized in an NX OM record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -729,6 +746,27 @@ pub struct ObjectReference {
     /// Directory entry containing the OM section.
     pub source_entry: String,
     /// Absolute file offset of the reference marker.
+    pub source_offset: u64,
+}
+
+/// Exact two-token persistent-handle run in one bounded OM object record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObjectRecordHandlePair {
+    /// Globally unique pair identity.
+    pub id: String,
+    /// Owning entry in the native OM record directory.
+    pub record: String,
+    /// Persistent OM object identifier when the section carries an ID table.
+    pub object_id: Option<u32>,
+    /// First handle-reference occurrence.
+    pub first_reference: String,
+    /// Second handle-reference occurrence.
+    pub second_reference: String,
+    /// First persistent-handle value.
+    pub first_handle: u32,
+    /// Second persistent-handle value.
+    pub second_handle: u32,
+    /// Absolute file offset of the first `e0` marker.
     pub source_offset: u64,
 }
 
@@ -2718,6 +2756,84 @@ pub fn string_values(container: &Container) -> Vec<StringValue> {
         .collect()
 }
 
+/// Decode canonical UUID frames across the contiguous storage of ID-bounded
+/// OM records. A value retains every physical record intersected by its frame.
+pub fn object_uuid_values(container: &Container) -> Vec<ObjectUuidValue> {
+    const FRAME_LEN: usize = 2 + 36 + 1;
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, (entry, section))| {
+            let Some(first) = section.records.first() else {
+                return Vec::new();
+            };
+            let Some(last) = section.records.last() else {
+                return Vec::new();
+            };
+            if first.object_id.is_none()
+                || section.records.windows(2).any(|records| {
+                    records[0].offset.checked_add(records[0].bytes.len()) != Some(records[1].offset)
+                })
+            {
+                return Vec::new();
+            }
+            let Some(end) = last.offset.checked_add(last.bytes.len()) else {
+                return Vec::new();
+            };
+            let Some((entry_offset, _)) = entry.file_span else {
+                return Vec::new();
+            };
+            let Ok(entry_offset_usize) = usize::try_from(entry_offset) else {
+                return Vec::new();
+            };
+            let Some(storage_start) = entry_offset_usize.checked_add(first.offset) else {
+                return Vec::new();
+            };
+            let Some(storage_end) = entry_offset_usize.checked_add(end) else {
+                return Vec::new();
+            };
+            let Some(storage) = container.data.get(storage_start..storage_end) else {
+                return Vec::new();
+            };
+            crate::om::uuid_string_values(storage, first.offset)
+                .into_iter()
+                .filter_map(|value| {
+                    let frame_end = value.offset.checked_add(FRAME_LEN)?;
+                    let records = section
+                        .records
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, record)| {
+                            record.offset < frame_end
+                                && record
+                                    .offset
+                                    .checked_add(record.bytes.len())
+                                    .is_some_and(|record_end| value.offset < record_end)
+                        })
+                        .map(|(record_ordinal, _)| {
+                            format!(
+                                "nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    (!records.is_empty()).then(|| ObjectUuidValue {
+                        id: format!(
+                            "nx:om-object-uuid-values-{section_ordinal}:value#{}",
+                            value.offset
+                        ),
+                        section_ordinal: section_ordinal as u32,
+                        uuid: value.value.to_owned(),
+                        records,
+                        source_entry: entry.name.clone(),
+                        source_offset: entry_offset + value.offset as u64,
+                    })
+                })
+                .collect()
+        })
+        .collect()
+}
+
 /// Decode ordered tagged references from bounded NX OM records.
 pub fn object_references(container: &Container) -> Vec<ObjectReference> {
     container
@@ -2775,6 +2891,49 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
                 .collect()
         })
         .collect()
+}
+
+/// Join maximal two-token adjacent persistent-handle runs within object records.
+pub fn object_record_handle_pairs(references: &[ObjectReference]) -> Vec<ObjectRecordHandlePair> {
+    let mut by_record = BTreeMap::<&str, Vec<&ObjectReference>>::new();
+    for reference in references
+        .iter()
+        .filter(|reference| reference.kind == ObjectReferenceKind::PersistentHandle)
+    {
+        by_record
+            .entry(reference.record.as_str())
+            .or_default()
+            .push(reference);
+    }
+    let mut pairs = Vec::new();
+    for (record, mut record_references) in by_record {
+        record_references.sort_by_key(|reference| reference.source_offset);
+        let mut at = 0;
+        while at < record_references.len() {
+            let start = at;
+            while record_references
+                .get(at + 1)
+                .is_some_and(|next| next.source_offset == record_references[at].source_offset + 5)
+            {
+                at += 1;
+            }
+            let run = &record_references[start..=at];
+            if let [first, second] = run {
+                pairs.push(ObjectRecordHandlePair {
+                    id: format!("nx:om-object-record:handle-pair#{}", first.source_offset),
+                    record: record.to_string(),
+                    object_id: first.object_id,
+                    first_reference: first.id.clone(),
+                    second_reference: second.id.clone(),
+                    first_handle: first.value,
+                    second_handle: second.value,
+                    source_offset: first.source_offset,
+                });
+            }
+            at += 1;
+        }
+    }
+    pairs
 }
 
 /// Group persistent-handle occurrences into cross-record identities.
@@ -4730,6 +4889,39 @@ mod tests {
         assert_eq!(pairs[0].second_reference, "reference#1");
         assert_eq!(pairs[0].first_handle, 100);
         assert_eq!(pairs[0].second_handle, 101);
+    }
+
+    #[test]
+    fn nx_object_record_handle_pairs_do_not_cross_records_or_long_runs() {
+        let reference = |record: &str, ordinal: u32, offset: u64| super::ObjectReference {
+            id: format!("{record}:reference#{ordinal}"),
+            record: record.into(),
+            object_id: Some(7),
+            ordinal,
+            kind: super::ObjectReferenceKind::PersistentHandle,
+            value: ordinal + 100,
+            target_record: None,
+            source_entry: "om".into(),
+            source_offset: offset,
+        };
+        let references = [
+            reference("record#0", 0, 10),
+            reference("record#0", 1, 15),
+            reference("record#0", 2, 30),
+            reference("record#0", 3, 35),
+            reference("record#0", 4, 40),
+            reference("record#1", 5, 20),
+            reference("record#1", 6, 25),
+        ];
+
+        let pairs = super::object_record_handle_pairs(&references);
+        assert_eq!(pairs.len(), 2);
+        assert_eq!(pairs[0].record, "record#0");
+        assert_eq!(pairs[0].first_reference, "record#0:reference#0");
+        assert_eq!(pairs[0].second_reference, "record#0:reference#1");
+        assert_eq!(pairs[0].object_id, Some(7));
+        assert_eq!(pairs[1].record, "record#1");
+        assert_eq!(pairs[1].source_offset, 20);
     }
 
     #[test]

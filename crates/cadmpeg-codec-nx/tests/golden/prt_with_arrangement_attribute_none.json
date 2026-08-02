@@ -181,14 +181,14 @@
                 "is_default": true,
                 "name": "Model",
                 "source_entry": "/Root/part/arrangements",
-                "source_offset": 431
+                "source_offset": 433
               },
               {
                 "id": "nx:arrangements-1:configuration#1",
                 "is_default": false,
                 "name": "Exploded",
                 "source_entry": "/Root/part/arrangements",
-                "source_offset": 472
+                "source_offset": 474
               }
             ],
             "unknowns": [
@@ -208,10 +208,10 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "3",
-          "file_size": "587",
+          "file_size": "589",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "573",
+          "footer_offset": "575",
           "header_entry_count": "3",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -242,15 +242,10 @@
           "code": "feature_history_retained",
           "message": "Activation, complete body membership, evaluated feature state, or evaluated parameter state remains unresolved for 2 NX design configuration(s).",
           "severity": "warning"
-        },
-        {
-          "code": "attributes_not_transferred",
-          "message": "Material and appearance assignment, class-specific entity attribute fields, and assembly occurrence placements were not transferred: their remaining NX object-model and Parasolid field serialization is not decoded.",
-          "severity": "warning"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 573, 3 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 575, 3 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -395,15 +390,15 @@
           "file_offset": "155",
           "region": "HEADER"
         },
-        "compressed_size": 262,
+        "compressed_size": 264,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 262
+        "uncompressed_size": 264
       },
       {
         "attributes": {
-          "file_offset": "417",
+          "file_offset": "419",
           "region": "HEADER"
         },
         "compressed_size": 114,
@@ -414,7 +409,7 @@
       },
       {
         "attributes": {
-          "file_offset": "531",
+          "file_offset": "533",
           "region": "HEADER"
         },
         "compressed_size": 42,
@@ -454,7 +449,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 573, 3 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 575, 3 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]

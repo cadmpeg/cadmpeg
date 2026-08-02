@@ -264,6 +264,67 @@ opaque stream. Its directory identity and exact bounded payload remain one
 content unit; marker-shaped bytes inside it do not create an implicit known
 stream.
 
+### 2.2 Saved toggle-information stream
+
+`/Root/UG_PART/LastSavedToggleInfoStream` is one atomic payload:
+
+```text
+version:u8 = 1
+count:u32 LE
+member[count]
+trailer:byte[4]
+
+member := byte_len:u16 LE, value:utf8[byte_len]
+value  := toggle_id, ":", state
+toggle_id := 32 lowercase hexadecimal digits
+state := "On" | "Off"
+```
+
+The count covers all members and the four-byte trailer ends the entry. A
+member retains its order, exact length word, toggle identity, state, and source
+offsets. The stream retains the exact count word and terminal word. A version,
+count, member, UTF-8, identity, state, or terminal-boundary mismatch rejects the
+typed stream atomically.
+
+### 2.3 Fast-load component roster
+
+`/Root/FastLoad/Structure` begins with the twelve-byte envelope
+`ff ff ff ff 00 00 00 00 payload_len:u32 BE`. `payload_len + 12` equals the
+bounded directory-entry size. The payload begins `OM 01 01` and carries
+length-framed NX OM class and member declarations. Its component roster has
+this grammar:
+
+```text
+01 metadata_count_plus_one:u8
+metadata[metadata_count]
+01 03 00 00
+01 occurrence_count_plus_one:u8
+39[occurrence_count]
+01 02 ff ff ff ff
+01 prototype_count_plus_one:u8
+prototype[prototype_count]
+01 occurrence_count_plus_one:u8
+prototype_index:u8[occurrence_count]
+01 uuid_count_plus_one:u8
+uuid[uuid_count]
+01 occurrence_count_plus_one:u8
+uuid_index:u8[occurrence_count]
+```
+
+Each `metadata` and `prototype` is `04 record_len:u8`, followed by
+`record_len - 2` non-control UTF-8 bytes and a zero terminator; `record_len`
+counts its own length byte, the string bytes, and the terminator. The first
+metadata value is `MODEL`. Each occurrence index is one-based and lies in
+`1..=prototype_count`. Occurrence order and repeated indices preserve distinct
+uses of the same named prototype. The roster does not assign hierarchy or a
+placement transform.
+
+Each `uuid` uses string tag `03` and the same length framing, and contains 36
+lowercase hexadecimal UUID characters with hyphens at positions 8, 13, 18, and
+23. Each UUID index is one-based and lies in `1..=uuid_count`. It associates
+the corresponding occurrence ordinal with the UUID table independently of the
+prototype index.
+
 `part/attrs` has an `UgAttributes` root. Each `Attribute` supplies `owner`,
 `pdmBased`, `title`/`utf8title`, `value`/`utf8value`, `version`, and an XML schema
 type. UTF-8 title and value fields take precedence over their compatibility
@@ -506,7 +567,7 @@ A terminal zero reference status may also serve as the high zero byte of the
 following record type. The following record begins at that shared byte and must
 satisfy its complete family grammar.
 
-Type-81 entity/attribute-list records and type-82, type-83, and type-84 value records use the complete grammars defined in section 9.4. Type-81 individually `01`-prefixed reference layouts retain their serialized form and the terminal `00` closes the record. Counted type-82 integer and type-83 finite-binary64 records end after the declared value lane. Length-framed printable type-84 records end after their terminal `00`. These records participate in the deltas byte ledger but do not replace topology or geometry records.
+Type-81 entity/attribute-list records and type-82 through type-89 and type-98 value records use the complete grammars defined in section 9.4. Type-81 individually `01`-prefixed reference layouts retain their serialized form and the terminal `00` closes the record. Counted value records end after the declared value lane. Length-framed printable type-84 records end after their terminal `00`. These records participate in the deltas byte ledger but do not replace topology or geometry records.
 
 Type-91 records are `type:005b [ff], xmt, flag:u32 BE, reference_status[6]`. The record XMT is non-null and `flag` is binary. Each `reference_status` entry is a nonzero encoded XMT followed by a status byte in `0..=1`. The optional `ff` envelope byte precedes the XMT identity. A complete escaped layout takes precedence over a coincidental longer direct layout beginning at that `ff`. The record ends after the sixth status byte. Type-91 records participate in the deltas byte ledger, retain exact serialized bytes in the semantic lane, and do not replace topology or geometry records.
 
@@ -1142,6 +1203,24 @@ Independently of the control-block form, complete `e0, handle:u32 BE` and four-b
 
 A maximal run of exactly two adjacent persistent-handle tokens forms a control handle pair: `e0, first:u32 BE, e0, second:u32 BE`. The pair retains both reference occurrences and values. A single token or a maximal run of three or more tokens does not form a pair.
 
+The same maximal-run rule applies independently within each externally bounded
+object record. An object-record handle pair retains its owning record, object
+ID when present, both reference occurrences and values, and the first marker's
+source offset. A run cannot cross a record boundary. A single token or a
+maximal run of three or more adjacent persistent handles does not form a pair.
+
+The contiguous storage covered by an ID-bounded record index may carry a UUID
+string frame `03 26, uuid[36], 00`. The UUID is lowercase hexadecimal with
+hyphens at positions 8, 13, 18, and 23. The frame is a logical value over the
+contiguous record storage and may intersect more than one physical record. It
+retains every intersected record in source order.
+
+An OM UUID group joins this value family to the fast-load roster when a roster
+UUID has a nonzero number of occurrences and exactly the same number of OM UUID
+frames. The group retains the ordered occurrence identities and ordered OM
+value identities as separate lists. Equal cardinality does not pair individual
+members across the lists.
+
 An offset-store block may carry a counted block-index lane `01, declared_count:u8, anchor, member[declared_count-2], 01 11`, with `declared_count >= 3`. The anchor and members are non-null compact indices: `00..7f` are direct, `80..fe, low:u8` decode as `(marker-80)*256+low`, and `ff` is null. Every index addresses the same offset-only store's control-plus-column block ordinal. The lane is retained only when its count is complete, its terminator is exact, and every addressed block exists. It retains decoded indices, exact serialized tokens, and source offsets. Anchor and member order remain distinct; no semantic role is assigned by the lane framing.
 
 Contiguous offset-store column storage may carry an `ABR` reference lane `11, slot[16], 02 11 41 42 52 ff 03`. Each ordered slot is a nullable compact block index: `ff` is null and non-null values use the direct and extended forms. Every non-null value addresses the same offset-only store's control-plus-column block ordinal. The lane is retained only when all sixteen slots and the complete literal terminator are present and every non-null target exists. It retains decoded slots, exact serialized tokens, and source offsets. Physical data-block boundaries do not constrain the lane.
@@ -1176,15 +1255,17 @@ The logical sketch construction payload is the bytewise concatenation of the res
 
 A sketch payload scalar field is `50 59 66, field_code:u8, 00, shifted_f64`. The shifted binary64 uses the extrusion shifted-IEEE transform. Each complete finite field retains its discriminator, decoded value, exact eight-byte encoding, payload-relative marker offset, and absolute source offset. The field frame does not assign a geometric or constraint role to the value.
 
-A sketch fixed pair is `04 e0 48 0e 02 03 80 84, 30, first:i56 BE, 00, 30, second:i56 BE`. Each signed atom has value `i56 / 2^55`. The pair retains both decoded dimensionless values, both exact seven-byte two's-complement payloads, payload-relative offsets, and absolute source offsets. The frame does not assign a point, vector, plane, entity, or constraint role to either value.
+A sketch fixed pair has one of three exact forms: `04 e0 48 0e 02 03 80 84, 30, first:i56 BE, 00, 30, second:i56 BE`; `08 02 03 01 03 01 c0 45 04 00 80 86 02 00 01, 30, first:i56 BE, 30, second:i56 BE`; or `08 02 03 01 c0 40 02 01 c0 45 04 00 80 86 02 00 01, 30, first:i56 BE, 30, second:i56 BE`. Each signed atom has value `i56 / 2^55`. The pair retains its exact discriminator, both decoded dimensionless values, both exact seven-byte two's-complement payloads, payload-relative offsets, and absolute source offsets. The frame does not assign a point, vector, plane, entity, or constraint role to either value.
+
+A sketch mixed pair is `04 e0 48 0e 02 03 80 84, 30, first:i56 BE, 00, shifted_f32`. The first value is signed Q1.55. The four-byte shifted binary32 atom has marker `40..5f` or `c0..df`; subtracting `0x10` from that marker and retaining the following three bytes produces one finite big-endian IEEE-754 binary32 value, widened exactly to binary64. The pair retains its exact discriminator, both decoded values, both exact atom encodings, payload-relative offsets, and absolute source offsets. The frame does not assign a common unit or any geometric or constraint role to either value.
 
 A datum-coordinate-system fixed pair is `0b 02 03 01 03 01 c0 45 04 00 80 86 02 00 03, 30, first:i56 BE, 00, 30, second:i56 BE`. Each signed atom has value `i56 / 2^55`. The pair retains the datum operation and payload identities, exact discriminator, both decoded dimensionless values, both exact seven-byte two's-complement payloads, payload-relative offsets, and absolute source offsets. The frame does not assign an origin, axis, orientation, sketch coordinate, or constraint role to either value.
 
-A sketch payload name field is `66, compact_type, 03, declared_len:u8, text[declared_len-2], 00`. The compact type is non-null; its decoded value, exact serialized token, payload offset, and absolute source offset are retained. At reconstructed payload offset zero, the type-free form is `03, declared_len:u8, text[declared_len-2], 00`; it has no compact type. In both forms text is nonempty printable ASCII. A complete name field opens a named payload interval ending exclusively at the next complete name field or the reconstructed payload boundary. Framed shifted-binary64 scalars and fixed pairs within that interval are retained independently in payload order. Bytes preceding the first complete name field remain outside named intervals.
+A sketch payload name field is `66, compact_type, 03, declared_len:u8, text[declared_len-2], 00`. The compact type is non-null; its decoded value, exact serialized token, payload offset, and absolute source offset are retained. At reconstructed payload offset zero, the type-free form is `03, declared_len:u8, text[declared_len-2], 00`; it has no compact type. In both forms text is nonempty printable ASCII. A complete name field opens a named payload interval ending exclusively at the next complete name field or the reconstructed payload boundary. Framed shifted-binary64 scalars, fixed pairs, and mixed pairs within that interval are retained independently in payload order. Bytes preceding the first complete name field remain outside named intervals.
 
 A named payload interval whose name is exactly `Point` followed by a positive decimal ordinal is a sketch point when the interval contains exactly two framed scalar fields. The scalar order is the point's native two-dimensional coordinate order. The coordinate unit and model-space frame are not assigned by this record. A zero ordinal, nondecimal suffix, missing scalar, or additional scalar rejects the typed point atomically.
 
-A named payload interval whose name is exactly `Point` followed by a positive decimal ordinal is a fixed-point record when it contains no shifted-binary64 scalar and exactly one fixed pair. The fixed pair supplies two ordered dimensionless values. The record retains the name, pair identity, decoded values, and source offset without assigning a sketch-coordinate, model-coordinate, annotation, or constraint role. A shifted scalar, zero or multiple fixed pairs, or an invalid point suffix rejects this fixed-point form atomically.
+A named payload interval whose name is exactly `Point` followed by a positive decimal ordinal is a fixed-point record when it contains no shifted-binary64 scalar, no mixed pair, and exactly one fixed pair. The fixed pair supplies two ordered dimensionless values. The record retains the name, pair identity, decoded values, and source offset without assigning a sketch-coordinate, model-coordinate, annotation, or constraint role. A shifted scalar, mixed pair, zero or multiple fixed pairs, or an invalid point suffix rejects this fixed-point form atomically.
 
 All same-name sketch points in one `SKETCH` operation form one point group when their two coordinate values are bit-identical in order. The group retains every point record in payload order and the common coordinates. Any coordinate conflict rejects the group atomically without rejecting the individual point records.
 
@@ -1197,6 +1278,8 @@ A sketch preceding-named-point use exists when one typed named-point span ends a
 One or more sketch named-point block uses and one reconstructed sketch-point group identify the same solved two-dimensional point when they belong to the same sketch operation and named-point object, their `Point<positive decimal>` names are identical, and the group's two scalar values are bit-identical to the named-point values in order. One identity relation retains the point group, the independently framed named point, and every block use and sketch reference in reference order. No identity is assigned when the reconstructed payload has no matching conflict-free point group.
 
 A later `DATUM_CSYS` construction depends on a `SKETCH` operation when exactly one sketch-point identity addresses a named-point span related to the coordinate-system construction. The block relation is either one exact block shared by the point span and construction or a complete point span whose final block immediately precedes the construction's first block in the same offset store. The dependency retains the point-identity witness and the typed shared or consecutive block relation. The sketch must precede the coordinate-system operation. No dependency is assigned for zero, multiple, or later sketch candidates.
+
+For that dependency, a datum-coordinate-system scalar aliases a sketch-point coordinate when both typed fields have the same absolute scalar-marker offset and therefore address the same shifted-binary64 encoding. The alias retains the zero-based sketch-coordinate ordinal, datum-coordinate-system scalar identity, and shared marker offset. Equal decoded values at different offsets do not establish an alias.
 
 An `EXTRUDE` operation carries an ordered profile-reference field `01 02 16 01, count:u8, reference[count-1], 01 03 79`, with `count >= 2`. The payload may repeat the identical ordered encoded references as `01, count, reference[count-1], 00 00`; an exact unique repetition is retained as an independent witness of the list. Profile indices use the same canonical `f0` and `f1` widths, retain their exact tokens and offsets, and resolve against offset-only OM data blocks under the same uniqueness rule.
 
@@ -1281,6 +1364,8 @@ All same-name construction points in one `BLOCK` operation form one point group 
 A `BLOCK` operation parameter binding selects the first declaration of its dimension run. The run consists of exactly three consecutive, unqualified declarations `pN`, `p(N+1)`, and `p(N+2)` in one OM section's expression-record order. Each declaration resolves uniquely to one finite millimeter expression in one shared expression table in that section. The typed dimension set retains every anchor binding, the three ordered declarations and expression records, and the three values in model millimeters. A section or expression-table boundary, nonconsecutive name or index, ambiguity, non-length unit, or unevaluated value rejects the complete dimension set.
 
 The owning `BLOCK` feature links the complete typed dimension set and construction independently. Dimension order is native parameter order. Placement requires that complete ordered dimension set. The placement body is the feature's exactly one transferred solid output, or, when the feature has no transferred output relation, the document's exactly one connected solid body. In the latter form, a complete unique placement proof also identifies that surviving body as the block output. Its complete ownership graph contains exactly one region and one shell. The shell's planar surfaces form exactly three mutually orthogonal normal bands, every band has two distinct extrema, and exactly one permutation of the three extrema separations matches the ordered dimensions within the document linear tolerance. Owned non-planar faces do not participate; this preserves the primitive frame after later curved operations modify the terminal body. Faces outside the placement body do not participate. Each normal is initially oriented so its first non-zero model-space component is positive. After dimension ordering, the third axis and its offsets are reversed when required for a right-handed frame. The three resulting minimum plane offsets define the origin. These ordered axes and origin form the local-to-model transform. Missing dimensions, multiple explicit outputs, multiple candidate fallback bodies, a non-solid body, multiple regions or shells, an incomplete ownership graph, additional owned plane directions, non-orthogonal bands, missing extrema, zero or multiple dimension-to-band permutations, or a separation outside the document linear tolerance leave placement absent.
+
+The dimension and placement constructions do not identify whether `BLOCK` creates an independent body or combines the primitive with an existing body. They do not assign its Boolean result operation.
 
 A `BLOCK` operation projects as a neutral rectangular block. A complete typed
 dimension set supplies its ordered local x, y, and z dimensions. The feature
@@ -1440,6 +1525,10 @@ Each complete scalar-lane witness is followed immediately by two tagged object i
 
 Two or more `SIMPLE HOLE` operations belong to one construction-identity group when their resolved first-witness block pair and repeated-witness block pair are equal in order. The group retains the shared four-block identity and aligns operation labels, scalar lanes, and block-reference lanes in feature-history order. Each operation contributes exactly one scalar lane and one block-reference lane; a duplicate operation identity or lane rejects the group. A different block in any position prevents the join. The equality assigns no parent, dependency, placement, or scalar role.
 
+A `HOLE PACKAGE` payload contains at most one construction-group lane framed as `00 00 01 00 00, selector:u8, 00, branch:u8, 00 00 00 00, reference[2], branch, 00 00 00 00, reference[2], 00 00 ff`. `selector` and `branch` are nonzero. The repeated branch bytes are equal. References use the canonical `f0`/`f1` object-index form, retain their exact tokens and offsets, and resolve atomically through the unique offset-store rule. A missing fixed byte, zero selector or branch, unequal branch witness, null or noncanonical reference, unresolved reference, or multiple complete lanes rejects the lane atomically without rejecting the bounded operation record.
+
+One package lane relates to one simple-hole construction group when their four resolved block identities are equal in serialized order and that identity selects exactly one package lane and exactly one simple-hole group. The relation retains the package operation, package lane, and simple-hole group. Ambiguous or partial equality produces no relation. The equality assigns grouping only; it does not assign hole parameters, placement, output, suppression, feature hierarchy, or dependency direction.
+
 A `DATUM_CSYS` payload begins `control:u8, 00 00 01 00 00 01 01 00 01 00 00 00 00`, followed by exactly eight canonical `f0`/`f1` object indices and `01 01 00 01 00 00 00 00`. The control byte is retained independently. The eight indices retain their exact tokens and offsets and resolve atomically to blocks in the single offset store selected by the operation-header inputs. Their serialized order is retained. A missing, noncanonical, unresolved, differently stored, or incorrectly terminated reference rejects the complete coordinate-system construction lane.
 
 The logical payload formed by the first two resolved `DATUM_CSYS` blocks uses the common `50 59 66, field_code, 00, shifted_f64` scalar frame. Complete finite fields retain their discriminator, value, exact eight-byte encoding, payload-relative offset, and exact file offset across the two source blocks. Their coordinate or dimensional role is not assigned by the frame.
@@ -1562,13 +1651,17 @@ The B-spline form code does not determine whether a control grid is rational. Th
 
 ### 9.4 Attributes and expressions
 
-Parasolid attribute definitions use a two-record catalog entry. `00 4f [ff] name_len:u32 BE, class_xmt:u16 BE, name[name_len]` declares a non-empty printable ASCII class name; `ff` is the optional record-envelope escape. The field record follows immediately as `00 50, field_count:u32 BE, field_xmt:u16 BE, reference[2]:u16 BE, header_word[2]:u16 BE, payload`. Both XMT identities and the ordered references are stream-local. The header words are retained verbatim; their second value includes `2328`, `1f67`, and `1f44`. The header is followed by an exact 26-byte descriptor prefix and `field_count` one-byte field codes. This gives the type-80 record a self-contained length of `42 + field_count` bytes. A truncated descriptor or field-code lane invalidates the declaration pair atomically. Type code `0x05` in the descriptor prefix denotes a component/reference or string field, `0x06` a double field, and `0x00` a void or flag field. The per-field code lane remains ordered independently of the descriptor type code. The primary storage kind is typed only when descriptor bytes four and five are `03 00`, `03 05`, or `03 06`; another marker or type code leaves the storage kind absent without discarding the exact descriptor prefix.
+Parasolid type-79 attribute identifiers are `00 4f [ff], name_len:u32 BE, xmt, name[name_len]`. The name is non-empty printable ASCII. Type-79 records are independent nodes and need not be adjacent to the type-80 definition that references them.
+
+A type-80 attribute definition is `00 50 [ff], field_count:u32 BE, xmt, next_definition, identifier, type_id:u32 BE, action[8], field_names, legal_owner[16], field_code[field_count]`. XMT and reference fields use the compact or extended XMT encoding. The definition XMT, identifier reference, and type ID are non-null. `identifier` must resolve uniquely to a type-79 record in the same stream; otherwise the definition remains untyped. `next_definition` and `field_names` may be null reference `1`. Each action code is in `0..=6`, and each legal-owner flag is binary. Each field code is in `0..=10`; zero is an ignored user-field extension, and codes 1 through 10 denote integer, real, character, point, vector, direction, axis, tag, pointer, and Unicode storage respectively. The definition identity is the type-80 XMT, not its type-79 identifier XMT. Definition order and physical adjacency do not participate in the join.
+
+A type-99 field-name list is `00 63 [ff], field_count:u32 BE, xmt, name[field_count]`. The count is nonzero, and the XMT and every name reference are non-null. A type-80 `field_names` reference resolves only when exactly one same-stream type-99 record has that XMT, its count equals the definition's field count, and every ordered name reference resolves uniquely to a same-stream type-84 character or type-98 Unicode value. The resulting names correspond positionally to the definition's field codes.
 
 A type-81 entity/attribute-list record is `00 51 [ff], flags:u32 BE,
-xmt, sequence:u32 BE, discriminator:u16 BE, references`. XMT fields use the
+xmt, sequence:u32 BE, definition, references`. XMT fields use the
 compact or extended XMT encoding. `xmt` is non-null, `sequence` is nonzero, and
 `flags` is in `1..=0x20`. The reference count is seven for `flags = 02`, nine
-for `flags = 04`, and in general five plus `flags`. The discriminator does not
+for `flags = 04`, and in general five plus `flags`. The definition reference does not
 affect framing. References are either consecutive XMT values or individually
 binary-status-prefixed XMT values followed by a binary terminal; the two forms
 are atomic. A
@@ -1580,14 +1673,15 @@ also be the leading `00` of the immediately following two-byte record tag. The
 shared byte belongs to both record frames and is counted once in the deltas byte
 ledger.
 
-The type-81 discriminator selects an attribute class when its value plus one
-equals the XMT of exactly one type-79 attribute definition in the same stream.
-Every matched instance retains the serialized discriminator, matched
-definition XMT, type-81 instance, and type-79 definition independently of
+The first five type-81 references form a fixed leading lane. The remaining `flags` references form the trailing payload lane. Only trailing references address attribute value records; their reference ordinals retain the five leading slots, so the first trailing reference has ordinal five. Leading references remain structural and do not produce attribute values even when their values collide with value-record XMT identities.
+
+The type-81 definition reference selects an attribute class when it equals the
+XMT of exactly one type-80 attribute definition in the same stream.
+Every matched instance retains the definition XMT, type-81 instance, and type-80 definition independently of
 topology ownership. A topology-owned matched instance additionally retains its
 topology ownership relation. A missing, overflowing, or multiply declared
-definition XMT leaves the class unresolved. Definition declaration order and
-type-81 reference values do not participate in class selection.
+definition XMT leaves the class unresolved. Definition declaration order,
+type-79 identifier identity, and type-81 field values do not participate in class selection.
 
 A printable type-84 value record is `00 54 [ff], length:u32 BE, xmt,
 text[length], 00`. The length is nonzero, xmt is non-null, and every text byte
@@ -1603,20 +1697,36 @@ has no terminator. A type-81 reference slot resolves a numeric value record only
 when exactly one type-82 or type-83 record in the same stream has the referenced
 xmt; reference order and the value lane order are retained.
 
-A shell, face, loop, edge, FIN, or vertex topology record with one uniquely resolved
-attribute-list identity owns every uniquely resolved type-82, type-83, and
-type-84 value referenced by that type-81 record. Each value record transfers as
-one topology-targeted source attribute. Its name contains the value-record
-family and zero-based type-81 reference ordinal; its values retain serialized
-lane order. The independently resolved class relation identifies the owning
-attribute definition, but a value receives a semantic field name only through
-the class-specific field-value serialization.
+Type-85 point, type-86 vector, and type-89 direction value records are `00 <55|56|59> [ff], count:u32 BE, xmt, value[count]`, where every value is three finite `f64 BE` components in serialized xyz order. Type-87 axis value records are `00 57 [ff], vector_count:u32 BE, xmt, vector[vector_count]`, with the same three-component vector representation. `vector_count` is positive and even; consecutive vector pairs form axes in lane order. Type-88 tag value records are `00 58 [ff], count:u32 BE, xmt, value[count]:u32 BE`.
 
-When the class relation resolves, each neutral source-attribute name is the
-exact class name followed by its type-82, type-83, or type-84 family and
-zero-based type-81 reference ordinal. Without a resolved class it retains only
-the family and ordinal. This qualification assigns class ownership without
-assigning a declared field role.
+A type-98 Unicode value record is `00 62 [ff], count:u32 BE, xmt, code_unit[count]:u16 BE`. The count is positive and the complete code-unit lane is valid UTF-16. The decoded value is the Unicode scalar string represented by that lane. Type-85 through type-89 and type-98 records have non-null XMT identities, end after their counted lane, and have no terminator.
+
+A trailing type-81 reference resolves a value only when exactly one value record of all type-82 through type-89 and type-98 families in the same stream has the referenced XMT. A collision between families or duplicate records leaves the reference unresolved. Reference order and every serialized value lane remain ordered. Pointer fields have no value-record family and are always transmitted empty.
+
+Trailing type-81 reference slot `5 + i` supplies declared type-80 field `i`.
+The assignment is valid only when the referenced value family matches the
+declared field code: types 82, 83, 84, 85, 86, 89, 87, 88, and 98 match codes
+1, 2, 3, 4, 5, 6, 7, 8, and 10 respectively. Code 9 is an empty pointer field
+and has no value assignment. An absent field declaration, an ambiguous class or value
+relation, or a value-family mismatch leaves the field unassigned.
+
+A shell, face, loop, edge, FIN, or vertex topology record with one uniquely resolved
+attribute-list identity owns every uniquely resolved attribute value referenced
+by that type-81 record. Each value record transfers as
+one topology-targeted source attribute whose values retain serialized lane
+order. The independently resolved class relation identifies the owning
+attribute definition. Integer and tag lanes transfer as integers, real lanes as
+floating-point values, character and Unicode lanes as strings, point/vector/direction
+lanes as three-component vectors, and axis lanes as six-component vectors retaining
+their serialized vector pair. A uniquely assigned field is
+named by its exact class name and resolved declared field name. Without a resolved
+field-name list, it is named by the zero-based declared field ordinal and declared
+field code. `SDL/TYSA_DENSITY` field zero is `density` and field one is `units`.
+
+When a value resolves without a unique declared-field assignment, its neutral
+source-attribute name retains the exact class name when available, followed by
+its value-record family and zero-based type-81 reference ordinal.
+Without a resolved class it retains only the family and ordinal.
 
 `hostglobalvariables` stores numeric expressions as independently length-framed ASCII records:
 

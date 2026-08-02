@@ -450,15 +450,29 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the class grammars to transfer the remaining fast-load state as typed data.
 
+### OM-30. Hole-package feature hierarchy
+
+**Question.** Does a `HOLE PACKAGE` operation own its related `SIMPLE HOLE` operations as child features, replace them as the authored neutral feature, or coexist with them as an independent operation?
+
+**Known.** `siemens_nx.md` defines the exact four-block package lane and its unambiguous equality relation to a simple-hole construction group. The equality does not encode hierarchy, dependency direction, or neutral feature identity.
+
+**Need.** We must identify the serialized hierarchy or operation-role field before collapsing, parenting, or suppressing either neutral feature family.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream
 
 **Question.** What is the field grammar and semantics of `/Root/FastLoad/Structure`?
 
-**Known.** `siemens_nx.md:245` through `siemens_nx.md:362` classify the stream and retain its bounded container entry.
+**Known.** The stream has a big-endian bounded OM envelope and typed class and
+member declarations. Its typed component
+roster defines ordered named prototypes and a one-based prototype index for
+each distinct occurrence. A second counted table stores UUID identities, and a
+parallel one-based index associates every occurrence with one UUID. Other
+payload fields remain uninterpreted.
 
-**Need.** We must know the grammar to decode fast-load assembly structure as typed data.
+**Need.** We must know the remaining payload grammar, including hierarchy,
+placement, UUID, and state fields.
 
 ### AM-02. Fast-load JT stream
 
@@ -470,11 +484,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### AM-03. Last-saved toggle stream
 
-**Question.** What is the field grammar and semantics of `/Root/UG_PART/LastSavedToggleInfoStream`?
+**Question.** Which native objects do the saved toggle identities address, and
+does an `On` or `Off` member control feature suppression, visibility, or another
+state domain?
 
-**Known.** `siemens_nx.md:245` through `siemens_nx.md:362` classify the stream and retain its bounded container entry.
+**Known.** `siemens_nx.md` defines the complete counted stream envelope and
+retains each 32-hex-digit identity and `On`/`Off` state exactly. The toggle
+identities have no proven join to feature-operation records.
 
-**Need.** We must know the grammar to decode the saved toggle state as typed data.
+**Need.** We must identify the addressed object namespace before projecting any
+member as a neutral suppression or visibility state.
 
 ### AM-04. `DisplayJT` outer-index values
 
@@ -504,7 +523,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does each child-bound persistent-handle set identify one distinct assembly occurrence?
 
-**Known.** `siemens_nx.md:146` through `siemens_nx.md:147` define segment order. `siemens_nx.md:1533` through `siemens_nx.md:1541` define `EXTREFSTREAM` handle sets and child-path bindings.
+**Known.** The fast-load component roster preserves each occurrence ordinal and
+its named prototype, including repeated uses. `EXTREFSTREAM` preserves child
+paths and persistent-handle sets independently. Bounded OM object records retain
+exact adjacent persistent-handle pairs without assigning occurrence semantics.
+Canonical UUID frames in contiguous ID-bounded OM storage group with roster
+occurrences by exact UUID and equal multiplicity. Repeated members remain two
+separate ordered lists because their individual correspondence is not encoded
+by that invariant.
 
 **Need.** We must know the mapping to preserve multiple occurrences of the same child part.
 
@@ -515,14 +541,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `siemens_nx.md:1533` through `siemens_nx.md:1539` define the indexed-record boundary, handle-set prefix, persistent-handle pairs, tagged references, string uses, and child binding. Other tail bytes remain opaque.
 
 **Need.** We must know the fields to decode complete occurrence and external-reference state.
-
-### AM-09. SDL/TYSA attribute values
-
-**Question.** How does each Parasolid SDL/TYSA attribute instance assign its referenced value records to the fields declared by its type-79 class definition?
-
-**Known.** `siemens_nx.md:1563` through `siemens_nx.md:1614` define attribute-class declarations, type-81 class selection, referenced value records, topology ownership, and neutral source-attribute names. The declaration includes ordered field type codes such as those for `SDL/TYSA_DENSITY` and `SDL/TYSA_BLEND_ID`.
-
-**Need.** We must know the assignment to transfer class-specific material and topology attributes with semantic field names.
 
 ### AM-10. Face material bindings
 

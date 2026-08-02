@@ -1252,7 +1252,7 @@ pub(crate) fn display_jt_scene_graph_stream() -> Vec<u8> {
 /// entity, `00 52`/`00 53` counted value records, `00 54` string record) whose
 /// extractors are exercised by the `parasolid_entity_*`, `parasolid_attribute_*`
 /// white-box tests. The `00 51` entity's references resolve to the value and
-/// string records, and its discriminator selects the class declaration, so the
+/// string records, and its definition reference selects the class declaration, so the
 /// join arenas (`parasolid_entity_51_numeric_uses`, `parasolid_entity_51_string_uses`,
 /// `parasolid_attribute_class_uses`) are populated as well.
 pub(crate) fn parasolid_entity_records_stream() -> Vec<u8> {
@@ -1262,9 +1262,8 @@ pub(crate) fn parasolid_entity_records_stream() -> Vec<u8> {
         b"XX: TRANSMIT FILE (partition) created by modeller\x00SCH_TEST_1_9999\x00",
     );
 
-    // `00 4f` attribute-class declaration with identity xmt 201, followed by its
-    // `00 50` field record (one field). A `00 51` entity with discriminator 200
-    // resolves to this class through `definition_xmt = discriminator + 1`.
+    // `00 4f` attribute identifier with identity xmt 201, followed by its
+    // `00 50` definition record with identity xmt 202 and one field.
     s.extend_from_slice(&[0x00, 0x4f]);
     s.extend_from_slice(&10u32.to_be_bytes()); // name length
     s.extend_from_slice(&201u16.to_be_bytes()); // class identity xmt
@@ -1272,11 +1271,12 @@ pub(crate) fn parasolid_entity_records_stream() -> Vec<u8> {
     s.extend_from_slice(&[0x00, 0x50]); // field-record tag
     s.extend_from_slice(&1u32.to_be_bytes()); // field count
     s.extend_from_slice(&202u16.to_be_bytes()); // field-record xmt
-    s.extend_from_slice(&0u16.to_be_bytes()); // reference 0
-    s.extend_from_slice(&0u16.to_be_bytes()); // reference 1
-    s.extend_from_slice(&0u16.to_be_bytes()); // header word 0
-    s.extend_from_slice(&0u16.to_be_bytes()); // header word 1
-    s.extend_from_slice(&[0xaa; 26]); // 26-byte descriptor prefix
+    s.extend_from_slice(&1u16.to_be_bytes()); // null next-definition reference
+    s.extend_from_slice(&201u16.to_be_bytes()); // identifier reference
+    s.extend_from_slice(&9000u32.to_be_bytes()); // type id
+    s.extend_from_slice(&[0; 8]); // event actions
+    s.extend_from_slice(&1u16.to_be_bytes()); // null field-name-list reference
+    s.extend_from_slice(&[0; 16]); // legal-owner flags
     s.push(0x01); // one field code
 
     // `00 52` counted unsigned-integer record, identity xmt 101, one value.
@@ -1299,13 +1299,13 @@ pub(crate) fn parasolid_entity_records_stream() -> Vec<u8> {
     s.push(0x00); // terminator
 
     // `00 51` framed entity: flags 1 (low_flag 1 -> six references), identity
-    // xmt 50, sequence 2, discriminator 200. Its references resolve to the
+    // xmt 50, sequence 2, definition xmt 202. Its references resolve to the
     // string (100), integer (101), and double (102) records above.
     s.extend_from_slice(&[0x00, 0x51]);
     s.extend_from_slice(&1u32.to_be_bytes()); // flags
     s.extend_from_slice(&50u16.to_be_bytes()); // identity xmt
     s.extend_from_slice(&2u32.to_be_bytes()); // sequence
-    s.extend_from_slice(&200u16.to_be_bytes()); // discriminator
+    s.extend_from_slice(&202u16.to_be_bytes()); // definition xmt
     for reference in [100u16, 101, 102, 150, 151, 152] {
         s.extend_from_slice(&reference.to_be_bytes());
     }

@@ -16,7 +16,7 @@ use cadmpeg_ir::geometry::{
     ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
-use cadmpeg_ir::report::LossCategory;
+use cadmpeg_ir::report::{LossCategory, LossKind};
 use cadmpeg_ir::Exactness;
 
 use crate::container;
@@ -1049,6 +1049,12 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         count: 3,
         second: None,
     }));
+    assert!(crate::decode::pattern_is_incomplete(&PatternKind::Linear {
+        direction: Some(Vector3::new(1.0, 0.0, 0.0)),
+        spacing: Length(10.0),
+        count: 1,
+        second: None,
+    }));
     assert!(crate::decode::pattern_is_incomplete(
         &PatternKind::CurveDriven {
             path: Some(PathRef::Native("nx:path".into())),
@@ -1073,7 +1079,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         &PatternKind::Composite {
             stages: vec![
                 PatternStage {
-                    pattern: Box::new(linear),
+                    pattern: Box::new(linear.clone()),
                     combination: PatternStageCombination::Initialize,
                 },
                 PatternStage {
@@ -1087,6 +1093,23 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
             ],
         }
     ));
+    let composite = PatternKind::Composite {
+        stages: vec![
+            PatternStage {
+                pattern: Box::new(linear),
+                combination: PatternStageCombination::Initialize,
+            },
+            PatternStage {
+                pattern: Box::new(PatternKind::Mirror {
+                    plane_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    plane_normal: Vector3::new(1.0, 0.0, 0.0),
+                }),
+                combination: PatternStageCombination::CartesianProduct,
+            },
+        ],
+    };
+    assert!(!crate::decode::pattern_is_incomplete(&composite));
+    assert_eq!(crate::decode::pattern_occurrence_count(&composite), Some(6));
 }
 
 #[test]
@@ -2069,7 +2092,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
 
 #[test]
 fn nx_body_producing_feature_families_require_history_outputs() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, Length};
+    use cadmpeg_ir::features::{BooleanOp, Feature, FeatureDefinition, FeatureId, Length};
     use std::collections::BTreeMap;
 
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
@@ -2088,6 +2111,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         definition: FeatureDefinition::Block {
             dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
             placement: Some(cadmpeg_ir::transform::Transform::identity()),
+            op: BooleanOp::NewBody,
         },
         native_ref: None,
     });
@@ -2130,6 +2154,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         ir.model.features[0].definition = FeatureDefinition::Block {
             dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
             placement: Some(invalid_placement),
+            op: BooleanOp::NewBody,
         };
         crate::decode::append_design_intent_losses(&ir, &mut losses);
         assert_eq!(losses.len(), 1);
@@ -2737,10 +2762,63 @@ fn sketch_fixed_pair_parser_reads_signed_q1_55_atoms() {
     assert_eq!(pairs[0].values, [0.5, -0.5]);
     assert_eq!(pairs[0].value_offsets, [8, 17]);
     assert_eq!(pairs[0].raw_values[0], [0x40, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(pairs[0].discriminator, bytes[..8]);
 
     let mut malformed = bytes;
     malformed[16] = 1;
     assert!(crate::om::sketch_payload_fixed_pairs(&malformed).is_empty());
+}
+
+#[test]
+fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
+    let short = [
+        0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x01,
+        0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00,
+    ];
+    let extended = [
+        0x08, 0x02, 0x03, 0x01, 0xc0, 0x40, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02,
+        0x00, 0x01, 0x30, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xe0, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+    ];
+
+    let short_pair = crate::om::sketch_payload_fixed_pairs(&short);
+    assert_eq!(short_pair.len(), 1);
+    assert_eq!(short_pair[0].values, [0.5, -0.5]);
+    assert_eq!(short_pair[0].value_offsets, [15, 23]);
+    assert_eq!(short_pair[0].discriminator, short[..15]);
+
+    let extended_pair = crate::om::sketch_payload_fixed_pairs(&extended);
+    assert_eq!(extended_pair.len(), 1);
+    assert_eq!(extended_pair[0].values, [0.25, -0.25]);
+    assert_eq!(extended_pair[0].value_offsets, [17, 25]);
+    assert_eq!(extended_pair[0].discriminator, extended[..17]);
+
+    let mut malformed = short;
+    malformed[23] = 0x31;
+    assert!(crate::om::sketch_payload_fixed_pairs(&malformed).is_empty());
+}
+
+#[test]
+fn sketch_mixed_pair_parser_requires_q1_55_then_shifted_binary32() {
+    let mut bytes = vec![0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84, 0x30];
+    bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);
+    bytes.push(0x00);
+    let mut shifted = 3.25_f32.to_be_bytes();
+    shifted[0] += 0x10;
+    bytes.extend_from_slice(&shifted);
+
+    let pairs = crate::om::sketch_payload_mixed_pairs(&bytes);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].fixed_value, 0.5);
+    assert_eq!(pairs[0].binary32_value, 3.25);
+    assert_eq!(pairs[0].fixed_raw_value, [0x40, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(pairs[0].binary32_raw_value, shifted);
+    assert_eq!(pairs[0].value_offsets, [8, 17]);
+
+    let mut malformed = bytes;
+    malformed[16] = 1;
+    assert!(crate::om::sketch_payload_mixed_pairs(&malformed).is_empty());
 }
 
 #[test]
@@ -2895,6 +2973,56 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
         crate::om::simple_hole_repeated_scalar_lane_block_references(crate::om::OperationRecord {
             bytes: &null,
             payload: &null,
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
+fn om_hole_package_lane_retains_the_exact_four_block_group() {
+    let payload = [
+        0x7e, 0x00, 0x00, 0x01, 0x00, 0x00, 0x46, 0x00, 0x11, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xcd,
+        0xf0, 0xce, 0x11, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xcf, 0xf0, 0xd0, 0x00, 0x00, 0xff, 0x7f,
+    ];
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: &payload,
+        payload_offset: 200,
+        payload: &payload,
+        label: crate::om::OperationLabel {
+            header_offset: 100,
+            offset: 120,
+            value: "HOLE PACKAGE",
+            object_indices: [None; 4],
+            object_index_offsets: [0; 4],
+        },
+    };
+    let lane = crate::om::hole_package_construction_group_lane(record).unwrap();
+    assert_eq!(lane.offset, 1);
+    assert_eq!(lane.selector, 0x46);
+    assert_eq!(lane.branch, 0x11);
+    assert_eq!(
+        lane.references
+            .iter()
+            .map(|reference| reference.object_index)
+            .collect::<Vec<_>>(),
+        [205, 206, 207, 208]
+    );
+    assert_eq!(
+        lane.references
+            .iter()
+            .map(|reference| reference.offset)
+            .collect::<Vec<_>>(),
+        [213, 215, 222, 224]
+    );
+
+    let mut mismatched_branch = payload;
+    mismatched_branch[17] = 0x12;
+    assert!(
+        crate::om::hole_package_construction_group_lane(crate::om::OperationRecord {
+            bytes: &mismatched_branch,
+            payload: &mismatched_branch,
             ..record
         })
         .is_none()
@@ -3678,6 +3806,20 @@ fn om_size_frame_bounds_its_type_declarations() {
     let mut truncated = bytes;
     truncated.pop();
     assert!(crate::om::sections(&truncated).is_empty());
+}
+
+#[test]
+fn om_size_frame_accepts_exact_terminal_twelve_byte_envelope() {
+    let mut bytes = size_framed_om_section();
+    let payload_len = u32::try_from(bytes.len() - 12).expect("short OM fixture");
+    bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
+    let sections = crate::om::sections(&bytes);
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].byte_len, bytes.len());
+    assert_eq!(sections[0].types[0].name, "UGS::FEATURE_RECORD");
+
+    bytes.push(0);
+    assert!(crate::om::sections(&bytes).is_empty());
 }
 
 #[test]
@@ -5757,13 +5899,32 @@ fn parasolid_entity_51_records_retain_layout_selected_references() {
     assert_eq!(records[0].byte_len, 26);
     assert_eq!(records[0].xmt, 10);
     assert_eq!(records[0].sequence, 2);
-    assert_eq!(records[0].discriminator, 0x21);
-    assert_eq!(records[0].references, vec![3, 4, 5, 6, 7, 8]);
+    assert_eq!(records[0].definition_xmt, 0x21);
+    assert_eq!(records[0].leading_references, [3, 4, 5, 6, 7]);
+    assert_eq!(records[0].trailing_references, [8]);
     assert_eq!(
         crate::parasolid::entity_51_record_at(&bytes, 0),
         Some(records[0].clone())
     );
     assert!(crate::parasolid::entity_51_record_at(&bytes[..25], 0).is_none());
+}
+
+#[test]
+fn parasolid_entity_51_definition_uses_extended_xmt_framing() {
+    let mut bytes = vec![0, 0x51];
+    bytes.extend_from_slice(&1u32.to_be_bytes());
+    bytes.extend_from_slice(&10u16.to_be_bytes());
+    bytes.extend_from_slice(&2u32.to_be_bytes());
+    bytes.extend_from_slice(&(-7_233i16).to_be_bytes());
+    bytes.extend_from_slice(&1u16.to_be_bytes());
+    for reference in 3..=8u16 {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+    }
+
+    let record = crate::parasolid::entity_51_record_at(&bytes, 0).unwrap();
+    assert_eq!(record.definition_xmt, 40_000);
+    assert_eq!(record.byte_len, 28);
+    assert!(crate::parasolid::entity_51_record_at(&bytes[..27], 0).is_none());
 }
 
 #[test]
@@ -5780,7 +5941,8 @@ fn parasolid_entity_51_reference_count_is_five_plus_flags() {
         direct.extend_from_slice(&[0xaa, 0xbb]);
 
         let record = crate::parasolid::entity_51_record_at(&direct, 0).unwrap();
-        assert_eq!(record.references.len(), (flags + 5) as usize);
+        assert_eq!(record.leading_references.len(), 5);
+        assert_eq!(record.trailing_references.len(), flags as usize);
         assert_eq!(record.byte_len, direct.len() - 2);
         assert!(crate::parasolid::entity_51_record_at(&direct[..direct.len() - 3], 0).is_none());
 
@@ -5797,7 +5959,8 @@ fn parasolid_entity_51_reference_count_is_five_plus_flags() {
         prefixed.extend_from_slice(&[0xaa, 0xbb]);
 
         let record = crate::parasolid::entity_51_record_at(&prefixed, 0).unwrap();
-        assert_eq!(record.references.len(), (flags + 5) as usize);
+        assert_eq!(record.leading_references.len(), 5);
+        assert_eq!(record.trailing_references.len(), flags as usize);
         assert_eq!(record.byte_len, prefixed.len() - 2);
         assert!(
             crate::parasolid::entity_51_record_at(&prefixed[..prefixed.len() - 3], 0).is_none()
@@ -5869,6 +6032,24 @@ fn parasolid_entity_52_integers_require_complete_counted_values() {
 }
 
 #[test]
+fn parasolid_field_names_require_a_complete_nonempty_reference_lane() {
+    let bytes = [
+        0xaa, 0x00, 0x63, 0x00, 0x00, 0x00, 0x03, 0x00, 0x19, 0x00, 0x1c, 0x00, 0x1d, 0x00, 0x1e,
+        0xbb,
+    ];
+    let records = crate::parasolid::field_names_records(&bytes);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].offset, 1);
+    assert_eq!(records[0].byte_len, 14);
+    assert_eq!(records[0].xmt, 25);
+    assert_eq!(records[0].name_xmts, [28, 29, 30]);
+    assert!(crate::parasolid::field_names_record_at(&bytes[..14], 1).is_none());
+
+    let empty = [0x00, 0x63, 0, 0, 0, 0, 0, 25];
+    assert!(crate::parasolid::field_names_records(&empty).is_empty());
+}
+
+#[test]
 fn parasolid_entity_53_doubles_require_complete_finite_values() {
     let mut bytes = vec![0xaa, 0x00, 0x53, 0xff];
     bytes.extend_from_slice(&2u32.to_be_bytes());
@@ -5891,6 +6072,90 @@ fn parasolid_entity_53_doubles_require_complete_finite_values() {
     bytes[last..].copy_from_slice(&f64::NAN.to_be_bytes());
     assert!(crate::parasolid::entity_53_double_records(&bytes).is_empty());
     assert!(crate::parasolid::entity_53_double_record_at(&bytes, 1).is_none());
+}
+
+#[test]
+fn parasolid_transformable_attribute_values_preserve_vector_and_axis_grouping() {
+    let vector_record = |tag: u8, xmt: u16, vectors: &[[f64; 3]]| {
+        let mut bytes = vec![0x00, tag];
+        bytes.extend_from_slice(
+            &u32::try_from(vectors.len())
+                .expect("test vector count fits u32")
+                .to_be_bytes(),
+        );
+        bytes.extend_from_slice(&xmt.to_be_bytes());
+        for vector in vectors {
+            for component in vector {
+                bytes.extend_from_slice(&component.to_be_bytes());
+            }
+        }
+        bytes
+    };
+    let vectors = [[1.0, 2.0, 3.0], [-4.0, 5.0, 6.0]];
+
+    let points = crate::parasolid::entity_55_point_records(&vector_record(0x55, 20, &vectors));
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].values, vectors);
+    let vector_values =
+        crate::parasolid::entity_56_vector_records(&vector_record(0x56, 21, &vectors));
+    assert_eq!(vector_values.len(), 1);
+    assert_eq!(vector_values[0].values, vectors);
+    let directions =
+        crate::parasolid::entity_59_direction_records(&vector_record(0x59, 22, &vectors));
+    assert_eq!(directions.len(), 1);
+    assert_eq!(directions[0].values, vectors);
+
+    let four_vectors = [vectors[0], vectors[1], [7.0, 8.0, 9.0], [0.0, 1.0, 0.0]];
+    let axes = crate::parasolid::entity_57_axis_records(&vector_record(0x57, 23, &four_vectors));
+    assert_eq!(axes.len(), 1);
+    assert_eq!(
+        axes[0].values,
+        [
+            [four_vectors[0], four_vectors[1]],
+            [four_vectors[2], four_vectors[3]],
+        ]
+    );
+    assert!(crate::parasolid::entity_57_axis_records(
+        &vector_record(0x57, 23, &four_vectors[..3],)
+    )
+    .is_empty());
+
+    let mut nonfinite = vectors;
+    nonfinite[1][2] = f64::INFINITY;
+    assert!(
+        crate::parasolid::entity_55_point_records(&vector_record(0x55, 20, &nonfinite)).is_empty()
+    );
+}
+
+#[test]
+fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
+    let tags = [
+        0x00, 0x58, 0, 0, 0, 2, 0, 24, 0, 0, 0, 7, 0xff, 0xff, 0xff, 0xff,
+    ];
+    let records = crate::parasolid::entity_58_tag_records(&tags);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].xmt, 24);
+    assert_eq!(records[0].values, [7, u32::MAX]);
+    assert!(crate::parasolid::entity_58_tag_records(&tags[..tags.len() - 1]).is_empty());
+
+    let code_units = [b'N' as u16, b'X' as u16, 0xd83d, 0xde80];
+    let mut unicode = vec![0x00, 0x62, 0xff];
+    unicode.extend_from_slice(&4u32.to_be_bytes());
+    unicode.extend_from_slice(&[0xff, 0xff, 0x00, 0x01]);
+    for code_unit in code_units {
+        unicode.extend_from_slice(&code_unit.to_be_bytes());
+    }
+    let records = crate::parasolid::entity_62_unicode_records(&unicode);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].xmt, 32_768);
+    assert_eq!(records[0].code_units, code_units);
+    assert_eq!(records[0].value, "NX🚀");
+    assert!(crate::parasolid::entity_62_unicode_records(&unicode[..unicode.len() - 1]).is_empty());
+
+    let mut invalid = unicode;
+    invalid[15..17].copy_from_slice(&0xd800u16.to_be_bytes());
+    invalid[17..19].copy_from_slice(&0x0041u16.to_be_bytes());
+    assert!(crate::parasolid::entity_62_unicode_records(&invalid).is_empty());
 }
 
 #[test]
@@ -7467,8 +7732,66 @@ fn decode_emits_connected_primitive_brep() {
         .losses
         .iter()
         .all(|loss| loss.code.category() != cadmpeg_ir::report::LossCategory::Topology));
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| loss.code != LossKind::MaterialNotTransferred));
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| loss.code != LossKind::AttributesNotTransferred));
+    assert!(!result.report.losses.iter().any(|loss| {
+        loss.code == LossKind::AssemblyPlacementsNotTransferred
+            && loss.message.contains("Assembly occurrence placements")
+    }));
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn decode_reports_missing_assembly_placements_only_for_external_references() {
+    let file = prt_with_named_payloads(&[
+        (
+            "/Root/UG_PART/UG_PART",
+            zlib_compress(&topology_partition_stream()),
+        ),
+        (
+            "/Root/UG_PART/ExternalReferences",
+            external_reference_stream(),
+        ),
+    ]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == LossKind::AssemblyPlacementsNotTransferred
+            && loss.message.contains("Assembly occurrence placements")
+    }));
+}
+
+#[test]
+fn decode_reports_material_loss_only_for_retained_material_assets() {
+    let file = prt_with_named_payloads(&[
+        (
+            "/Root/UG_PART/UG_PART",
+            zlib_compress(&topology_partition_stream()),
+        ),
+        (
+            "/Root/materialsTif/Steel",
+            vec![b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 0],
+        ),
+    ]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == LossKind::MaterialNotTransferred
+            && loss.message.contains("Embedded material texture assets")
+    }));
 }
 
 #[test]
@@ -13389,8 +13712,8 @@ fn decode_retains_unsupported_named_stream_payloads() {
 fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::{
-        ConfigurationBodies, ConfigurationId, DesignConfiguration, Feature, FeatureDefinition,
-        FeatureId,
+        BooleanOp, ConfigurationBodies, ConfigurationId, DesignConfiguration, Feature,
+        FeatureDefinition, FeatureId,
     };
 
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
@@ -13492,6 +13815,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         definition: FeatureDefinition::Block {
             dimensions: None,
             placement: None,
+            op: BooleanOp::Unresolved,
         },
         native_ref: None,
     });
@@ -13602,9 +13926,8 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     losses.clear();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
-    assert_eq!(losses.len(), 6);
+    assert_eq!(losses.len(), 5);
     assert!(!losses[4].message.contains("sketch"));
-    assert!(losses[5].message.contains("no sketch constraints"));
 }
 
 #[path = "integration_tests.rs"]
@@ -13728,7 +14051,7 @@ mod golden {
 
     use super::*;
 
-    /// Every arena name production writes via `set_arena` in `decode.rs`, extracted
+    /// Every arena name production writes via the native catalogue, extracted
     /// mechanically. This is the coverage denominator; `arena_coverage_is_a_subset`
     /// fails if production introduces an arena name this list does not know, which
     /// keeps the denominator honest as the code evolves.
@@ -13786,6 +14109,10 @@ mod golden {
         "external_reference_records",
         "external_reference_tail_reference_pairs",
         "external_references",
+        "fast_load_component_occurrences",
+        "fast_load_component_object_groups",
+        "fast_load_component_prototypes",
+        "fast_load_component_uuids",
         "feature_block_construction_payloads",
         "feature_block_construction_references",
         "feature_block_constructions",
@@ -13836,6 +14163,8 @@ mod golden {
         "feature_input_column_row_uses",
         "feature_input_column_targets",
         "feature_identical_instance_output_lanes",
+        "feature_hole_package_construction_group_lanes",
+        "feature_hole_package_construction_group_uses",
         "feature_multi_instance_output_lanes",
         "feature_operation_body_11_continuations",
         "feature_operation_body_members",
@@ -13871,6 +14200,7 @@ mod golden {
         "feature_sketch_named_point_block_uses",
         "feature_sketch_payload_coordinate_pairs",
         "feature_sketch_payload_fixed_pairs",
+        "feature_sketch_payload_mixed_pairs",
         "feature_sketch_payload_named_records",
         "feature_sketch_payload_names",
         "feature_sketch_payload_scalars",
@@ -13889,11 +14219,14 @@ mod golden {
         "material_texture_assets",
         "material_texture_catalog_entries",
         "object_records",
+        "object_record_handle_pairs",
         "object_references",
+        "object_uuid_values",
         "offset_store_named_points",
         "om_record_areas",
         "parasolid_attribute_class_uses",
-        "parasolid_attribute_numeric_class_uses",
+        "parasolid_attribute_field_uses",
+        "parasolid_attribute_field_names",
         "parasolid_attribute_definitions",
         "parasolid_blend_bound_records",
         "parasolid_blend_surface_records",
@@ -13915,10 +14248,16 @@ mod golden {
         "parasolid_deltas_tombstones",
         "parasolid_entity_51_numeric_uses",
         "parasolid_entity_51_records",
+        "parasolid_entity_51_structured_uses",
         "parasolid_entity_51_string_uses",
         "parasolid_entity_52_integer_records",
         "parasolid_entity_53_double_records",
         "parasolid_entity_54_string_records",
+        "parasolid_entity_57_axis_records",
+        "parasolid_entity_58_tag_records",
+        "parasolid_entity_62_unicode_records",
+        "parasolid_entity_vector_records",
+        "parasolid_field_names_records",
         "parasolid_intersection_records",
         "parasolid_offset_surface_records",
         "parasolid_support_uv_records",
@@ -13931,6 +14270,8 @@ mod golden {
         "persistent_handles",
         "rmfastload_object_id_tables",
         "rmfastload_object_ids",
+        "saved_toggle_entries",
+        "saved_toggle_streams",
         "segment_body_bindings",
         "segment_body_lineage_statuses",
         "segment_index_rows",
@@ -14637,7 +14978,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (205), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (223), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -14648,13 +14989,13 @@ mod golden {
 
         use crate::native::catalogue::CATALOGUE;
 
-        assert_eq!(CATALOGUE.len(), 205, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 223, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE
                 .iter()
                 .filter(|row| row.phase == Phase::GroupA)
                 .count(),
-            97,
+            106,
             "group A family count"
         );
         assert_eq!(
@@ -14662,7 +15003,7 @@ mod golden {
                 .iter()
                 .filter(|row| row.phase == Phase::GroupB)
                 .count(),
-            3,
+            9,
             "group B family count"
         );
 

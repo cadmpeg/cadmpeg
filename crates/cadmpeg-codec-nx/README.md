@@ -43,6 +43,17 @@ partition, deltas, plain cached body, or preview data. Set
 `DecodeOptions::container_only` to produce metadata IR without decoding
 entities.
 
+Run the capability profiler against a directory of `.prt` files to produce a
+deterministic JSON census and cumulative L0-L6 gate assertions:
+
+```sh
+cargo run -p cadmpeg-codec-nx --bin nx_profile -- FIXTURES OUTPUT.json
+```
+
+The profiler does not infer support from entity counts. A gate fails when any
+lower gate fails, when the corresponding decode-loss domain is nonempty, or
+when its structural requirements do not validate.
+
 ## Data model and coverage
 
 NX stores part geometry in one or more Parasolid streams inside an SPLMSSTR

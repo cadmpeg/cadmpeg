@@ -202,6 +202,46 @@ pub struct FeatureSimpleHoleConstructionGroup {
     pub block_references: Vec<String>,
 }
 
+/// Exact four-block construction-group lane carried by a `HOLE PACKAGE` operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureHolePackageConstructionGroupLane {
+    /// Globally unique lane identity.
+    pub id: String,
+    /// Owning `HOLE PACKAGE` operation label.
+    pub operation_label: String,
+    /// Compact selector preceding the repeated branch byte.
+    pub selector: u8,
+    /// Branch byte repeated between the two reference pairs.
+    pub branch: u8,
+    /// Ordered serialized offset-store block indices.
+    pub object_indices: [u32; 4],
+    /// Exact variable-width object-index tokens.
+    pub raw_object_indices: [Vec<u8>; 4],
+    /// Uniquely resolved offset-store blocks.
+    pub data_blocks: [String; 4],
+    /// Payload-relative offset of the lane prefix.
+    pub payload_offset: u64,
+    /// Absolute file offset of the lane prefix.
+    pub source_offset: u64,
+    /// Absolute file offsets of the four reference tokens.
+    pub reference_source_offsets: [u64; 4],
+}
+
+/// Exact relation between one hole package and one simple-hole construction group.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureHolePackageConstructionGroupUse {
+    /// Globally unique relation identity.
+    pub id: String,
+    /// Owning `HOLE PACKAGE` operation label.
+    pub operation_label: String,
+    /// Exact package lane carrying the group identity.
+    pub construction_group_lane: String,
+    /// Uniquely matched simple-hole construction group.
+    pub simple_hole_construction_group: String,
+    /// Absolute file offset of the package lane.
+    pub source_offset: u64,
+}
+
 /// Construction family named by a simple-hole template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -906,6 +946,39 @@ pub struct FeatureSketchPayloadFixedPair {
     pub values: [f64; 2],
     /// Exact ordered seven-byte two's-complement payloads.
     pub raw_values: [[u8; 7]; 2],
+    /// Exact discriminator and branch prefix selecting the pair layout.
+    pub discriminator: Vec<u8>,
+    /// Payload-relative offset of the discriminator.
+    pub payload_offset: u64,
+    /// Payload-relative offsets of the two atom markers.
+    pub value_payload_offsets: [u64; 2],
+    /// Absolute source offset of the discriminator.
+    pub source_offset: u64,
+    /// Absolute source offsets of the two atom markers.
+    pub value_source_offsets: [u64; 2],
+}
+
+/// One exactly framed mixed Q1.55/binary32 pair in a reconstructed sketch payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureSketchPayloadMixedPair {
+    /// Globally unique mixed-pair identity.
+    pub id: String,
+    /// Owning `SKETCH` operation label.
+    pub operation_label: String,
+    /// Reconstructed sketch payload carrying the frame.
+    pub construction_payload: String,
+    /// Zero-based frame order within the payload.
+    pub ordinal: u32,
+    /// Dimensionless signed Q1.55 value.
+    pub fixed_value: f64,
+    /// Finite shifted-IEEE binary32 value widened exactly to binary64.
+    pub binary32_value: f64,
+    /// Exact seven-byte two's-complement Q1.55 payload.
+    pub fixed_raw_value: [u8; 7],
+    /// Exact four-byte shifted-binary32 encoding.
+    pub binary32_raw_value: [u8; 4],
+    /// Exact discriminator selecting the mixed pair layout.
+    pub discriminator: Vec<u8>,
     /// Payload-relative offset of the discriminator.
     pub payload_offset: u64,
     /// Payload-relative offsets of the two atom markers.
@@ -987,6 +1060,9 @@ pub struct FeatureSketchPayloadNamedRecord {
     pub scalar_fields: Vec<String>,
     /// Ordered fixed-pair fields before the next complete name field.
     pub fixed_pairs: Vec<String>,
+    /// Mixed Q1.55/binary32 pairs contained by this interval in payload order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mixed_pairs: Vec<String>,
     /// Payload-relative offset of the opening name marker.
     pub payload_start_offset: u64,
     /// Payload-relative exclusive end at the next name or payload boundary.
@@ -1140,6 +1216,17 @@ pub enum FeatureSketchDatumCsysBlockRelation {
     },
 }
 
+/// One byte-identical scalar shared by a named sketch point and datum-CSYS payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSketchDatumCsysScalarAlias {
+    /// Zero-based coordinate within the named sketch point.
+    pub sketch_coordinate_ordinal: u8,
+    /// Exact datum-CSYS scalar field occupying the same source bytes.
+    pub datum_csys_scalar: String,
+    /// Absolute source offset of the shared scalar field marker.
+    pub value_source_offset: u64,
+}
+
 /// Exact ordered dependency from a sketch point to a datum coordinate system.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSketchDatumCsysDependency {
@@ -1155,6 +1242,8 @@ pub struct FeatureSketchDatumCsysDependency {
     pub datum_csys_construction: String,
     /// Exact block relation between the complete point span and construction.
     pub block_relation: FeatureSketchDatumCsysBlockRelation,
+    /// Scalar encodings occupying the same source bytes in both typed records.
+    pub scalar_aliases: Vec<FeatureSketchDatumCsysScalarAlias>,
     /// Absolute source offset of the first sketch reference witnessing the point identity.
     pub source_offset: u64,
 }
@@ -3112,6 +3201,116 @@ pub fn feature_simple_hole_construction_groups(
         .collect()
 }
 
+/// Decode and resolve exact four-block lanes from `HOLE PACKAGE` operations.
+pub fn feature_hole_package_construction_group_lanes(
+    container: &Container,
+) -> Vec<FeatureHolePackageConstructionGroupLane> {
+    let sections = container.om_sections();
+    let indexed = container.indexed_om_sections();
+    let mut lanes = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let Some(lane) = crate::om::hole_package_construction_group_lane(record) else {
+                continue;
+            };
+            let data_blocks = lane
+                .references
+                .iter()
+                .map(|reference| unique_offset_data_block(&indexed, reference.object_index))
+                .collect::<Option<Vec<_>>>()
+                .and_then(|blocks| blocks.try_into().ok());
+            let Some(data_blocks) = data_blocks else {
+                continue;
+            };
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
+            lanes.push(FeatureHolePackageConstructionGroupLane {
+                id: format!(
+                    "nx:feature-history:hole-package-construction-group-lane#{section_key}-{operation_ordinal:010}"
+                ),
+                operation_label,
+                selector: lane.selector,
+                branch: lane.branch,
+                object_indices: lane.references.clone().map(|reference| reference.object_index),
+                raw_object_indices: lane
+                    .references
+                    .clone()
+                    .map(|reference| reference.raw_object_index),
+                data_blocks,
+                payload_offset: lane.offset as u64,
+                source_offset: entry_offset + record.payload_offset as u64 + lane.offset as u64,
+                reference_source_offsets: lane
+                    .references
+                    .map(|reference| entry_offset + reference.offset as u64),
+            });
+        }
+    }
+    lanes
+}
+
+/// Join one package lane to one simple-hole group only by exact four-block identity.
+pub fn feature_hole_package_construction_group_uses(
+    lanes: &[FeatureHolePackageConstructionGroupLane],
+    groups: &[FeatureSimpleHoleConstructionGroup],
+) -> Vec<FeatureHolePackageConstructionGroupUse> {
+    let group_key = |group: &FeatureSimpleHoleConstructionGroup| {
+        [
+            group.first_data_blocks[0].clone(),
+            group.first_data_blocks[1].clone(),
+            group.second_data_blocks[0].clone(),
+            group.second_data_blocks[1].clone(),
+        ]
+    };
+    let mut groups_by_blocks = BTreeMap::<[String; 4], Vec<_>>::new();
+    for group in groups {
+        groups_by_blocks
+            .entry(group_key(group))
+            .or_default()
+            .push(group);
+    }
+    let mut lanes_by_blocks = BTreeMap::<[String; 4], Vec<_>>::new();
+    for lane in lanes {
+        lanes_by_blocks
+            .entry(lane.data_blocks.clone())
+            .or_default()
+            .push(lane);
+    }
+    groups_by_blocks
+        .into_iter()
+        .filter_map(|(blocks, groups)| {
+            let [group] = groups.as_slice() else {
+                return None;
+            };
+            let [lane] = lanes_by_blocks.get(&blocks)?.as_slice() else {
+                return None;
+            };
+            Some(FeatureHolePackageConstructionGroupUse {
+                id: lane.id.replacen(
+                    "hole-package-construction-group-lane",
+                    "hole-package-construction-group-use",
+                    1,
+                ),
+                operation_label: lane.operation_label.clone(),
+                construction_group_lane: lane.id.clone(),
+                simple_hole_construction_group: group.id.clone(),
+                source_offset: lane.source_offset,
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn parse_simple_hole_template(
     value: &str,
 ) -> Option<(
@@ -3901,12 +4100,12 @@ pub fn feature_datum_csys_payloads(
         .collect()
 }
 
-/// Shared body for the datum payload-frame extractors. Reconstruct each
+/// Shared body for construction-payload frame extractors. Reconstruct each
 /// payload's concatenated bytes, build the payload-relative-to-source-offset
 /// mapper once, scan the bytes, and let each family build its record, dropping
-/// frames whose offsets fall outside a source block. The four extractors below
-/// differ only in their payload block lane, their scanner, and their record.
-fn datum_payload_frames<P, S, R>(
+/// frames whose offsets fall outside a source block. Extractors differ only in
+/// their payload block lane, scanner, and output record.
+fn construction_payload_frames<P, S, R>(
     container: &Container,
     payloads: &[P],
     data_blocks: impl Fn(&P) -> &[String],
@@ -3922,16 +4121,9 @@ fn datum_payload_frames<P, S, R>(
             else {
                 return Vec::new();
             };
-            let source_offset =
-                |relative: usize| {
-                    let relative = relative as u64;
-                    starts.iter().zip(&lengths).zip(&sources).find_map(
-                        |((start, length), source)| {
-                            (relative >= *start && relative < start.saturating_add(*length))
-                                .then_some(source + relative - start)
-                        },
-                    )
-                };
+            let source_offset = |relative: usize| {
+                joined_payload_source_offset(relative as u64, &starts, &lengths, &sources)
+            };
             scan(&bytes)
                 .into_iter()
                 .enumerate()
@@ -3946,7 +4138,7 @@ pub fn feature_datum_csys_payload_scalar_pairs(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Vec<FeatureDatumCsysPayloadScalarPair> {
-    datum_payload_frames(
+    construction_payload_frames(
         container,
         payloads,
         |payload| &payload.data_blocks[..],
@@ -3977,7 +4169,7 @@ pub fn feature_datum_csys_payload_fixed_pairs(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Vec<FeatureDatumCsysPayloadFixedPair> {
-    datum_payload_frames(
+    construction_payload_frames(
         container,
         payloads,
         |payload| &payload.data_blocks[..],
@@ -4008,7 +4200,7 @@ pub fn feature_datum_csys_payload_scalars(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Vec<FeatureDatumCsysPayloadScalar> {
-    datum_payload_frames(
+    construction_payload_frames(
         container,
         payloads,
         |payload| &payload.data_blocks[..],
@@ -4097,7 +4289,7 @@ pub fn feature_datum_plane_payload_scalar_pairs(
     container: &Container,
     payloads: &[FeatureDatumPlanePayload],
 ) -> Vec<FeatureDatumPlanePayloadScalarPair> {
-    datum_payload_frames(
+    construction_payload_frames(
         container,
         payloads,
         |payload| payload.data_blocks.as_slice(),
@@ -4389,49 +4581,30 @@ pub fn feature_sketch_payload_coordinate_pairs(
     container: &Container,
     payloads: &[FeatureSketchConstructionPayload],
 ) -> Vec<FeatureSketchPayloadCoordinatePair> {
-    let blocks = offset_data_block_bytes(container);
-    payloads
-        .iter()
-        .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
-            else {
-                return Vec::new();
-            };
-            let source_offset =
-                |relative: usize| {
-                    let relative = relative as u64;
-                    starts.iter().zip(&lengths).zip(&sources).find_map(
-                        |((start, length), source)| {
-                            (relative >= *start && relative < start.saturating_add(*length))
-                                .then_some(source + relative - start)
-                        },
-                    )
-                };
-            crate::om::object_payload_scalar_pairs(&bytes)
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, pair)| {
-                    Some(FeatureSketchPayloadCoordinatePair {
-                        id: format!("{}-coordinate-pair-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        construction_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        values: pair.values,
-                        raw_values: pair.raw_values,
-                        payload_offset: pair.offset as u64,
-                        value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
-                        source_offset: source_offset(pair.offset)?,
-                        value_source_offsets: [
-                            source_offset(pair.value_offsets[0])?,
-                            source_offset(pair.value_offsets[1])?,
-                        ],
-                        discriminator: pair.discriminator,
-                    })
-                })
-                .collect()
-        })
-        .collect()
+    construction_payload_frames(
+        container,
+        payloads,
+        |payload| &payload.data_blocks,
+        crate::om::object_payload_scalar_pairs,
+        |payload, ordinal, pair, source_offset| {
+            Some(FeatureSketchPayloadCoordinatePair {
+                id: format!("{}-coordinate-pair-{ordinal:010}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                construction_payload: payload.id.clone(),
+                ordinal: ordinal as u32,
+                values: pair.values,
+                raw_values: pair.raw_values,
+                payload_offset: pair.offset as u64,
+                value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
+                source_offset: source_offset(pair.offset)?,
+                value_source_offsets: [
+                    source_offset(pair.value_offsets[0])?,
+                    source_offset(pair.value_offsets[1])?,
+                ],
+                discriminator: pair.discriminator,
+            })
+        },
+    )
 }
 
 /// Decode exact signed fixed-point pair frames from reconstructed sketch payloads.
@@ -4439,48 +4612,63 @@ pub fn feature_sketch_payload_fixed_pairs(
     container: &Container,
     payloads: &[FeatureSketchConstructionPayload],
 ) -> Vec<FeatureSketchPayloadFixedPair> {
-    let blocks = offset_data_block_bytes(container);
-    payloads
-        .iter()
-        .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
-            else {
-                return Vec::new();
-            };
-            let source_offset =
-                |relative: usize| {
-                    let relative = relative as u64;
-                    starts.iter().zip(&lengths).zip(&sources).find_map(
-                        |((start, length), source)| {
-                            (relative >= *start && relative < start.saturating_add(*length))
-                                .then_some(source + relative - start)
-                        },
-                    )
-                };
-            crate::om::sketch_payload_fixed_pairs(&bytes)
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, pair)| {
-                    Some(FeatureSketchPayloadFixedPair {
-                        id: format!("{}-fixed-pair-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        construction_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        values: pair.values,
-                        raw_values: pair.raw_values,
-                        payload_offset: pair.offset as u64,
-                        value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
-                        source_offset: source_offset(pair.offset)?,
-                        value_source_offsets: [
-                            source_offset(pair.value_offsets[0])?,
-                            source_offset(pair.value_offsets[1])?,
-                        ],
-                    })
-                })
-                .collect()
-        })
-        .collect()
+    construction_payload_frames(
+        container,
+        payloads,
+        |payload| &payload.data_blocks,
+        crate::om::sketch_payload_fixed_pairs,
+        |payload, ordinal, pair, source_offset| {
+            Some(FeatureSketchPayloadFixedPair {
+                id: format!("{}-fixed-pair-{ordinal:010}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                construction_payload: payload.id.clone(),
+                ordinal: ordinal as u32,
+                values: pair.values,
+                raw_values: pair.raw_values,
+                discriminator: pair.discriminator,
+                payload_offset: pair.offset as u64,
+                value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
+                source_offset: source_offset(pair.offset)?,
+                value_source_offsets: [
+                    source_offset(pair.value_offsets[0])?,
+                    source_offset(pair.value_offsets[1])?,
+                ],
+            })
+        },
+    )
+}
+
+/// Decode exact mixed Q1.55/binary32 pair frames from reconstructed sketch payloads.
+pub fn feature_sketch_payload_mixed_pairs(
+    container: &Container,
+    payloads: &[FeatureSketchConstructionPayload],
+) -> Vec<FeatureSketchPayloadMixedPair> {
+    construction_payload_frames(
+        container,
+        payloads,
+        |payload| &payload.data_blocks,
+        crate::om::sketch_payload_mixed_pairs,
+        |payload, ordinal, pair, source_offset| {
+            Some(FeatureSketchPayloadMixedPair {
+                id: format!("{}-mixed-pair-{ordinal:010}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                construction_payload: payload.id.clone(),
+                ordinal: ordinal as u32,
+                fixed_value: pair.fixed_value,
+                binary32_value: pair.binary32_value,
+                fixed_raw_value: pair.fixed_raw_value,
+                binary32_raw_value: pair.binary32_raw_value,
+                discriminator: pair.discriminator,
+                payload_offset: pair.offset as u64,
+                value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
+                source_offset: source_offset(pair.offset)?,
+                value_source_offsets: [
+                    source_offset(pair.value_offsets[0])?,
+                    source_offset(pair.value_offsets[1])?,
+                ],
+            })
+        },
+    )
 }
 
 pub(crate) fn offset_data_block_bytes_for_section<'a>(
@@ -4666,6 +4854,7 @@ pub fn feature_sketch_payload_named_records(
     names: &[FeatureSketchPayloadName],
     scalars: &[FeatureSketchPayloadScalar],
     fixed_pairs: &[FeatureSketchPayloadFixedPair],
+    mixed_pairs: &[FeatureSketchPayloadMixedPair],
 ) -> Vec<FeatureSketchPayloadNamedRecord> {
     let mut records = Vec::new();
     for payload in payloads {
@@ -4696,6 +4885,15 @@ pub fn feature_sketch_payload_named_records(
                 })
                 .collect::<Vec<_>>();
             record_fixed_pairs.sort_by_key(|pair| pair.payload_offset);
+            let mut record_mixed_pairs = mixed_pairs
+                .iter()
+                .filter(|pair| {
+                    pair.construction_payload == payload.id
+                        && pair.payload_offset > name.payload_offset
+                        && pair.payload_offset < end
+                })
+                .collect::<Vec<_>>();
+            record_mixed_pairs.sort_by_key(|pair| pair.payload_offset);
             records.push(FeatureSketchPayloadNamedRecord {
                 id: format!(
                     "nx:feature-history:sketch-payload-record#{}-{ordinal:010}",
@@ -4712,6 +4910,10 @@ pub fn feature_sketch_payload_named_records(
                     .map(|scalar| scalar.id.clone())
                     .collect(),
                 fixed_pairs: record_fixed_pairs
+                    .into_iter()
+                    .map(|pair| pair.id.clone())
+                    .collect(),
+                mixed_pairs: record_mixed_pairs
                     .into_iter()
                     .map(|pair| pair.id.clone())
                     .collect(),
@@ -4779,7 +4981,7 @@ pub fn feature_sketch_fixed_points(
     records
         .iter()
         .filter_map(|record| {
-            if !record.scalar_fields.is_empty() {
+            if !record.scalar_fields.is_empty() || !record.mixed_pairs.is_empty() {
                 return None;
             }
             let [fixed_pair_id] = record.fixed_pairs.as_slice() else {
@@ -5109,6 +5311,7 @@ pub fn feature_sketch_datum_csys_dependencies(
     named_points: &[OffsetStoreNamedPoint],
     point_uses: &[FeatureSketchPointUse],
     constructions: &[FeatureDatumCsysConstruction],
+    scalars: &[FeatureDatumCsysPayloadScalar],
 ) -> Vec<FeatureSketchDatumCsysDependency> {
     fn block_key(block: &str) -> Option<(&str, u32)> {
         let (store, ordinal) = block.rsplit_once(":block#")?;
@@ -5187,6 +5390,25 @@ pub fn feature_sketch_datum_csys_dependencies(
         let [(point_use, block_relation)] = candidates.as_slice() else {
             continue;
         };
+        let point = points[point_use.named_point.as_str()];
+        let scalar_aliases = point
+            .value_source_offsets
+            .iter()
+            .enumerate()
+            .flat_map(|(coordinate_ordinal, value_source_offset)| {
+                scalars
+                    .iter()
+                    .filter(move |scalar| {
+                        scalar.operation_label == construction.operation_label
+                            && scalar.source_offset == *value_source_offset
+                    })
+                    .map(move |scalar| FeatureSketchDatumCsysScalarAlias {
+                        sketch_coordinate_ordinal: coordinate_ordinal as u8,
+                        datum_csys_scalar: scalar.id.clone(),
+                        value_source_offset: *value_source_offset,
+                    })
+            })
+            .collect();
         dependencies.push(FeatureSketchDatumCsysDependency {
             id: construction.id.replacen(
                 "datum-csys-construction",
@@ -5198,6 +5420,7 @@ pub fn feature_sketch_datum_csys_dependencies(
             sketch_point_use: point_use.id.clone(),
             datum_csys_construction: construction.id.clone(),
             block_relation: block_relation.clone(),
+            scalar_aliases,
             source_offset: point_use.source_offsets[0],
         });
     }
@@ -8296,7 +8519,7 @@ mod tests {
         let roots = BTreeMap::from([(10, 10), (20, 10)]);
 
         assert_eq!(
-            crate::native::attach::boolean_feature_definition(&operation, &roots),
+            crate::native::attach::boolean_feature_definition(&operation, &roots, &BTreeMap::new(),),
             FeatureDefinition::Combine {
                 target: BodySelection::Native("nx:om-object-index#10".to_string()),
                 tools: BodySelection::Native("nx:om-object-indices#20".to_string()),
@@ -8306,7 +8529,11 @@ mod tests {
 
         let missing_tool = BTreeMap::from([(10, 10)]);
         assert!(matches!(
-            crate::native::attach::boolean_feature_definition(&operation, &missing_tool),
+            crate::native::attach::boolean_feature_definition(
+                &operation,
+                &missing_tool,
+                &BTreeMap::new(),
+            ),
             FeatureDefinition::Combine {
                 target: BodySelection::Native(target),
                 tools: BodySelection::Native(tools),
@@ -8832,7 +9059,7 @@ mod tests {
     #[test]
     fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
         use super::{
-            FeatureDatumCsysConstruction, FeatureOperationLabel,
+            FeatureDatumCsysConstruction, FeatureDatumCsysPayloadScalar, FeatureOperationLabel,
             FeatureSketchDatumCsysBlockRelation, FeatureSketchPointUse, OffsetStoreNamedPoint,
         };
 
@@ -8875,12 +9102,24 @@ mod tests {
             data_blocks: blocks,
             source_offsets: [400; 8],
         };
+        let scalar = FeatureDatumCsysPayloadScalar {
+            id: "csys-scalar".to_string(),
+            operation_label: "csys".to_string(),
+            datum_csys_payload: "payload".to_string(),
+            ordinal: 0,
+            field_code: 0x64,
+            value: 2.0,
+            raw_value: shifted_f64_bytes(2.0),
+            payload_offset: 8,
+            source_offset: 220,
+        };
 
         let dependencies = super::feature_sketch_datum_csys_dependencies(
             &labels,
             std::slice::from_ref(&point),
             std::slice::from_ref(&point_use),
             std::slice::from_ref(&construction),
+            std::slice::from_ref(&scalar),
         );
         assert_eq!(dependencies[0].datum_csys_operation_label, "csys");
         assert_eq!(dependencies[0].sketch_operation_label, "sketch");
@@ -8891,6 +9130,27 @@ mod tests {
                 data_block: "shared".to_string()
             }
         );
+        assert_eq!(dependencies[0].scalar_aliases.len(), 1);
+        assert_eq!(
+            dependencies[0].scalar_aliases[0].sketch_coordinate_ordinal,
+            1
+        );
+        assert_eq!(
+            dependencies[0].scalar_aliases[0].datum_csys_scalar,
+            "csys-scalar"
+        );
+        assert_eq!(dependencies[0].scalar_aliases[0].value_source_offset, 220);
+
+        let mut equal_at_another_offset = scalar.clone();
+        equal_at_another_offset.source_offset = 219;
+        let unaliased = super::feature_sketch_datum_csys_dependencies(
+            &labels,
+            std::slice::from_ref(&point),
+            std::slice::from_ref(&point_use),
+            std::slice::from_ref(&construction),
+            std::slice::from_ref(&equal_at_another_offset),
+        );
+        assert!(unaliased[0].scalar_aliases.is_empty());
 
         let consecutive_point = OffsetStoreNamedPoint {
             id: "consecutive-point".to_string(),
@@ -8917,6 +9177,7 @@ mod tests {
             &[consecutive_point],
             &[consecutive_use],
             &[consecutive_construction],
+            &[],
         );
         assert_eq!(
             consecutive_dependencies[0].block_relation,
@@ -8938,6 +9199,7 @@ mod tests {
             &[point.clone(), ambiguous_point],
             &[point_use.clone(), ambiguous_use],
             std::slice::from_ref(&construction),
+            &[],
         )
         .is_empty());
 
@@ -8947,6 +9209,7 @@ mod tests {
             &[point],
             &[point_use],
             &[construction],
+            &[],
         )
         .is_empty());
     }
@@ -9645,6 +9908,7 @@ mod tests {
             ordinal: 0,
             values: [0.5, -0.5],
             raw_values: [[0; 7]; 2],
+            discriminator: vec![0x04],
             payload_offset: 20,
             value_payload_offsets: [28, 37],
             source_offset: 1020,
@@ -9653,7 +9917,7 @@ mod tests {
 
         let names = [name("first", 0, 10), name("second", 1, 50)];
         let pairs = [pair];
-        let records = feature_sketch_payload_named_records(&[payload], &names, &[], &pairs);
+        let records = feature_sketch_payload_named_records(&[payload], &names, &[], &pairs, &[]);
         assert_eq!(records[0].fixed_pairs, ["pair"]);
         assert!(records[1].fixed_pairs.is_empty());
         let points = feature_sketch_fixed_points(&records, &names, &pairs);
@@ -10183,6 +10447,60 @@ mod tests {
             feature_simple_hole_construction_groups(&duplicate_lanes, &shared_references)
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
+        use super::{
+            feature_hole_package_construction_group_uses, FeatureHolePackageConstructionGroupLane,
+            FeatureSimpleHoleConstructionGroup,
+        };
+        let blocks = [
+            "block-1".to_string(),
+            "block-2".to_string(),
+            "block-3".to_string(),
+            "block-4".to_string(),
+        ];
+        let lane = FeatureHolePackageConstructionGroupLane {
+            id: "package-lane".into(),
+            operation_label: "package-operation".into(),
+            selector: 0x46,
+            branch: 0x11,
+            object_indices: [1, 2, 3, 4],
+            raw_object_indices: std::array::from_fn(|index| vec![0xf0, index as u8 + 1]),
+            data_blocks: blocks.clone(),
+            payload_offset: 20,
+            source_offset: 120,
+            reference_source_offsets: [132, 134, 141, 143],
+        };
+        let group = FeatureSimpleHoleConstructionGroup {
+            id: "simple-hole-group".into(),
+            first_data_blocks: [blocks[0].clone(), blocks[1].clone()],
+            second_data_blocks: [blocks[2].clone(), blocks[3].clone()],
+            operation_labels: vec!["simple-hole-1".into(), "simple-hole-2".into()],
+            scalar_lanes: vec!["scalar-1".into(), "scalar-2".into()],
+            block_references: vec!["references-1".into(), "references-2".into()],
+        };
+
+        let uses = feature_hole_package_construction_group_uses(
+            std::slice::from_ref(&lane),
+            std::slice::from_ref(&group),
+        );
+        assert_eq!(uses.len(), 1);
+        assert_eq!(uses[0].operation_label, lane.operation_label);
+        assert_eq!(uses[0].construction_group_lane, lane.id);
+        assert_eq!(uses[0].simple_hole_construction_group, group.id);
+
+        assert!(feature_hole_package_construction_group_uses(
+            &[lane.clone(), lane.clone()],
+            std::slice::from_ref(&group),
+        )
+        .is_empty());
+        assert!(feature_hole_package_construction_group_uses(
+            std::slice::from_ref(&lane),
+            &[group.clone(), group],
+        )
+        .is_empty());
     }
 
     #[test]

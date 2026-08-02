@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Declarative catalogue of the native record families.
 //!
-//! One [`FamilyRow`] per model field (205 total). Each row names the `nx`
+//! One [`FamilyRow`] per model field. Each row names the `nx`
 //! namespace arena the family serializes into, and — for families that also emit
 //! source annotations — the tag, exactness, and a `note` fn. Row order is the
 //! observable annotation-emission order for the note-bearing rows;
-//! [`note_group_a_end`] / [`note_group_b_end`] find the semantic-island split
-//! that [`super::attach`] walks. Arena serialization order is not observable
+//! phase identifies the semantic-island split that [`super::attach`] walks.
+//! Arena serialization order is not observable
 //! (arenas live in a `BTreeMap`), so the non-noting tail rows follow the legacy
 //! arena-pass order purely for readability.
 //!
@@ -25,7 +25,9 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, NativeConvertError, NativeNamespa
 
 use super::model::NativeModel;
 #[allow(clippy::wildcard_imports)]
-use super::{display_jt::*, features::*, om::*, parasolid::*, segments::*};
+use super::{
+    display_jt::*, features::*, om::*, parasolid::*, segments::*, structure::*, toggle::*,
+};
 
 pub(crate) type CatalogueRow =
     FamilyRow<NativeModel, AnnotationBuilder, NativeNamespace, Exactness>;
@@ -47,6 +49,18 @@ fn emit_arena<T: Serialize>(
 /// offset the note points at.
 trait ContainerNoted {
     fn container_note(&self) -> (&str, u64);
+}
+
+impl ContainerNoted for SavedToggleStream {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+
+impl ContainerNoted for SavedToggleEntry {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
 }
 
 /// A record noted into its own `nx:s{ordinal}` stream: its id, the stream
@@ -90,6 +104,21 @@ fn note_per_stream<T: StreamNoted>(
 }
 
 impl ContainerNoted for DisplayJtSegment {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for FastLoadComponentPrototype {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for FastLoadComponentOccurrence {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for FastLoadComponentUuid {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
     }
@@ -284,6 +313,11 @@ impl ContainerNoted for FeatureSketchPayloadFixedPair {
         (&self.id, self.source_offset)
     }
 }
+impl ContainerNoted for FeatureSketchPayloadMixedPair {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
 impl ContainerNoted for FeatureSketchFixedPoint {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
@@ -360,6 +394,21 @@ impl ContainerNoted for DataBlockControlReference {
     }
 }
 impl ContainerNoted for DataBlockControlHandlePair {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for ObjectRecordHandlePair {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for ObjectUuidValue {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for FastLoadComponentObjectGroup {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
     }
@@ -540,12 +589,37 @@ impl StreamNoted for ParasolidEntity54StringRecord {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
 }
+impl StreamNoted for ParasolidEntityVectorRecord {
+    fn stream_note(&self) -> (&str, u32, u64) {
+        (&self.id, self.stream_ordinal, self.inflated_offset)
+    }
+}
+impl StreamNoted for ParasolidEntity57AxisRecord {
+    fn stream_note(&self) -> (&str, u32, u64) {
+        (&self.id, self.stream_ordinal, self.inflated_offset)
+    }
+}
+impl StreamNoted for ParasolidEntity58TagRecord {
+    fn stream_note(&self) -> (&str, u32, u64) {
+        (&self.id, self.stream_ordinal, self.inflated_offset)
+    }
+}
+impl StreamNoted for ParasolidEntity62UnicodeRecord {
+    fn stream_note(&self) -> (&str, u32, u64) {
+        (&self.id, self.stream_ordinal, self.inflated_offset)
+    }
+}
 impl StreamNoted for ParasolidEntity51StringUse {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
 }
 impl StreamNoted for ParasolidEntity51NumericUse {
+    fn stream_note(&self) -> (&str, u32, u64) {
+        (&self.id, self.stream_ordinal, self.inflated_offset)
+    }
+}
+impl StreamNoted for ParasolidEntity51StructuredUse {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
@@ -1341,6 +1415,26 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "parasolid_field_names_records",
+        tag: Some("FIELD_NAMES"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_field_names_records, r, ns),
+        len: |m| m.parasolid.parasolid_field_names_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "parasolid_attribute_field_names",
+        tag: None,
+        exactness: Exactness::Derived,
+        phase: Phase::GroupA,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_attribute_field_names, r, ns),
+        len: |m| m.parasolid.parasolid_attribute_field_names.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "parasolid_entity_51_records",
         tag: Some("ENTITY_51"),
         exactness: Exactness::ByteExact,
@@ -1387,6 +1481,54 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "parasolid_entity_vector_records",
+        tag: Some("ATTRIBUTE_VECTOR_VALUES"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| {
+            note_per_stream(&m.parasolid.parasolid_entity_vector_records, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_vector_records, r, ns),
+        len: |m| m.parasolid.parasolid_entity_vector_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "parasolid_entity_57_axis_records",
+        tag: Some("ENTITY_57_AXES"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| {
+            note_per_stream(&m.parasolid.parasolid_entity_57_axis_records, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_57_axis_records, r, ns),
+        len: |m| m.parasolid.parasolid_entity_57_axis_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "parasolid_entity_58_tag_records",
+        tag: Some("ENTITY_58_TAGS"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| {
+            note_per_stream(&m.parasolid.parasolid_entity_58_tag_records, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_58_tag_records, r, ns),
+        len: |m| m.parasolid.parasolid_entity_58_tag_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "parasolid_entity_62_unicode_records",
+        tag: Some("ENTITY_62_UNICODE"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| {
+            note_per_stream(&m.parasolid.parasolid_entity_62_unicode_records, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_62_unicode_records, r, ns),
+        len: |m| m.parasolid.parasolid_entity_62_unicode_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "parasolid_entity_51_string_uses",
         tag: Some("ENTITY_51_STRING_USE"),
         exactness: Exactness::ByteExact,
@@ -1407,6 +1549,18 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "parasolid_entity_51_structured_uses",
+        tag: Some("ENTITY_51_STRUCTURED_USE"),
+        exactness: Exactness::Derived,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| {
+            note_per_stream(&m.parasolid.parasolid_entity_51_structured_uses, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_entity_51_structured_uses, r, ns),
+        len: |m| m.parasolid.parasolid_entity_51_structured_uses.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "parasolid_attribute_class_uses",
         tag: None,
         exactness: Exactness::Derived,
@@ -1417,13 +1571,13 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
-        arena: "parasolid_attribute_numeric_class_uses",
+        arena: "parasolid_attribute_field_uses",
         tag: None,
         exactness: Exactness::Derived,
         phase: Phase::GroupA,
         note: None,
-        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_attribute_numeric_class_uses, r, ns),
-        len: |m| m.parasolid.parasolid_attribute_numeric_class_uses.len(),
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_attribute_field_uses, r, ns),
+        len: |m| m.parasolid.parasolid_attribute_field_uses.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
@@ -1599,6 +1753,16 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "feature_sketch_payload_mixed_pairs",
+        tag: Some("FEATURE_SKETCH_MIXED_PAIR"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| note_container(&m.features.feature_sketch_payload_mixed_pairs, r, a)),
+        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_payload_mixed_pairs, r, ns),
+        len: |m| m.features.feature_sketch_payload_mixed_pairs.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "feature_sketch_fixed_points",
         tag: Some("FEATURE_SKETCH_FIXED_POINT"),
         exactness: Exactness::Derived,
@@ -1769,6 +1933,16 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "object_record_handle_pairs",
+        tag: Some("OM_OBJECT_RECORD_HANDLE_PAIR"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| note_container(&m.om.object_record_handle_pairs, r, a)),
+        emit: |m, r, ns| emit_arena(&m.om.object_record_handle_pairs, r, ns),
+        len: |m| m.om.object_record_handle_pairs.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "data_block_references",
         tag: Some("OM_DATA_BLOCK_REFERENCE"),
         exactness: Exactness::ByteExact,
@@ -1816,6 +1990,66 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: Some(|m, r, a| note_container(&m.om.external_references, r, a)),
         emit: |m, r, ns| emit_arena(&m.om.external_references, r, ns),
         len: |m| m.om.external_references.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "fast_load_component_prototypes",
+        tag: Some("FAST_LOAD_COMPONENT_PROTOTYPE"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupB,
+        note: Some(|m, r, a| note_container(&m.structure.prototypes, r, a)),
+        emit: |m, r, ns| emit_arena(&m.structure.prototypes, r, ns),
+        len: |m| m.structure.prototypes.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "fast_load_component_occurrences",
+        tag: Some("FAST_LOAD_COMPONENT_OCCURRENCE"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupB,
+        note: Some(|m, r, a| note_container(&m.structure.occurrences, r, a)),
+        emit: |m, r, ns| emit_arena(&m.structure.occurrences, r, ns),
+        len: |m| m.structure.occurrences.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "fast_load_component_uuids",
+        tag: Some("FAST_LOAD_COMPONENT_UUID"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupB,
+        note: Some(|m, r, a| note_container(&m.structure.uuids, r, a)),
+        emit: |m, r, ns| emit_arena(&m.structure.uuids, r, ns),
+        len: |m| m.structure.uuids.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "fast_load_component_object_groups",
+        tag: Some("FAST_LOAD_COMPONENT_OBJECT_GROUP"),
+        exactness: Exactness::Derived,
+        phase: Phase::GroupB,
+        note: Some(|m, r, a| note_container(&m.structure.object_groups, r, a)),
+        emit: |m, r, ns| emit_arena(&m.structure.object_groups, r, ns),
+        len: |m| m.structure.object_groups.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "saved_toggle_streams",
+        tag: Some("SAVED_TOGGLE_STREAM"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupB,
+        note: Some(|m, r, a| note_container(&m.toggle.streams, r, a)),
+        emit: |m, r, ns| emit_arena(&m.toggle.streams, r, ns),
+        len: |m| m.toggle.streams.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "saved_toggle_entries",
+        tag: Some("SAVED_TOGGLE_ENTRY"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupB,
+        note: Some(|m, r, a| note_container(&m.toggle.entries, r, a)),
+        emit: |m, r, ns| emit_arena(&m.toggle.entries, r, ns),
+        len: |m| m.toggle.entries.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
@@ -1917,6 +2151,46 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: None,
         emit: |m, r, ns| emit_arena(&m.features.feature_simple_hole_construction_groups, r, ns),
         len: |m| m.features.feature_simple_hole_construction_groups.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_hole_package_construction_group_lanes",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| {
+            emit_arena(
+                &m.features.feature_hole_package_construction_group_lanes,
+                r,
+                ns,
+            )
+        },
+        len: |m| {
+            m.features
+                .feature_hole_package_construction_group_lanes
+                .len()
+        },
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_hole_package_construction_group_uses",
+        tag: None,
+        exactness: Exactness::Derived,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| {
+            emit_arena(
+                &m.features.feature_hole_package_construction_group_uses,
+                r,
+                ns,
+            )
+        },
+        len: |m| {
+            m.features
+                .feature_hole_package_construction_group_uses
+                .len()
+        },
         counts_toward_emptiness: true,
     },
     CatalogueRow {
@@ -2803,6 +3077,16 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: None,
         emit: |m, r, ns| emit_arena(&m.om.string_values, r, ns),
         len: |m| m.om.string_values.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "object_uuid_values",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: Some(|m, r, a| note_container(&m.om.object_uuid_values, r, a)),
+        emit: |m, r, ns| emit_arena(&m.om.object_uuid_values, r, ns),
+        len: |m| m.om.object_uuid_values.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

@@ -38,7 +38,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::decode::Scan;
-use crate::native::history::active_feature_closure;
+use crate::native::history::{active_feature_closure, BodyWriterHistory};
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 
 use super::catalogue::NATIVE_CATALOGUE;
@@ -137,11 +137,15 @@ pub(crate) fn attach(
     }
     attach_parasolid_topology_string_attributes(
         ir,
-        &model.parasolid.parasolid_topology_attribute_list_references,
-        &model.parasolid.parasolid_topology_attribute_class_uses,
-        &model.parasolid.parasolid_attribute_definitions,
-        &model.parasolid.parasolid_entity_51_string_uses,
-        &model.parasolid.parasolid_entity_54_string_records,
+        &ParasolidStringAttributeSources {
+            topology_references: &model.parasolid.parasolid_topology_attribute_list_references,
+            class_uses: &model.parasolid.parasolid_topology_attribute_class_uses,
+            definitions: &model.parasolid.parasolid_attribute_definitions,
+            field_uses: &model.parasolid.parasolid_attribute_field_uses,
+            field_names: &model.parasolid.parasolid_attribute_field_names,
+            string_uses: &model.parasolid.parasolid_entity_51_string_uses,
+            strings: &model.parasolid.parasolid_entity_54_string_records,
+        },
         annotations,
     );
     attach_parasolid_topology_numeric_attributes(
@@ -150,9 +154,27 @@ pub(crate) fn attach(
             topology_references: &model.parasolid.parasolid_topology_attribute_list_references,
             class_uses: &model.parasolid.parasolid_topology_attribute_class_uses,
             definitions: &model.parasolid.parasolid_attribute_definitions,
+            field_uses: &model.parasolid.parasolid_attribute_field_uses,
+            field_names: &model.parasolid.parasolid_attribute_field_names,
             numeric_uses: &model.parasolid.parasolid_entity_51_numeric_uses,
             integers: &model.parasolid.parasolid_entity_52_integer_records,
             doubles: &model.parasolid.parasolid_entity_53_double_records,
+        },
+        annotations,
+    );
+    attach_parasolid_topology_structured_attributes(
+        ir,
+        &ParasolidStructuredAttributeSources {
+            topology_references: &model.parasolid.parasolid_topology_attribute_list_references,
+            class_uses: &model.parasolid.parasolid_topology_attribute_class_uses,
+            definitions: &model.parasolid.parasolid_attribute_definitions,
+            field_uses: &model.parasolid.parasolid_attribute_field_uses,
+            field_names: &model.parasolid.parasolid_attribute_field_names,
+            structured_uses: &model.parasolid.parasolid_entity_51_structured_uses,
+            vectors: &model.parasolid.parasolid_entity_vector_records,
+            axes: &model.parasolid.parasolid_entity_57_axis_records,
+            tags: &model.parasolid.parasolid_entity_58_tag_records,
+            unicode: &model.parasolid.parasolid_entity_62_unicode_records,
         },
         annotations,
     );
@@ -511,6 +533,7 @@ fn attach_feature_operations(
     let sketch_construction_payloads = features.feature_sketch_construction_payloads.as_slice();
     let sketch_coordinate_pairs = features.feature_sketch_payload_coordinate_pairs.as_slice();
     let sketch_fixed_pairs = features.feature_sketch_payload_fixed_pairs.as_slice();
+    let sketch_mixed_pairs = features.feature_sketch_payload_mixed_pairs.as_slice();
     let sketch_fixed_points = features.feature_sketch_fixed_points.as_slice();
     let block_constructions = features.feature_block_constructions.as_slice();
     let block_construction_payloads = features.feature_block_construction_payloads.as_slice();
@@ -543,6 +566,12 @@ fn attach_feature_operations(
         .as_slice();
     let simple_hole_construction_groups =
         features.feature_simple_hole_construction_groups.as_slice();
+    let hole_package_construction_group_lanes = features
+        .feature_hole_package_construction_group_lanes
+        .as_slice();
+    let hole_package_construction_group_uses = features
+        .feature_hole_package_construction_group_uses
+        .as_slice();
     let stream = annotations.stream("nx:container");
     let base_ordinal = ir.model.features.len() as u64;
     let booleans = booleans
@@ -571,7 +600,7 @@ fn attach_feature_operations(
             .or_default()
             .push(reference);
     }
-    let mut last_body_writer = BTreeMap::<u32, FeatureId>::new();
+    let mut body_writer_history = BodyWriterHistory::default();
     let body_alias_roots =
         crate::native::segments::body_alias_roots(body_bindings).unwrap_or_default();
     let canonical_body =
@@ -857,6 +886,14 @@ fn attach_feature_operations(
             .or_default()
             .push(pair);
     }
+    let mut sketch_mixed_pairs_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPayloadMixedPair>>::new();
+    for pair in sketch_mixed_pairs {
+        sketch_mixed_pairs_by_operation
+            .entry(pair.operation_label.as_str())
+            .or_default()
+            .push(pair);
+    }
     let mut sketch_fixed_points_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchFixedPoint>>::new();
     for point in sketch_fixed_points {
@@ -1057,14 +1094,9 @@ fn attach_feature_operations(
             .expect("every operation label owns one neutral feature identity")
             .clone();
         let mut dependencies = Vec::new();
-        if let Some(body) = body_references.get(label.id.as_str()) {
-            if let Some(writer) = last_body_writer.get(&canonical_body(*body)) {
-                dependencies.push(writer.clone());
-            }
-        }
         if let Some(operation) = booleans.get(label.id.as_str()) {
             for body in &operation.tool_object_indices {
-                if let Some(writer) = last_body_writer.get(&canonical_body(*body)) {
+                if let Some(writer) = body_writer_history.native_writer(canonical_body(*body)) {
                     if !dependencies.contains(writer) {
                         dependencies.push(writer.clone());
                     }
@@ -1077,7 +1109,7 @@ fn attach_feature_operations(
             .flatten()
         {
             if let Some(writer) =
-                last_body_writer.get(&canonical_body(operand.operand_object_index))
+                body_writer_history.native_writer(canonical_body(operand.operand_object_index))
             {
                 if !dependencies.contains(writer) {
                     dependencies.push(writer.clone());
@@ -1200,6 +1232,16 @@ fn attach_feature_operations(
                 "sketch_datum_csys_dependency".to_string(),
                 dependency.id.clone(),
             );
+            for (alias_ordinal, alias) in dependency.scalar_aliases.iter().enumerate() {
+                source_properties.insert(
+                    format!("sketch_point_dependency_scalar.{alias_ordinal}"),
+                    alias.datum_csys_scalar.clone(),
+                );
+                source_properties.insert(
+                    format!("sketch_point_dependency_coordinate.{alias_ordinal}"),
+                    alias.sketch_coordinate_ordinal.to_string(),
+                );
+            }
         }
         let deletes_body = label.value == "DELETE";
         let mut outputs = if deletes_body {
@@ -1218,6 +1260,10 @@ fn attach_feature_operations(
                 .cloned()
                 .unwrap_or_default();
         }
+        let native_primary_body = body_references
+            .get(label.id.as_str())
+            .copied()
+            .map(canonical_body);
         if let Some(body) = body_references.get(label.id.as_str()) {
             source_properties.insert("primary_body_object_index".to_string(), body.to_string());
         }
@@ -1270,6 +1316,16 @@ fn attach_feature_operations(
         {
             source_properties.insert(
                 format!("sketch_fixed_pair.{}", pair.ordinal),
+                pair.id.clone(),
+            );
+        }
+        for pair in sketch_mixed_pairs_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!("sketch_mixed_pair.{}", pair.ordinal),
                 pair.id.clone(),
             );
         }
@@ -1459,6 +1515,44 @@ fn attach_feature_operations(
             simple_hole_repeated_scalar_lane_block_references,
             simple_hole_construction_groups,
         ));
+        for lane in hole_package_construction_group_lanes
+            .iter()
+            .filter(|lane| lane.operation_label == label.id)
+        {
+            source_properties.insert(
+                "hole_package_construction_group_lane".to_string(),
+                lane.id.clone(),
+            );
+        }
+        for group_use in hole_package_construction_group_uses {
+            let group = simple_hole_construction_groups
+                .iter()
+                .find(|group| group.id == group_use.simple_hole_construction_group);
+            if group_use.operation_label == label.id {
+                source_properties.insert(
+                    "hole_package_construction_group_use".to_string(),
+                    group_use.id.clone(),
+                );
+                source_properties.insert(
+                    "simple_hole_construction_group".to_string(),
+                    group_use.simple_hole_construction_group.clone(),
+                );
+            } else if group.is_some_and(|group| {
+                group
+                    .operation_labels
+                    .iter()
+                    .any(|operation| operation == &label.id)
+            }) {
+                source_properties.insert(
+                    "hole_package_construction_group_use".to_string(),
+                    group_use.id.clone(),
+                );
+                source_properties.insert(
+                    "hole_package_operation".to_string(),
+                    group_use.operation_label.clone(),
+                );
+            }
+        }
         for (slot, value) in label.object_indices.iter().enumerate() {
             source_properties.insert(
                 format!("object_index.{slot}"),
@@ -1926,6 +2020,19 @@ fn attach_feature_operations(
                 outputs.push(body.clone());
             }
         }
+        let block_op = if block_projection.is_some()
+            && matches!(outputs.as_slice(), [_])
+            && !body_writer_history.has_primary_writer(native_primary_body, &outputs)
+        {
+            BooleanOp::NewBody
+        } else {
+            BooleanOp::Unresolved
+        };
+        body_writer_history.extend_primary_dependencies(
+            native_primary_body,
+            &outputs,
+            &mut dependencies,
+        );
         let block_placement = block_projection.map(|(_, placement)| placement);
         let sew_projection = (label.value == "SEW")
             .then(|| {
@@ -1935,6 +2042,7 @@ fn attach_feature_operations(
                         .get(label.id.as_str())?
                         .as_slice(),
                     &body_alias_roots,
+                    &bodies_by_object_index,
                 )
             })
             .flatten();
@@ -1946,6 +2054,7 @@ fn attach_feature_operations(
                         .get(label.id.as_str())?
                         .as_slice(),
                     &body_alias_roots,
+                    &bodies_by_object_index,
                 )
             })
             .flatten();
@@ -1999,9 +2108,11 @@ fn attach_feature_operations(
                 .collect::<Option<Vec<_>>>()
                 .unwrap_or_default();
             let op = extrude_boolean_op(
-                body_references
-                    .get(label.id.as_str())
-                    .is_none_or(|body| last_body_writer.contains_key(&canonical_body(*body))),
+                body_references.get(label.id.as_str()).is_none_or(|body| {
+                    body_writer_history
+                        .native_writer(canonical_body(*body))
+                        .is_some()
+                }),
                 &output_kinds,
             );
             extrude_feature_definition(
@@ -2020,6 +2131,7 @@ fn attach_feature_operations(
                 delete_body_feature_definition(
                     body_references.get(label.id.as_str()).copied(),
                     &body_alias_roots,
+                    &bodies_by_object_index,
                 )
             })
             .flatten();
@@ -2057,7 +2169,7 @@ fn attach_feature_operations(
                                 sketch: Some(sketch),
                             };
                         }
-                        non_boolean_feature_definition_with_parameters(
+                        let mut definition = non_boolean_feature_definition_with_parameters(
                             &label.value,
                             &operation_payload_strings,
                             block_dimension_values,
@@ -2074,10 +2186,16 @@ fn attach_feature_operations(
                                 chamfer: simple_hole_chamfers.get(label.id.as_str()).copied(),
                             },
                             native_parameters,
-                        )
+                        );
+                        if let FeatureDefinition::Block { op, .. } = &mut definition {
+                            *op = block_op;
+                        }
+                        definition
                     })
             },
-            |operation| boolean_feature_definition(operation, &body_alias_roots),
+            |operation| {
+                boolean_feature_definition(operation, &body_alias_roots, &bodies_by_object_index)
+            },
         );
         annotations
             .note(&id, stream, label.source_offset)
@@ -2117,6 +2235,8 @@ fn attach_feature_operations(
             annotations.exactness(&annotation.id.0, Exactness::Derived);
             ir.model.semantic_annotations.push(annotation);
         }
+        let native_output = (!deletes_body).then_some(native_primary_body).flatten();
+        body_writer_history.record_writer(native_output, &outputs, &id);
         ir.model.features.push(Feature {
             id: id.clone(),
             ordinal: base_ordinal + ordinal as u64,
@@ -2132,11 +2252,6 @@ fn attach_feature_operations(
             definition,
             native_ref: Some(label.id.clone()),
         });
-        if !deletes_body {
-            if let Some(body) = body_references.get(label.id.as_str()) {
-                last_body_writer.insert(canonical_body(*body), id);
-            }
-        }
     }
 }
 
@@ -2280,23 +2395,31 @@ fn operation_source_properties(
 
 // ===== Feature-semantics and attachment helpers (moved from decode.rs) =====
 
+struct ParasolidStringAttributeSources<'a> {
+    topology_references: &'a [crate::native::parasolid::ParasolidTopologyAttributeListReference],
+    class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],
+    definitions: &'a [crate::native::parasolid::ParasolidAttributeDefinition],
+    field_uses: &'a [crate::native::parasolid::ParasolidAttributeFieldUse],
+    field_names: &'a [crate::native::parasolid::ParasolidAttributeFieldNames],
+    string_uses: &'a [crate::native::parasolid::ParasolidEntity51StringUse],
+    strings: &'a [crate::native::parasolid::ParasolidEntity54StringRecord],
+}
+
 fn attach_parasolid_topology_string_attributes(
     ir: &mut CadIr,
-    topology_references: &[crate::native::parasolid::ParasolidTopologyAttributeListReference],
-    class_uses: &[crate::native::parasolid::ParasolidTopologyAttributeClassUse],
-    definitions: &[crate::native::parasolid::ParasolidAttributeDefinition],
-    string_uses: &[crate::native::parasolid::ParasolidEntity51StringUse],
-    strings: &[crate::native::parasolid::ParasolidEntity54StringRecord],
+    sources: &ParasolidStringAttributeSources<'_>,
     annotations: &mut AnnotationBuilder,
 ) {
-    let class_names = parasolid_topology_attribute_class_names(class_uses, definitions);
-    let strings_by_id = strings
+    let class_names =
+        parasolid_topology_attribute_class_names(sources.class_uses, sources.definitions);
+    let strings_by_id = sources
+        .strings
         .iter()
         .map(|record| (record.id.as_str(), record))
         .collect::<BTreeMap<_, _>>();
     let mut uses_by_entity =
         BTreeMap::<&str, Vec<&crate::native::parasolid::ParasolidEntity51StringUse>>::new();
-    for string_use in string_uses {
+    for string_use in sources.string_uses {
         uses_by_entity
             .entry(string_use.entity_51_record.as_str())
             .or_default()
@@ -2305,33 +2428,9 @@ fn attach_parasolid_topology_string_attributes(
     for uses in uses_by_entity.values_mut() {
         uses.sort_by_key(|string_use| string_use.reference_ordinal);
     }
-    let mut references_by_target = BTreeMap::<
-        String,
-        Vec<&crate::native::parasolid::ParasolidTopologyAttributeListReference>,
-    >::new();
-    for reference in topology_references {
-        let Some(kind) = parasolid_topology_kind(reference.topology_type) else {
-            continue;
-        };
-        references_by_target
-            .entry(format!(
-                "nx:s{}:{kind}#{}",
-                reference.stream_ordinal, reference.topology_xmt
-            ))
-            .or_default()
-            .push(reference);
-    }
-    let emitted_targets = parasolid_topology_attribute_targets(ir);
-    for (target_key, references) in references_by_target {
-        let [reference] = references.as_slice() else {
-            continue;
-        };
-        let Some(target) = emitted_targets.get(target_key.as_str()) else {
-            continue;
-        };
-        let Some(entity) = reference.attribute_list_record.as_deref() else {
-            continue;
-        };
+    for context in parasolid_topology_attribute_contexts(ir, sources.topology_references) {
+        let reference = context.reference;
+        let entity = context.entity;
         for string_use in uses_by_entity.get(entity).into_iter().flatten() {
             let Some(string) = strings_by_id.get(string_use.string_record.as_str()) else {
                 continue;
@@ -2353,14 +2452,24 @@ fn attach_parasolid_topology_string_attributes(
                 "parasolid_type_84_reference_{}",
                 string_use.reference_ordinal
             );
+            let name = parasolid_topology_attribute_field_name(
+                reference,
+                string_use.id.as_str(),
+                sources.class_uses,
+                sources.definitions,
+                sources.field_uses,
+                sources.field_names,
+            );
             ir.model.attributes.push(SourceAttribute {
                 id,
-                target: target.clone(),
-                name: class_names
-                    .get(reference.id.as_str())
-                    .map_or(generic_name.clone(), |class_name| {
-                        format!("{class_name}.{generic_name}")
-                    }),
+                target: context.target.clone(),
+                name: name
+                    .or_else(|| {
+                        class_names
+                            .get(reference.id.as_str())
+                            .map(|class_name| format!("{class_name}.{generic_name}"))
+                    })
+                    .unwrap_or(generic_name),
                 values: vec![AttributeValue::String(string.value.clone())],
             });
         }
@@ -2375,26 +2484,95 @@ struct ParasolidNumericAttributeSources<'a> {
         &'a [crate::native::parasolid::ParasolidTopologyAttributeListReference],
     pub(crate) class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],
     pub(crate) definitions: &'a [crate::native::parasolid::ParasolidAttributeDefinition],
+    pub(crate) field_uses: &'a [crate::native::parasolid::ParasolidAttributeFieldUse],
+    pub(crate) field_names: &'a [crate::native::parasolid::ParasolidAttributeFieldNames],
     pub(crate) numeric_uses: &'a [crate::native::parasolid::ParasolidEntity51NumericUse],
     pub(crate) integers: &'a [crate::native::parasolid::ParasolidEntity52IntegerRecord],
     pub(crate) doubles: &'a [crate::native::parasolid::ParasolidEntity53DoubleRecord],
+}
+
+fn parasolid_topology_attribute_field_name(
+    topology_reference: &crate::native::parasolid::ParasolidTopologyAttributeListReference,
+    value_use: &str,
+    class_uses: &[crate::native::parasolid::ParasolidTopologyAttributeClassUse],
+    definitions: &[crate::native::parasolid::ParasolidAttributeDefinition],
+    field_uses: &[crate::native::parasolid::ParasolidAttributeFieldUse],
+    field_names: &[crate::native::parasolid::ParasolidAttributeFieldNames],
+) -> Option<String> {
+    let mut classes = class_uses
+        .iter()
+        .filter(|class_use| class_use.topology_attribute_reference == topology_reference.id);
+    let class_use = classes.next()?;
+    if classes.next().is_some() {
+        return None;
+    }
+    let mut matching_fields = field_uses.iter().filter(|field_use| {
+        field_use.value_use == value_use
+            && field_use.entity_51_record == class_use.entity_51_record
+            && field_use.attribute_class_use == class_use.attribute_class_use
+            && field_use.attribute_definition == class_use.attribute_definition
+    });
+    let field_use = matching_fields.next()?;
+    if matching_fields.next().is_some() {
+        return None;
+    }
+    let mut matching_definitions = definitions
+        .iter()
+        .filter(|definition| definition.id == class_use.attribute_definition);
+    let definition = matching_definitions.next()?;
+    if matching_definitions.next().is_some() {
+        return None;
+    }
+    let declared_name = field_names
+        .iter()
+        .filter(|names| names.attribute_definition == definition.id)
+        .collect::<Vec<_>>();
+    let field_name = match (definition.name.as_str(), field_use.field_ordinal) {
+        ("SDL/TYSA_DENSITY", 0) => "density".to_string(),
+        ("SDL/TYSA_DENSITY", 1) => "units".to_string(),
+        _ if matches!(declared_name.as_slice(), [_]) => declared_name[0]
+            .names
+            .get(field_use.field_ordinal as usize)?
+            .clone(),
+        _ => format!(
+            "field_{}.parasolid_type_{}",
+            field_use.field_ordinal, field_use.field_code
+        ),
+    };
+    Some(format!("{}.{}", definition.name, field_name))
 }
 
 fn parasolid_topology_attribute_class_names<'a>(
     class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],
     definitions: &'a [crate::native::parasolid::ParasolidAttributeDefinition],
 ) -> BTreeMap<&'a str, &'a str> {
-    let definitions = definitions
-        .iter()
-        .map(|definition| (definition.id.as_str(), definition.name.as_str()))
-        .collect::<BTreeMap<_, _>>();
-    class_uses
-        .iter()
-        .filter_map(|class_use| {
-            Some((
-                class_use.topology_attribute_reference.as_str(),
-                *definitions.get(class_use.attribute_definition.as_str())?,
-            ))
+    let mut definitions_by_id = BTreeMap::<&str, Vec<&str>>::new();
+    for definition in definitions {
+        definitions_by_id
+            .entry(definition.id.as_str())
+            .or_default()
+            .push(definition.name.as_str());
+    }
+    let mut classes_by_reference = BTreeMap::<&str, Vec<&str>>::new();
+    for class_use in class_uses {
+        let Some([class_name]) = definitions_by_id
+            .get(class_use.attribute_definition.as_str())
+            .map(Vec::as_slice)
+        else {
+            continue;
+        };
+        classes_by_reference
+            .entry(class_use.topology_attribute_reference.as_str())
+            .or_default()
+            .push(class_name);
+    }
+    classes_by_reference
+        .into_iter()
+        .filter_map(|(reference, names)| {
+            let [name] = names.as_slice() else {
+                return None;
+            };
+            Some((reference, *name))
         })
         .collect()
 }
@@ -2449,6 +2627,45 @@ fn parasolid_topology_attribute_targets(ir: &CadIr) -> BTreeMap<String, Attribut
         .collect()
 }
 
+struct ParasolidTopologyAttributeContext<'a> {
+    reference: &'a crate::native::parasolid::ParasolidTopologyAttributeListReference,
+    entity: &'a str,
+    target: AttributeTarget,
+}
+
+fn parasolid_topology_attribute_contexts<'a>(
+    ir: &CadIr,
+    topology_references: &'a [crate::native::parasolid::ParasolidTopologyAttributeListReference],
+) -> Vec<ParasolidTopologyAttributeContext<'a>> {
+    let mut references_by_target = BTreeMap::<String, Vec<_>>::new();
+    for reference in topology_references {
+        let Some(kind) = parasolid_topology_kind(reference.topology_type) else {
+            continue;
+        };
+        references_by_target
+            .entry(format!(
+                "nx:s{}:{kind}#{}",
+                reference.stream_ordinal, reference.topology_xmt
+            ))
+            .or_default()
+            .push(reference);
+    }
+    let emitted_targets = parasolid_topology_attribute_targets(ir);
+    references_by_target
+        .into_iter()
+        .filter_map(|(target_key, references)| {
+            let [reference] = references.as_slice() else {
+                return None;
+            };
+            Some(ParasolidTopologyAttributeContext {
+                reference,
+                entity: reference.attribute_list_record.as_deref()?,
+                target: emitted_targets.get(target_key.as_str())?.clone(),
+            })
+        })
+        .collect()
+}
+
 fn attach_parasolid_topology_numeric_attributes(
     ir: &mut CadIr,
     sources: &ParasolidNumericAttributeSources<'_>,
@@ -2477,34 +2694,9 @@ fn attach_parasolid_topology_numeric_attributes(
     for uses in uses_by_entity.values_mut() {
         uses.sort_by_key(|numeric_use| numeric_use.reference_ordinal);
     }
-    let mut references_by_target = BTreeMap::<
-        String,
-        Vec<&crate::native::parasolid::ParasolidTopologyAttributeListReference>,
-    >::new();
-    for reference in sources.topology_references {
-        let Some(kind) = parasolid_topology_kind(reference.topology_type) else {
-            continue;
-        };
-        references_by_target
-            .entry(format!(
-                "nx:s{}:{kind}#{}",
-                reference.stream_ordinal, reference.topology_xmt
-            ))
-            .or_default()
-            .push(reference);
-    }
-    let emitted_targets = parasolid_topology_attribute_targets(ir);
-
-    for (target_key, references) in references_by_target {
-        let [reference] = references.as_slice() else {
-            continue;
-        };
-        let Some(target) = emitted_targets.get(target_key.as_str()) else {
-            continue;
-        };
-        let Some(entity) = reference.attribute_list_record.as_deref() else {
-            continue;
-        };
+    for context in parasolid_topology_attribute_contexts(ir, sources.topology_references) {
+        let reference = context.reference;
+        let entity = context.entity;
         for numeric_use in uses_by_entity.get(entity).into_iter().flatten() {
             let (values, source_offset, tag, lane) = match numeric_use.kind {
                 crate::native::parasolid::ParasolidEntity51NumericKind::UnsignedIntegers => {
@@ -2556,14 +2748,198 @@ fn attach_parasolid_topology_numeric_attributes(
                 "parasolid_type_{lane}_reference_{}",
                 numeric_use.reference_ordinal
             );
+            let name = parasolid_topology_attribute_field_name(
+                reference,
+                numeric_use.id.as_str(),
+                sources.class_uses,
+                sources.definitions,
+                sources.field_uses,
+                sources.field_names,
+            );
             ir.model.attributes.push(SourceAttribute {
                 id,
-                target: target.clone(),
-                name: class_names
-                    .get(reference.id.as_str())
-                    .map_or(generic_name.clone(), |class_name| {
-                        format!("{class_name}.{generic_name}")
-                    }),
+                target: context.target.clone(),
+                name: name
+                    .or_else(|| {
+                        class_names
+                            .get(reference.id.as_str())
+                            .map(|class_name| format!("{class_name}.{generic_name}"))
+                    })
+                    .unwrap_or(generic_name),
+                values,
+            });
+        }
+    }
+    ir.model
+        .attributes
+        .sort_by(|first, second| first.id.0.cmp(&second.id.0));
+}
+
+struct ParasolidStructuredAttributeSources<'a> {
+    topology_references: &'a [crate::native::parasolid::ParasolidTopologyAttributeListReference],
+    class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],
+    definitions: &'a [crate::native::parasolid::ParasolidAttributeDefinition],
+    field_uses: &'a [crate::native::parasolid::ParasolidAttributeFieldUse],
+    field_names: &'a [crate::native::parasolid::ParasolidAttributeFieldNames],
+    structured_uses: &'a [crate::native::parasolid::ParasolidEntity51StructuredUse],
+    vectors: &'a [crate::native::parasolid::ParasolidEntityVectorRecord],
+    axes: &'a [crate::native::parasolid::ParasolidEntity57AxisRecord],
+    tags: &'a [crate::native::parasolid::ParasolidEntity58TagRecord],
+    unicode: &'a [crate::native::parasolid::ParasolidEntity62UnicodeRecord],
+}
+
+fn attach_parasolid_topology_structured_attributes(
+    ir: &mut CadIr,
+    sources: &ParasolidStructuredAttributeSources<'_>,
+    annotations: &mut AnnotationBuilder,
+) {
+    let class_names =
+        parasolid_topology_attribute_class_names(sources.class_uses, sources.definitions);
+    let vectors_by_id = sources
+        .vectors
+        .iter()
+        .map(|record| (record.id.as_str(), record))
+        .collect::<BTreeMap<_, _>>();
+    let axes_by_id = sources
+        .axes
+        .iter()
+        .map(|record| (record.id.as_str(), record))
+        .collect::<BTreeMap<_, _>>();
+    let tags_by_id = sources
+        .tags
+        .iter()
+        .map(|record| (record.id.as_str(), record))
+        .collect::<BTreeMap<_, _>>();
+    let unicode_by_id = sources
+        .unicode
+        .iter()
+        .map(|record| (record.id.as_str(), record))
+        .collect::<BTreeMap<_, _>>();
+    let mut uses_by_entity =
+        BTreeMap::<&str, Vec<&crate::native::parasolid::ParasolidEntity51StructuredUse>>::new();
+    for structured_use in sources.structured_uses {
+        uses_by_entity
+            .entry(structured_use.entity_51_record.as_str())
+            .or_default()
+            .push(structured_use);
+    }
+    for uses in uses_by_entity.values_mut() {
+        uses.sort_by_key(|structured_use| structured_use.reference_ordinal);
+    }
+    for context in parasolid_topology_attribute_contexts(ir, sources.topology_references) {
+        let reference = context.reference;
+        let entity = context.entity;
+        for structured_use in uses_by_entity.get(entity).into_iter().flatten() {
+            use crate::native::parasolid::ParasolidAttributeFieldValueKind as Kind;
+            use crate::native::parasolid::ParasolidVectorValueKind;
+            let (values, source_offset, tag, family) = match structured_use.kind {
+                Kind::Points | Kind::Vectors | Kind::Directions => {
+                    let Some(record) = vectors_by_id.get(structured_use.value_record.as_str())
+                    else {
+                        continue;
+                    };
+                    let family = match (structured_use.kind, record.kind) {
+                        (Kind::Points, ParasolidVectorValueKind::Points) => "85_point",
+                        (Kind::Vectors, ParasolidVectorValueKind::Vectors) => "86_vector",
+                        (Kind::Directions, ParasolidVectorValueKind::Directions) => "89_direction",
+                        _ => continue,
+                    };
+                    (
+                        record
+                            .values
+                            .iter()
+                            .map(|value| AttributeValue::Vector(value.to_vec()))
+                            .collect(),
+                        record.inflated_offset,
+                        "PARASOLID_VECTOR_ATTRIBUTE",
+                        family,
+                    )
+                }
+                Kind::Axes => {
+                    let Some(record) = axes_by_id.get(structured_use.value_record.as_str()) else {
+                        continue;
+                    };
+                    (
+                        record
+                            .values
+                            .iter()
+                            .map(|axis| {
+                                AttributeValue::Vector(
+                                    axis.iter()
+                                        .flat_map(|vector| vector.iter().copied())
+                                        .collect(),
+                                )
+                            })
+                            .collect(),
+                        record.inflated_offset,
+                        "ENTITY_57_AXIS_ATTRIBUTE",
+                        "87_axis",
+                    )
+                }
+                Kind::Tags => {
+                    let Some(record) = tags_by_id.get(structured_use.value_record.as_str()) else {
+                        continue;
+                    };
+                    (
+                        record
+                            .values
+                            .iter()
+                            .map(|value| AttributeValue::Integer(i64::from(*value)))
+                            .collect(),
+                        record.inflated_offset,
+                        "ENTITY_58_TAG_ATTRIBUTE",
+                        "88_tag",
+                    )
+                }
+                Kind::Unicode => {
+                    let Some(record) = unicode_by_id.get(structured_use.value_record.as_str())
+                    else {
+                        continue;
+                    };
+                    (
+                        vec![AttributeValue::String(record.value.clone())],
+                        record.inflated_offset,
+                        "ENTITY_62_UNICODE_ATTRIBUTE",
+                        "98_unicode",
+                    )
+                }
+                Kind::UnsignedIntegers | Kind::Doubles | Kind::String => continue,
+            };
+            let id = AttributeId(format!(
+                "nx:s{}:topology-structured-attribute#{}-{}-{}",
+                reference.stream_ordinal,
+                reference.topology_type,
+                reference.topology_xmt,
+                structured_use.reference_ordinal
+            ));
+            let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
+            annotations
+                .note(&id.0, source_stream, source_offset)
+                .tag(tag);
+            annotations.derived(&id.0, "target");
+            annotations.derived(&id.0, "name");
+            let generic_name = format!(
+                "parasolid_type_{family}_reference_{}",
+                structured_use.reference_ordinal
+            );
+            let name = parasolid_topology_attribute_field_name(
+                reference,
+                structured_use.id.as_str(),
+                sources.class_uses,
+                sources.definitions,
+                sources.field_uses,
+                sources.field_names,
+            );
+            ir.model.attributes.push(SourceAttribute {
+                id,
+                target: context.target.clone(),
+                name: name
+                    .or_else(|| {
+                        class_names
+                            .get(reference.id.as_str())
+                            .map(|class_name| format!("{class_name}.{generic_name}"))
+                    })
+                    .unwrap_or(generic_name),
                 values,
             });
         }
@@ -3470,6 +3846,7 @@ fn non_boolean_feature_definition_with_parameters(
         return FeatureDefinition::Block {
             dimensions: Some(dimensions.map(Length)),
             placement: block_placement,
+            op: BooleanOp::Unresolved,
         };
     }
     if let Some(op) = match kind {
@@ -3496,6 +3873,7 @@ fn non_boolean_feature_definition_with_parameters(
         "BLOCK" => FeatureDefinition::Block {
             dimensions: None,
             placement: None,
+            op: BooleanOp::Unresolved,
         },
         "SKETCH" => FeatureDefinition::Sketch {
             space: SketchSpace::Unresolved,
@@ -4160,22 +4538,46 @@ fn unique_simple_hole_template(
     crate::native::features::parse_simple_hole_template(candidate)
 }
 
-fn feature_local_body_selection(
+/// Resolve a complete object-index selection only when every alias root owns one
+/// decoded body image. Retain the complete feature-input-local identities when
+/// current topology cannot represent a consumed historical body, and fall back
+/// to the native expression when even the alias namespace is incomplete.
+fn feature_body_selection(
     object_indices: &[u32],
     body_alias_roots: &BTreeMap<u32, u32>,
+    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
     native: String,
 ) -> BodySelection {
-    let mut bodies = Vec::<String>::new();
+    let mut roots = Vec::new();
     for index in object_indices {
         let Some(root) = body_alias_roots.get(index) else {
             return BodySelection::Native(native);
         };
-        let body = format!("nx:om-body-object#{root}");
-        if !bodies.contains(&body) {
-            bodies.push(body);
+        if !roots.contains(root) {
+            roots.push(*root);
         }
     }
-    BodySelection::Local { bodies, native }
+    let resolved = roots
+        .iter()
+        .map(|root| {
+            let [body] = bodies_by_object_index.get(root)?.as_slice() else {
+                return None;
+            };
+            Some(body.clone())
+        })
+        .collect::<Option<Vec<_>>>();
+    if let Some(bodies) =
+        resolved.filter(|bodies| bodies.iter().collect::<BTreeSet<_>>().len() == bodies.len())
+    {
+        return BodySelection::Resolved { bodies, native };
+    }
+    BodySelection::Local {
+        bodies: roots
+            .into_iter()
+            .map(|root| format!("nx:om-body-object#{root}"))
+            .collect(),
+        native,
+    }
 }
 
 fn atomic_disjoint_body_selections(
@@ -4210,16 +4612,19 @@ fn atomic_disjoint_body_selections(
 pub(crate) fn boolean_feature_definition(
     operation: &crate::native::features::FeatureBooleanOperation,
     body_alias_roots: &BTreeMap<u32, u32>,
+    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> FeatureDefinition {
     let (target, tools) = atomic_disjoint_body_selections(
-        feature_local_body_selection(
+        feature_body_selection(
             &[operation.target_object_index],
             body_alias_roots,
+            bodies_by_object_index,
             format!("nx:om-object-index#{}", operation.target_object_index),
         ),
-        feature_local_body_selection(
+        feature_body_selection(
             &operation.tool_object_indices,
             body_alias_roots,
+            bodies_by_object_index,
             format!(
                 "nx:om-object-indices#{}",
                 operation
@@ -4248,12 +4653,14 @@ pub(crate) fn boolean_feature_definition(
 fn delete_body_feature_definition(
     body_object_index: Option<u32>,
     body_alias_roots: &BTreeMap<u32, u32>,
+    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Option<FeatureDefinition> {
     let body = body_object_index?;
     Some(FeatureDefinition::DeleteBody {
-        bodies: feature_local_body_selection(
+        bodies: feature_body_selection(
             &[body],
             body_alias_roots,
+            bodies_by_object_index,
             format!("nx:om-object-index#{body}"),
         ),
         mode: BodyRetentionMode::DeleteSelected,
@@ -4264,15 +4671,17 @@ fn sew_body_feature_definition(
     primary_body_object_index: u32,
     operands: &[&crate::native::features::FeatureOperationBodyOperand],
     body_alias_roots: &BTreeMap<u32, u32>,
+    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Option<FeatureDefinition> {
     (!operands.is_empty()).then(|| {
         let object_indices = std::iter::once(primary_body_object_index)
             .chain(operands.iter().map(|operand| operand.operand_object_index))
             .collect::<Vec<_>>();
         FeatureDefinition::SewBodies {
-            bodies: feature_local_body_selection(
+            bodies: feature_body_selection(
                 &object_indices,
                 body_alias_roots,
+                bodies_by_object_index,
                 format!(
                     "nx:om-object-indices#{}",
                     object_indices
@@ -4291,6 +4700,7 @@ fn trim_body_feature_definition(
     target_object_index: u32,
     operands: &[&crate::native::features::FeatureOperationBodyOperand],
     body_alias_roots: &BTreeMap<u32, u32>,
+    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Option<FeatureDefinition> {
     let tool_object_indices = operands
         .iter()
@@ -4298,14 +4708,16 @@ fn trim_body_feature_definition(
         .collect::<Vec<_>>();
     (!tool_object_indices.is_empty()).then(|| {
         let (targets, tools) = atomic_disjoint_body_selections(
-            feature_local_body_selection(
+            feature_body_selection(
                 &[target_object_index],
                 body_alias_roots,
+                bodies_by_object_index,
                 format!("nx:om-object-index#{target_object_index}"),
             ),
-            feature_local_body_selection(
+            feature_body_selection(
                 &tool_object_indices,
                 body_alias_roots,
+                bodies_by_object_index,
                 format!(
                     "nx:om-object-indices#{}",
                     tool_object_indices
@@ -5586,9 +5998,10 @@ mod tests {
         let first = BodyId("nx:s2:body#3".to_string());
         let roots = BTreeMap::from([(94, 94), (122, 122)]);
         assert_eq!(
-            super::feature_local_body_selection(
+            super::feature_body_selection(
                 &[94, 122],
                 &roots,
+                &BTreeMap::new(),
                 "nx:om-object-indices#94,122".to_string(),
             ),
             BodySelection::Local {
@@ -5600,18 +6013,20 @@ mod tests {
             }
         );
         assert!(matches!(
-            super::feature_local_body_selection(
+            super::feature_body_selection(
                 &[94, 123],
                 &roots,
+                &BTreeMap::new(),
                 "nx:om-object-indices#94,123".to_string(),
             ),
             BodySelection::Native(_)
         ));
         let aliases = BTreeMap::from([(94, 94), (150, 94)]);
         assert_eq!(
-            super::feature_local_body_selection(
+            super::feature_body_selection(
                 &[94, 150],
                 &aliases,
+                &BTreeMap::new(),
                 "nx:om-object-indices#94,150".to_string(),
             ),
             BodySelection::Local {
@@ -5620,6 +6035,18 @@ mod tests {
             }
         );
         let bindings = BTreeMap::from([(94, vec![first.clone()])]);
+        assert_eq!(
+            super::feature_body_selection(
+                &[94],
+                &roots,
+                &bindings,
+                "nx:om-object-index#94".to_string(),
+            ),
+            BodySelection::Resolved {
+                bodies: vec![first.clone()],
+                native: "nx:om-object-index#94".to_string(),
+            }
+        );
         assert_eq!(super::feature_body_outputs(94, &bindings), vec![first]);
         assert!(super::feature_body_outputs(123, &bindings).is_empty());
     }
@@ -5627,6 +6054,7 @@ mod tests {
     #[test]
     fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+        use cadmpeg_ir::ids::BodyId;
         use std::collections::BTreeMap;
 
         let operand =
@@ -5647,7 +6075,7 @@ mod tests {
         let roots = BTreeMap::from([(10, 10), (20, 20), (30, 30)]);
 
         assert_eq!(
-            super::sew_body_feature_definition(10, &references, &roots),
+            super::sew_body_feature_definition(10, &references, &roots, &BTreeMap::new()),
             Some(FeatureDefinition::SewBodies {
                 bodies: BodySelection::Local {
                     bodies: vec![
@@ -5660,11 +6088,33 @@ mod tests {
                 gap_tolerance: None,
             })
         );
-        assert_eq!(super::sew_body_feature_definition(10, &[], &roots), None);
+        let resolved = BTreeMap::from([
+            (10, vec![BodyId("target".to_string())]),
+            (20, vec![BodyId("first-tool".to_string())]),
+            (30, vec![BodyId("second-tool".to_string())]),
+        ]);
+        assert_eq!(
+            super::sew_body_feature_definition(10, &references, &roots, &resolved),
+            Some(FeatureDefinition::SewBodies {
+                bodies: BodySelection::Resolved {
+                    bodies: vec![
+                        BodyId("target".to_string()),
+                        BodyId("first-tool".to_string()),
+                        BodyId("second-tool".to_string()),
+                    ],
+                    native: "nx:om-object-indices#10,20,30".to_string(),
+                },
+                gap_tolerance: None,
+            })
+        );
+        assert_eq!(
+            super::sew_body_feature_definition(10, &[], &roots, &BTreeMap::new()),
+            None
+        );
 
         let alias_roots = BTreeMap::from([(10, 10), (20, 20), (30, 20)]);
         assert_eq!(
-            super::sew_body_feature_definition(10, &references, &alias_roots),
+            super::sew_body_feature_definition(10, &references, &alias_roots, &BTreeMap::new()),
             Some(FeatureDefinition::SewBodies {
                 bodies: BodySelection::Local {
                     bodies: vec![
@@ -5685,7 +6135,7 @@ mod tests {
 
         let roots = BTreeMap::from([(20, 20)]);
         assert_eq!(
-            super::delete_body_feature_definition(Some(20), &roots),
+            super::delete_body_feature_definition(Some(20), &roots, &BTreeMap::new()),
             Some(FeatureDefinition::DeleteBody {
                 bodies: BodySelection::Local {
                     bodies: vec!["nx:om-body-object#20".to_string()],
@@ -5694,12 +6144,16 @@ mod tests {
                 mode: BodyRetentionMode::DeleteSelected,
             })
         );
-        assert_eq!(super::delete_body_feature_definition(None, &roots), None);
+        assert_eq!(
+            super::delete_body_feature_definition(None, &roots, &BTreeMap::new()),
+            None
+        );
     }
 
     #[test]
     fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
         use cadmpeg_ir::features::{BodySelection, BodyTrimSide, FeatureDefinition};
+        use cadmpeg_ir::ids::BodyId;
         use std::collections::BTreeMap;
 
         let operands = [crate::native::features::FeatureOperationBodyOperand {
@@ -5718,7 +6172,7 @@ mod tests {
         let roots = BTreeMap::from([(10, 10), (20, 20)]);
 
         assert_eq!(
-            super::trim_body_feature_definition(10, &references, &roots),
+            super::trim_body_feature_definition(10, &references, &roots, &BTreeMap::new()),
             Some(FeatureDefinition::TrimBodies {
                 targets: BodySelection::Local {
                     bodies: vec!["nx:om-body-object#10".to_string()],
@@ -5731,11 +6185,37 @@ mod tests {
                 keep: BodyTrimSide::Unresolved,
             })
         );
-        assert_eq!(super::trim_body_feature_definition(10, &[], &roots), None);
+        let resolved = BTreeMap::from([
+            (10, vec![BodyId("target".to_string())]),
+            (20, vec![BodyId("tool".to_string())]),
+        ]);
+        assert_eq!(
+            super::trim_body_feature_definition(10, &references, &roots, &resolved),
+            Some(FeatureDefinition::TrimBodies {
+                targets: BodySelection::Resolved {
+                    bodies: vec![BodyId("target".to_string())],
+                    native: "nx:om-object-index#10".to_string(),
+                },
+                tools: BodySelection::Resolved {
+                    bodies: vec![BodyId("tool".to_string())],
+                    native: "nx:om-object-indices#20".to_string(),
+                },
+                keep: BodyTrimSide::Unresolved,
+            })
+        );
+        assert_eq!(
+            super::trim_body_feature_definition(10, &[], &roots, &BTreeMap::new()),
+            None
+        );
 
         let same_body = BTreeMap::from([(10, 10), (20, 10)]);
         assert!(matches!(
-            super::trim_body_feature_definition(10, &references, &same_body),
+            super::trim_body_feature_definition(
+                10,
+                &references,
+                &same_body,
+                &BTreeMap::new(),
+            ),
             Some(FeatureDefinition::TrimBodies {
                 targets: BodySelection::Native(target),
                 tools: BodySelection::Native(tools),
@@ -5865,6 +6345,7 @@ mod tests {
                     cadmpeg_ir::features::Length(30.0),
                 ]),
                 placement: None,
+                op: BooleanOp::Unresolved,
             }
         ));
         assert_eq!(
@@ -5872,6 +6353,7 @@ mod tests {
             cadmpeg_ir::features::FeatureDefinition::Block {
                 dimensions: None,
                 placement: None,
+                op: BooleanOp::Unresolved,
             }
         );
     }
@@ -7540,21 +8022,23 @@ mod tests {
             id: "definition".into(),
             stream_ordinal: 3,
             xmt: 34,
+            next_definition_xmt: 1,
+            identifier_xmt: 35,
+            identifier_inflated_offset: 90,
             name: "SDL/TYSA_DENSITY".into(),
+            type_id: 8004,
+            action_codes: [0; 8],
+            field_names_xmt: 1,
+            legal_owner_flags: [0; 16],
             field_count: 1,
-            field_record_xmt: 35,
-            field_record_references: [36, 37],
-            field_record_header_words: [0, 9000],
-            field_descriptor_prefix: [0; 26],
-            field_storage: Some(crate::native::parasolid::ParasolidAttributeFieldStorage::Double),
-            field_codes: vec![1],
+            field_codes: vec![2],
             inflated_offset: 100,
         };
         let class_use = ParasolidTopologyAttributeClassUse {
             id: "class-use".into(),
             topology_attribute_reference: references[2].id.clone(),
             entity_51_record: "entity".into(),
-            class_discriminator: 33,
+            attribute_class_use: "attribute-class-use".into(),
             definition_xmt: definition.xmt,
             attribute_definition: definition.id.clone(),
         };
@@ -7566,6 +8050,8 @@ mod tests {
                 topology_references: &references,
                 class_uses: &[class_use],
                 definitions: &[definition],
+                field_uses: &[],
+                field_names: &[],
                 numeric_uses: &uses,
                 integers: &[integer],
                 doubles: &[double],
@@ -7618,5 +8104,275 @@ mod tests {
                 [AttributeValue::Float(0.25), AttributeValue::Float(7.5)]
             );
         }
+    }
+
+    #[test]
+    fn topology_attribute_field_names_use_unique_declared_assignments() {
+        use crate::native::parasolid::{
+            ParasolidAttributeDefinition, ParasolidAttributeFieldNames, ParasolidAttributeFieldUse,
+            ParasolidAttributeFieldValueKind, ParasolidTopologyAttributeClassUse,
+            ParasolidTopologyAttributeListReference,
+        };
+
+        let reference = ParasolidTopologyAttributeListReference {
+            id: "topology-reference".into(),
+            stream_ordinal: 3,
+            topology_type: 14,
+            topology_xmt: 60,
+            attribute_list_xmt: 50,
+            attribute_list_record: Some("entity".into()),
+            inflated_offset: 300,
+        };
+        let definition = ParasolidAttributeDefinition {
+            id: "definition".into(),
+            stream_ordinal: 3,
+            xmt: 34,
+            next_definition_xmt: 1,
+            identifier_xmt: 35,
+            identifier_inflated_offset: 90,
+            name: "SDL/TYSA_DENSITY".into(),
+            type_id: 8004,
+            action_codes: [0; 8],
+            field_names_xmt: 1,
+            legal_owner_flags: [0; 16],
+            field_count: 2,
+            field_codes: vec![2, 3],
+            inflated_offset: 100,
+        };
+        let class_use = ParasolidTopologyAttributeClassUse {
+            id: "topology-class-use".into(),
+            topology_attribute_reference: reference.id.clone(),
+            entity_51_record: "entity".into(),
+            attribute_class_use: "attribute-class-use".into(),
+            definition_xmt: definition.xmt,
+            attribute_definition: definition.id.clone(),
+        };
+        let field_use = ParasolidAttributeFieldUse {
+            id: "field-use".into(),
+            stream_ordinal: 3,
+            attribute_class_use: "attribute-class-use".into(),
+            entity_51_record: "entity".into(),
+            attribute_definition: definition.id.clone(),
+            field_ordinal: 0,
+            field_code: 2,
+            reference_ordinal: 5,
+            value_kind: ParasolidAttributeFieldValueKind::Doubles,
+            value_use: "double-use".into(),
+            value_record: "double-record".into(),
+            inflated_offset: 200,
+        };
+
+        assert_eq!(
+            super::parasolid_topology_attribute_field_name(
+                &reference,
+                "double-use",
+                std::slice::from_ref(&class_use),
+                std::slice::from_ref(&definition),
+                std::slice::from_ref(&field_use),
+                &[],
+            )
+            .as_deref(),
+            Some("SDL/TYSA_DENSITY.density")
+        );
+
+        let units = ParasolidAttributeFieldUse {
+            field_ordinal: 1,
+            field_code: 3,
+            reference_ordinal: 6,
+            value_kind: ParasolidAttributeFieldValueKind::String,
+            value_use: "string-use".into(),
+            value_record: "string-record".into(),
+            ..field_use.clone()
+        };
+        assert_eq!(
+            super::parasolid_topology_attribute_field_name(
+                &reference,
+                "string-use",
+                std::slice::from_ref(&class_use),
+                std::slice::from_ref(&definition),
+                &[units],
+                &[],
+            )
+            .as_deref(),
+            Some("SDL/TYSA_DENSITY.units")
+        );
+
+        let named_definition = ParasolidAttributeDefinition {
+            name: "PVM/25_1".into(),
+            field_names_xmt: 25,
+            ..definition.clone()
+        };
+        let field_names = ParasolidAttributeFieldNames {
+            id: "field-names-relation".into(),
+            stream_ordinal: 3,
+            attribute_definition: named_definition.id.clone(),
+            field_names_record: "field-names-record".into(),
+            value_records: vec!["name-1".into(), "name-2".into()],
+            names: vec!["width".into(), "units".into()],
+        };
+        assert_eq!(
+            super::parasolid_topology_attribute_field_name(
+                &reference,
+                "double-use",
+                std::slice::from_ref(&class_use),
+                std::slice::from_ref(&named_definition),
+                std::slice::from_ref(&field_use),
+                std::slice::from_ref(&field_names),
+            )
+            .as_deref(),
+            Some("PVM/25_1.width")
+        );
+
+        let duplicate_class = ParasolidTopologyAttributeClassUse {
+            id: "duplicate-class-use".into(),
+            ..class_use.clone()
+        };
+        assert!(super::parasolid_topology_attribute_field_name(
+            &reference,
+            "double-use",
+            &[class_use, duplicate_class],
+            &[definition],
+            &[field_use],
+            &[],
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn topology_structured_attribute_values_preserve_serialized_lanes() {
+        use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+        use cadmpeg_ir::ids::FaceId;
+        use cadmpeg_ir::AnnotationBuilder;
+
+        use crate::native::parasolid::{
+            ParasolidAttributeFieldValueKind as Kind, ParasolidEntity51StructuredUse,
+            ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord,
+            ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord,
+            ParasolidTopologyAttributeListReference, ParasolidVectorValueKind,
+        };
+
+        let mut ir = cadmpeg_ir::examples::unit_cube();
+        ir.model.faces[0].id = FaceId("nx:s3:face#60".into());
+        let reference = ParasolidTopologyAttributeListReference {
+            id: "topology-reference".into(),
+            stream_ordinal: 3,
+            topology_type: 14,
+            topology_xmt: 60,
+            attribute_list_xmt: 50,
+            attribute_list_record: Some("entity".into()),
+            inflated_offset: 300,
+        };
+        let vectors = [
+            (ParasolidVectorValueKind::Points, "point", [1.0, 2.0, 3.0]),
+            (ParasolidVectorValueKind::Vectors, "vector", [4.0, 5.0, 6.0]),
+            (
+                ParasolidVectorValueKind::Directions,
+                "direction",
+                [7.0, 8.0, 9.0],
+            ),
+        ]
+        .map(|(kind, id, value)| ParasolidEntityVectorRecord {
+            id: id.into(),
+            stream_ordinal: 3,
+            kind,
+            xmt: 70,
+            values: vec![value],
+            byte_len: 36,
+            inflated_offset: 400,
+        });
+        let axis = ParasolidEntity57AxisRecord {
+            id: "axis".into(),
+            stream_ordinal: 3,
+            xmt: 73,
+            values: vec![[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]],
+            byte_len: 60,
+            inflated_offset: 430,
+        };
+        let tag = ParasolidEntity58TagRecord {
+            id: "tag".into(),
+            stream_ordinal: 3,
+            xmt: 74,
+            values: vec![u32::MAX],
+            byte_len: 16,
+            inflated_offset: 440,
+        };
+        let unicode = ParasolidEntity62UnicodeRecord {
+            id: "unicode".into(),
+            stream_ordinal: 3,
+            xmt: 75,
+            code_units: vec![0x03bc],
+            value: "μ".into(),
+            byte_len: 14,
+            inflated_offset: 450,
+        };
+        let uses = [
+            (Kind::Points, "point"),
+            (Kind::Vectors, "vector"),
+            (Kind::Directions, "direction"),
+            (Kind::Axes, "axis"),
+            (Kind::Tags, "tag"),
+            (Kind::Unicode, "unicode"),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, (kind, record))| ParasolidEntity51StructuredUse {
+            id: format!("use-{ordinal}"),
+            stream_ordinal: 3,
+            entity_51_record: "entity".into(),
+            reference_ordinal: u32::try_from(ordinal).expect("test ordinal fits u32") + 5,
+            referenced_xmt: u32::try_from(ordinal).expect("test ordinal fits u32") + 70,
+            kind,
+            value_record: record.into(),
+            inflated_offset: 200,
+        })
+        .collect::<Vec<_>>();
+        let mut annotations = AnnotationBuilder::new();
+        super::attach_parasolid_topology_structured_attributes(
+            &mut ir,
+            &super::ParasolidStructuredAttributeSources {
+                topology_references: &[reference],
+                class_uses: &[],
+                definitions: &[],
+                field_uses: &[],
+                field_names: &[],
+                structured_uses: &uses,
+                vectors: &vectors,
+                axes: &[axis],
+                tags: &[tag],
+                unicode: &[unicode],
+            },
+            &mut annotations,
+        );
+
+        let attributes = ir
+            .model
+            .attributes
+            .iter()
+            .filter(|attribute| attribute.id.0.contains("topology-structured-attribute"))
+            .collect::<Vec<_>>();
+        assert_eq!(attributes.len(), 6);
+        assert!(attributes.iter().all(|attribute| {
+            attribute.target == AttributeTarget::Face(FaceId("nx:s3:face#60".into()))
+        }));
+        let values = attributes
+            .iter()
+            .map(|attribute| (attribute.name.as_str(), attribute.values.as_slice()))
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(
+            values["parasolid_type_85_point_reference_5"],
+            [AttributeValue::Vector(vec![1.0, 2.0, 3.0])]
+        );
+        assert_eq!(
+            values["parasolid_type_87_axis_reference_8"],
+            [AttributeValue::Vector(vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0])]
+        );
+        assert_eq!(
+            values["parasolid_type_88_tag_reference_9"],
+            [AttributeValue::Integer(i64::from(u32::MAX))]
+        );
+        assert_eq!(
+            values["parasolid_type_98_unicode_reference_10"],
+            [AttributeValue::String("μ".into())]
+        );
     }
 }
