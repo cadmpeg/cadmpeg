@@ -54,6 +54,15 @@ pub struct StringValue<'a> {
     pub value: &'a str,
 }
 
+/// One canonical UUID in the compact NX OM string frame `03 26, text, 00`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UuidStringValue<'a> {
+    /// Absolute byte offset of the `03 26` marker.
+    pub offset: usize,
+    /// Canonical lowercase UUID text.
+    pub value: &'a str,
+}
+
 /// One self-framed printable string in a surface-referenced payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SurfacePayloadString<'a> {
@@ -1222,6 +1231,27 @@ pub struct SketchPayloadFixedPair {
     pub value_offsets: [usize; 2],
     /// Exact seven-byte two's-complement payloads.
     pub raw_values: [[u8; 7]; 2],
+    /// Exact discriminator and branch prefix selecting the pair layout.
+    pub discriminator: Vec<u8>,
+}
+
+/// Exact mixed Q1.55 and shifted-binary32 pair in a sketch payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SketchPayloadMixedPair {
+    /// Payload-relative offset of the discriminator.
+    pub offset: usize,
+    /// Dimensionless signed Q1.55 value.
+    pub fixed_value: f64,
+    /// Finite shifted-IEEE binary32 value widened exactly to binary64.
+    pub binary32_value: f64,
+    /// Exact seven-byte two's-complement Q1.55 payload.
+    pub fixed_raw_value: [u8; 7],
+    /// Exact four-byte shifted-binary32 encoding.
+    pub binary32_raw_value: [u8; 4],
+    /// Payload-relative offsets of the two atom markers.
+    pub value_offsets: [usize; 2],
+    /// Exact discriminator selecting the mixed pair layout.
+    pub discriminator: Vec<u8>,
 }
 
 /// Exact pair of signed Q1.55 atoms following a datum-CSYS branch discriminator.
@@ -1381,6 +1411,19 @@ pub struct SimpleHoleRepeatedScalarLaneBlockReferences {
     pub second: [u32; 2],
     /// Absolute offsets of the four tagged-index tokens.
     pub offsets: [[usize; 2]; 2],
+}
+
+/// Four construction-block references carried by a `HOLE PACKAGE` payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HolePackageConstructionGroupLane {
+    /// Payload-relative offset of the fixed lane prefix.
+    pub offset: usize,
+    /// Compact selector preceding the repeated branch byte.
+    pub selector: u8,
+    /// Branch byte repeated between the two reference pairs.
+    pub branch: u8,
+    /// Ordered first and second construction-block pairs.
+    pub references: [PayloadObjectReference; 4],
 }
 
 /// Width form of one self-delimiting operation-payload scalar.
@@ -1974,6 +2017,74 @@ pub fn simple_hole_repeated_scalar_lane_block_references(
         second,
         offsets: [first_offsets, second_offsets],
     })
+}
+
+/// Decode the unique four-block construction-group lane in a `HOLE PACKAGE` payload.
+pub fn hole_package_construction_group_lane(
+    record: OperationRecord<'_>,
+) -> Option<HolePackageConstructionGroupLane> {
+    const PREFIX: [u8; 5] = [0x00, 0x00, 0x01, 0x00, 0x00];
+    const ZEROES: [u8; 4] = [0; 4];
+    const SUFFIX: [u8; 3] = [0x00, 0x00, 0xff];
+    if record.label.value != "HOLE PACKAGE" {
+        return None;
+    }
+    let mut matches = Vec::new();
+    for start in 0..record.payload.len().saturating_sub(PREFIX.len()) {
+        if record.payload.get(start..start + PREFIX.len()) != Some(&PREFIX) {
+            continue;
+        }
+        let Some(lane) = (|| {
+            let selector = *record.payload.get(start + 5)?;
+            let branch = *record.payload.get(start + 7)?;
+            if selector == 0
+                || branch == 0
+                || record.payload.get(start + 6) != Some(&0)
+                || record.payload.get(start + 8..start + 12) != Some(&ZEROES)
+            {
+                return None;
+            }
+            let mut at = start + 12;
+            let mut references = Vec::with_capacity(4);
+            for ordinal in 0..4 {
+                if ordinal == 2 {
+                    if record.payload.get(at) != Some(&branch)
+                        || record.payload.get(at + 1..at + 5) != Some(&ZEROES)
+                    {
+                        return None;
+                    }
+                    at += 5;
+                }
+                let reference_offset = at;
+                let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+                if !matches!(record.payload.get(at), Some(0xf0 | 0xf1)) {
+                    return None;
+                }
+                references.push(PayloadObjectReference {
+                    offset: record.payload_offset + reference_offset,
+                    object_index,
+                    raw_object_index: record.payload.get(at..at + width)?.to_vec(),
+                });
+                at += width;
+            }
+            if record.payload.get(at..at + SUFFIX.len()) != Some(&SUFFIX) {
+                return None;
+            }
+            Some(HolePackageConstructionGroupLane {
+                offset: start,
+                selector,
+                branch,
+                references: references.try_into().ok()?,
+            })
+        })() else {
+            continue;
+        };
+        matches.push(lane);
+    }
+    let [lane] = matches.as_slice() else {
+        return None;
+    };
+    Some(lane.clone())
 }
 
 /// Decode the unique counted reference field in a bounded `SKETCH` payload.
@@ -4021,37 +4132,95 @@ pub fn object_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair>
 
 /// Decode every exactly framed signed Q1.55 pair in a reconstructed sketch payload.
 pub fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
+    const LEGACY: [u8; 8] = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
+    const SHORT: [u8; 15] = [
+        0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x01,
+    ];
+    const EXTENDED: [u8; 17] = [
+        0x08, 0x02, 0x03, 0x01, 0xc0, 0x40, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02,
+        0x00, 0x01,
+    ];
+    let mut pairs = Vec::new();
+    for (discriminator, separator_width) in [
+        (LEGACY.as_slice(), 1usize),
+        (SHORT.as_slice(), 0),
+        (EXTENDED.as_slice(), 0),
+    ] {
+        for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
+            if window != discriminator {
+                continue;
+            }
+            let first = offset + discriminator.len();
+            let second = first + 8 + separator_width;
+            if bytes.get(first) != Some(&0x30)
+                || (separator_width != 0 && bytes.get(first + 8) != Some(&0x00))
+                || bytes.get(second) != Some(&0x30)
+            {
+                continue;
+            }
+            let Some(first_raw) = bytes
+                .get(first + 1..first + 8)
+                .and_then(|raw| raw.try_into().ok())
+            else {
+                continue;
+            };
+            let Some(second_raw) = bytes
+                .get(second + 1..second + 8)
+                .and_then(|raw| raw.try_into().ok())
+            else {
+                continue;
+            };
+            pairs.push(SketchPayloadFixedPair {
+                offset,
+                values: [decode_q1_55(first_raw), decode_q1_55(second_raw)],
+                value_offsets: [first, second],
+                raw_values: [first_raw, second_raw],
+                discriminator: discriminator.to_vec(),
+            });
+        }
+    }
+    pairs.sort_by_key(|pair| pair.offset);
+    pairs
+}
+
+/// Decode every exactly framed mixed Q1.55/binary32 pair in a sketch payload.
+pub fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
     const DISCRIMINATOR: [u8; 8] = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
     let mut pairs = Vec::new();
     for (offset, window) in bytes.windows(DISCRIMINATOR.len()).enumerate() {
         if window != DISCRIMINATOR {
             continue;
         }
-        let first = offset + DISCRIMINATOR.len();
-        let second = first + 9;
-        if bytes.get(first) != Some(&0x30)
-            || bytes.get(first + 8) != Some(&0x00)
-            || bytes.get(second) != Some(&0x30)
-        {
+        let fixed_offset = offset + DISCRIMINATOR.len();
+        let binary32_offset = fixed_offset + 9;
+        if bytes.get(fixed_offset) != Some(&0x30) || bytes.get(fixed_offset + 8) != Some(&0x00) {
             continue;
         }
-        let Some(first_raw) = bytes
-            .get(first + 1..first + 8)
+        let Some(fixed_raw_value) = bytes
+            .get(fixed_offset + 1..fixed_offset + 8)
             .and_then(|raw| raw.try_into().ok())
         else {
             continue;
         };
-        let Some(second_raw) = bytes
-            .get(second + 1..second + 8)
+        let Some(binary32_raw_value): Option<[u8; 4]> = bytes
+            .get(binary32_offset..binary32_offset + 4)
             .and_then(|raw| raw.try_into().ok())
         else {
             continue;
         };
-        pairs.push(SketchPayloadFixedPair {
+        let Some((binary32_value, PayloadScalarEncoding::Binary32, 4)) =
+            payload_scalar(&binary32_raw_value)
+        else {
+            continue;
+        };
+        pairs.push(SketchPayloadMixedPair {
             offset,
-            values: [decode_q1_55(first_raw), decode_q1_55(second_raw)],
-            value_offsets: [first, second],
-            raw_values: [first_raw, second_raw],
+            fixed_value: decode_q1_55(fixed_raw_value),
+            binary32_value,
+            fixed_raw_value,
+            binary32_raw_value,
+            value_offsets: [fixed_offset, binary32_offset],
+            discriminator: DISCRIMINATOR.to_vec(),
         });
     }
     pairs
@@ -4956,6 +5125,68 @@ pub fn string_values(bytes: &[u8], base_offset: usize) -> Vec<StringValue<'_>> {
         .collect()
 }
 
+/// Return whether `value` is canonical lowercase UUID text.
+pub fn canonical_uuid_text(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)
+            }
+        })
+}
+
+/// Decode complete `03 26, canonical UUID text, 00` values in `bytes`.
+pub fn uuid_string_values(bytes: &[u8], base_offset: usize) -> Vec<UuidStringValue<'_>> {
+    const MARKER: &[u8] = &[0x03, 0x26];
+    const TEXT_LEN: usize = 36;
+    bytes
+        .windows(MARKER.len())
+        .enumerate()
+        .filter(|(_, window)| *window == MARKER)
+        .filter_map(|(offset, _)| {
+            let start = offset.checked_add(MARKER.len())?;
+            let end = start.checked_add(TEXT_LEN)?;
+            let raw = bytes.get(start..end)?;
+            let value = std::str::from_utf8(raw).ok()?;
+            (canonical_uuid_text(value) && bytes.get(end) == Some(&0)).then_some(UuidStringValue {
+                offset: base_offset + offset,
+                value,
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod uuid_string_value_tests {
+    use super::*;
+
+    #[test]
+    fn decodes_only_complete_canonical_uuid_frames() {
+        let mut bytes = b"prefix\x03\x2601234567-89ab-cdef-0123-456789abcdef\0suffix".to_vec();
+        let values = uuid_string_values(&bytes, 100);
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0].offset, 106);
+        assert_eq!(values[0].value, "01234567-89ab-cdef-0123-456789abcdef");
+
+        bytes[6 + 2 + 9] = b'A';
+        assert!(uuid_string_values(&bytes, 0).is_empty());
+        assert!(!canonical_uuid_text("01234567-89ab-cdef-0123-456789abcde"));
+        assert!(!canonical_uuid_text("01234567-89ab-cdef-0123_456789abcdef"));
+        assert!(!canonical_uuid_text("01234567-89ab-cdef-0123-456789abcdeg"));
+    }
+
+    #[test]
+    fn rejects_truncated_or_unterminated_uuid_frames() {
+        let frame = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
+        assert!(uuid_string_values(&frame[..frame.len() - 1], 0).is_empty());
+        let mut unterminated = frame.to_vec();
+        *unterminated.last_mut().expect("nonempty frame") = 1;
+        assert!(uuid_string_values(&unterminated, 0).is_empty());
+    }
+}
+
 /// Decode `66 1b 03, byte-length, printable UTF-8, 00` values in `bytes`.
 pub fn surface_payload_strings(bytes: &[u8]) -> Vec<SurfacePayloadString<'_>> {
     const MARKER: &[u8] = &[0x66, 0x1b, 0x03];
@@ -5024,9 +5255,16 @@ pub fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
         else {
             break;
         };
-        let Some(end) = offset
+        let standard_end = offset
             .checked_add(16)
+            .and_then(|header_end| header_end.checked_add(payload_len));
+        let compact_terminal_end = offset
+            .checked_add(12)
             .and_then(|header_end| header_end.checked_add(payload_len))
+            .filter(|end| *end == bytes.len());
+        let Some(end) = standard_end
+            .filter(|end| *end <= bytes.len())
+            .or(compact_terminal_end)
         else {
             at = offset + 4;
             continue;

@@ -19,6 +19,7 @@
             "definition": {
               "definition": "block",
               "dimensions": null,
+              "op": "unresolved",
               "placement": null
             },
             "id": "nx:feature-history:feature#0000000000-0000000000",

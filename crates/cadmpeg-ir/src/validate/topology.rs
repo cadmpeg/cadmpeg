@@ -2394,6 +2394,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             FeatureDefinition::Block {
                 dimensions,
                 placement,
+                ..
             } => {
                 if dimensions.is_some_and(|values| {
                     values

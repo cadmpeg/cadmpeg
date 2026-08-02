@@ -3420,7 +3420,7 @@ fn feature_extent_magnitudes_are_validated() {
 
 #[test]
 fn block_placement_must_be_proper_rigid() {
-    use crate::features::{Feature, FeatureDefinition, FeatureId, Length};
+    use crate::features::{BooleanOp, Feature, FeatureDefinition, FeatureId, Length};
 
     let mut rotated = crate::transform::Transform::identity();
     rotated.rows[0][0] = 0.0;
@@ -3472,6 +3472,7 @@ fn block_placement_must_be_proper_rigid() {
             definition: FeatureDefinition::Block {
                 dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
                 placement: Some(placement),
+                op: BooleanOp::NewBody,
             },
             native_ref: None,
         });

@@ -10,6 +10,8 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
+#[cfg(feature = "fuzzing")]
+use cadmpeg_codec_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_codec_core::decode::{DecodeContext, ExpandSpec, View};
 use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -683,8 +685,6 @@ pub(crate) fn fuzz_buffer(data: &[u8]) {
     if data.len() < 2 {
         return;
     }
-    use cadmpeg_codec_core::decode::{DecodeArena, DecodePolicy};
-
     let expected = usize::from(u16::from_le_bytes([data[0], data[1]]));
     let Ok(mut reader) = BoundedReader::new(data, 2, data.len()) else {
         return;

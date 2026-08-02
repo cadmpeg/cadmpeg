@@ -24,7 +24,9 @@ mod model;
 mod om;
 mod parasolid;
 mod segments;
+mod structure;
 mod substrate;
+mod toggle;
 pub(crate) mod vector;
 
 // The record families, extractors, and enums each domain module owns stay

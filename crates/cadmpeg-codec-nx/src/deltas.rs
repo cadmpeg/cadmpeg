@@ -2511,7 +2511,12 @@ fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
     let (xmt, byte_len, references) = match kind {
         81 => {
             let record = crate::parasolid::entity_51_record_at(stream, offset)?;
-            (record.xmt, record.byte_len, record.references)
+            let references = record
+                .leading_references
+                .into_iter()
+                .chain(record.trailing_references)
+                .collect();
+            (record.xmt, record.byte_len, references)
         }
         82 => {
             let record = crate::parasolid::entity_52_integer_record_at(stream, offset)?;
