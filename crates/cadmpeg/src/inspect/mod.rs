@@ -1,0 +1,453 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Format-agnostic byte tools under `cadmpeg inspect`.
+//!
+//! These subcommands read a file as bytes. They know nothing about CAD formats,
+//! so they work on a container, on an entry extracted from one, and on a probe
+//! variant that no codec accepts yet. `cadmpeg inspect FILE` without a
+//! subcommand still runs the codec-aware container summary.
+//!
+//! Every offset and length argument accepts hexadecimal with an `0x` prefix or
+//! decimal, with `_` allowed between digits.
+
+pub mod container;
+pub mod diff;
+pub mod hexdump;
+pub mod layout;
+pub mod numeric;
+pub mod search;
+
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
+
+use anyhow::{bail, Context, Result};
+use clap::{Args, Subcommand};
+
+use crate::LimitProfile;
+use numeric::{parse_offset, EndianArgs, ScalarType};
+
+/// Default number of bytes a bare `inspect hex` prints.
+const DEFAULT_HEX_LEN: u64 = 256;
+
+/// Byte-level subcommands of `cadmpeg inspect`.
+#[derive(Debug, Subcommand)]
+pub enum ByteCommand {
+    /// Print a hexadecimal dump with absolute offsets and an ASCII gutter.
+    Hex(HexArgs),
+    /// Read fixed-width scalars at an offset, optionally striding a record array.
+    Read(ReadArgs),
+    /// Report every offset where a byte pattern or a text string occurs.
+    Find(FindArgs),
+    /// Extract printable strings.
+    Strings(StringsArgs),
+    /// Decode records with an inline `--layout` spec.
+    Struct(StructArgs),
+    /// List ZIP entries with their physical offsets.
+    Container(ContainerArgs),
+    /// Compare two files byte for byte at the same offsets.
+    Diff(DiffArgs),
+}
+
+/// Arguments for `cadmpeg inspect hex`.
+#[derive(Debug, Args)]
+pub struct HexArgs {
+    /// File to dump.
+    pub file: PathBuf,
+    /// First byte to print.
+    #[arg(long, default_value = "0", value_parser = parse_offset)]
+    pub offset: u64,
+    /// Number of bytes to print; the dump stops early at end of file.
+    #[arg(long, value_parser = parse_offset)]
+    pub len: Option<u64>,
+    /// Bytes per output line.
+    #[arg(long, default_value_t = 16)]
+    pub width: usize,
+}
+
+/// Arguments for `cadmpeg inspect read`.
+#[derive(Debug, Args)]
+pub struct ReadArgs {
+    /// File to read.
+    pub file: PathBuf,
+    /// Scalar type to decode.
+    #[arg(long = "type", value_enum)]
+    pub ty: ScalarType,
+    /// Offset of the first value.
+    #[arg(long, default_value = "0", value_parser = parse_offset)]
+    pub offset: u64,
+    /// How many values to read.
+    #[arg(long, default_value_t = 1)]
+    pub count: u64,
+    /// Byte step between consecutive values; defaults to the scalar width.
+    #[arg(long, value_parser = parse_offset)]
+    pub stride: Option<u64>,
+    #[command(flatten)]
+    pub endian: EndianArgs,
+}
+
+/// Arguments for `cadmpeg inspect find`.
+#[derive(Debug, Args)]
+#[command(group(clap::ArgGroup::new("needle").required(true).args(["hex", "ascii", "utf16le"])))]
+pub struct FindArgs {
+    /// File to search.
+    pub file: PathBuf,
+    /// Hexadecimal byte pattern; `??` matches any byte.
+    #[arg(long)]
+    pub hex: Option<String>,
+    /// ASCII string to search for.
+    #[arg(long)]
+    pub ascii: Option<String>,
+    /// String to search for encoded as UTF-16LE.
+    #[arg(long)]
+    pub utf16le: Option<String>,
+    /// Stop after this many hits; 0 reports every hit.
+    #[arg(long, default_value_t = 100)]
+    pub max: usize,
+}
+
+/// Arguments for `cadmpeg inspect strings`.
+#[derive(Debug, Args)]
+pub struct StringsArgs {
+    /// File to scan.
+    pub file: PathBuf,
+    /// Shortest run to report, in characters.
+    #[arg(long, default_value_t = 4)]
+    pub min: usize,
+    /// Which encodings to scan for.
+    #[arg(long, value_enum, default_value_t = search::StringEncoding::Ascii)]
+    pub encoding: search::StringEncoding,
+}
+
+/// Arguments for `cadmpeg inspect struct`.
+#[derive(Debug, Args)]
+pub struct StructArgs {
+    /// File to decode.
+    pub file: PathBuf,
+    /// Record layout, for example `u32le:count,pad4,f64le:x,f64le:y`.
+    #[arg(long)]
+    pub layout: String,
+    /// Offset of the first record.
+    #[arg(long, default_value = "0", value_parser = parse_offset)]
+    pub offset: u64,
+    /// How many consecutive records to decode.
+    #[arg(long, default_value_t = 1)]
+    pub count: u64,
+}
+
+/// Arguments for `cadmpeg inspect container`.
+#[derive(Debug, Args)]
+pub struct ContainerArgs {
+    /// ZIP-based file to list.
+    pub file: PathBuf,
+    /// Resource-limit profile applied while reading the central directory.
+    #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
+    pub limits: LimitProfile,
+}
+
+/// Arguments for `cadmpeg inspect diff`.
+#[derive(Debug, Args)]
+pub struct DiffArgs {
+    /// First file.
+    pub a: PathBuf,
+    /// Second file.
+    pub b: PathBuf,
+    /// Merge two differing spans separated by this many equal bytes or fewer.
+    #[arg(long, default_value_t = 8)]
+    pub gap: u64,
+    /// Stop listing after this many runs; 0 lists every run.
+    #[arg(long, default_value_t = 32)]
+    pub max_runs: usize,
+    /// Bytes of context dumped on each side of the first difference.
+    #[arg(long, default_value = "32", value_parser = parse_offset)]
+    pub context: u64,
+}
+
+/// Runs one byte subcommand.
+///
+/// # Errors
+///
+/// Returns an operational error when a file cannot be read, an argument does
+/// not parse, or a requested offset lies past end of file.
+pub fn run(command: ByteCommand) -> Result<()> {
+    match command {
+        ByteCommand::Hex(args) => hex(&args),
+        ByteCommand::Read(args) => read(&args),
+        ByteCommand::Find(args) => find(&args),
+        ByteCommand::Strings(args) => strings(&args),
+        ByteCommand::Struct(args) => structure(&args),
+        ByteCommand::Container(args) => container_list(&args),
+        ByteCommand::Diff(args) => diff_files(&args),
+    }
+}
+
+/// Returns the file length in bytes.
+fn file_len(path: &Path) -> Result<u64> {
+    let metadata = std::fs::metadata(path)
+        .with_context(|| format!("reading metadata for {}", path.display()))?;
+    Ok(metadata.len())
+}
+
+/// Reads up to `len` bytes starting at `offset`, returning fewer at end of file.
+///
+/// Seeking past end of file is an error rather than an empty result, because an
+/// offset outside the file is always a mistake worth reporting.
+fn read_window(path: &Path, offset: u64, len: u64) -> Result<Vec<u8>> {
+    let size = file_len(path)?;
+    if offset > size {
+        bail!(
+            "offset 0x{offset:x} ({offset}) is past the end of {}, which is 0x{size:x} ({size}) bytes",
+            path.display()
+        );
+    }
+    let available = size - offset;
+    let want = usize::try_from(len.min(available))
+        .context("the requested length does not fit in memory on this target")?;
+    let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    file.seek(SeekFrom::Start(offset))
+        .with_context(|| format!("seeking to 0x{offset:x} in {}", path.display()))?;
+    let mut buffer = vec![0u8; want];
+    file.read_exact(&mut buffer).with_context(|| {
+        format!(
+            "reading {want} bytes at 0x{offset:x} from {}",
+            path.display()
+        )
+    })?;
+    Ok(buffer)
+}
+
+/// Reads a whole file.
+fn read_whole(path: &Path) -> Result<Vec<u8>> {
+    std::fs::read(path).with_context(|| format!("reading {}", path.display()))
+}
+
+fn hex(args: &HexArgs) -> Result<()> {
+    if args.width == 0 {
+        bail!("--width must be at least 1");
+    }
+    let len = args.len.unwrap_or(DEFAULT_HEX_LEN);
+    let bytes = read_window(&args.file, args.offset, len)?;
+    if bytes.is_empty() {
+        println!("(no bytes at 0x{:x})", args.offset);
+        return Ok(());
+    }
+    print!("{}", hexdump::render(args.offset, &bytes, args.width));
+    Ok(())
+}
+
+fn read(args: &ReadArgs) -> Result<()> {
+    let width = args.ty.width() as u64;
+    let stride = args.stride.unwrap_or(width);
+    if args.count == 0 {
+        return Ok(());
+    }
+    if stride == 0 {
+        bail!("--stride 0 would read the same bytes forever");
+    }
+    let endian = args.endian.endian();
+    let size = file_len(&args.file)?;
+    let name = args.ty.display_name(endian);
+    let mut file =
+        File::open(&args.file).with_context(|| format!("opening {}", args.file.display()))?;
+    for index in 0..args.count {
+        let offset = args
+            .offset
+            .checked_add(index * stride)
+            .context("the strided offset overflows 64 bits")?;
+        let end = offset
+            .checked_add(width)
+            .context("the read overflows 64 bits")?;
+        if end > size {
+            bail!(
+                "value {index} needs bytes 0x{offset:x}..0x{end:x}, past the end of {} at 0x{size:x}",
+                args.file.display()
+            );
+        }
+        file.seek(SeekFrom::Start(offset))?;
+        let mut buffer = [0u8; 8];
+        let slot = &mut buffer[..width as usize];
+        file.read_exact(slot)?;
+        let value = args.ty.read(slot, endian);
+        println!(
+            "0x{offset:08x}  {name:<6}  {:<24}  {}",
+            value.decimal(),
+            value.hex(args.ty)
+        );
+    }
+    Ok(())
+}
+
+fn find(args: &FindArgs) -> Result<()> {
+    let (pattern, described) = if let Some(text) = &args.hex {
+        (search::parse_pattern(text), format!("hex {text}"))
+    } else if let Some(text) = &args.ascii {
+        (search::ascii_pattern(text), format!("ascii {text:?}"))
+    } else if let Some(text) = &args.utf16le {
+        (search::utf16le_pattern(text), format!("utf16le {text:?}"))
+    } else {
+        unreachable!("clap requires one of --hex, --ascii, or --utf16le")
+    };
+    let pattern = pattern.map_err(|message| anyhow::anyhow!(message))?;
+    let bytes = read_whole(&args.file)?;
+    let limit = (args.max > 0).then_some(args.max);
+    let hits = search::find_all(&bytes, &pattern, limit);
+    println!(
+        "pattern: {described} ({} bytes)  hits: {}{}",
+        pattern.len(),
+        hits.len(),
+        if limit.is_some_and(|max| hits.len() >= max) {
+            " (truncated by --max)"
+        } else {
+            ""
+        }
+    );
+    for offset in hits {
+        println!("0x{offset:08x}  {offset}");
+    }
+    Ok(())
+}
+
+fn strings(args: &StringsArgs) -> Result<()> {
+    if args.min == 0 {
+        bail!("--min must be at least 1");
+    }
+    let bytes = read_whole(&args.file)?;
+    for found in search::extract_strings(&bytes, args.min, args.encoding) {
+        println!(
+            "0x{:08x}  {:<8}  \"{}\"",
+            found.offset,
+            found.encoding.label(),
+            search::escape(&found.text)
+        );
+    }
+    Ok(())
+}
+
+fn structure(args: &StructArgs) -> Result<()> {
+    let layout = layout::Layout::parse(&args.layout)?;
+    if args.count == 0 {
+        return Ok(());
+    }
+    let size = file_len(&args.file)?;
+    let record_size = layout.size as u64;
+    let span = record_size
+        .checked_mul(args.count)
+        .and_then(|total| args.offset.checked_add(total))
+        .context("the requested records overflow a 64-bit offset")?;
+    if span > size {
+        bail!(
+            "{} records of {record_size} bytes at 0x{:x} need 0x{span:x} bytes, \
+             but {} is 0x{size:x} bytes",
+            args.count,
+            args.offset,
+            args.file.display()
+        );
+    }
+    let bytes = read_window(&args.file, args.offset, span - args.offset)?;
+    let name_width = layout
+        .fields
+        .iter()
+        .map(|field| field.name.len())
+        .max()
+        .unwrap_or(1);
+    for index in 0..args.count {
+        let start = (index * record_size) as usize;
+        let record = &bytes[start..start + layout.size];
+        let base = args.offset + index * record_size;
+        println!("record {index} @ 0x{base:08x} ({record_size} bytes)");
+        for field in layout.decode(record) {
+            let at = base + field.offset as u64;
+            println!(
+                "  0x{at:08x}  {:<name_width$}  {:<8}  {:<24}  {}",
+                field.name, field.type_name, field.decimal, field.hex
+            );
+        }
+    }
+    Ok(())
+}
+
+fn container_list(args: &ContainerArgs) -> Result<()> {
+    let bytes = read_whole(&args.file)?;
+    let entries = container::list(&bytes, args.limits.limits()).with_context(|| {
+        format!(
+            "{} is not a readable ZIP container; `cadmpeg inspect {}` reads \
+             the other container families through their codec",
+            args.file.display(),
+            args.file.display()
+        )
+    })?;
+    print!("{}", container::render(&entries));
+    Ok(())
+}
+
+fn diff_files(args: &DiffArgs) -> Result<()> {
+    let a = read_whole(&args.a)?;
+    let b = read_whole(&args.b)?;
+    let summary = diff::compare(&a, &b, args.gap);
+    println!(
+        "a: {} ({} bytes)\nb: {} ({} bytes)",
+        args.a.display(),
+        summary.len_a,
+        args.b.display(),
+        summary.len_b
+    );
+    if summary.identical() {
+        println!("identical");
+        return Ok(());
+    }
+    if summary.len_a != summary.len_b {
+        println!(
+            "length differs by {} bytes; only the first {} bytes are compared",
+            summary.len_a.abs_diff(summary.len_b),
+            summary.compared
+        );
+    }
+    let Some(first) = summary.first else {
+        println!("the common prefix is identical");
+        return Ok(());
+    };
+    println!(
+        "first difference: 0x{first:08x} ({first})\ndiffering bytes: {} of {}\nruns (gap {}): {}",
+        summary.differing,
+        summary.compared,
+        args.gap,
+        summary.runs.len()
+    );
+    let shown = if args.max_runs == 0 {
+        summary.runs.len()
+    } else {
+        args.max_runs.min(summary.runs.len())
+    };
+    for run in &summary.runs[..shown] {
+        println!(
+            "  0x{:08x}..0x{:08x}  {} bytes",
+            run.start,
+            run.end(),
+            run.len
+        );
+    }
+    if shown < summary.runs.len() {
+        println!(
+            "  … {} more runs (raise --max-runs)",
+            summary.runs.len() - shown
+        );
+    }
+    if args.context > 0 {
+        let window_start = first.saturating_sub(args.context / 2);
+        println!("\na @ 0x{window_start:x}:");
+        print!("{}", window(&a, window_start, args.context));
+        println!("b @ 0x{window_start:x}:");
+        print!("{}", window(&b, window_start, args.context));
+    }
+    Ok(())
+}
+
+/// Renders a bounded hexadecimal window of an in-memory buffer.
+fn window(bytes: &[u8], start: u64, len: u64) -> String {
+    let begin = usize::try_from(start)
+        .unwrap_or(usize::MAX)
+        .min(bytes.len());
+    let end = usize::try_from(start.saturating_add(len))
+        .unwrap_or(usize::MAX)
+        .min(bytes.len());
+    hexdump::render(begin as u64, &bytes[begin..end], 16)
+}

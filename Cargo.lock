@@ -147,13 +147,16 @@ dependencies = [
  "cadmpeg-codec-nx",
  "cadmpeg-codec-rhino",
  "cadmpeg-codec-sldprt",
+ "cadmpeg-container",
  "cadmpeg-ir",
  "cadmpeg-step",
  "clap",
  "crc32fast",
+ "memchr",
  "predicates",
  "serde_json",
  "tempfile",
+ "thiserror",
  "zip",
 ]
 

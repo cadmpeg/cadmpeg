@@ -86,6 +86,57 @@ cadmpeg export bracket.cadir.json -o bracket.step
 container diagnostics and normally requires `--allow-empty` when followed by a
 geometry export.
 
+## Read raw bytes
+
+`cadmpeg inspect` also carries byte tools that work on any file, decoded or not.
+They replace the ad-hoc `xxd`, `od`, `strings`, and `struct.unpack` one-liners
+that format work otherwise needs. Every offset and length argument accepts `0x`
+hexadecimal or decimal, and `_` between digits.
+
+```sh
+cadmpeg inspect hex part.prt --offset 0x40 --len 0x80   # dump with an ASCII gutter
+cadmpeg inspect read part.prt --type u32 --offset 0x40  # one scalar, decimal and hex
+cadmpeg inspect read part.prt --type f64 --offset 0x100 --count 8 --stride 24
+cadmpeg inspect find part.prt --hex '4d5a??00'          # `??` is a byte wildcard
+cadmpeg inspect find part.prt --utf16le Extrude
+cadmpeg inspect strings part.prt --min 6 --encoding both
+cadmpeg inspect struct part.prt --offset 0x100 --count 4 \
+  --layout 'u32le:id,pad4,f64le:x,f64le:y,f64le:z'
+cadmpeg inspect container part.f3d                      # ZIP entries with byte offsets
+cadmpeg inspect diff probe-a.prt probe-b.prt            # positional byte diff
+```
+
+`--le` and `--be` select the byte order for `read`; little-endian is the
+default. `read --count N` walks a record array, stepping `--stride` bytes and
+defaulting to the scalar width.
+
+`--layout` is a comma-separated record spec with no implicit alignment:
+
+| Field | Meaning |
+| --- | --- |
+| `u8`, `i8` | One byte. A byte-order suffix is rejected. |
+| `u16le`, `i32be`, `f64le`, … | A wide scalar. The `le` or `be` suffix is required. |
+| `bytesN` | `N` raw bytes, printed as hexadecimal. |
+| `padN` | `N` bytes skipped and not printed. Takes no name. |
+
+Every field except `padN` accepts an optional `:name`; unnamed fields are called
+`f<index>`. `struct --count N` decodes `N` consecutive records and reports an
+error rather than a partial record when the run passes end of file.
+
+`inspect container` lists ZIP entries with their local-header and payload
+offsets, so a hex dump of an entry follows directly. Names are single-quoted
+because Fusion `.f3d` entry names hold `[` and `]`, which a shell reads as a
+glob. Other container families are listed by `cadmpeg inspect FILE` through
+their codec.
+
+`inspect diff` compares byte `n` of one file with byte `n` of the other. It
+reports the first differing offset, the differing byte count, and the differing
+spans. `--gap` merges two spans separated by that many equal bytes or fewer.
+This is a byte comparison; `cadmpeg diff` compares decoded models instead.
+
+A file whose name is also a subcommand name, such as `hex`, is read as the
+subcommand. Write `./hex` for such a file.
+
 ## Compare models
 
 `diff` compares two decoded models structurally:
