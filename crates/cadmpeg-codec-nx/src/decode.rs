@@ -10293,30 +10293,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "sketch"
             }
-            FeatureDefinition::Loft {
-                sections,
-                centerline,
-                guides,
-                op,
-                max_degree,
-                ..
-            } if sections.len() < 2
-                || sections.iter().any(loft_section_is_incomplete)
-                || sections.iter().any(|section| {
-                    matches!(
-                        section,
-                        LoftSection::Profile(profile)
-                            if profile_dependency_is_incomplete(profile, &feature.dependencies)
-                    )
-                })
-                || centerline.as_ref().is_some_and(path_ref_is_incomplete)
-                || guides.iter().any(path_ref_is_incomplete)
-                || (centerline.is_some() && !guides.is_empty())
-                || max_degree.is_some_and(|degree| degree == 0)
-                || matches!(op, BooleanOp::Unresolved) =>
-            {
-                "loft"
-            }
+            FeatureDefinition::Loft { .. } if loft_definition_is_incomplete(feature) => "loft",
             FeatureDefinition::ProjectedCurve {
                 source,
                 target_faces,
@@ -10347,14 +10324,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 "extend surface"
             }
             FeatureDefinition::Hole { .. } if hole_definition_is_incomplete(feature) => "hole",
-            FeatureDefinition::Rib { construction, op }
-                if rib_feature_is_incomplete(construction, *op)
-                    || construction.profile.as_ref().is_some_and(|profile| {
-                        profile_dependency_is_incomplete(profile, &feature.dependencies)
-                    }) =>
-            {
-                "rib"
-            }
+            FeatureDefinition::Rib { .. } if rib_definition_is_incomplete(feature) => "rib",
             FeatureDefinition::Chamfer { .. } if chamfer_definition_is_incomplete(feature) => {
                 "chamfer"
             }
@@ -10384,80 +10354,13 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "trim bodies"
             }
-            FeatureDefinition::Extrude {
-                profile,
-                direction,
-                start,
-                extent,
-                op,
-                solid,
-                direction_source,
-                face_maker,
-                ..
-            } if profile_ref_is_incomplete(profile)
-                || profile_dependency_is_incomplete(profile, &feature.dependencies)
-                || matches!(
-                    direction,
-                    cadmpeg_ir::features::ExtrudeDirection::Unresolved
-                )
-                || matches!(
-                    direction,
-                    cadmpeg_ir::features::ExtrudeDirection::Explicit(direction)
-                        if !valid_feature_direction(*direction)
-                )
-                || extrude_start_is_incomplete(start)
-                || extrude_extent_is_incomplete(extent, &feature.dependencies)
-                || matches!(op, BooleanOp::Unresolved)
-                || solid.is_none()
-                || direction_source.as_ref().is_some_and(|source| {
-                    matches!(
-                        source,
-                        cadmpeg_ir::features::ExtrusionDirectionSource::Edge { reference }
-                            if path_ref_is_incomplete(reference)
-                    )
-                })
-                || face_maker
-                    .as_ref()
-                    .is_some_and(|maker| maker.class.trim().is_empty()) =>
-            {
+            FeatureDefinition::Extrude { .. } if extrude_definition_is_incomplete(feature) => {
                 "extrude"
             }
-            FeatureDefinition::Revolve { construction, op }
-                if revolve_feature_is_incomplete(construction, *op, &feature.dependencies) =>
-            {
+            FeatureDefinition::Revolve { .. } if revolve_definition_is_incomplete(feature) => {
                 "revolve"
             }
-            FeatureDefinition::Sweep {
-                profile,
-                sections,
-                path,
-                mode,
-                orientation,
-                transition,
-                transformation,
-                twist,
-                scale,
-                ..
-            } if profile.as_ref().is_none_or(profile_ref_is_incomplete)
-                || profile.as_ref().is_some_and(|profile| {
-                    profile_dependency_is_incomplete(profile, &feature.dependencies)
-                })
-                || sections.iter().any(profile_ref_is_incomplete)
-                || sections.iter().any(|profile| {
-                    profile_dependency_is_incomplete(profile, &feature.dependencies)
-                })
-                || path.as_ref().is_none_or(path_ref_is_incomplete)
-                || sweep_mode_is_incomplete(*mode)
-                || orientation
-                    .as_ref()
-                    .is_none_or(sweep_orientation_is_incomplete)
-                || transition.is_none()
-                || transformation.is_none()
-                || twist.is_some_and(|twist| !twist.0.is_finite())
-                || scale.is_some_and(|scale| !scale.is_finite() || scale <= 0.0) =>
-            {
-                "sweep"
-            }
+            FeatureDefinition::Sweep { .. } if sweep_definition_is_incomplete(feature) => "sweep",
             FeatureDefinition::OffsetSurface { .. }
                 if offset_surface_definition_is_incomplete(feature) =>
             {
@@ -10941,6 +10844,129 @@ pub(crate) fn replace_face_definition_is_incomplete(feature: &Feature) -> bool {
     face_selection_is_incomplete(targets)
         || face_selection_is_incomplete(replacements)
         || face_selections_overlap(targets, replacements)
+}
+
+pub(crate) fn loft_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Loft {
+        sections,
+        centerline,
+        guides,
+        op,
+        max_degree,
+        ..
+    } = &feature.definition
+    else {
+        return true;
+    };
+    sections.len() < 2
+        || sections.iter().any(loft_section_is_incomplete)
+        || sections.iter().any(|section| {
+            matches!(
+                section,
+                LoftSection::Profile(profile)
+                    if profile_dependency_is_incomplete(profile, &feature.dependencies)
+            )
+        })
+        || centerline.as_ref().is_some_and(path_ref_is_incomplete)
+        || guides.iter().any(path_ref_is_incomplete)
+        || (centerline.is_some() && !guides.is_empty())
+        || max_degree.is_some_and(|degree| degree == 0)
+        || matches!(op, BooleanOp::Unresolved)
+}
+
+pub(crate) fn extrude_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Extrude {
+        profile,
+        direction,
+        start,
+        extent,
+        op,
+        solid,
+        direction_source,
+        face_maker,
+        ..
+    } = &feature.definition
+    else {
+        return true;
+    };
+    profile_ref_is_incomplete(profile)
+        || profile_dependency_is_incomplete(profile, &feature.dependencies)
+        || matches!(
+            direction,
+            cadmpeg_ir::features::ExtrudeDirection::Unresolved
+        )
+        || matches!(
+            direction,
+            cadmpeg_ir::features::ExtrudeDirection::Explicit(direction)
+                if !valid_feature_direction(*direction)
+        )
+        || extrude_start_is_incomplete(start)
+        || extrude_extent_is_incomplete(extent, &feature.dependencies)
+        || matches!(op, BooleanOp::Unresolved)
+        || solid.is_none()
+        || direction_source.as_ref().is_some_and(|source| {
+            matches!(
+                source,
+                cadmpeg_ir::features::ExtrusionDirectionSource::Edge { reference }
+                    if path_ref_is_incomplete(reference)
+            )
+        })
+        || face_maker
+            .as_ref()
+            .is_some_and(|maker| maker.class.trim().is_empty())
+}
+
+pub(crate) fn revolve_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Revolve { construction, op } = &feature.definition else {
+        return true;
+    };
+    revolve_feature_is_incomplete(construction, *op, &feature.dependencies)
+}
+
+pub(crate) fn rib_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Rib { construction, op } = &feature.definition else {
+        return true;
+    };
+    rib_feature_is_incomplete(construction, *op)
+        || construction
+            .profile
+            .as_ref()
+            .is_some_and(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))
+}
+
+pub(crate) fn sweep_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Sweep {
+        profile,
+        sections,
+        path,
+        mode,
+        orientation,
+        transition,
+        transformation,
+        twist,
+        scale,
+        ..
+    } = &feature.definition
+    else {
+        return true;
+    };
+    profile.as_ref().is_none_or(profile_ref_is_incomplete)
+        || profile
+            .as_ref()
+            .is_some_and(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))
+        || sections.iter().any(profile_ref_is_incomplete)
+        || sections
+            .iter()
+            .any(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))
+        || path.as_ref().is_none_or(path_ref_is_incomplete)
+        || sweep_mode_is_incomplete(*mode)
+        || orientation
+            .as_ref()
+            .is_none_or(sweep_orientation_is_incomplete)
+        || transition.is_none()
+        || transformation.is_none()
+        || twist.is_some_and(|twist| !twist.0.is_finite())
+        || scale.is_some_and(|scale| !scale.is_finite() || scale <= 0.0)
 }
 
 pub(crate) fn hole_feature_is_incomplete(

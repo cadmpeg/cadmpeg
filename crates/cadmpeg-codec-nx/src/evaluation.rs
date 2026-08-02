@@ -204,6 +204,51 @@ fn rederived_body_census(
                     UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                 ));
             }
+            FeatureDefinition::Loft { op, .. } => {
+                apply_complete_boolean_outputs(
+                    feature,
+                    &mut bodies,
+                    *op,
+                    crate::decode::loft_definition_is_incomplete(feature),
+                )?;
+            }
+            FeatureDefinition::Extrude { op, .. } => {
+                apply_complete_boolean_outputs(
+                    feature,
+                    &mut bodies,
+                    *op,
+                    crate::decode::extrude_definition_is_incomplete(feature),
+                )?;
+            }
+            FeatureDefinition::Revolve { op, .. } => {
+                apply_complete_boolean_outputs(
+                    feature,
+                    &mut bodies,
+                    *op,
+                    crate::decode::revolve_definition_is_incomplete(feature),
+                )?;
+            }
+            FeatureDefinition::Rib { op, .. } => {
+                apply_complete_boolean_outputs(
+                    feature,
+                    &mut bodies,
+                    *op,
+                    crate::decode::rib_definition_is_incomplete(feature),
+                )?;
+            }
+            FeatureDefinition::Sweep { mode, .. } => {
+                let op = match mode {
+                    cadmpeg_ir::features::SweepMode::Solid { op } => *op,
+                    cadmpeg_ir::features::SweepMode::Surface => BooleanOp::NewBody,
+                    cadmpeg_ir::features::SweepMode::Unresolved => BooleanOp::Unresolved,
+                };
+                apply_complete_boolean_outputs(
+                    feature,
+                    &mut bodies,
+                    op,
+                    crate::decode::sweep_definition_is_incomplete(feature),
+                )?;
+            }
             FeatureDefinition::BaseFeature { bodies: selection }
             | FeatureDefinition::InsertBodies { bodies: selection } => {
                 let Some(selected) = explicit_body_selection(selection) else {
@@ -335,6 +380,47 @@ fn preserve_complete_single_output(
     Ok(())
 }
 
+fn apply_complete_boolean_outputs(
+    feature: &cadmpeg_ir::features::Feature,
+    bodies: &mut BTreeSet<BodyId>,
+    op: BooleanOp,
+    incomplete: bool,
+) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+    if incomplete || matches!(op, BooleanOp::Unresolved) {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+        ));
+    }
+    if feature.outputs.is_empty()
+        || feature.outputs.iter().collect::<BTreeSet<_>>().len() != feature.outputs.len()
+    {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::InvalidOutputLineage,
+        ));
+    }
+    match op {
+        BooleanOp::NewBody
+            if feature
+                .outputs
+                .iter()
+                .all(|output| !bodies.contains(output)) =>
+        {
+            bodies.extend(feature.outputs.iter().cloned());
+        }
+        BooleanOp::Join | BooleanOp::Cut | BooleanOp::Intersect
+            if feature.outputs.iter().all(|output| bodies.contains(output)) => {}
+        _ => {
+            return Err((
+                feature.id.clone(),
+                UnsupportedBodyCensusReason::InvalidOutputLineage,
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn explicit_body_selection(selection: &BodySelection) -> Option<&[BodyId]> {
     let bodies = match selection {
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies,
@@ -359,8 +445,10 @@ mod tests {
     use cadmpeg_ir::features::{
         Angle, BodyRetentionMode, ChamferGroup, ChamferSpec, ConfigurationBodies,
         ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
-        CurveProjectionDirectionState, DesignConfiguration, EdgeSelection, FaceSelection, Feature,
-        FilletGroup, HoleKind, HolePlacement, PathRef, RadiusSpec, Termination, ThickenSide,
+        CurveProjectionDirectionState, DesignConfiguration, EdgeSelection, ExtrudeDirection,
+        ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FilletGroup, HoleKind,
+        HolePlacement, PathRef, ProfileRef, RadiusSpec, RevolutionConstruction, RibConstruction,
+        RibDraft, SketchSpace, SweepMode, Termination, ThickenSide,
     };
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -519,6 +607,43 @@ mod tests {
         }
     }
 
+    fn complete_extrude_feature(
+        id: &str,
+        ordinal: u64,
+        profile: FeatureId,
+        outputs: Vec<BodyId>,
+        op: BooleanOp,
+    ) -> Feature {
+        let mut feature = body_neutral_feature(
+            id,
+            ordinal,
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Feature(profile.clone()),
+                direction: ExtrudeDirection::ProfileNormal,
+                start: ExtrudeStart::ProfilePlane,
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: Termination::Blind {
+                            length: Length(1.0),
+                        },
+                        draft: None,
+                        offset: None,
+                    },
+                },
+                op,
+                direction_source: None,
+                solid: Some(true),
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
+            },
+        );
+        feature.dependencies.push(profile);
+        feature.outputs = outputs;
+        feature
+    }
+
     #[test]
     fn complete_hole_preserves_the_existing_body_identity() {
         let mut ir = complete_block_ir();
@@ -626,6 +751,154 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies: vec![body] }
         );
+    }
+
+    #[test]
+    fn complete_extrudes_apply_new_body_and_boolean_output_lineage() {
+        let mut ir = complete_block_ir();
+        let existing = ir.model.bodies[0].id.clone();
+        let created = BodyId("extruded".to_string());
+        ir.model.bodies.push(model_body(&created.0));
+        let profile = FeatureId("profile".to_string());
+        ir.model.features.push(body_neutral_feature(
+            &profile.0,
+            1,
+            FeatureDefinition::Sketch {
+                space: SketchSpace::Unresolved,
+                sketch: None,
+            },
+        ));
+        ir.model.features.extend([
+            complete_extrude_feature(
+                "new-extrude",
+                2,
+                profile.clone(),
+                vec![created.clone()],
+                BooleanOp::NewBody,
+            ),
+            complete_extrude_feature(
+                "joined-extrude",
+                3,
+                profile,
+                vec![existing.clone()],
+                BooleanOp::Join,
+            ),
+        ]);
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified {
+                bodies: vec![existing, created],
+            }
+        );
+    }
+
+    #[test]
+    fn new_body_operation_cannot_reuse_an_existing_body_identity() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        let profile = FeatureId("profile".to_string());
+        ir.model.features.push(body_neutral_feature(
+            &profile.0,
+            1,
+            FeatureDefinition::Sketch {
+                space: SketchSpace::Unresolved,
+                sketch: None,
+            },
+        ));
+        ir.model.features.push(complete_extrude_feature(
+            "extrude",
+            2,
+            profile,
+            vec![body],
+            BooleanOp::NewBody,
+        ));
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Unsupported {
+                feature: Some(FeatureId("extrude".to_string())),
+                reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
+            }
+        );
+    }
+
+    #[test]
+    fn profile_driven_families_report_incomplete_construction_before_lineage() {
+        let definitions = [
+            FeatureDefinition::Loft {
+                sections: Vec::new(),
+                guides: Vec::new(),
+                centerline: None,
+                op: BooleanOp::NewBody,
+                closed: false,
+                solid: true,
+                ruled: false,
+                max_degree: None,
+                check_compatibility: None,
+                allow_multi_profile_faces: None,
+            },
+            complete_extrude_feature(
+                "fixture",
+                1,
+                FeatureId("profile".to_string()),
+                Vec::new(),
+                BooleanOp::NewBody,
+            )
+            .definition,
+            FeatureDefinition::Revolve {
+                construction: RevolutionConstruction {
+                    profile: None,
+                    axis: None,
+                    extent: None,
+                    axis_reference: None,
+                    solid: None,
+                    face_maker_class: None,
+                    fuse_order: None,
+                    allow_multi_profile_faces: None,
+                },
+                op: BooleanOp::NewBody,
+            },
+            FeatureDefinition::Rib {
+                construction: RibConstruction {
+                    profile: None,
+                    direction: None,
+                    thickness: None,
+                    side: None,
+                    draft: RibDraft::Unresolved,
+                },
+                op: BooleanOp::Join,
+            },
+            FeatureDefinition::Sweep {
+                profile: None,
+                sections: Vec::new(),
+                path: None,
+                mode: SweepMode::Unresolved,
+                orientation: None,
+                transition: None,
+                transformation: None,
+                path_tangent: false,
+                linearize: false,
+                twist: None,
+                scale: None,
+                allow_multi_profile_faces: None,
+            },
+        ];
+        for (index, definition) in definitions.into_iter().enumerate() {
+            let mut ir = complete_block_ir();
+            let id = format!("incomplete-{index}");
+            ir.model
+                .features
+                .push(body_neutral_feature(&id, 1, definition));
+
+            assert_eq!(
+                evaluate_saved_body_census(&ir),
+                BodyCensusEvaluation::Unsupported {
+                    feature: Some(FeatureId(id)),
+                    reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+                }
+            );
+        }
     }
 
     #[test]
