@@ -5235,6 +5235,7 @@ mod history_reference_tests {
 
         let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
         let parameter_id = ParameterId("test:model:parameter#depth".into());
+        let count_id = ParameterId("test:model:parameter#count".into());
         ir.model.parameters.push(DesignParameter {
             id: parameter_id.clone(),
             owner: Some(FeatureId("test:model:feature#extrude".into())),
@@ -5243,6 +5244,19 @@ mod history_reference_tests {
             expression: "7mm".into(),
             display: None,
             value: Some(ParameterValue::Length(Length(7.0))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+        ir.model.parameters.push(DesignParameter {
+            id: count_id.clone(),
+            owner: Some(FeatureId("test:model:feature#pattern".into())),
+            ordinal: 0,
+            name: "Count".into(),
+            expression: "7".into(),
+            display: None,
+            value: Some(ParameterValue::Integer(7)),
             dependencies: Vec::new(),
             properties: BTreeMap::new(),
             pmi: None,
@@ -5257,7 +5271,10 @@ mod history_reference_tests {
             material: None,
             properties: BTreeMap::new(),
             bodies: ConfigurationBodies::Resolved(Vec::new()),
-            parameter_values: BTreeMap::from([(parameter_id.clone(), ParameterValue::Integer(7))]),
+            parameter_values: BTreeMap::from([
+                (parameter_id.clone(), ParameterValue::Integer(7)),
+                (count_id.clone(), ParameterValue::Length(Length(0.007))),
+            ]),
             suppressed_features: Vec::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
@@ -5270,6 +5287,9 @@ mod history_reference_tests {
             ir.model.configurations[0].parameter_values[&parameter_id],
             ParameterValue::Length(Length(7.0))
         );
+        assert!(!ir.model.configurations[0]
+            .parameter_values
+            .contains_key(&count_id));
     }
 }
 
@@ -9892,8 +9912,8 @@ fn configuration_surface_carriers(
         .collect()
 }
 
-/// Give configuration-local numeric overrides the dimensional kind established
-/// by their neutral parameter definition.
+/// Give configuration-local numeric overrides the kind established by their
+/// neutral parameter definition and discard incompatible native candidates.
 pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
     let parameter_kinds = ir
         .model
@@ -9932,6 +9952,14 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
         if let Some(aligned) = aligned {
             *value = aligned;
         }
+    }
+    for configuration in &mut ir.model.configurations {
+        configuration.parameter_values.retain(|parameter, value| {
+            let Some(canonical) = parameter_kinds.get(parameter) else {
+                return true;
+            };
+            std::mem::discriminant(&**canonical) == std::mem::discriminant(value)
+        });
     }
 }
 
