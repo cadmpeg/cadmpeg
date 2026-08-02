@@ -100,7 +100,9 @@ pub fn evaluate_saved_body_census(ir: &CadIr) -> BodyCensusEvaluation {
 }
 
 fn active_configuration_is_admitted(ir: &CadIr, saved: &BTreeSet<BodyId>) -> bool {
-    if ir.model.configurations.is_empty() {
+    if ir.model.configurations.is_empty()
+        || (saved.is_empty() && ir.model.features.iter().all(is_body_neutral_feature))
+    {
         return true;
     }
     let mut active = ir
@@ -1264,6 +1266,24 @@ mod tests {
         ir.model.features.push(datum);
         attach_complete_active_configuration(&mut ir);
         ir.model.configurations[0].feature_states.clear();
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: Vec::new() }
+        );
+    }
+
+    #[test]
+    fn empty_body_neutral_model_does_not_need_an_active_configuration_identity() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.features.push(body_neutral_feature(
+            "datum",
+            0,
+            FeatureDefinition::DatumCoordinateSystemUnresolved,
+        ));
+        attach_complete_active_configuration(&mut ir);
+        ir.model.configurations[0].active = false;
+        ir.model.configurations[0].bodies = ConfigurationBodies::Unresolved;
 
         assert_eq!(
             evaluate_saved_body_census(&ir),
