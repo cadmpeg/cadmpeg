@@ -202,6 +202,46 @@ pub struct FeatureSimpleHoleConstructionGroup {
     pub block_references: Vec<String>,
 }
 
+/// Exact four-block construction-group lane carried by a `HOLE PACKAGE` operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureHolePackageConstructionGroupLane {
+    /// Globally unique lane identity.
+    pub id: String,
+    /// Owning `HOLE PACKAGE` operation label.
+    pub operation_label: String,
+    /// Compact selector preceding the repeated branch byte.
+    pub selector: u8,
+    /// Branch byte repeated between the two reference pairs.
+    pub branch: u8,
+    /// Ordered serialized offset-store block indices.
+    pub object_indices: [u32; 4],
+    /// Exact variable-width object-index tokens.
+    pub raw_object_indices: [Vec<u8>; 4],
+    /// Uniquely resolved offset-store blocks.
+    pub data_blocks: [String; 4],
+    /// Payload-relative offset of the lane prefix.
+    pub payload_offset: u64,
+    /// Absolute file offset of the lane prefix.
+    pub source_offset: u64,
+    /// Absolute file offsets of the four reference tokens.
+    pub reference_source_offsets: [u64; 4],
+}
+
+/// Exact relation between one hole package and one simple-hole construction group.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureHolePackageConstructionGroupUse {
+    /// Globally unique relation identity.
+    pub id: String,
+    /// Owning `HOLE PACKAGE` operation label.
+    pub operation_label: String,
+    /// Exact package lane carrying the group identity.
+    pub construction_group_lane: String,
+    /// Uniquely matched simple-hole construction group.
+    pub simple_hole_construction_group: String,
+    /// Absolute file offset of the package lane.
+    pub source_offset: u64,
+}
+
 /// Construction family named by a simple-hole template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -3156,6 +3196,116 @@ pub fn feature_simple_hole_construction_groups(
                     .iter()
                     .map(|(reference, _)| reference.id.clone())
                     .collect(),
+            })
+        })
+        .collect()
+}
+
+/// Decode and resolve exact four-block lanes from `HOLE PACKAGE` operations.
+pub fn feature_hole_package_construction_group_lanes(
+    container: &Container,
+) -> Vec<FeatureHolePackageConstructionGroupLane> {
+    let sections = container.om_sections();
+    let indexed = container.indexed_om_sections();
+    let mut lanes = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let Some(lane) = crate::om::hole_package_construction_group_lane(record) else {
+                continue;
+            };
+            let data_blocks = lane
+                .references
+                .iter()
+                .map(|reference| unique_offset_data_block(&indexed, reference.object_index))
+                .collect::<Option<Vec<_>>>()
+                .and_then(|blocks| blocks.try_into().ok());
+            let Some(data_blocks) = data_blocks else {
+                continue;
+            };
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
+            lanes.push(FeatureHolePackageConstructionGroupLane {
+                id: format!(
+                    "nx:feature-history:hole-package-construction-group-lane#{section_key}-{operation_ordinal:010}"
+                ),
+                operation_label,
+                selector: lane.selector,
+                branch: lane.branch,
+                object_indices: lane.references.clone().map(|reference| reference.object_index),
+                raw_object_indices: lane
+                    .references
+                    .clone()
+                    .map(|reference| reference.raw_object_index),
+                data_blocks,
+                payload_offset: lane.offset as u64,
+                source_offset: entry_offset + record.payload_offset as u64 + lane.offset as u64,
+                reference_source_offsets: lane
+                    .references
+                    .map(|reference| entry_offset + reference.offset as u64),
+            });
+        }
+    }
+    lanes
+}
+
+/// Join one package lane to one simple-hole group only by exact four-block identity.
+pub fn feature_hole_package_construction_group_uses(
+    lanes: &[FeatureHolePackageConstructionGroupLane],
+    groups: &[FeatureSimpleHoleConstructionGroup],
+) -> Vec<FeatureHolePackageConstructionGroupUse> {
+    let group_key = |group: &FeatureSimpleHoleConstructionGroup| {
+        [
+            group.first_data_blocks[0].clone(),
+            group.first_data_blocks[1].clone(),
+            group.second_data_blocks[0].clone(),
+            group.second_data_blocks[1].clone(),
+        ]
+    };
+    let mut groups_by_blocks = BTreeMap::<[String; 4], Vec<_>>::new();
+    for group in groups {
+        groups_by_blocks
+            .entry(group_key(group))
+            .or_default()
+            .push(group);
+    }
+    let mut lanes_by_blocks = BTreeMap::<[String; 4], Vec<_>>::new();
+    for lane in lanes {
+        lanes_by_blocks
+            .entry(lane.data_blocks.clone())
+            .or_default()
+            .push(lane);
+    }
+    groups_by_blocks
+        .into_iter()
+        .filter_map(|(blocks, groups)| {
+            let [group] = groups.as_slice() else {
+                return None;
+            };
+            let [lane] = lanes_by_blocks.get(&blocks)?.as_slice() else {
+                return None;
+            };
+            Some(FeatureHolePackageConstructionGroupUse {
+                id: lane.id.replacen(
+                    "hole-package-construction-group-lane",
+                    "hole-package-construction-group-use",
+                    1,
+                ),
+                operation_label: lane.operation_label.clone(),
+                construction_group_lane: lane.id.clone(),
+                simple_hole_construction_group: group.id.clone(),
+                source_offset: lane.source_offset,
             })
         })
         .collect()
@@ -10293,6 +10443,60 @@ mod tests {
             feature_simple_hole_construction_groups(&duplicate_lanes, &shared_references)
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
+        use super::{
+            feature_hole_package_construction_group_uses, FeatureHolePackageConstructionGroupLane,
+            FeatureSimpleHoleConstructionGroup,
+        };
+        let blocks = [
+            "block-1".to_string(),
+            "block-2".to_string(),
+            "block-3".to_string(),
+            "block-4".to_string(),
+        ];
+        let lane = FeatureHolePackageConstructionGroupLane {
+            id: "package-lane".into(),
+            operation_label: "package-operation".into(),
+            selector: 0x46,
+            branch: 0x11,
+            object_indices: [1, 2, 3, 4],
+            raw_object_indices: std::array::from_fn(|index| vec![0xf0, index as u8 + 1]),
+            data_blocks: blocks.clone(),
+            payload_offset: 20,
+            source_offset: 120,
+            reference_source_offsets: [132, 134, 141, 143],
+        };
+        let group = FeatureSimpleHoleConstructionGroup {
+            id: "simple-hole-group".into(),
+            first_data_blocks: [blocks[0].clone(), blocks[1].clone()],
+            second_data_blocks: [blocks[2].clone(), blocks[3].clone()],
+            operation_labels: vec!["simple-hole-1".into(), "simple-hole-2".into()],
+            scalar_lanes: vec!["scalar-1".into(), "scalar-2".into()],
+            block_references: vec!["references-1".into(), "references-2".into()],
+        };
+
+        let uses = feature_hole_package_construction_group_uses(
+            std::slice::from_ref(&lane),
+            std::slice::from_ref(&group),
+        );
+        assert_eq!(uses.len(), 1);
+        assert_eq!(uses[0].operation_label, lane.operation_label);
+        assert_eq!(uses[0].construction_group_lane, lane.id);
+        assert_eq!(uses[0].simple_hole_construction_group, group.id);
+
+        assert!(feature_hole_package_construction_group_uses(
+            &[lane.clone(), lane.clone()],
+            std::slice::from_ref(&group),
+        )
+        .is_empty());
+        assert!(feature_hole_package_construction_group_uses(
+            std::slice::from_ref(&lane),
+            &[group.clone(), group],
+        )
+        .is_empty());
     }
 
     #[test]

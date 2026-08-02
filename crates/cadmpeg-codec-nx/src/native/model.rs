@@ -129,6 +129,10 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_simple_hole_repeated_scalar_lane_block_references:
         Vec<FeatureSimpleHoleRepeatedScalarLaneBlockReferences>,
     pub(crate) feature_simple_hole_construction_groups: Vec<FeatureSimpleHoleConstructionGroup>,
+    pub(crate) feature_hole_package_construction_group_lanes:
+        Vec<FeatureHolePackageConstructionGroupLane>,
+    pub(crate) feature_hole_package_construction_group_uses:
+        Vec<FeatureHolePackageConstructionGroupUse>,
     pub(crate) feature_body_references: Vec<FeatureBodyReference>,
     pub(crate) feature_body_segment_uses: Vec<FeatureBodySegmentUse>,
     pub(crate) feature_body_data_block_uses: Vec<FeatureBodyDataBlockUse>,
@@ -359,6 +363,13 @@ impl NativeModel {
             &feature_simple_hole_repeated_scalar_lanes,
             &feature_simple_hole_repeated_scalar_lane_block_references,
         );
+        let feature_hole_package_construction_group_lanes =
+            feature_hole_package_construction_group_lanes(container);
+        let feature_hole_package_construction_group_uses =
+            feature_hole_package_construction_group_uses(
+                &feature_hole_package_construction_group_lanes,
+                &feature_simple_hole_construction_groups,
+            );
         let feature_body_references = feature_body_references(container);
         let data_blocks = data_blocks(container);
         let feature_body_reference_occurrences = feature_body_reference_occurrences(container);
@@ -892,6 +903,8 @@ impl NativeModel {
                 feature_simple_hole_repeated_scalar_lanes,
                 feature_simple_hole_repeated_scalar_lane_block_references,
                 feature_simple_hole_construction_groups,
+                feature_hole_package_construction_group_lanes,
+                feature_hole_package_construction_group_uses,
                 feature_body_references,
                 feature_body_segment_uses,
                 feature_body_data_block_uses,

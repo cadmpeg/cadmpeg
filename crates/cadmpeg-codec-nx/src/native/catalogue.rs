@@ -1972,6 +1972,44 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "feature_hole_package_construction_group_lanes",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        note: None,
+        emit: |m, r, ns| {
+            emit_arena(
+                &m.features.feature_hole_package_construction_group_lanes,
+                r,
+                ns,
+            )
+        },
+        len: |m| {
+            m.features
+                .feature_hole_package_construction_group_lanes
+                .len()
+        },
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_hole_package_construction_group_uses",
+        tag: None,
+        exactness: Exactness::Derived,
+        note: None,
+        emit: |m, r, ns| {
+            emit_arena(
+                &m.features.feature_hole_package_construction_group_uses,
+                r,
+                ns,
+            )
+        },
+        len: |m| {
+            m.features
+                .feature_hole_package_construction_group_uses
+                .len()
+        },
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "feature_datum_csys_constructions",
         tag: None,
         exactness: Exactness::ByteExact,

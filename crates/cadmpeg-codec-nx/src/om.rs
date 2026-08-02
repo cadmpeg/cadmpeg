@@ -1413,6 +1413,19 @@ pub struct SimpleHoleRepeatedScalarLaneBlockReferences {
     pub offsets: [[usize; 2]; 2],
 }
 
+/// Four construction-block references carried by a `HOLE PACKAGE` payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HolePackageConstructionGroupLane {
+    /// Payload-relative offset of the fixed lane prefix.
+    pub offset: usize,
+    /// Compact selector preceding the repeated branch byte.
+    pub selector: u8,
+    /// Branch byte repeated between the two reference pairs.
+    pub branch: u8,
+    /// Ordered first and second construction-block pairs.
+    pub references: [PayloadObjectReference; 4],
+}
+
 /// Width form of one self-delimiting operation-payload scalar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PayloadScalarEncoding {
@@ -2004,6 +2017,74 @@ pub fn simple_hole_repeated_scalar_lane_block_references(
         second,
         offsets: [first_offsets, second_offsets],
     })
+}
+
+/// Decode the unique four-block construction-group lane in a `HOLE PACKAGE` payload.
+pub fn hole_package_construction_group_lane(
+    record: OperationRecord<'_>,
+) -> Option<HolePackageConstructionGroupLane> {
+    const PREFIX: [u8; 5] = [0x00, 0x00, 0x01, 0x00, 0x00];
+    const ZEROES: [u8; 4] = [0; 4];
+    const SUFFIX: [u8; 3] = [0x00, 0x00, 0xff];
+    if record.label.value != "HOLE PACKAGE" {
+        return None;
+    }
+    let mut matches = Vec::new();
+    for start in 0..record.payload.len().saturating_sub(PREFIX.len()) {
+        if record.payload.get(start..start + PREFIX.len()) != Some(&PREFIX) {
+            continue;
+        }
+        let Some(lane) = (|| {
+            let selector = *record.payload.get(start + 5)?;
+            let branch = *record.payload.get(start + 7)?;
+            if selector == 0
+                || branch == 0
+                || record.payload.get(start + 6) != Some(&0)
+                || record.payload.get(start + 8..start + 12) != Some(&ZEROES)
+            {
+                return None;
+            }
+            let mut at = start + 12;
+            let mut references = Vec::with_capacity(4);
+            for ordinal in 0..4 {
+                if ordinal == 2 {
+                    if record.payload.get(at) != Some(&branch)
+                        || record.payload.get(at + 1..at + 5) != Some(&ZEROES)
+                    {
+                        return None;
+                    }
+                    at += 5;
+                }
+                let reference_offset = at;
+                let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+                if !matches!(record.payload.get(at), Some(0xf0 | 0xf1)) {
+                    return None;
+                }
+                references.push(PayloadObjectReference {
+                    offset: record.payload_offset + reference_offset,
+                    object_index,
+                    raw_object_index: record.payload.get(at..at + width)?.to_vec(),
+                });
+                at += width;
+            }
+            if record.payload.get(at..at + SUFFIX.len()) != Some(&SUFFIX) {
+                return None;
+            }
+            Some(HolePackageConstructionGroupLane {
+                offset: start,
+                selector,
+                branch,
+                references: references.try_into().ok()?,
+            })
+        })() else {
+            continue;
+        };
+        matches.push(lane);
+    }
+    let [lane] = matches.as_slice() else {
+        return None;
+    };
+    Some(lane.clone())
 }
 
 /// Decode the unique counted reference field in a bounded `SKETCH` payload.

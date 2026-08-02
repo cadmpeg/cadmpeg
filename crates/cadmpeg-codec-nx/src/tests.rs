@@ -2955,6 +2955,56 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
 }
 
 #[test]
+fn om_hole_package_lane_retains_the_exact_four_block_group() {
+    let payload = [
+        0x7e, 0x00, 0x00, 0x01, 0x00, 0x00, 0x46, 0x00, 0x11, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xcd,
+        0xf0, 0xce, 0x11, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xcf, 0xf0, 0xd0, 0x00, 0x00, 0xff, 0x7f,
+    ];
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: &payload,
+        payload_offset: 200,
+        payload: &payload,
+        label: crate::om::OperationLabel {
+            header_offset: 100,
+            offset: 120,
+            value: "HOLE PACKAGE",
+            object_indices: [None; 4],
+            object_index_offsets: [0; 4],
+        },
+    };
+    let lane = crate::om::hole_package_construction_group_lane(record).unwrap();
+    assert_eq!(lane.offset, 1);
+    assert_eq!(lane.selector, 0x46);
+    assert_eq!(lane.branch, 0x11);
+    assert_eq!(
+        lane.references
+            .iter()
+            .map(|reference| reference.object_index)
+            .collect::<Vec<_>>(),
+        [205, 206, 207, 208]
+    );
+    assert_eq!(
+        lane.references
+            .iter()
+            .map(|reference| reference.offset)
+            .collect::<Vec<_>>(),
+        [213, 215, 222, 224]
+    );
+
+    let mut mismatched_branch = payload;
+    mismatched_branch[17] = 0x12;
+    assert!(
+        crate::om::hole_package_construction_group_lane(crate::om::OperationRecord {
+            bytes: &mismatched_branch,
+            payload: &mismatched_branch,
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
 fn om_datum_csys_reference_lane_requires_eight_canonical_indices() {
     let mut payload = vec![
         0x13, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
@@ -13917,6 +13967,8 @@ mod golden {
         "feature_input_column_row_uses",
         "feature_input_column_targets",
         "feature_identical_instance_output_lanes",
+        "feature_hole_package_construction_group_lanes",
+        "feature_hole_package_construction_group_uses",
         "feature_multi_instance_output_lanes",
         "feature_operation_body_11_continuations",
         "feature_operation_body_members",
@@ -14723,7 +14775,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (214), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (216), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -14732,7 +14784,7 @@ mod golden {
     fn catalogue_arenas_match_known_arenas() {
         use crate::native::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
 
-        assert_eq!(CATALOGUE.len(), 214, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 216, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE[note_group_a_end()].arena,
             "feature_parameter_uses",

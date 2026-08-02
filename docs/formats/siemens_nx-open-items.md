@@ -450,6 +450,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the class grammars to transfer the remaining fast-load state as typed data.
 
+### OM-30. Hole-package feature hierarchy
+
+**Question.** Does a `HOLE PACKAGE` operation own its related `SIMPLE HOLE` operations as child features, replace them as the authored neutral feature, or coexist with them as an independent operation?
+
+**Known.** `siemens_nx.md` defines the exact four-block package lane and its unambiguous equality relation to a simple-hole construction group. The equality does not encode hierarchy, dependency direction, or neutral feature identity.
+
+**Need.** We must identify the serialized hierarchy or operation-role field before collapsing, parenting, or suppressing either neutral feature family.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream

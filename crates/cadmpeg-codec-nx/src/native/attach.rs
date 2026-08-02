@@ -555,6 +555,12 @@ fn attach_feature_operations(
         .as_slice();
     let simple_hole_construction_groups =
         features.feature_simple_hole_construction_groups.as_slice();
+    let hole_package_construction_group_lanes = features
+        .feature_hole_package_construction_group_lanes
+        .as_slice();
+    let hole_package_construction_group_uses = features
+        .feature_hole_package_construction_group_uses
+        .as_slice();
     let stream = annotations.stream("nx:container");
     let base_ordinal = ir.model.features.len() as u64;
     let booleans = booleans
@@ -1499,6 +1505,44 @@ fn attach_feature_operations(
             simple_hole_repeated_scalar_lane_block_references,
             simple_hole_construction_groups,
         ));
+        for lane in hole_package_construction_group_lanes
+            .iter()
+            .filter(|lane| lane.operation_label == label.id)
+        {
+            source_properties.insert(
+                "hole_package_construction_group_lane".to_string(),
+                lane.id.clone(),
+            );
+        }
+        for group_use in hole_package_construction_group_uses {
+            let group = simple_hole_construction_groups
+                .iter()
+                .find(|group| group.id == group_use.simple_hole_construction_group);
+            if group_use.operation_label == label.id {
+                source_properties.insert(
+                    "hole_package_construction_group_use".to_string(),
+                    group_use.id.clone(),
+                );
+                source_properties.insert(
+                    "simple_hole_construction_group".to_string(),
+                    group_use.simple_hole_construction_group.clone(),
+                );
+            } else if group.is_some_and(|group| {
+                group
+                    .operation_labels
+                    .iter()
+                    .any(|operation| operation == &label.id)
+            }) {
+                source_properties.insert(
+                    "hole_package_construction_group_use".to_string(),
+                    group_use.id.clone(),
+                );
+                source_properties.insert(
+                    "hole_package_operation".to_string(),
+                    group_use.operation_label.clone(),
+                );
+            }
+        }
         for (slot, value) in label.object_indices.iter().enumerate() {
             source_properties.insert(
                 format!("object_index.{slot}"),
