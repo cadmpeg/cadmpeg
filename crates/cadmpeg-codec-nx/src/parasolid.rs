@@ -152,6 +152,86 @@ pub struct Entity53DoubleRecord {
     pub values: Vec<f64>,
 }
 
+/// One counted type-85 point-value record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Entity55PointRecord {
+    /// Inflated-stream offset of the `00 55` tag.
+    pub offset: usize,
+    /// Exact framed record length.
+    pub byte_len: usize,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Ordered finite xyz point values.
+    pub values: Vec<[f64; 3]>,
+}
+
+/// One counted type-86 vector-value record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Entity56VectorRecord {
+    /// Inflated-stream offset of the `00 56` tag.
+    pub offset: usize,
+    /// Exact framed record length.
+    pub byte_len: usize,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Ordered finite xyz vector values.
+    pub values: Vec<[f64; 3]>,
+}
+
+/// One counted type-87 axis-value record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Entity57AxisRecord {
+    /// Inflated-stream offset of the `00 57` tag.
+    pub offset: usize,
+    /// Exact framed record length.
+    pub byte_len: usize,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Ordered axes, each serialized as two finite xyz vectors.
+    pub values: Vec<[[f64; 3]; 2]>,
+}
+
+/// One counted type-88 tag-value record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Entity58TagRecord {
+    /// Inflated-stream offset of the `00 58` tag.
+    pub offset: usize,
+    /// Exact framed record length.
+    pub byte_len: usize,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Ordered big-endian tag values.
+    pub values: Vec<u32>,
+}
+
+/// One counted type-89 direction-value record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Entity59DirectionRecord {
+    /// Inflated-stream offset of the `00 59` tag.
+    pub offset: usize,
+    /// Exact framed record length.
+    pub byte_len: usize,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Ordered finite xyz direction values.
+    pub values: Vec<[f64; 3]>,
+}
+
+/// One counted type-98 Unicode-value record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Entity62UnicodeRecord {
+    /// Inflated-stream offset of the `00 62` tag.
+    pub offset: usize,
+    /// Exact framed record length.
+    pub byte_len: usize,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Ordered big-endian UTF-16 code units.
+    pub code_units: Vec<u16>,
+    /// Exact Unicode scalar string represented by `code_units`.
+    pub value: String,
+}
+
 /// One counted type-99 attribute field-name record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldNamesRecord {
@@ -176,6 +256,48 @@ pub fn entity_52_integer_records(bytes: &[u8]) -> Vec<Entity52IntegerRecord> {
 pub fn entity_53_double_records(bytes: &[u8]) -> Vec<Entity53DoubleRecord> {
     (0..bytes.len())
         .filter_map(|offset| entity_53_double_record_at(bytes, offset))
+        .collect()
+}
+
+/// Decode counted type-85 point-value records.
+pub fn entity_55_point_records(bytes: &[u8]) -> Vec<Entity55PointRecord> {
+    (0..bytes.len())
+        .filter_map(|offset| entity_55_point_record_at(bytes, offset))
+        .collect()
+}
+
+/// Decode counted type-86 vector-value records.
+pub fn entity_56_vector_records(bytes: &[u8]) -> Vec<Entity56VectorRecord> {
+    (0..bytes.len())
+        .filter_map(|offset| entity_56_vector_record_at(bytes, offset))
+        .collect()
+}
+
+/// Decode counted type-87 axis-value records.
+pub fn entity_57_axis_records(bytes: &[u8]) -> Vec<Entity57AxisRecord> {
+    (0..bytes.len())
+        .filter_map(|offset| entity_57_axis_record_at(bytes, offset))
+        .collect()
+}
+
+/// Decode counted type-88 tag-value records.
+pub fn entity_58_tag_records(bytes: &[u8]) -> Vec<Entity58TagRecord> {
+    (0..bytes.len())
+        .filter_map(|offset| entity_58_tag_record_at(bytes, offset))
+        .collect()
+}
+
+/// Decode counted type-89 direction-value records.
+pub fn entity_59_direction_records(bytes: &[u8]) -> Vec<Entity59DirectionRecord> {
+    (0..bytes.len())
+        .filter_map(|offset| entity_59_direction_record_at(bytes, offset))
+        .collect()
+}
+
+/// Decode counted type-98 Unicode-value records.
+pub fn entity_62_unicode_records(bytes: &[u8]) -> Vec<Entity62UnicodeRecord> {
+    (0..bytes.len())
+        .filter_map(|offset| entity_62_unicode_record_at(bytes, offset))
         .collect()
 }
 
@@ -238,6 +360,108 @@ pub(crate) fn entity_53_double_record_at(
         byte_len: record.byte_len,
         xmt: record.xmt,
         values: record.values,
+    })
+}
+
+fn finite_vector(value: &[u8]) -> Option<[f64; 3]> {
+    let values = value
+        .chunks_exact(8)
+        .map(|component| Some(f64::from_be_bytes(component.try_into().ok()?)))
+        .collect::<Option<Vec<_>>>()?;
+    let values: [f64; 3] = values.try_into().ok()?;
+    values
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(values)
+}
+
+/// Decode one complete type-85 point-value record at `offset`.
+pub(crate) fn entity_55_point_record_at(
+    bytes: &[u8],
+    offset: usize,
+) -> Option<Entity55PointRecord> {
+    let record = counted_value_record_at(bytes, offset, 0x55, 24, finite_vector)?;
+    Some(Entity55PointRecord {
+        offset: record.offset,
+        byte_len: record.byte_len,
+        xmt: record.xmt,
+        values: record.values,
+    })
+}
+
+/// Decode one complete type-86 vector-value record at `offset`.
+pub(crate) fn entity_56_vector_record_at(
+    bytes: &[u8],
+    offset: usize,
+) -> Option<Entity56VectorRecord> {
+    let record = counted_value_record_at(bytes, offset, 0x56, 24, finite_vector)?;
+    Some(Entity56VectorRecord {
+        offset: record.offset,
+        byte_len: record.byte_len,
+        xmt: record.xmt,
+        values: record.values,
+    })
+}
+
+/// Decode one complete type-87 axis-value record at `offset`.
+pub(crate) fn entity_57_axis_record_at(bytes: &[u8], offset: usize) -> Option<Entity57AxisRecord> {
+    let record = counted_value_record_at(bytes, offset, 0x57, 24, finite_vector)?;
+    (record.values.len() % 2 == 0).then_some(())?;
+    let values = record
+        .values
+        .chunks_exact(2)
+        .map(|axis| axis.try_into().expect("two vectors per axis"))
+        .collect();
+    Some(Entity57AxisRecord {
+        offset: record.offset,
+        byte_len: record.byte_len,
+        xmt: record.xmt,
+        values,
+    })
+}
+
+/// Decode one complete type-88 tag-value record at `offset`.
+pub(crate) fn entity_58_tag_record_at(bytes: &[u8], offset: usize) -> Option<Entity58TagRecord> {
+    let record = counted_value_record_at(bytes, offset, 0x58, 4, |value| {
+        Some(u32::from_be_bytes(value.try_into().ok()?))
+    })?;
+    Some(Entity58TagRecord {
+        offset: record.offset,
+        byte_len: record.byte_len,
+        xmt: record.xmt,
+        values: record.values,
+    })
+}
+
+/// Decode one complete type-89 direction-value record at `offset`.
+pub(crate) fn entity_59_direction_record_at(
+    bytes: &[u8],
+    offset: usize,
+) -> Option<Entity59DirectionRecord> {
+    let record = counted_value_record_at(bytes, offset, 0x59, 24, finite_vector)?;
+    Some(Entity59DirectionRecord {
+        offset: record.offset,
+        byte_len: record.byte_len,
+        xmt: record.xmt,
+        values: record.values,
+    })
+}
+
+/// Decode one complete type-98 Unicode-value record at `offset`.
+pub(crate) fn entity_62_unicode_record_at(
+    bytes: &[u8],
+    offset: usize,
+) -> Option<Entity62UnicodeRecord> {
+    let record = counted_value_record_at(bytes, offset, 0x62, 2, |value| {
+        Some(u16::from_be_bytes(value.try_into().ok()?))
+    })?;
+    let value = String::from_utf16(&record.values).ok()?;
+    Some(Entity62UnicodeRecord {
+        offset: record.offset,
+        byte_len: record.byte_len,
+        xmt: record.xmt,
+        code_units: record.values,
+        value,
     })
 }
 

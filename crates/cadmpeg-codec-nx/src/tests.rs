@@ -6050,6 +6050,90 @@ fn parasolid_entity_53_doubles_require_complete_finite_values() {
 }
 
 #[test]
+fn parasolid_transformable_attribute_values_preserve_vector_and_axis_grouping() {
+    let vector_record = |tag: u8, xmt: u16, vectors: &[[f64; 3]]| {
+        let mut bytes = vec![0x00, tag];
+        bytes.extend_from_slice(
+            &u32::try_from(vectors.len())
+                .expect("test vector count fits u32")
+                .to_be_bytes(),
+        );
+        bytes.extend_from_slice(&xmt.to_be_bytes());
+        for vector in vectors {
+            for component in vector {
+                bytes.extend_from_slice(&component.to_be_bytes());
+            }
+        }
+        bytes
+    };
+    let vectors = [[1.0, 2.0, 3.0], [-4.0, 5.0, 6.0]];
+
+    let points = crate::parasolid::entity_55_point_records(&vector_record(0x55, 20, &vectors));
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].values, vectors);
+    let vector_values =
+        crate::parasolid::entity_56_vector_records(&vector_record(0x56, 21, &vectors));
+    assert_eq!(vector_values.len(), 1);
+    assert_eq!(vector_values[0].values, vectors);
+    let directions =
+        crate::parasolid::entity_59_direction_records(&vector_record(0x59, 22, &vectors));
+    assert_eq!(directions.len(), 1);
+    assert_eq!(directions[0].values, vectors);
+
+    let four_vectors = [vectors[0], vectors[1], [7.0, 8.0, 9.0], [0.0, 1.0, 0.0]];
+    let axes = crate::parasolid::entity_57_axis_records(&vector_record(0x57, 23, &four_vectors));
+    assert_eq!(axes.len(), 1);
+    assert_eq!(
+        axes[0].values,
+        [
+            [four_vectors[0], four_vectors[1]],
+            [four_vectors[2], four_vectors[3]],
+        ]
+    );
+    assert!(crate::parasolid::entity_57_axis_records(
+        &vector_record(0x57, 23, &four_vectors[..3],)
+    )
+    .is_empty());
+
+    let mut nonfinite = vectors;
+    nonfinite[1][2] = f64::INFINITY;
+    assert!(
+        crate::parasolid::entity_55_point_records(&vector_record(0x55, 20, &nonfinite)).is_empty()
+    );
+}
+
+#[test]
+fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
+    let tags = [
+        0x00, 0x58, 0, 0, 0, 2, 0, 24, 0, 0, 0, 7, 0xff, 0xff, 0xff, 0xff,
+    ];
+    let records = crate::parasolid::entity_58_tag_records(&tags);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].xmt, 24);
+    assert_eq!(records[0].values, [7, u32::MAX]);
+    assert!(crate::parasolid::entity_58_tag_records(&tags[..tags.len() - 1]).is_empty());
+
+    let code_units = [b'N' as u16, b'X' as u16, 0xd83d, 0xde80];
+    let mut unicode = vec![0x00, 0x62, 0xff];
+    unicode.extend_from_slice(&4u32.to_be_bytes());
+    unicode.extend_from_slice(&[0xff, 0xff, 0x00, 0x01]);
+    for code_unit in code_units {
+        unicode.extend_from_slice(&code_unit.to_be_bytes());
+    }
+    let records = crate::parasolid::entity_62_unicode_records(&unicode);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].xmt, 32_768);
+    assert_eq!(records[0].code_units, code_units);
+    assert_eq!(records[0].value, "NX🚀");
+    assert!(crate::parasolid::entity_62_unicode_records(&unicode[..unicode.len() - 1]).is_empty());
+
+    let mut invalid = unicode;
+    invalid[15..17].copy_from_slice(&0xd800u16.to_be_bytes());
+    invalid[17..19].copy_from_slice(&0x0041u16.to_be_bytes());
+    assert!(crate::parasolid::entity_62_unicode_records(&invalid).is_empty());
+}
+
+#[test]
 fn topology_rejects_shell_with_broken_face_ownership_chain() {
     let valid = topology_partition_stream();
     let graph = crate::topology::Graph::parse(&valid);
