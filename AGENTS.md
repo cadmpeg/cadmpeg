@@ -16,7 +16,7 @@ Multi-agent repository etiquette:
 
 Build and test operations:
 
-- Run several tests in one invocation: `cargo test name_a name_b`. Fast suite: `cargo test-fast`. Regenerate golden snapshots after an intended change: `UPDATE_GOLDEN=1 cargo test-fast golden`, then review the diff.
+- Run several tests in one invocation with filters after the separator: `cargo test -- name_a name_b`. Plain `cargo test name_a name_b` fails with `unexpected argument`. Fast suite: `cargo test-fast`. Regenerate golden snapshots after an intended change: `UPDATE_GOLDEN=1 cargo test-fast golden`, then review the diff.
 - The pre-commit gate scopes clippy and tests to the staged crates plus their workspace dependents. Triage a lint finding once and apply a targeted `#[allow]` with a comment; do not rerun the full gate against code you did not touch.
 - Changes to `cadmpeg-ir` or `cadmpeg-codec-core` fan out to every codec crate and diverge all goldens. Add struct fields through `Default` or constructor helpers and plan the fan-out before editing.
 - A successful decode is not a valid IR. Run `cadmpeg validate` on decoder output; it enforces ID-naming and topology conventions beyond decode success.
