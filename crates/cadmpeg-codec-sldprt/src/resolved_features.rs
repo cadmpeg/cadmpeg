@@ -35764,7 +35764,27 @@ pub(crate) fn project_relation_point_geometry(
             let Some(sketch) = sketches_by_feature.get(feature) else {
                 continue;
             };
-            let endpoints = line_endpoint_markers(marker, &markers_by_id);
+            let mut endpoints = line_endpoint_markers(marker, &markers_by_id);
+            if endpoints.len() != 2 {
+                endpoints = marker
+                    .links
+                    .iter()
+                    .filter_map(|link| markers_by_id.get(link.entity_ref.as_str()).copied())
+                    .filter(|endpoint| {
+                        endpoint.feature_ref == marker.feature_ref
+                            && endpoint.coordinates_m.is_some()
+                            && entities.iter().any(|entity| {
+                                entity.sketch == *sketch
+                                    && matches!(entity.geometry, SketchGeometry::Point { .. })
+                                    && (entity.native_ref.as_deref() == Some(endpoint.id.as_str())
+                                        || entity.geometry_ref.as_deref()
+                                            == Some(endpoint.id.as_str()))
+                            })
+                    })
+                    .collect::<Vec<_>>();
+                endpoints.sort_unstable_by_key(|endpoint| endpoint.offset);
+                endpoints.dedup_by_key(|endpoint| endpoint.id.as_str());
+            }
             let [first_marker, second_marker] = endpoints.as_slice() else {
                 continue;
             };
@@ -51257,14 +51277,6 @@ mod profile_join_tests {
         let mut relation_line = marker("relation-line", None);
         relation_line.offset = 84;
         relation_line.kind = SketchInputKind::LineOrCircle;
-        endpoint_a.links = vec![SketchInputLink {
-            local_id: 1,
-            entity_ref: relation_line.id.clone(),
-        }];
-        endpoint_b.links = vec![SketchInputLink {
-            local_id: 2,
-            entity_ref: relation_line.id.clone(),
-        }];
         let mut support_handle = marker("support-handle", None);
         support_handle.offset = 85;
         support_handle.links = vec![SketchInputLink {
@@ -51275,6 +51287,16 @@ mod profile_join_tests {
         qualified_curve.id = "sldprt:feature-input:sketch-entity#qualified-curve".into();
         qualified_curve.offset = 86;
         qualified_curve.kind = SketchInputKind::LineOrCircle;
+        relation_line.links = vec![
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: endpoint_a.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 2,
+                entity_ref: qualified_curve.id.clone(),
+            },
+        ];
         let mut coincident_point = marker("coincident-point", Some([0.002, 0.001]));
         coincident_point.offset = 87;
         markers.extend([
@@ -51435,9 +51457,13 @@ mod profile_join_tests {
         assert!(entities.iter().any(|entity| {
             entity.construction
                 && entity.native_ref.as_deref() == Some("relation-line")
-                && entity.endpoint_refs == ["endpoint-a", "endpoint-b"]
+                && entity.endpoint_refs
+                    == [
+                        "endpoint-a",
+                        "sldprt:feature-input:sketch-entity#qualified-curve",
+                    ]
                 && matches!(entity.geometry, SketchGeometry::Line { start, end }
-                    if start == Point2::new(1.0, 2.0) && end == Point2::new(4.0, 7.0))
+                    if start == Point2::new(1.0, 2.0) && end == Point2::new(2.5, 4.5))
         }));
         let loci = profile_loci_by_marker(
             std::slice::from_ref(&feature),
@@ -51447,8 +51473,8 @@ mod profile_join_tests {
         );
         assert_eq!(
             loci["sldprt:feature-input:sketch-entity#qualified-curve:qualified-point"],
-            vec![SketchLocus::Entity(SketchEntityId(
-                "sldprt:model:sketch-entity#relation-point:lane:86".into(),
+            vec![SketchLocus::End(SketchEntityId(
+                "sldprt:model:sketch-entity#relation-line:lane:84".into(),
             ))]
         );
         let markers = lane
@@ -51462,8 +51488,8 @@ mod profile_join_tests {
                 &markers,
                 &loci,
             ),
-            Some(SketchLocus::Entity(SketchEntityId(
-                "sldprt:model:sketch-entity#relation-point:lane:86".into(),
+            Some(SketchLocus::End(SketchEntityId(
+                "sldprt:model:sketch-entity#relation-line:lane:84".into(),
             )))
         );
     }
