@@ -10634,17 +10634,6 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             ),
             provenance: None,
         });
-    } else if sketch_feature_count != 0 && ir.model.sketch_constraints.is_empty() {
-        losses.push(LossNote {
-            code: LossKind::FeatureHistoryRetained,
-            severity: Severity::Warning,
-            message: format!(
-                "Decoded {} NX sketch record(s), but no sketch constraints were transferred because \
-                 their object-model field serialization and operand roles are unresolved.",
-                ir.model.sketches.len()
-            ),
-            provenance: None,
-        });
     }
 
     let native_sketch_entity_count = ir

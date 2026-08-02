@@ -13871,9 +13871,8 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     losses.clear();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
-    assert_eq!(losses.len(), 6);
+    assert_eq!(losses.len(), 5);
     assert!(!losses[4].message.contains("sketch"));
-    assert!(losses[5].message.contains("no sketch constraints"));
 }
 
 #[path = "integration_tests.rs"]
