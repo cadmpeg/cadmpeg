@@ -476,11 +476,16 @@ placement, UUID, and state fields.
 
 ### AM-03. Last-saved toggle stream
 
-**Question.** What is the field grammar and semantics of `/Root/UG_PART/LastSavedToggleInfoStream`?
+**Question.** Which native objects do the saved toggle identities address, and
+does an `On` or `Off` member control feature suppression, visibility, or another
+state domain?
 
-**Known.** `siemens_nx.md:245` through `siemens_nx.md:362` classify the stream and retain its bounded container entry.
+**Known.** `siemens_nx.md` defines the complete counted stream envelope and
+retains each 32-hex-digit identity and `On`/`Off` state exactly. The toggle
+identities have no proven join to feature-operation records.
 
-**Need.** We must know the grammar to decode the saved toggle state as typed data.
+**Need.** We must identify the addressed object namespace before projecting any
+member as a neutral suppression or visibility state.
 
 ### AM-04. `DisplayJT` outer-index values
 

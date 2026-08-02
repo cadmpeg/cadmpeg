@@ -3,7 +3,7 @@
 //!
 //! [`NativeModel::extract`] runs the full extraction dependency DAG in the same
 //! hand-ordered topological order the decode tier previously inlined, grouping
-//! the resulting record vectors into five domain sub-structs. Extraction is
+//! the resulting record vectors into domain sub-structs. Extraction is
 //! infallible: malformed data is omitted, never surfaced as an error.
 
 use crate::container::Container;
@@ -13,6 +13,7 @@ use cadmpeg_codec_core::decode::{DecodeContext, View};
 #[allow(clippy::wildcard_imports)]
 use super::{
     display_jt::*, features::*, om::*, parasolid::*, segments::*, structure::*, substrate::*,
+    toggle::*,
 };
 
 /// Records extracted from the `display_jt` domain.
@@ -106,6 +107,12 @@ pub(crate) struct StructureRecords {
     pub(crate) uuids: Vec<FastLoadComponentUuid>,
     pub(crate) occurrences: Vec<FastLoadComponentOccurrence>,
     pub(crate) object_groups: Vec<FastLoadComponentObjectGroup>,
+}
+
+/// Records extracted from the saved toggle-information stream.
+pub(crate) struct ToggleRecords {
+    pub(crate) streams: Vec<SavedToggleStream>,
+    pub(crate) entries: Vec<SavedToggleEntry>,
 }
 
 /// Records extracted from the `features` domain.
@@ -271,6 +278,7 @@ pub(crate) struct NativeModel {
     pub(crate) parasolid: ParasolidRecords,
     pub(crate) segments: SegmentRecords,
     pub(crate) structure: StructureRecords,
+    pub(crate) toggle: ToggleRecords,
     pub(crate) features: FeatureRecords,
     pub(crate) om: OmRecords,
 }
@@ -786,6 +794,7 @@ impl NativeModel {
             &fast_load_component_occurrences,
             &object_uuid_values,
         );
+        let (saved_toggle_streams, saved_toggle_entries) = saved_toggle_records(container);
 
         NativeModel {
             display_jt: DisplayJtRecords {
@@ -867,6 +876,10 @@ impl NativeModel {
                 uuids: fast_load_component_uuids,
                 occurrences: fast_load_component_occurrences,
                 object_groups: fast_load_component_object_groups,
+            },
+            toggle: ToggleRecords {
+                streams: saved_toggle_streams,
+                entries: saved_toggle_entries,
             },
             features: FeatureRecords {
                 feature_operation_labels,

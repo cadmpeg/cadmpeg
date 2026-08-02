@@ -264,7 +264,29 @@ opaque stream. Its directory identity and exact bounded payload remain one
 content unit; marker-shaped bytes inside it do not create an implicit known
 stream.
 
-### 2.2 Fast-load component roster
+### 2.2 Saved toggle-information stream
+
+`/Root/UG_PART/LastSavedToggleInfoStream` is one atomic payload:
+
+```text
+version:u8 = 1
+count:u32 LE
+member[count]
+trailer:byte[4]
+
+member := byte_len:u16 LE, value:utf8[byte_len]
+value  := toggle_id, ":", state
+toggle_id := 32 lowercase hexadecimal digits
+state := "On" | "Off"
+```
+
+The count covers all members and the four-byte trailer ends the entry. A
+member retains its order, exact length word, toggle identity, state, and source
+offsets. The stream retains the exact count word and terminal word. A version,
+count, member, UTF-8, identity, state, or terminal-boundary mismatch rejects the
+typed stream atomically.
+
+### 2.3 Fast-load component roster
 
 `/Root/FastLoad/Structure` begins with the twelve-byte envelope
 `ff ff ff ff 00 00 00 00 payload_len:u32 BE`. `payload_len + 12` equals the

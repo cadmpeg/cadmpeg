@@ -24,7 +24,9 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, NativeConvertError, NativeNamespa
 
 use super::model::NativeModel;
 #[allow(clippy::wildcard_imports)]
-use super::{display_jt::*, features::*, om::*, parasolid::*, segments::*, structure::*};
+use super::{
+    display_jt::*, features::*, om::*, parasolid::*, segments::*, structure::*, toggle::*,
+};
 
 /// One native record family: its arena, note metadata, and the fns that
 /// serialize and (optionally) annotate it.
@@ -87,6 +89,18 @@ fn emit_arena<T: Serialize>(
 /// offset the note points at.
 trait ContainerNoted {
     fn container_note(&self) -> (&str, u64);
+}
+
+impl ContainerNoted for SavedToggleStream {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+
+impl ContainerNoted for SavedToggleEntry {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
 }
 
 /// A record noted into its own `nx:s{ordinal}` stream: its id, the stream
@@ -1845,6 +1859,24 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: Some(|m, r, a| note_container(&m.structure.object_groups, r, a)),
         emit: |m, r, ns| emit_arena(&m.structure.object_groups, r, ns),
         len: |m| m.structure.object_groups.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "saved_toggle_streams",
+        tag: Some("SAVED_TOGGLE_STREAM"),
+        exactness: Exactness::ByteExact,
+        note: Some(|m, r, a| note_container(&m.toggle.streams, r, a)),
+        emit: |m, r, ns| emit_arena(&m.toggle.streams, r, ns),
+        len: |m| m.toggle.streams.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "saved_toggle_entries",
+        tag: Some("SAVED_TOGGLE_ENTRY"),
+        exactness: Exactness::ByteExact,
+        note: Some(|m, r, a| note_container(&m.toggle.entries, r, a)),
+        emit: |m, r, ns| emit_arena(&m.toggle.entries, r, ns),
+        len: |m| m.toggle.entries.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
