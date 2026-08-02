@@ -39,6 +39,65 @@ pub trait ArenaEntity: private::Sealed + EntitySchema + Sized {
     fn arena_mut(model: &mut Model) -> &mut Vec<Self>;
 }
 
+/// Registry-complete arena lengths captured at a model transaction boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelCheckpoint {
+    lengths: [usize; EntityKind::ALL.len()],
+}
+
+impl ModelCheckpoint {
+    /// Captures every neutral arena length.
+    pub fn capture(model: &Model) -> Self {
+        let mut lengths = Vec::with_capacity(EntityKind::ALL.len());
+        macro_rules! capture_lengths {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+                $(lengths.push(model.$field.len());)*
+            };
+        }
+        crate::document::arena_registry!(capture_lengths);
+        Self {
+            lengths: lengths
+                .try_into()
+                .expect("arena registry and EntityKind::ALL have equal length"),
+        }
+    }
+
+    fn length<T: ArenaEntity>(&self) -> usize {
+        let index = EntityKind::ALL
+            .iter()
+            .position(|kind| *kind == T::KIND)
+            .expect("arena entity kind is registered");
+        self.lengths[index]
+    }
+
+    /// Returns the captured length of one typed arena.
+    pub fn arena_len<T: ArenaEntity>(&self) -> usize {
+        self.length::<T>()
+    }
+
+    /// Returns entities of `T` added since this checkpoint.
+    pub fn added<'a, T: ArenaEntity>(&self, model: &'a Model) -> Option<&'a [T]> {
+        T::arena(model).get(self.length::<T>()..)
+    }
+
+    /// Returns mutable entities of `T` added since this checkpoint.
+    pub fn added_mut<'a, T: ArenaEntity>(&self, model: &'a mut Model) -> Option<&'a mut [T]> {
+        T::arena_mut(model).get_mut(self.length::<T>()..)
+    }
+
+    /// Counts all entities added since this checkpoint, rejecting arena shrinkage.
+    pub fn added_count(&self, model: &Model) -> Option<usize> {
+        let after = Self::capture(model);
+        after
+            .lengths
+            .into_iter()
+            .zip(self.lengths)
+            .try_fold(0_usize, |total, (after, before)| {
+                total.checked_add(after.checked_sub(before)?)
+            })
+    }
+}
+
 macro_rules! impl_arena_entities {
     ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
         $(
@@ -141,6 +200,11 @@ impl ModelDraft {
                 },
             );
         }
+    }
+
+    /// Retains exactness notes selected by identity.
+    pub fn retain_exactness(&mut self, mut keep: impl FnMut(&str) -> bool) {
+        self.exactness.retain(|identity, _| keep(identity));
     }
 
     /// Adds a staged loss note.
