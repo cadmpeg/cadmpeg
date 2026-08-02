@@ -4692,9 +4692,40 @@ mod history_reference_tests {
             allow_multi_profile_faces: None,
         };
 
-        inherit_configuration_hole_semantics(&mut configured.definition, &base.definition);
+        inherit_configuration_shared_semantics(&mut configured.definition, &base.definition);
 
         assert_eq!(configured.definition, base.definition);
+    }
+
+    #[test]
+    fn configuration_offset_plane_inherits_shared_reference() {
+        use cadmpeg_ir::features::{DatumPlaneReference, FaceSelection, FeatureDefinition, Length};
+
+        let base = FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Faces(vec!["test:model:face#1".into()]),
+                origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            }),
+            distance: Length(5.0),
+        };
+        let mut configured = FeatureDefinition::DatumOffsetPlane {
+            reference: None,
+            distance: Length(8.0),
+        };
+
+        inherit_configuration_shared_semantics(&mut configured, &base);
+
+        let FeatureDefinition::DatumOffsetPlane {
+            reference,
+            distance,
+        } = configured
+        else {
+            panic!("offset-plane definition retained its variant");
+        };
+        assert!(reference.is_some());
+        assert_eq!(distance, Length(8.0));
     }
 
     #[test]
@@ -9120,16 +9151,29 @@ pub(crate) fn project_configuration_sketch_states(
     for configuration in &mut ir.model.configurations {
         for (feature_id, state) in &mut configuration.feature_states {
             if let Some(base_definition) = base.get(feature_id) {
-                inherit_configuration_hole_semantics(&mut state.definition, base_definition);
+                inherit_configuration_shared_semantics(&mut state.definition, base_definition);
             }
         }
     }
 }
 
-fn inherit_configuration_hole_semantics(
+fn inherit_configuration_shared_semantics(
     definition: &mut FeatureDefinition,
     base_definition: &FeatureDefinition,
 ) {
+    if let (
+        FeatureDefinition::DatumOffsetPlane { reference, .. },
+        FeatureDefinition::DatumOffsetPlane {
+            reference: base_reference,
+            ..
+        },
+    ) = (&mut *definition, base_definition)
+    {
+        if reference.is_none() {
+            reference.clone_from(base_reference);
+        }
+        return;
+    }
     let FeatureDefinition::Hole {
         face,
         placements,
