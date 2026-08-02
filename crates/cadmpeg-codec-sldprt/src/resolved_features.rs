@@ -10369,6 +10369,55 @@ mod marker_tests {
     }
 
     #[test]
+    fn current_compact_84_line_falls_back_to_zero_based_point_roster() {
+        let mut payload = vec![0; 84 + SKETCH_MARKER.len()];
+        payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[23..31].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[58..60].copy_from_slice(&1u16.to_le_bytes());
+        payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[80..84].copy_from_slice(&2u32.to_le_bytes());
+        payload[84..].copy_from_slice(SKETCH_MARKER);
+
+        let entity =
+            |id: &str, offset, object_index, coordinates_m: Option<[f64; 2]>| SketchInputEntity {
+                id: id.into(),
+                parent: "lane".into(),
+                feature_ref: Some("sketch".into()),
+                ordinal: 0,
+                offset,
+                object_index,
+                local_id: None,
+                kind: if coordinates_m.is_some() {
+                    SketchInputKind::Point
+                } else {
+                    SketchInputKind::LineOrCircle
+                },
+                state_value: Some(1.0),
+                coordinates_m,
+                links: Vec::new(),
+                link_selector: None,
+            };
+        let curve = entity("curve", 0, Some(1), None);
+        let first = entity("first", 10, Some(10), Some([0.0, 0.0]));
+        let second = entity("second", 20, Some(11), Some([1.0, 0.0]));
+        let markers = [&curve, &first, &second];
+
+        assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
+        assert_eq!(
+            roster_curve_endpoint_markers(&payload, &curve, &markers)
+                .iter()
+                .map(|endpoint| endpoint.id.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
+    }
+
+    #[test]
     fn current_compact_104_profile_record_is_a_line() {
         let mut payload = vec![0; 104 + SKETCH_MARKER.len()];
         payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
@@ -43319,6 +43368,10 @@ fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Option<us
     if prefix == SKETCH_MARKER {
         return if current_compact_104_indexed_line_endpoint_indices(payload, offset).is_some() {
             Some(64)
+        } else if compact_indexed_curve_endpoint_indices(payload, offset).is_some()
+            && sketch_marker_prefix_at(payload, offset.checked_add(84)?)
+        {
+            Some(56)
         } else {
             (wide_indexed_curve_endpoint_indices(payload, offset).is_some()
                 && sketch_marker_prefix_at(payload, offset.checked_add(92)?))
