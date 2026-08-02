@@ -352,7 +352,7 @@ fn container_refuses_a_file_that_is_not_a_zip() {
         .args(["inspect", "container", file.to_str().unwrap()])
         .assert()
         .code(2)
-        .stderr(predicate::str::contains("not a readable ZIP container"));
+        .stderr(predicate::str::contains("as a ZIP container"));
 }
 
 #[test]

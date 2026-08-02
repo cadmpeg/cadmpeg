@@ -249,9 +249,9 @@ fn read(args: &ReadArgs) -> Result<()> {
     let mut file =
         File::open(&args.file).with_context(|| format!("opening {}", args.file.display()))?;
     for index in 0..args.count {
-        let offset = args
-            .offset
-            .checked_add(index * stride)
+        let offset = index
+            .checked_mul(stride)
+            .and_then(|step| args.offset.checked_add(step))
             .context("the strided offset overflows 64 bits")?;
         let end = offset
             .checked_add(width)
@@ -284,7 +284,7 @@ fn find(args: &FindArgs) -> Result<()> {
     } else if let Some(text) = &args.utf16le {
         (search::utf16le_pattern(text), format!("utf16le {text:?}"))
     } else {
-        unreachable!("clap requires one of --hex, --ascii, or --utf16le")
+        bail!("pass one of --hex, --ascii, or --utf16le")
     };
     let pattern = pattern.map_err(|message| anyhow::anyhow!(message))?;
     let bytes = read_whole(&args.file)?;
@@ -369,7 +369,7 @@ fn container_list(args: &ContainerArgs) -> Result<()> {
     let bytes = read_whole(&args.file)?;
     let entries = container::list(&bytes, args.limits.limits()).with_context(|| {
         format!(
-            "{} is not a readable ZIP container; `cadmpeg inspect {}` reads \
+            "cannot list {} as a ZIP container; `cadmpeg inspect {}` reads \
              the other container families through their codec",
             args.file.display(),
             args.file.display()
