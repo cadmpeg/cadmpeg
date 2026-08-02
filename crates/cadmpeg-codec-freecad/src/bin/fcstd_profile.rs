@@ -12,6 +12,7 @@ use cadmpeg_codec_freecad::{
     FcstdWriteOptions,
 };
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, Encoder};
+
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::{CadIr, Severity};
 use serde::Serialize;
@@ -157,9 +158,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .namespace("fcstd")
             .ok_or("decoded fixture has no fcstd namespace")?;
         let mut first_write = Vec::new();
-        FcstdCodec.encode(&first.ir, &mut first_write)?;
+        FcstdCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &first.ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut first_write))?;
         let mut second_write = Vec::new();
-        FcstdCodec.encode(&first.ir, &mut second_write)?;
+        FcstdCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &first.ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut second_write))?;
         let written =
             FcstdCodec.decode(&mut Cursor::new(&first_write), &DecodeOptions::default())?;
         let semantic_round_trip =
@@ -176,7 +187,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "cadmpeg L9 edit",
         )?;
         let mut edited_bytes = Vec::new();
-        FcstdCodec.encode(&edited_ir, &mut edited_bytes)?;
+        FcstdCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &edited_ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut edited_bytes))?;
         let edited =
             FcstdCodec.decode(&mut Cursor::new(edited_bytes), &DecodeOptions::default())?;
         let typed_edit_round_trip =
@@ -346,21 +362,22 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         return;
     };
     for record in namespace.arenas.get("carrier_census").into_iter().flatten() {
-        insert_string(&record.fields, "form", &mut observed.shape_forms);
-        insert_map_keys(&record.fields, "curves_2d", &mut observed.curves_2d);
-        insert_map_keys(&record.fields, "curves_3d", &mut observed.curves_3d);
-        insert_map_keys(&record.fields, "surfaces", &mut observed.surfaces);
-        insert_map_keys(&record.fields, "topology", &mut observed.topology);
+        let fields = record.fields();
+        insert_string(&fields, "form", &mut observed.shape_forms);
+        insert_map_keys(&fields, "curves_2d", &mut observed.curves_2d);
+        insert_map_keys(&fields, "curves_3d", &mut observed.curves_3d);
+        insert_map_keys(&fields, "surfaces", &mut observed.surfaces);
+        insert_map_keys(&fields, "topology", &mut observed.topology);
     }
     for record in namespace.arenas.get("applications").into_iter().flatten() {
-        insert_string(&record.fields, "type_name", &mut observed.application_types);
-        if record.fields.get("inert_payload").and_then(Value::as_bool) == Some(true) {
+        let fields = record.fields();
+        insert_string(&fields, "type_name", &mut observed.application_types);
+        if fields.get("inert_payload").and_then(Value::as_bool) == Some(true) {
             observed
                 .application_constructs
                 .insert("inert_payload".into());
         }
-        if record
-            .fields
+        if fields
             .get("property_records")
             .and_then(Value::as_array)
             .is_some_and(|properties| {
@@ -378,9 +395,9 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         }
     }
     for record in namespace.arenas.get("drawings").into_iter().flatten() {
-        insert_string(&record.fields, "kind", &mut observed.drawing_types);
-        if record
-            .fields
+        let fields = record.fields();
+        insert_string(&fields, "kind", &mut observed.drawing_types);
+        if fields
             .get("side_entries")
             .and_then(Value::as_array)
             .is_some_and(|entries| !entries.is_empty())
@@ -391,7 +408,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         }
     }
     for record in namespace.arenas.get("gui_documents").into_iter().flatten() {
-        if let Some(states) = record.fields.get("states").and_then(Value::as_array) {
+        if let Some(states) = record.field("states").as_ref().and_then(Value::as_array) {
             for state in states {
                 if let Some(kind) = state.get("kind").and_then(Value::as_str) {
                     observed
@@ -408,22 +425,21 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         .flatten()
     {
         if record
-            .fields
-            .get("expanded")
+            .field("expanded")
             .is_some_and(|value| !value.is_null())
         {
             observed.presentation_constructs.insert("tree_state".into());
         }
     }
     for record in namespace.arenas.get("gui_properties").into_iter().flatten() {
-        if let Some(name) = record.fields.get("name").and_then(Value::as_str) {
+        if let Some(Value::String(name)) = record.field("name") {
             observed
                 .presentation_constructs
                 .insert(format!("view_property:{name}"));
         }
     }
     for record in namespace.arenas.get("entries").into_iter().flatten() {
-        if record.fields.get("role").and_then(Value::as_str) == Some("thumbnail") {
+        if record.field("role").as_ref().and_then(Value::as_str) == Some("thumbnail") {
             observed.presentation_constructs.insert("thumbnail".into());
         }
     }
@@ -433,20 +449,22 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
-    for record in &product_nodes {
-        if let Some(Value::String(kind)) = record.fields.get("kind") {
+    let product_node_fields = product_nodes
+        .iter()
+        .map(|record| record.fields())
+        .collect::<Vec<_>>();
+    for fields in &product_node_fields {
+        if let Some(Value::String(kind)) = fields.get("kind") {
             observed.product_constructs.insert(kind.clone());
         }
-        if record
-            .fields
+        if fields
             .get("element_count")
             .and_then(Value::as_i64)
             .is_some_and(|count| count > 1)
         {
             observed.product_constructs.insert("link_array".into());
         }
-        if record
-            .fields
+        if fields
             .get("external_document")
             .is_some_and(|value| !value.is_null())
         {
@@ -454,8 +472,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
                 .product_constructs
                 .insert("external_occurrence".into());
         }
-        if record
-            .fields
+        if fields
             .get("linked_subelements")
             .and_then(Value::as_array)
             .is_some_and(|values| !values.is_empty())
@@ -464,11 +481,11 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
                 .product_constructs
                 .insert("linked_subelements".into());
         }
-        let prototype = record.fields.get("prototype").and_then(Value::as_str);
+        let prototype = fields.get("prototype").and_then(Value::as_str);
         if prototype.is_some_and(|prototype| {
-            product_nodes.iter().any(|candidate| {
-                candidate.fields.get("object").and_then(Value::as_str) == Some(prototype)
-                    && candidate.fields.get("kind").and_then(Value::as_str) == Some("occurrence")
+            product_node_fields.iter().any(|candidate| {
+                candidate.get("object").and_then(Value::as_str) == Some(prototype)
+                    && candidate.get("kind").and_then(Value::as_str) == Some("occurrence")
             })
         }) {
             observed
@@ -477,9 +494,9 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         }
     }
     for record in namespace.arenas.get("joints").into_iter().flatten() {
-        insert_string(&record.fields, "kind", &mut observed.joint_kinds);
-        if record
-            .fields
+        let fields = record.fields();
+        insert_string(&fields, "kind", &mut observed.joint_kinds);
+        if fields
             .get("references")
             .and_then(Value::as_array)
             .is_some_and(|references| {
@@ -495,8 +512,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
                 .product_constructs
                 .insert("persistent_joint_operands".into());
         }
-        if record
-            .fields
+        if fields
             .get("parameters")
             .and_then(Value::as_object)
             .is_some_and(|parameters| {
@@ -616,7 +632,7 @@ fn exact_byte_coverage(ir: &CadIr) -> bool {
         .and_then(|namespace| namespace.arenas.get("byte_coverage"))
         .is_some_and(|records| {
             records.len() == 1
-                && records[0].fields.get("exact").and_then(Value::as_bool) == Some(true)
+                && records[0].field("exact").as_ref().and_then(Value::as_bool) == Some(true)
         })
 }
 
@@ -646,8 +662,9 @@ fn logical_side_entries(
         .into_iter()
         .flatten()
         .filter_map(|record| {
-            let name = record.fields.get("name")?.as_str()?;
-            let digest = record.fields.get("sha256")?.as_str()?;
+            let fields = record.fields();
+            let name = fields.get("name")?.as_str()?;
+            let digest = fields.get("sha256")?.as_str()?;
             Some((name.to_owned(), digest.to_owned()))
         })
         .collect())
@@ -666,11 +683,11 @@ fn property_value_attribute(
         .get("properties")?
         .iter()
         .find(|record| {
-            record.fields.get("owner").and_then(Value::as_str) == Some(owner)
-                && record.fields.get("name").and_then(Value::as_str) == Some(property_name)
+            let fields = record.fields();
+            fields.get("owner").and_then(Value::as_str) == Some(owner)
+                && fields.get("name").and_then(Value::as_str) == Some(property_name)
         })?
-        .fields
-        .get("values")?
+        .field("values")?
         .as_array()?
         .iter()
         .find(|value| value.get("order").and_then(Value::as_u64) == Some(value_order as u64))?
@@ -704,9 +721,19 @@ fn source_less_profile() -> Result<SourceLessWriteProfile, Box<dyn std::error::E
         )?;
     let ir = builder.build()?;
     let mut first = Vec::new();
-    FcstdCodec.encode(&ir, &mut first)?;
+    FcstdCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut first))?;
     let mut second = Vec::new();
-    FcstdCodec.encode(&ir, &mut second)?;
+    FcstdCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut second))?;
     let decoded = FcstdCodec.decode(&mut Cursor::new(&first), &DecodeOptions::default())?;
     let namespace = decoded
         .ir
@@ -718,9 +745,11 @@ fn source_less_profile() -> Result<SourceLessWriteProfile, Box<dyn std::error::E
         .get("objects")
         .into_iter()
         .flatten()
-        .find_map(|record| record.fields.get("type_name").and_then(Value::as_str))
-        .unwrap_or_default()
-        .to_owned();
+        .find_map(|record| match record.field("type_name") {
+            Some(Value::String(value)) => Some(value),
+            _ => None,
+        })
+        .unwrap_or_default();
     let object_owner = "fcstd:native:object#Box";
     let typed_parameters = ["Length", "Width", "Height"]
         .into_iter()

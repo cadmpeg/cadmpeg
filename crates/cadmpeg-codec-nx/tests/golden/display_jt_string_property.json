@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "4",
+      "ir_version": "5",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -17,7 +17,6 @@
           }
         ],
         "coedges": [],
-        "components": [],
         "configurations": [],
         "curves": [
           {
@@ -60,8 +59,7 @@
         "presentation_layers": [],
         "procedural_curves": [],
         "procedural_surfaces": [],
-        "product_occurrences": [],
-        "products": [],
+        "product_definitions": [],
         "regions": [
           {
             "body": "nx:derived:point-body#0",
@@ -155,7 +153,7 @@
                 "id": "nx:display-jt:segment#0-row-0-0-inflated-sequence",
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 31,
-                "source_offset": 495,
+                "source_offset": 519,
                 "tail": [],
                 "tail_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
               }
@@ -189,7 +187,7 @@
                 "ordinal": 0,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 31,
-                "source_offset": 495
+                "source_offset": 519
               }
             ],
             "display_jt_documents": [
@@ -217,8 +215,8 @@
                   1,
                   1
                 ],
-                "physical_byte_len": 224,
-                "source_offset": 334,
+                "physical_byte_len": 234,
+                "source_offset": 358,
                 "toc_entries": [
                   {
                     "attributes": [
@@ -229,7 +227,7 @@
                     ],
                     "id": "nx:display-jt:toc-entry#0-row-0-0",
                     "ordinal": 0,
-                    "segment_byte_len": 87,
+                    "segment_byte_len": 97,
                     "segment_id": [
                       2,
                       2,
@@ -249,7 +247,7 @@
                       2
                     ],
                     "segment_offset": 137,
-                    "source_offset": 443
+                    "source_offset": 467
                   }
                 ],
                 "toc_offset": 105,
@@ -265,11 +263,11 @@
                     "header_offset": 28,
                     "id": "nx:display-jt:index#0-row-0",
                     "ordinal": 0,
-                    "source_offset": 314,
+                    "source_offset": 338,
                     "value": 100
                   }
                 ],
-                "source_offset": 306,
+                "source_offset": 330,
                 "version": 9
               }
             ],
@@ -277,15 +275,15 @@
               {
                 "compression": {
                   "algorithm": 2,
-                  "compressed_byte_len": 54,
-                  "compressed_data_byte_len": 55,
+                  "compressed_byte_len": 64,
+                  "compressed_data_byte_len": 65,
                   "flag": 2,
                   "inflated_sha256": "f27bcae38cc8dce4e5a705688ac240c82d125258bd9fe08aff1cea0213f25963"
                 },
                 "document": "nx:display-jt:document#0-row-0",
                 "id": "nx:display-jt:segment#0-row-0-0",
-                "payload_sha256": "85b5b25534348b45d81c607150843df1670e9f6b6d49eeec48ab9f3b9587baf4",
-                "segment_byte_len": 87,
+                "payload_sha256": "0150a790ad42dba8e443628ef0edc10c291598d0da281184359b1d13d014b4d2",
+                "segment_byte_len": 97,
                 "segment_id": [
                   2,
                   2,
@@ -305,7 +303,7 @@
                   2
                 ],
                 "segment_type": 31,
-                "source_offset": 471,
+                "source_offset": 495,
                 "toc_entry": "nx:display-jt:toc-entry#0-row-0-0"
               }
             ],
@@ -318,7 +316,7 @@
                 "element": "nx:display-jt:segment#0-row-0-0-inflated-element-0",
                 "id": "nx:display-jt:segment#0-row-0-0-string-property-atom-0",
                 "object_id": 1,
-                "source_offset": 495,
+                "source_offset": 519,
                 "value": "JT"
               }
             ],
@@ -333,15 +331,18 @@
               }
             ]
           },
-          "version": 155
+          "version": 181
         }
       },
       "source": {
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "2",
-          "file_size": "558",
-          "footer_offset": "0",
+          "file_size": "606",
+          "footer_entry_count": "0",
+          "footer_fingerprint": "00000000",
+          "footer_offset": "592",
+          "header_entry_count": "2",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
           "partition_streams": "1",
@@ -363,26 +364,18 @@
       "geometry_transferred": true,
       "losses": [
         {
-          "category": "geometry",
           "code": "carrier_summary",
           "message": "Decoded 1 POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, metres → millimetres), 2 analytic surface carrier(s) (1 plane, 1 cylinder, 0 cone, 0 sphere, 0 torus), and 1 analytic curve carrier(s) (1 line, 0 circle, 0 ellipse). All parameters are byte-exact at the document's millimetre scale.",
           "severity": "info"
         },
         {
-          "category": "topology",
           "code": "topology_not_transferred",
           "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Exact-key supported partition↔deltas replacements and deletions were applied before graph construction. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
           "severity": "blocking"
-        },
-        {
-          "category": "attribute",
-          "code": "attributes_not_transferred",
-          "message": "Material and appearance assignment, class-specific entity attribute fields, and assembly occurrence placements were not transferred: their remaining NX object-model and Parasolid field serialization is not decoded.",
-          "severity": "warning"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 2 directory entry/ies",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 592, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -435,7 +428,7 @@
         },
         "provenance": {
           "nx:container:parasolid#0": {
-            "offset": 115,
+            "offset": 119,
             "stream": 1,
             "tag": "partition"
           },
@@ -490,7 +483,7 @@
           "byte_len": 383,
           "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIgdmVyc2lvbiAzNDAwMTc2AFNDSF9URVNUXzFfOTk5OQAAHQAAAAAAAAAAAAAAAAAAP7AAAAAAAAAAAAAAAAAAAD+KAnUlRgqmADIAAAAAAAAAAAAAAAAAAAAAKz+zgdfb9If9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzAAAAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/cJa7mMfigj/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAAAAAAAAAAAAAAAAAAAACs/hHrhR64Uez+UeuFHrhR7P564UeuFHrg/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
           "id": "nx:container:parasolid#0",
-          "offset": 115,
+          "offset": 119,
           "sha256": "b5a338b2331eb7af411e1fbb4fcae722dffc02eb7b7ecba5ad477c50b8c3dad8",
           "stream": "nx:container"
         }
@@ -503,29 +496,29 @@
     "entries": [
       {
         "attributes": {
-          "file_offset": "115",
+          "file_offset": "119",
           "region": "HEADER"
         },
-        "compressed_size": 191,
+        "compressed_size": 211,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
-        "role": "stream",
-        "uncompressed_size": 191
+        "role": "part-payload",
+        "uncompressed_size": 211
       },
       {
         "attributes": {
-          "file_offset": "306",
+          "file_offset": "330",
           "region": "HEADER"
         },
-        "compressed_size": 252,
+        "compressed_size": 262,
         "compression": "none",
         "name": "/Root/UG_PART/DisplayJT",
-        "role": "stream",
-        "uncompressed_size": 252
+        "role": "display-jt",
+        "uncompressed_size": 262
       },
       {
         "attributes": {
-          "file_offset": "115",
+          "file_offset": "119",
           "kind": "partition",
           "records.body": "0",
           "records.edge": "0",
@@ -554,7 +547,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 2 directory entry/ies",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 592, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]

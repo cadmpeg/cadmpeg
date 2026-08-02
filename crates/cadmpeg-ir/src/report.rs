@@ -55,6 +55,8 @@ pub enum LossCategory {
     Attribute,
     /// Features, sketches, parameters, configurations, or design history not transferred.
     DesignIntent,
+    /// Product structure, component occurrences, placements, or external dependencies.
+    Product,
     /// Anything else.
     Other,
 }
@@ -69,6 +71,7 @@ impl fmt::Display for LossCategory {
             Self::Units => "units",
             Self::Attribute => "attribute",
             Self::DesignIntent => "design_intent",
+            Self::Product => "product",
             Self::Other => "other",
         })
     }
@@ -92,7 +95,7 @@ pub enum StrictConsequence {
 )]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
-pub enum LossCode {
+pub enum LossKind {
     /// Container-only decode was requested; entity decode was not attempted.
     ContainerOnly,
     /// No geometry stream was located in the container, so no B-rep could be
@@ -127,6 +130,8 @@ pub enum LossCode {
     /// The part is an assembly; component geometry lives in external referenced
     /// files, not inline.
     AssemblyComponentsExternal,
+    /// Assembly component occurrence placements were not transferred.
+    AssemblyPlacementsNotTransferred,
     /// A record was decoded but yielded no typed IR entity.
     RecordNotTyped,
     /// A decode-time diagnostic surfaced as a loss note; detail is in the
@@ -179,9 +184,11 @@ pub enum LossCode {
     /// Appearance assets were reduced to base colors; schemas, textures, and
     /// shader properties were dropped.
     AppearanceReduced,
+    /// Preserved source bytes required for a byte-exact write were unavailable.
+    PreservedSourceUnavailable,
 }
 
-impl LossCode {
+impl LossKind {
     /// The stable `snake_case` identifier, matching the serialized form.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -198,6 +205,7 @@ impl LossCode {
             Self::AttributesNotTransferred => "attributes_not_transferred",
             Self::FeatureHistoryRetained => "feature_history_retained",
             Self::AssemblyComponentsExternal => "assembly_components_external",
+            Self::AssemblyPlacementsNotTransferred => "assembly_placements_not_transferred",
             Self::RecordNotTyped => "record_not_typed",
             Self::DecodeDiagnostic => "decode_diagnostic",
             Self::MeshVertexPrecision => "mesh_vertex_precision",
@@ -220,11 +228,65 @@ impl LossCode {
             Self::ProceduralReduced => "procedural_reduced",
             Self::ParametricRecordOmitted => "parametric_record_omitted",
             Self::AppearanceReduced => "appearance_reduced",
+            Self::PreservedSourceUnavailable => "preserved_source_unavailable",
         }
     }
 
-    /// Returns the strict-mode consequence of this code.
-    pub fn strict_consequence(self) -> StrictConsequence {
+    /// Returns the subsystem affected by this kind of loss.
+    pub const fn category(self) -> LossCategory {
+        match self {
+            Self::TopologyNotTransferred
+            | Self::ReferenceGraphNotClosed
+            | Self::TopologyGaugeSubstituted
+            | Self::NoExportableSolids
+            | Self::HiddenBodyOmitted => LossCategory::Topology,
+            Self::MaterialNotTransferred | Self::AppearanceReduced => LossCategory::Material,
+            Self::MetadataNotTransferred | Self::SourceAssociationOmitted => LossCategory::Metadata,
+            Self::AttributesNotTransferred | Self::PmiOmitted => LossCategory::Attribute,
+            Self::FeatureHistoryRetained | Self::ParametricRecordOmitted => {
+                LossCategory::DesignIntent
+            }
+            Self::AssemblyComponentsExternal | Self::AssemblyPlacementsNotTransferred => {
+                LossCategory::Product
+            }
+            Self::RecordNotTyped
+            | Self::DecodeDiagnostic
+            | Self::AssetNotTransferred
+            | Self::PassthroughRecordOmitted
+            | Self::PreservedSourceUnavailable => LossCategory::Other,
+            Self::ContainerOnly
+            | Self::MissingGeometryStream
+            | Self::GeometryNotTransferred
+            | Self::CarrierAxisInferred
+            | Self::CarrierSummary
+            | Self::MeshVertexPrecision
+            | Self::ObjectRecordsUntransferred
+            | Self::UnsupportedObjectFamily
+            | Self::BodyTransformNotApplied
+            | Self::AnalyticSurfaceNormalized
+            | Self::EllipticalConeReduced
+            | Self::CurvelessEdgeOmitted
+            | Self::UnknownSurfaceFaceOmitted
+            | Self::PcurveOmitted
+            | Self::SubdOmitted
+            | Self::TessellationOmitted
+            | Self::ProceduralReduced => LossCategory::Geometry,
+        }
+    }
+
+    /// Returns the default severity for this kind of loss.
+    pub const fn default_severity(self) -> Severity {
+        match self {
+            Self::ContainerOnly | Self::CarrierSummary | Self::PassthroughRecordOmitted => {
+                Severity::Info
+            }
+            Self::MissingGeometryStream | Self::NoExportableSolids => Severity::Error,
+            _ => Severity::Warning,
+        }
+    }
+
+    /// Returns the minimum severity that makes strict mode reject this loss.
+    pub const fn strict_floor(self) -> Option<Severity> {
         match self {
             Self::MissingGeometryStream
             | Self::TopologyNotTransferred
@@ -233,13 +295,13 @@ impl LossCode {
             | Self::CurvelessEdgeOmitted
             | Self::UnknownSurfaceFaceOmitted
             | Self::SubdOmitted
-            | Self::NoExportableSolids => StrictConsequence::Reject,
-            _ => StrictConsequence::Tolerate,
+            | Self::NoExportableSolids => Some(Severity::Warning),
+            _ => None,
         }
     }
 }
 
-impl fmt::Display for LossCode {
+impl fmt::Display for LossKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
@@ -249,9 +311,7 @@ impl fmt::Display for LossCode {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LossNote {
     /// Stable machine-readable loss kind.
-    pub code: LossCode,
-    /// Affected subsystem.
-    pub category: LossCategory,
+    pub code: LossKind,
     /// How serious the loss is.
     pub severity: Severity,
     /// Human-readable explanation.
@@ -259,6 +319,40 @@ pub struct LossNote {
     /// Where in the source the loss occurred, when attributable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provenance: Option<Provenance>,
+}
+
+impl LossNote {
+    /// Creates a loss note with the kind's default severity and no provenance.
+    pub fn new(code: LossKind, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            severity: code.default_severity(),
+            message: message.into(),
+            provenance: None,
+        }
+    }
+
+    /// Overrides this note's severity.
+    #[must_use]
+    pub const fn with_severity(mut self, severity: Severity) -> Self {
+        self.severity = severity;
+        self
+    }
+
+    /// Attaches source provenance to this note.
+    #[must_use]
+    pub fn with_provenance(mut self, provenance: Provenance) -> Self {
+        self.provenance = Some(provenance);
+        self
+    }
+
+    /// Returns strict-mode handling after applying the kind's severity floor.
+    pub fn strict_consequence(&self) -> StrictConsequence {
+        match self.code.strict_floor() {
+            Some(floor) if self.severity >= floor => StrictConsequence::Reject,
+            _ => StrictConsequence::Tolerate,
+        }
+    }
 }
 
 /// Transfer status and loss details from a successful decode.
@@ -277,9 +371,119 @@ pub struct DecodeReport {
     pub losses: Vec<LossNote>,
     /// Free-form informational notes (e.g. container findings).
     pub notes: Vec<String>,
+    /// Per-source disposition ledger for decoded records and entities.
+    #[serde(default, skip_serializing_if = "TransferLedger::is_empty")]
+    pub transfer_ledger: TransferLedger,
 }
 
+/// Final disposition of one source record or semantic object.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TransferDisposition {
+    /// Transferred as an exact neutral or native entity.
+    Emitted,
+    /// Preserved in a native retained-record arena.
+    Retained,
+    /// Transferred with an explicit approximation.
+    Approximated,
+    /// Deliberately not transferred.
+    Omitted,
+}
+
+/// One source object's transfer disposition.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TransferRecord {
+    /// Stable source identity or source-local record key.
+    pub source: String,
+    /// Resulting neutral or native identity, when one was produced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    /// Final transfer disposition.
+    pub disposition: TransferDisposition,
+    /// Concise reason for approximation or omission.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// Complete source-to-result accounting for a decode.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TransferLedger {
+    /// Entries in deterministic source traversal order.
+    pub entries: Vec<TransferRecord>,
+}
+
+impl TransferLedger {
+    /// Returns whether the ledger contains no transfer entries.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Records one source disposition.
+    pub fn record(
+        &mut self,
+        source: impl Into<String>,
+        target: Option<String>,
+        disposition: TransferDisposition,
+        note: Option<String>,
+    ) {
+        self.entries.push(TransferRecord {
+            source: source.into(),
+            target,
+            disposition,
+            note,
+        });
+    }
+
+    /// Verifies every produced target against a finalized model index.
+    pub fn verify(&self, index: &crate::index::ModelIndex<'_>) -> Result<(), String> {
+        for entry in &self.entries {
+            let produces_target = matches!(
+                entry.disposition,
+                TransferDisposition::Emitted
+                    | TransferDisposition::Retained
+                    | TransferDisposition::Approximated
+            );
+            match (&entry.target, produces_target) {
+                (Some(target), true) if !index.contains(target) => {
+                    return Err(format!(
+                        "transfer source {:?} targets unresolved identity {:?}",
+                        entry.source, target
+                    ));
+                }
+                (None, true) => {
+                    return Err(format!(
+                        "transfer source {:?} has {:?} disposition without a target",
+                        entry.source, entry.disposition
+                    ));
+                }
+                (Some(_), false) => {
+                    return Err(format!(
+                        "omitted transfer source {:?} unexpectedly has a target",
+                        entry.source
+                    ));
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+}
+
+/// A statically declared decode-coverage measure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CoverageKey(pub &'static str);
+
 impl DecodeReport {
+    /// Records one observation for a statically declared coverage measure.
+    pub fn record_coverage(&mut self, key: CoverageKey) {
+        *self.coverage.entry(key.0.to_owned()).or_default() += 1;
+    }
+
+    /// Returns a coverage measure, treating an unobserved measure as zero.
+    pub fn coverage_count(&self, key: CoverageKey) -> usize {
+        self.coverage.get(key.0).copied().unwrap_or(0)
+    }
+
     /// Count loss notes at or above [`Severity::Error`].
     pub fn error_count(&self) -> usize {
         self.losses
@@ -294,14 +498,57 @@ impl DecodeReport {
 pub struct ExportReport {
     /// Target format id.
     pub format: String,
-    /// Exported entity counts keyed by target entity kind.
-    pub entity_counts: BTreeMap<String, usize>,
-    /// Total exported entities.
-    pub total_entities: usize,
+    /// Entity counts and the semantic basis on which they were measured.
+    pub census: EntityCensus,
+    /// How decode-time source fidelity was handled.
+    pub fidelity: FidelityResolution,
     /// Omitted, normalized, or reduced content.
     pub losses: Vec<LossNote>,
     /// Informational details about the export path.
     pub notes: Vec<String>,
+}
+
+/// How an encoder resolved optional source fidelity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case", tag = "status")]
+pub enum FidelityResolution {
+    /// The input had no decode-time fidelity state.
+    NotProvided,
+    /// Preserved source content was consumed successfully.
+    Replayed,
+    /// The encoder does not consume source fidelity.
+    NotConsumed,
+    /// Fidelity was available but could not be consumed.
+    Degraded {
+        /// Explanation of the degradation.
+        reason: String,
+    },
+}
+
+/// The model against which export entity counts were measured.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CensusBasis {
+    /// Counts describe records emitted in the target format.
+    TargetRecords,
+    /// Counts describe input IR arenas.
+    IrArenas,
+}
+
+/// Explicitly based entity counts for one export.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct EntityCensus {
+    /// Semantic basis of `counts`.
+    pub basis: CensusBasis,
+    /// Counts keyed by arena or target-record kind.
+    pub counts: BTreeMap<String, usize>,
+}
+
+impl EntityCensus {
+    /// Total count across every census row.
+    pub fn total(&self) -> usize {
+        self.counts.values().sum()
+    }
 }
 
 impl ExportReport {
@@ -455,26 +702,49 @@ mod tests {
     #[test]
     fn loss_code_serializes_under_its_stable_identifier() {
         let note = LossNote {
-            code: LossCode::TopologyNotTransferred,
-            category: LossCategory::Topology,
+            code: LossKind::TopologyNotTransferred,
             severity: Severity::Blocking,
             message: "topology graph not transferred".to_owned(),
             provenance: None,
         };
         let value: serde_json::Value = serde_json::to_value(&note).expect("required invariant");
         assert_eq!(value["code"], "topology_not_transferred");
-        assert_eq!(value["code"], LossCode::TopologyNotTransferred.as_str());
+        assert_eq!(value["code"], LossKind::TopologyNotTransferred.as_str());
     }
 
     #[test]
-    fn loss_code_carries_reversibility_and_strict_consequence() {
+    fn loss_kind_strict_consequence_depends_on_severity() {
         assert_eq!(
-            LossCode::TopologyNotTransferred.strict_consequence(),
+            LossNote::new(LossKind::TopologyNotTransferred, "missing topology")
+                .strict_consequence(),
             StrictConsequence::Reject
         );
         assert_eq!(
-            LossCode::PassthroughRecordOmitted.strict_consequence(),
+            LossNote::new(LossKind::TopologyNotTransferred, "diagnostic")
+                .with_severity(Severity::Info)
+                .strict_consequence(),
             StrictConsequence::Tolerate
+        );
+        assert_eq!(
+            LossNote::new(LossKind::PassthroughRecordOmitted, "retained source")
+                .strict_consequence(),
+            StrictConsequence::Tolerate
+        );
+    }
+
+    #[test]
+    fn assembly_losses_belong_to_the_product_domain() {
+        assert_eq!(
+            LossKind::AssemblyComponentsExternal.category(),
+            LossCategory::Product
+        );
+        assert_eq!(
+            LossKind::AssemblyPlacementsNotTransferred.category(),
+            LossCategory::Product
+        );
+        assert_eq!(
+            LossKind::AssemblyPlacementsNotTransferred.as_str(),
+            "assembly_placements_not_transferred"
         );
     }
 }

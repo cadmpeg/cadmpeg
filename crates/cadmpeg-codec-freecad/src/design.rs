@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BinderConstruction, BinderCopyOnChange, BinderLifecycle, BinderOffset, BinderOffsetJoin,
@@ -1295,6 +1295,8 @@ fn parse_constraints(
             .unwrap_or_else(|| SketchConstraintDefinition::Native {
                 native_kind: constraint_kind(type_code).into(),
                 native_state: None,
+                native_flags: None,
+                native_properties: std::collections::BTreeMap::new(),
                 entities: resolved.iter().map(locus_entity).cloned().collect(),
                 parameter,
                 operands: operands
@@ -2731,6 +2733,7 @@ fn thickness_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
         return None;
     }
     Some(FeatureDefinition::Shell {
+        bodies: None,
         removed_faces: cadmpeg_ir::features::FaceSelection::Native(selection.id.clone()),
         thickness: Some(Length(thickness.abs())),
         outward: Some(if kind == "Part::Thickness" {
@@ -2829,7 +2832,7 @@ fn section_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDef
     Some(FeatureDefinition::SectionShape {
         first: operand("Base")?,
         second: operand("Tool")?,
-        approximate: bool_property(properties, "Approximation").unwrap_or(false),
+        approximate: Some(bool_property(properties, "Approximation").unwrap_or(false)),
     })
 }
 
@@ -3175,7 +3178,12 @@ fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Feat
             BodySelection::Native(format!("{}:links:1..{}", shapes.id, shapes.links.len())),
         )
     };
-    Some(FeatureDefinition::Combine { target, tools, op })
+    Some(FeatureDefinition::Combine {
+        target,
+        tools,
+        op,
+        keep_tools: false,
+    })
 }
 
 fn loft_definition(
@@ -3308,8 +3316,11 @@ fn sweep_definition(
         }
     };
     Some(FeatureDefinition::Sweep {
-        profile: Some(profile),
-        sections: profiles,
+        section: cadmpeg_ir::features::SweepSection::Profile(profile),
+        sections: profiles
+            .into_iter()
+            .map(cadmpeg_ir::features::SweepSection::Profile)
+            .collect(),
         path: Some(PathRef::Native(path_property.id.clone())),
         mode: if solid {
             SweepMode::Solid {
@@ -3324,6 +3335,9 @@ fn sweep_definition(
         path_tangent: bool_property(properties, "SpineTangent").unwrap_or(false),
         linearize: bool_property(properties, "Linearize").unwrap_or(false),
         twist: None,
+        path_extent: None,
+        guide_rail: None,
+        taper: None,
         scale: None,
         allow_multi_profile_faces: if property(properties, "AllowMultiFace").is_some() {
             Some(bool_property(properties, "AllowMultiFace")?)
@@ -3372,6 +3386,7 @@ fn hole_definition(
         },
         3 => HoleKind::Counterdrill {
             diameter: Length(positive("HoleCutDiameter")?),
+            entry_diameter: None,
             depth: Length(positive("HoleCutDepth")?),
             angle: cut_angle()?,
         },

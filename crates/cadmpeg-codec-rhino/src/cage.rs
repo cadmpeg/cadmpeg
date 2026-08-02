@@ -4,8 +4,8 @@
 
 use std::ops::Range;
 
-use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::View;
+use cadmpeg_codec_core::decode::View;
+use cadmpeg_codec_core::CodecError;
 
 use crate::chunks::{chunk_at, ArchiveVersion, FramingError};
 use crate::curves::GeometryError;

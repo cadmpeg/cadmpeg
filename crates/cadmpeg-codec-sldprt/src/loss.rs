@@ -12,7 +12,7 @@
 //! severity from the code so the two cannot drift apart across sites, and it
 //! leaves only the per-instance message to the caller.
 //!
-use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
+use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 
 /// A stable, machine-readable identifier for one `.sldprt` transfer loss.
 ///
@@ -160,22 +160,6 @@ impl SldprtLossCode {
         }
     }
 
-    /// The subsystem category this loss belongs to.
-    #[must_use]
-    pub const fn category(self) -> LossCategory {
-        match self {
-            Self::GeometryFaceSupportSurfaceUntyped
-            | Self::GeometryEdgeSupportCurveUntyped
-            | Self::GeometryParasolidNotTransferred
-            | Self::ContainerNoParasolidStream => LossCategory::Geometry,
-            Self::TopologyBodyHierarchyDerived | Self::TopologyGraphNotTransferred => {
-                LossCategory::Topology
-            }
-            Self::MaterialMetadataNotTransferred => LossCategory::Material,
-            _ => LossCategory::Other,
-        }
-    }
-
     /// The severity of this loss.
     #[must_use]
     pub const fn severity(self) -> Severity {
@@ -188,33 +172,27 @@ impl SldprtLossCode {
         }
     }
 
-    const fn shared_code(self) -> LossCode {
+    const fn shared_code(self) -> LossKind {
         match self {
-            Self::ContainerNoParasolidStream => LossCode::MissingGeometryStream,
-            Self::TopologyBodyHierarchyDerived => LossCode::TopologyGaugeSubstituted,
-            Self::TopologyGraphNotTransferred => LossCode::TopologyNotTransferred,
+            Self::ContainerNoParasolidStream => LossKind::MissingGeometryStream,
+            Self::TopologyBodyHierarchyDerived => LossKind::TopologyGaugeSubstituted,
+            Self::TopologyGraphNotTransferred => LossKind::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
-            | Self::GeometryParasolidNotTransferred => LossCode::GeometryNotTransferred,
-            Self::MaterialMetadataNotTransferred => LossCode::MaterialNotTransferred,
-            _ => LossCode::FeatureHistoryRetained,
+            | Self::GeometryParasolidNotTransferred => LossKind::GeometryNotTransferred,
+            Self::MaterialMetadataNotTransferred => LossKind::MaterialNotTransferred,
+            _ => LossKind::FeatureHistoryRetained,
         }
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
-    /// Category and severity come from the code, so a site cannot mislabel a
-    /// loss it names. Provenance is left absent; the decoder attributes losses
-    /// through the message and record identity, not a source span.
+    /// Severity comes from the codec-specific code. Provenance is left absent;
+    /// the decoder attributes losses through the message and record identity,
+    /// not a source span.
     #[must_use]
     pub fn note(self, message: impl Into<String>) -> LossNote {
-        LossNote {
-            code: self.shared_code(),
-            category: self.category(),
-            severity: self.severity(),
-            message: message.into(),
-            provenance: None,
-        }
+        LossNote::new(self.shared_code(), message).with_severity(self.severity())
     }
 }
 
@@ -283,13 +261,11 @@ mod tests {
         }
     }
 
-    /// The note builder fixes category and severity from the code so a call
-    /// site cannot mislabel a loss it names.
+    /// The note builder fixes severity from the codec-specific code.
     #[test]
-    fn note_takes_category_and_severity_from_the_code() {
+    fn note_takes_severity_from_the_code() {
         for code in SldprtLossCode::ALL {
             let note = code.note("x");
-            assert_eq!(note.category, code.category());
             assert_eq!(note.severity, code.severity());
             assert_eq!(note.message, "x");
             assert!(note.provenance.is_none());

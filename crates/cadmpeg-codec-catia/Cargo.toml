@@ -15,14 +15,18 @@ categories = ["encoding", "parser-implementations", "graphics"]
 
 [features]
 # Exposes the `fuzz` facade of `()`-returning parser wrappers for `cadmpeg-fuzz`.
-fuzz = []
+fuzzing = []
 
 [dependencies]
+cadmpeg-codec-core.workspace = true
 cadmpeg-ir.workspace = true
 sha2.workspace = true
 memchr.workspace = true
 serde.workspace = true
 schemars.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true

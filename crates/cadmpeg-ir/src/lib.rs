@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Format-neutral CAD documents and the codec interfaces that produce them.
 //!
 //! [`CadIr`] stores units, tolerances, and flat entity arenas connected by
@@ -16,8 +17,9 @@
 //!
 //! Format crates implement [`Codec`]. Detection selects a codec from a byte
 //! prefix, inspection enumerates a container, and decoding returns a
-//! [`DecodeResult`]. Operation failures use [`CodecError`]. A successful decode
-//! reports partial transfer through [`DecodeReport`] and [`LossNote`].
+//! [`DecodeResult`]. Operation failures use [`cadmpeg_codec_core::CodecError`].
+//! A successful decode reports partial transfer through [`DecodeReport`] and
+//! [`LossNote`].
 //!
 //! [`Annotations`] records source locations and fidelity by globally unique
 //! entity ID. An omitted exactness entry means byte-exact; explicit entries
@@ -30,16 +32,15 @@
 
 pub mod annotations;
 pub mod appearance;
+pub mod artifact;
+pub mod assets;
 pub mod attributes;
-pub mod be;
 pub mod bytes;
 pub mod codec;
-pub mod compression;
-pub mod cursor;
-pub mod decode;
 
 pub mod diff;
 pub mod document;
+pub mod draft;
 pub mod drawings;
 pub mod eval;
 pub mod examples;
@@ -48,16 +49,15 @@ pub mod geometry;
 pub mod hash;
 
 pub mod ids;
-pub mod le;
+pub mod index;
 pub mod math;
 pub mod native;
 pub mod pmi;
 pub mod presentation;
-pub mod product;
 pub mod products;
 mod provenance;
-pub mod read;
 pub mod report;
+pub mod schema;
 pub mod semantic_annotations;
 pub mod sketches;
 pub mod source_fidelity;
@@ -70,9 +70,9 @@ pub mod units;
 pub mod validate;
 
 pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote, Provenance};
+pub use artifact::{DocumentArtifact, DocumentOrigin};
 pub use codec::{
-    CadirEncoder, Codec, CodecEntry, CodecError, Confidence, ContainerEntry, ContainerSummary,
-    DecodeOptions, DecodeResult, Encoder, ReadSeek,
+    CadirEncoder, Codec, CodecEntry, Confidence, DecodeOptions, DecodeResult, Encoder,
 };
 pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
 pub use document::{CadIr, SourceMeta, IR_VERSION};
@@ -92,18 +92,17 @@ pub use presentation::{
     CameraState, PresentationDocument, PresentationId, PresentationState, ViewPresentation,
 };
 pub use presentation::{PresentationItem, PresentationLayer};
-pub use product::{OccurrenceParent, Product, ProductOccurrence};
 pub use products::{
-    AssemblyJoint, Component, ComponentId, ComponentKind, ComponentReference, CopyOnChangePolicy,
+    AssemblyGraph, AssemblyGraphError, AssemblyJoint, CopyOnChangePolicy,
     ExternalDocumentReference, ExternalResolution, JointId, JointKind, JointLimits, JointOperand,
-    Occurrence, OccurrenceId,
+    Occurrence, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
 /// Source location attached to a [`LossNote`].
 pub use provenance::Provenance as LossProvenance;
 pub use provenance::{Exactness, SourceObjectAssociation};
 pub use report::{
-    Check, DecodeReport, ExportReport, Finding, LossCategory, LossCode, LossNote, Severity,
-    StrictConsequence, ValidationReport,
+    CensusBasis, Check, CoverageKey, DecodeReport, EntityCensus, ExportReport, FidelityResolution,
+    Finding, LossCategory, LossKind, LossNote, Severity, StrictConsequence, ValidationReport,
 };
 pub use sketches::{
     Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
@@ -112,7 +111,10 @@ pub use sketches::{
     SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchEntityUse, SpatialSketchGeometry,
     SpatialSketchId, SpatialSketchProfile,
 };
-pub use source_fidelity::{RetainedSourceRecord, SourceFidelity, SOURCE_FIDELITY_VERSION};
+pub use source_fidelity::{
+    decode_sidecar_path, DecodeSidecar, DecodeSidecarParseError, RetainedSourceRecord,
+    SourceFidelity, DECODE_SIDECAR_VERSION, SOURCE_FIDELITY_VERSION,
+};
 pub use spreadsheets::{Spreadsheet, SpreadsheetDimension, SpreadsheetId, SpreadsheetRange};
 pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,

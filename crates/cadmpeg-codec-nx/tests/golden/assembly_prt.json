@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "4",
+      "ir_version": "5",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -9,7 +9,6 @@
         "attributes": [],
         "bodies": [],
         "coedges": [],
-        "components": [],
         "configurations": [],
         "curves": [],
         "drawings": [],
@@ -26,8 +25,7 @@
         "presentation_layers": [],
         "procedural_curves": [],
         "procedural_surfaces": [],
-        "product_occurrences": [],
-        "products": [],
+        "product_definitions": [],
         "regions": [],
         "semantic_annotations": [],
         "shells": [],
@@ -55,8 +53,11 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "83",
-          "footer_offset": "0",
+          "file_size": "101",
+          "footer_entry_count": "0",
+          "footer_fingerprint": "00000000",
+          "footer_offset": "87",
+          "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "0",
           "plain_streams": "0"
@@ -77,20 +78,23 @@
       "geometry_transferred": false,
       "losses": [
         {
-          "category": "geometry",
           "code": "assembly_components_external",
           "message": "No inline Parasolid geometry: this is an assembly .prt. Component geometry lives in external child .prt files named in EXTREFSTREAM, and the assembled solid's inputs (child partitions + constraint solve) are absent from this file. This is an external-dependency boundary, not a decode gap.",
           "severity": "blocking"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 87, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "no inline Parasolid geometry (assembly .prt: geometry in external child parts)"
       ]
     },
     "source_fidelity": {
-      "annotations": {},
+      "annotations": {
+        "streams": [
+          "nx:container"
+        ]
+      },
       "version": "3"
     }
   },
@@ -105,13 +109,13 @@
         "compressed_size": 0,
         "compression": "none",
         "name": "/Root/UG_PART/ExternalReferences",
-        "role": "stream",
+        "role": "directory",
         "uncompressed_size": 0
       }
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 0, 1 directory entry/ies",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 87, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "no inline Parasolid geometry (assembly .prt: geometry in external child parts)"
     ]

@@ -581,7 +581,7 @@ pub struct SketchInputEntity {
     pub local_id: Option<u32>,
     /// Sketch-entity kind this marker identifies.
     pub kind: SketchInputKind,
-    /// Finite little-endian state scalar stored 48 bytes after the marker.
+    /// Finite little-endian state scalar at the marker layout's state slot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state_value: Option<f64>,
     /// Two little-endian coordinate fields stored by geometry-handle marker families, in metres.

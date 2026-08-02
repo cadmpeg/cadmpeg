@@ -173,7 +173,7 @@ fn nurbs_weights_valid(weights: Option<&[f64]>, pole_count: usize) -> bool {
         weights.len() == pole_count
             && weights
                 .iter()
-                .all(|weight| weight.is_finite() && weight.abs() > f64::EPSILON)
+                .all(|weight| weight.is_finite() && *weight != 0.0)
     })
 }
 
@@ -210,12 +210,10 @@ fn variable_blend_value_valid(value: &crate::geometry::VariableBlendValue) -> bo
             parameter,
             radius,
             points,
-            tail,
             ..
         } => {
             parameter.is_finite()
                 && radius.is_finite()
-                && tail.as_ref().is_none_or(|values| finite(values))
                 && points.iter().all(|point| {
                     point.parameter.is_finite()
                         && point.radius.is_finite()
@@ -332,7 +330,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 if !orthonormal(axis, ref_direction) {
                     bounds_err(findings, &s.id.0, "sphere frame is not orthonormal");
                 }
-                if !radius.is_finite() || radius.abs() <= f64::EPSILON {
+                if !radius.is_finite() || *radius == 0.0 {
                     bounds_err(findings, &s.id.0, "sphere radius is zero or not finite");
                 }
             }
@@ -349,10 +347,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 if !orthonormal(axis, ref_direction) {
                     bounds_err(findings, &s.id.0, "torus frame is not orthonormal");
                 }
-                if nonpositive(*major_radius)
-                    || !minor_radius.is_finite()
-                    || minor_radius.abs() <= f64::EPSILON
-                {
+                if nonpositive(*major_radius) || !minor_radius.is_finite() || *minor_radius == 0.0 {
                     bounds_err(
                         findings,
                         &s.id.0,
@@ -408,7 +403,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
             SurfaceGeometry::Transformed { basis, transform } => {
-                if !valid_affine_transform(*transform) {
+                if !transform.is_affine() {
                     bounds_err(findings, &s.id.0, "surface transform is not finite affine");
                 }
                 if !valid_surface_basis(basis) {
@@ -466,9 +461,11 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
                     })
                 }
-                crate::geometry::SplineSurfaceParameters::RevisionValues { values } => {
-                    values.iter().flatten().all(|value| value.is_finite())
-                }
+                crate::geometry::SplineSurfaceParameters::RevisionRanges { intervals } => intervals
+                    .iter()
+                    .flatten()
+                    .flatten()
+                    .all(|value| value.is_finite()),
             };
             if !valid {
                 bounds_err(
@@ -563,9 +560,11 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]
                     })
                 }
-                crate::geometry::SplineSurfaceParameters::RevisionValues { values } => {
-                    values.iter().flatten().all(|value| value.is_finite())
-                }
+                crate::geometry::SplineSurfaceParameters::RevisionRanges { intervals } => intervals
+                    .iter()
+                    .flatten()
+                    .flatten()
+                    .all(|value| value.is_finite()),
             };
             let sections_valid =
                 sections
@@ -772,6 +771,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     crate::geometry::LawExpression::Transform { scalars, .. } => {
                         scalars.iter().all(|value| value.is_finite())
                     }
+                    crate::geometry::LawExpression::TransformVec { vectors, scale, .. } => {
+                        scale.is_finite()
+                            && vectors.iter().all(|value| {
+                                value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                            })
+                    }
                     crate::geometry::LawExpression::Edge { parameters, .. } => {
                         parameters.iter().all(|value| value.is_finite())
                     }
@@ -861,6 +866,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     }
                     crate::geometry::LawExpression::Transform { scalars, .. } => {
                         scalars.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawExpression::TransformVec { vectors, scale, .. } => {
+                        scale.is_finite()
+                            && vectors.iter().all(|value| {
+                                value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                            })
                     }
                     crate::geometry::LawExpression::Edge { parameters, .. } => {
                         parameters.iter().all(|value| value.is_finite())
@@ -962,6 +973,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     crate::geometry::LawExpression::Transform { scalars, .. } => {
                         scalars.iter().all(|value| value.is_finite())
                     }
+                    crate::geometry::LawExpression::TransformVec { vectors, scale, .. } => {
+                        scale.is_finite()
+                            && vectors.iter().all(|value| {
+                                value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                            })
+                    }
                     crate::geometry::LawExpression::Edge { parameters, .. } => {
                         parameters.iter().all(|value| value.is_finite())
                     }
@@ -1050,6 +1067,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     }
                     crate::geometry::LawExpression::Transform { scalars, .. } => {
                         scalars.iter().all(|value| value.is_finite())
+                    }
+                    crate::geometry::LawExpression::TransformVec { vectors, scale, .. } => {
+                        scale.is_finite()
+                            && vectors.iter().all(|value| {
+                                value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+                            })
                     }
                     crate::geometry::LawExpression::Edge { parameters, .. } => {
                         parameters.iter().all(|value| value.is_finite())
@@ -1459,26 +1482,25 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     .as_ref()
                     .is_none_or(variable_blend_value_valid)
                 && construction
-                    .chamfer
+                    .cross_section
                     .as_ref()
-                    .is_none_or(|chamfer| variable_blend_value_valid(&chamfer.value));
+                    .is_none_or(|cross_section| match cross_section {
+                        crate::geometry::VariableBlendCrossSection::Circular => true,
+                        crate::geometry::VariableBlendCrossSection::Thumbweights { parameters }
+                        | crate::geometry::VariableBlendCrossSection::G2Round { parameters } => {
+                            parameters.iter().all(|value| value.is_finite())
+                        }
+                        crate::geometry::VariableBlendCrossSection::RoundedChamfer { radius } => {
+                            radius.as_deref().is_none_or(variable_blend_value_valid)
+                        }
+                        crate::geometry::VariableBlendCrossSection::UnclassifiedBare { .. } => true,
+                    });
             let scalar_tail_valid = construction.offsets.iter().all(|value| value.is_finite())
                 && construction.shape_parameter.is_finite()
-                && construction.shape_length.is_finite()
-                && construction
-                    .single_radius_tail
-                    .as_ref()
-                    .is_none_or(|tail| {
-                        tail.parameters.iter().all(|value| value.is_finite())
-                            && !matches!(tail.selector, crate::geometry::LoftBridgeToken::Double(value) if !value.is_finite())
-                    });
+                && construction.shape_length.is_finite();
             let radius_branch_valid = match construction.radius_kind {
-                VariableBlendRadiusKind::SingleRadius => {
-                    construction.second_value.is_none() && construction.chamfer.is_none()
-                }
-                VariableBlendRadiusKind::TwoRadii => {
-                    construction.second_value.is_some() && construction.single_radius_tail.is_none()
-                }
+                VariableBlendRadiusKind::SingleRadius => construction.second_value.is_none(),
+                VariableBlendRadiusKind::TwoRadii => construction.second_value.is_some(),
             };
             if !ranges_valid
                 || !sides_valid
@@ -1501,7 +1523,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
             };
             let boundaries_valid = construction.boundaries.iter().all(|boundary| {
-                point_finite(&boundary.magic)
+                vector_finite(&boundary.magic)
                     && boundary.fullness.is_finite()
                     && match &boundary.geometry {
                         crate::geometry::VertexBlendBoundaryGeometry::Circle {
@@ -1662,19 +1684,41 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         if let ProceduralSurfaceDefinition::Offset {
             distance,
             extension_flags,
+            revision_form,
             ..
         } = &procedural.definition
         {
-            if !distance.is_finite()
-                || !matches!(
+            // A revision-gated offset stores its four-boolean carrier run in
+            // the revision form and has no ASM extension tail of its own.
+            let flags_shape_ok = if let Some(form) = revision_form {
+                extension_flags.is_empty() && form.flags.len() == 4
+            } else {
+                matches!(
                     extension_flags.as_slice(),
                     [] | [false] | [true, _] | [true, _, _]
                 )
-            {
+            };
+            if !distance.is_finite() || !flags_shape_ok {
                 bounds_err(
                     findings,
                     &procedural.id.0,
                     "offset spline surface distance or extension flags are invalid",
+                );
+            }
+        }
+        if let Some((enumeration, parameterization)) = revision_tail_form(&procedural.definition) {
+            // Tail enum `0` stores a solved cache and its fit tolerance; `2`
+            // stores the parameterization instead. No other value is defined.
+            let form_matches = match enumeration {
+                0 => parameterization.is_none(),
+                2 => parameterization.is_some(),
+                _ => false,
+            };
+            if !form_matches {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "revision-gated surface tail enum does not match its stored cache form",
                 );
             }
         }
@@ -1817,7 +1861,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
             CurveGeometry::Transformed { basis, transform } => {
-                if !valid_affine_transform(*transform) {
+                if !transform.is_affine() {
                     bounds_err(findings, &c.id.0, "curve transform is not finite affine");
                 }
                 if !valid_curve_basis(basis) {
@@ -1830,7 +1874,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
     for pcurve in &ir.model.pcurves {
         let point_finite = |point: &crate::math::Point2| point.u.is_finite() && point.v.is_finite();
         let direction_valid = |direction: &crate::math::Point2| {
-            point_finite(direction) && direction.u.hypot(direction.v) > f64::EPSILON
+            point_finite(direction) && direction.u.hypot(direction.v) > 0.0
         };
         let valid = match &pcurve.geometry {
             crate::geometry::PcurveGeometry::Line { origin, direction } => {
@@ -1859,6 +1903,21 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && direction_valid(y_axis)
                     && !nonpositive(*major_radius)
                     && !nonpositive(*minor_radius)
+            }
+            crate::geometry::PcurveGeometry::Harmonic {
+                center,
+                cosine,
+                sine,
+            }
+            | crate::geometry::PcurveGeometry::Hyperbolic {
+                center,
+                cosine,
+                sine,
+            } => {
+                point_finite(center)
+                    && point_finite(cosine)
+                    && point_finite(sine)
+                    && (direction_valid(cosine) || direction_valid(sine))
             }
             crate::geometry::PcurveGeometry::Parabola {
                 vertex,
@@ -1932,6 +1991,17 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                                 .iter()
                                 .all(|weight| weight.is_finite() && *weight > 0.0)
                     })
+            }
+            crate::geometry::PcurveGeometry::SphericalGreatCircle {
+                azimuth_origin,
+                azimuth_rate,
+                plane_phase,
+                plane_slope,
+            } => {
+                [azimuth_origin, azimuth_rate, plane_phase, plane_slope]
+                    .into_iter()
+                    .all(|value| value.is_finite())
+                    && *azimuth_rate != 0.0
             }
             crate::geometry::PcurveGeometry::Nurbs {
                 degree,
@@ -2038,26 +2108,57 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 bounds_err(findings, &procedural.id.0, "invalid spatial curve offset");
             }
         }
-        if let ProceduralCurveDefinition::Deformable { data, .. } = &procedural.definition {
-            if let crate::geometry::DeformableCurveData::VectorField {
-                vectors,
-                parameter_pairs,
-            } = data
-            {
-                let vectors_finite = vectors.iter().all(|vector| {
-                    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-                });
-                let pairs_finite = parameter_pairs
-                    .iter()
-                    .flatten()
-                    .all(|value| value.is_finite());
-                if !vectors_finite || !pairs_finite {
-                    bounds_err(
-                        findings,
-                        &procedural.id.0,
-                        "deformable vector-field payload is not finite",
-                    );
+        if let ProceduralCurveDefinition::Deformable {
+            source_parameter_range,
+            data,
+            ..
+        } = &procedural.definition
+        {
+            let finite_vector = |vector: &crate::math::Vector3| {
+                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+            };
+            let payload_finite = match data {
+                crate::geometry::DeformableCurveData::VectorField {
+                    vectors,
+                    parameter_pairs,
+                } => {
+                    vectors.iter().all(finite_vector)
+                        && parameter_pairs
+                            .iter()
+                            .flatten()
+                            .all(|value| value.is_finite())
                 }
+                crate::geometry::DeformableCurveData::Mode3 {
+                    leading_vectors,
+                    leading_parameter,
+                    trailing_point,
+                    trailing_vectors,
+                    frame_parameter,
+                    parameters,
+                    trailing_parameter,
+                    ..
+                } => {
+                    leading_vectors.iter().all(finite_vector)
+                        && leading_parameter.is_finite()
+                        && [trailing_point.x, trailing_point.y, trailing_point.z]
+                            .into_iter()
+                            .all(f64::is_finite)
+                        && trailing_vectors.iter().all(finite_vector)
+                        && frame_parameter.is_finite()
+                        && parameters.iter().all(|value| value.is_finite())
+                        && trailing_parameter.is_finite()
+                }
+            };
+            let range_valid = source_parameter_range
+                .iter()
+                .flatten()
+                .all(|value| value.is_finite());
+            if !payload_finite || !range_valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "deformable curve payload is not finite",
+                );
             }
             continue;
         }
@@ -2204,6 +2305,38 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     findings,
                     &procedural.id.0,
                     "intersection support context is not finite and ordered",
+                );
+            }
+            continue;
+        }
+        if let ProceduralCurveDefinition::TolerantIntersection {
+            supports,
+            endpoints,
+            tolerance,
+            parameterization,
+        } = &procedural.definition
+        {
+            let point_is_finite = |point: &crate::math::Point3| {
+                point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+            };
+            let parameterization_is_valid = parameterization.as_ref().is_none_or(|value| {
+                value
+                    .parameter_range
+                    .iter()
+                    .all(|parameter| parameter.is_finite())
+                    && value.parameter_range[0] < value.parameter_range[1]
+                    && value.pcurves.iter().all(pcurve_basis_is_valid)
+            });
+            if supports[0] == supports[1]
+                || !endpoints.iter().all(point_is_finite)
+                || !tolerance.is_finite()
+                || *tolerance < 0.0
+                || !parameterization_is_valid
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "tolerant intersection supports or endpoint bounds are invalid",
                 );
             }
             continue;
@@ -2390,6 +2523,18 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
                 && *major_radius > 0.0
                 && *minor_radius > 0.0
         }
+        PcurveGeometry::Harmonic {
+            center,
+            cosine,
+            sine,
+        }
+        | PcurveGeometry::Hyperbolic {
+            center,
+            cosine,
+            sine,
+        } => {
+            point(center) && point(cosine) && point(sine) && (direction(cosine) || direction(sine))
+        }
         PcurveGeometry::Parabola {
             vertex,
             x_axis,
@@ -2439,6 +2584,15 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
                             .all(|weight| weight.is_finite() && *weight > 0.0)
                 })
         }
+        PcurveGeometry::SphericalGreatCircle {
+            azimuth_origin,
+            azimuth_rate,
+            plane_phase,
+            plane_slope,
+        } => {
+            finite(&[*azimuth_origin, *azimuth_rate, *plane_phase, *plane_slope])
+                && *azimuth_rate != 0.0
+        }
         PcurveGeometry::Nurbs {
             degree,
             knots,
@@ -2473,11 +2627,6 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
     }
 }
 
-fn valid_affine_transform(transform: crate::transform::Transform) -> bool {
-    transform.rows.into_iter().flatten().all(f64::is_finite)
-        && transform.rows[3] == [0.0, 0.0, 0.0, 1.0]
-}
-
 fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
     match geometry {
         SurfaceGeometry::Plane { normal, u_axis, .. } => !degenerate(normal) && !degenerate(u_axis),
@@ -2505,7 +2654,9 @@ fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
             ref_direction,
             radius,
             ..
-        } => !degenerate(axis) && !degenerate(ref_direction) && radius.abs() > f64::EPSILON,
+        } => {
+            !degenerate(axis) && !degenerate(ref_direction) && radius.is_finite() && *radius != 0.0
+        }
         SurfaceGeometry::Torus {
             axis,
             ref_direction,
@@ -2516,7 +2667,8 @@ fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
             !degenerate(axis)
                 && !degenerate(ref_direction)
                 && !nonpositive(*major_radius)
-                && minor_radius.abs() > f64::EPSILON
+                && minor_radius.is_finite()
+                && *minor_radius != 0.0
         }
         SurfaceGeometry::Nurbs(n) => {
             n.control_points.len() == n.u_count as usize * n.v_count as usize
@@ -2529,7 +2681,7 @@ fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
             chordal_deflection,
         } => valid_polygonal_surface(vertices, triangles, *chordal_deflection),
         SurfaceGeometry::Transformed { basis, transform } => {
-            valid_affine_transform(*transform) && valid_surface_basis(basis)
+            transform.is_affine() && valid_surface_basis(basis)
         }
         SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => true,
     }
@@ -2574,7 +2726,7 @@ fn valid_curve_basis(geometry: &CurveGeometry) -> bool {
             chordal_deflection,
         } => valid_polyline(points, parameters.as_deref(), *chordal_deflection),
         CurveGeometry::Transformed { basis, transform } => {
-            valid_affine_transform(*transform) && valid_curve_basis(basis)
+            transform.is_affine() && valid_curve_basis(basis)
         }
         CurveGeometry::Procedural { .. }
         | CurveGeometry::Composite { .. }
@@ -2662,6 +2814,44 @@ pub(super) fn check_knots(findings: &mut Vec<Finding>, id: &str, knots: &[f64], 
     }
 }
 
+/// The shared revision-gated surface tail's form enum and the parameterization
+/// paired with it, from whichever carrier the definition uses.
+fn revision_tail_form(
+    definition: &ProceduralSurfaceDefinition,
+) -> Option<(
+    i64,
+    Option<&crate::geometry::RevisionSurfaceParameterization>,
+)> {
+    let form = match definition {
+        ProceduralSurfaceDefinition::Exact { revision_form, .. }
+        | ProceduralSurfaceDefinition::Taper { revision_form, .. }
+        | ProceduralSurfaceDefinition::Revolution { revision_form, .. }
+        | ProceduralSurfaceDefinition::Sum { revision_form, .. }
+        | ProceduralSurfaceDefinition::Extrusion { revision_form, .. }
+        | ProceduralSurfaceDefinition::Offset { revision_form, .. } => revision_form.as_ref(),
+        ProceduralSurfaceDefinition::TSpline { construction } => {
+            construction.revision_form.as_ref()
+        }
+        ProceduralSurfaceDefinition::VariableBlend { construction } => {
+            return Some((
+                construction.tail_enum,
+                construction.tail_parameterization.as_ref(),
+            ))
+        }
+        ProceduralSurfaceDefinition::Blend {
+            native: Some(construction),
+            ..
+        } => {
+            return Some((
+                construction.tail_enum,
+                construction.tail_parameterization.as_ref(),
+            ))
+        }
+        _ => None,
+    }?;
+    Some((form.tail_enum, form.tail_parameterization.as_ref()))
+}
+
 pub(super) fn bounds_err(findings: &mut Vec<Finding>, id: &str, msg: &str) {
     findings.push(Finding {
         check: Check::Bounds,
@@ -2673,9 +2863,13 @@ pub(super) fn bounds_err(findings: &mut Vec<Finding>, id: &str, msg: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::support_context_is_finite;
-    use crate::geometry::{IntcurveSupportContext, IntcurveSupportSide, PcurveGeometry};
-    use crate::math::Point2;
+    use super::{
+        nurbs_weights_valid, pcurve_basis_is_valid, support_context_is_finite, valid_surface_basis,
+    };
+    use crate::geometry::{
+        IntcurveSupportContext, IntcurveSupportSide, PcurveGeometry, SurfaceGeometry,
+    };
+    use crate::math::{Point2, Point3, Vector3};
 
     fn context(pcurve: bool, pcurve_parameter_range: Option<[f64; 2]>) -> IntcurveSupportContext {
         IntcurveSupportContext {
@@ -2716,5 +2910,38 @@ mod tests {
             true,
             Some([f64::NAN, 2.0])
         )));
+    }
+
+    #[test]
+    fn exact_geometry_scalars_require_finite_nonzero_values_without_a_size_floor() {
+        let tiny = 1e-200;
+        assert!(nurbs_weights_valid(Some(&[tiny, -tiny]), 2));
+        assert!(!nurbs_weights_valid(Some(&[tiny, 0.0]), 2));
+        assert!(!nurbs_weights_valid(Some(&[tiny, f64::NAN]), 2));
+
+        assert!(pcurve_basis_is_valid(
+            &PcurveGeometry::SphericalGreatCircle {
+                azimuth_origin: 0.0,
+                azimuth_rate: tiny,
+                plane_phase: 0.0,
+                plane_slope: 0.0,
+            }
+        ));
+
+        let axis = Vector3::new(0.0, 0.0, 1.0);
+        let ref_direction = Vector3::new(1.0, 0.0, 0.0);
+        assert!(valid_surface_basis(&SurfaceGeometry::Sphere {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis,
+            ref_direction,
+            radius: tiny,
+        }));
+        assert!(valid_surface_basis(&SurfaceGeometry::Torus {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis,
+            ref_direction,
+            major_radius: tiny,
+            minor_radius: -tiny,
+        }));
     }
 }

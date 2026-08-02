@@ -12,8 +12,8 @@ use crate::solve::UnionFind;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-const FBB_ROW: [u8; 4] = [0x30, 0x04, 0x04, 0xff];
 pub(crate) const EDGE_DELIMITER: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
+const VERTEX_RECORD_BYTES: usize = 3 + 3 * size_of::<f32>();
 const TRIM_KINDS: [u8; 14] = [
     0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
 ];
@@ -25,6 +25,19 @@ const TRIM_KINDS: [u8; 14] = [
 #[must_use]
 pub fn standard_face_count(bytes: &[u8]) -> Option<usize> {
     largest_fbb_run(bytes).map(|(_, count, _)| count)
+}
+
+/// RGBA display color for each positional standard face row.
+#[must_use]
+pub fn standard_face_colors(bytes: &[u8]) -> Option<Vec<[u8; 4]>> {
+    let (start, count, _) = largest_fbb_run(bytes)?;
+    let marker: [u8; 4] = bytes.get(start..start + 4)?.try_into().ok()?;
+    (0..count)
+        .map(|index| {
+            let row = bytes.get(start + index * 8..start + (index + 1) * 8)?;
+            (row[..4] == marker).then_some([row[7], row[6], row[5], row[4]])
+        })
+        .collect()
 }
 
 /// Unit frame vector for each positional standard trim packet. The result is
@@ -402,10 +415,10 @@ pub(crate) fn largest_fbb_run(bytes: &[u8]) -> Option<(usize, usize, usize)> {
     let mut tied = false;
     let mut position = 0;
     while position + 8 <= bytes.len() {
-        if bytes[position..].starts_with(&FBB_ROW) {
+        if crate::container::is_fbb_row(&bytes[position..]) {
             let start = position;
             let mut count = 0;
-            while position + 8 <= bytes.len() && bytes[position..].starts_with(&FBB_ROW) {
+            while position + 8 <= bytes.len() && crate::container::is_fbb_row(&bytes[position..]) {
                 count += 1;
                 position += 8;
             }
@@ -423,6 +436,25 @@ pub(crate) fn largest_fbb_run(bytes: &[u8]) -> Option<(usize, usize, usize)> {
         None
     } else {
         best
+    }
+}
+
+#[cfg(test)]
+mod appearance_tests {
+    use super::standard_face_colors;
+
+    #[test]
+    fn face_colors_are_abgr_and_require_one_marker_family() {
+        let bytes = [
+            0xb0, 4, 4, 0xff, 0x99, 0x1f, 0x1a, 0xd1, 0xb0, 4, 4, 0xff, 0xff, 0xe0, 0x3d, 0x14,
+        ];
+        assert_eq!(
+            standard_face_colors(&bytes),
+            Some(vec![[0xd1, 0x1a, 0x1f, 0x99], [0x14, 0x3d, 0xe0, 0xff]])
+        );
+        let mut mixed = bytes;
+        mixed[8] = 0x30;
+        assert_eq!(standard_face_colors(&mixed), None);
     }
 }
 
@@ -453,7 +485,26 @@ pub(crate) fn parse_edge_tables_at(bytes: &[u8], position: usize) -> Option<(Vec
 
 pub(crate) fn parse_edge_tables_scoped_at(
     bytes: &[u8],
+    position: usize,
+) -> Option<(Vec<EdgeRow>, Vec<usize>, usize)> {
+    let solutions = [1, 2, 3]
+        .into_iter()
+        .filter_map(|handle_width| {
+            let parsed = parse_edge_tables_scoped_width(bytes, position, handle_width)?;
+            parse_vertex_table(bytes, parsed.2)
+                .is_some()
+                .then_some(parsed)
+        })
+        .collect::<Vec<_>>();
+    <[_; 1]>::try_from(solutions)
+        .ok()
+        .map(|[solution]| solution)
+}
+
+fn parse_edge_tables_scoped_width(
+    bytes: &[u8],
     mut position: usize,
+    handle_width: usize,
 ) -> Option<(Vec<EdgeRow>, Vec<usize>, usize)> {
     let mut rows = Vec::new();
     let mut scopes = Vec::new();
@@ -477,20 +528,25 @@ pub(crate) fn parse_edge_tables_scoped_at(
             if arity < 2 {
                 return None;
             }
-            if arity > bytes.len().saturating_sub(position) / 2 {
+            if arity > bytes.len().saturating_sub(position) / handle_width {
                 return None;
             }
             let mut handles = Vec::with_capacity(arity);
             for _ in 0..arity {
-                handles.push(u32::from(u16::from_be_bytes(
-                    bytes.get(position..position + 2)?.try_into().ok()?,
-                )));
-                position += 2;
+                let mut encoded = [0u8; 4];
+                encoded[4 - handle_width..]
+                    .copy_from_slice(bytes.get(position..position + handle_width)?);
+                handles.push(u32::from_be_bytes(encoded));
+                position += handle_width;
             }
             rows.push(EdgeRow {
                 kind,
                 handles,
-                boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+                boundary_layout: if arity == 2 {
+                    EdgeBoundaryLayout::CompleteBoundaryRun
+                } else {
+                    EdgeBoundaryLayout::InteriorWithFlankingCorners
+                },
             });
             scopes.push(scope);
         }
@@ -511,11 +567,14 @@ pub(crate) fn parse_edge_tables_scoped_at(
 }
 
 pub(crate) fn parse_vertex_table(bytes: &[u8], mut position: usize) -> Option<Vec<[f64; 3]>> {
-    if bytes.get(position..position + 2)? != [0x01, 0x06] {
+    if !bytes.get(position..)?.starts_with(&[0x01, 0x06]) {
         return None;
     }
     position += 2;
     let count = parse_count(bytes, &mut position)?;
+    if count > bytes.len().saturating_sub(position) / VERTEX_RECORD_BYTES {
+        return None;
+    }
     let mut points = Vec::with_capacity(count);
     for _ in 0..count {
         if bytes.get(position..position + 3)? != [0x05, 0x08, 0x01] {
@@ -795,32 +854,33 @@ fn packet_triangles(
 }
 
 pub(crate) fn boundary_cycles(triangles: &[[u32; 3]]) -> Option<Vec<Vec<u32>>> {
-    let mut counts = HashMap::<(u32, u32), usize>::new();
+    let mut edge_directions = HashMap::<(u32, u32), u8>::new();
     for &[a, b, c] in triangles {
-        for edge in [(a, b), (b, c), (c, a)] {
-            *counts.entry(edge).or_default() += 1;
-        }
-    }
-    let undirected: HashSet<(u32, u32)> = counts
-        .keys()
-        .map(|&(start, end)| (start.min(end), start.max(end)))
-        .collect();
-    for (low, high) in undirected {
-        if low == high {
-            return None;
-        }
-        let forward = counts.get(&(low, high)).copied().unwrap_or(0);
-        let reverse = counts.get(&(high, low)).copied().unwrap_or(0);
-        if !matches!((forward, reverse), (1, 0 | 1) | (0, 1)) {
-            return None;
+        for (start, end) in [(a, b), (b, c), (c, a)] {
+            if start == end {
+                return None;
+            }
+            let (edge, direction) = if start < end {
+                ((start, end), 1)
+            } else {
+                ((end, start), 2)
+            };
+            let directions = edge_directions.entry(edge).or_default();
+            if *directions & direction != 0 {
+                return None;
+            }
+            *directions |= direction;
         }
     }
     let mut successors = HashMap::new();
-    for (&(start, end), &count) in &counts {
-        if count > 0
-            && counts.get(&(end, start)).copied().unwrap_or(0) == 0
-            && successors.insert(start, end).is_some()
-        {
+    for (&(low, high), &directions) in &edge_directions {
+        let boundary = match directions {
+            1 => Some((low, high)),
+            2 => Some((high, low)),
+            3 => None,
+            _ => return None,
+        };
+        if boundary.is_some_and(|(start, end)| successors.insert(start, end).is_some()) {
             return None;
         }
     }
@@ -936,4 +996,21 @@ fn cover_cycle_by_rows(cycle: &[u32], rows: &[EdgeRow], union: &mut UnionFind) -
         });
     }
     Some(Boundary { coedges })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::boundary_cycles;
+
+    #[test]
+    fn boundary_cycles_cancel_opposite_triangle_edges() {
+        let triangles = [[0, 1, 2], [0, 2, 3]];
+        assert_eq!(boundary_cycles(&triangles), Some(vec![vec![0, 1, 2, 3]]));
+    }
+
+    #[test]
+    fn boundary_cycles_reject_duplicate_directed_edges() {
+        let triangles = [[0, 1, 2], [0, 1, 3]];
+        assert_eq!(boundary_cycles(&triangles), None);
+    }
 }

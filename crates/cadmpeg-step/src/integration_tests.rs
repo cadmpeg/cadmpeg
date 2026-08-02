@@ -1,0 +1,102 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Integration contracts over synthesized STEP Part 21 exchanges.
+
+use super::*;
+
+fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+    assert!(result.ir.native.namespace("step").is_some());
+}
+
+#[test]
+fn part21_pipeline_composes_envelope_editions_strings_anchors_opaque_records_and_dependencies() {
+    codec_detects_and_inspects_ap242_exchange_structure();
+    codec_inspects_edition3_sections_and_external_references();
+    string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode();
+    decode_reports_data_section_external_dependencies();
+    decode_preserves_named_opaque_records_with_exact_byte_spans();
+    decode_accounts_for_every_part21_byte();
+}
+
+#[test]
+fn geometry_pipeline_composes_analytic_conic_nurbs_procedural_and_unit_conversion_paths() {
+    decode_transfers_placed_analytic_geometry_in_millimetres();
+    decode_conical_apex_and_context_plane_angle_units();
+    decode_resolves_conversion_units_and_linear_uncertainty();
+    procedural_step_geometry_round_trips_as_native_entities();
+    writer_round_trips_rational_nurbs_pcurves();
+    parabola_and_hyperbola_map_to_step_conics();
+    nurbs_surface_grid_orientation_is_u_major();
+}
+
+#[test]
+fn topology_pipeline_composes_sheets_solids_wires_singular_loops_bounds_and_placements() {
+    decode_and_write_singular_vertex_loops();
+    decode_builds_a_valid_connected_sheet_brep();
+    decode_builds_a_valid_ap203_sheet_brep();
+    reader_recovers_a_valid_solid_from_writer_output();
+    writer_round_trips_rigid_body_placements();
+    writer_round_trips_edge_based_wire_bodies();
+    face_outer_bound_is_canonicalized_ahead_of_inner_bounds();
+    every_region_of_a_body_is_retained_as_a_shape_item();
+}
+
+#[test]
+fn product_pipeline_composes_body_ownership_occurrences_mappings_and_recursive_assemblies() {
+    writer_round_trips_product_body_ownership();
+    decode_builds_product_occurrences_with_relative_placement();
+    decode_builds_occurrence_placement_from_mapped_item();
+    repeated_subassembly_instances_each_receive_the_subtree();
+    ap203_specified_source_formations_build_occurrence_tree();
+    standalone_geometry_uses_general_shape_representation();
+}
+
+#[test]
+fn presentation_pipeline_composes_tessellation_colors_visibility_layers_and_style_overrides() {
+    ap242_writer_round_trips_indexed_tessellation_and_exact_body_link();
+    step_color_assets_round_trip_names_and_tessellation_targets_strictly();
+    decode_transfers_ap242_one_based_tessellation_indices();
+    hidden_body_geometry_and_visibility_round_trip();
+    body_color_becomes_per_face_styled_item_presentation();
+    face_appearance_binding_styles_the_advanced_face();
+    face_override_wins_over_body_color_and_body_fills_the_rest();
+    presentation_reader_normalizes_invalid_layer_and_common_datum_inputs();
+}
+
+#[test]
+fn pmi_pipeline_composes_semantic_presentation_dimension_datum_and_tolerance_entities() {
+    decode_transfers_ap242_semantic_pmi();
+    decode_transfers_ap242_presentation_pmi();
+    ap242_dimension_kinds_emit_concrete_schema_entities();
+    common_datum_compartment_round_trips_as_one_precedence();
+    typed_pmi_measure_uses_its_explicit_conversion_unit();
+    unresolved_lower_tolerance_does_not_shift_upper_deviation();
+}
+
+#[test]
+fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_strict_output() {
+    let ir = unit_cube();
+    for schema in [
+        StepSchema::Ap203Edition1,
+        StepSchema::Ap214,
+        StepSchema::Ap242Edition3,
+    ] {
+        let mut bytes = Vec::new();
+        let options = StepWriteOptions {
+            schema,
+            ..StepWriteOptions::default()
+        };
+        write_step(&ir, &mut bytes, &options).expect("STEP cube write");
+        assert_eq!(StepCodec::default().detect(&bytes), Confidence::High);
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("STEP cube decode");
+        assert_eq!(result.ir.model.bodies.len(), 1);
+        assert_eq!(result.ir.model.faces.len(), 6);
+        assert_valid(&result);
+    }
+    strict_writer_rejects_before_emitting_bytes();
+    strict_writer_refuses_retained_opaque_step_records_atomically();
+    rejected_step_write_detects_incomplete_datum_system();
+}

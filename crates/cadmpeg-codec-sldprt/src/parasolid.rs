@@ -8,8 +8,8 @@
 //! descriptions identify partition, deltas, and feature-profile payloads.
 
 use crate::container::parasolid_offset;
-use cadmpeg_ir::compression::inflate_zlib_prefix;
 use cadmpeg_ir::math::Point3;
+use std::io::Read as _;
 
 /// The constant 16-byte prefix of the wrapped Parasolid transmit-container
 /// magic. When it is present, the actual `PS\0\0` stream is a nested zlib member
@@ -57,7 +57,7 @@ pub fn extract_streams_with_offsets(payload: &[u8]) -> Vec<(usize, Vec<u8>)> {
     let mut i = 0usize;
     while i + 2 <= payload.len() {
         if payload[i] == 0x78 && matches!(payload[i + 1], 0x01 | 0x9c | 0xda) {
-            if let Some(inner) = inflate_zlib_prefix(&payload[i..]) {
+            if let Some(inner) = inflate_zlib_candidate(&payload[i..]) {
                 if inner.starts_with(&[b'P', b'S', 0x00, 0x00])
                     && stream_header(&inner).is_some()
                     && !out.iter().any(|(_, stream)| stream == &inner)
@@ -69,6 +69,26 @@ pub fn extract_streams_with_offsets(payload: &[u8]) -> Vec<(usize, Vec<u8>)> {
         i += 1;
     }
     out
+}
+
+fn inflate_zlib_candidate(bytes: &[u8]) -> Option<Vec<u8>> {
+    let cap = (16 * 1024 * 1024_usize)
+        .saturating_add(bytes.len().saturating_mul(256))
+        .min(2 * 1024 * 1024 * 1024);
+    let mut decoder = flate2::read::ZlibDecoder::new(bytes);
+    let mut output = Vec::new();
+    let mut chunk = [0_u8; 8192];
+    loop {
+        match decoder.read(&mut chunk) {
+            Ok(0) => return (!output.is_empty()).then_some(output),
+            Ok(read) if read <= cap.saturating_sub(output.len()) => {
+                output.try_reserve(read).ok()?;
+                output.extend_from_slice(&chunk[..read]);
+            }
+            Ok(_) => return None,
+            Err(_) => return (!output.is_empty()).then_some(output),
+        }
+    }
 }
 
 /// Direct (uncompressed) Parasolid streams with their block-payload offsets.
@@ -139,7 +159,7 @@ pub struct StreamHeader {
 pub fn stream_header(payload: &[u8]) -> Option<StreamHeader> {
     let sig = parasolid_offset(payload)?;
     let desc_len_at = sig + 4;
-    let desc_len = usize::from(cadmpeg_ir::be::u16_at(payload, desc_len_at)?);
+    let desc_len = usize::from(cadmpeg_codec_core::be::u16_at(payload, desc_len_at)?);
     let desc_start = desc_len_at + 2;
     let desc_end = desc_start + desc_len;
     let description = String::from_utf8_lossy(payload.get(desc_start..desc_end)?).into_owned();

@@ -1,0 +1,35 @@
+{
+  "container_kind": "v5-cfv2",
+  "entries": [
+    {
+      "attributes": {
+        "desc_offset": "16",
+        "directory": "inner",
+        "extent_count": "1"
+      },
+      "compressed_size": 275,
+      "compression": "none",
+      "name": "XainDataStream",
+      "role": "stream",
+      "uncompressed_size": 275
+    },
+    {
+      "attributes": {
+        "desc_offset": "120",
+        "directory": "inner",
+        "extent_count": "1"
+      },
+      "compressed_size": 1,
+      "compression": "none",
+      "name": "SurfacicReps",
+      "role": "stream",
+      "uncompressed_size": 1
+    }
+  ],
+  "format": "catia",
+  "notes": [
+    "outer V5_CFV2 container: directory offset 539 + length 0 = 539 (file size 539); variant: nested V5_CFV2 with no BREP-body directory (contiguous inner body): freeform carrier decode supported",
+    "nested V5_CFV2 at file offset 16 with a CATIA_V5 CB0001 directory of 2 stream(s)",
+    "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
+  ]
+}

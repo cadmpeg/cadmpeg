@@ -11,12 +11,12 @@ use std::collections::BTreeMap;
 use std::io::{Cursor, Write};
 
 use crate::records::DesignMaterialAssignment;
+use cadmpeg_codec_core::le::{u32_at, u64_at};
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::appearance::{
     Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
 };
-use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::ids::{AppearanceId, BodyId};
-use cadmpeg_ir::le::{u32_at, u64_at};
 use cadmpeg_ir::topology::Color;
 
 use crate::bytes::{
@@ -26,6 +26,16 @@ use crate::container::{role, ContainerScan};
 
 const PAGE_SIZE: usize = 0x88;
 const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
+/// The `AssetLibID` [`encode_protein`] writes for an appearance that names no
+/// library. A stored library identifier is a library GUID or a library path;
+/// the null GUID names neither.
+const NO_ASSET_LIB_ID: &str = "00000000-0000-0000-0000-000000000000";
+
+/// The library identifier an `InstanceProperties` record stores, when it names
+/// a library.
+fn library_id(asset_lib_id: &str) -> Option<String> {
+    (!asset_lib_id.is_empty() && asset_lib_id != NO_ASSET_LIB_ID).then(|| asset_lib_id.to_owned())
+}
 
 /// Compare a serialized Protein visual token with a Design visual GUID.
 ///
@@ -51,7 +61,12 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
         })?;
     let name = appearance.name.as_deref().unwrap_or("Prism-001");
     let mut logical = RECORD_MARKER.to_vec();
-    for value in [schema, guid, name, "00000000-0000-0000-0000-000000000000"] {
+    for value in [
+        schema,
+        guid,
+        name,
+        appearance.library_id.as_deref().unwrap_or(NO_ASSET_LIB_ID),
+    ] {
         push_lp(&mut logical, value)?;
     }
     let value_block = logical.len();
@@ -250,7 +265,13 @@ fn patch_instance_colors(
         let Some(edit) = edits.get(&guid) else {
             continue;
         };
-        let delta = generic_connection_delta(record, position);
+        let delta = if schema == "GenericSchema" {
+            generic_connection_delta(record, position).ok_or_else(|| {
+                CodecError::Malformed("Protein GenericSchema connection list is malformed".into())
+            })?
+        } else {
+            0
+        };
         if let Some(color) = edit.color {
             let relative = match schema.as_str() {
                 "GenericSchema" => position + 112 + delta,
@@ -383,7 +404,7 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
         };
         let catalog = definition_catalog(payload);
         let mut appearances = if crate::protein::has_schemas(payload) {
-            let records = crate::protein::decode(payload, &logical)?;
+            let records = crate::protein::decode(payload, &instance)?;
             let mut decoded = appearances_from_schema_records(&records);
             let decoded_ids = decoded
                 .iter()
@@ -425,6 +446,7 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
                 id: AppearanceId(format!("f3d:design:appearance#{}", assignment.visual_guid)),
                 name: assignment.visual_preset.clone(),
                 asset_guid: Some(assignment.visual_guid.clone()),
+                library_id: None,
                 visual_guid: Some(assignment.visual_guid.clone()),
                 physical_token: assignment.physical_token.clone(),
                 schema: None,
@@ -448,10 +470,7 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
     let mut bindings = bind_bodies(&out, &assignments, &act_channels, &object_types, body_keys);
     let body_overrides = decode_body_appearance_overrides(scan)?;
     for over in &body_overrides {
-        let Some(body) = body_keys
-            .iter()
-            .find_map(|(body, key)| (*key == over.asm_body_key).then_some(body.clone()))
-        else {
+        let Some(body) = body_for_key(body_keys, over.asm_body_key) else {
             continue;
         };
         if bindings
@@ -540,6 +559,7 @@ fn appearances_from_schema_records(records: &[crate::protein::DecodedRecord]) ->
                 id: AppearanceId(format!("f3d:design:appearance#{}", record.guid)),
                 name: Some(record.base.clone()),
                 asset_guid: Some(record.guid.clone()),
+                library_id: library_id(&record.asset_lib_id),
                 visual_guid: (!is_physical_schema(&record.schema)).then(|| record.guid.clone()),
                 physical_token: None,
                 schema: Some(record.schema.clone()),
@@ -686,7 +706,8 @@ fn distance_property(record: &crate::protein::DecodedRecord, suffix: &str) -> Op
     };
     match *unit {
         0x2016 => Some(*value * 25.4),
-        0x200e => Some(*value * 10.0),
+        0x200e => Some(*value),
+        0x200d => Some(*value * 10.0),
         _ => None,
     }
 }
@@ -845,9 +866,17 @@ fn decode_face_appearance_assignments(
 pub(crate) fn face_appearance_assignments(bytes: &[u8]) -> Vec<FaceAppearanceAssignment> {
     const MARKER: &str = "BA5EE55E-9982-449B-9D66-9F036540E140";
     let strings = lp_utf16_strings(bytes);
+    let browser_nodes = crate::design::decode::body::browser_node_entities(bytes);
     let mut out = Vec::new();
     for (index, (_, value)) in strings.iter().enumerate() {
         if value != MARKER || index < 2 {
+            continue;
+        }
+        // A body-presentation record also terminates at this marker, but its
+        // bounded prefix contains the GUID of a browser node. That relation
+        // assigns the record to a body and excludes the adjacent record GUID
+        // from the face-identity grammar.
+        if body_node_candidate(&strings, index, &browser_nodes).is_some() {
             continue;
         }
         let (_, visual) = &strings[index - 1];
@@ -900,7 +929,61 @@ pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
         };
         out.push(entity_suffix);
     }
+    out.extend(browser_node_body_appearances(bytes));
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|binding| seen.insert(binding.clone()));
     out
+}
+
+/// Decode body-presentation records that identify their body through a
+/// browser-node GUID rather than a class-299 head.
+///
+/// The terminating visual marker is shared with face-presentation records.
+/// A record is body-owned only when exactly one GUID in its bounded prefix
+/// resolves through a browser-node record to one Design entity suffix.
+fn browser_node_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
+    const VISUAL_MARKER: &str = "BA5EE55E-9982-449B-9D66-9F036540E140";
+    let nodes = crate::design::decode::body::browser_node_entities(bytes);
+    if nodes.is_empty() {
+        return Vec::new();
+    }
+    let strings = lp_utf16_strings(bytes);
+    let mut out = Vec::new();
+    for (index, (_, marker)) in strings.iter().enumerate() {
+        if marker != VISUAL_MARKER || index == 0 {
+            continue;
+        }
+        let visual = &strings[index - 1].1;
+        if !is_guid_prefix(visual) {
+            continue;
+        }
+        if let Some(entity_suffix) = body_node_candidate(&strings, index, &nodes) {
+            out.push((entity_suffix, visual[..36].to_string()));
+        }
+    }
+    out
+}
+
+fn body_node_candidate(
+    strings: &[(usize, String)],
+    marker_index: usize,
+    nodes: &std::collections::HashMap<String, u64>,
+) -> Option<u64> {
+    const APPEARANCE_MARKER: &str = "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C";
+    let marker = strings[..marker_index]
+        .iter()
+        .rposition(|(_, value)| value == APPEARANCE_MARKER)?;
+    let start = marker.saturating_sub(3);
+    let candidates = strings[start..marker_index.saturating_sub(1)]
+        .iter()
+        .filter_map(|(_, candidate)| nodes.get(&candidate.to_ascii_lowercase()).copied())
+        .collect::<std::collections::HashSet<_>>();
+    (candidates.len() == 1).then(|| {
+        *candidates
+            .iter()
+            .next()
+            .expect("one browser-node candidate was established")
+    })
 }
 
 /// Parse the appearance fields of one browser body record whose marker GUID
@@ -989,6 +1072,23 @@ fn skip_zeros(bytes: &[u8], position: usize) -> usize {
     skip_zeros_capped(bytes, position, 8)
 }
 
+/// The body carrying ASM body key `key`.
+///
+/// Several bodies can carry one key. Hash order decides which of them an
+/// iteration reaches first and would put a different body in the appearance
+/// binding — and so a different document digest — on every process run, so the
+/// smallest identity wins instead.
+pub(crate) fn body_for_key<S: std::hash::BuildHasher>(
+    body_keys: &std::collections::HashMap<BodyId, u64, S>,
+    key: u64,
+) -> Option<BodyId> {
+    body_keys
+        .iter()
+        .filter_map(|(body, candidate)| (*candidate == key).then_some(body))
+        .min()
+        .cloned()
+}
+
 fn bind_bodies<S: std::hash::BuildHasher>(
     appearances: &[Appearance],
     assignments: &[DesignMaterialAssignment],
@@ -999,9 +1099,7 @@ fn bind_bodies<S: std::hash::BuildHasher>(
     assignments
         .iter()
         .filter_map(|assignment| {
-            let body = body_keys.iter().find_map(|(body, key)| {
-                (*key == assignment.asm_body_key).then_some(body.clone())
-            })?;
+            let body = body_for_key(body_keys, assignment.asm_body_key)?;
             let appearance = appearances.iter().find(|appearance| {
                 appearance
                     .visual_guid
@@ -1190,7 +1288,13 @@ fn lp_utf16_string_at(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
     Some((value, 4 + byte_len))
 }
 
-fn decode_body_map(bytes: &[u8]) -> std::collections::HashMap<u64, (u64, usize, usize)> {
+/// ASM body key to design-entity suffix and the two field offsets, keyed in
+/// ascending body-key order.
+///
+/// Callers search this map by entity suffix rather than by key, so an ordered
+/// map is what keeps the answer the same across process runs when two body keys
+/// carry one suffix.
+fn decode_body_map(bytes: &[u8]) -> BTreeMap<u64, (u64, usize, usize)> {
     crate::design::decode::body::body_bindings(bytes)
         .into_iter()
         .map(|binding| {
@@ -1323,16 +1427,25 @@ fn decode_fixed_logical_records(bytes: &[u8]) -> Vec<Appearance> {
         .collect()
 }
 
+/// Decode one record of a fixed source-less layout.
+///
+/// The schema set here is exactly the set [`encode_protein`] emits, and the
+/// offsets are that encoder's own layout rather than a property order stated by
+/// the format. A record carrying any other schema declines: its member offsets
+/// follow from the schema packaged beside it, which the schema-driven path
+/// reads. That covers the `interior_model` subtypes with no fixed layout here,
+/// `PrismLayeredSchema` and `PrismWoodSchema`, whose colour offset must not be
+/// assumed from the opaque, metal, or transparent layouts.
 fn decode_fixed_record(record: &[u8]) -> Option<Appearance> {
     let mut position = RECORD_MARKER.len();
     let schema = take_lp_utf8(record, &mut position)?;
     let guid = take_lp_utf8(record, &mut position)?;
     let base = take_lp_utf8(record, &mut position)?;
-    take_lp_utf8(record, &mut position)?;
+    let asset_lib_id = take_lp_utf8(record, &mut position)?;
     let color = match schema.as_str() {
         "GenericSchema" => fixed_rgba(
             record,
-            position + 112 + generic_connection_delta(record, position),
+            position + 112 + generic_connection_delta(record, position)?,
         ),
         "PrismOpaqueSchema" | "PrismMetalSchema" => fixed_rgba(record, position + 8),
         "PrismTransparentSchema" => fixed_rgba(record, position + 121),
@@ -1344,7 +1457,7 @@ fn decode_fixed_record(record: &[u8]) -> Option<Appearance> {
     };
     let mut properties = BTreeMap::new();
     if schema == "GenericSchema" {
-        let delta = generic_connection_delta(record, position);
+        let delta = generic_connection_delta(record, position)?;
         fixed_tagged_scalar(
             &mut properties,
             "reflectivity_at_0deg",
@@ -1368,6 +1481,7 @@ fn decode_fixed_record(record: &[u8]) -> Option<Appearance> {
         id: AppearanceId(format!("f3d:design:appearance#{guid}")),
         name: Some(base),
         asset_guid: Some(guid.clone()),
+        library_id: library_id(&asset_lib_id),
         visual_guid: (!matches!(
             schema.as_str(),
             "PhysMatSchema"
@@ -1413,33 +1527,32 @@ fn fixed_rgba(bytes: &[u8], offset: usize) -> Option<Color> {
     decoded_color(values)
 }
 
-fn generic_connection_delta(record: &[u8], value_block: usize) -> usize {
-    let slot = value_block + 102;
+fn generic_connection_delta(record: &[u8], value_block: usize) -> Option<usize> {
+    let slot = value_block.checked_add(102)?;
     match record.get(slot) {
-        Some(0) => 0,
+        Some(0) => Some(0),
         Some(1) if slot + 6 <= record.len() => {
             let count = u32::from_le_bytes(
                 record[slot + 2..slot + 6]
                     .try_into()
                     .expect("invariant: record[slot+2..slot+6] is a 4-byte slice"),
             ) as usize;
+            if count > 8 {
+                return None;
+            }
             let mut position = slot + 6;
-            for _ in 0..count.min(8) {
-                let Some(length_bytes) = record.get(position..position + 4) else {
-                    return 0;
-                };
+            for _ in 0..count {
+                let length_bytes = record.get(position..position + 4)?;
                 let length = u32::from_le_bytes(length_bytes.try_into().expect(
                     "invariant: length_bytes is a 4-byte slice from bytes.get(range) of length 4",
                 )) as usize;
                 position += 4;
-                if record.get(position..position + length).is_none() {
-                    return 0;
-                }
+                record.get(position..position + length)?;
                 position += length;
             }
-            position.saturating_sub(slot + 1)
+            position.checked_sub(slot + 1)
         }
-        _ => 0,
+        _ => None,
     }
 }
 
@@ -1454,10 +1567,99 @@ fn find(bytes: &[u8], needle: &[u8], start: usize) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn generic_connection_delta_rejects_unknown_and_truncated_forms() {
+        let mut record = vec![0; 120];
+        record[102] = 2;
+        assert_eq!(super::generic_connection_delta(&record, 0), None);
+
+        record[102] = 1;
+        record[104..108].copy_from_slice(&1u32.to_le_bytes());
+        record[108..112].copy_from_slice(&16u32.to_le_bytes());
+        assert_eq!(super::generic_connection_delta(&record, 0), None);
+    }
+
+    fn distance_record(unit: u32, value: f64) -> crate::protein::DecodedRecord {
+        crate::protein::DecodedRecord {
+            schema: "TestSchema".into(),
+            guid: String::new(),
+            base: String::new(),
+            asset_lib_id: String::new(),
+            properties: std::collections::BTreeMap::from([(
+                "test_Depth".to_owned(),
+                crate::protein::DecodedProperty {
+                    value: crate::protein::PropertyValue::Distance { unit, value },
+                    connections: Vec::new(),
+                },
+            )]),
+        }
+    }
+
+    #[test]
     fn decoded_color_requires_finite_normalized_channels() {
         assert!(super::decoded_color([0.0, 0.25, 0.5, 1.0]).is_some());
         for invalid in [f64::NAN, f64::INFINITY, -0.01, 1.01] {
             assert!(super::decoded_color([invalid, 0.25, 0.5, 1.0]).is_none());
         }
+    }
+
+    /// The three length tags of the Distance quantity class each convert to
+    /// the IR's millimetres. `0x200e` is millimetre, not centimetre.
+    #[test]
+    fn distance_tags_convert_to_millimetres() {
+        for (unit, value, expected) in [(0x2016, 1.0, 25.4), (0x200e, 0.5, 0.5), (0x200d, 0.5, 5.0)]
+        {
+            let record = distance_record(unit, value);
+            assert_eq!(super::distance_property(&record, "Depth"), Some(expected));
+        }
+    }
+
+    /// The schema-driven path takes the appearance colour from the connectable
+    /// albedo member and does not select on the schema name, so every
+    /// `interior_model` subtype gets a colour. The fixed layouts cover only the
+    /// subtypes the source-less encoder writes.
+    #[test]
+    fn every_prism_subtype_decodes_its_albedo_colour() {
+        for schema in [
+            "PrismOpaqueSchema",
+            "PrismMetalSchema",
+            "PrismLayeredSchema",
+            "PrismTransparentSchema",
+            "PrismWoodSchema",
+        ] {
+            let decoded = super::appearances_from_schema_records(&[albedo_record(schema)]);
+            let [appearance] = decoded.as_slice() else {
+                panic!("{schema} record decodes to one appearance");
+            };
+            assert_eq!(appearance.schema.as_deref(), Some(schema));
+            assert_eq!(
+                appearance.base_color.map(|color| color.g),
+                Some(0.25),
+                "{schema} keeps its albedo colour"
+            );
+        }
+    }
+
+    fn albedo_record(schema: &str) -> crate::protein::DecodedRecord {
+        crate::protein::DecodedRecord {
+            schema: schema.to_owned(),
+            guid: "11111111-2222-3333-4444-555555555555".to_owned(),
+            base: "Prism-001".to_owned(),
+            asset_lib_id: String::new(),
+            properties: std::collections::BTreeMap::from([(
+                "surface_albedo".to_owned(),
+                crate::protein::DecodedProperty {
+                    value: crate::protein::PropertyValue::Color([0.5, 0.25, 0.125, 1.0]),
+                    connections: Vec::new(),
+                },
+            )]),
+        }
+    }
+
+    /// A Distance whose tag names a quantity other than length has no
+    /// millimetre reading and must not be silently taken as one.
+    #[test]
+    fn a_non_length_distance_tag_yields_no_value() {
+        let record = distance_record(0x0002_1008, 1.0);
+        assert_eq!(super::distance_property(&record, "Depth"), None);
     }
 }

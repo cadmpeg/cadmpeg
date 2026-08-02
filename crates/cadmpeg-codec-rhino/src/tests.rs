@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, CodecEntry, CodecError, Confidence, DecodeOptions};
-use cadmpeg_ir::decode::InspectOptions;
+use cadmpeg_codec_core::decode::InspectOptions;
+use cadmpeg_codec_core::CodecError;
+use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
 use cadmpeg_ir::report::Severity;
-use cadmpeg_ir::LossCode;
+use cadmpeg_ir::LossKind;
 use cadmpeg_ir::IR_VERSION;
 
 use super::chunks::{
@@ -1704,6 +1705,20 @@ fn header_only_bands_inspect_without_scanning_and_do_not_decode() {
 }
 
 #[test]
+fn top_level_framing_preserves_truncation_classification() {
+    let bytes = header("50");
+    let truncated = &bytes[..bytes.len() - 1];
+    assert!(matches!(
+        RhinoCodec.inspect(
+            &mut Cursor::new(truncated),
+            &InspectOptions::default()
+        ),
+        Err(CodecError::Truncated { location, context })
+            if location.offset == 31 && context.operation == "rhino chunk framing"
+    ));
+}
+
+#[test]
 fn requires_end_of_table_and_rejects_wrong_order() {
     let archive = ArchiveVersion::V5;
     let mut missing = header("50");
@@ -2342,7 +2357,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
 }
 
 #[test]
-fn rejected_candidate_detaches_payload_clone_and_preserves_live_bytes() {
+fn rejected_candidate_rolls_back_entities_and_preserves_retained_bytes() {
     let archive = ArchiveVersion::V5;
     let object = object_record(archive, 1, [0; 16]);
     let bytes = minimal_document(
@@ -2362,8 +2377,7 @@ fn rejected_candidate_detaches_payload_clone_and_preserves_live_bytes() {
             .data
             .clone()
             .expect("required invariant");
-        let (payloads_detached, findings) = context.reject_duplicate_unknown_candidate();
-        assert!(payloads_detached);
+        let findings = context.reject_duplicate_entity_candidate();
         assert!(findings.contains("identity"));
         assert_eq!(
             context
@@ -2374,6 +2388,18 @@ fn rejected_candidate_detaches_payload_clone_and_preserves_live_bytes() {
             Some(original.as_slice())
         );
         assert_eq!(context.unknown_count(), 1);
+        let matching = context
+            .ir_mut()
+            .model
+            .points
+            .iter()
+            .filter(|point| point.id.0 == "rhino:test:duplicate-point")
+            .collect::<Vec<_>>();
+        assert_eq!(matching.len(), 1);
+        assert_eq!(
+            matching[0].position,
+            cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+        );
     });
 }
 
@@ -2687,11 +2713,11 @@ fn static_instance_suppresses_member_and_two_references_expand_with_distinct_ids
     assert_eq!(native.arenas["product_definitions"].len(), 1);
     assert_eq!(native.arenas["product_occurrences"].len(), 2);
     assert_eq!(
-        native.arenas["product_occurrences"][0].fields["definition_uuid"],
+        native.arenas["product_occurrences"][0].fields()["definition_uuid"],
         Uuid::from_wire(definition_id).to_string()
     );
     assert_eq!(
-        native.arenas["product_occurrences"][0].fields["transform_units"],
+        native.arenas["product_occurrences"][0].fields()["transform_units"],
         "millimeter"
     );
     assert!(result
@@ -3393,7 +3419,7 @@ fn geometry_decode_does_not_clear_attribute_degradation() {
             .report
             .losses
             .iter()
-            .any(|loss| { loss.code == LossCode::AttributesNotTransferred }));
+            .any(|loss| { loss.code == LossKind::AttributesNotTransferred }));
     });
 }
 
@@ -3454,7 +3480,8 @@ fn report_attributes_aggregated_class_losses_to_first_object_record() {
         .losses
         .iter()
         .find(|loss| {
-            loss.category == cadmpeg_ir::report::LossCategory::Geometry && loss.provenance.is_some()
+            loss.code.category() == cadmpeg_ir::report::LossCategory::Geometry
+                && loss.provenance.is_some()
         })
         .and_then(|loss| loss.provenance.as_ref())
         .expect("retained geometry loss has provenance");
@@ -3510,3 +3537,6 @@ fn typed_class_constants_preserve_canonical_uuid_display() {
         "f09ba4d9-455b-42c3-ba3b-e6ccacef853b"
     );
 }
+
+#[path = "integration_tests.rs"]
+mod integration_tests;

@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "4",
+      "ir_version": "5",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -27,7 +27,6 @@
             "sense": "forward"
           }
         ],
-        "components": [],
         "configurations": [],
         "curves": [
           {
@@ -176,8 +175,7 @@
           }
         ],
         "procedural_surfaces": [],
-        "product_occurrences": [],
-        "products": [],
+        "product_definitions": [],
         "regions": [
           {
             "body": "nx:s0:body#2",
@@ -360,15 +358,18 @@
               }
             ]
           },
-          "version": 155
+          "version": 181
         }
       },
       "source": {
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "449",
-          "footer_offset": "0",
+          "file_size": "463",
+          "footer_entry_count": "0",
+          "footer_fingerprint": "00000000",
+          "footer_offset": "449",
+          "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
           "partition_streams": "1",
@@ -390,20 +391,13 @@
       "geometry_transferred": true,
       "losses": [
         {
-          "category": "geometry",
           "code": "carrier_summary",
           "message": "Decoded 1 POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, metres → millimetres), 1 analytic surface carrier(s) (1 plane, 0 cylinder, 0 cone, 0 sphere, 0 torus), and 2 analytic curve carrier(s) (1 line, 0 circle, 0 ellipse). All parameters are byte-exact at the document's millimetre scale.",
           "severity": "info"
-        },
-        {
-          "category": "attribute",
-          "code": "attributes_not_transferred",
-          "message": "Material and appearance assignment, class-specific entity attribute fields, and assembly occurrence placements were not transferred: their remaining NX object-model and Parasolid field serialization is not decoded.",
-          "severity": "warning"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 449, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -474,7 +468,7 @@
         },
         "provenance": {
           "nx:container:parasolid#0": {
-            "offset": 72,
+            "offset": 76,
             "stream": 1,
             "tag": "partition"
           },
@@ -555,7 +549,7 @@
           "byte_len": 718,
           "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AAAMAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAMAAAAAAAEAAgABAAQAAQABAAwAAQAOAAQAAAAAAAA/Kjbi6xxDLQABAAEABQADAAYrAAAAAAAAAAAAAAAPAAUAAAAAAAAABwAEAAEAEQAHAAAABQAHAAcACgABAAgADAAAKwAQAAgAAAAAAAA/M6kqMFUyYQAHAAAAAAAMAAAAAAAAADIABgAAAAAAAAAAAAAAAAAAKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAkAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEgAKAAAAAAAAAAAAAAAAAAs/Gjbi6xxDLQAAABMADAAAAAAAAAAAAAAAAAAdAAsAAAAAAAAAAAAAAAA/hHrhR64Uez+UeuFHrhR7P564UeuFHrgAJgAMAAAAAAABAAAAAAAAAAArAAYAAQAUABUAFgAXACgAAAACABQAAAAAAAAAAD/wAAAAAAAAAAAAAj7k+LWI42jxP1BiTdLxqfzCvJKPmW4AAMK8ko+ZbgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP4R64UeuFHsAAAAAAAAAAAAAAAAAAAAAACkAAAABABVMPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAApAAAAAQAWTD8/hH2AXl8w6AAAAAAAAAAAAAAAAAAAAAAAzAAAAAQAFwIAAAAAAAAAAAAAAAAAAAAAP4R64UeuFHsAAAAAAAAAAA==",
           "id": "nx:container:parasolid#0",
-          "offset": 72,
+          "offset": 76,
           "sha256": "03e5c76b4f452b02cf41cb568126f0e27e64a7e67ec73891c856e4e64684b705",
           "stream": "nx:container"
         }
@@ -568,18 +562,18 @@
     "entries": [
       {
         "attributes": {
-          "file_offset": "72",
+          "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 377,
+        "compressed_size": 373,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
-        "role": "stream",
-        "uncompressed_size": 377
+        "role": "part-payload",
+        "uncompressed_size": 373
       },
       {
         "attributes": {
-          "file_offset": "72",
+          "file_offset": "76",
           "kind": "partition",
           "records.body": "1",
           "records.edge": "1",
@@ -608,7 +602,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 449, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]

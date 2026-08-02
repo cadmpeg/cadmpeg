@@ -1,0 +1,327 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "13544",
+        "crc32": "918f3593",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compressed_size": 4434,
+      "compression": "deflate",
+      "name": "Document.xml",
+      "role": "document",
+      "uncompressed_size": 61780
+    },
+    {
+      "attributes": {
+        "central_header_offset": "13602",
+        "crc32": "1c6c71bb",
+        "data_offset": "4528",
+        "header_offset": "4476"
+      },
+      "compressed_size": 373,
+      "compression": "deflate",
+      "name": "StringHasher.Table.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 1393
+    },
+    {
+      "attributes": {
+        "central_header_offset": "13670",
+        "crc32": "19be6e32",
+        "data_offset": "4945",
+        "header_offset": "4901"
+      },
+      "compressed_size": 1267,
+      "compression": "deflate",
+      "name": "Body.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 13310
+    },
+    {
+      "attributes": {
+        "central_header_offset": "13730",
+        "crc32": "dd25846d",
+        "data_offset": "6260",
+        "header_offset": "6212"
+      },
+      "compressed_size": 387,
+      "compression": "deflate",
+      "name": "Body.Shape.Map.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 1040
+    },
+    {
+      "attributes": {
+        "central_header_offset": "13794",
+        "crc32": "00000000",
+        "data_offset": "6704",
+        "header_offset": "6647"
+      },
+      "compressed_size": 2,
+      "compression": "deflate",
+      "name": "PadSketch.InternalShape.brp",
+      "role": "brep",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "central_header_offset": "13867",
+        "crc32": "19e462b8",
+        "data_offset": "6755",
+        "header_offset": "6706"
+      },
+      "compressed_size": 298,
+      "compression": "deflate",
+      "name": "PadSketch.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 1655
+    },
+    {
+      "attributes": {
+        "central_header_offset": "13932",
+        "crc32": "3d21f172",
+        "data_offset": "7106",
+        "header_offset": "7053"
+      },
+      "compressed_size": 142,
+      "compression": "deflate",
+      "name": "PadSketch.Shape.Map.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 267
+    },
+    {
+      "attributes": {
+        "central_header_offset": "14001",
+        "crc32": "65817652",
+        "data_offset": "7297",
+        "header_offset": "7248"
+      },
+      "compressed_size": 562,
+      "compression": "deflate",
+      "name": "Pad.AddSubShape.brp",
+      "role": "brep",
+      "uncompressed_size": 4963
+    },
+    {
+      "attributes": {
+        "central_header_offset": "14066",
+        "crc32": "69e3b26f",
+        "data_offset": "7912",
+        "header_offset": "7859"
+      },
+      "compressed_size": 276,
+      "compression": "deflate",
+      "name": "Pad.AddSubShape.Map.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 630
+    },
+    {
+      "attributes": {
+        "central_header_offset": "14135",
+        "crc32": "9fa673d8",
+        "data_offset": "8231",
+        "header_offset": "8188"
+      },
+      "compressed_size": 564,
+      "compression": "deflate",
+      "name": "Pad.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 5186
+    },
+    {
+      "attributes": {
+        "central_header_offset": "14194",
+        "crc32": "ecf377fe",
+        "data_offset": "8842",
+        "header_offset": "8795"
+      },
+      "compressed_size": 276,
+      "compression": "deflate",
+      "name": "Pad.Shape.Map.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 630
+    },
+    {
+      "attributes": {
+        "central_header_offset": "14257",
+        "crc32": "00000000",
+        "data_offset": "9171",
+        "header_offset": "9118"
+      },
+      "compressed_size": 2,
+      "compression": "deflate",
+      "name": "Pad.SuppressedShape.brp",
+      "role": "brep",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "central_header_offset": "14326",
+        "crc32": "00000000",
+        "data_offset": "9233",
+        "header_offset": "9173"
+      },
+      "compressed_size": 2,
+      "compression": "deflate",
+      "name": "PocketSketch.InternalShape.brp",
+      "role": "brep",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "central_header_offset": "14402",
+        "crc32": "ddaaa1e1",
+        "data_offset": "9287",
+        "header_offset": "9235"
+      },
+      "compressed_size": 245,
+      "compression": "deflate",
+      "name": "PocketSketch.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 849
+    },
+    {
+      "attributes": {
+        "central_header_offset": "14470",
+        "crc32": "76336ad3",
+        "data_offset": "9588",
+        "header_offset": "9532"
+      },
+      "compressed_size": 114,
+      "compression": "deflate",
+      "name": "PocketSketch.Shape.Map.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 181
+    },
+    {
+      "attributes": {
+        "central_header_offset": "14542",
+        "crc32": "662131b1",
+        "data_offset": "9754",
+        "header_offset": "9702"
+      },
+      "compressed_size": 443,
+      "compression": "deflate",
+      "name": "Pocket.AddSubShape.brp",
+      "role": "brep",
+      "uncompressed_size": 3013
+    },
+    {
+      "attributes": {
+        "central_header_offset": "14610",
+        "crc32": "d7e4c625",
+        "data_offset": "10253",
+        "header_offset": "10197"
+      },
+      "compressed_size": 202,
+      "compression": "deflate",
+      "name": "Pocket.AddSubShape.Map.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 391
+    },
+    {
+      "attributes": {
+        "central_header_offset": "14682",
+        "crc32": "552c7f2e",
+        "data_offset": "10501",
+        "header_offset": "10455"
+      },
+      "compressed_size": 870,
+      "compression": "deflate",
+      "name": "Pocket.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 8736
+    },
+    {
+      "attributes": {
+        "central_header_offset": "14744",
+        "crc32": "fd1d56e2",
+        "data_offset": "11421",
+        "header_offset": "11371"
+      },
+      "compressed_size": 299,
+      "compression": "deflate",
+      "name": "Pocket.Shape.Map.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 738
+    },
+    {
+      "attributes": {
+        "central_header_offset": "14810",
+        "crc32": "00000000",
+        "data_offset": "11776",
+        "header_offset": "11720"
+      },
+      "compressed_size": 2,
+      "compression": "deflate",
+      "name": "Pocket.SuppressedShape.brp",
+      "role": "brep",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "central_header_offset": "14882",
+        "crc32": "00000000",
+        "data_offset": "11830",
+        "header_offset": "11778"
+      },
+      "compressed_size": 2,
+      "compression": "deflate",
+      "name": "Fillet.AddSubShape.brp",
+      "role": "brep",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "central_header_offset": "14950",
+        "crc32": "771e4f27",
+        "data_offset": "11878",
+        "header_offset": "11832"
+      },
+      "compressed_size": 1216,
+      "compression": "deflate",
+      "name": "Fillet.Shape.brp",
+      "role": "brep",
+      "uncompressed_size": 12235
+    },
+    {
+      "attributes": {
+        "central_header_offset": "15012",
+        "crc32": "ba26bf27",
+        "data_offset": "13144",
+        "header_offset": "13094"
+      },
+      "compressed_size": 342,
+      "compression": "deflate",
+      "name": "Fillet.Shape.Map.txt",
+      "role": "auxiliary",
+      "uncompressed_size": 854
+    },
+    {
+      "attributes": {
+        "central_header_offset": "15078",
+        "crc32": "00000000",
+        "data_offset": "13542",
+        "header_offset": "13486"
+      },
+      "compressed_size": 2,
+      "compression": "deflate",
+      "name": "Fillet.SuppressedShape.brp",
+      "role": "brep",
+      "uncompressed_size": 0
+    }
+  ],
+  "format": "fcstd",
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=part-design",
+    "object count=15",
+    "physical ledger spans=169 coverage=exact",
+    "ProgramVersion=1.1R20260414 (Git shallow)"
+  ]
+}

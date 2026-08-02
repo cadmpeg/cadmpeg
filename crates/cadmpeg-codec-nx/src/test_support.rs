@@ -11,8 +11,6 @@ use std::io::Write;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 
-use crate::container;
-
 pub(crate) const MAGIC: &[u8; 8] = b"SPLMSSTR";
 
 pub(crate) fn shifted_f64_bytes(value: f64) -> [u8; 8] {
@@ -1254,7 +1252,7 @@ pub(crate) fn display_jt_scene_graph_stream() -> Vec<u8> {
 /// entity, `00 52`/`00 53` counted value records, `00 54` string record) whose
 /// extractors are exercised by the `parasolid_entity_*`, `parasolid_attribute_*`
 /// white-box tests. The `00 51` entity's references resolve to the value and
-/// string records, and its discriminator selects the class declaration, so the
+/// string records, and its definition reference selects the class declaration, so the
 /// join arenas (`parasolid_entity_51_numeric_uses`, `parasolid_entity_51_string_uses`,
 /// `parasolid_attribute_class_uses`) are populated as well.
 pub(crate) fn parasolid_entity_records_stream() -> Vec<u8> {
@@ -1264,9 +1262,8 @@ pub(crate) fn parasolid_entity_records_stream() -> Vec<u8> {
         b"XX: TRANSMIT FILE (partition) created by modeller\x00SCH_TEST_1_9999\x00",
     );
 
-    // `00 4f` attribute-class declaration with identity xmt 201, followed by its
-    // `00 50` field record (one field). A `00 51` entity with discriminator 200
-    // resolves to this class through `definition_xmt = discriminator + 1`.
+    // `00 4f` attribute identifier with identity xmt 201, followed by its
+    // `00 50` definition record with identity xmt 202 and one field.
     s.extend_from_slice(&[0x00, 0x4f]);
     s.extend_from_slice(&10u32.to_be_bytes()); // name length
     s.extend_from_slice(&201u16.to_be_bytes()); // class identity xmt
@@ -1274,11 +1271,12 @@ pub(crate) fn parasolid_entity_records_stream() -> Vec<u8> {
     s.extend_from_slice(&[0x00, 0x50]); // field-record tag
     s.extend_from_slice(&1u32.to_be_bytes()); // field count
     s.extend_from_slice(&202u16.to_be_bytes()); // field-record xmt
-    s.extend_from_slice(&0u16.to_be_bytes()); // reference 0
-    s.extend_from_slice(&0u16.to_be_bytes()); // reference 1
-    s.extend_from_slice(&0u16.to_be_bytes()); // header word 0
-    s.extend_from_slice(&0u16.to_be_bytes()); // header word 1
-    s.extend_from_slice(&[0xaa; 26]); // 26-byte descriptor prefix
+    s.extend_from_slice(&1u16.to_be_bytes()); // null next-definition reference
+    s.extend_from_slice(&201u16.to_be_bytes()); // identifier reference
+    s.extend_from_slice(&9000u32.to_be_bytes()); // type id
+    s.extend_from_slice(&[0; 8]); // event actions
+    s.extend_from_slice(&1u16.to_be_bytes()); // null field-name-list reference
+    s.extend_from_slice(&[0; 16]); // legal-owner flags
     s.push(0x01); // one field code
 
     // `00 52` counted unsigned-integer record, identity xmt 101, one value.
@@ -1301,13 +1299,13 @@ pub(crate) fn parasolid_entity_records_stream() -> Vec<u8> {
     s.push(0x00); // terminator
 
     // `00 51` framed entity: flags 1 (low_flag 1 -> six references), identity
-    // xmt 50, sequence 2, discriminator 200. Its references resolve to the
+    // xmt 50, sequence 2, definition xmt 202. Its references resolve to the
     // string (100), integer (101), and double (102) records above.
     s.extend_from_slice(&[0x00, 0x51]);
     s.extend_from_slice(&1u32.to_be_bytes()); // flags
     s.extend_from_slice(&50u16.to_be_bytes()); // identity xmt
     s.extend_from_slice(&2u32.to_be_bytes()); // sequence
-    s.extend_from_slice(&200u16.to_be_bytes()); // discriminator
+    s.extend_from_slice(&202u16.to_be_bytes()); // definition xmt
     for reference in [100u16, 101, 102, 150, 151, 152] {
         s.extend_from_slice(&reference.to_be_bytes());
     }
@@ -1936,23 +1934,7 @@ pub(crate) fn inline_descriptor_intersection_curve_stream() -> Vec<u8> {
 }
 
 pub(crate) fn deltas_intersection_curve_stream() -> Vec<u8> {
-    let mut stream = topology_partition_stream();
-    let subtype = stream
-        .windows(b"(partition)".len())
-        .position(|window| window == b"(partition)")
-        .expect("partition subtype");
-    stream.splice(
-        subtype..subtype + b"(partition)".len(),
-        b"(deltas)".iter().copied(),
-    );
-    for (tag, xmt, offset) in [(16, 8, 24), (17, 7, 18)] {
-        let marker = [0, tag, 0, xmt];
-        let record = stream
-            .windows(marker.len())
-            .position(|window| window == marker)
-            .expect("topology record");
-        put_ref(&mut stream, record + offset, 12);
-    }
+    let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend_from_slice(b"intersection_data");
     stream.push(0x5a);
     stream.extend_from_slice(&12u16.to_be_bytes());
@@ -2186,6 +2168,7 @@ pub(crate) fn deltas_offset_surface_partition_stream() -> Vec<u8> {
     stream.extend_from_slice(&6u16.to_be_bytes());
     stream.push(1);
     stream.extend_from_slice(&0.004_5f64.to_be_bytes());
+    stream.extend_from_slice(&0xc2bc_928f_996e_0000u64.to_be_bytes());
     stream
 }
 
@@ -2559,7 +2542,8 @@ pub(crate) fn extended_bspline_surface_stream() -> Vec<u8> {
 
     let xmt = encoded_xmt(descriptor_ref);
     let shift = xmt.len() - 2;
-    let mut descriptor = vec![0u8; 58 + shift];
+    let encoded_payload_ref = encoded_xmt(payload_ref);
+    let mut descriptor = vec![0u8; 56 + shift + encoded_payload_ref.len()];
     descriptor[..2].copy_from_slice(&126u16.to_be_bytes());
     descriptor[2..2 + xmt.len()].copy_from_slice(&xmt);
     put_ref(&mut descriptor, 6 + shift, 1);
@@ -2584,6 +2568,7 @@ pub(crate) fn extended_bspline_surface_stream() -> Vec<u8> {
     }
     assert_eq!(at, 54 + shift);
     put_ref(&mut descriptor, 54 + shift, 125);
+    descriptor[56 + shift..].copy_from_slice(&encoded_payload_ref);
     stream.extend(descriptor);
 
     let xmt = encoded_xmt(payload_ref);
@@ -2949,30 +2934,10 @@ pub(crate) fn zlib_compress_at_level(raw: &[u8], level: u32) -> Vec<u8> {
 /// directory with one `/Root/UG_PART/UG_PART` file entry, and a zlib-compressed
 /// Parasolid partition stream.
 pub(crate) fn single_part_prt() -> Vec<u8> {
-    let mut f = Vec::new();
-    f.extend_from_slice(MAGIC);
-    f.push(0x06); // version tag
-    f.extend_from_slice(&[0x11, 0x22, 0x33]); // u24 file tag
-    f.extend_from_slice(&[0, 0, 0, 0]); // +0x0c constant
-    f.push(0x00); // +0x10 constant
-    f.extend_from_slice(&[0, 0, 0, 0, 0, 0]); // +0x11 footer offset (0 → no footer)
-    f.extend_from_slice(&[0, 0]); // pad to 0x19
-    assert_eq!(f.len(), 0x19);
-
-    // HEADER directory: one file entry naming the canonical part stream.
-    f.extend_from_slice(b"HEADER");
-    let name = b"/Root/UG_PART/UG_PART";
-    f.extend_from_slice(&(name.len() as u32).to_le_bytes());
-    f.extend_from_slice(name);
-    // 16-byte payload: file_offset then size (both u64 LE) — point at the zlib blob.
-    let blob = zlib_compress(&partition_stream());
-    // The blob will be appended after the directory; compute its offset now.
-    let dir_end = f.len() + 16; // after this entry's payload
-    let blob_off = dir_end as u64;
-    f.extend_from_slice(&blob_off.to_le_bytes());
-    f.extend_from_slice(&(blob.len() as u64).to_le_bytes());
-    f.extend_from_slice(&blob);
-    f
+    let mut file =
+        prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream()))]);
+    file[9..12].copy_from_slice(&[0x11, 0x22, 0x33]);
+    file
 }
 
 pub(crate) fn prt_with_named_payloads(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
@@ -2981,6 +2946,11 @@ pub(crate) fn prt_with_named_payloads(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
     file.push(0x06);
     file.extend_from_slice(&[0; 3 + 4 + 1 + 6 + 2]);
     file.extend_from_slice(b"HEADER");
+    file.extend_from_slice(
+        &u32::try_from(entries.len())
+            .expect("synthetic directory count")
+            .to_le_bytes(),
+    );
     let mut spans = Vec::new();
     for (name, _) in entries {
         file.extend_from_slice(&(name.len() as u32).to_le_bytes());
@@ -2994,6 +2964,11 @@ pub(crate) fn prt_with_named_payloads(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
         file[span..span + 8].copy_from_slice(&(offset as u64).to_le_bytes());
         file[span + 8..span + 16].copy_from_slice(&(payload.len() as u64).to_le_bytes());
     }
+    let footer_offset = file.len() as u64;
+    file[0x11..0x17].copy_from_slice(&footer_offset.to_le_bytes()[..6]);
+    file.extend_from_slice(b"FOOTER");
+    file.extend_from_slice(&0_u32.to_le_bytes());
+    file.extend_from_slice(&[0; 4]);
     file
 }
 
@@ -3040,69 +3015,27 @@ pub(crate) fn topology_with_missing_tolerances() -> Vec<u8> {
 }
 
 pub(crate) fn prt_with_partition(stream: &[u8]) -> Vec<u8> {
-    let mut f = single_part_prt();
-    let compressed = zlib_compress(stream);
-    let entry = container::scan_bytes(f.clone()).unwrap().entries.remove(0);
-    let (offset, size) = entry.file_span.unwrap();
-    assert_eq!(offset as usize + size as usize, f.len());
-    f.truncate(offset as usize);
-    f.extend_from_slice(&compressed);
-    let size_at = offset as usize - 8;
-    f[size_at..size_at + 8].copy_from_slice(&(compressed.len() as u64).to_le_bytes());
-    f
+    prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", zlib_compress(stream))])
 }
 
 pub(crate) fn prt_with_streams(streams: &[&[u8]]) -> Vec<u8> {
-    let mut file = single_part_prt();
-    let entry = container::scan_bytes(file.clone())
-        .unwrap()
-        .entries
-        .remove(0);
-    let (offset, size) = entry.file_span.unwrap();
-    assert_eq!(offset as usize + size as usize, file.len());
-    file.truncate(offset as usize);
     let payload = streams
         .iter()
         .flat_map(|stream| zlib_compress(stream))
         .collect::<Vec<_>>();
-    file.extend_from_slice(&payload);
-    let size_at = offset as usize - 8;
-    file[size_at..size_at + 8].copy_from_slice(&(payload.len() as u64).to_le_bytes());
-    file
+    prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
 }
 
 pub(crate) fn prt_with_indexed_om_section() -> Vec<u8> {
-    let mut file = single_part_prt();
-    let entry = container::scan_bytes(file.clone())
-        .unwrap()
-        .entries
-        .remove(0);
-    let (offset, size) = entry.file_span.unwrap();
-    assert_eq!(offset as usize + size as usize, file.len());
-    file.truncate(offset as usize);
     let mut payload = indexed_om_section();
     payload.extend(zlib_compress(&partition_stream()));
-    file.extend_from_slice(&payload);
-    let size_at = offset as usize - 8;
-    file[size_at..size_at + 8].copy_from_slice(&(payload.len() as u64).to_le_bytes());
-    file
+    prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
 }
 
 pub(crate) fn prt_with_size_framed_om_section() -> Vec<u8> {
-    let mut file = single_part_prt();
-    let entry = container::scan_bytes(file.clone())
-        .unwrap()
-        .entries
-        .remove(0);
-    let (offset, size) = entry.file_span.unwrap();
-    assert_eq!(offset as usize + size as usize, file.len());
-    file.truncate(offset as usize);
     let mut payload = size_framed_om_section();
     payload.extend(zlib_compress(&partition_stream()));
-    file.extend_from_slice(&payload);
-    let size_at = offset as usize - 8;
-    file[size_at..size_at + 8].copy_from_slice(&(payload.len() as u64).to_le_bytes());
-    file
+    prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
 }
 
 pub(crate) fn large_xmt_headers(stream: &[u8]) -> Vec<u8> {
@@ -3130,37 +3063,12 @@ pub(crate) fn large_xmt_headers(stream: &[u8]) -> Vec<u8> {
 /// A synthetic assembly `.prt`: SPLMSSTR header, an `ExternalReferences` file
 /// entry, and no embedded Parasolid stream.
 pub(crate) fn assembly_prt() -> Vec<u8> {
-    let mut f = Vec::new();
-    f.extend_from_slice(MAGIC);
-    f.push(0x06);
-    f.extend_from_slice(&[0, 0, 0]);
-    f.extend_from_slice(&[0, 0, 0, 0]);
-    f.push(0x00);
-    f.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-    f.extend_from_slice(&[0, 0]);
-    f.extend_from_slice(b"HEADER");
-    let name = b"/Root/UG_PART/ExternalReferences";
-    f.extend_from_slice(&(name.len() as u32).to_le_bytes());
-    f.extend_from_slice(name);
-    f.extend_from_slice(&[0u8; 16]); // opaque directory payload
-    f
+    prt_with_named_payloads(&[("/Root/UG_PART/ExternalReferences", Vec::new())])
 }
 
 pub(crate) fn assembly_with_external_paths() -> Vec<u8> {
     let payload = b"EXTREFSTREAM\x01\x02\x00\x00\x00\x09\x00child.prt\x0c\x00nested/b.prt";
-    let mut f = Vec::new();
-    f.extend_from_slice(MAGIC);
-    f.push(0x06);
-    f.extend_from_slice(&[0; 3 + 4 + 1 + 6 + 2]);
-    f.extend_from_slice(b"HEADER");
-    let name = b"/Root/UG_PART/ExternalReferences";
-    f.extend_from_slice(&(name.len() as u32).to_le_bytes());
-    f.extend_from_slice(name);
-    let offset = f.len() + 16;
-    f.extend_from_slice(&(offset as u64).to_le_bytes());
-    f.extend_from_slice(&(payload.len() as u64).to_le_bytes());
-    f.extend_from_slice(payload);
-    f
+    prt_with_named_payloads(&[("/Root/UG_PART/ExternalReferences", payload.to_vec())])
 }
 
 pub(crate) fn rmfastload_prt() -> Vec<u8> {
@@ -3169,19 +3077,7 @@ pub(crate) fn rmfastload_prt() -> Vec<u8> {
     for id in 1..=50u32 {
         payload.extend_from_slice(&id.to_le_bytes());
     }
-    let mut f = Vec::new();
-    f.extend_from_slice(MAGIC);
-    f.push(6);
-    f.extend_from_slice(&[0; 3 + 4 + 1 + 6 + 2]);
-    f.extend_from_slice(b"HEADER");
-    let name = b"/Root/FastLoad/RMFastLoad";
-    f.extend_from_slice(&(name.len() as u32).to_le_bytes());
-    f.extend_from_slice(name);
-    let offset = f.len() + 16;
-    f.extend_from_slice(&(offset as u64).to_le_bytes());
-    f.extend_from_slice(&(payload.len() as u64).to_le_bytes());
-    f.extend(payload);
-    f
+    prt_with_named_payloads(&[("/Root/FastLoad/RMFastLoad", payload)])
 }
 
 pub(crate) fn many_face_partition_stream(node_id_start: u32) -> Vec<u8> {
@@ -3242,57 +3138,28 @@ pub(crate) fn prt_with_two_bodies_and_rmfastload() -> Vec<u8> {
         rm_payload.extend_from_slice(&id.to_le_bytes());
     }
 
-    let mut file = Vec::new();
-    file.extend_from_slice(MAGIC);
-    file.push(6);
-    file.extend_from_slice(&[0; 3 + 4 + 1 + 6 + 2]);
-    file.extend_from_slice(b"HEADER");
-    let part_name = b"/Root/UG_PART/UG_PART";
-    file.extend_from_slice(&(part_name.len() as u32).to_le_bytes());
-    file.extend_from_slice(part_name);
-    let part_span = file.len();
-    file.extend_from_slice(&[0; 16]);
-    let rm_name = b"/Root/FastLoad/RMFastLoad";
-    file.extend_from_slice(&(rm_name.len() as u32).to_le_bytes());
-    file.extend_from_slice(rm_name);
-    let rm_span = file.len();
-    file.extend_from_slice(&[0; 16]);
-    let part_offset = file.len();
-    file.extend_from_slice(&part_payload);
-    let rm_offset = file.len();
-    file.extend_from_slice(&rm_payload);
-    file[part_span..part_span + 8].copy_from_slice(&(part_offset as u64).to_le_bytes());
-    file[part_span + 8..part_span + 16].copy_from_slice(&(part_payload.len() as u64).to_le_bytes());
-    file[rm_span..rm_span + 8].copy_from_slice(&(rm_offset as u64).to_le_bytes());
-    file[rm_span + 8..rm_span + 16].copy_from_slice(&(rm_payload.len() as u64).to_le_bytes());
-    file
+    prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", part_payload),
+        ("/Root/FastLoad/RMFastLoad", rm_payload),
+    ])
 }
 
 pub(crate) fn prt_with_two_active_bodies_and_rmfastload() -> Vec<u8> {
-    let mut file = prt_with_two_bodies_and_rmfastload();
-    let marker = b"UGS::Solid::Topol";
-    let count_at = file
-        .windows(marker.len())
-        .position(|window| window == marker)
-        .expect("RMFastLoad payload")
-        + marker.len();
-    let ids_at = count_at + 4;
-    let tail = file[ids_at + 50 * 4..].to_vec();
-    file[count_at..count_at + 4].copy_from_slice(&100u32.to_le_bytes());
-    file.truncate(ids_at + 50 * 4);
-    for id in 2_000..2_050u32 {
-        file.extend_from_slice(&id.to_le_bytes());
+    let mut part_payload = zlib_compress(&many_face_partition_stream(1_000));
+    part_payload.extend(zlib_compress(&many_face_partition_stream(2_000)));
+    let mut rm_payload = b"UGS::Solid::Topol".to_vec();
+    rm_payload.extend_from_slice(&100u32.to_le_bytes());
+    for id in 1_000..1_050u32 {
+        rm_payload.extend_from_slice(&id.to_le_bytes());
     }
-    file.extend_from_slice(&tail);
-    let directory_size_at = file
-        .windows(b"/Root/FastLoad/RMFastLoad".len())
-        .position(|window| window == b"/Root/FastLoad/RMFastLoad")
-        .expect("RMFastLoad directory")
-        + b"/Root/FastLoad/RMFastLoad".len()
-        + 8;
-    file[directory_size_at..directory_size_at + 8]
-        .copy_from_slice(&((marker.len() + 4 + 100 * 4) as u64).to_le_bytes());
-    file
+    for id in 2_000..2_050u32 {
+        rm_payload.extend_from_slice(&id.to_le_bytes());
+    }
+
+    prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", part_payload),
+        ("/Root/FastLoad/RMFastLoad", rm_payload),
+    ])
 }
 
 pub(crate) fn prt_with_missing_active_body_record() -> Vec<u8> {
@@ -3310,30 +3177,10 @@ pub(crate) fn prt_with_missing_active_body_record() -> Vec<u8> {
         rm_payload.extend_from_slice(&id.to_le_bytes());
     }
 
-    let mut file = Vec::new();
-    file.extend_from_slice(MAGIC);
-    file.push(6);
-    file.extend_from_slice(&[0; 3 + 4 + 1 + 6 + 2]);
-    file.extend_from_slice(b"HEADER");
-    let part_name = b"/Root/UG_PART/UG_PART";
-    file.extend_from_slice(&(part_name.len() as u32).to_le_bytes());
-    file.extend_from_slice(part_name);
-    let part_span = file.len();
-    file.extend_from_slice(&[0; 16]);
-    let rm_name = b"/Root/FastLoad/RMFastLoad";
-    file.extend_from_slice(&(rm_name.len() as u32).to_le_bytes());
-    file.extend_from_slice(rm_name);
-    let rm_span = file.len();
-    file.extend_from_slice(&[0; 16]);
-    let part_offset = file.len();
-    file.extend_from_slice(&part_payload);
-    let rm_offset = file.len();
-    file.extend_from_slice(&rm_payload);
-    file[part_span..part_span + 8].copy_from_slice(&(part_offset as u64).to_le_bytes());
-    file[part_span + 8..part_span + 16].copy_from_slice(&(part_payload.len() as u64).to_le_bytes());
-    file[rm_span..rm_span + 8].copy_from_slice(&(rm_offset as u64).to_le_bytes());
-    file[rm_span + 8..rm_span + 16].copy_from_slice(&(rm_payload.len() as u64).to_le_bytes());
-    file
+    prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", part_payload),
+        ("/Root/FastLoad/RMFastLoad", rm_payload),
+    ])
 }
 
 pub(crate) fn prt_with_weak_rmfastload_overlap() -> Vec<u8> {

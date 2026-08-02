@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, HashSet};
 use std::fmt::Write as _;
 use std::io::{Cursor, Write};
 
-use cadmpeg_ir::codec::{CodecEntry, CodecError, DecodeOptions};
+use cadmpeg_codec_core::CodecError;
+use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use zip::write::SimpleFileOptions;
 

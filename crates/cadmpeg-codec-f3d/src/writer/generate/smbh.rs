@@ -4,7 +4,8 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use cadmpeg_ir::codec::CodecError;
+use crate::native::F3dNative;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::ids::{ShellId, VertexId};
@@ -13,8 +14,9 @@ use cadmpeg_ir::topology::Sense;
 use super::attributes::{
     edge_persistent_attribute_ref, encode_source_less_attributes, owner_color_or_body_tag_ref,
     owner_color_or_face_tag_ref, sketch_link_attribute_ref, source_less_body_key,
-    timestamp_attribute_ref,
+    timestamp_attribute_ref, AttributeIndex,
 };
+use super::index::NativeGenerationIndex;
 use super::native_bytes::{
     native_curve_base, native_f64, native_history_tail, native_i64, native_ident, native_point,
     native_record_index, native_ref, native_string, native_surface_base, native_transform,
@@ -30,19 +32,24 @@ use super::preconditions::{
 };
 use super::records::{native_tolerant_coedge_extension, tolerant_coedge_range};
 use crate::nurbs::reader::LEN_TO_MM;
-use crate::writer::primitives::{f3d_native, native_bool, normalized_face_sense_to_native};
+use crate::writer::primitives::{native_bool, normalized_face_sense_to_native};
 
-pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
+pub(crate) fn encode_planar_triangle_smbh(
+    target: &CadIr,
+    native: &F3dNative,
+    attributes: &AttributeIndex<'_>,
+) -> Result<Vec<u8>, CodecError> {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
     let model = &target.model;
+    let topology = NativeGenerationIndex::new(native);
     if model.faces.is_empty()
         && model
             .shells
             .iter()
             .any(|shell| !shell.wire_edges.is_empty() || !shell.free_vertices.is_empty())
     {
-        return encode_wire_body_smbh(target);
+        return encode_wire_body_smbh(target, native, attributes, &topology);
     }
     validate_source_less_body_kinds(model)?;
     let wire_vertices = validate_source_less_wire_vertices(target)?;
@@ -59,7 +66,7 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
             .any(|body| body.color.is_some() || body.transform.is_some())
         || model.faces.iter().any(|face| face.color.is_some())
     {
-        return encode_multi_face_shell_smbh(target, wire_vertices);
+        return encode_multi_face_shell_smbh(target, native, attributes, &topology, wire_vertices);
     }
     if model.bodies.is_empty()
         || model.regions.is_empty()
@@ -161,7 +168,7 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
 
     native_ident(&mut records, "body")?;
     native_ref(&mut records, -1);
-    native_i64(&mut records, source_less_body_key(target, body, 0)?);
+    native_i64(&mut records, source_less_body_key(attributes, body, 0)?);
     native_ref(&mut records, -1);
     native_ref(&mut records, 2);
     native_ref(&mut records, -1);
@@ -198,9 +205,9 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
     native_ref(&mut records, -1);
     native_ref(&mut records, 6);
     records.push(native_bool(
-        native_face_sense(target, face)? == Sense::Reversed,
+        native_face_sense(&topology, face) == Sense::Reversed,
     ));
-    native_face_sidedness(&mut records, target, face)?;
+    native_face_sidedness(&mut records, &topology, face);
     records.push(0x11);
 
     native_ident(&mut records, "loop")?;
@@ -503,7 +510,7 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
             .ok_or_else(|| {
                 CodecError::Malformed(format!("coedge references missing edge {}", coedge.edge))
             })?;
-        let tolerant_range = tolerant_coedge_range(target, &coedge.id)?;
+        let tolerant_range = tolerant_coedge_range(&topology, &coedge.id);
         native_ident(
             &mut records,
             if tolerant_range.is_some() {
@@ -550,13 +557,13 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
         if let Some(range) = tolerant_range {
             native_f64(&mut records, range[0]);
             native_f64(&mut records, range[1]);
-            native_tolerant_coedge_extension(&mut records, target, &coedge.id)?;
+            native_tolerant_coedge_extension(&mut records, target, &topology, &coedge.id)?;
         }
         records.push(0x11);
     }
 
     let mut edge_owners = BTreeMap::new();
-    apply_native_edge_owners(target, coedge_start, &mut edge_owners)?;
+    apply_native_edge_owners(target, &topology, coedge_start, &mut edge_owners)?;
     for edge in &model.edges {
         let start = model
             .vertices
@@ -619,10 +626,10 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
             edge_owners.get(&edge.id).copied().unwrap_or(-1),
         );
         native_ref(&mut records, curve_ref);
-        let (sense, continuity) = edge_record_metadata(target, edge)?;
+        let (sense, continuity) = edge_record_metadata(&topology, edge)?;
         records.push(native_bool(sense == Sense::Reversed));
         native_string(&mut records, &continuity)?;
-        native_tolerant_edge_tail(&mut records, target, edge)?;
+        native_tolerant_edge_tail(&mut records, &topology, edge)?;
         records.push(0x11);
     }
 
@@ -634,7 +641,7 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
             .ok_or_else(|| {
                 CodecError::Malformed(format!("vertex references missing point {}", vertex.point))
             })?;
-        let (owning_edge, endpoint_index) = vertex_ownership(target, vertex)?;
+        let (owning_edge, endpoint_index) = vertex_ownership(target, &topology, vertex)?;
         native_ident(
             &mut records,
             if vertex.tolerance.is_some() {
@@ -649,7 +656,7 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
         native_ref(&mut records, native_record_index(edge_start, owning_edge)?);
         native_i64(&mut records, i64::from(endpoint_index));
         native_ref(&mut records, native_record_index(point_start, point)?);
-        native_tolerant_vertex_tail(&mut records, target, vertex)?;
+        native_tolerant_vertex_tail(&mut records, &topology, vertex)?;
         records.push(0x11);
     }
 
@@ -668,7 +675,7 @@ pub(crate) fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, Cod
         );
         records.push(0x11);
     }
-    native_history_tail(&mut records, target)?;
+    native_history_tail(&mut records, native)?;
 
     let mut bytes = native_smbh_header(target)?;
     bytes.extend_from_slice(&records);
@@ -777,6 +784,7 @@ fn source_less_wire_record_for_shell(
 fn encode_source_less_wires(
     records: &mut Vec<u8>,
     wire_vertices: WireVerticesValidated<'_>,
+    topology: &NativeGenerationIndex<'_>,
     wire_start: i64,
     wire_coedge_start: i64,
     shell_start: i64,
@@ -812,7 +820,7 @@ fn encode_source_less_wires(
             native_ref(records, native_record_index(shell_start, shell_ordinal)?);
             native_ref(records, -1);
             records.push(native_wire_side(
-                target,
+                topology,
                 &shell.id,
                 &shell.wire_edges,
                 None,
@@ -843,7 +851,7 @@ fn encode_source_less_wires(
             native_ref(records, -1);
             native_ref(records, native_record_index(shell_start, shell_ordinal)?);
             native_ref(records, native_record_index(vertex_start, vertex_ordinal)?);
-            records.push(native_wire_side(target, &shell.id, &[], Some(vertex_id))?);
+            records.push(native_wire_side(topology, &shell.id, &[], Some(vertex_id))?);
             records.push(0x11);
             wire_ordinal += 1;
         }
@@ -851,7 +859,12 @@ fn encode_source_less_wires(
     Ok(free_vertex_owners)
 }
 
-fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
+fn encode_wire_body_smbh(
+    target: &CadIr,
+    native: &F3dNative,
+    attributes: &AttributeIndex<'_>,
+    topology: &NativeGenerationIndex<'_>,
+) -> Result<Vec<u8>, CodecError> {
     let model = &target.model;
     if model.bodies.is_empty()
         || model.regions.is_empty()
@@ -975,9 +988,12 @@ fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         native_ident(&mut records, "body")?;
         native_ref(
             &mut records,
-            owner_color_or_body_tag_ref(target, body, ordinal, attribute_start)?,
+            owner_color_or_body_tag_ref(target, attributes, body, ordinal, attribute_start)?,
         );
-        native_i64(&mut records, source_less_body_key(target, body, ordinal)?);
+        native_i64(
+            &mut records,
+            source_less_body_key(attributes, body, ordinal)?,
+        );
         native_ref(&mut records, -1);
         native_ref(
             &mut records,
@@ -1083,6 +1099,7 @@ fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     let free_vertex_owners = encode_source_less_wires(
         &mut records,
         wire_vertices,
+        topology,
         wire_start,
         wire_coedge_start,
         shell_start,
@@ -1126,10 +1143,12 @@ fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             native_record_index(wire_coedge_start, ordinal).map(|owner| (edge.id.clone(), owner))
         })
         .collect::<Result<BTreeMap<_, _>, _>>()?;
-    apply_native_edge_owners(target, wire_coedge_start, &mut wire_edge_owners)?;
+    apply_native_edge_owners(target, topology, wire_coedge_start, &mut wire_edge_owners)?;
     encode_source_less_edges_vertices_points(
         &mut records,
         target,
+        attributes,
+        topology,
         SourceLessRecordStarts {
             curve: curve_start,
             edge: edge_start,
@@ -1142,12 +1161,12 @@ fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     )?;
     for body in &model.bodies {
         if let Some(transform) = body.transform {
-            native_transform(&mut records, target, body, transform)?;
+            native_transform(&mut records, topology, body, transform)?;
             records.push(0x11);
         }
     }
-    encode_source_less_attributes(&mut records, target, attribute_start)?;
-    native_history_tail(&mut records, target)?;
+    encode_source_less_attributes(&mut records, target, attributes, attribute_start)?;
+    native_history_tail(&mut records, native)?;
     let mut bytes = native_smbh_header(target)?;
     bytes.extend_from_slice(&records);
     Ok(bytes)
@@ -1261,6 +1280,9 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
 
 fn encode_multi_face_shell_smbh(
     target: &CadIr,
+    native: &F3dNative,
+    attributes: &AttributeIndex<'_>,
+    topology: &NativeGenerationIndex<'_>,
     wire_vertices: WireVerticesValidated<'_>,
 ) -> Result<Vec<u8>, CodecError> {
     use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -1373,11 +1395,11 @@ fn encode_multi_face_shell_smbh(
         native_ident(&mut records, "body")?;
         native_ref(
             &mut records,
-            owner_color_or_body_tag_ref(target, body, body_ordinal, attribute_start)?,
+            owner_color_or_body_tag_ref(target, attributes, body, body_ordinal, attribute_start)?,
         );
         native_i64(
             &mut records,
-            source_less_body_key(target, body, body_ordinal)?,
+            source_less_body_key(attributes, body, body_ordinal)?,
         );
         native_ref(&mut records, -1);
         native_ref(
@@ -1520,6 +1542,7 @@ fn encode_multi_face_shell_smbh(
     let free_vertex_owners = encode_source_less_wires(
         &mut records,
         wire_vertices,
+        topology,
         wire_start,
         wire_coedge_start,
         shell_start,
@@ -1560,7 +1583,13 @@ fn encode_multi_face_shell_smbh(
         native_ident(&mut records, "face")?;
         native_ref(
             &mut records,
-            owner_color_or_face_tag_ref(target, face, face_ordinal_global, attribute_start)?,
+            owner_color_or_face_tag_ref(
+                target,
+                attributes,
+                face,
+                face_ordinal_global,
+                attribute_start,
+            )?,
         );
         native_i64(&mut records, -1);
         native_ref(&mut records, -1);
@@ -1594,9 +1623,9 @@ fn encode_multi_face_shell_smbh(
             native_record_index(surface_start, surface_position)?,
         );
         records.push(native_bool(
-            native_face_sense(target, face)? == Sense::Reversed,
+            native_face_sense(topology, face) == Sense::Reversed,
         ));
-        native_face_sidedness(&mut records, target, face)?;
+        native_face_sidedness(&mut records, topology, face);
         records.push(0x11);
     }
 
@@ -1964,7 +1993,7 @@ fn encode_multi_face_shell_smbh(
                 coedge.id
             )));
         };
-        let tolerant_range = tolerant_coedge_range(target, &coedge.id)?;
+        let tolerant_range = tolerant_coedge_range(topology, &coedge.id);
         native_ident(
             &mut records,
             if tolerant_range.is_some() {
@@ -1975,7 +2004,7 @@ fn encode_multi_face_shell_smbh(
         )?;
         native_ref(
             &mut records,
-            sketch_link_attribute_ref(target, coedge, coedge_ordinal, attribute_start)?,
+            sketch_link_attribute_ref(target, attributes, coedge, coedge_ordinal, attribute_start)?,
         );
         native_i64(&mut records, -1);
         native_ref(&mut records, -1);
@@ -2014,7 +2043,7 @@ fn encode_multi_face_shell_smbh(
         if let Some(range) = tolerant_range {
             native_f64(&mut records, range[0]);
             native_f64(&mut records, range[1]);
-            native_tolerant_coedge_extension(&mut records, target, &coedge.id)?;
+            native_tolerant_coedge_extension(&mut records, target, topology, &coedge.id)?;
         }
         records.push(0x11);
     }
@@ -2059,11 +2088,13 @@ fn encode_multi_face_shell_smbh(
         }
         wire_edge_base += shell.wire_edges.len();
     }
-    apply_native_edge_owners(target, coedge_start, &mut wire_edge_owners)?;
+    apply_native_edge_owners(target, topology, coedge_start, &mut wire_edge_owners)?;
 
     encode_source_less_edges_vertices_points(
         &mut records,
         target,
+        attributes,
+        topology,
         SourceLessRecordStarts {
             curve: curve_start,
             edge: edge_start,
@@ -2076,12 +2107,12 @@ fn encode_multi_face_shell_smbh(
     )?;
     for body in &model.bodies {
         if let Some(transform) = body.transform {
-            native_transform(&mut records, target, body, transform)?;
+            native_transform(&mut records, topology, body, transform)?;
             records.push(0x11);
         }
     }
-    encode_source_less_attributes(&mut records, target, attribute_start)?;
-    native_history_tail(&mut records, target)?;
+    encode_source_less_attributes(&mut records, target, attributes, attribute_start)?;
+    native_history_tail(&mut records, native)?;
     let mut bytes = native_smbh_header(target)?;
     bytes.extend_from_slice(&records);
     Ok(bytes)
@@ -2101,6 +2132,8 @@ struct SourceLessRecordStarts {
 fn encode_source_less_edges_vertices_points(
     records: &mut Vec<u8>,
     target: &CadIr,
+    attributes: &AttributeIndex<'_>,
+    topology: &NativeGenerationIndex<'_>,
     starts: SourceLessRecordStarts,
     edge_owners: Option<&BTreeMap<cadmpeg_ir::ids::EdgeId, i64>>,
     free_vertex_owners: Option<&BTreeMap<VertexId, i64>>,
@@ -2175,7 +2208,7 @@ fn encode_source_less_edges_vertices_points(
             },
         )?;
         let persistent =
-            edge_persistent_attribute_ref(target, edge, edge_ordinal, attribute_start)?;
+            edge_persistent_attribute_ref(target, attributes, edge, edge_ordinal, attribute_start)?;
         native_ref(
             records,
             if let Some(reference) = persistent {
@@ -2183,6 +2216,7 @@ fn encode_source_less_edges_vertices_points(
             } else {
                 timestamp_attribute_ref(
                     target,
+                    attributes,
                     &cadmpeg_ir::attributes::AttributeTarget::Edge(edge.id.clone()),
                     attribute_start,
                 )?
@@ -2203,10 +2237,10 @@ fn encode_source_less_edges_vertices_points(
                 .unwrap_or(-1),
         );
         native_ref(records, curve_ref);
-        let (sense, continuity) = edge_record_metadata(target, edge)?;
+        let (sense, continuity) = edge_record_metadata(topology, edge)?;
         records.push(native_bool(sense == Sense::Reversed));
         native_string(records, &continuity)?;
-        native_tolerant_edge_tail(records, target, edge)?;
+        native_tolerant_edge_tail(records, topology, edge)?;
         records.push(0x11);
     }
     for vertex in &model.vertices {
@@ -2232,6 +2266,7 @@ fn encode_source_less_edges_vertices_points(
             records,
             timestamp_attribute_ref(
                 target,
+                attributes,
                 &cadmpeg_ir::attributes::AttributeTarget::Vertex(vertex.id.clone()),
                 attribute_start,
             )?
@@ -2243,12 +2278,12 @@ fn encode_source_less_edges_vertices_points(
             native_ref(records, wire);
             native_i64(records, -1);
         } else {
-            let (edge, endpoint_index) = vertex_ownership(target, vertex)?;
+            let (edge, endpoint_index) = vertex_ownership(target, topology, vertex)?;
             native_ref(records, native_record_index(edge_start, edge)?);
             native_i64(records, i64::from(endpoint_index));
         }
         native_ref(records, native_record_index(point_start, point)?);
-        native_tolerant_vertex_tail(records, target, vertex)?;
+        native_tolerant_vertex_tail(records, topology, vertex)?;
         records.push(0x11);
     }
     for point in &model.points {
@@ -2271,15 +2306,11 @@ fn encode_source_less_edges_vertices_points(
 
 fn vertex_ownership(
     target: &CadIr,
+    topology: &NativeGenerationIndex<'_>,
     vertex: &cadmpeg_ir::topology::Vertex,
 ) -> Result<(usize, u8), CodecError> {
     let model = &target.model;
-    if let Some(metadata) = f3d_native(target)?.and_then(|native| {
-        native
-            .vertex_ownerships
-            .into_iter()
-            .find(|metadata| metadata.vertex == vertex.id)
-    }) {
+    if let Some(metadata) = topology.vertex_ownerships.get(vertex.id.as_str()) {
         let ordinal = model
             .edges
             .iter()
@@ -2322,16 +2353,13 @@ fn vertex_ownership(
 
 fn native_face_sidedness(
     records: &mut Vec<u8>,
-    target: &CadIr,
+    topology: &NativeGenerationIndex<'_>,
     face: &cadmpeg_ir::topology::Face,
-) -> Result<(), CodecError> {
-    let containment = f3d_native(target)?.and_then(|native| {
-        native
-            .face_sidedness
-            .into_iter()
-            .find(|metadata| metadata.face == face.id)
-            .and_then(|metadata| metadata.containment)
-    });
+) {
+    let containment = topology
+        .face_sidedness
+        .get(face.id.as_str())
+        .and_then(|metadata| metadata.containment);
     records.push(native_bool(containment.is_some()));
     if let Some(containment) = containment {
         records.push(match containment {
@@ -2339,53 +2367,41 @@ fn native_face_sidedness(
             crate::records::FaceContainment::Out => 0x0b,
         });
     }
-    Ok(())
 }
 
 fn native_face_sense(
-    target: &CadIr,
+    topology: &NativeGenerationIndex<'_>,
     face: &cadmpeg_ir::topology::Face,
-) -> Result<Sense, CodecError> {
-    Ok(f3d_native(target)?
-        .and_then(|native| {
-            native
-                .face_sidedness
-                .into_iter()
-                .find(|metadata| metadata.face == face.id)
-                .map(|metadata| {
-                    normalized_face_sense_to_native(
-                        face.sense,
-                        metadata.native_sense,
-                        metadata.normalized_sense,
-                    )
-                })
+) -> Sense {
+    topology
+        .face_sidedness
+        .get(face.id.as_str())
+        .map_or(face.sense, |metadata| {
+            normalized_face_sense_to_native(
+                face.sense,
+                metadata.native_sense,
+                metadata.normalized_sense,
+            )
         })
-        .unwrap_or(face.sense))
 }
 
 fn native_wire_side(
-    target: &CadIr,
+    topology: &NativeGenerationIndex<'_>,
     shell: &ShellId,
     edges: &[cadmpeg_ir::ids::EdgeId],
     free_vertex: Option<&VertexId>,
 ) -> Result<u8, CodecError> {
-    let matches = f3d_native(target)?
-        .map(|native| {
-            native
-                .wire_topologies
-                .into_iter()
-                .filter(|wire| {
-                    wire.shell == *shell
-                        && wire.edges == edges
-                        && wire.free_vertex.as_ref() == free_vertex
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let side = match matches.as_slice() {
-        [] => crate::records::WireSide::Out,
-        [wire] => wire.side,
-        _ => {
+    let mut matches = topology
+        .wires_by_shell
+        .get(shell.as_str())
+        .into_iter()
+        .flatten()
+        .copied()
+        .filter(|wire| wire.edges == edges && wire.free_vertex.as_ref() == free_vertex);
+    let side = match (matches.next(), matches.next()) {
+        (None, _) => crate::records::WireSide::Out,
+        (Some(wire), None) => wire.side,
+        (Some(_), Some(_)) => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D generation has duplicate native wire metadata on shell {shell}"
             )))
@@ -2399,7 +2415,7 @@ fn native_wire_side(
 
 fn native_tolerant_vertex_tail(
     records: &mut Vec<u8>,
-    target: &CadIr,
+    topology: &NativeGenerationIndex<'_>,
     vertex: &cadmpeg_ir::topology::Vertex,
 ) -> Result<(), CodecError> {
     let Some(tolerance) = vertex.tolerance else {
@@ -2413,17 +2429,16 @@ fn native_tolerant_vertex_tail(
     }
     // The record stores three f64 tolerance slots: the two leading slots
     // verbatim (default: the -1 unevaluated sentinel) and the evaluated
-    // tolerance last, followed by an integer 0. A negative tolerance is the
+    // tolerance last, followed by a version-gated trailing integer (0 or 1,
+    // retained verbatim and elided when absent in the source; fresh
+    // generation writes 0). A negative tolerance is the
     // unevaluated sentinel, stored verbatim; a non-negative tolerance
     // converts from millimetres to centimetres.
-    let leading = f3d_native(target)?
-        .and_then(|native| {
-            native
-                .tolerant_vertex_tails
-                .into_iter()
-                .find(|tail| tail.vertex == vertex.id)
-        })
+    let stored = topology.tolerant_vertices.get(vertex.id.as_str()).copied();
+    let leading = stored
+        .as_ref()
         .map_or([-1.0; 2], |tail| tail.leading_tolerances);
+    let trailing = stored.as_ref().map_or(Some(0), |tail| tail.trailing_field);
     for value in leading {
         native_f64(records, value);
     }
@@ -2435,13 +2450,15 @@ fn native_tolerant_vertex_tail(
             tolerance / LEN_TO_MM
         },
     );
-    native_i64(records, 0);
+    if let Some(trailing) = trailing {
+        native_i64(records, trailing);
+    }
     Ok(())
 }
 
 fn native_tolerant_edge_tail(
     records: &mut Vec<u8>,
-    target: &CadIr,
+    topology: &NativeGenerationIndex<'_>,
     edge: &cadmpeg_ir::topology::Edge,
 ) -> Result<(), CodecError> {
     let Some(tolerance) = edge.tolerance else {
@@ -2454,34 +2471,31 @@ fn native_tolerant_edge_tail(
         )));
     }
     native_f64(records, tolerance / LEN_TO_MM);
-    let trailing = f3d_native(target)?
-        .and_then(|native| {
-            native
-                .tolerant_edge_tails
-                .into_iter()
-                .find(|tail| tail.edge == edge.id)
-        })
-        .map_or([23100, 0], |tail| tail.trailing_integers);
-    for value in trailing {
-        native_i64(records, value);
+    let (revision, trailing) = topology
+        .tolerant_edges
+        .get(edge.id.as_str())
+        .map_or((23100, Some(0)), |tail| {
+            (tail.entity_revision, tail.trailing_field)
+        });
+    native_i64(records, revision);
+    if let Some(trailing) = trailing {
+        native_i64(records, trailing);
     }
     Ok(())
 }
 
 fn edge_record_metadata(
-    target: &CadIr,
+    topology: &NativeGenerationIndex<'_>,
     edge: &cadmpeg_ir::topology::Edge,
 ) -> Result<(Sense, String), CodecError> {
-    let metadata = f3d_native(target)?.and_then(|native| {
-        native
-            .edge_continuities
-            .into_iter()
-            .find(|metadata| metadata.edge == edge.id)
-    });
+    let metadata = topology.edge_continuities.get(edge.id.as_str()).copied();
     let sense = metadata
         .as_ref()
         .map_or(Sense::Forward, |metadata| metadata.sense);
-    let continuity = metadata.map_or_else(|| "unknown".to_owned(), |metadata| metadata.continuity);
+    let continuity = metadata.map_or_else(
+        || "unknown".to_owned(),
+        |metadata| metadata.continuity.clone(),
+    );
     if continuity != "tangent" && continuity != "unknown" {
         return Err(CodecError::Malformed(format!(
             "F3D edge {} has unsupported continuity token {continuity}",
@@ -2493,13 +2507,11 @@ fn edge_record_metadata(
 
 fn apply_native_edge_owners(
     target: &CadIr,
+    topology: &NativeGenerationIndex<'_>,
     coedge_start: i64,
     owners: &mut BTreeMap<cadmpeg_ir::ids::EdgeId, i64>,
 ) -> Result<(), CodecError> {
-    let metadata = f3d_native(target)?
-        .map(|native| native.edge_ownerships)
-        .unwrap_or_default();
-    for ownership in metadata {
+    for ownership in topology.edge_ownerships {
         if !target
             .model
             .edges
@@ -2511,7 +2523,7 @@ fn apply_native_edge_owners(
                 ownership.id, ownership.edge
             )));
         }
-        let owner = match ownership.owner_coedge {
+        let owner = match &ownership.owner_coedge {
             None => -1,
             Some(owner) => {
                 if let Some((ordinal, coedge)) = target
@@ -2519,7 +2531,7 @@ fn apply_native_edge_owners(
                     .coedges
                     .iter()
                     .enumerate()
-                    .find(|(_, coedge)| coedge.id == owner)
+                    .find(|(_, coedge)| coedge.id == *owner)
                 {
                     if coedge.edge != ownership.edge {
                         return Err(CodecError::Malformed(format!(
@@ -2540,7 +2552,7 @@ fn apply_native_edge_owners(
                 }
             }
         };
-        owners.insert(ownership.edge, owner);
+        owners.insert(ownership.edge.clone(), owner);
     }
     Ok(())
 }

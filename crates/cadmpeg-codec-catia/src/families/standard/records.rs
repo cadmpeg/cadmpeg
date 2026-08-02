@@ -4,9 +4,9 @@
 //! curve-support/edge-incidence table, standard vertex rosters, and the
 //! inline big-endian curved-surface parameter block.
 
-use cadmpeg_ir::be::f32_at as f32_be;
+use cadmpeg_codec_core::be::f32_at as f32_be;
+use cadmpeg_codec_core::le::u32_at as u32_le;
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::le::u32_at as u32_le;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap};
 
@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, HashMap};
 pub struct PlaneParams {
     /// The little-endian u24 carrier tag.
     pub target: u32,
-    /// Bounding-sphere center, which lies on the plane.
+    /// Bounding-sphere center, which lies on the plane and fixes its origin.
     pub origin: Point3,
     /// Unit plane normal from the positionally paired trim packet.
     pub normal: Vector3,
@@ -58,15 +58,15 @@ pub enum StandardSurfaceRecord {
         /// Little-endian u24 carrier tag.
         tag: u32,
         /// Trimmed-face spatial bounds stored in the roster core.
-        bounds: FreeformFaceBounds,
+        bounds: StandardFaceBounds,
         /// Face orientation relative to the linked carrier.
         forward: bool,
     },
 }
 
-/// Spatial bounds stored by one standard freeform face roster core.
+/// Spatial bounds stored by one standard face roster core.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FreeformFaceBounds {
+pub struct StandardFaceBounds {
     /// Axis-aligned bounding-box centre.
     pub aabb_center: [f64; 3],
     /// Non-negative axis-aligned bounding-box half-extents.
@@ -75,6 +75,58 @@ pub struct FreeformFaceBounds {
     pub sphere_center: [f64; 3],
     /// Non-negative bounding-sphere radius.
     pub sphere_radius: f64,
+}
+
+fn face_bounds_at(brep: &[u8], position: usize) -> Option<StandardFaceBounds> {
+    let values = (0..10)
+        .map(|index| f32_le(brep, position + 4 * index))
+        .collect::<Vec<_>>();
+    if values.iter().any(|value| !value.is_finite())
+        || values[3..6].iter().any(|extent| *extent < 0.0)
+        || values[9] < 0.0
+        || (0..3).any(|axis| (values[axis] - values[6 + axis]).abs() + values[3 + axis] > values[9])
+    {
+        return None;
+    }
+    Some(StandardFaceBounds {
+        aabb_center: [
+            f64::from(values[0]),
+            f64::from(values[1]),
+            f64::from(values[2]),
+        ],
+        aabb_half_extents: [
+            f64::from(values[3]),
+            f64::from(values[4]),
+            f64::from(values[5]),
+        ],
+        sphere_center: [
+            f64::from(values[6]),
+            f64::from(values[7]),
+            f64::from(values[8]),
+        ],
+        sphere_radius: f64::from(values[9]),
+    })
+}
+
+/// Read the spatial bounds of one complete face-local surface record.
+#[must_use]
+pub fn standard_face_bounds(
+    brep: &[u8],
+    record: &StandardSurfaceRecord,
+) -> Option<StandardFaceBounds> {
+    match record {
+        StandardSurfaceRecord::Freeform { bounds, .. } => Some(*bounds),
+        StandardSurfaceRecord::Analytic(prefix) => {
+            let relative = match prefix.kind {
+                0x32 => 3,
+                0x33 | 0x34 => 27,
+                0x35 => 19,
+                0x38 => 31,
+                _ => return None,
+            };
+            face_bounds_at(brep, prefix.pos + relative).filter(|bounds| bounds.sphere_radius > 0.0)
+        }
+    }
 }
 
 impl StandardSurfaceRecord {
@@ -129,16 +181,10 @@ pub fn standard_surface_records(
             0xff => false,
             _ => continue,
         };
-        let values = (0..10)
-            .map(|index| f32_le(brep, pos + 6 + 4 * index))
-            .collect::<Vec<_>>();
-        if tag == 0
-            || values.iter().any(|value| !value.is_finite())
-            || values[3..6].iter().any(|extent| *extent < 0.0)
-            || values[9] < 0.0
-            || (0..3)
-                .any(|axis| (values[axis] - values[6 + axis]).abs() + values[3 + axis] > values[9])
-        {
+        let Some(bounds) = face_bounds_at(brep, pos + 6) else {
+            continue;
+        };
+        if tag == 0 {
             continue;
         }
         records.insert(
@@ -146,24 +192,7 @@ pub fn standard_surface_records(
             StandardSurfaceRecord::Freeform {
                 pos,
                 tag,
-                bounds: FreeformFaceBounds {
-                    aabb_center: [
-                        f64::from(values[0]),
-                        f64::from(values[1]),
-                        f64::from(values[2]),
-                    ],
-                    aabb_half_extents: [
-                        f64::from(values[3]),
-                        f64::from(values[4]),
-                        f64::from(values[5]),
-                    ],
-                    sphere_center: [
-                        f64::from(values[6]),
-                        f64::from(values[7]),
-                        f64::from(values[8]),
-                    ],
-                    sphere_radius: f64::from(values[9]),
-                },
+                bounds,
                 forward,
             },
         );
@@ -338,12 +367,13 @@ pub fn plane_params<S: std::hash::BuildHasher>(
 }
 
 /// Decode a plane carrier from its bridged bounds and trim-frame records.
-pub fn decode_plane(params: &PlaneParams) -> SurfaceGeometry {
-    SurfaceGeometry::Plane {
+pub fn decode_plane(params: &PlaneParams) -> Option<SurfaceGeometry> {
+    let normal = unit_vector(params.normal)?;
+    Some(SurfaceGeometry::Plane {
         origin: params.origin,
-        normal: params.normal,
-        u_axis: cadmpeg_ir::geometry::derive_reference_direction(params.normal),
-    }
+        normal,
+        u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
+    })
 }
 
 /// A circle carrier in the standard `0x60` edge-support table.
@@ -503,7 +533,6 @@ fn standard_curve_supports_at(
                 || !cz.is_finite()
                 || !radius.is_finite()
                 || radius <= 0.0
-                || radius >= 1e6
             {
                 break;
             }
@@ -577,7 +606,7 @@ pub fn standard_lines(brep: &[u8], face_count: usize) -> Vec<StandardLine> {
 /// record. The big-endian `f32` payload begins immediately after the 3-byte
 /// `00 33 <kind>` marker ([spec §5.8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#58-analytic-surface-records-in-surfacicreps)). Returns `None` for the plane kind (its
 /// parameters are in a separate bridged record) and for any non-finite or
-/// out-of-range payload.
+/// invalid payload.
 pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeometry> {
     let p = prefix.pos + 3; // skip `00 33 <kind>`
     let be = |i: usize| -> Option<f32> {
@@ -588,7 +617,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
         0x35 => {
             // sphere: cx cy cz radius
             let (cx, cy, cz, r) = (be(0)?, be(1)?, be(2)?, be(3)?);
-            if !all_finite(&[cx, cy, cz, r]) || !(0.0..1e6).contains(&r.abs()) || r <= 0.0 {
+            if !all_finite(&[cx, cy, cz, r]) || r <= 0.0 {
                 return None;
             }
             Some(SurfaceGeometry::Sphere {
@@ -605,15 +634,10 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
             if !all_finite(&[cx, cy, cz, ax, ay, major, minor]) {
                 return None;
             }
-            if !(major.abs() > 0.0
-                && major.abs() < 1e6
-                && minor > 0.0
-                && minor < 1e6
-                && ax * ax + ay * ay <= 1.0 + 1e-4)
-            {
+            if !(major.abs() > 0.0 && minor > 0.0 && ax * ax + ay * ay <= 1.0 + 1e-4) {
                 return None;
             }
-            let axis = axis_from_xy(ax, ay, major);
+            let axis = axis_from_xy(ax, ay, major)?;
             Some(SurfaceGeometry::Torus {
                 center: pt(cx, cy, cz),
                 axis,
@@ -628,15 +652,14 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
             if !all_finite(&[px, py, pz, ax, ay, radius]) {
                 return None;
             }
-            if !(radius.abs() > 0.0 && radius.abs() < 1e6) || ax * ax + ay * ay > 1.0 + 1e-4 {
+            if radius == 0.0 || ax * ax + ay * ay > 1.0 + 1e-4 {
                 return None;
             }
+            let axis = axis_from_xy(ax, ay, radius)?;
             Some(SurfaceGeometry::Cylinder {
                 origin: pt(px, py, pz),
-                axis: axis_from_xy(ax, ay, radius),
-                ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis_from_xy(
-                    ax, ay, radius,
-                )),
+                axis,
+                ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
                 radius: radius.abs() as f64,
             })
         }
@@ -649,12 +672,11 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
             if !(semi.abs() > 0.0 && semi.abs() < std::f32::consts::FRAC_PI_2) {
                 return None;
             }
+            let axis = axis_from_xy(ax, ay, semi)?;
             Some(SurfaceGeometry::Cone {
                 origin: pt(x, y, z),
-                axis: axis_from_xy(ax, ay, semi),
-                ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis_from_xy(
-                    ax, ay, semi,
-                )),
+                axis,
+                ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
                 radius: 0.0,
                 ratio: 1.0,
                 half_angle: semi.abs() as f64,
@@ -695,14 +717,19 @@ fn pt(x: f32, y: f32, z: f32) -> Point3 {
 /// Recover the third axis component from the unit-norm constraint, taking its
 /// sign from a companion signed field (the cone/cylinder store `sign(az)` in the
 /// sign of the semi-angle / radius).
-fn axis_from_xy(ax: f32, ay: f32, signed: f32) -> Vector3 {
+fn axis_from_xy(ax: f32, ay: f32, signed: f32) -> Option<Vector3> {
     let az2 = (1.0 - (ax * ax + ay * ay) as f64).max(0.0);
     let az = az2.sqrt().copysign(signed as f64);
-    Vector3::new(ax as f64, ay as f64, az)
+    unit_vector(Vector3::new(ax as f64, ay as f64, az))
+}
+
+fn unit_vector(vector: Vector3) -> Option<Vector3> {
+    let norm = vector.x.hypot(vector.y).hypot(vector.z);
+    (norm.is_finite() && norm != 0.0).then(|| vector.scale(1.0 / norm))
 }
 
 fn f32_le(bytes: &[u8], at: usize) -> f32 {
-    cadmpeg_ir::le::f32_at(bytes, at).unwrap_or(f32::NAN)
+    cadmpeg_codec_core::le::f32_at(bytes, at).unwrap_or(f32::NAN)
 }
 
 fn face_ref(bytes: &[u8], at: usize) -> Option<(usize, usize)> {
@@ -718,4 +745,19 @@ fn u24_le(bytes: &[u8], at: usize) -> u32 {
 
 fn all_finite(vs: &[f32]) -> bool {
     vs.iter().all(|v| v.is_finite())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unit_vector;
+    use cadmpeg_ir::math::Vector3;
+
+    #[test]
+    fn unit_vector_preserves_tiny_finite_direction() {
+        assert_eq!(
+            unit_vector(Vector3::new(1e-200, 0.0, 0.0)),
+            Some(Vector3::new(1.0, 0.0, 0.0))
+        );
+        assert_eq!(unit_vector(Vector3::new(0.0, 0.0, 0.0)), None);
+    }
 }

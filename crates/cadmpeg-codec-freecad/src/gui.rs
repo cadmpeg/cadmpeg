@@ -3,8 +3,8 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::AppearanceId;
 use cadmpeg_ir::presentation::{
@@ -28,7 +28,7 @@ pub(crate) struct Graph {
 pub(crate) fn transfer(
     ir: &mut CadIr,
     bytes: &[u8],
-    entries: &BTreeMap<String, Vec<u8>>,
+    entries: &BTreeMap<String, &[u8]>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
@@ -278,6 +278,7 @@ pub(crate) fn transfer(
             id: appearance_id.clone(),
             name: Some(format!("{name} shape appearance")),
             asset_guid: None,
+            library_id: None,
             visual_guid: None,
             physical_token: None,
             schema: Some("FCStd ViewProvider ShapeMaterial".into()),
@@ -454,6 +455,7 @@ fn transfer_edge_appearance(
         id: appearance_id.clone(),
         name: Some(format!("{provider_name} line appearance")),
         asset_guid: None,
+        library_id: None,
         visual_guid: None,
         physical_token: None,
         schema: Some("FCStd ViewProvider line style".into()),
@@ -504,6 +506,7 @@ fn transfer_vertex_appearance(
         id: appearance_id.clone(),
         name: Some(format!("{provider_name} point appearance")),
         asset_guid: None,
+        library_id: None,
         visual_guid: None,
         physical_token: None,
         schema: Some("FCStd ViewProvider point style".into()),
@@ -690,7 +693,7 @@ fn transfer_topology_colors(
     provider_name: &str,
     object_id: &str,
     entry_name: &str,
-    entries: &BTreeMap<String, Vec<u8>>,
+    entries: &BTreeMap<String, &[u8]>,
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
     element_maps: &[ElementMapRecord],
@@ -789,6 +792,7 @@ fn transfer_topology_colors(
                         index + 1
                     )),
                     asset_guid: None,
+                    library_id: None,
                     visual_guid: None,
                     physical_token: None,
                     schema: Some(kind.schema().into()),

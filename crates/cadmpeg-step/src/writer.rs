@@ -77,10 +77,6 @@ impl Emitter {
             .collect()
     }
 
-    pub fn total(&self) -> usize {
-        self.lines.len()
-    }
-
     /// Consume the emitter and return one encoded DATA instance per element.
     pub fn into_lines(self) -> Vec<String> {
         self.lines

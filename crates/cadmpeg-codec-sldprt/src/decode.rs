@@ -15,16 +15,17 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_codec_core::be::u32_at as be_u32;
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::le::{i32_at as le_i32, u16_at as le_u16, u32_at as le_u32};
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use cadmpeg_ir::be::u32_at as be_u32;
-use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
-use cadmpeg_ir::le::{i32_at as le_i32, u16_at as le_u16, u32_at as le_u32};
 use cadmpeg_ir::report::DecodeReport;
 
 use crate::loss::SldprtLossCode;
@@ -91,12 +92,12 @@ struct EvaluatedFeatureState<'a> {
 /// or I/O failures return [`CodecError`]; unsupported model records are reported
 /// through [`DecodeResult::report`] when a partial result can be represented.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
-    let scan = container::scan_bytes(root.window());
+    let scan = container::scan(ctx, root)?;
 
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
-        return decode_result(ir, report, annotations, unknowns);
+        return decode_result(ctx, ir, report, annotations, unknowns);
     }
 
     let streams = active_body_streams(&scan);
@@ -110,22 +111,24 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
                 &decoded.configuration_bodies,
             )?;
             append_design_losses(&ir, &mut report);
-            return decode_result(ir, report, annotations, unknowns);
+            return decode_result(ctx, ir, report, annotations, unknowns);
         }
     }
 
     let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
     let mut report = build_container_report(&scan, false);
     append_design_losses(&ir, &mut report);
-    decode_result(ir, report, annotations, unknowns)
+    decode_result(ctx, ir, report, annotations, unknowns)
 }
 
 fn decode_result(
+    ctx: &DecodeContext<'_>,
     mut ir: CadIr,
     report: DecodeReport,
     annotations: Annotations,
     mut unknowns: Vec<UnknownRecord>,
 ) -> Result<DecodeResult, CodecError> {
+    ctx.charge_entities(ir.model.entity_count() as u64, "admit SLDPRT entities")?;
     let mut source_fidelity = cadmpeg_ir::SourceFidelity {
         annotations,
         ..cadmpeg_ir::SourceFidelity::default()
@@ -134,25 +137,152 @@ fn decode_result(
         .iter()
         .position(|record| record.id.0 == "sldprt:file:source-image#0")
         .map(|index| unknowns.remove(index));
-    source_fidelity.attach_native_unknown_records(&mut ir, "sldprt", &unknowns)?;
+    source_fidelity.attach_native_unknown_records(&mut ir, "sldprt", unknowns)?;
     if let Some(source_image) = source_image {
-        source_fidelity.retain_unknown_records("sldprt", std::slice::from_ref(&source_image));
+        source_fidelity.retain_unknown_records("sldprt", [source_image]);
     }
     set_semantic_hash(&mut ir);
-    Ok(DecodeResult::with_source_fidelity(
-        ir,
-        report,
-        source_fidelity,
-    ))
+    Ok(DecodeResult::new(ir, report, source_fidelity))
+}
+
+fn incomplete_pattern(
+    pattern: &cadmpeg_ir::features::PatternKind,
+    incomplete_path: &dyn Fn(&cadmpeg_ir::features::PathRef) -> bool,
+) -> bool {
+    use cadmpeg_ir::features::{PatternKind, PatternScaleCenter};
+
+    match pattern {
+        PatternKind::Unresolved { .. } => true,
+        PatternKind::Linear { direction, .. } | PatternKind::LinearOffsets { direction, .. } => {
+            direction.is_none()
+        }
+        PatternKind::Circular { .. } | PatternKind::Mirror { .. } => false,
+        PatternKind::CircularAngles { angles, .. } => angles.is_empty(),
+        PatternKind::CurveDriven { path, .. } => path.as_ref().is_none_or(incomplete_path),
+        PatternKind::Scale { center, .. } => matches!(center, PatternScaleCenter::Native(_)),
+        PatternKind::Composite { stages } => {
+            stages.is_empty()
+                || stages
+                    .iter()
+                    .any(|stage| incomplete_pattern(&stage.pattern, incomplete_path))
+        }
+    }
+}
+
+fn incomplete_binder_target(
+    target: &cadmpeg_ir::features::BinderTarget,
+    feature_positions: &BTreeMap<&cadmpeg_ir::features::FeatureId, u64>,
+    consumer_ordinal: u64,
+    dependencies: &[cadmpeg_ir::features::FeatureId],
+) -> bool {
+    match target {
+        cadmpeg_ir::features::BinderTarget::Feature { feature } => {
+            feature_positions
+                .get(feature)
+                .is_none_or(|ordinal| *ordinal >= consumer_ordinal)
+                || !dependencies.contains(feature)
+        }
+        cadmpeg_ir::features::BinderTarget::External { document, object } => {
+            document.trim().is_empty() || object.trim().is_empty()
+        }
+        cadmpeg_ir::features::BinderTarget::Native { .. } => true,
+    }
+}
+
+fn sketch_constraint_has_complete_neutral_semantics(
+    definition: &cadmpeg_ir::sketches::SketchConstraintDefinition,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchConstraintDefinition as Constraint;
+
+    match definition {
+        Constraint::Native { .. } => false,
+        Constraint::Disabled
+        | Constraint::Coincident { .. }
+        | Constraint::Polygon { .. }
+        | Constraint::SplineGroup { .. }
+        | Constraint::RectangularPattern { .. }
+        | Constraint::CircularPattern { .. }
+        | Constraint::TextFrame { .. }
+        | Constraint::TextPath { .. }
+        | Constraint::CoincidentLoci { .. }
+        | Constraint::SameCoordinate { .. }
+        | Constraint::PointOnObject { .. }
+        | Constraint::Midpoint { .. }
+        | Constraint::Offset { .. }
+        | Constraint::ProjectedCopy { .. }
+        | Constraint::AtIntersection { .. }
+        | Constraint::Concentric { .. }
+        | Constraint::Coradial { .. }
+        | Constraint::Collinear { .. }
+        | Constraint::Symmetric { .. }
+        | Constraint::PointSymmetric { .. }
+        | Constraint::Horizontal { .. }
+        | Constraint::HorizontalLoci { .. }
+        | Constraint::Vertical { .. }
+        | Constraint::VerticalLoci { .. }
+        | Constraint::HorizontalPoints { .. }
+        | Constraint::VerticalPoints { .. }
+        | Constraint::Parallel { .. }
+        | Constraint::Perpendicular { .. }
+        | Constraint::Tangent { .. }
+        | Constraint::TangentLoci { .. }
+        | Constraint::Curvature { .. }
+        | Constraint::Equal { .. }
+        | Constraint::Fixed { .. }
+        | Constraint::ArcAngle { .. }
+        | Constraint::EllipseAngle { .. }
+        | Constraint::Distance { .. }
+        | Constraint::DistanceLoci { .. }
+        | Constraint::HorizontalDistance { .. }
+        | Constraint::VerticalDistance { .. }
+        | Constraint::RepeatedDistance { .. }
+        | Constraint::RepeatedLength { .. }
+        | Constraint::ParallelLineSetDistance { .. }
+        | Constraint::Angle { .. }
+        | Constraint::AngleToAxis { .. }
+        | Constraint::Radius { .. }
+        | Constraint::RepeatedRadius { .. }
+        | Constraint::Diameter { .. }
+        | Constraint::RepeatedDiameter { .. }
+        | Constraint::SnellsLaw { .. }
+        | Constraint::Weight { .. }
+        | Constraint::InternalAlignment { .. }
+        | Constraint::Group { .. }
+        | Constraint::Text { .. } => true,
+    }
+}
+
+fn spatial_sketch_constraint_has_complete_neutral_semantics(
+    definition: &cadmpeg_ir::sketches::SpatialSketchConstraintDefinition,
+) -> bool {
+    use cadmpeg_ir::sketches::SpatialSketchConstraintDefinition as Constraint;
+
+    match definition {
+        Constraint::Native { .. } => false,
+        Constraint::Coincident { .. }
+        | Constraint::Symmetric { .. }
+        | Constraint::PointOnSurface { .. }
+        | Constraint::Midpoint { .. }
+        | Constraint::Tangent { .. }
+        | Constraint::PointDistance { .. }
+        | Constraint::LineLength { .. }
+        | Constraint::RepeatedLineLength { .. }
+        | Constraint::ParallelLineDistance { .. }
+        | Constraint::RepeatedParallelLineDistance { .. }
+        | Constraint::ParallelLineSetDistance { .. }
+        | Constraint::Offset { .. }
+        | Constraint::ParallelToDirection { .. }
+        | Constraint::SplineGroup { .. } => true,
+    }
 }
 
 fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     use cadmpeg_ir::features::{
         BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent,
-        FaceSelection, FeatureDefinition, FeatureSourceContent, PathRef, PatternKind, ProfileRef,
-        RadiusSpec, RevolveExtent, Termination,
+        FaceSelection, FeatureDefinition, FeatureSourceContent, PathRef, ProfileRef, RadiusSpec,
+        RevolveExtent, Termination,
     };
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchGeometry, SpatialSketchGeometry};
+    use cadmpeg_ir::sketches::{SketchGeometry, SpatialSketchGeometry};
 
     let native = ir
         .native
@@ -203,35 +333,10 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             )));
     }
     let unresolved_configuration_parameter_lanes = native.as_ref().map_or(0, |native| {
-        let mut counts = BTreeMap::<&str, usize>::new();
-        for key in native
-            .feature_input_lanes
-            .iter()
-            .filter_map(|lane| lane.configuration.as_deref())
-        {
-            *counts.entry(key).or_default() += 1;
-        }
-        counts
-            .into_iter()
-            .map(|(key, count)| {
-                let configuration_matches = key.parse::<u32>().ok().map_or(0, |source_index| {
-                    ir.model
-                        .configurations
-                        .iter()
-                        .filter(|configuration| {
-                            configuration.source_index == Some(source_index)
-                                || configuration.source_index.is_none()
-                                    && configuration.ordinal == source_index
-                        })
-                        .count()
-                });
-                if count == 1 && configuration_matches == 1 {
-                    0
-                } else {
-                    count
-                }
-            })
-            .sum()
+        crate::history::unresolved_configuration_lanes(
+            &ir.model.configurations,
+            &native.feature_input_lanes,
+        )
     });
     if unresolved_configuration_parameter_lanes > 0 {
         report.losses.push(SldprtLossCode::ConfigLaneIdentityUnresolved.note(format!(
@@ -319,9 +424,15 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 .any(|body| !bodies.insert(body) || !model_body_ids.contains(body))
         })
         .count();
-    if incoherent_configuration_bodies > 0 {
+    let unresolved_configuration_bodies = ir
+        .model
+        .configurations
+        .iter()
+        .filter(|configuration| configuration.bodies.is_unresolved())
+        .count();
+    if unresolved_configuration_bodies > 0 || incoherent_configuration_bodies > 0 {
         report.losses.push(SldprtLossCode::ConfigIncoherentBodyRefs.note(format!(
-                "{incoherent_configuration_bodies} configuration record(s) contain missing or repeated body references."
+                "{unresolved_configuration_bodies} configuration record(s) have unresolved body membership; {incoherent_configuration_bodies} configuration record(s) contain missing or repeated body references."
             )));
     }
 
@@ -342,7 +453,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .configurations
         .iter()
         .filter(|configuration| {
-            !feature_ids.is_empty()
+            !configuration_source_needs_update(ir, configuration)
                 && (configuration.feature_states.len() != feature_ids.len()
                     || configuration
                         .feature_states
@@ -355,7 +466,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .configurations
         .iter()
         .filter(|configuration| {
-            !parameter_ids.is_empty()
+            !configuration_source_needs_update(ir, configuration)
                 && (configuration.parameter_values.len() != parameter_ids.len()
                     || configuration
                         .parameter_values
@@ -369,6 +480,38 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         report.losses.push(SldprtLossCode::ConfigIncompleteSnapshot.note(format!(
                 "{incomplete_configuration_feature_snapshots} configuration(s) lack a complete evaluated feature snapshot; {incomplete_configuration_parameter_snapshots} configuration(s) lack a complete evaluated parameter snapshot."
             )));
+    }
+    let incoherent_configuration_suppression =
+        ir.model
+            .configurations
+            .iter()
+            .filter(|configuration| {
+                let mut suppressed = std::collections::HashSet::new();
+                configuration
+                    .suppressed_features
+                    .iter()
+                    .any(|feature| !feature_ids.contains(feature) || !suppressed.insert(feature))
+                    || (!configuration.feature_states.is_empty()
+                        && configuration.feature_states.iter().any(|(feature, state)| {
+                            state.suppressed != suppressed.contains(feature)
+                        }))
+            })
+            .count();
+    let incoherent_configuration_overrides = ir
+        .model
+        .configurations
+        .iter()
+        .filter(|configuration| {
+            configuration
+                .parameter_overrides
+                .keys()
+                .any(|parameter| !parameter_ids.contains(parameter))
+        })
+        .count();
+    if incoherent_configuration_suppression > 0 || incoherent_configuration_overrides > 0 {
+        report.losses.push(SldprtLossCode::ConfigIncompleteSnapshot.note(format!(
+            "{incoherent_configuration_suppression} configuration(s) have missing, repeated, or feature-state-inconsistent suppression members; {incoherent_configuration_overrides} configuration(s) reference missing parameter overrides."
+        )));
     }
 
     let feature_names = ir
@@ -700,20 +843,27 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             )));
     }
 
-    let native_constraints = ir
+    let native_planar_constraints = ir
         .model
         .sketch_constraints
         .iter()
         .filter(|constraint| {
-            matches!(
-                constraint.definition,
-                SketchConstraintDefinition::Native { .. }
-            )
+            !sketch_constraint_has_complete_neutral_semantics(&constraint.definition)
+                && constraint.active != Some(false)
         })
         .count();
+    let native_spatial_constraints = ir
+        .model
+        .spatial_sketch_constraints
+        .iter()
+        .filter(|constraint| {
+            !spatial_sketch_constraint_has_complete_neutral_semantics(&constraint.definition)
+        })
+        .count();
+    let native_constraints = native_planar_constraints + native_spatial_constraints;
     if native_constraints > 0 {
         report.losses.push(SldprtLossCode::SketchNativeConstraint.note(format!(
-                "{native_constraints} sketch constraint(s) retain native relation kinds and operands without complete neutral geometric semantics."
+                "{native_constraints} planar or spatial sketch constraint(s) retain native relation kinds and operands without complete neutral geometric semantics."
             )));
     }
 
@@ -799,10 +949,12 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     };
     let incomplete_body_selection = |selection: &BodySelection| match selection {
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies.is_empty(),
-        BodySelection::Historical { bodies, .. } => bodies.is_empty(),
+        BodySelection::Historical { bodies, .. } | BodySelection::HistoricalSet { bodies, .. } => {
+            bodies.is_empty()
+        }
         BodySelection::Generated { bodies, .. } => bodies.is_empty(),
         BodySelection::Local { bodies, .. } => bodies.is_empty(),
-        BodySelection::Unresolved | BodySelection::Native(_) => true,
+        BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => true,
     };
     let incomplete_profile = |profile: &ProfileRef| match profile {
         ProfileRef::Faces(faces) => faces.is_empty(),
@@ -810,6 +962,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         ProfileRef::SketchProfiles { profiles, .. }
         | ProfileRef::SpatialSketchProfiles { profiles, .. } => profiles.is_empty(),
         ProfileRef::SketchRegions { regions, .. } => regions.is_empty(),
+        ProfileRef::SketchEntities { entities, .. } => entities.is_empty(),
         ProfileRef::SketchSelection { selections, .. }
         | ProfileRef::SpatialSketchSelection { selections, .. } => selections.is_empty(),
         ProfileRef::HistoricalFaces { faces, .. } => faces.is_empty(),
@@ -823,10 +976,27 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         PathRef::SpatialSketchSelection { selections, .. } => selections.is_empty(),
         PathRef::Unresolved(_) | PathRef::Native(_) => true,
         PathRef::Sketch(_) => false,
+        PathRef::SketchCurves { curves, .. } => curves.is_empty(),
     };
-    let incomplete_termination = |termination: &Termination| {
-        matches!(termination, Termination::Unresolved)
-            || matches!(termination, Termination::ToFace { face, .. } if incomplete_face_selection(face))
+    let incomplete_vertex_selection = |selection: &cadmpeg_ir::features::VertexSelection| {
+        matches!(
+            selection,
+            cadmpeg_ir::features::VertexSelection::Unresolved
+                | cadmpeg_ir::features::VertexSelection::Native(_)
+        )
+    };
+    let incomplete_termination = |termination: &Termination| match termination {
+        Termination::Unresolved => true,
+        Termination::ToFace { face, .. }
+        | Termination::OffsetFromFace { face, .. }
+        | Termination::ToShape { target: face } => incomplete_face_selection(face),
+        Termination::ToVertex { vertex } => incomplete_vertex_selection(vertex),
+        Termination::Blind { .. }
+        | Termination::ThroughAll
+        | Termination::ThroughNext
+        | Termination::ToFirst
+        | Termination::ToLast
+        | Termination::Angle { .. } => false,
     };
     let incomplete_extrude_extent = |extent: &ExtrudeExtent| match extent {
         ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
@@ -847,7 +1017,12 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     };
     let incomplete_typed_features = evaluated_feature_states
         .iter()
-        .filter(|state| match state.definition {
+        .filter(|state| {
+            let mut definition = state.definition;
+            while let FeatureDefinition::PostProcess { operation, .. } = definition {
+                definition = operation;
+            }
+            match definition {
             FeatureDefinition::TreeNode { .. }
             | FeatureDefinition::DatumPrincipalPlane { .. }
             | FeatureDefinition::DatumPlane { .. }
@@ -856,6 +1031,73 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             | FeatureDefinition::DatumCoordinateSystem { .. }
             | FeatureDefinition::EquationCurve { .. }
             | FeatureDefinition::Helix { .. } => false,
+            FeatureDefinition::BaseFeature { bodies }
+            | FeatureDefinition::InsertBodies { bodies } => incomplete_body_selection(bodies),
+            FeatureDefinition::InsertComponent { occurrence } => !ir
+                .model
+                .occurrences
+                .iter()
+                .any(|candidate| candidate.id == *occurrence),
+            FeatureDefinition::AssemblyJoint { joint } => !ir
+                .model
+                .assembly_joints
+                .iter()
+                .any(|candidate| candidate.id == *joint),
+            FeatureDefinition::ReferenceImage { asset, .. } => {
+                !ir.model.assets.iter().any(|candidate| candidate.id == *asset)
+            }
+            FeatureDefinition::StoredGeometry => state.outputs.is_empty(),
+            FeatureDefinition::ExtractBody { source } => incomplete_body_selection(source),
+            FeatureDefinition::DerivedGeometry { source } => {
+                feature_positions
+                    .get(source)
+                    .is_none_or(|ordinal| *ordinal >= state.feature.ordinal)
+                    || !state.dependencies.contains(source)
+            }
+            FeatureDefinition::ImportedGeometry { path, .. } => path.trim().is_empty(),
+            FeatureDefinition::Form { cages } => cages.is_empty(),
+            FeatureDefinition::PointGeometry { .. }
+            | FeatureDefinition::LineSegment { .. }
+            | FeatureDefinition::CircularArc { .. }
+            | FeatureDefinition::EllipticArc { .. }
+            | FeatureDefinition::PlanarPatch { .. } => false,
+            FeatureDefinition::Polyline { points, .. } => points.len() < 2,
+            FeatureDefinition::RegularPolygonCurve { sides, .. } => *sides < 3,
+            FeatureDefinition::FaceFromShapes {
+                sources,
+                face_maker_class,
+            } => incomplete_body_selection(sources) || face_maker_class.trim().is_empty(),
+            FeatureDefinition::Block {
+                dimensions,
+                placement,
+                ..
+            } => dimensions.is_none() || placement.is_none(),
+            FeatureDefinition::ProjectOnSurface {
+                sources,
+                support_face,
+                ..
+            } => incomplete_path(sources) || incomplete_face_selection(support_face),
+            FeatureDefinition::Coil {
+                construction,
+                result,
+            } => {
+                matches!(
+                    construction.placement,
+                    cadmpeg_ir::features::CoilPlacement::Native { .. }
+                ) || match result {
+                    cadmpeg_ir::features::CoilResult::NewBody => false,
+                    cadmpeg_ir::features::CoilResult::Boolean {
+                        operation,
+                        targets,
+                    } => {
+                        *operation == BooleanOp::Unresolved
+                            || incomplete_body_selection(targets)
+                    }
+                }
+            }
+            FeatureDefinition::Sphere { op, .. }
+            | FeatureDefinition::Torus { op, .. }
+            | FeatureDefinition::Primitive { op, .. } => *op == BooleanOp::Unresolved,
             FeatureDefinition::CosmeticThread {
                 face,
                 diameter,
@@ -869,12 +1111,30 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::SketchBlockInstance { block, placement } => {
                 block.is_none() || placement.is_none()
             }
-            FeatureDefinition::DatumOffsetPlane { reference, .. } => reference.is_none(),
+            FeatureDefinition::DatumOffsetPlane { reference, .. } => reference
+                .as_ref()
+                .is_none_or(|reference| match reference {
+                    cadmpeg_ir::features::DatumPlaneReference::Feature(_) => false,
+                    cadmpeg_ir::features::DatumPlaneReference::Face { face, .. } => {
+                        incomplete_face_selection(face)
+                    }
+                }),
             FeatureDefinition::ProjectedCurve {
                 source,
                 target_faces,
-                ..
-            } => incomplete_path(source) || incomplete_face_selection(target_faces),
+                direction,
+                bidirectional,
+            } => {
+                incomplete_path(source)
+                    || incomplete_face_selection(target_faces)
+                    || matches!(
+                        direction,
+                        cadmpeg_ir::features::CurveProjectionDirection::State(
+                            cadmpeg_ir::features::CurveProjectionDirectionState::Unresolved
+                        )
+                    )
+                    || bidirectional.is_none()
+            }
             FeatureDefinition::CompositeCurve { segments, .. } => {
                 segments.is_empty() || segments.iter().any(incomplete_path)
             }
@@ -893,11 +1153,28 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::SpatialSketch { sketch } => sketch.is_none(),
             FeatureDefinition::Extrude {
                 profile,
+                direction,
+                start,
                 extent,
                 op,
+                direction_source,
                 ..
             } => {
                 incomplete_profile(profile)
+                    || matches!(direction, cadmpeg_ir::features::ExtrudeDirection::Unresolved)
+                    || match start {
+                        cadmpeg_ir::features::ExtrudeStart::Unresolved => true,
+                        cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } => {
+                            incomplete_face_selection(face)
+                        }
+                        cadmpeg_ir::features::ExtrudeStart::ProfilePlane
+                        | cadmpeg_ir::features::ExtrudeStart::OffsetProfilePlane { .. } => false,
+                    }
+                    || matches!(
+                        direction_source,
+                        Some(cadmpeg_ir::features::ExtrusionDirectionSource::Edge { reference })
+                            if incomplete_path(reference)
+                    )
                     || incomplete_extrude_extent(extent)
                     || *op == BooleanOp::Unresolved
             }
@@ -908,19 +1185,69 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || *op == BooleanOp::Unresolved
             }
             FeatureDefinition::Sweep {
-                profile,
+                section,
+                sections,
                 path,
                 mode,
+                orientation,
                 ..
             } => {
-                profile.as_ref().is_none_or(incomplete_profile)
+                matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
+                    || section.referenced_profile().is_some_and(incomplete_profile)
+                    || sections.iter().any(|section| {
+                        matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
+                            || section.referenced_profile().is_some_and(incomplete_profile)
+                    })
                     || path.as_ref().is_none_or(incomplete_path)
+                    || matches!(
+                        orientation,
+                        Some(cadmpeg_ir::features::SweepOrientation::Auxiliary { path, .. })
+                            if incomplete_path(path)
+                    )
                     || matches!(mode, cadmpeg_ir::features::SweepMode::Unresolved)
                     || matches!(mode, cadmpeg_ir::features::SweepMode::Solid { op } if *op == BooleanOp::Unresolved)
+            }
+            FeatureDefinition::HelicalSweep { construction, op } => {
+                incomplete_profile(&construction.profile) || *op == BooleanOp::Unresolved
+            }
+            FeatureDefinition::Binder {
+                sources,
+                construction,
+            } => {
+                sources.is_empty()
+                    || sources.iter().any(|source| {
+                        incomplete_binder_target(
+                            &source.target,
+                            &feature_positions,
+                            state.feature.ordinal,
+                            state.dependencies,
+                        ) || source
+                            .subelements
+                            .iter()
+                            .any(|subelement| subelement.trim().is_empty())
+                    })
+                    || matches!(
+                        construction,
+                        cadmpeg_ir::features::BinderConstruction::Shape { .. }
+                            if sources.len() != 1
+                    )
+                    || matches!(
+                        construction,
+                        cadmpeg_ir::features::BinderConstruction::SubShape {
+                            context: Some(context),
+                            ..
+                        } if incomplete_binder_target(
+                            context,
+                            &feature_positions,
+                            state.feature.ordinal,
+                            state.dependencies,
+                        )
+                    )
             }
             FeatureDefinition::Loft {
                 sections,
                 guides,
+                centerline,
                 op,
                 ..
             } => {
@@ -931,6 +1258,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                         cadmpeg_ir::features::LoftSection::Point(_) => false,
                     })
                     || guides.iter().any(incomplete_path)
+                    || centerline.as_ref().is_some_and(incomplete_path)
                     || *op == BooleanOp::Unresolved
             }
             FeatureDefinition::Rib { construction, op } => {
@@ -941,34 +1269,107 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || matches!(construction.draft, cadmpeg_ir::features::RibDraft::Unresolved)
                     || *op == BooleanOp::Unresolved
             }
-            FeatureDefinition::Fillet { groups } => groups.is_empty() || groups.iter().any(|group| {
-                incomplete_edge_selection(&group.edges) || matches!(group.radius, RadiusSpec::Unresolved { .. })
-            }),
+            FeatureDefinition::SheetMetalBaseFlange { profile, .. } => {
+                incomplete_profile(profile)
+            }
+            FeatureDefinition::Fillet { groups } => {
+                groups.is_empty()
+                    || groups.iter().any(|group| {
+                        incomplete_edge_selection(&group.edges)
+                            || matches!(group.radius, RadiusSpec::Unresolved { .. })
+                            || matches!(group.radius, RadiusSpec::Variable { ref points } if points.is_empty())
+                    })
+            }
             FeatureDefinition::Chamfer { groups, .. } => groups.is_empty() || groups.iter().any(|group| {
                 incomplete_edge_selection(&group.edges) || matches!(group.spec, ChamferSpec::Unresolved { .. })
             }),
+            FeatureDefinition::FaceBlend {
+                first_faces,
+                second_faces,
+                radius,
+            } => {
+                incomplete_face_selection(first_faces)
+                    || incomplete_face_selection(second_faces)
+                    || matches!(radius, RadiusSpec::Unresolved { .. })
+                    || matches!(radius, RadiusSpec::Variable { points } if points.is_empty())
+            }
             FeatureDefinition::Shell {
+                bodies,
                 removed_faces,
                 thickness,
                 outward,
-                ..
+                mode,
+                join,
+                resolve_intersections,
+                allow_self_intersections,
             } => {
-                incomplete_optional_face_selection(removed_faces)
+                bodies.as_ref().is_some_and(incomplete_body_selection)
+                    || incomplete_optional_face_selection(removed_faces)
                     || thickness.is_none()
                     || outward.is_none()
+                    || mode.is_none()
+                    || join.is_none()
+                    || resolve_intersections.is_none()
+                    || allow_self_intersections.is_none()
+            }
+            FeatureDefinition::OffsetShape { source, .. }
+            | FeatureDefinition::RefineShape { source }
+            | FeatureDefinition::ReverseShape { source } => incomplete_body_selection(source),
+            FeatureDefinition::Compound { members } => incomplete_body_selection(members),
+            FeatureDefinition::RuledBetweenCurves { first, second, .. } => {
+                incomplete_path(first) || incomplete_path(second)
+            }
+            FeatureDefinition::SectionShape {
+                first,
+                second,
+                approximate,
+            } => {
+                incomplete_body_selection(first)
+                    || incomplete_body_selection(second)
+                    || approximate.is_none()
+            }
+            FeatureDefinition::MirrorShape {
+                source,
+                plane_reference,
+                ..
+            } => {
+                incomplete_body_selection(source)
+                    || plane_reference
+                        .as_ref()
+                        .is_some_and(incomplete_face_selection)
             }
             FeatureDefinition::Thicken {
                 faces,
                 thickness,
                 side,
             } => incomplete_face_selection(faces) || thickness.is_none() || side.is_none(),
-            FeatureDefinition::OffsetSurface { faces, .. }
-            | FeatureDefinition::KnitSurface { faces, .. }
-            | FeatureDefinition::ExtendSurface { faces, .. } => incomplete_face_selection(faces),
+            FeatureDefinition::OffsetSurface { faces, distance } => {
+                incomplete_face_selection(faces) || distance.is_none()
+            }
+            FeatureDefinition::KnitSurface {
+                faces,
+                merge_entities,
+                create_solid,
+                ..
+            } => {
+                incomplete_face_selection(faces)
+                    || merge_entities.is_none()
+                    || create_solid.is_none()
+            }
+            FeatureDefinition::ExtendSurface {
+                faces,
+                distance,
+                method,
+            } => {
+                incomplete_face_selection(faces)
+                    || distance.is_none()
+                    || *method == cadmpeg_ir::features::SurfaceExtension::Unresolved
+            }
             FeatureDefinition::FilledSurface {
                 boundary,
                 support_faces,
                 continuity,
+                merge_result,
                 ..
             } => {
                 (match boundary {
@@ -982,9 +1383,13 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     } else {
                         incomplete_face_selection(support_faces)
                     }
+                    || continuity.is_none()
+                    || merge_result.is_none()
             }
-            FeatureDefinition::TrimSurface { faces, tool, .. } => {
-                incomplete_face_selection(faces) || incomplete_path(tool)
+            FeatureDefinition::TrimSurface { faces, tool, keep } => {
+                incomplete_face_selection(faces)
+                    || incomplete_path(tool)
+                    || *keep == cadmpeg_ir::features::TrimRegion::Unresolved
             }
             FeatureDefinition::RuledSurface {
                 edges,
@@ -1001,16 +1406,50 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,
-                ..
-            } => incomplete_face_selection(faces) || incomplete_face_selection(neutral_plane),
-            FeatureDefinition::Combine { target, tools, op } => {
+                pull_direction,
+                angle,
+                outward,
+            } => {
+                incomplete_face_selection(faces)
+                    || incomplete_face_selection(neutral_plane)
+                    || pull_direction.is_none()
+                    || angle.is_none()
+                    || outward.is_none()
+            }
+            FeatureDefinition::Combine {
+                target, tools, op, ..
+            } => {
                 incomplete_body_selection(target)
                     || incomplete_body_selection(tools)
                     || *op == BooleanOp::Unresolved
             }
+            FeatureDefinition::BoundaryFill { tools, cells } => {
+                incomplete_body_selection(tools)
+                    || cells.is_empty()
+                    || cells.iter().any(incomplete_body_selection)
+            }
             FeatureDefinition::CutWithSurface { targets, tools, .. } => {
                 incomplete_body_selection(targets) || incomplete_face_selection(tools)
             }
+            FeatureDefinition::TrimBodies {
+                targets,
+                tools,
+                keep,
+            } => {
+                incomplete_body_selection(targets)
+                    || incomplete_body_selection(tools)
+                    || *keep == cadmpeg_ir::features::BodyTrimSide::Unresolved
+            }
+            FeatureDefinition::SplitBody { targets, tools } => {
+                incomplete_body_selection(targets) || incomplete_face_selection(tools)
+            }
+            FeatureDefinition::SplitFace { targets, tool } => {
+                incomplete_face_selection(targets) || incomplete_path(tool)
+            }
+            FeatureDefinition::SewBodies {
+                bodies,
+                gap_tolerance,
+            } => incomplete_body_selection(bodies) || gap_tolerance.is_none(),
             FeatureDefinition::DeleteBody { bodies, mode } => {
                 incomplete_body_selection(bodies) || *mode == BodyRetentionMode::Unresolved
             }
@@ -1048,16 +1487,20 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || factors.resolved().is_none()
             }
             FeatureDefinition::Hole {
+                profile,
                 face,
                 placements,
                 kind,
+                exit_kind,
                 diameter,
                 extent,
                 ..
             } => {
-                face.as_ref().is_some_and(incomplete_face_selection)
+                profile.as_ref().is_some_and(incomplete_profile)
+                    || face.as_ref().is_some_and(incomplete_face_selection)
                     || placements.is_empty()
                     || matches!(kind, cadmpeg_ir::features::HoleKind::Unresolved { .. })
+                    || matches!(exit_kind, Some(cadmpeg_ir::features::HoleKind::Unresolved { .. }))
                     || diameter.is_none()
                     || extent.as_ref().is_none_or(incomplete_termination)
             }
@@ -1071,19 +1514,29 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                         cadmpeg_ir::features::PatternSeed::Bodies(bodies) => {
                             incomplete_body_selection(bodies)
                         }
+                        cadmpeg_ir::features::PatternSeed::Occurrences(occurrences) => {
+                            occurrences.is_empty()
+                        }
                     })
-                    || matches!(pattern, PatternKind::Unresolved { .. })
-                    || matches!(pattern, PatternKind::Linear { direction: None, .. })
-                    || matches!(pattern, PatternKind::CurveDriven { path: None, .. })
+                    || incomplete_pattern(pattern, &incomplete_path)
             }
-            FeatureDefinition::Native { .. } => false,
-            _ => false,
+            FeatureDefinition::Native { .. } | FeatureDefinition::PostProcess { .. } => false,
+            // These variants explicitly retain unresolved construction semantics. Keep
+            // the match exhaustive so a new common-IR family cannot silently pass L6.
+            FeatureDefinition::DatumPlaneUnresolved
+            | FeatureDefinition::DatumPointUnresolved
+            | FeatureDefinition::DatumCoordinateSystemUnresolved
+            | FeatureDefinition::LoftUnresolved
+            | FeatureDefinition::FreeformSurfaceUnresolved
+            | FeatureDefinition::BoundarySurfaceUnresolved
+            | FeatureDefinition::DraftUnresolved => true,
+            }
         })
         .count();
     if incomplete_typed_features > 0 {
         report.losses.push(SldprtLossCode::FeatureTypedOperandIncomplete.note(format!(
-                "{incomplete_typed_features} typed feature(s) retain native or unresolved required operation operands."
-            )));
+            "{incomplete_typed_features} typed feature(s) retain native or unresolved required operation operands."
+        )));
     }
 
     let unresolved_body_modes = evaluated_feature_states
@@ -1103,6 +1556,26 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 "{unresolved_body_modes} body delete/keep feature(s) retain selected native body identities without a decoded retention mode."
             )));
     }
+}
+
+fn configuration_source_needs_update(
+    ir: &CadIr,
+    configuration: &cadmpeg_ir::features::DesignConfiguration,
+) -> bool {
+    let slot = configuration
+        .properties
+        .get("id")
+        .and_then(|value| value.parse::<u32>().ok())
+        .or(configuration.source_index)
+        .unwrap_or(configuration.ordinal);
+    ir.source
+        .as_ref()
+        .and_then(|source| {
+            source
+                .attributes
+                .get(&format!("sw_configuration_{slot}_needs_update"))
+        })
+        .is_some_and(|value| value.eq_ignore_ascii_case("yes"))
 }
 
 fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative) -> usize {
@@ -1127,6 +1600,24 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
             *binding_counts.entry((source, class)).or_default() += 1;
         }
     }
+    let mut named_binding_counts = BTreeMap::<(&str, &str, &str), usize>::new();
+    for lane in &native.feature_input_lanes {
+        for feature in native
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.features)
+        {
+            let (Some(class), Some(name)) = (
+                feature.input_class.as_deref(),
+                crate::resolved_features::feature_object_name(feature, lane),
+            ) else {
+                continue;
+            };
+            *named_binding_counts
+                .entry((lane.id.as_str(), name.id.as_str(), class))
+                .or_default() += 1;
+        }
+    }
     native
         .feature_input_lanes
         .iter()
@@ -1134,19 +1625,24 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
             lane.classes
                 .iter()
                 .filter(|class| class.role == FeatureInputClassRole::Feature)
-                .filter_map(|class| {
+                .filter_map(move |class| {
                     let name_offset = class.offset + 6 + class.name.len() as u64;
                     lane.names
                         .iter()
                         .find(|name| name.offset == name_offset)
-                        .map(|name| (class, name))
+                        .map(|name| (lane, class, name))
                 })
         })
-        .filter(|(class, name)| {
-            name.object_id.is_none_or(|id| {
-                source_counts.get(&id).copied() != Some(1)
-                    || binding_counts.get(&(id, class.name.as_str())).copied() != Some(1)
-            })
+        .filter(|(lane, class, name)| {
+            let source_bound = name.object_id.is_some_and(|id| {
+                source_counts.get(&id).copied() == Some(1)
+                    && binding_counts.get(&(id, class.name.as_str())).copied() == Some(1)
+            });
+            let name_bound = named_binding_counts
+                .get(&(lane.id.as_str(), name.id.as_str(), class.name.as_str()))
+                .copied()
+                == Some(1);
+            !(source_bound || name_bound)
         })
         .count()
 }
@@ -1267,7 +1763,7 @@ fn multiply_projected_sketch_relation_records(
 
 /// Decode the active Parasolid stream's B-rep. Returns `None` when the stream
 /// frames but yields no geometry, so the caller falls back to metadata.
-fn active_body_streams(scan: &ContainerScan) -> Vec<BodyStream<'_>> {
+fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<BodyStream<'a>> {
     let block_streams = scan.blocks.iter().flat_map(|block| {
         block.ps_streams.iter().filter_map(move |payload| {
             let header = crate::parasolid::stream_header(payload)?;
@@ -1433,6 +1929,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) {
     target.pcurves.append(&mut source.pcurves);
     target.unknowns.append(&mut source.unknowns);
     target.face_colors.append(&mut source.face_colors);
+    target.face_atoms.append(&mut source.face_atoms);
     target.stats.unknown_surface_faces += source.stats.unknown_surface_faces;
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
     target.stats.source_entity_records += source.stats.source_entity_records;
@@ -1472,8 +1969,11 @@ fn build_geometry_ir(
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut histories = crate::history::histories(scan, &mut annotations);
     let mut lanes = crate::resolved_features::lanes(scan, &mut annotations);
+    let mut supplemental_config_lanes =
+        crate::resolved_features::supplemental_config_lanes(scan, &mut annotations);
     crate::resolved_features::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bind_scalar_operands(&histories, &mut lanes);
+    crate::resolved_features::bind_scalar_operands(&histories, &mut supplemental_config_lanes);
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations);
     project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
     let (spatial_sketches, spatial_sketch_entities) =
@@ -1516,6 +2016,19 @@ fn build_geometry_ir(
         &lanes,
         &annotations,
     );
+    crate::resolved_features::bind_unresolved_detached_sketch_objects(
+        &ir.model.features,
+        &histories,
+        &mut supplemental_config_lanes,
+    );
+    crate::resolved_features::project_compact_edge_selections(
+        &mut ir.model.features,
+        &supplemental_config_lanes,
+    );
+    crate::history::project_configuration_supplemental_edge_selections(
+        &mut ir,
+        &supplemental_config_lanes,
+    );
     crate::resolved_features::project_compact_sketch_profiles(
         &mut ir.model.features,
         &mut sketches,
@@ -1523,13 +2036,14 @@ fn build_geometry_ir(
         &histories,
         &lanes,
     );
+    let mut sketch_lanes = lanes.clone();
+    sketch_lanes.extend(supplemental_config_lanes.clone());
     crate::resolved_features::project_marker_backed_sketches(
         &mut ir.model.features,
         &mut sketches,
         &mut sketch_entities,
         &histories,
-        &lanes,
-        crate::container::active_parasolid_modeler_generation(scan),
+        &sketch_lanes,
     );
     crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches, &histories);
     crate::resolved_features::project_dissected_sketches(
@@ -1571,6 +2085,13 @@ fn build_geometry_ir(
         &ir.model.features,
         &lanes,
     );
+    crate::resolved_features::project_relation_solved_line_geometry(
+        &mut sketch_entities,
+        &sketches,
+        &ir.model.features,
+        &ir.model.parameters,
+        &lanes,
+    );
     crate::resolved_features::project_relation_solved_point_geometry(
         &mut sketch_entities,
         &sketches,
@@ -1589,6 +2110,7 @@ fn build_geometry_ir(
     stamp_feature_baseline(&mut ir);
     let mut attributes = crate::metadata::attributes(scan, &mut annotations);
     attributes.extend(crate::history::custom_property_attributes(&histories));
+    lanes.extend(supplemental_config_lanes);
     let mut native = crate::native::SldprtNative {
         version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: histories.clone(),
@@ -1611,15 +2133,40 @@ fn build_geometry_ir(
     ir.model.vertices = brep.vertices;
     ir.model.points = brep.points;
     ir.model.surfaces = brep.surfaces;
+    ir.model.procedural_surfaces = brep.procedural_surfaces;
     ir.model.curves = brep.curves;
     ir.model.pcurves = brep.pcurves;
+    let face_producers = brep
+        .face_atoms
+        .iter()
+        .filter_map(|atom| {
+            atom.target
+                .clone()
+                .map(|target| (target, atom.feature_source_id))
+        })
+        .collect::<Vec<_>>();
+    crate::history::derive_feature_outputs(
+        &mut ir.model.features,
+        &histories,
+        &face_producers,
+        &ir.model.faces,
+        &ir.model.shells,
+        &ir.model.regions,
+    );
     crate::history::bind_topology_selections(
         &mut ir.model.features,
         &histories,
         &ir.model.bodies,
         &ir.model.faces,
+        &ir.model.surfaces,
         &ir.model.edges,
         &ir.model.curves,
+    );
+    crate::resolved_features::project_profiled_hole_constructions(
+        &mut ir.model.features,
+        &ir.model.sketch_entities,
+        &histories,
+        &native.feature_input_lanes,
     );
     crate::resolved_features::project_hole_position_sketches(
         &mut ir.model.features,
@@ -1636,14 +2183,42 @@ fn build_geometry_ir(
         &histories,
         &native.feature_input_lanes,
     );
+    crate::resolved_features::project_topological_hole_constructions(
+        &mut ir.model.features,
+        &crate::resolved_features::HoleTopology {
+            surfaces: &ir.model.surfaces,
+            faces: &ir.model.faces,
+            loops: &ir.model.loops,
+            coedges: &ir.model.coedges,
+            edges: &ir.model.edges,
+            vertices: &ir.model.vertices,
+            points: &ir.model.points,
+        },
+    );
     crate::resolved_features::project_hole_axes(
         &mut ir.model.features,
+        &ir.model.sketch_entities,
+        &crate::resolved_features::HoleTopology {
+            surfaces: &ir.model.surfaces,
+            faces: &ir.model.faces,
+            loops: &ir.model.loops,
+            coedges: &ir.model.coedges,
+            edges: &ir.model.edges,
+            vertices: &ir.model.vertices,
+            points: &ir.model.points,
+        },
+        &histories,
+        &native.feature_input_lanes,
+    );
+    crate::resolved_features::project_bore_backed_position_sketches(
+        &mut ir.model.features,
+        &mut ir.model.sketches,
+        &mut ir.model.sketch_entities,
         &ir.model.surfaces,
         &histories,
         &native.feature_input_lanes,
     );
     crate::history::order_features_for_regeneration(&mut ir.model.features);
-    stamp_feature_baseline(&mut ir);
     assign_configuration_bodies(&mut ir, configuration_bodies);
     crate::history::project_configuration_sketch_states(
         &mut ir,
@@ -1652,6 +2227,20 @@ fn build_geometry_ir(
         &annotations,
     );
     mark_active_configuration(&mut ir);
+    crate::resolved_features::project_unbound_cosmetic_thread_faces(
+        &mut ir.model.features,
+        &histories,
+        &native.feature_input_lanes,
+        &ir.model.faces,
+        &ir.model.surfaces,
+    );
+    crate::resolved_features::project_unbound_offset_plane_faces(
+        &mut ir.model.features,
+        &ir.model.faces,
+        &ir.model.surfaces,
+    );
+    sync_active_configuration_face_selections(&mut ir);
+    stamp_feature_baseline(&mut ir);
     assign_native_configuration_indices(&ir, &mut native);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
@@ -1664,7 +2253,12 @@ fn build_geometry_ir(
         );
     }
     native.store(ir.native.namespace_mut("sldprt"))?;
+    // The baseline has to describe native-backed configuration state only, so
+    // it is stamped before the read-side snapshot is fabricated. Stamping after
+    // would bake fabricated state into a hash the write path compares against a
+    // projection that can only ever re-derive the native-backed part.
     stamp_configuration_baseline(&mut ir);
+    snapshot_active_configuration(&mut ir);
     let mut unknowns = brep.unknowns;
     for face_color in brep.face_colors {
         let id = AppearanceId(format!(
@@ -1689,6 +2283,7 @@ fn build_geometry_ir(
                 id: id.clone(),
                 name: None,
                 asset_guid: None,
+                library_id: None,
                 visual_guid: None,
                 physical_token: None,
                 schema: Some("entity-53".into()),
@@ -1739,6 +2334,7 @@ fn build_geometry_ir(
             id: id.clone(),
             name: Some(material.name),
             asset_guid: None,
+            library_id: None,
             visual_guid: None,
             physical_token: None,
             schema: Some("moVisualProperties_c".to_string()),
@@ -2058,6 +2654,30 @@ fn add_solidworks_xml_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<S
                 attributes.insert("sw_configuration_name".into(), value.into());
             }
         }
+        for configuration in root
+            .descendants()
+            .filter(|node| node.has_tag_name("swConfiguration"))
+        {
+            let Some(slot) = configuration.attribute("swID") else {
+                continue;
+            };
+            if !slot.bytes().all(|byte| byte.is_ascii_digit()) {
+                continue;
+            }
+            for (source, target) in [
+                ("swConfigurationNeedsUpdate", "needs_update"),
+                ("swMostRecentConfiguration", "most_recent"),
+                ("swConfigurationFlags", "flags"),
+                ("swConfigurationAlternateName", "alternate_name"),
+            ] {
+                if let Some(value) = configuration.attribute(source) {
+                    attributes.insert(
+                        format!("sw_configuration_{slot}_{target}"),
+                        value.to_string(),
+                    );
+                }
+            }
+        }
         break;
     }
 }
@@ -2100,6 +2720,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         container_only: false,
         geometry_transferred: true,
         coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
         notes: container::summarize(scan).notes,
     }
@@ -2113,8 +2734,11 @@ fn build_metadata_ir(
     let mut annotations = Annotations::default();
     let mut histories = crate::history::histories(scan, &mut annotations);
     let mut lanes = crate::resolved_features::lanes(scan, &mut annotations);
+    let mut supplemental_config_lanes =
+        crate::resolved_features::supplemental_config_lanes(scan, &mut annotations);
     crate::resolved_features::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bind_scalar_operands(&histories, &mut lanes);
+    crate::resolved_features::bind_scalar_operands(&histories, &mut supplemental_config_lanes);
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations);
     let (sketches, sketch_entities, sketch_constraints) =
         crate::resolved_features::sketches(scan, &mut annotations);
@@ -2199,6 +2823,19 @@ fn build_metadata_ir(
         &lanes,
         &annotations,
     );
+    crate::resolved_features::bind_unresolved_detached_sketch_objects(
+        &ir.model.features,
+        &histories,
+        &mut supplemental_config_lanes,
+    );
+    crate::resolved_features::project_compact_edge_selections(
+        &mut ir.model.features,
+        &supplemental_config_lanes,
+    );
+    crate::history::project_configuration_supplemental_edge_selections(
+        &mut ir,
+        &supplemental_config_lanes,
+    );
     crate::resolved_features::project_compact_sketch_profiles(
         &mut ir.model.features,
         &mut ir.model.sketches,
@@ -2206,13 +2843,14 @@ fn build_metadata_ir(
         &histories,
         &lanes,
     );
+    let mut sketch_lanes = lanes.clone();
+    sketch_lanes.extend(supplemental_config_lanes.clone());
     crate::resolved_features::project_marker_backed_sketches(
         &mut ir.model.features,
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
         &histories,
-        &lanes,
-        crate::container::active_parasolid_modeler_generation(scan),
+        &sketch_lanes,
     );
     crate::history::bind_unique_sketch_feature(
         &mut ir.model.features,
@@ -2251,6 +2889,13 @@ fn build_metadata_ir(
         &ir.model.features,
         &lanes,
     );
+    crate::resolved_features::project_relation_solved_line_geometry(
+        &mut ir.model.sketch_entities,
+        &ir.model.sketches,
+        &ir.model.features,
+        &ir.model.parameters,
+        &lanes,
+    );
     crate::resolved_features::project_relation_solved_point_geometry(
         &mut ir.model.sketch_entities,
         &ir.model.sketches,
@@ -2264,6 +2909,12 @@ fn build_metadata_ir(
         &ir.model.features,
         &ir.model.sketch_entities,
         &ir.model.parameters,
+        &lanes,
+    );
+    crate::resolved_features::project_profiled_hole_constructions(
+        &mut ir.model.features,
+        &ir.model.sketch_entities,
+        &histories,
         &lanes,
     );
     crate::resolved_features::project_hole_position_sketches(
@@ -2281,16 +2932,58 @@ fn build_metadata_ir(
         &histories,
         &lanes,
     );
+    crate::resolved_features::project_topological_hole_constructions(
+        &mut ir.model.features,
+        &crate::resolved_features::HoleTopology {
+            surfaces: &ir.model.surfaces,
+            faces: &ir.model.faces,
+            loops: &ir.model.loops,
+            coedges: &ir.model.coedges,
+            edges: &ir.model.edges,
+            vertices: &ir.model.vertices,
+            points: &ir.model.points,
+        },
+    );
     crate::resolved_features::project_hole_axes(
         &mut ir.model.features,
+        &ir.model.sketch_entities,
+        &crate::resolved_features::HoleTopology {
+            surfaces: &ir.model.surfaces,
+            faces: &ir.model.faces,
+            loops: &ir.model.loops,
+            coedges: &ir.model.coedges,
+            edges: &ir.model.edges,
+            vertices: &ir.model.vertices,
+            points: &ir.model.points,
+        },
+        &histories,
+        &lanes,
+    );
+    crate::resolved_features::project_bore_backed_position_sketches(
+        &mut ir.model.features,
+        &mut ir.model.sketches,
+        &mut ir.model.sketch_entities,
         &ir.model.surfaces,
         &histories,
         &lanes,
     );
+    crate::resolved_features::project_unbound_cosmetic_thread_faces(
+        &mut ir.model.features,
+        &histories,
+        &lanes,
+        &ir.model.faces,
+        &ir.model.surfaces,
+    );
+    crate::resolved_features::project_unbound_offset_plane_faces(
+        &mut ir.model.features,
+        &ir.model.faces,
+        &ir.model.surfaces,
+    );
+    sync_active_configuration_face_selections(&mut ir);
     crate::history::order_features_for_regeneration(&mut ir.model.features);
     crate::history::project_configuration_sketch_states(&mut ir, &histories, &lanes, &annotations);
     stamp_feature_baseline(&mut ir);
-    stamp_configuration_baseline(&mut ir);
+    lanes.extend(supplemental_config_lanes);
     let native = crate::native::SldprtNative {
         version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: histories.clone(),
@@ -2300,6 +2993,8 @@ fn build_metadata_ir(
     native.store(ir.native.namespace_mut("sldprt"))?;
     stamp_sketch_baseline(&mut ir, &native);
     mark_active_configuration(&mut ir);
+    stamp_configuration_baseline(&mut ir);
+    snapshot_active_configuration(&mut ir);
     preserve_source_image(scan, &mut annotations, &mut unknowns);
     set_semantic_hash(&mut ir);
     Ok((ir, annotations, unknowns))
@@ -2367,18 +3062,23 @@ fn project_design_history(
 fn parameter_identity_lanes(
     lanes: &[crate::records::FeatureInputLane],
 ) -> Vec<&crate::records::FeatureInputLane> {
+    let lanes = lanes
+        .iter()
+        .filter(|lane| !crate::resolved_features::is_supplemental_config_lane(lane))
+        .collect::<Vec<_>>();
     let has_global = lanes.iter().any(|lane| lane.configuration.is_none());
     let scoped_configurations = lanes
         .iter()
         .filter_map(|lane| lane.configuration.as_deref())
         .collect::<BTreeSet<_>>();
+    let lane_count = lanes.len();
     lanes
-        .iter()
+        .into_iter()
         .filter(|lane| {
             if has_global {
                 lane.configuration.is_none()
             } else {
-                scoped_configurations.len() == 1 && lanes.len() == 1
+                scoped_configurations.len() == 1 && lane_count == 1
             }
         })
         .collect()
@@ -2441,6 +3141,198 @@ fn mark_active_configuration(ir: &mut CadIr) {
     };
     for (position, configuration) in ir.model.configurations.iter_mut().enumerate() {
         configuration.active = selected == Some(position);
+    }
+}
+
+fn snapshot_active_configuration(ir: &mut CadIr) {
+    let mut active = ir
+        .model
+        .configurations
+        .iter()
+        .enumerate()
+        .filter(|(_, configuration)| configuration.active)
+        .map(|(index, _)| index);
+    let Some(configuration_index) = active.next() else {
+        return;
+    };
+    if active.next().is_some() {
+        return;
+    }
+    if !ir.model.configurations[configuration_index]
+        .parameter_values
+        .is_empty()
+        || !ir.model.configurations[configuration_index]
+            .feature_states
+            .is_empty()
+    {
+        return;
+    }
+
+    let parameter_values = ir
+        .model
+        .parameters
+        .iter()
+        .filter_map(|parameter| {
+            parameter
+                .value
+                .clone()
+                .map(|value| (parameter.id.clone(), value))
+        })
+        .collect();
+    let feature_states = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| {
+            (
+                feature.id.clone(),
+                cadmpeg_ir::features::ConfigurationFeatureState {
+                    suppressed: feature.suppressed.unwrap_or(false),
+                    dependencies: feature.dependencies.clone(),
+                    outputs: feature.outputs.clone(),
+                    definition: feature.definition.clone(),
+                },
+            )
+        })
+        .collect();
+    let configuration = &mut ir.model.configurations[configuration_index];
+    configuration.parameter_values = parameter_values;
+    configuration.feature_states = feature_states;
+    // This design state is a read-side presentation of model-level state, not
+    // configuration-local data the native records carry. Naming the
+    // configuration it was fabricated on lets the write path tell it apart from
+    // state that came out of a feature-input lane.
+    let id = configuration.id.0.clone();
+    if let Some(source) = &mut ir.source {
+        source
+            .attributes
+            .insert("sldprt_configuration_snapshot_synthesized".into(), id);
+    }
+}
+
+fn sync_active_configuration_face_selections(ir: &mut CadIr) {
+    let mut active = ir
+        .model
+        .configurations
+        .iter()
+        .enumerate()
+        .filter(|(_, configuration)| configuration.active)
+        .map(|(index, _)| index);
+    let Some(configuration_index) = active.next() else {
+        return;
+    };
+    if active.next().is_some() {
+        return;
+    }
+    let resolved = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let cadmpeg_ir::features::FeatureDefinition::CosmeticThread {
+                face,
+                diameter,
+                extent,
+            } = &feature.definition
+            else {
+                return None;
+            };
+            let complete = match face {
+                cadmpeg_ir::features::FaceSelection::Faces(selected)
+                | cadmpeg_ir::features::FaceSelection::Resolved {
+                    faces: selected, ..
+                } => !selected.is_empty(),
+                _ => false,
+            };
+            complete.then_some((feature.id.clone(), face.clone(), *diameter, *extent))
+        })
+        .collect::<Vec<_>>();
+    let configuration = &mut ir.model.configurations[configuration_index];
+    for (feature, resolved_face, resolved_diameter, resolved_extent) in resolved {
+        let Some(state) = configuration.feature_states.get_mut(&feature) else {
+            continue;
+        };
+        let cadmpeg_ir::features::FeatureDefinition::CosmeticThread {
+            face,
+            diameter,
+            extent,
+        } = &mut state.definition
+        else {
+            continue;
+        };
+        if *diameter == resolved_diameter
+            && *extent == resolved_extent
+            && matches!(
+                face,
+                cadmpeg_ir::features::FaceSelection::Unresolved
+                    | cadmpeg_ir::features::FaceSelection::Native(_)
+            )
+        {
+            *face = resolved_face;
+        }
+    }
+    let resolved = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let cadmpeg_ir::features::FeatureDefinition::DatumOffsetPlane {
+                reference:
+                    Some(cadmpeg_ir::features::DatumPlaneReference::Face {
+                        face: face @ cadmpeg_ir::features::FaceSelection::Faces(selected),
+                        origin,
+                        normal,
+                        u_axis,
+                    }),
+                distance,
+            } = &feature.definition
+            else {
+                return None;
+            };
+            (!selected.is_empty()).then_some((
+                feature.id.clone(),
+                face.clone(),
+                *origin,
+                *normal,
+                *u_axis,
+                *distance,
+            ))
+        })
+        .collect::<Vec<_>>();
+    let configuration = &mut ir.model.configurations[configuration_index];
+    for (
+        feature,
+        resolved_face,
+        resolved_origin,
+        resolved_normal,
+        resolved_u_axis,
+        resolved_distance,
+    ) in resolved
+    {
+        let Some(state) = configuration.feature_states.get_mut(&feature) else {
+            continue;
+        };
+        let cadmpeg_ir::features::FeatureDefinition::DatumOffsetPlane {
+            reference:
+                Some(cadmpeg_ir::features::DatumPlaneReference::Face {
+                    face,
+                    origin,
+                    normal,
+                    u_axis,
+                }),
+            distance,
+        } = &mut state.definition
+        else {
+            continue;
+        };
+        if *origin == resolved_origin
+            && *normal == resolved_normal
+            && *u_axis == resolved_u_axis
+            && *distance == resolved_distance
+            && matches!(face, cadmpeg_ir::features::FaceSelection::Unresolved)
+        {
+            *face = resolved_face;
+        }
     }
 }
 
@@ -2654,39 +3546,12 @@ pub(crate) fn brep_semantic_hash(ir: &CadIr) -> String {
     normalized.model.sketches.clear();
     normalized.model.sketch_entities.clear();
     normalized.model.sketch_constraints.clear();
-    sha256_hex(
-        normalized
-            .to_canonical_json()
-            .expect("CadIr serialization")
-            .as_bytes(),
-    )
+    cadmpeg_ir::hash::canonical_json_sha256(&normalized)
 }
 
+/// The document digest recorded as the SLDPRT `semantic_sha256` attribute.
 pub(crate) fn semantic_hash(ir: &CadIr) -> String {
-    // Normalize with a field-by-field clone so the retained source image (the
-    // largest single payload) is filtered out instead of copied and dropped.
-    let mut normalized = ir.clone();
-    normalized.finalize();
-    normalized.source = ir.source.as_ref().map(|source| {
-        let mut source = source.clone();
-        source.attributes.remove("semantic_sha256");
-        source
-    });
-    let unknowns = ir
-        .native_unknowns("sldprt")
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|record| record.id.0 != "sldprt:file:source-image#0")
-        .collect::<Vec<_>>();
-    normalized
-        .set_native_unknowns("sldprt", &unknowns)
-        .expect("SLDPRT unknown records serialize");
-    sha256_hex(
-        normalized
-            .to_canonical_json()
-            .expect("CadIr serialization")
-            .as_bytes(),
-    )
+    cadmpeg_ir::hash::semantic_document_hash(ir, "sldprt", "sldprt:file:source-image#0")
 }
 
 fn preserve_source_image(
@@ -2706,8 +3571,8 @@ fn preserve_source_image(
         id: UnknownId("sldprt:file:source-image#0".into()),
         offset: 0,
         byte_len: scan.source_image.len() as u64,
-        sha256: sha256_hex(&scan.source_image),
-        data: Some(scan.source_image.clone()),
+        sha256: sha256_hex(scan.source_image),
+        data: Some(scan.source_image.to_vec()),
         links: Vec::new(),
     });
 }
@@ -2757,6 +3622,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         container_only,
         geometry_transferred: false,
         coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
         notes: summary.notes,
     }
@@ -2766,8 +3632,10 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 mod design_loss_tests {
     use super::{
         append_design_losses, assign_configuration_bodies,
-        multiply_projected_sketch_relation_records, unbound_feature_input_operation_objects,
-        unprojected_sketch_relation_records,
+        multiply_projected_sketch_relation_records,
+        sketch_constraint_has_complete_neutral_semantics, snapshot_active_configuration,
+        spatial_sketch_constraint_has_complete_neutral_semantics,
+        unbound_feature_input_operation_objects, unprojected_sketch_relation_records,
     };
     use crate::native::SldprtNative;
     use crate::records::{
@@ -2780,19 +3648,86 @@ mod design_loss_tests {
         Angle, BodyRetentionMode, BodySelection, BooleanOp, ConfigurationFeatureState,
         ConfigurationId, DesignConfiguration, DesignParameter, EdgeSelection, FaceSelection,
         Feature, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, Length,
-        ParameterId, ParameterPmi, ParameterValue, PathRef, PmiDimensionSubtype, RadiusSpec,
-        RuledSurfaceMode, SurfaceContinuity,
+        ParameterId, ParameterPmi, ParameterValue, PathRef, PatternKind, PmiDimensionSubtype,
+        RadiusSpec, RuledSurfaceMode, SurfaceContinuity,
     };
     use cadmpeg_ir::ids::{BodyId, EdgeId};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::report::DecodeReport;
     use cadmpeg_ir::sketches::{
-        SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketchEntity,
-        SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
+        SketchConstraintDefinition, SketchConstraintId, SketchEntity, SketchEntityId,
+        SketchGeometry, SketchId, SpatialSketchConstraint, SpatialSketchConstraintDefinition,
+        SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
     };
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::CadIr;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn sketch_constraint_completeness_distinguishes_neutral_and_native_semantics() {
+        assert!(sketch_constraint_has_complete_neutral_semantics(
+            &SketchConstraintDefinition::Disabled
+        ));
+        assert!(!sketch_constraint_has_complete_neutral_semantics(
+            &SketchConstraintDefinition::Native {
+                native_kind: "unresolved".into(),
+                native_state: None,
+                native_flags: None,
+                native_properties: BTreeMap::new(),
+                entities: Vec::new(),
+                parameter: None,
+                operands: Vec::new(),
+            }
+        ));
+        assert!(spatial_sketch_constraint_has_complete_neutral_semantics(
+            &SpatialSketchConstraintDefinition::Coincident {
+                first: SpatialSketchEntityId("first".into()),
+                second: SpatialSketchEntityId("second".into()),
+            }
+        ));
+        assert!(!spatial_sketch_constraint_has_complete_neutral_semantics(
+            &SpatialSketchConstraintDefinition::Native {
+                native_kind: "unresolved".into(),
+                native_state: None,
+                parameter: None,
+                operands: Vec::new(),
+            }
+        ));
+    }
+
+    #[test]
+    fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model
+            .spatial_sketch_constraints
+            .push(SpatialSketchConstraint {
+                id: SketchConstraintId("native-spatial".into()),
+                sketch: SpatialSketchId("spatial-sketch".into()),
+                definition: SpatialSketchConstraintDefinition::Native {
+                    native_kind: "unresolved".into(),
+                    native_state: None,
+                    parameter: None,
+                    operands: Vec::new(),
+                },
+                native_ref: None,
+            });
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "1 planar or spatial sketch constraint(s) retain native relation kinds and operands without complete neutral geometric semantics."
+        }));
+    }
 
     #[test]
     fn typed_native_operands_are_reported_as_design_losses() {
@@ -2813,6 +3748,7 @@ mod design_loss_tests {
                 target: BodySelection::Native("target".into()),
                 tools: BodySelection::Native("tools".into()),
                 op: BooleanOp::Unresolved,
+                keep_tools: false,
             },
             native_ref: None,
         });
@@ -2821,6 +3757,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -2871,6 +3808,7 @@ mod design_loss_tests {
                     target: BodySelection::Native("target".into()),
                     tools: BodySelection::Native("tools".into()),
                     op: BooleanOp::Unresolved,
+                    keep_tools: false,
                 },
             ),
             (
@@ -2916,6 +3854,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -2970,6 +3909,19 @@ mod design_loss_tests {
             pmi: None,
             native_ref: None,
         });
+        ir.model.parameters.push(DesignParameter {
+            id: ParameterId("unevaluated-parameter".into()),
+            owner: None,
+            ordinal: 1,
+            name: "Text".into(),
+            expression: "native text".into(),
+            display: None,
+            value: None,
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId("configuration".into()),
             ordinal: 0,
@@ -2990,6 +3942,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3000,10 +3953,114 @@ mod design_loss_tests {
             loss.message
                 == "1 configuration(s) lack a complete evaluated feature snapshot; 1 configuration(s) lack a complete evaluated parameter snapshot."
         }));
+
+        ir.source = Some(cadmpeg_ir::document::SourceMeta {
+            format: "sldprt".into(),
+            attributes: BTreeMap::from([("sw_configuration_0_needs_update".into(), "YES".into())]),
+        });
+        report.losses.clear();
+        append_design_losses(&ir, &mut report);
+        assert!(!report
+            .losses
+            .iter()
+            .any(|loss| { loss.message.contains("complete evaluated feature snapshot") }));
     }
 
     #[test]
-    fn every_typed_family_participates_in_design_completeness_accounting() {
+    fn active_configuration_snapshots_final_neutral_design_state() {
+        let mut ir = CadIr::empty(Units::default());
+        let feature_id = FeatureId("feature".into());
+        ir.model.features.push(Feature {
+            id: feature_id.clone(),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(true),
+            parent: None,
+            dependencies: vec![FeatureId("dependency".into())],
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: vec![BodyId("body".into())],
+            definition: FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children: Vec::new(),
+                active_child: None,
+            },
+            native_ref: None,
+        });
+        let parameter_id = ParameterId("parameter".into());
+        ir.model.parameters.push(DesignParameter {
+            id: parameter_id.clone(),
+            owner: Some(feature_id.clone()),
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "12mm".into(),
+            value: Some(ParameterValue::Length(Length(12.0))),
+            dependencies: Vec::new(),
+            display: None,
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+        for (ordinal, active) in [(0, true), (1, false)] {
+            ir.model.configurations.push(DesignConfiguration {
+                id: ConfigurationId(format!("configuration-{ordinal}")),
+                ordinal,
+                active,
+                source_index: Some(ordinal),
+                name: format!("Configuration {ordinal}"),
+                material: None,
+                properties: BTreeMap::new(),
+                bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+                parameter_values: BTreeMap::new(),
+                suppressed_features: Vec::new(),
+                parameter_overrides: BTreeMap::new(),
+                feature_states: BTreeMap::new(),
+                native_ref: None,
+            });
+        }
+
+        snapshot_active_configuration(&mut ir);
+
+        assert_eq!(
+            ir.model.configurations[0].parameter_values[&parameter_id],
+            ParameterValue::Length(Length(12.0))
+        );
+        assert_eq!(
+            ir.model.configurations[0].feature_states[&feature_id],
+            ConfigurationFeatureState {
+                suppressed: true,
+                dependencies: vec![FeatureId("dependency".into())],
+                outputs: vec![BodyId("body".into())],
+                definition: FeatureDefinition::TreeNode {
+                    role: FeatureTreeNodeRole::History,
+                    children: Vec::new(),
+                    active_child: None,
+                },
+            }
+        );
+        assert!(ir.model.configurations[1].parameter_values.is_empty());
+        assert!(ir.model.configurations[1].feature_states.is_empty());
+
+        ir.model.configurations[0]
+            .parameter_values
+            .insert(parameter_id.clone(), ParameterValue::Length(Length(25.0)));
+        ir.model.configurations[0]
+            .feature_states
+            .get_mut(&feature_id)
+            .expect("active feature state")
+            .suppressed = false;
+        snapshot_active_configuration(&mut ir);
+        assert_eq!(
+            ir.model.configurations[0].parameter_values[&parameter_id],
+            ParameterValue::Length(Length(25.0))
+        );
+        assert!(!ir.model.configurations[0].feature_states[&feature_id].suppressed);
+    }
+
+    #[test]
+    fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
         let mut ir = CadIr::empty(Units::default());
         let feature = |id: &str, ordinal, definition| Feature {
             id: FeatureId(id.into()),
@@ -3047,11 +4104,405 @@ mod design_loss_tests {
                 reverse: None,
             },
         ));
+        ir.model.features.push(feature(
+            "unresolved-plane",
+            2,
+            FeatureDefinition::DatumPlaneUnresolved,
+        ));
+        ir.model.features.push(feature(
+            "unaudited-stored-geometry",
+            3,
+            FeatureDefinition::StoredGeometry,
+        ));
         let mut report = DecodeReport {
             format: "sldprt".into(),
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "3 typed feature(s) retain native or unresolved required operation operands."
+        }));
+    }
+
+    #[test]
+    fn design_completeness_audits_direct_body_and_shape_families() {
+        let mut ir = CadIr::empty(Units::default());
+        let body = BodyId("body".into());
+        let source = FeatureId("base".into());
+        let mut push = |id: &str, ordinal, dependencies, outputs, definition| {
+            ir.model.features.push(Feature {
+                id: FeatureId(id.into()),
+                ordinal,
+                name: None,
+                suppressed: Some(false),
+                parent: None,
+                dependencies,
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs,
+                definition,
+                native_ref: None,
+            });
+        };
+        push(
+            "base",
+            0,
+            Vec::new(),
+            Vec::new(),
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Bodies(vec![body.clone()]),
+            },
+        );
+        push(
+            "stored",
+            1,
+            Vec::new(),
+            vec![body.clone()],
+            FeatureDefinition::StoredGeometry,
+        );
+        push(
+            "derived",
+            2,
+            vec![source.clone()],
+            Vec::new(),
+            FeatureDefinition::DerivedGeometry { source },
+        );
+        push(
+            "mirror",
+            3,
+            Vec::new(),
+            Vec::new(),
+            FeatureDefinition::MirrorShape {
+                source: BodySelection::Bodies(vec![body.clone()]),
+                plane_origin: Point3::new(0.0, 0.0, 0.0),
+                plane_normal: Vector3::new(0.0, 0.0, 1.0),
+                plane_reference: Some(FaceSelection::Native("plane".into())),
+            },
+        );
+        push(
+            "sew",
+            4,
+            Vec::new(),
+            Vec::new(),
+            FeatureDefinition::SewBodies {
+                bodies: BodySelection::Bodies(vec![body.clone()]),
+                gap_tolerance: None,
+            },
+        );
+        push(
+            "trim",
+            5,
+            Vec::new(),
+            Vec::new(),
+            FeatureDefinition::TrimBodies {
+                targets: BodySelection::Bodies(vec![body.clone()]),
+                tools: BodySelection::Bodies(vec![body.clone()]),
+                keep: cadmpeg_ir::features::BodyTrimSide::Unresolved,
+            },
+        );
+        push(
+            "import",
+            6,
+            Vec::new(),
+            Vec::new(),
+            FeatureDefinition::ImportedGeometry {
+                path: "  ".into(),
+                format: cadmpeg_ir::features::GeometryImportFormat::Step,
+            },
+        );
+        push(
+            "section",
+            7,
+            Vec::new(),
+            Vec::new(),
+            FeatureDefinition::SectionShape {
+                first: BodySelection::Bodies(vec![body.clone()]),
+                second: BodySelection::Bodies(vec![body]),
+                approximate: None,
+            },
+        );
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "5 typed feature(s) retain native or unresolved required operation operands."
+        }));
+    }
+
+    #[test]
+    fn design_completeness_audits_typed_construction_families() {
+        let mut ir = CadIr::empty(Units::default());
+        let body = BodyId("body".into());
+        let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
+        let face = FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId("face".into())]);
+        let definitions = [
+            FeatureDefinition::PointGeometry {
+                position: Point3::new(0.0, 0.0, 0.0),
+            },
+            FeatureDefinition::Primitive {
+                solid: cadmpeg_ir::features::PrimitiveSolid::Box {
+                    length: Length(1.0),
+                    width: Length(2.0),
+                    height: Length(3.0),
+                },
+                op: BooleanOp::NewBody,
+            },
+            FeatureDefinition::SheetMetalBaseFlange {
+                profile: cadmpeg_ir::features::ProfileRef::Sketch(sketch),
+                thickness: Length(1.0),
+                side: cadmpeg_ir::features::SheetMetalThicknessSide::Symmetric,
+            },
+            FeatureDefinition::Polyline {
+                points: vec![Point3::new(0.0, 0.0, 0.0)],
+                closed: false,
+            },
+            FeatureDefinition::Block {
+                dimensions: None,
+                placement: None,
+                op: BooleanOp::Unresolved,
+            },
+            FeatureDefinition::ProjectOnSurface {
+                sources: PathRef::Native("sources".into()),
+                support_face: face.clone(),
+                direction: Vector3::new(0.0, 0.0, 1.0),
+                mode: cadmpeg_ir::features::SurfaceProjectionMode::All,
+                height: Length(0.0),
+                offset: Length(0.0),
+            },
+            FeatureDefinition::Coil {
+                construction: cadmpeg_ir::features::CoilConstruction {
+                    placement: cadmpeg_ir::features::CoilPlacement::Native {
+                        native_ref: "placement".into(),
+                    },
+                    diameter: Length(10.0),
+                    extent: cadmpeg_ir::features::CoilExtent::RevolutionsHeight {
+                        revolutions: 2.0,
+                        height: Length(5.0),
+                    },
+                    section: cadmpeg_ir::features::CoilSection::Circular {
+                        diameter: Length(1.0),
+                    },
+                    section_placement: cadmpeg_ir::features::CoilSectionPlacement::Center,
+                    clockwise: false,
+                    taper: Angle(0.0),
+                },
+                result: cadmpeg_ir::features::CoilResult::NewBody,
+            },
+            FeatureDefinition::Sphere {
+                center: Point3::new(0.0, 0.0, 0.0),
+                radius: Length(1.0),
+                op: BooleanOp::Unresolved,
+            },
+            FeatureDefinition::FaceBlend {
+                first_faces: face.clone(),
+                second_faces: face.clone(),
+                radius: RadiusSpec::Variable { points: Vec::new() },
+            },
+            FeatureDefinition::BoundaryFill {
+                tools: BodySelection::Bodies(vec![body]),
+                cells: Vec::new(),
+            },
+        ];
+        for (ordinal, definition) in definitions.into_iter().enumerate() {
+            ir.model.features.push(Feature {
+                id: FeatureId(format!("construction-{ordinal}")),
+                ordinal: ordinal as u64,
+                name: None,
+                suppressed: Some(false),
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition,
+                native_ref: None,
+            });
+        }
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "7 typed feature(s) retain native or unresolved required operation operands."
+        }));
+    }
+
+    #[test]
+    fn binder_completeness_requires_resolved_targets_and_shape_arity() {
+        let mut ir = CadIr::empty(Units::default());
+        let source = FeatureId("source".into());
+        let feature = |id: &str, ordinal, dependencies, definition| Feature {
+            id: FeatureId(id.into()),
+            ordinal,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies,
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition,
+            native_ref: None,
+        };
+        ir.model.features.push(feature(
+            "source",
+            0,
+            Vec::new(),
+            FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children: Vec::new(),
+                active_child: None,
+            },
+        ));
+        let shape = |sources| FeatureDefinition::Binder {
+            sources,
+            construction: cadmpeg_ir::features::BinderConstruction::Shape {
+                trace_support: false,
+            },
+        };
+        ir.model.features.push(feature(
+            "complete",
+            1,
+            vec![source.clone()],
+            shape(vec![cadmpeg_ir::features::BinderSource {
+                target: cadmpeg_ir::features::BinderTarget::Feature {
+                    feature: source.clone(),
+                },
+                subelements: vec!["Face1".into()],
+            }]),
+        ));
+        ir.model.features.push(feature(
+            "native",
+            2,
+            Vec::new(),
+            shape(vec![cadmpeg_ir::features::BinderSource {
+                target: cadmpeg_ir::features::BinderTarget::Native {
+                    reference: "source".into(),
+                },
+                subelements: Vec::new(),
+            }]),
+        ));
+        ir.model.features.push(feature(
+            "multiple-shape-sources",
+            3,
+            Vec::new(),
+            shape(vec![
+                cadmpeg_ir::features::BinderSource {
+                    target: cadmpeg_ir::features::BinderTarget::External {
+                        document: "a.FCStd".into(),
+                        object: "Body".into(),
+                    },
+                    subelements: Vec::new(),
+                },
+                cadmpeg_ir::features::BinderSource {
+                    target: cadmpeg_ir::features::BinderTarget::External {
+                        document: "b.FCStd".into(),
+                        object: "Body".into(),
+                    },
+                    subelements: Vec::new(),
+                },
+            ]),
+        ));
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "2 typed feature(s) retain native or unresolved required operation operands."
+        }));
+    }
+
+    #[test]
+    fn post_process_completeness_delegates_to_the_wrapped_operation() {
+        let mut ir = CadIr::empty(Units::default());
+        let post_process = |operation| FeatureDefinition::PostProcess {
+            operation: Box::new(operation),
+            refine: true,
+            fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::KernelDefault,
+        };
+        for (ordinal, definition) in [
+            post_process(FeatureDefinition::Helix {
+                axis_origin: Point3::new(0.0, 0.0, 0.0),
+                axis_direction: Vector3::new(0.0, 0.0, 1.0),
+                radius: Length(1.0),
+                pitch: Length(2.0),
+                revolutions: 3.0,
+                start_angle: Angle(0.0),
+                clockwise: false,
+                radial_growth: None,
+                cone_angle: None,
+                segment_turns: None,
+                construction_style: None,
+            }),
+            post_process(post_process(FeatureDefinition::DatumPlaneUnresolved)),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            ir.model.features.push(Feature {
+                id: FeatureId(format!("post-process-{ordinal}")),
+                ordinal: ordinal as u64,
+                name: None,
+                suppressed: Some(false),
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition,
+                native_ref: None,
+            });
+        }
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3061,6 +4512,308 @@ mod design_loss_tests {
         assert!(report.losses.iter().any(|loss| {
             loss.message
                 == "1 typed feature(s) retain native or unresolved required operation operands."
+        }));
+    }
+
+    #[test]
+    fn design_completeness_recurses_through_pattern_operands() {
+        let mut ir = CadIr::empty(Units::default());
+        let seed = cadmpeg_ir::features::PatternSeed::Feature(FeatureId("seed".into()));
+        for (ordinal, pattern) in [
+            (
+                0,
+                PatternKind::LinearOffsets {
+                    direction: None,
+                    offsets: vec![Length(0.0), Length(10.0)],
+                },
+            ),
+            (
+                1,
+                PatternKind::CurveDriven {
+                    path: Some(PathRef::Native("path".into())),
+                    spacing: Length(10.0),
+                    count: 2,
+                },
+            ),
+            (
+                2,
+                PatternKind::Scale {
+                    center: cadmpeg_ir::features::PatternScaleCenter::Native("center".into()),
+                    final_factor: 2.0,
+                    count: 2,
+                },
+            ),
+            (
+                3,
+                PatternKind::Composite {
+                    stages: vec![cadmpeg_ir::features::PatternStage {
+                        pattern: Box::new(PatternKind::CurveDriven {
+                            path: None,
+                            spacing: Length(10.0),
+                            count: 2,
+                        }),
+                        combination: cadmpeg_ir::features::PatternStageCombination::Initialize,
+                    }],
+                },
+            ),
+            (
+                4,
+                PatternKind::Circular {
+                    axis_origin: Point3::new(0.0, 0.0, 0.0),
+                    axis_dir: Vector3::new(0.0, 0.0, 1.0),
+                    angle: Angle(std::f64::consts::TAU),
+                    count: 4,
+                },
+            ),
+        ] {
+            ir.model.features.push(Feature {
+                id: FeatureId(format!("pattern-{ordinal}")),
+                ordinal,
+                name: None,
+                suppressed: Some(false),
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition: FeatureDefinition::Pattern {
+                    seeds: vec![seed.clone()],
+                    pattern,
+                },
+                native_ref: None,
+            });
+        }
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "4 typed feature(s) retain native or unresolved required operation operands."
+        }));
+    }
+
+    #[test]
+    fn design_completeness_checks_secondary_sweep_and_loft_paths() {
+        let mut ir = CadIr::empty(Units::default());
+        let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
+        let profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
+        let path = PathRef::Sketch(sketch);
+        let sweep = |sections, orientation| FeatureDefinition::Sweep {
+            section: cadmpeg_ir::features::SweepSection::Profile(profile.clone()),
+            sections,
+            path: Some(path.clone()),
+            mode: cadmpeg_ir::features::SweepMode::Surface,
+            orientation,
+            transition: None,
+            transformation: None,
+            path_tangent: false,
+            linearize: false,
+            twist: None,
+            path_extent: None,
+            guide_rail: None,
+            taper: None,
+            scale: None,
+            allow_multi_profile_faces: None,
+        };
+        let definitions = [
+            sweep(
+                vec![cadmpeg_ir::features::SweepSection::Profile(
+                    cadmpeg_ir::features::ProfileRef::Native("section".into()),
+                )],
+                None,
+            ),
+            sweep(
+                Vec::new(),
+                Some(cadmpeg_ir::features::SweepOrientation::Auxiliary {
+                    path: PathRef::Native("auxiliary".into()),
+                    tangent: false,
+                    curvilinear: false,
+                }),
+            ),
+            FeatureDefinition::Loft {
+                sections: vec![
+                    cadmpeg_ir::features::LoftSection::Profile(profile.clone()),
+                    cadmpeg_ir::features::LoftSection::Profile(profile.clone()),
+                ],
+                guides: Vec::new(),
+                centerline: Some(PathRef::Native("centerline".into())),
+                op: BooleanOp::NewBody,
+                closed: false,
+                solid: false,
+                ruled: false,
+                max_degree: None,
+                check_compatibility: None,
+                allow_multi_profile_faces: None,
+            },
+            sweep(Vec::new(), None),
+        ];
+        for (ordinal, definition) in definitions.into_iter().enumerate() {
+            ir.model.features.push(Feature {
+                id: FeatureId(format!("path-feature-{ordinal}")),
+                ordinal: ordinal as u64,
+                name: None,
+                suppressed: Some(false),
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition,
+                native_ref: None,
+            });
+        }
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "3 typed feature(s) retain native or unresolved required operation operands."
+        }));
+    }
+
+    #[test]
+    fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
+        let mut ir = CadIr::empty(Units::default());
+        let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
+        let profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
+        let path = PathRef::Sketch(sketch);
+        let face = FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId("face".into())]);
+        let extrude = |direction, termination| FeatureDefinition::Extrude {
+            profile: profile.clone(),
+            direction,
+            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination,
+                    draft: None,
+                    offset: None,
+                },
+            },
+            op: BooleanOp::NewBody,
+            direction_source: None,
+            solid: Some(true),
+            face_maker: None,
+            inner_wire_taper: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
+        };
+        let definitions = [
+            FeatureDefinition::ProjectedCurve {
+                source: path.clone(),
+                target_faces: face.clone(),
+                direction: cadmpeg_ir::features::CurveProjectionDirection::State(
+                    cadmpeg_ir::features::CurveProjectionDirectionState::Unresolved,
+                ),
+                bidirectional: Some(false),
+            },
+            extrude(
+                cadmpeg_ir::features::ExtrudeDirection::Unresolved,
+                cadmpeg_ir::features::Termination::Blind {
+                    length: Length(10.0),
+                },
+            ),
+            extrude(
+                cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+                cadmpeg_ir::features::Termination::ToVertex {
+                    vertex: cadmpeg_ir::features::VertexSelection::Native("vertex".into()),
+                },
+            ),
+            FeatureDefinition::OffsetSurface {
+                faces: face.clone(),
+                distance: None,
+            },
+            FeatureDefinition::KnitSurface {
+                faces: face.clone(),
+                merge_entities: None,
+                create_solid: None,
+                gap_tolerance: None,
+            },
+            FeatureDefinition::ExtendSurface {
+                faces: face.clone(),
+                distance: Some(Length(10.0)),
+                method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
+            },
+            FeatureDefinition::FilledSurface {
+                boundary: cadmpeg_ir::features::SurfaceBoundary::Path(path.clone()),
+                support_faces: face.clone(),
+                continuity: None,
+                merge_result: Some(false),
+            },
+            FeatureDefinition::TrimSurface {
+                faces: face.clone(),
+                tool: path.clone(),
+                keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            },
+            FeatureDefinition::Draft {
+                faces: face.clone(),
+                neutral_plane: face.clone(),
+                pull_direction: None,
+                angle: None,
+                outward: None,
+            },
+            FeatureDefinition::ProjectedCurve {
+                source: path,
+                target_faces: face,
+                direction: cadmpeg_ir::features::CurveProjectionDirection::State(
+                    cadmpeg_ir::features::CurveProjectionDirectionState::TargetNormal,
+                ),
+                bidirectional: Some(false),
+            },
+        ];
+        for (ordinal, definition) in definitions.into_iter().enumerate() {
+            ir.model.features.push(Feature {
+                id: FeatureId(format!("operation-{ordinal}")),
+                ordinal: ordinal as u64,
+                name: None,
+                suppressed: Some(false),
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition,
+                native_ref: None,
+            });
+        }
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "9 typed feature(s) retain native or unresolved required operation operands."
         }));
     }
 
@@ -3119,6 +4872,7 @@ mod design_loss_tests {
             feature(
                 4,
                 FeatureDefinition::Shell {
+                    bodies: None,
                     removed_faces: FaceSelection::Faces(Vec::new()),
                     thickness: Some(Length(1.0)),
                     outward: Some(false),
@@ -3150,12 +4904,23 @@ mod design_loss_tests {
                     },
                 },
             ),
+            feature(
+                7,
+                FeatureDefinition::Fillet {
+                    groups: vec![cadmpeg_ir::features::FilletGroup {
+                        edges: EdgeSelection::Edges(vec![EdgeId("edge".into())]),
+                        radius: RadiusSpec::Variable { points: Vec::new() },
+                        tangency_weight: None,
+                    }],
+                },
+            ),
         ]);
         let mut report = DecodeReport {
             format: "sldprt".into(),
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3164,7 +4929,83 @@ mod design_loss_tests {
 
         assert!(report.losses.iter().any(|loss| {
             loss.message
-                == "4 typed feature(s) retain native or unresolved required operation operands."
+                == "6 typed feature(s) retain native or unresolved required operation operands."
+        }));
+    }
+
+    #[test]
+    fn hole_completeness_checks_optional_operands_when_present() {
+        let mut ir = CadIr::empty(Units::default());
+        let hole = |profile, exit_kind| FeatureDefinition::Hole {
+            profile,
+            profile_filter: None,
+            face: None,
+            position: None,
+            direction: None,
+            placements: vec![cadmpeg_ir::features::HolePlacement::Directed {
+                position: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(0.0, 0.0, 1.0),
+            }],
+            kind: cadmpeg_ir::features::HoleKind::Simple,
+            exit_kind,
+            diameter: Some(Length(5.0)),
+            extent: Some(cadmpeg_ir::features::Termination::ThroughAll),
+            bottom: None,
+            taper_angle: None,
+            specification: None,
+            allow_multi_profile_faces: None,
+        };
+        for (ordinal, definition) in [
+            hole(
+                Some(cadmpeg_ir::features::ProfileRef::Native("profile".into())),
+                None,
+            ),
+            hole(
+                None,
+                Some(cadmpeg_ir::features::HoleKind::Unresolved {
+                    form: None,
+                    counterbore_diameter: None,
+                    counterbore_depth: None,
+                    countersink_diameter: None,
+                    countersink_angle: None,
+                }),
+            ),
+            hole(None, None),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            ir.model.features.push(Feature {
+                id: FeatureId(format!("hole-{ordinal}")),
+                ordinal: ordinal as u64,
+                name: None,
+                suppressed: Some(false),
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition,
+                native_ref: None,
+            });
+        }
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "2 typed feature(s) retain native or unresolved required operation operands."
         }));
     }
 
@@ -3321,6 +5162,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3388,6 +5230,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3440,6 +5283,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3523,6 +5367,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3563,6 +5408,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3605,6 +5451,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3647,12 +5494,14 @@ mod design_loss_tests {
                 1,
                 cadmpeg_ir::ConfigurationBodies::Resolved(vec![BodyId("missing-body".into())]),
             ),
+            configuration("unresolved", 2, cadmpeg_ir::ConfigurationBodies::Unresolved),
         ];
         let mut report = DecodeReport {
             format: "sldprt".into(),
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3660,7 +5509,122 @@ mod design_loss_tests {
         append_design_losses(&ir, &mut report);
 
         assert!(report.losses.iter().any(|loss| {
-            loss.message == "2 configuration record(s) contain missing or repeated body references."
+            loss.message == "1 configuration record(s) have unresolved body membership; 2 configuration record(s) contain missing or repeated body references."
+        }));
+    }
+
+    #[test]
+    fn configuration_values_complete_parameters_without_baseline_values() {
+        let mut ir = CadIr::empty(Units::default());
+        let parameter = ParameterId("configured-parameter".into());
+        ir.model.parameters.push(DesignParameter {
+            id: parameter.clone(),
+            owner: None,
+            ordinal: 0,
+            name: "Configured".into(),
+            expression: "12mm".into(),
+            display: None,
+            value: None,
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+        ir.model.configurations.push(DesignConfiguration {
+            id: ConfigurationId("configuration".into()),
+            ordinal: 0,
+            active: true,
+            source_index: Some(0),
+            name: "Default".into(),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+            parameter_values: BTreeMap::from([(parameter, ParameterValue::Length(Length(12.0)))]),
+            suppressed_features: Vec::new(),
+            parameter_overrides: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: Some("native:configuration".into()),
+        });
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(!report.losses.iter().any(|loss| {
+            loss.message
+                .contains("complete evaluated parameter snapshot")
+                || loss.message.contains("lack an evaluated scalar")
+        }));
+    }
+
+    #[test]
+    fn configuration_suppression_and_override_references_are_coherent() {
+        let mut ir = CadIr::empty(Units::default());
+        let feature = FeatureId("feature".into());
+        let definition = FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::History,
+            children: Vec::new(),
+            active_child: None,
+        };
+        ir.model.features.push(Feature {
+            id: feature.clone(),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: definition.clone(),
+            native_ref: None,
+        });
+        ir.model.configurations.push(DesignConfiguration {
+            id: ConfigurationId("configuration".into()),
+            ordinal: 0,
+            active: true,
+            source_index: Some(0),
+            name: "Default".into(),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+            parameter_values: BTreeMap::new(),
+            suppressed_features: Vec::new(),
+            parameter_overrides: BTreeMap::from([(ParameterId("missing".into()), "1mm".into())]),
+            feature_states: BTreeMap::from([(
+                feature,
+                ConfigurationFeatureState {
+                    suppressed: true,
+                    dependencies: Vec::new(),
+                    outputs: Vec::new(),
+                    definition,
+                },
+            )]),
+            native_ref: Some("native:configuration".into()),
+        });
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message == "1 configuration(s) have missing, repeated, or feature-state-inconsistent suppression members; 1 configuration(s) reference missing parameter overrides."
         }));
     }
 
@@ -3694,6 +5658,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3948,6 +5913,8 @@ mod design_loss_tests {
         native.feature_histories[0].features[0].input_class = Some("moSweep_c".into());
         assert_eq!(unbound_feature_input_operation_objects(&native), 1);
         native.feature_histories[0].features[0].input_class = Some(class_name.into());
+        native.feature_histories[0].features[0].source_id = None;
+        assert_eq!(unbound_feature_input_operation_objects(&native), 0);
         let mut duplicate = native.feature_histories[0].features[0].clone();
         duplicate.id = "duplicate-feature".into();
         native.feature_histories[0].features.push(duplicate);
@@ -4007,6 +5974,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };

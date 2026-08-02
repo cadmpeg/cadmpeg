@@ -1,0 +1,135 @@
+{
+  "container_kind": "3dm-chunks",
+  "entries": [
+    {
+      "attributes": {
+        "body_offset": "81",
+        "offset": "69",
+        "record_count": "0",
+        "size": "24"
+      },
+      "compressed_size": 24,
+      "compression": "none",
+      "name": "table-0x10000014",
+      "role": "table",
+      "uncompressed_size": 12
+    },
+    {
+      "attributes": {
+        "body_offset": "105",
+        "offset": "93",
+        "record_count": "1",
+        "size": "72"
+      },
+      "compressed_size": 72,
+      "compression": "none",
+      "name": "table-0x10000015",
+      "role": "table",
+      "uncompressed_size": 60
+    },
+    {
+      "attributes": {
+        "body_offset": "177",
+        "object_typecode_0x1": "1",
+        "object_typecode_0x2": "1",
+        "object_typecode_0x4": "4",
+        "offset": "165",
+        "record_count": "6",
+        "size": "1901"
+      },
+      "compressed_size": 1901,
+      "compression": "none",
+      "name": "table-0x10000013",
+      "role": "table",
+      "uncompressed_size": 1889
+    },
+    {
+      "attributes": {
+        "class_uuid": "2488f347-f8fa-11d3-bfec-0010830122f0",
+        "count": "1",
+        "nil_uuid": "false",
+        "total_record_bytes": "345"
+      },
+      "compressed_size": 345,
+      "compression": "none",
+      "name": "class-2488f347-f8fa-11d3-bfec-0010830122f0",
+      "role": "object-class",
+      "uncompressed_size": 345
+    },
+    {
+      "attributes": {
+        "class_uuid": "4ed7d4db-e947-11d3-bfe5-0010830122f0",
+        "count": "1",
+        "nil_uuid": "false",
+        "total_record_bytes": "181"
+      },
+      "compressed_size": 181,
+      "compression": "none",
+      "name": "class-4ed7d4db-e947-11d3-bfe5-0010830122f0",
+      "role": "object-class",
+      "uncompressed_size": 181
+    },
+    {
+      "attributes": {
+        "class_uuid": "4ed7d4e0-e947-11d3-bfe5-0010830122f0",
+        "count": "1",
+        "nil_uuid": "false",
+        "total_record_bytes": "636"
+      },
+      "compressed_size": 636,
+      "compression": "none",
+      "name": "class-4ed7d4e0-e947-11d3-bfe5-0010830122f0",
+      "role": "object-class",
+      "uncompressed_size": 636
+    },
+    {
+      "attributes": {
+        "class_uuid": "4ed7d4e6-e947-11d3-bfe5-0010830122f0",
+        "count": "1",
+        "nil_uuid": "false",
+        "total_record_bytes": "221"
+      },
+      "compressed_size": 221,
+      "compression": "none",
+      "name": "class-4ed7d4e6-e947-11d3-bfe5-0010830122f0",
+      "role": "object-class",
+      "uncompressed_size": 221
+    },
+    {
+      "attributes": {
+        "class_uuid": "c3101a1d-f157-11d3-bfe7-0010830122f0",
+        "count": "1",
+        "nil_uuid": "false",
+        "total_record_bytes": "137"
+      },
+      "compressed_size": 137,
+      "compression": "none",
+      "name": "class-c3101a1d-f157-11d3-bfe7-0010830122f0",
+      "role": "object-class",
+      "uncompressed_size": 137
+    },
+    {
+      "attributes": {
+        "class_uuid": "cf33be2a-09b4-11d4-bffb-0010830122f0",
+        "count": "1",
+        "nil_uuid": "false",
+        "total_record_bytes": "357"
+      },
+      "compressed_size": 357,
+      "compression": "none",
+      "name": "class-cf33be2a-09b4-11d4-bffb-0010830122f0",
+      "role": "object-class",
+      "uncompressed_size": 357
+    }
+  ],
+  "format": "rhino",
+  "notes": [
+    "archive version 50",
+    "object at 177 has nil object UUID",
+    "object at 314 has nil object UUID",
+    "object at 659 has nil object UUID",
+    "object at 840 has nil object UUID",
+    "object at 1197 has nil object UUID",
+    "object at 1418 has nil object UUID"
+  ]
+}

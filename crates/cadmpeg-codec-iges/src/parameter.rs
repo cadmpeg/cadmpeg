@@ -4,7 +4,7 @@
 use crate::card::{CardScan, PhysicalLine, Section};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 

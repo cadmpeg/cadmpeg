@@ -54,7 +54,8 @@ fn empty_zip() -> Vec<u8> {
 fn bare_zip_with_txt() -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-    zip.start_file("readme.txt", stored).expect("required invariant");
+    zip.start_file("readme.txt", stored)
+        .expect("required invariant");
     zip.write_all(b"hello").expect("required invariant");
     zip.finish().expect("required invariant").into_inner()
 }
@@ -327,7 +328,10 @@ fn synthetic_geometry_with_pcurve_smbh() -> Vec<u8> {
     let records = frame_records(&bytes, start, limit);
     let coedge = &records[7];
     let record = &mut bytes[coedge.0..coedge.0 + coedge.1];
-    let pcurve_ref_tag = record.iter().rposition(|b| *b == 0x0c).expect("required invariant");
+    let pcurve_ref_tag = record
+        .iter()
+        .rposition(|b| *b == 0x0c)
+        .expect("required invariant");
     record[pcurve_ref_tag + 1..pcurve_ref_tag + 9].copy_from_slice(&19i64.to_le_bytes());
 
     let delta = bytes[..]
@@ -533,8 +537,10 @@ fn synthetic_mixed_smbh() -> Vec<u8> {
 fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-    zip.start_file("Manifest.dat", stored).expect("required invariant");
-    zip.write_all(b"synthetic-manifest").expect("required invariant");
+    zip.start_file("Manifest.dat", stored)
+        .expect("required invariant");
+    zip.write_all(b"synthetic-manifest")
+        .expect("required invariant");
     zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
         .expect("required invariant");
     zip.write_all(smbh).expect("required invariant");
@@ -547,13 +553,16 @@ fn synthetic_f3d(include_smbh: bool) -> Vec<u8> {
     let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
     let folder = "FusionAssetName[Active]";
-    zip.start_file("Manifest.dat", stored).expect("required invariant");
-    zip.write_all(b"synthetic-manifest").expect("required invariant");
+    zip.start_file("Manifest.dat", stored)
+        .expect("required invariant");
+    zip.write_all(b"synthetic-manifest")
+        .expect("required invariant");
 
     if include_smbh {
         zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smbh"), deflated)
             .expect("required invariant");
-        zip.write_all(&synthetic_smbh()).expect("required invariant");
+        zip.write_all(&synthetic_smbh())
+            .expect("required invariant");
     }
 
     let mut smb = synthetic_smbh();

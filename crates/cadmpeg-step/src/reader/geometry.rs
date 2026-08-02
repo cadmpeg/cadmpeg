@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point};
 use cadmpeg_ir::geometry::{
     derive_reference_direction, CompositeCurveSegment, CompositeCurveTransition, Curve,
     CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -15,6 +16,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::Point;
+use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::parse::{Exchange, RawRecord, Value};
 
@@ -348,6 +350,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 &geometry,
                 angle_scale,
                 linear_parameter_scale,
+                ir.tolerances.linear,
             )
         });
         let end = record.parameter(3).and_then(|value| {
@@ -357,6 +360,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 &geometry,
                 angle_scale,
                 linear_parameter_scale,
+                ir.tolerances.linear,
             )
         });
         let Some((start, end)) = start.zip(end) else {
@@ -899,12 +903,72 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             typed.insert(id);
         }
     }
+    associate_free_geometric_set_members(exchange, ir);
     GeometryResult {
         typed_records: typed,
         warnings,
         placements,
         length_scale: scale,
         plane_angle_scale: angle_scale,
+    }
+}
+
+fn associate_free_geometric_set_members(exchange: &Exchange, ir: &mut CadIr) {
+    let curve_indices = ir
+        .model
+        .curves
+        .iter()
+        .enumerate()
+        .map(|(index, curve)| (curve.id.0.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+    let point_indices = ir
+        .model
+        .points
+        .iter()
+        .enumerate()
+        .map(|(index, point)| (point.id.0.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+
+    for set in exchange.records.values() {
+        if !matches!(
+            set.simple_name(),
+            Some("GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET")
+        ) {
+            continue;
+        }
+        let Some(members) = set.parameter(1).and_then(Value::list) else {
+            continue;
+        };
+        for member in members.iter().filter_map(Value::reference) {
+            let name = exchange
+                .records
+                .get(&member)
+                .and_then(|record| record.parameter(0))
+                .and_then(|value| match value {
+                    Value::String(bytes) => crate::strings::decode(bytes).ok(),
+                    _ => None,
+                })
+                .filter(|name| !name.is_empty());
+            let association = || SourceObjectAssociation {
+                format: "step".into(),
+                object_id: format!("#{member}"),
+                name: name.clone(),
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            };
+            if let Some(index) = curve_indices.get(&format!("step:data:curve#{member}")) {
+                ir.model.curves[*index]
+                    .source_object
+                    .get_or_insert_with(association);
+            }
+            if let Some(index) = point_indices.get(&format!("step:data:point#{member}")) {
+                ir.model.points[*index]
+                    .source_object
+                    .get_or_insert_with(association);
+            }
+        }
     }
 }
 
@@ -1107,6 +1171,7 @@ fn trim_parameter(
     geometry: &CurveGeometry,
     angle_scale: f64,
     linear_parameter_scale: f64,
+    tolerance: f64,
 ) -> Option<f64> {
     match value {
         Value::Integer(value) => {
@@ -1115,14 +1180,26 @@ fn trim_parameter(
         Value::Real(value) => {
             Some(parameter_scale(geometry, angle_scale, linear_parameter_scale) * *value)
         }
-        Value::Typed(_, value) => {
-            trim_parameter(value, points, geometry, angle_scale, linear_parameter_scale)
-        }
+        Value::Typed(_, value) => trim_parameter(
+            value,
+            points,
+            geometry,
+            angle_scale,
+            linear_parameter_scale,
+            tolerance,
+        ),
         Value::Reference(id) => points
             .get(id)
-            .and_then(|point| curve_parameter_at_point(geometry, *point)),
+            .and_then(|point| curve_parameter_at_point(geometry, *point, tolerance)),
         Value::List(values) => values.iter().find_map(|value| {
-            trim_parameter(value, points, geometry, angle_scale, linear_parameter_scale)
+            trim_parameter(
+                value,
+                points,
+                geometry,
+                angle_scale,
+                linear_parameter_scale,
+                tolerance,
+            )
         }),
         _ => None,
     }
@@ -1166,7 +1243,11 @@ fn orthogonal_reference(axis: Vector3, reference: Vector3) -> Option<Vector3> {
     ))
 }
 
-fn curve_parameter_at_point(geometry: &CurveGeometry, point: Point3) -> Option<f64> {
+fn curve_parameter_at_point(
+    geometry: &CurveGeometry,
+    point: Point3,
+    tolerance: f64,
+) -> Option<f64> {
     let offset =
         |origin: Point3| Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
     match geometry {
@@ -1194,6 +1275,10 @@ fn curve_parameter_at_point(geometry: &CurveGeometry, point: Point3) -> Option<f
                 (dot(radial, minor_direction) / minor_radius)
                     .atan2(dot(radial, *major_direction) / major_radius),
             )
+        }
+        CurveGeometry::Nurbs(curve) => {
+            let domain = nurbs_curve_parameter_domain(curve)?;
+            nurbs_curve_parameter_near_point(curve, point, tolerance, (domain[0] + domain[1]) * 0.5)
         }
         _ => None,
     }

@@ -12,9 +12,10 @@
 //! native loops, units, feature identifiers, and datum planes. [`summarize`]
 //! converts that scan into the codec-neutral container summary.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::codec::{ContainerEntry, ContainerSummary};
+use cadmpeg_codec_core::{ContainerEntry, ContainerSummary};
 
 use crate::curve::{
     self, BoundPrototypePcurve, CurveExpressionRecord, CurveExpressionValue, CurveParameterRecord,
@@ -25,9 +26,9 @@ use crate::curve::{
 use crate::datum::{self, DatumPlane};
 use crate::feature::{
     self, FeatureAffectedIds, FeatureChoice, FeatureChoiceField, FeatureDefinition, FeatureEntity,
-    FeatureEntityReference, FeatureEntityTable, FeatureGeometryTable, FeatureLoopRestoreDirection,
-    FeatureOperation, FeatureRecipe, FeatureReferenceName, FeatureReplayAffectedIds,
-    FeatureRevolutionExtent, FeatureRow,
+    FeatureEntityReference, FeatureEntityTable, FeatureGeometryTable, FeatureLoopHistoryEntry,
+    FeatureLoopRestoreDirection, FeatureOperation, FeatureRecipe, FeatureReferenceName,
+    FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow,
 };
 use crate::placement::{self, FeatureSectionTransform};
 use crate::primdata::{self, PrimitiveScalarArray, PrimitiveTriangleStrip};
@@ -184,10 +185,10 @@ pub struct FamilyTableRecord {
 /// grouped into per-domain sub-structs so each consumer names the domain it
 /// reads. `ContainerScan` is never serialized; grouping and field naming are
 /// internal and do not affect IR or JSON output.
-pub struct ContainerScan {
+pub struct ContainerScan<'a> {
     /// Container framing: raw bytes, header, TOC-enumerated sections, and
     /// model-level diagnostics.
-    pub framing: FramingScan,
+    pub framing: FramingScan<'a>,
     /// Named scalar and triangle-strip products from expanded primitive data.
     pub primitives: PrimitiveScan,
     /// Model-space reference entities decoded from `MdlRefInfo`.
@@ -206,9 +207,9 @@ pub struct ContainerScan {
 }
 
 /// Container framing: raw bytes, header, sections, and model-level diagnostics.
-pub struct FramingScan {
+pub struct FramingScan<'a> {
     /// Complete source bytes.
-    pub data: Vec<u8>,
+    pub data: Cow<'a, [u8]>,
     /// The magic/version header line, ASCII, trimmed.
     pub version_line: String,
     /// Native model filename from the length-prefixed `CMNM` header record.
@@ -377,10 +378,14 @@ pub struct FeatureScan {
     pub choice_fields: Vec<FeatureChoiceField>,
     /// Generated-geometry namespace headers owned by decoded features.
     pub geometry_tables: Vec<FeatureGeometryTable>,
+    /// Ordered feature-local loop identities from complete `lo_hist` rosters.
+    pub loop_history_entries: Vec<FeatureLoopHistoryEntry>,
     /// Complete named affected-ID arrays owned by decoded features.
     pub affected_ids: Vec<FeatureAffectedIds>,
     /// Affected-ID runs from unlabeled positional replay feature rows.
     pub replay_affected_ids: Vec<FeatureReplayAffectedIds>,
+    /// Affected geometry, edge, and quilt arrays from class-946 replay rows.
+    pub surface_merge_replay_affected_ids: Vec<crate::feature::FeatureSurfaceMergeAffectedIds>,
     /// Named compact direction values from loop-restoration records.
     pub loop_restore_directions: Vec<FeatureLoopRestoreDirection>,
     /// Resolved angular termination from rotational feature rows.
@@ -1075,6 +1080,16 @@ fn curve_expressions(
                     for assignment in &mut record.assignments {
                         assignment.offset += section.offset;
                     }
+                    for block in &mut record.solve_blocks {
+                        block.offset += section.offset;
+                        block.for_offset += section.offset;
+                        for equation in &mut block.equations {
+                            equation.offset += section.offset;
+                        }
+                        for assignment in &mut block.assignments {
+                            assignment.offset += section.offset;
+                        }
+                    }
                     record
                 }),
         );
@@ -1221,9 +1236,20 @@ fn datum_planes(data: &[u8], sections: &[Section]) -> Vec<DatumPlane> {
     planes
 }
 
-fn feature_ids(data: &[u8], sections: &[Section], rows: &[SurfaceRow]) -> Vec<u32> {
+fn structural_feature_ids(
+    data: &[u8],
+    sections: &[Section],
+    surface_rows: &[SurfaceRow],
+    curve_rows: &[CurveTopologyRow],
+) -> std::collections::BTreeSet<u32> {
     let mut ids = std::collections::BTreeSet::new();
-    ids.extend(rows.iter().map(|row| row.feature_id).filter(|id| *id != 0));
+    ids.extend(
+        surface_rows
+            .iter()
+            .map(|row| row.feature_id)
+            .chain(curve_rows.iter().map(|row| row.feature_id))
+            .filter(|id| *id != 0),
+    );
     for section in sections
         .iter()
         .filter(|section| section.role == role::GEOMETRY)
@@ -1251,7 +1277,73 @@ fn feature_ids(data: &[u8], sections: &[Section], rows: &[SurfaceRow]) -> Vec<u3
             from = start;
         }
     }
-    ids.into_iter().collect()
+    ids
+}
+
+fn stored_operation_schema_class(operation: &FeatureOperation) -> Option<u32> {
+    operation
+        .root_schema_class
+        .or_else(|| match operation.kind.as_str() {
+            "Hole" => Some(911),
+            "Round" | "Rundung" => Some(913),
+            "Chamfer" => Some(914),
+            "Cut" => Some(916),
+            "Protrusion" => Some(917),
+            "Datum Plane" | "Bezugsebene" => Some(923),
+            "Section" => Some(926),
+            "Draft" | "Schräge" => Some(927),
+            "Surface Merge" => Some(946),
+            _ => operation.recipe.map(|recipe| match recipe.effect() {
+                feature::FeatureRecipeEffect::Cut => 916,
+                feature::FeatureRecipeEffect::Protrude => 917,
+            }),
+        })
+}
+
+fn registered_feature_schema_class(schema_class: u32) -> bool {
+    matches!(
+        schema_class,
+        911 | 913 | 914 | 916 | 917 | 923 | 926 | 927 | 946 | 979
+    )
+}
+
+fn feature_row_has_model_identity(
+    row: &FeatureRow,
+    structural_ids: &std::collections::BTreeSet<u32>,
+    operations: &[FeatureOperation],
+    reference_names: &[FeatureReferenceName],
+) -> bool {
+    structural_ids.contains(&row.feature_id)
+        || operations.iter().any(|operation| {
+            operation.feature_id == row.feature_id
+                && (stored_operation_schema_class(operation) == row.root_schema_class
+                    || (stored_operation_schema_class(operation).is_some()
+                        && row.root_schema_class.is_some_and(|schema_class| {
+                            !registered_feature_schema_class(schema_class)
+                        })))
+        })
+        || reference_names.iter().any(|reference| {
+            let numbered_family = |family: &str| {
+                [" id ", " ID "].into_iter().any(|separator| {
+                    reference
+                        .name
+                        .strip_prefix(family)
+                        .and_then(|suffix| suffix.strip_prefix(separator))
+                        .and_then(|ordinal| ordinal.parse::<u32>().ok())
+                        == Some(reference.feature_id)
+                })
+            };
+            let named_datum = matches!(reference.name.as_str(), "Datum Plane" | "Bezugsebene")
+                || numbered_family("Datum Plane")
+                || numbered_family("Bezugsebene")
+                || reference.name.strip_prefix("DTM").is_some_and(|ordinal| {
+                    !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+                });
+            reference.feature_id == row.feature_id
+                && (row.root_schema_class == Some(926)
+                    || (row.root_schema_class == Some(923) && named_datum)
+                    || (row.root_schema_class == Some(979) && reference.name == "PRT_CSYS_DEF"))
+        })
 }
 
 fn feature_entity_tables(
@@ -1348,6 +1440,24 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
         for row in &mut segments.rows {
             row.offset += section_offset;
         }
+        for row in &mut segments.circle_rows {
+            row.offset += section_offset;
+        }
+        for row in &mut segments.point_rows {
+            row.offset += section_offset;
+        }
+        for row in &mut segments.centered_line_rows {
+            row.offset += section_offset;
+        }
+        for row in &mut segments.reference_line_rows {
+            row.offset += section_offset;
+        }
+        for row in &mut segments.bounded_curve_rows {
+            row.offset += section_offset;
+        }
+        for row in &mut segments.conic_rows {
+            row.offset += section_offset;
+        }
         for row in &mut segments.opaque_rows {
             row.offset += section_offset;
         }
@@ -1384,6 +1494,18 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
         for row in &mut relations.rows {
             row.offset += section_offset;
         }
+        if let Some(header) = &mut relations.skamp_header {
+            header.offset += section_offset;
+        }
+        for row in &mut relations.skamps {
+            row.offset += section_offset;
+        }
+        if let Some(header) = &mut relations.triples_header {
+            header.offset += section_offset;
+        }
+        for row in &mut relations.triples {
+            row.offset += section_offset;
+        }
     }
     if let Some(saved) = &mut definition.saved_section {
         saved.offset += section_offset;
@@ -1392,6 +1514,7 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
                 feature::FeatureSavedEntity::Line(line) => line.offset += section_offset,
                 feature::FeatureSavedEntity::Arc(arc) => arc.offset += section_offset,
                 feature::FeatureSavedEntity::Circle(circle) => circle.offset += section_offset,
+                feature::FeatureSavedEntity::Conic(conic) => conic.offset += section_offset,
                 feature::FeatureSavedEntity::Spline(spline) => spline.offset += section_offset,
                 feature::FeatureSavedEntity::Dummy(dummy) => dummy.offset += section_offset,
             }
@@ -1608,7 +1731,8 @@ fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u3
 
 /// Parse a whole `.prt` byte image. Split out so tests drive it from a synthetic
 /// buffer without a reader.
-pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
+pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
+    let data = data.into();
     let version_line = line_at(&data, 0);
     let (model_name, model_name_offset) =
         model_name(&data).map_or((None, None), |(name, offset)| (Some(name), Some(offset)));
@@ -1776,24 +1900,55 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let (topological_vertices, half_edge_vertex_incidence) = topology::vertex_orbits(&half_edges);
     let face_components = topology::face_components(&curve_topology_rows);
     let datum_planes = datum_planes(&data, &sections);
-    let feature_ids = feature_ids(&data, &sections, &surface_rows);
-    let feature_rows = feature_rows(&data, &sections, &feature_ids);
+    let feature_operation_states = feature_operation_states(&data, &sections);
+    let feature_operations = feature_operations(&data, &sections);
+    let feature_reference_names = feature_reference_names(&data, &sections);
+    let structural_feature_ids =
+        structural_feature_ids(&data, &sections, &surface_rows, &curve_topology_rows);
+    let mut candidate_feature_ids = structural_feature_ids.clone();
+    candidate_feature_ids.extend(
+        feature_operations
+            .iter()
+            .map(|operation| operation.feature_id),
+    );
+    candidate_feature_ids.extend(
+        feature_reference_names
+            .iter()
+            .map(|reference| reference.feature_id),
+    );
+    let mut feature_rows = feature_rows(
+        &data,
+        &sections,
+        &candidate_feature_ids.iter().copied().collect::<Vec<_>>(),
+    );
+    feature_rows.retain(|row| {
+        feature_row_has_model_identity(
+            row,
+            &structural_feature_ids,
+            &feature_operations,
+            &feature_reference_names,
+        )
+    });
+    let mut feature_ids = structural_feature_ids;
+    feature_ids.extend(feature_rows.iter().map(|row| row.feature_id));
+    let feature_ids = feature_ids.into_iter().collect::<Vec<_>>();
     let feature_choices = feature::choices(&feature_rows);
     let feature_choice_fields = feature::choice_fields(&feature_choices);
     let depdb_recipe_rows = depdb_recipe_rows(&data, &sections);
     let mut feature_geometry_tables = feature::geometry_tables(&feature_rows);
     feature_geometry_tables.extend(feature::geometry_tables(&depdb_recipe_rows));
     feature_geometry_tables.sort_by_key(|table| table.offset);
+    let feature_loop_history_entries =
+        feature::loop_history_entries(&feature_rows, &feature_geometry_tables);
     let mut feature_affected_ids = feature::affected_ids(&feature_rows);
     feature_affected_ids.extend(feature::affected_ids(&depdb_recipe_rows));
     feature_affected_ids.sort_by_key(|record| record.offset);
     let feature_replay_affected_ids = feature::replay_affected_ids(&feature_rows);
+    let surface_merge_replay_affected_ids =
+        feature::surface_merge_replay_affected_ids(&feature_rows, &feature_affected_ids);
     let feature_loop_restore_directions = feature::loop_restore_directions(&feature_rows);
     let feature_entity_tables =
         feature_entity_tables(&data, &sections, &feature_ids, &surface_rows);
-    let feature_operation_states = feature_operation_states(&data, &sections);
-    let feature_operations = feature_operations(&data, &sections);
-    let feature_reference_names = feature_reference_names(&data, &sections);
     let mut feature_definitions = feature_definitions(&data, &sections);
     feature::bind_definition_owners(&mut feature_definitions, &feature_geometry_tables);
     feature::bind_trimmed_definition_owners(&mut feature_definitions, &feature_entity_tables);
@@ -1961,8 +2116,10 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
             choices: feature_choices,
             choice_fields: feature_choice_fields,
             geometry_tables: feature_geometry_tables,
+            loop_history_entries: feature_loop_history_entries,
             affected_ids: feature_affected_ids,
             replay_affected_ids: feature_replay_affected_ids,
+            surface_merge_replay_affected_ids,
             loop_restore_directions: feature_loop_restore_directions,
             revolution_extents: feature_revolution_extents,
             definitions: feature_definitions,
@@ -2084,10 +2241,114 @@ mod feature_row_definition_tests {
     use super::*;
 
     #[test]
+    fn surface_and_curve_generators_are_structural_feature_identities() {
+        let surface = SurfaceRow {
+            id: 12,
+            type_byte: 0x22,
+            kind: crate::surface::SurfaceKind::Plane,
+            feature_id: 40,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 0,
+        };
+        let curve = CurveTopologyRow {
+            id: 45,
+            type_byte: 8,
+            feature_id: 41,
+            directions: [1, 0xf6],
+            faces: [12, 13],
+            next_edges: [45, 45],
+            offset: 0,
+        };
+
+        assert_eq!(
+            structural_feature_ids(&[], &[], &[surface], &[curve]),
+            std::collections::BTreeSet::from([40, 41])
+        );
+    }
+
+    #[test]
     fn zero_width_toc_has_no_rows() {
         let data = b"#UGC_TOC 2 18446744073709551615 0#\n";
 
         assert!(toc_sections(data, 0).is_empty());
+    }
+
+    #[test]
+    fn stored_feature_identities_require_compatible_allfeatur_rows() {
+        let operation = FeatureOperation {
+            feature_id: 42,
+            kind: "Round".to_string(),
+            display_name_stored: true,
+            stored_name: Some("Round id 42".to_string()),
+            stored_name_bytes: Some(b"Round id 42".to_vec()),
+            identifier_keyword: Some("id".to_string()),
+            stored_name_prefix: None,
+            recipe: None,
+            root_schema_class: None,
+            parent_feature_id: None,
+            offset: 0,
+            state_offset: 0,
+        };
+        let reference = FeatureReferenceName {
+            feature_id: 73,
+            name: "SKETCH_1".to_string(),
+            name_bytes: b"SKETCH_1".to_vec(),
+            own_reference_id: 9,
+            reference_type: 1,
+            offset: 0,
+        };
+        let datum_reference = FeatureReferenceName {
+            feature_id: 87,
+            name: "Datum Plane id 87".to_string(),
+            name_bytes: b"Datum Plane id 87".to_vec(),
+            own_reference_id: 10,
+            reference_type: 1,
+            offset: 0,
+        };
+
+        let row = |feature_id, root_schema_class| FeatureRow {
+            feature_id,
+            header: [0xe3, 0xf6],
+            root_schema_class: Some(root_schema_class),
+            stream_offset: 0,
+            body: Vec::new(),
+            body_offset: 0,
+            offset: 0,
+        };
+        let structural = std::collections::BTreeSet::new();
+
+        assert!(feature_row_has_model_identity(
+            &row(42, 913),
+            &structural,
+            std::slice::from_ref(&operation),
+            std::slice::from_ref(&reference),
+        ));
+        assert!(!feature_row_has_model_identity(
+            &row(42, 923),
+            &structural,
+            std::slice::from_ref(&operation),
+            std::slice::from_ref(&reference),
+        ));
+        assert!(feature_row_has_model_identity(
+            &row(73, 926),
+            &structural,
+            &[operation],
+            &[reference],
+        ));
+        assert!(feature_row_has_model_identity(
+            &row(87, 923),
+            &structural,
+            &[],
+            std::slice::from_ref(&datum_reference),
+        ));
+        assert!(!feature_row_has_model_identity(
+            &row(87, 911),
+            &structural,
+            &[],
+            &[datum_reference],
+        ));
     }
 
     #[test]

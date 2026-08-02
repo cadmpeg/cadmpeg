@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+# Deliberately broken layout table: its code cross-check names a substring the source file does not contain
+# `crates/cadmpeg/tests/layout_tables.rs` asserts the validator rejects it.
+schema = 1
+format = "f3d"
+spec = "docs/formats/f3d.md"
+endianness = "little"
+
+[[record]]
+name = "asmheader_binaryfile8"
+kind = "byte"
+section = "3"
+anchor = "`BinaryFile8` header layout"
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "bytes[15]"
+source = "spec"
+anchor = "`0..15` | magic `ASM BinaryFile8`"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/asm_header.rs"
+contains = "const HEADER_LEN: usize = 4242;"
+note = "Invented on purpose: no such constant exists."

@@ -6,6 +6,878 @@ use super::*;
 
 use super::substrate::StreamView;
 
+/// One completely bounded record in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParasolidDeltasRecord {
+    /// Globally unique record identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Stable Parasolid record-family name.
+    pub family: String,
+    /// Numeric Parasolid node type.
+    pub kind: u16,
+    /// Stream-local XMT identity.
+    pub xmt: u32,
+    /// Kernel node identity when serialized by this family.
+    pub node_id: Option<u32>,
+    /// Ordered decoded XMT references.
+    pub references: Vec<u32>,
+    /// Model-space point in Parasolid metres when serialized by this family.
+    pub position: Option<[f64; 3]>,
+    /// Exact serialized record length.
+    pub byte_len: u64,
+    /// Record tag offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// One compact deletion in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasTombstone {
+    /// Globally unique event identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Stable Parasolid record-family name.
+    pub family: String,
+    /// Numeric Parasolid node type.
+    pub kind: u16,
+    /// Stream-local deleted XMT identity.
+    pub xmt: u32,
+    /// Exact compact tombstone length.
+    pub byte_len: u64,
+    /// Record tag offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// BODY revision envelope in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasBodyRevision {
+    /// Globally unique revision identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Stream-local BODY XMT identity.
+    pub xmt: u32,
+    /// Monotonic kernel revision identity.
+    pub node_id: u32,
+    /// Eight ordered BODY references.
+    pub references: [u32; 8],
+    /// Exact complete envelope length.
+    pub byte_len: u64,
+    /// Exact validated prefix length.
+    pub prefix_byte_len: u64,
+    /// Exact bounded state-tail length.
+    pub state_tail_byte_len: u64,
+    /// SHA-256 of the exact bounded state-tail bytes.
+    pub state_tail_sha256: String,
+    /// BODY tag offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Parasolid transmit header at the start of a deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasTransmitHeader {
+    /// Globally unique header identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Printable transmit-file description.
+    pub description: String,
+    /// Declared Parasolid schema token.
+    pub schema: String,
+    /// Consecutive stream-local header identities.
+    pub references: [u32; 2],
+    /// Exact header byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact header bytes.
+    pub sha256: String,
+    /// First header byte offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Null references at the boundary of a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasTerminalNullReferences {
+    /// Globally unique trailer identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Ordered null XMT references.
+    pub references: Vec<u32>,
+    /// Exact trailer byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact trailer bytes.
+    pub sha256: String,
+    /// First trailer byte offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Count-selected numeric lane following one deltas `term_use` endpoint.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParasolidDeltasTermUseNumericTail {
+    /// Globally unique numeric-tail identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// XMT identity of the owning `term_use` record.
+    pub term_use_xmt: u32,
+    /// Serialized endpoint count selecting the numeric-tail cardinality.
+    pub term_use_count: u32,
+    /// Ordered finite binary64 values without assigned semantic roles.
+    pub values: Vec<f64>,
+    /// Exact numeric-tail byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact numeric-tail bytes.
+    pub sha256: String,
+    /// First numeric byte following the complete `term_use` record.
+    pub inflated_offset: u64,
+}
+
+/// Maximal deltas gap composed entirely of typed stream-local references.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasTaggedReferenceLane {
+    /// Globally unique reference-lane identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Ordered `(Parasolid record kind, XMT identity)` references.
+    pub references: Vec<(u16, u32)>,
+    /// Exact reference-lane byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact reference-lane bytes.
+    pub sha256: String,
+    /// First byte of the first tagged reference.
+    pub inflated_offset: u64,
+}
+
+/// Framed reference/type map in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasReferenceTypeMap {
+    /// Globally unique map identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Ordered `(XMT identity, Parasolid type code)` entries.
+    pub entries: Vec<(u32, u16)>,
+    /// Type code of the optional terminal map target.
+    pub target_kind: Option<u16>,
+    /// Exact map byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact map bytes.
+    pub sha256: String,
+    /// First map byte offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// One four-reference frame in a Parasolid deltas state packet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasReferenceStateFrame {
+    /// Four ordered stream-local XMT references.
+    pub references: [u32; 4],
+    /// Five ordered big-endian state words.
+    pub state_words: [u32; 5],
+    /// Terminal serialized state byte.
+    pub state_byte: u8,
+}
+
+/// Reference-state packet in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasReferenceStatePacket {
+    /// Globally unique packet identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Ordered packet frames.
+    pub frames: Vec<ParasolidDeltasReferenceStateFrame>,
+    /// Whether the packet ends with `ref(1)[3], u32(1)`.
+    pub terminal: bool,
+    /// Exact packet byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact packet bytes.
+    pub sha256: String,
+    /// First packet byte offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Schema reference preamble in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasSchemaReferencePreamble {
+    /// Globally unique preamble identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Repeated serialized identity.
+    pub identity: u16,
+    /// Two consecutive non-null stream-local XMT references.
+    pub references: [u32; 2],
+    /// Non-null state-lane reference between null sentinels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_reference: Option<u32>,
+    /// Four ordered big-endian state words.
+    pub state_words: [u32; 4],
+    /// Serialized state count.
+    pub count: u16,
+    /// Ordered `(Parasolid record kind, XMT identity)` entries.
+    pub entries: Vec<(u16, u32)>,
+    /// Terminal serialized state value.
+    pub terminal_value: u16,
+    /// Exact preamble byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact preamble bytes.
+    pub sha256: String,
+    /// First preamble byte offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Reference-marker packet in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasReferenceMarkerPacket {
+    /// Globally unique packet identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Non-null stream-local XMT reference.
+    pub reference: u32,
+    /// Serialized marker byte.
+    pub marker: u8,
+    /// Exact packet byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact packet bytes.
+    pub sha256: String,
+    /// First packet byte offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Single-byte type-150 state packet in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParasolidDeltasType150StatePacket {
+    /// Globally unique packet identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Five ordered stream-local XMT references.
+    pub references: [u32; 5],
+    /// Serialized state discriminator.
+    pub marker: u8,
+    /// Nine finite binary64 state values.
+    pub values: [f64; 9],
+    /// Exact packet byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact packet bytes.
+    pub sha256: String,
+    /// First packet byte offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Body of an inline schema declaration in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "schema", rename_all = "snake_case")]
+pub enum ParasolidDeltasInlineSchemaFields {
+    /// Type 12 `BODY` schema header without following instance state.
+    BodyHeader,
+    /// REGION declaration state.
+    Region {
+        xmt: u32,
+        state_word: u32,
+        references: [u32; 4],
+    },
+    /// `ATTDEF_LIST` declaration state.
+    AttdefList {
+        xmt: u32,
+        slot_count: u32,
+        active_count: u32,
+        references: Vec<u32>,
+    },
+    /// Type 70 declaration state.
+    Type70 {
+        xmt: u32,
+        node_id: u32,
+        references: [u32; 4],
+        count: u16,
+        trailing_reference: u32,
+    },
+    /// Type 100 declaration and its precision state.
+    Type100 {
+        xmt: u32,
+        references: [u32; 3],
+        transform: [f64; 13],
+    },
+    /// Type 101 declaration and its schema-bound instance state.
+    Type101 {
+        references: [u32; 4],
+        anchor_reference: Option<u32>,
+        state_words: [u32; 3],
+        terminal_value: u64,
+    },
+    /// Type 101 declaration with the compact fixed state.
+    Type101Compact,
+    /// Type 38 intersection-data declaration state.
+    Type38 {
+        xmt: u32,
+        node_id: u32,
+        leading_references: [u32; 5],
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        leading_statuses: Option<[u8; 5]>,
+        marker: u8,
+        linked_references: Vec<u32>,
+        state_references: Vec<u32>,
+        numeric_values: Option<[f64; 11]>,
+    },
+    /// Type 41 term-use declaration state.
+    Type41 {
+        reference: u32,
+        numeric_values: [f64; 11],
+    },
+}
+
+/// Inline schema declaration in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParasolidDeltasInlineSchemaDeclaration {
+    /// Globally unique declaration identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Schema-specific declaration body.
+    #[serde(flatten)]
+    pub fields: ParasolidDeltasInlineSchemaFields,
+    /// Exact declaration byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact declaration bytes.
+    pub sha256: String,
+    /// First declaration byte offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Schema-bound type-12 `BODY` instance-state fields.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "form", rename_all = "snake_case")]
+pub enum ParasolidDeltasInlineBodyStateFields {
+    /// Compact reference form followed by status zero.
+    Compact {
+        /// Non-null stream-local XMT reference.
+        reference: u32,
+    },
+    /// Revision form with a bounded opaque state tail.
+    Revision {
+        /// Monotonic kernel revision identity.
+        node_id: u32,
+        /// Eight ordered status-framed XMT references.
+        references: [u32; 8],
+        /// Exact state bytes following the reference prefix.
+        state_bytes: Vec<u8>,
+    },
+}
+
+/// Schema-bound type-12 `BODY` instance state in a Parasolid deltas stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasInlineBodyState {
+    /// Globally unique state identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Serialized state form.
+    pub fields: ParasolidDeltasInlineBodyStateFields,
+    /// Exact state byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact state bytes.
+    pub sha256: String,
+    /// First state byte offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Maximal inflated-stream span outside every admitted deltas event.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidDeltasResidualSpan {
+    /// Globally unique residual-span identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Exact residual byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the residual bytes.
+    pub sha256: String,
+    /// First residual byte offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+pub(crate) struct ParasolidDeltasEvents {
+    pub(crate) transmit_headers: Vec<ParasolidDeltasTransmitHeader>,
+    pub(crate) terminal_null_references: Vec<ParasolidDeltasTerminalNullReferences>,
+    pub(crate) records: Vec<ParasolidDeltasRecord>,
+    pub(crate) tombstones: Vec<ParasolidDeltasTombstone>,
+    pub(crate) body_revisions: Vec<ParasolidDeltasBodyRevision>,
+    pub(crate) term_use_numeric_tails: Vec<ParasolidDeltasTermUseNumericTail>,
+    pub(crate) tagged_reference_lanes: Vec<ParasolidDeltasTaggedReferenceLane>,
+    pub(crate) reference_type_maps: Vec<ParasolidDeltasReferenceTypeMap>,
+    pub(crate) reference_state_packets: Vec<ParasolidDeltasReferenceStatePacket>,
+    pub(crate) schema_reference_preambles: Vec<ParasolidDeltasSchemaReferencePreamble>,
+    pub(crate) reference_marker_packets: Vec<ParasolidDeltasReferenceMarkerPacket>,
+    pub(crate) type_150_state_packets: Vec<ParasolidDeltasType150StatePacket>,
+    pub(crate) inline_schema_declarations: Vec<ParasolidDeltasInlineSchemaDeclaration>,
+    pub(crate) inline_body_states: Vec<ParasolidDeltasInlineBodyState>,
+    pub(crate) residual_spans: Vec<ParasolidDeltasResidualSpan>,
+}
+
+/// Retain every completely bounded event in every Parasolid deltas stream.
+pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEvents {
+    let mut events = ParasolidDeltasEvents {
+        transmit_headers: Vec::new(),
+        terminal_null_references: Vec::new(),
+        records: Vec::new(),
+        tombstones: Vec::new(),
+        body_revisions: Vec::new(),
+        term_use_numeric_tails: Vec::new(),
+        tagged_reference_lanes: Vec::new(),
+        reference_type_maps: Vec::new(),
+        reference_state_packets: Vec::new(),
+        schema_reference_preambles: Vec::new(),
+        reference_marker_packets: Vec::new(),
+        type_150_state_packets: Vec::new(),
+        inline_schema_declarations: Vec::new(),
+        inline_body_states: Vec::new(),
+        residual_spans: Vec::new(),
+    };
+    for (stream_ordinal, stream) in streams.iter().enumerate() {
+        if stream.kind != crate::parasolid::StreamKind::Deltas {
+            continue;
+        }
+        let census = crate::deltas::walk(&stream.inflated);
+        let mut residual_start = 0;
+        for (covered_start, covered_end) in census.covered_spans() {
+            if residual_start < covered_start {
+                push_deltas_residual_span(
+                    &mut events.residual_spans,
+                    stream_ordinal,
+                    &stream.inflated,
+                    residual_start,
+                    covered_start,
+                );
+            }
+            residual_start = residual_start.max(covered_end);
+        }
+        if residual_start < stream.inflated.len() {
+            push_deltas_residual_span(
+                &mut events.residual_spans,
+                stream_ordinal,
+                &stream.inflated,
+                residual_start,
+                stream.inflated.len(),
+            );
+        }
+        if let Some(header) = census.transmit_header {
+            let bytes = &stream.inflated[..header.end];
+            events.transmit_headers.push(ParasolidDeltasTransmitHeader {
+                id: format!("nx:s{stream_ordinal}:deltas-transmit-header#0"),
+                stream_ordinal: stream_ordinal as u32,
+                description: header.description,
+                schema: header.schema,
+                references: header.references,
+                byte_len: bytes.len() as u64,
+                sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                inflated_offset: 0,
+            });
+        }
+        if let Some(trailer) = census.terminal_null_references {
+            let bytes = &stream.inflated[trailer.offset..trailer.end];
+            events
+                .terminal_null_references
+                .push(ParasolidDeltasTerminalNullReferences {
+                    id: format!(
+                        "nx:s{stream_ordinal}:deltas-terminal-null-references#{}",
+                        trailer.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    references: vec![1; trailer.count.into()],
+                    byte_len: bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    inflated_offset: trailer.offset as u64,
+                });
+        }
+        for record in census.records {
+            let family = crate::deltas::family_name(record.kind)
+                .expect("the deltas walker admits only named record families");
+            events.records.push(ParasolidDeltasRecord {
+                id: format!(
+                    "nx:s{stream_ordinal}:deltas-record#{}-{}",
+                    record.offset, record.xmt
+                ),
+                stream_ordinal: stream_ordinal as u32,
+                family: family.to_string(),
+                kind: record.kind,
+                xmt: record.xmt,
+                node_id: record.node_id,
+                references: record.references,
+                position: record.position,
+                byte_len: (record.end - record.offset) as u64,
+                inflated_offset: record.offset as u64,
+            });
+        }
+        for tombstone in census.tombstones {
+            let family = crate::deltas::family_name(tombstone.kind)
+                .expect("the deltas walker admits only named tombstone families");
+            events.tombstones.push(ParasolidDeltasTombstone {
+                id: format!(
+                    "nx:s{stream_ordinal}:deltas-tombstone#{}-{}",
+                    tombstone.offset, tombstone.xmt
+                ),
+                stream_ordinal: stream_ordinal as u32,
+                family: family.to_string(),
+                kind: tombstone.kind,
+                xmt: tombstone.xmt,
+                byte_len: 6,
+                inflated_offset: tombstone.offset as u64,
+            });
+        }
+        for revision in census.body_revisions {
+            let state_tail = &stream.inflated[revision.prefix_end..revision.end];
+            events.body_revisions.push(ParasolidDeltasBodyRevision {
+                id: format!(
+                    "nx:s{stream_ordinal}:deltas-body-revision#{}-{}",
+                    revision.offset, revision.node_id
+                ),
+                stream_ordinal: stream_ordinal as u32,
+                xmt: revision.xmt,
+                node_id: revision.node_id,
+                references: revision.references,
+                byte_len: (revision.end - revision.offset) as u64,
+                prefix_byte_len: (revision.prefix_end - revision.offset) as u64,
+                state_tail_byte_len: state_tail.len() as u64,
+                state_tail_sha256: cadmpeg_ir::hash::sha256_hex(state_tail),
+                inflated_offset: revision.offset as u64,
+            });
+        }
+        for tail in census.term_use_numeric_tails {
+            let bytes = &stream.inflated[tail.offset..tail.end];
+            events
+                .term_use_numeric_tails
+                .push(ParasolidDeltasTermUseNumericTail {
+                    id: format!(
+                        "nx:s{stream_ordinal}:deltas-term-use-tail#{}-{}",
+                        tail.offset, tail.term_use_xmt
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    term_use_xmt: tail.term_use_xmt,
+                    term_use_count: tail.term_use_count,
+                    values: tail.values,
+                    byte_len: bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    inflated_offset: tail.offset as u64,
+                });
+        }
+        for lane in census.tagged_reference_lanes {
+            let bytes = &stream.inflated[lane.offset..lane.end];
+            events
+                .tagged_reference_lanes
+                .push(ParasolidDeltasTaggedReferenceLane {
+                    id: format!(
+                        "nx:s{stream_ordinal}:deltas-tagged-reference-lane#{}",
+                        lane.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    references: lane.references,
+                    byte_len: bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    inflated_offset: lane.offset as u64,
+                });
+        }
+        for map in census.reference_type_maps {
+            let bytes = &stream.inflated[map.offset..map.end];
+            events
+                .reference_type_maps
+                .push(ParasolidDeltasReferenceTypeMap {
+                    id: format!(
+                        "nx:s{stream_ordinal}:deltas-reference-type-map#{}",
+                        map.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    entries: map.entries,
+                    target_kind: map.target_kind,
+                    byte_len: bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    inflated_offset: map.offset as u64,
+                });
+        }
+        for packet in census.reference_state_packets {
+            let bytes = &stream.inflated[packet.offset..packet.end];
+            events
+                .reference_state_packets
+                .push(ParasolidDeltasReferenceStatePacket {
+                    id: format!(
+                        "nx:s{stream_ordinal}:deltas-reference-state#{}",
+                        packet.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    frames: packet
+                        .frames
+                        .into_iter()
+                        .map(|frame| ParasolidDeltasReferenceStateFrame {
+                            references: frame.references,
+                            state_words: frame.state_words,
+                            state_byte: frame.state_byte,
+                        })
+                        .collect(),
+                    terminal: packet.terminal,
+                    byte_len: bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    inflated_offset: packet.offset as u64,
+                });
+        }
+        for preamble in census.schema_reference_preambles {
+            let bytes = &stream.inflated[preamble.offset..preamble.end];
+            events
+                .schema_reference_preambles
+                .push(ParasolidDeltasSchemaReferencePreamble {
+                    id: format!(
+                        "nx:s{stream_ordinal}:deltas-schema-reference-preamble#{}",
+                        preamble.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    identity: preamble.identity,
+                    references: preamble.references,
+                    state_reference: (preamble.state_references != [1; 3])
+                        .then_some(preamble.state_references[1]),
+                    state_words: preamble.state_words,
+                    count: preamble.count,
+                    entries: preamble.entries,
+                    terminal_value: preamble.terminal_value,
+                    byte_len: bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    inflated_offset: preamble.offset as u64,
+                });
+        }
+        for packet in census.reference_marker_packets {
+            let bytes = &stream.inflated[packet.offset..packet.end];
+            events
+                .reference_marker_packets
+                .push(ParasolidDeltasReferenceMarkerPacket {
+                    id: format!(
+                        "nx:s{stream_ordinal}:deltas-reference-marker#{}",
+                        packet.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    reference: packet.reference,
+                    marker: packet.marker,
+                    byte_len: bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    inflated_offset: packet.offset as u64,
+                });
+        }
+        for packet in census.type_150_state_packets {
+            let bytes = &stream.inflated[packet.offset..packet.end];
+            events
+                .type_150_state_packets
+                .push(ParasolidDeltasType150StatePacket {
+                    id: format!(
+                        "nx:s{stream_ordinal}:deltas-type-150-state#{}",
+                        packet.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    references: packet.references,
+                    marker: packet.marker,
+                    values: packet.values,
+                    byte_len: bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    inflated_offset: packet.offset as u64,
+                });
+        }
+        for declaration in census.inline_schema_declarations {
+            let bytes = &stream.inflated[declaration.offset..declaration.end];
+            let fields = match declaration.fields {
+                crate::deltas::InlineSchemaFields::BodyHeader => {
+                    ParasolidDeltasInlineSchemaFields::BodyHeader
+                }
+                crate::deltas::InlineSchemaFields::Region {
+                    xmt,
+                    state_word,
+                    references,
+                } => ParasolidDeltasInlineSchemaFields::Region {
+                    xmt,
+                    state_word,
+                    references,
+                },
+                crate::deltas::InlineSchemaFields::AttdefList {
+                    xmt,
+                    slot_count,
+                    active_count,
+                    references,
+                } => ParasolidDeltasInlineSchemaFields::AttdefList {
+                    xmt,
+                    slot_count,
+                    active_count,
+                    references,
+                },
+                crate::deltas::InlineSchemaFields::Type70 {
+                    xmt,
+                    node_id,
+                    references,
+                    count,
+                    trailing_reference,
+                } => ParasolidDeltasInlineSchemaFields::Type70 {
+                    xmt,
+                    node_id,
+                    references,
+                    count,
+                    trailing_reference,
+                },
+                crate::deltas::InlineSchemaFields::Type100 {
+                    xmt,
+                    references,
+                    transform,
+                } => ParasolidDeltasInlineSchemaFields::Type100 {
+                    xmt,
+                    references,
+                    transform,
+                },
+                crate::deltas::InlineSchemaFields::Type101 {
+                    references,
+                    anchor_reference,
+                    state_words,
+                    terminal_value,
+                } => ParasolidDeltasInlineSchemaFields::Type101 {
+                    references,
+                    anchor_reference,
+                    state_words,
+                    terminal_value,
+                },
+                crate::deltas::InlineSchemaFields::Type101Compact => {
+                    ParasolidDeltasInlineSchemaFields::Type101Compact
+                }
+                crate::deltas::InlineSchemaFields::Type38 {
+                    xmt,
+                    node_id,
+                    leading_references,
+                    leading_statuses,
+                    marker,
+                    linked_references,
+                    state_references,
+                    numeric_values,
+                } => ParasolidDeltasInlineSchemaFields::Type38 {
+                    xmt,
+                    node_id,
+                    leading_references,
+                    leading_statuses: (leading_statuses != [1; 5]).then_some(leading_statuses),
+                    marker,
+                    linked_references,
+                    state_references,
+                    numeric_values,
+                },
+                crate::deltas::InlineSchemaFields::Type41 {
+                    reference,
+                    numeric_values,
+                } => ParasolidDeltasInlineSchemaFields::Type41 {
+                    reference,
+                    numeric_values,
+                },
+            };
+            events
+                .inline_schema_declarations
+                .push(ParasolidDeltasInlineSchemaDeclaration {
+                    id: format!(
+                        "nx:s{stream_ordinal}:deltas-inline-schema#{}",
+                        declaration.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    fields,
+                    byte_len: bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    inflated_offset: declaration.offset as u64,
+                });
+        }
+        for state in census.inline_body_states {
+            let bytes = &stream.inflated[state.offset..state.end];
+            let fields = match state.fields {
+                crate::deltas::InlineBodyStateFields::Compact { reference } => {
+                    ParasolidDeltasInlineBodyStateFields::Compact { reference }
+                }
+                crate::deltas::InlineBodyStateFields::Revision {
+                    node_id,
+                    references,
+                    state_bytes,
+                } => ParasolidDeltasInlineBodyStateFields::Revision {
+                    node_id,
+                    references,
+                    state_bytes,
+                },
+            };
+            events
+                .inline_body_states
+                .push(ParasolidDeltasInlineBodyState {
+                    id: format!(
+                        "nx:s{stream_ordinal}:deltas-inline-body-state#{}",
+                        state.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    fields,
+                    byte_len: bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                    inflated_offset: state.offset as u64,
+                });
+        }
+    }
+    events
+        .transmit_headers
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .terminal_null_references
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events.records.sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .tombstones
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .body_revisions
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .term_use_numeric_tails
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .tagged_reference_lanes
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .reference_type_maps
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .reference_state_packets
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .schema_reference_preambles
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .reference_marker_packets
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .type_150_state_packets
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .inline_schema_declarations
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .inline_body_states
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+        .residual_spans
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    events
+}
+
+fn push_deltas_residual_span(
+    residual_spans: &mut Vec<ParasolidDeltasResidualSpan>,
+    stream_ordinal: usize,
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+) {
+    let residual = &bytes[start..end];
+    residual_spans.push(ParasolidDeltasResidualSpan {
+        id: format!("nx:s{stream_ordinal}:deltas-residual#{start}"),
+        stream_ordinal: stream_ordinal as u32,
+        byte_len: residual.len() as u64,
+        sha256: cadmpeg_ir::hash::sha256_hex(residual),
+        inflated_offset: start as u64,
+    });
+}
+
 /// Shared skeleton for Parasolid record families read from the cached per-stream
 /// record view. It owns the stream loop, the `nx:s{ordinal}:{ID_STEM}#{xmt}`
 /// identity, and the sort by identity; each family supplies only its cached row
@@ -261,8 +1133,8 @@ pub struct ParasolidBlendBoundRecord {
     pub boundary_index: u32,
     /// Cross-reference index of the blend surface.
     pub blend_surface_xmt: u32,
-    /// Whether the record tag uses the `0xff` envelope escape.
-    pub escaped: bool,
+    /// Serialized partition/deltas and direct/escaped framing.
+    pub framing: crate::intersection::BlendBoundFraming,
     /// Record tag offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -291,7 +1163,7 @@ impl ParasolidScanRecords for ParasolidBlendBoundRecord {
             sense: row.sense,
             boundary_index: row.boundary_index,
             blend_surface_xmt: row.blend_surface,
-            escaped: row.escaped,
+            framing: row.framing,
             inflated_offset: row.pos as u64,
         }
     }
@@ -505,22 +1377,25 @@ pub struct ParasolidIntersectionRecord {
 
 /// Decode complete typed source records for retained intersection constructions.
 pub(crate) fn parasolid_intersection_records(
-    parsed: &ParsedStreams,
+    streams: &[Stream],
 ) -> Vec<ParasolidIntersectionRecord> {
-    per_parasolid_stream::<ParasolidIntersectionRecord>(parsed)
+    per_parasolid_scan::<ParasolidIntersectionRecord>(streams)
 }
 
-impl ParasolidStreamRecords for ParasolidIntersectionRecord {
+impl ParasolidScanRecords for ParasolidIntersectionRecord {
     type Row = crate::topology::CompositeCurve;
     type Record = ParasolidIntersectionRecord;
     const ID_STEM: &'static str = "intersection-record";
-    fn rows(view: &StreamView) -> &[Self::Row] {
-        &view.intersections.constructions
+    fn scan(bytes: &[u8]) -> Vec<Self::Row> {
+        crate::topology::composite_curves(bytes)
+            .into_iter()
+            .chain(crate::topology::intersection_data_curves(bytes))
+            .collect()
     }
     fn xmt(row: &Self::Row) -> u32 {
         row.xmt
     }
-    fn record(id: String, stream_ordinal: u32, row: &Self::Row) -> Self::Record {
+    fn record(id: String, stream_ordinal: u32, row: Self::Row) -> Self::Record {
         ParasolidIntersectionRecord {
             id,
             stream_ordinal,
@@ -566,50 +1441,63 @@ pub struct ParasolidAttributeDefinition {
     /// Zero-based embedded stream ordinal.
     pub stream_ordinal: u32,
     /// Stream-local definition record identity.
-    pub xmt: u16,
+    pub xmt: u32,
+    /// Stream-local next-definition identity; `1` is null.
+    pub next_definition_xmt: u32,
+    /// Stream-local type-79 identifier identity.
+    pub identifier_xmt: u32,
+    /// Offset of the resolved type-79 identifier in the inflated stream.
+    pub identifier_inflated_offset: u64,
     /// Exact printable attribute class name.
     pub name: String,
+    /// Numeric attribute type identifier.
+    pub type_id: u32,
+    /// Ordered actions for the eight logged event families.
+    pub action_codes: [u8; 8],
+    /// Stream-local field-name-list identity; `1` is null.
+    pub field_names_xmt: u32,
+    /// Ordered legal-owner flags.
+    pub legal_owner_flags: [u8; 16],
     /// Declared number of fields.
     pub field_count: u32,
-    /// Stream-local identity of the following field record.
-    pub field_record_xmt: u16,
-    /// Ordered catalog references in the field-record header.
-    pub field_record_references: [u16; 2],
-    /// Two field-record header words following the catalog references.
-    pub field_record_header_words: [u16; 2],
-    /// Exact 26-byte descriptor prefix following the field-record header.
-    pub field_descriptor_prefix: [u8; 26],
-    /// Typed primary storage declared by the descriptor's `03` atom.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub field_storage: Option<ParasolidAttributeFieldStorage>,
     /// One serialized code for every declared field.
     pub field_codes: Vec<u8>,
     /// Offset of the declaration in the inflated stream.
     pub inflated_offset: u64,
 }
 
-/// Primary storage alphabet declared by a Parasolid attribute field descriptor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ParasolidAttributeFieldStorage {
-    /// Void or flag storage.
-    Void,
-    /// Component/reference or string storage.
-    Component,
-    /// Binary64 floating-point storage.
-    Double,
+/// Counted Parasolid type-99 field-name reference record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidFieldNamesRecord {
+    /// Globally unique native-record identity.
+    pub id: String,
+    /// Zero-based embedded stream ordinal.
+    pub stream_ordinal: u32,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Ordered stream-local character or Unicode value references.
+    pub name_xmts: Vec<u32>,
+    /// Exact framed record length.
+    pub byte_len: u64,
+    /// Offset of the record tag in the inflated stream.
+    pub inflated_offset: u64,
 }
 
-pub(crate) fn parasolid_attribute_field_storage(
-    descriptor: &[u8; 26],
-) -> Option<ParasolidAttributeFieldStorage> {
-    (descriptor[4] == 0x03).then_some(())?;
-    match descriptor[5] {
-        0x00 => Some(ParasolidAttributeFieldStorage::Void),
-        0x05 => Some(ParasolidAttributeFieldStorage::Component),
-        0x06 => Some(ParasolidAttributeFieldStorage::Double),
-        _ => None,
-    }
+/// Complete type-80 declaration-to-field-name-list relation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidAttributeFieldNames {
+    /// Globally unique relation identity.
+    pub id: String,
+    /// Zero-based embedded stream ordinal.
+    pub stream_ordinal: u32,
+    /// Owning type-80 declaration.
+    pub attribute_definition: String,
+    /// Uniquely resolved type-99 field-name record.
+    pub field_names_record: String,
+    /// Ordered uniquely resolved type-84 or type-98 records.
+    pub value_records: Vec<String>,
+    /// Ordered exact field names.
+    pub names: Vec<String>,
 }
 
 /// Explicit topology-record ownership of one Parasolid attribute list.
@@ -645,10 +1533,12 @@ pub struct ParasolidEntity51Record {
     pub flags: u32,
     /// Serialized sequence value.
     pub sequence: u32,
-    /// Layout discriminator.
-    pub discriminator: u16,
-    /// Ordered stream-local references.
-    pub references: Vec<u32>,
+    /// Stream-local type-80 attribute-definition identity.
+    pub definition_xmt: u32,
+    /// Five fixed leading stream-local references.
+    pub leading_references: [u32; 5],
+    /// Variable trailing stream-local references counted by `flags`.
+    pub trailing_references: Vec<u32>,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -706,6 +1596,90 @@ pub struct ParasolidEntity53DoubleRecord {
     pub inflated_offset: u64,
 }
 
+/// Parasolid vector-shaped attribute-value family.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ParasolidVectorValueKind {
+    /// Type-85 point values.
+    Points,
+    /// Type-86 free-vector values.
+    Vectors,
+    /// Type-89 direction values.
+    Directions,
+}
+
+/// Counted Parasolid type-85, type-86, or type-89 vector-shaped value record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParasolidEntityVectorRecord {
+    /// Globally unique native-record identity.
+    pub id: String,
+    /// Zero-based inflated Parasolid stream ordinal.
+    pub stream_ordinal: u32,
+    /// Exact value family.
+    pub kind: ParasolidVectorValueKind,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Ordered finite xyz values.
+    pub values: Vec<[f64; 3]>,
+    /// Exact framed record length.
+    pub byte_len: u64,
+    /// Offset of the record tag in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Counted Parasolid type-87 axis-value record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParasolidEntity57AxisRecord {
+    /// Globally unique native-record identity.
+    pub id: String,
+    /// Zero-based inflated Parasolid stream ordinal.
+    pub stream_ordinal: u32,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Ordered axes, each retaining its two serialized xyz vectors.
+    pub values: Vec<[[f64; 3]; 2]>,
+    /// Exact framed record length.
+    pub byte_len: u64,
+    /// Offset of the record tag in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Counted Parasolid type-88 tag-value record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidEntity58TagRecord {
+    /// Globally unique native-record identity.
+    pub id: String,
+    /// Zero-based inflated Parasolid stream ordinal.
+    pub stream_ordinal: u32,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Ordered exact tag values.
+    pub values: Vec<u32>,
+    /// Exact framed record length.
+    pub byte_len: u64,
+    /// Offset of the record tag in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Counted Parasolid type-98 Unicode-value record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidEntity62UnicodeRecord {
+    /// Globally unique native-record identity.
+    pub id: String,
+    /// Zero-based inflated Parasolid stream ordinal.
+    pub stream_ordinal: u32,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Ordered exact big-endian UTF-16 code units.
+    pub code_units: Vec<u16>,
+    /// Validated Unicode scalar string.
+    pub value: String,
+    /// Exact framed record length.
+    pub byte_len: u64,
+    /// Offset of the record tag in the inflated stream.
+    pub inflated_offset: u64,
+}
+
 /// Numeric value-record family referenced by a type-81 record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -756,6 +1730,27 @@ pub struct ParasolidEntity51StringUse {
     pub inflated_offset: u64,
 }
 
+/// Exact type-81 reference to one uniquely resolved structured value record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidEntity51StructuredUse {
+    /// Globally unique use identity.
+    pub id: String,
+    /// Zero-based inflated Parasolid stream ordinal.
+    pub stream_ordinal: u32,
+    /// Owning type-81 record.
+    pub entity_51_record: String,
+    /// Zero-based position in the type-81 reference lane.
+    pub reference_ordinal: u32,
+    /// Stream-local referenced xmt.
+    pub referenced_xmt: u32,
+    /// Structured value-record family.
+    pub kind: ParasolidAttributeFieldValueKind,
+    /// Uniquely resolved structured value record.
+    pub value_record: String,
+    /// Offset of the owning type-81 record in the inflated stream.
+    pub inflated_offset: u64,
+}
+
 /// Resolved registered class of one Parasolid type-81 attribute instance.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidAttributeClassUse {
@@ -765,12 +1760,63 @@ pub struct ParasolidAttributeClassUse {
     pub stream_ordinal: u32,
     /// Type-81 attribute-instance record.
     pub entity_51_record: String,
-    /// Class discriminator serialized by the type-81 instance.
-    pub class_discriminator: u16,
-    /// Stream-local XMT of the matched type-79 definition.
-    pub definition_xmt: u16,
+    /// Stream-local XMT of the matched type-80 definition.
+    pub definition_xmt: u32,
     /// Uniquely matched attribute definition.
     pub attribute_definition: String,
+}
+
+/// Value-record family assigned to one declared Parasolid attribute field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ParasolidAttributeFieldValueKind {
+    /// Type-82 integer values.
+    UnsignedIntegers,
+    /// Type-83 binary64 values.
+    Doubles,
+    /// Type-84 character values.
+    String,
+    /// Type-85 point values.
+    Points,
+    /// Type-86 vector values.
+    Vectors,
+    /// Type-87 axis values.
+    Axes,
+    /// Type-88 tag values.
+    Tags,
+    /// Type-89 direction values.
+    Directions,
+    /// Type-98 Unicode values.
+    Unicode,
+}
+
+/// One uniquely typed type-81 field reference joined to its type-80 declaration.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidAttributeFieldUse {
+    /// Globally unique relation identity.
+    pub id: String,
+    /// Zero-based inflated Parasolid stream ordinal.
+    pub stream_ordinal: u32,
+    /// Resolved class relation for the attribute instance.
+    pub attribute_class_use: String,
+    /// Type-81 attribute-instance record.
+    pub entity_51_record: String,
+    /// Uniquely matched attribute definition.
+    pub attribute_definition: String,
+    /// Zero-based position in the type-80 field declaration.
+    pub field_ordinal: u32,
+    /// Declared type-80 field code.
+    pub field_code: u8,
+    /// Zero-based position in the complete type-81 reference lane.
+    pub reference_ordinal: u32,
+    /// Resolved value-record family.
+    pub value_kind: ParasolidAttributeFieldValueKind,
+    /// Type-81-to-value relation carrying this field.
+    pub value_use: String,
+    /// Uniquely resolved value record.
+    pub value_record: String,
+    /// Offset of the owning type-81 record in the inflated stream.
+    pub inflated_offset: u64,
 }
 
 /// Resolved class of one topology-owned Parasolid attribute instance.
@@ -782,10 +1828,10 @@ pub struct ParasolidTopologyAttributeClassUse {
     pub topology_attribute_reference: String,
     /// Topology-owned type-81 attribute-instance record.
     pub entity_51_record: String,
-    /// Class discriminator serialized by the type-81 instance.
-    pub class_discriminator: u16,
-    /// Stream-local XMT of the matched type-79 definition.
-    pub definition_xmt: u16,
+    /// Resolved class relation for the attribute instance.
+    pub attribute_class_use: String,
+    /// Stream-local XMT of the matched type-80 definition.
+    pub definition_xmt: u32,
     /// Uniquely matched attribute definition.
     pub attribute_definition: String,
 }
@@ -806,20 +1852,131 @@ pub fn parasolid_attribute_definitions(streams: &[Stream]) -> Vec<ParasolidAttri
                     ),
                     stream_ordinal: stream_ordinal as u32,
                     xmt: definition.xmt,
+                    next_definition_xmt: definition.next_definition_xmt,
+                    identifier_xmt: definition.identifier_xmt,
+                    identifier_inflated_offset: definition.identifier_offset as u64,
                     name: definition.name.to_string(),
+                    type_id: definition.type_id,
+                    action_codes: definition.action_codes,
+                    field_names_xmt: definition.field_names_xmt,
+                    legal_owner_flags: definition.legal_owner_flags,
                     field_count: definition.field_count,
-                    field_record_xmt: definition.field_record_xmt,
-                    field_record_references: definition.field_record_references,
-                    field_record_header_words: definition.field_record_header_words,
-                    field_descriptor_prefix: definition.field_descriptor_prefix,
-                    field_storage: parasolid_attribute_field_storage(
-                        &definition.field_descriptor_prefix,
-                    ),
                     field_codes: definition.field_codes.to_vec(),
                     inflated_offset: definition.offset as u64,
                 })
         })
         .collect()
+}
+
+/// Decode every counted type-99 attribute field-name record.
+pub fn parasolid_field_names_records(streams: &[Stream]) -> Vec<ParasolidFieldNamesRecord> {
+    let mut records = streams
+        .iter()
+        .enumerate()
+        .filter(|(_, stream)| stream.kind.is_parasolid())
+        .flat_map(|(stream_ordinal, stream)| {
+            crate::parasolid::field_names_records(&stream.inflated)
+                .into_iter()
+                .map(move |record| ParasolidFieldNamesRecord {
+                    id: format!(
+                        "nx:s{stream_ordinal}:field-names#{}-{}",
+                        record.xmt, record.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    xmt: record.xmt,
+                    name_xmts: record.name_xmts,
+                    byte_len: record.byte_len as u64,
+                    inflated_offset: record.offset as u64,
+                })
+        })
+        .collect::<Vec<_>>();
+    records.sort_by(|first, second| first.id.cmp(&second.id));
+    records
+}
+
+/// Resolve complete type-80 field-name lists through type-99 and character records.
+pub fn parasolid_attribute_field_names(
+    definitions: &[ParasolidAttributeDefinition],
+    field_names: &[ParasolidFieldNamesRecord],
+    strings: &[ParasolidEntity54StringRecord],
+    unicode: &[ParasolidEntity62UnicodeRecord],
+) -> Vec<ParasolidAttributeFieldNames> {
+    let mut definitions_by_identity =
+        BTreeMap::<(u32, u32), Vec<&ParasolidAttributeDefinition>>::new();
+    for definition in definitions {
+        definitions_by_identity
+            .entry((definition.stream_ordinal, definition.xmt))
+            .or_default()
+            .push(definition);
+    }
+    let mut lists = BTreeMap::<(u32, u32), Vec<&ParasolidFieldNamesRecord>>::new();
+    for list in field_names {
+        lists
+            .entry((list.stream_ordinal, list.xmt))
+            .or_default()
+            .push(list);
+    }
+    let mut names_by_xmt = BTreeMap::<(u32, u32), Vec<(&str, &str)>>::new();
+    for string in strings {
+        names_by_xmt
+            .entry((string.stream_ordinal, string.xmt))
+            .or_default()
+            .push((string.id.as_str(), string.value.as_str()));
+    }
+    for value in unicode {
+        names_by_xmt
+            .entry((value.stream_ordinal, value.xmt))
+            .or_default()
+            .push((value.id.as_str(), value.value.as_str()));
+    }
+    let mut relations = definitions_by_identity
+        .values()
+        .filter_map(|definitions| {
+            let [definition] = definitions.as_slice() else {
+                return None;
+            };
+            Some(*definition)
+        })
+        .filter(|definition| definition.field_names_xmt > 1)
+        .filter_map(|definition| {
+            let [list] = lists
+                .get(&(definition.stream_ordinal, definition.field_names_xmt))?
+                .as_slice()
+            else {
+                return None;
+            };
+            (list.name_xmts.len() == definition.field_codes.len()).then_some(())?;
+            let resolved = list
+                .name_xmts
+                .iter()
+                .map(|xmt| {
+                    let [name] = names_by_xmt
+                        .get(&(definition.stream_ordinal, *xmt))?
+                        .as_slice()
+                    else {
+                        return None;
+                    };
+                    Some(*name)
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(ParasolidAttributeFieldNames {
+                id: format!(
+                    "nx:s{}:attribute-field-names#{}",
+                    definition.stream_ordinal, definition.xmt
+                ),
+                stream_ordinal: definition.stream_ordinal,
+                attribute_definition: definition.id.clone(),
+                field_names_record: list.id.clone(),
+                value_records: resolved.iter().map(|(id, _)| (*id).to_string()).collect(),
+                names: resolved
+                    .iter()
+                    .map(|(_, value)| (*value).to_string())
+                    .collect(),
+            })
+        })
+        .collect::<Vec<_>>();
+    relations.sort_by(|first, second| first.id.cmp(&second.id));
+    relations
 }
 
 /// Retain complete typed rolling-ball blend records from all Parasolid streams.
@@ -931,8 +2088,9 @@ pub fn parasolid_entity_51_records(streams: &[Stream]) -> Vec<ParasolidEntity51R
                     xmt: record.xmt,
                     flags: record.flags,
                     sequence: record.sequence,
-                    discriminator: record.discriminator,
-                    references: record.references,
+                    definition_xmt: record.definition_xmt,
+                    leading_references: record.leading_references,
+                    trailing_references: record.trailing_references,
                     byte_len: record.byte_len as u64,
                     inflated_offset: record.offset as u64,
                 })
@@ -1026,6 +2184,141 @@ pub fn parasolid_entity_53_double_records(
     records
 }
 
+/// Decode every counted type-85, type-86, and type-89 vector-shaped value record.
+pub fn parasolid_entity_vector_records(streams: &[Stream]) -> Vec<ParasolidEntityVectorRecord> {
+    let mut records = Vec::new();
+    for (stream_ordinal, stream) in streams
+        .iter()
+        .enumerate()
+        .filter(|(_, stream)| stream.kind.is_parasolid())
+    {
+        let mut retain = |kind, family: &str, xmt, offset, byte_len, values| {
+            records.push(ParasolidEntityVectorRecord {
+                id: format!("nx:s{stream_ordinal}:entity-{family}#{xmt}-{offset}"),
+                stream_ordinal: stream_ordinal as u32,
+                kind,
+                xmt,
+                values,
+                byte_len: byte_len as u64,
+                inflated_offset: offset as u64,
+            });
+        };
+        for record in crate::parasolid::entity_55_point_records(&stream.inflated) {
+            retain(
+                ParasolidVectorValueKind::Points,
+                "55-points",
+                record.xmt,
+                record.offset,
+                record.byte_len,
+                record.values,
+            );
+        }
+        for record in crate::parasolid::entity_56_vector_records(&stream.inflated) {
+            retain(
+                ParasolidVectorValueKind::Vectors,
+                "56-vectors",
+                record.xmt,
+                record.offset,
+                record.byte_len,
+                record.values,
+            );
+        }
+        for record in crate::parasolid::entity_59_direction_records(&stream.inflated) {
+            retain(
+                ParasolidVectorValueKind::Directions,
+                "59-directions",
+                record.xmt,
+                record.offset,
+                record.byte_len,
+                record.values,
+            );
+        }
+    }
+    records.sort_by(|first, second| first.id.cmp(&second.id));
+    records
+}
+
+/// Decode every counted type-87 axis-value record.
+pub fn parasolid_entity_57_axis_records(streams: &[Stream]) -> Vec<ParasolidEntity57AxisRecord> {
+    let mut records = streams
+        .iter()
+        .enumerate()
+        .filter(|(_, stream)| stream.kind.is_parasolid())
+        .flat_map(|(stream_ordinal, stream)| {
+            crate::parasolid::entity_57_axis_records(&stream.inflated)
+                .into_iter()
+                .map(move |record| ParasolidEntity57AxisRecord {
+                    id: format!(
+                        "nx:s{stream_ordinal}:entity-57-axes#{}-{}",
+                        record.xmt, record.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    xmt: record.xmt,
+                    values: record.values,
+                    byte_len: record.byte_len as u64,
+                    inflated_offset: record.offset as u64,
+                })
+        })
+        .collect::<Vec<_>>();
+    records.sort_by(|first, second| first.id.cmp(&second.id));
+    records
+}
+
+/// Decode every counted type-88 tag-value record.
+pub fn parasolid_entity_58_tag_records(streams: &[Stream]) -> Vec<ParasolidEntity58TagRecord> {
+    let mut records = streams
+        .iter()
+        .enumerate()
+        .filter(|(_, stream)| stream.kind.is_parasolid())
+        .flat_map(|(stream_ordinal, stream)| {
+            crate::parasolid::entity_58_tag_records(&stream.inflated)
+                .into_iter()
+                .map(move |record| ParasolidEntity58TagRecord {
+                    id: format!(
+                        "nx:s{stream_ordinal}:entity-58-tags#{}-{}",
+                        record.xmt, record.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    xmt: record.xmt,
+                    values: record.values,
+                    byte_len: record.byte_len as u64,
+                    inflated_offset: record.offset as u64,
+                })
+        })
+        .collect::<Vec<_>>();
+    records.sort_by(|first, second| first.id.cmp(&second.id));
+    records
+}
+
+/// Decode every counted type-98 Unicode-value record.
+pub fn parasolid_entity_62_unicode_records(
+    streams: &[Stream],
+) -> Vec<ParasolidEntity62UnicodeRecord> {
+    let mut records = streams
+        .iter()
+        .enumerate()
+        .filter(|(_, stream)| stream.kind.is_parasolid())
+        .flat_map(|(stream_ordinal, stream)| {
+            crate::parasolid::entity_62_unicode_records(&stream.inflated)
+                .into_iter()
+                .map(move |record| ParasolidEntity62UnicodeRecord {
+                    id: format!(
+                        "nx:s{stream_ordinal}:entity-62-unicode#{}-{}",
+                        record.xmt, record.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    xmt: record.xmt,
+                    code_units: record.code_units,
+                    value: record.value,
+                    byte_len: record.byte_len as u64,
+                    inflated_offset: record.offset as u64,
+                })
+        })
+        .collect::<Vec<_>>();
+    records.sort_by(|first, second| first.id.cmp(&second.id));
+    records
+}
+
 /// Join type-81 reference slots to unique same-stream numeric value records.
 pub fn parasolid_entity_51_numeric_uses(
     entities: &[ParasolidEntity51Record],
@@ -1047,7 +2340,10 @@ pub fn parasolid_entity_51_numeric_uses(
     }
     let mut uses = Vec::new();
     for entity in entities {
-        for (reference_ordinal, referenced_xmt) in entity.references.iter().copied().enumerate() {
+        for (trailing_ordinal, referenced_xmt) in
+            entity.trailing_references.iter().copied().enumerate()
+        {
+            let reference_ordinal = trailing_ordinal + 5;
             let Some([(kind, value_record)]) = values
                 .get(&(entity.stream_ordinal, referenced_xmt))
                 .map(Vec::as_slice)
@@ -1087,7 +2383,10 @@ pub fn parasolid_entity_51_string_uses(
     }
     let mut uses = Vec::new();
     for entity in entities {
-        for (reference_ordinal, referenced_xmt) in entity.references.iter().copied().enumerate() {
+        for (trailing_ordinal, referenced_xmt) in
+            entity.trailing_references.iter().copied().enumerate()
+        {
+            let reference_ordinal = trailing_ordinal + 5;
             let Some([string]) = strings_by_identity
                 .get(&(entity.stream_ordinal, referenced_xmt))
                 .map(Vec::as_slice)
@@ -1112,21 +2411,107 @@ pub fn parasolid_entity_51_string_uses(
     uses
 }
 
-/// Resolve topology-owned attribute instances through their class discriminator.
+/// Join type-81 reference slots to unique same-stream structured value records.
+pub fn parasolid_entity_51_structured_uses(
+    entities: &[ParasolidEntity51Record],
+    vectors: &[ParasolidEntityVectorRecord],
+    axes: &[ParasolidEntity57AxisRecord],
+    tags: &[ParasolidEntity58TagRecord],
+    unicode: &[ParasolidEntity62UnicodeRecord],
+) -> Vec<ParasolidEntity51StructuredUse> {
+    let mut values = BTreeMap::<(u32, u32), Vec<(ParasolidAttributeFieldValueKind, &str)>>::new();
+    for record in vectors {
+        let kind = match record.kind {
+            ParasolidVectorValueKind::Points => ParasolidAttributeFieldValueKind::Points,
+            ParasolidVectorValueKind::Vectors => ParasolidAttributeFieldValueKind::Vectors,
+            ParasolidVectorValueKind::Directions => ParasolidAttributeFieldValueKind::Directions,
+        };
+        values
+            .entry((record.stream_ordinal, record.xmt))
+            .or_default()
+            .push((kind, record.id.as_str()));
+    }
+    for (kind, stream_ordinal, xmt, id) in axes
+        .iter()
+        .map(|record| {
+            (
+                ParasolidAttributeFieldValueKind::Axes,
+                record.stream_ordinal,
+                record.xmt,
+                record.id.as_str(),
+            )
+        })
+        .chain(tags.iter().map(|record| {
+            (
+                ParasolidAttributeFieldValueKind::Tags,
+                record.stream_ordinal,
+                record.xmt,
+                record.id.as_str(),
+            )
+        }))
+        .chain(unicode.iter().map(|record| {
+            (
+                ParasolidAttributeFieldValueKind::Unicode,
+                record.stream_ordinal,
+                record.xmt,
+                record.id.as_str(),
+            )
+        }))
+    {
+        values
+            .entry((stream_ordinal, xmt))
+            .or_default()
+            .push((kind, id));
+    }
+    let mut uses = Vec::new();
+    for entity in entities {
+        for (trailing_ordinal, referenced_xmt) in
+            entity.trailing_references.iter().copied().enumerate()
+        {
+            let reference_ordinal = trailing_ordinal + 5;
+            let Some([(kind, value_record)]) = values
+                .get(&(entity.stream_ordinal, referenced_xmt))
+                .map(Vec::as_slice)
+            else {
+                continue;
+            };
+            uses.push(ParasolidEntity51StructuredUse {
+                id: format!(
+                    "nx:s{}:entity-51-structured-use#{}-{}-{reference_ordinal}",
+                    entity.stream_ordinal, entity.xmt, entity.inflated_offset
+                ),
+                stream_ordinal: entity.stream_ordinal,
+                entity_51_record: entity.id.clone(),
+                reference_ordinal: reference_ordinal as u32,
+                referenced_xmt,
+                kind: *kind,
+                value_record: (*value_record).to_string(),
+                inflated_offset: entity.inflated_offset,
+            });
+        }
+    }
+    uses.sort_by(|first, second| first.id.cmp(&second.id));
+    uses
+}
+
+/// Resolve topology-owned attribute instances through their type-80 definition.
 pub fn parasolid_topology_attribute_class_uses(
     topology_references: &[ParasolidTopologyAttributeListReference],
     class_uses: &[ParasolidAttributeClassUse],
 ) -> Vec<ParasolidTopologyAttributeClassUse> {
-    let class_uses = class_uses
-        .iter()
-        .map(|class_use| (class_use.entity_51_record.as_str(), class_use))
-        .collect::<BTreeMap<_, _>>();
+    let mut class_uses_by_entity = BTreeMap::<&str, Vec<&ParasolidAttributeClassUse>>::new();
+    for class_use in class_uses {
+        class_uses_by_entity
+            .entry(class_use.entity_51_record.as_str())
+            .or_default()
+            .push(class_use);
+    }
     let mut uses = Vec::new();
     for reference in topology_references {
         let Some(entity_id) = reference.attribute_list_record.as_deref() else {
             continue;
         };
-        let Some(class_use) = class_uses.get(entity_id) else {
+        let Some([class_use]) = class_uses_by_entity.get(entity_id).map(Vec::as_slice) else {
             continue;
         };
         uses.push(ParasolidTopologyAttributeClassUse {
@@ -1136,7 +2521,7 @@ pub fn parasolid_topology_attribute_class_uses(
             ),
             topology_attribute_reference: reference.id.clone(),
             entity_51_record: class_use.entity_51_record.clone(),
-            class_discriminator: class_use.class_discriminator,
+            attribute_class_use: class_use.id.clone(),
             definition_xmt: class_use.definition_xmt,
             attribute_definition: class_use.attribute_definition.clone(),
         });
@@ -1145,13 +2530,13 @@ pub fn parasolid_topology_attribute_class_uses(
     uses
 }
 
-/// Resolve every type-81 attribute instance through its class discriminator.
+/// Resolve every type-81 attribute instance through its type-80 definition reference.
 pub fn parasolid_attribute_class_uses(
     entities: &[ParasolidEntity51Record],
     definitions: &[ParasolidAttributeDefinition],
 ) -> Vec<ParasolidAttributeClassUse> {
     let mut definitions_by_identity =
-        BTreeMap::<(u32, u16), Vec<&ParasolidAttributeDefinition>>::new();
+        BTreeMap::<(u32, u32), Vec<&ParasolidAttributeDefinition>>::new();
     for definition in definitions {
         definitions_by_identity
             .entry((definition.stream_ordinal, definition.xmt))
@@ -1161,7 +2546,7 @@ pub fn parasolid_attribute_class_uses(
     let mut uses = entities
         .iter()
         .filter_map(|entity| {
-            let definition_xmt = entity.discriminator.checked_add(1)?;
+            let definition_xmt = entity.definition_xmt;
             let [definition] = definitions_by_identity
                 .get(&(entity.stream_ordinal, definition_xmt))?
                 .as_slice()
@@ -1175,7 +2560,6 @@ pub fn parasolid_attribute_class_uses(
                 ),
                 stream_ordinal: entity.stream_ordinal,
                 entity_51_record: entity.id.clone(),
-                class_discriminator: entity.discriminator,
                 definition_xmt,
                 attribute_definition: definition.id.clone(),
             })
@@ -1183,6 +2567,214 @@ pub fn parasolid_attribute_class_uses(
         .collect::<Vec<_>>();
     uses.sort_by(|first, second| first.id.cmp(&second.id));
     uses
+}
+
+/// Assign uniquely resolved attribute values to declared type-80 fields.
+pub fn parasolid_attribute_field_uses(
+    class_uses: &[ParasolidAttributeClassUse],
+    definitions: &[ParasolidAttributeDefinition],
+    numeric_uses: &[ParasolidEntity51NumericUse],
+    string_uses: &[ParasolidEntity51StringUse],
+    structured_uses: &[ParasolidEntity51StructuredUse],
+) -> Vec<ParasolidAttributeFieldUse> {
+    let mut classes = BTreeMap::<&str, Vec<&ParasolidAttributeClassUse>>::new();
+    for class_use in class_uses {
+        classes
+            .entry(class_use.entity_51_record.as_str())
+            .or_default()
+            .push(class_use);
+    }
+    let mut definitions_by_id = BTreeMap::<&str, Vec<&ParasolidAttributeDefinition>>::new();
+    for definition in definitions {
+        definitions_by_id
+            .entry(definition.id.as_str())
+            .or_default()
+            .push(definition);
+    }
+    let mut candidates = BTreeMap::<(&str, u32), Vec<_>>::new();
+    for numeric_use in numeric_uses {
+        let value_kind = match numeric_use.kind {
+            ParasolidEntity51NumericKind::UnsignedIntegers => {
+                ParasolidAttributeFieldValueKind::UnsignedIntegers
+            }
+            ParasolidEntity51NumericKind::Doubles => ParasolidAttributeFieldValueKind::Doubles,
+        };
+        candidates
+            .entry((
+                numeric_use.entity_51_record.as_str(),
+                numeric_use.reference_ordinal,
+            ))
+            .or_default()
+            .push((
+                numeric_use.stream_ordinal,
+                value_kind,
+                numeric_use.id.as_str(),
+                numeric_use.value_record.as_str(),
+                numeric_use.inflated_offset,
+            ));
+    }
+    for string_use in string_uses {
+        candidates
+            .entry((
+                string_use.entity_51_record.as_str(),
+                string_use.reference_ordinal,
+            ))
+            .or_default()
+            .push((
+                string_use.stream_ordinal,
+                ParasolidAttributeFieldValueKind::String,
+                string_use.id.as_str(),
+                string_use.string_record.as_str(),
+                string_use.inflated_offset,
+            ));
+    }
+    for structured_use in structured_uses {
+        candidates
+            .entry((
+                structured_use.entity_51_record.as_str(),
+                structured_use.reference_ordinal,
+            ))
+            .or_default()
+            .push((
+                structured_use.stream_ordinal,
+                structured_use.kind,
+                structured_use.id.as_str(),
+                structured_use.value_record.as_str(),
+                structured_use.inflated_offset,
+            ));
+    }
+    let mut uses = candidates
+        .into_iter()
+        .filter_map(|((entity_51_record, reference_ordinal), candidates)| {
+            let [(stream_ordinal, value_kind, value_use, value_record, inflated_offset)] =
+                candidates.as_slice()
+            else {
+                return None;
+            };
+            let [class_use] = classes.get(entity_51_record)?.as_slice() else {
+                return None;
+            };
+            if class_use.stream_ordinal != *stream_ordinal {
+                return None;
+            }
+            let [definition] = definitions_by_id
+                .get(class_use.attribute_definition.as_str())?
+                .as_slice()
+            else {
+                return None;
+            };
+            let field_ordinal = reference_ordinal.checked_sub(5)?;
+            let field_code = *definition.field_codes.get(field_ordinal as usize)?;
+            matches!(
+                (field_code, value_kind),
+                (1, ParasolidAttributeFieldValueKind::UnsignedIntegers)
+                    | (2, ParasolidAttributeFieldValueKind::Doubles)
+                    | (3, ParasolidAttributeFieldValueKind::String)
+                    | (4, ParasolidAttributeFieldValueKind::Points)
+                    | (5, ParasolidAttributeFieldValueKind::Vectors)
+                    | (6, ParasolidAttributeFieldValueKind::Directions)
+                    | (7, ParasolidAttributeFieldValueKind::Axes)
+                    | (8, ParasolidAttributeFieldValueKind::Tags)
+                    | (10, ParasolidAttributeFieldValueKind::Unicode)
+            )
+            .then_some(())?;
+            let (_, class_key) = class_use.id.rsplit_once('#')?;
+            Some(ParasolidAttributeFieldUse {
+                id: format!("nx:s{stream_ordinal}:attribute-field-use#{class_key}-{field_ordinal}"),
+                stream_ordinal: *stream_ordinal,
+                attribute_class_use: class_use.id.clone(),
+                entity_51_record: entity_51_record.to_string(),
+                attribute_definition: class_use.attribute_definition.clone(),
+                field_ordinal,
+                field_code,
+                reference_ordinal,
+                value_kind: *value_kind,
+                value_use: (*value_use).to_string(),
+                value_record: (*value_record).to_string(),
+                inflated_offset: *inflated_offset,
+            })
+        })
+        .collect::<Vec<_>>();
+    uses.sort_by(|first, second| first.id.cmp(&second.id));
+    uses
+}
+
+/// Whether a concrete attribute instance or field-name reference lacks its exact relation.
+pub fn parasolid_attribute_definitions_have_untransferred_fields(
+    definitions: &[ParasolidAttributeDefinition],
+    field_names: &[ParasolidAttributeFieldNames],
+    entities: &[ParasolidEntity51Record],
+    field_uses: &[ParasolidAttributeFieldUse],
+    topology_class_uses: &[ParasolidTopologyAttributeClassUse],
+) -> bool {
+    let resolved_names = field_names
+        .iter()
+        .map(|names| names.attribute_definition.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut definitions_by_id = BTreeMap::<&str, Vec<&ParasolidAttributeDefinition>>::new();
+    for definition in definitions {
+        definitions_by_id
+            .entry(definition.id.as_str())
+            .or_default()
+            .push(definition);
+    }
+    let mut fields_by_identity = BTreeMap::<(&str, u32), Vec<&ParasolidAttributeFieldUse>>::new();
+    for field_use in field_uses {
+        fields_by_identity
+            .entry((field_use.entity_51_record.as_str(), field_use.field_ordinal))
+            .or_default()
+            .push(field_use);
+    }
+
+    let mut entities_by_id = BTreeMap::<&str, Vec<&ParasolidEntity51Record>>::new();
+    for entity in entities {
+        entities_by_id
+            .entry(entity.id.as_str())
+            .or_default()
+            .push(entity);
+    }
+
+    topology_class_uses.iter().any(|topology_class_use| {
+        let entity_id = topology_class_use.entity_51_record.as_str();
+        let Some([entity]) = entities_by_id.get(entity_id).map(Vec::as_slice) else {
+            return true;
+        };
+        let Some([definition]) = definitions_by_id
+            .get(topology_class_use.attribute_definition.as_str())
+            .map(Vec::as_slice)
+        else {
+            return true;
+        };
+        if definition.field_names_xmt != 1 && !resolved_names.contains(definition.id.as_str()) {
+            return true;
+        }
+        definition
+            .field_codes
+            .iter()
+            .enumerate()
+            .any(|(field_ordinal, field_code)| {
+                // Field code 0 is ignored. Pointer fields (code 9) are always
+                // transmitted empty and therefore have no value relation.
+                if matches!(field_code, 0 | 9) {
+                    return false;
+                }
+                let Some(&referenced_xmt) = entity.trailing_references.get(field_ordinal) else {
+                    return true;
+                };
+                if referenced_xmt == 1 {
+                    return false;
+                }
+                let Ok(field_ordinal) = u32::try_from(field_ordinal) else {
+                    return true;
+                };
+                !matches!(
+                    fields_by_identity
+                        .get(&(entity.id.as_str(), field_ordinal))
+                        .map(Vec::as_slice),
+                    Some([_])
+                )
+            })
+    })
 }
 
 #[cfg(test)]
@@ -1193,13 +2785,499 @@ mod tests {
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
 
+    use crate::parasolid::Stream;
+
+    fn deltas_type_45(xmt: u16) -> Vec<u8> {
+        let mut bytes = 45u16.to_be_bytes().to_vec();
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend_from_slice(&xmt.to_be_bytes());
+        bytes.extend_from_slice(&1.25f64.to_be_bytes());
+        bytes.extend_from_slice(&2.5f64.to_be_bytes());
+        bytes
+    }
+
+    #[test]
+    fn deltas_events_retain_bounded_records_tombstones_and_revisions() {
+        let mut bytes = vec![0xaa, 0xbb, 0xcc, 0, 12, 0, 3];
+        bytes.extend_from_slice(&9u32.to_be_bytes());
+        for reference in [2u16, 3, 4, 5, 6, 7, 8, 9] {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+            bytes.push(1);
+        }
+        let revision_prefix_end = bytes.len();
+        let revision_state_tail = [0xde, 0xad, 0xbe, 0xef];
+        bytes.extend_from_slice(&revision_state_tail);
+        let type_45_offset = bytes.len();
+        bytes.extend_from_slice(&45u16.to_be_bytes());
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend_from_slice(&10u16.to_be_bytes());
+        bytes.extend_from_slice(&1.25f64.to_be_bytes());
+        bytes.extend_from_slice(&2.5f64.to_be_bytes());
+        bytes.extend_from_slice(&[0xdd, 0xee]);
+        let tombstone_offset = bytes.len();
+        bytes.extend_from_slice(&[0, 29, 0, 11, 0, 1]);
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes,
+            kind: StreamKind::Deltas,
+            schema: None,
+        }];
+
+        let events = super::parasolid_deltas_events(&streams);
+
+        assert_eq!(events.body_revisions.len(), 1);
+        assert_eq!(events.body_revisions[0].xmt, 3);
+        assert_eq!(events.body_revisions[0].node_id, 9);
+        assert_eq!(
+            events.body_revisions[0].references,
+            [2, 3, 4, 5, 6, 7, 8, 9]
+        );
+        assert_eq!(events.body_revisions[0].prefix_byte_len, 32);
+        assert_eq!(events.body_revisions[0].state_tail_byte_len, 4);
+        assert_eq!(events.body_revisions[0].byte_len, 36);
+        assert_eq!(
+            events.body_revisions[0].state_tail_sha256,
+            cadmpeg_ir::hash::sha256_hex(&revision_state_tail)
+        );
+        assert_eq!(
+            events.body_revisions[0].inflated_offset + events.body_revisions[0].prefix_byte_len,
+            revision_prefix_end as u64
+        );
+        assert_eq!(events.records.len(), 1);
+        assert_eq!(events.records[0].family, "TYPE_45");
+        assert_eq!(events.records[0].xmt, 10);
+        assert_eq!(events.records[0].inflated_offset, type_45_offset as u64);
+        assert_eq!(events.records[0].byte_len, 24);
+        assert_eq!(events.tombstones.len(), 1);
+        assert_eq!(events.tombstones[0].family, "POINT");
+        assert_eq!(events.tombstones[0].xmt, 11);
+        assert_eq!(events.tombstones[0].byte_len, 6);
+        assert_eq!(
+            events.tombstones[0].inflated_offset,
+            tombstone_offset as u64
+        );
+        assert_eq!(events.residual_spans.len(), 2);
+        assert_eq!(events.residual_spans[0].inflated_offset, 0);
+        assert_eq!(events.residual_spans[0].byte_len, 3);
+        assert_eq!(
+            events.residual_spans[0].sha256,
+            cadmpeg_ir::hash::sha256_hex(&[0xaa, 0xbb, 0xcc])
+        );
+        assert_eq!(
+            events.residual_spans[1].inflated_offset,
+            (type_45_offset + 24) as u64
+        );
+        assert_eq!(events.residual_spans[1].byte_len, 2);
+    }
+
+    #[test]
+    fn deltas_events_subtract_typed_term_use_numeric_tails_from_residuals() {
+        let mut bytes = [0xaa, 0xbb].to_vec();
+        bytes.extend_from_slice(&41u16.to_be_bytes());
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend_from_slice(&20u16.to_be_bytes());
+        bytes.extend_from_slice(b"L?");
+        for coordinate in [1.0f64, 2.0, 3.0] {
+            bytes.extend_from_slice(&coordinate.to_be_bytes());
+        }
+        let tail_offset = bytes.len();
+        for ordinal in 0..8 {
+            bytes.extend_from_slice(&(ordinal as f64 + 0.5).to_be_bytes());
+        }
+        bytes.extend_from_slice(&[0xcc, 0xdd, 0xee]);
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes,
+            kind: StreamKind::Deltas,
+            schema: None,
+        }];
+
+        let events = super::parasolid_deltas_events(&streams);
+
+        assert_eq!(events.term_use_numeric_tails.len(), 1);
+        let tail = &events.term_use_numeric_tails[0];
+        assert_eq!(tail.term_use_xmt, 20);
+        assert_eq!(tail.term_use_count, 1);
+        assert_eq!(tail.values.len(), 8);
+        assert_eq!(tail.byte_len, 64);
+        assert_eq!(tail.inflated_offset, tail_offset as u64);
+        assert_eq!(events.residual_spans.len(), 2);
+        assert_eq!(events.residual_spans[0].byte_len, 2);
+        assert_eq!(
+            events.residual_spans[1].inflated_offset,
+            (tail_offset + 64) as u64
+        );
+        assert_eq!(events.residual_spans[1].byte_len, 3);
+    }
+
+    #[test]
+    fn deltas_events_subtract_tagged_reference_lanes_from_residuals() {
+        let mut bytes = [0xaa, 0xbb, 0xcc].to_vec();
+        bytes.extend(deltas_type_45(10));
+        let lane_offset = bytes.len();
+        bytes.extend([
+            0x00, 0x4f, 0x00, 0x0a, // direct type-79 reference
+            0x00, 0x50, 0xff, 0xff, 0x00, 0x01, // extended type-80 reference
+        ]);
+        let lane_end = bytes.len();
+        bytes.extend(deltas_type_45(11));
+        let suffix_offset = bytes.len();
+        bytes.extend([0xdd, 0xee]);
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes.clone(),
+            kind: StreamKind::Deltas,
+            schema: None,
+        }];
+
+        let events = super::parasolid_deltas_events(&streams);
+
+        assert_eq!(events.tagged_reference_lanes.len(), 1);
+        let lane = &events.tagged_reference_lanes[0];
+        assert_eq!(lane.references, [(79, 10), (80, 32_768)]);
+        assert_eq!(lane.byte_len, 10);
+        assert_eq!(lane.inflated_offset, lane_offset as u64);
+        assert_eq!(
+            lane.sha256,
+            cadmpeg_ir::hash::sha256_hex(&bytes[lane_offset..lane_end])
+        );
+        assert_eq!(events.residual_spans.len(), 2);
+        assert_eq!(events.residual_spans[0].inflated_offset, 0);
+        assert_eq!(events.residual_spans[0].byte_len, 3);
+        assert_eq!(
+            events.residual_spans[1].inflated_offset,
+            suffix_offset as u64
+        );
+        assert_eq!(events.residual_spans[1].byte_len, 2);
+    }
+
+    #[test]
+    fn deltas_events_subtract_transmit_headers_from_residuals() {
+        let description = b": TRANSMIT FILE (deltas) created by modeller version 3501171";
+        let schema = b"SCH_3501171_35102_13006";
+        let mut bytes = b"PS".to_vec();
+        bytes.extend_from_slice(&(description.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(description);
+        bytes.extend_from_slice(&(schema.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(schema);
+        bytes.extend_from_slice(&[
+            0, 0xe7, 0, 0, 0, 0, 0, 3, 0xff, 0x04, 0x27, 0x04, 0x28, 0, 0,
+        ]);
+        let header_end = bytes.len();
+        bytes.extend([0xaa, 0xbb]);
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes.clone(),
+            kind: StreamKind::Deltas,
+            schema: Some("SCH_3501171_35102_13006".to_string()),
+        }];
+
+        let events = super::parasolid_deltas_events(&streams);
+
+        assert_eq!(events.transmit_headers.len(), 1);
+        let header = &events.transmit_headers[0];
+        assert_eq!(header.id, "nx:s0:deltas-transmit-header#0");
+        assert_eq!(header.description.as_bytes(), description);
+        assert_eq!(header.schema.as_bytes(), schema);
+        assert_eq!(header.references, [1063, 1064]);
+        assert_eq!(header.byte_len, header_end as u64);
+        assert_eq!(
+            header.sha256,
+            cadmpeg_ir::hash::sha256_hex(&bytes[..header_end])
+        );
+        assert_eq!(events.residual_spans.len(), 1);
+        assert_eq!(events.residual_spans[0].inflated_offset, header_end as u64);
+        assert_eq!(events.residual_spans[0].byte_len, 2);
+    }
+
+    #[test]
+    fn deltas_events_retain_terminal_null_references() {
+        let mut bytes = [0xaa, 0xbb].to_vec();
+        let trailer_offset = bytes.len();
+        bytes.extend_from_slice(&[0, 1, 0, 1, 0, 1, 0, 1]);
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes.clone(),
+            kind: StreamKind::Deltas,
+            schema: None,
+        }];
+
+        let events = super::parasolid_deltas_events(&streams);
+
+        assert_eq!(events.terminal_null_references.len(), 1);
+        let trailer = &events.terminal_null_references[0];
+        assert_eq!(trailer.references, [1; 4]);
+        assert_eq!(trailer.byte_len, 8);
+        assert_eq!(trailer.inflated_offset, trailer_offset as u64);
+        assert_eq!(
+            trailer.sha256,
+            cadmpeg_ir::hash::sha256_hex(&bytes[trailer_offset..])
+        );
+        assert_eq!(events.residual_spans.len(), 1);
+        assert_eq!(events.residual_spans[0].inflated_offset, 0);
+        assert_eq!(events.residual_spans[0].byte_len, trailer_offset as u64);
+    }
+
+    #[test]
+    fn deltas_events_subtract_reference_type_maps_from_residuals() {
+        let mut bytes = [0xaa, 0xbb].to_vec();
+        bytes.extend(deltas_type_45(10));
+        let map_offset = bytes.len();
+        bytes.extend([
+            0, 1, 0, 1, 0xe3, 0xbf, 0, 1, 0, 81, 0, 3, 0, 100, 0, 1, 0, 0, 0, 55,
+        ]);
+        let map_end = bytes.len();
+        bytes.extend(deltas_type_45(11));
+        let suffix_offset = bytes.len();
+        bytes.extend([0xcc, 0xdd]);
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes.clone(),
+            kind: StreamKind::Deltas,
+            schema: None,
+        }];
+
+        let events = super::parasolid_deltas_events(&streams);
+
+        assert_eq!(events.reference_type_maps.len(), 1);
+        let map = &events.reference_type_maps[0];
+        assert_eq!(map.entries, [(40_000, 81), (3, 100)]);
+        assert_eq!(map.target_kind, Some(55));
+        assert_eq!(map.byte_len, 20);
+        assert_eq!(map.inflated_offset, map_offset as u64);
+        assert_eq!(
+            map.sha256,
+            cadmpeg_ir::hash::sha256_hex(&bytes[map_offset..map_end])
+        );
+        assert_eq!(events.residual_spans.len(), 2);
+        assert_eq!(events.residual_spans[0].byte_len, 2);
+        assert_eq!(
+            events.residual_spans[1].inflated_offset,
+            suffix_offset as u64
+        );
+        assert_eq!(events.residual_spans[1].byte_len, 2);
+    }
+
+    #[test]
+    fn deltas_events_subtract_reference_state_packets_from_residuals() {
+        let mut bytes = [0xaa, 0xbb].to_vec();
+        bytes.extend(deltas_type_45(10));
+        let packet_offset = bytes.len();
+        bytes.extend([0, 1, 0, 1, 0, 4]);
+        for reference in [2u16, 3, 4, 1] {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+        for word in [34u32, 6, 11, 22_362, 1] {
+            bytes.extend_from_slice(&word.to_be_bytes());
+        }
+        bytes.push(65);
+        let packet_end = bytes.len();
+        bytes.extend(deltas_type_45(11));
+        let suffix_offset = bytes.len();
+        bytes.extend([0xcc, 0xdd, 0xee]);
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes.clone(),
+            kind: StreamKind::Deltas,
+            schema: None,
+        }];
+
+        let events = super::parasolid_deltas_events(&streams);
+
+        assert_eq!(events.reference_state_packets.len(), 1);
+        let packet = &events.reference_state_packets[0];
+        assert_eq!(
+            packet.frames,
+            [ParasolidDeltasReferenceStateFrame {
+                references: [2, 3, 4, 1],
+                state_words: [34, 6, 11, 22_362, 1],
+                state_byte: 65,
+            }]
+        );
+        assert!(!packet.terminal);
+        assert_eq!(packet.byte_len, 37);
+        assert_eq!(packet.inflated_offset, packet_offset as u64);
+        assert_eq!(
+            packet.sha256,
+            cadmpeg_ir::hash::sha256_hex(&bytes[packet_offset..packet_end])
+        );
+        assert_eq!(events.residual_spans.len(), 2);
+        assert_eq!(events.residual_spans[0].byte_len, 2);
+        assert_eq!(
+            events.residual_spans[1].inflated_offset,
+            suffix_offset as u64
+        );
+        assert_eq!(events.residual_spans[1].byte_len, 3);
+    }
+
+    #[test]
+    fn deltas_events_retain_schema_reference_preambles() {
+        let mut bytes = [0xaa, 0xbb].to_vec();
+        bytes.extend(deltas_type_45(10));
+        let preamble_offset = bytes.len();
+        bytes.extend_from_slice(&300u16.to_be_bytes());
+        bytes.extend_from_slice(&4u16.to_be_bytes());
+        bytes.push(0xff);
+        for reference in [2u16, 3, 1, 1, 1] {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+        for state_word in [2u32, 0, 1, 55] {
+            bytes.extend_from_slice(&state_word.to_be_bytes());
+        }
+        bytes.extend_from_slice(&[0, 0, 0]);
+        bytes.extend_from_slice(&300u16.to_be_bytes());
+        for reference in [1u16, 1] {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+        bytes.extend_from_slice(&5u16.to_be_bytes());
+        for (kind, reference) in [(81u16, 4u16), (82, 5), (81, 6)] {
+            bytes.extend_from_slice(&kind.to_be_bytes());
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+        bytes.extend_from_slice(&82u16.to_be_bytes());
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+        bytes.extend_from_slice(&0u16.to_be_bytes());
+        bytes.extend_from_slice(&9u16.to_be_bytes());
+        let preamble_end = bytes.len();
+        bytes.extend(deltas_type_45(11));
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes.clone(),
+            kind: StreamKind::Deltas,
+            schema: None,
+        }];
+
+        let events = super::parasolid_deltas_events(&streams);
+
+        assert_eq!(events.schema_reference_preambles.len(), 1);
+        let preamble = &events.schema_reference_preambles[0];
+        assert_eq!(preamble.identity, 300);
+        assert_eq!(preamble.references, [2, 3]);
+        assert_eq!(preamble.state_reference, None);
+        assert_eq!(preamble.state_words, [2, 0, 1, 55]);
+        assert_eq!(preamble.count, 5);
+        assert_eq!(preamble.entries, [(81, 4), (82, 5), (81, 6)]);
+        assert_eq!(preamble.terminal_value, 9);
+        assert_eq!(preamble.inflated_offset, preamble_offset as u64);
+        assert_eq!(preamble.byte_len, (preamble_end - preamble_offset) as u64);
+        assert_eq!(
+            preamble.sha256,
+            cadmpeg_ir::hash::sha256_hex(&bytes[preamble_offset..preamble_end])
+        );
+    }
+
+    #[test]
+    fn deltas_events_subtract_reference_marker_packets_from_residuals() {
+        let mut bytes = [0xaa, 0xbb].to_vec();
+        bytes.extend(deltas_type_45(10));
+        let packet_offset = bytes.len();
+        bytes.extend([0, 9, 1, 0, 1, 1, 0x53, 0, 1, 1]);
+        let packet_end = bytes.len();
+        bytes.extend(deltas_type_45(11));
+        let suffix_offset = bytes.len();
+        bytes.extend([0xcc, 0xdd]);
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes.clone(),
+            kind: StreamKind::Deltas,
+            schema: None,
+        }];
+
+        let events = super::parasolid_deltas_events(&streams);
+
+        assert_eq!(events.reference_marker_packets.len(), 1);
+        let packet = &events.reference_marker_packets[0];
+        assert_eq!(packet.reference, 9);
+        assert_eq!(packet.marker, 0x53);
+        assert_eq!(packet.byte_len, 10);
+        assert_eq!(packet.inflated_offset, packet_offset as u64);
+        assert_eq!(
+            packet.sha256,
+            cadmpeg_ir::hash::sha256_hex(&bytes[packet_offset..packet_end])
+        );
+        assert_eq!(events.residual_spans.len(), 2);
+        assert_eq!(events.residual_spans[0].byte_len, 2);
+        assert_eq!(
+            events.residual_spans[1].inflated_offset,
+            suffix_offset as u64
+        );
+        assert_eq!(events.residual_spans[1].byte_len, 2);
+    }
+
+    #[test]
+    fn deltas_events_subtract_inline_schema_declarations_from_residuals() {
+        let mut bytes = [0xaa, 0xbb].to_vec();
+        bytes.extend(deltas_type_45(10));
+        let declaration_offset = bytes.len();
+        bytes.extend([
+            0x00, 0x13, 0x09, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x49, 0x05, 0x66, 0x72, 0x61,
+            0x6d, 0x65, 0x00, 0xe6, 0x00, 0x01, 0x43, 0x41, 0x05, 0x6f, 0x77, 0x6e, 0x65, 0x72,
+            0x00, 0x0c, 0x00, 0x01, 0x5a,
+        ]);
+        bytes.extend_from_slice(&11u16.to_be_bytes());
+        bytes.extend_from_slice(&5u32.to_be_bytes());
+        for reference in [1u16, 3, 1, 9] {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+            bytes.push(1);
+        }
+        let declaration_end = bytes.len();
+        bytes.extend(deltas_type_45(11));
+        let suffix_offset = bytes.len();
+        bytes.extend([0xcc, 0xdd]);
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes.clone(),
+            kind: StreamKind::Deltas,
+            schema: None,
+        }];
+
+        let events = super::parasolid_deltas_events(&streams);
+
+        assert_eq!(events.inline_schema_declarations.len(), 1);
+        let declaration = &events.inline_schema_declarations[0];
+        assert_eq!(
+            declaration.fields,
+            ParasolidDeltasInlineSchemaFields::Region {
+                xmt: 11,
+                state_word: 5,
+                references: [1, 3, 1, 9],
+            }
+        );
+        assert_eq!(declaration.byte_len, 51);
+        assert_eq!(declaration.inflated_offset, declaration_offset as u64);
+        assert_eq!(
+            declaration.sha256,
+            cadmpeg_ir::hash::sha256_hex(&bytes[declaration_offset..declaration_end])
+        );
+        assert_eq!(events.residual_spans.len(), 2);
+        assert_eq!(events.residual_spans[0].byte_len, 2);
+        assert_eq!(
+            events.residual_spans[1].inflated_offset,
+            suffix_offset as u64
+        );
+        assert_eq!(events.residual_spans[1].byte_len, 2);
+    }
+
     use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+
     use cadmpeg_ir::geometry::{
         BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
         ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
     };
     use cadmpeg_ir::math::{Point2, Vector3};
     use cadmpeg_ir::report::LossCategory;
+
     use cadmpeg_ir::Exactness;
 
     use crate::container;
@@ -1208,6 +3286,554 @@ mod tests {
     use crate::NxCodec;
 
     use super::*;
+
+    #[test]
+    fn attribute_value_uses_are_assigned_to_compatible_declared_fields() {
+        let definition = ParasolidAttributeDefinition {
+            id: "definition".into(),
+            stream_ordinal: 2,
+            xmt: 9,
+            next_definition_xmt: 1,
+            identifier_xmt: 10,
+            identifier_inflated_offset: 32,
+            name: "CLASS".into(),
+            type_id: 8000,
+            action_codes: [0; 8],
+            field_names_xmt: 1,
+            legal_owner_flags: [0; 16],
+            field_count: 3,
+            field_codes: vec![1, 2, 3],
+            inflated_offset: 40,
+        };
+        let class_use = ParasolidAttributeClassUse {
+            id: "nx:s2:attribute-class-use#class-use".into(),
+            stream_ordinal: 2,
+            entity_51_record: "entity".into(),
+            definition_xmt: 9,
+            attribute_definition: "definition".into(),
+        };
+        let numeric_use = ParasolidEntity51NumericUse {
+            id: "numeric-use".into(),
+            stream_ordinal: 2,
+            entity_51_record: "entity".into(),
+            reference_ordinal: 5,
+            referenced_xmt: 12,
+            kind: ParasolidEntity51NumericKind::UnsignedIntegers,
+            value_record: "integers".into(),
+            inflated_offset: 48,
+        };
+        let double_use = ParasolidEntity51NumericUse {
+            id: "double-use".into(),
+            reference_ordinal: 6,
+            kind: ParasolidEntity51NumericKind::Doubles,
+            value_record: "doubles".into(),
+            ..numeric_use.clone()
+        };
+        let string_use = ParasolidEntity51StringUse {
+            id: "string-use".into(),
+            stream_ordinal: 2,
+            entity_51_record: "entity".into(),
+            reference_ordinal: 7,
+            referenced_xmt: 14,
+            string_record: "string".into(),
+            inflated_offset: 48,
+        };
+
+        let uses = parasolid_attribute_field_uses(
+            std::slice::from_ref(&class_use),
+            std::slice::from_ref(&definition),
+            &[numeric_use.clone(), double_use],
+            std::slice::from_ref(&string_use),
+            &[],
+        );
+
+        assert_eq!(uses.len(), 3);
+        assert_eq!(uses[0].id, "nx:s2:attribute-field-use#class-use-0");
+        assert_eq!(
+            uses[0].attribute_class_use,
+            "nx:s2:attribute-class-use#class-use"
+        );
+        assert_eq!(uses[0].attribute_definition, "definition");
+        assert_eq!(uses[0].field_ordinal, 0);
+        assert_eq!(uses[0].field_code, 1);
+        assert_eq!(uses[0].reference_ordinal, 5);
+        assert_eq!(
+            uses[0].value_kind,
+            ParasolidAttributeFieldValueKind::UnsignedIntegers
+        );
+        assert_eq!(uses[0].value_use, "numeric-use");
+        assert_eq!(uses[0].value_record, "integers");
+        assert_eq!(uses[1].field_ordinal, 1);
+        assert_eq!(uses[1].field_code, 2);
+        assert_eq!(
+            uses[1].value_kind,
+            ParasolidAttributeFieldValueKind::Doubles
+        );
+        assert_eq!(uses[1].value_record, "doubles");
+        assert_eq!(uses[2].field_ordinal, 2);
+        assert_eq!(uses[2].field_code, 3);
+        assert_eq!(uses[2].value_kind, ParasolidAttributeFieldValueKind::String);
+        assert_eq!(uses[2].value_record, "string");
+
+        let duplicate = ParasolidAttributeClassUse {
+            id: "duplicate".into(),
+            stream_ordinal: 2,
+            entity_51_record: "entity".into(),
+            definition_xmt: 11,
+            attribute_definition: "other-definition".into(),
+        };
+        assert!(parasolid_attribute_field_uses(
+            &[class_use.clone(), duplicate.clone()],
+            std::slice::from_ref(&definition),
+            std::slice::from_ref(&numeric_use),
+            &[],
+            &[],
+        )
+        .is_empty());
+
+        let wrong_stream = ParasolidAttributeClassUse {
+            stream_ordinal: 3,
+            ..duplicate
+        };
+        assert!(parasolid_attribute_field_uses(
+            &[wrong_stream],
+            std::slice::from_ref(&definition),
+            std::slice::from_ref(&numeric_use),
+            &[],
+            &[],
+        )
+        .is_empty());
+
+        let mismatched = ParasolidEntity51NumericUse {
+            kind: ParasolidEntity51NumericKind::Doubles,
+            ..numeric_use.clone()
+        };
+        assert!(parasolid_attribute_field_uses(
+            std::slice::from_ref(&class_use),
+            std::slice::from_ref(&definition),
+            &[mismatched],
+            &[],
+            &[],
+        )
+        .is_empty());
+
+        let ambiguous_string = ParasolidEntity51StringUse {
+            reference_ordinal: 5,
+            ..string_use
+        };
+        assert!(parasolid_attribute_field_uses(
+            std::slice::from_ref(&class_use),
+            std::slice::from_ref(&definition),
+            std::slice::from_ref(&numeric_use),
+            &[ambiguous_string],
+            &[],
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn structured_value_uses_require_one_same_stream_family() {
+        let entity = ParasolidEntity51Record {
+            id: "entity".into(),
+            stream_ordinal: 2,
+            xmt: 10,
+            flags: 1,
+            sequence: 0,
+            definition_xmt: 9,
+            leading_references: [1; 5],
+            trailing_references: vec![12],
+            byte_len: 32,
+            inflated_offset: 40,
+        };
+        let point = ParasolidEntityVectorRecord {
+            id: "point".into(),
+            stream_ordinal: 2,
+            kind: ParasolidVectorValueKind::Points,
+            xmt: 12,
+            values: vec![[1.0, 2.0, 3.0]],
+            byte_len: 36,
+            inflated_offset: 80,
+        };
+        let uses = parasolid_entity_51_structured_uses(
+            std::slice::from_ref(&entity),
+            std::slice::from_ref(&point),
+            &[],
+            &[],
+            &[],
+        );
+        assert_eq!(uses.len(), 1);
+        assert_eq!(uses[0].reference_ordinal, 5);
+        assert_eq!(uses[0].kind, ParasolidAttributeFieldValueKind::Points);
+        assert_eq!(uses[0].value_record, "point");
+
+        let colliding_tag = ParasolidEntity58TagRecord {
+            id: "tag".into(),
+            stream_ordinal: 2,
+            xmt: 12,
+            values: vec![7],
+            byte_len: 16,
+            inflated_offset: 90,
+        };
+        assert!(parasolid_entity_51_structured_uses(
+            std::slice::from_ref(&entity),
+            std::slice::from_ref(&point),
+            &[],
+            std::slice::from_ref(&colliding_tag),
+            &[],
+        )
+        .is_empty());
+
+        let other_stream = ParasolidEntityVectorRecord {
+            stream_ordinal: 3,
+            ..point
+        };
+        assert!(
+            parasolid_entity_51_structured_uses(&[entity], &[other_stream], &[], &[], &[],)
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn structured_value_families_match_only_their_declared_field_codes() {
+        let kinds = [
+            ParasolidAttributeFieldValueKind::Points,
+            ParasolidAttributeFieldValueKind::Vectors,
+            ParasolidAttributeFieldValueKind::Directions,
+            ParasolidAttributeFieldValueKind::Axes,
+            ParasolidAttributeFieldValueKind::Tags,
+            ParasolidAttributeFieldValueKind::Unicode,
+        ];
+        let definition = ParasolidAttributeDefinition {
+            id: "definition".into(),
+            stream_ordinal: 2,
+            xmt: 9,
+            next_definition_xmt: 1,
+            identifier_xmt: 10,
+            identifier_inflated_offset: 32,
+            name: "CLASS".into(),
+            type_id: 8000,
+            action_codes: [0; 8],
+            field_names_xmt: 1,
+            legal_owner_flags: [0; 16],
+            field_count: 6,
+            field_codes: vec![4, 5, 6, 7, 8, 10],
+            inflated_offset: 40,
+        };
+        let class_use = ParasolidAttributeClassUse {
+            id: "nx:s2:attribute-class-use#class-use".into(),
+            stream_ordinal: 2,
+            entity_51_record: "entity".into(),
+            definition_xmt: 9,
+            attribute_definition: definition.id.clone(),
+        };
+        let structured = kinds
+            .iter()
+            .enumerate()
+            .map(|(ordinal, kind)| ParasolidEntity51StructuredUse {
+                id: format!("use-{ordinal}"),
+                stream_ordinal: 2,
+                entity_51_record: "entity".into(),
+                reference_ordinal: u32::try_from(ordinal).expect("test ordinal fits u32") + 5,
+                referenced_xmt: u32::try_from(ordinal).expect("test ordinal fits u32") + 20,
+                kind: *kind,
+                value_record: format!("value-{ordinal}"),
+                inflated_offset: 48,
+            })
+            .collect::<Vec<_>>();
+        let uses = parasolid_attribute_field_uses(
+            std::slice::from_ref(&class_use),
+            std::slice::from_ref(&definition),
+            &[],
+            &[],
+            &structured,
+        );
+        assert_eq!(
+            uses.iter().map(|use_| use_.value_kind).collect::<Vec<_>>(),
+            kinds
+        );
+
+        let mut mismatched = structured;
+        mismatched[0].kind = ParasolidAttributeFieldValueKind::Vectors;
+        let uses =
+            parasolid_attribute_field_uses(&[class_use], &[definition], &[], &[], &mismatched);
+        assert_eq!(uses.len(), 5);
+        assert!(uses.iter().all(|use_| use_.field_ordinal != 0));
+    }
+
+    #[test]
+    fn attribute_loss_requires_concrete_unresolved_references() {
+        let definition = |field_names_xmt, field_codes: Vec<u8>| ParasolidAttributeDefinition {
+            id: "definition".into(),
+            stream_ordinal: 0,
+            xmt: 20,
+            next_definition_xmt: 1,
+            identifier_xmt: 21,
+            identifier_inflated_offset: 10,
+            name: "CLASS".into(),
+            type_id: 8000,
+            action_codes: [0; 8],
+            field_names_xmt,
+            legal_owner_flags: [0; 16],
+            field_count: u32::try_from(field_codes.len()).expect("test field count fits u32"),
+            field_codes,
+            inflated_offset: 20,
+        };
+
+        let entity = ParasolidEntity51Record {
+            id: "entity".into(),
+            stream_ordinal: 0,
+            xmt: 30,
+            flags: 1,
+            sequence: 0,
+            definition_xmt: 20,
+            leading_references: [1; 5],
+            trailing_references: vec![40],
+            byte_len: 32,
+            inflated_offset: 30,
+        };
+        let class_use = ParasolidAttributeClassUse {
+            id: "class-use".into(),
+            stream_ordinal: 0,
+            entity_51_record: entity.id.clone(),
+            definition_xmt: 20,
+            attribute_definition: "definition".into(),
+        };
+        let field_use = ParasolidAttributeFieldUse {
+            id: "field-use".into(),
+            stream_ordinal: 0,
+            attribute_class_use: class_use.id.clone(),
+            entity_51_record: entity.id.clone(),
+            attribute_definition: "definition".into(),
+            field_ordinal: 0,
+            field_code: 4,
+            reference_ordinal: 5,
+            value_kind: ParasolidAttributeFieldValueKind::Points,
+            value_use: "point-use".into(),
+            value_record: "points".into(),
+            inflated_offset: 30,
+        };
+        let topology_reference = ParasolidTopologyAttributeListReference {
+            id: "topology-reference".into(),
+            stream_ordinal: 0,
+            topology_type: 14,
+            topology_xmt: 50,
+            attribute_list_xmt: entity.xmt,
+            attribute_list_record: Some(entity.id.clone()),
+            inflated_offset: 28,
+        };
+        let topology_class_use = ParasolidTopologyAttributeClassUse {
+            id: "topology-class-use".into(),
+            topology_attribute_reference: topology_reference.id.clone(),
+            entity_51_record: entity.id.clone(),
+            attribute_class_use: class_use.id.clone(),
+            definition_xmt: 20,
+            attribute_definition: "definition".into(),
+        };
+
+        // An unused declaration carries no value-loss evidence.
+        assert!(!parasolid_attribute_definitions_have_untransferred_fields(
+            &[definition(1, vec![4])],
+            &[],
+            &[],
+            &[],
+            &[],
+        ));
+        // A non-null instance reference must have exactly one resolved field use.
+        assert!(parasolid_attribute_definitions_have_untransferred_fields(
+            &[definition(1, vec![4])],
+            &[],
+            std::slice::from_ref(&entity),
+            &[],
+            std::slice::from_ref(&topology_class_use),
+        ));
+        assert!(!parasolid_attribute_definitions_have_untransferred_fields(
+            &[definition(1, vec![4])],
+            &[],
+            std::slice::from_ref(&entity),
+            std::slice::from_ref(&field_use),
+            std::slice::from_ref(&topology_class_use),
+        ));
+        // Null values and always-empty pointer fields require no value relation.
+        let mut null_entity = entity.clone();
+        null_entity.trailing_references[0] = 1;
+        assert!(!parasolid_attribute_definitions_have_untransferred_fields(
+            &[definition(1, vec![4])],
+            &[],
+            &[null_entity],
+            &[],
+            std::slice::from_ref(&topology_class_use),
+        ));
+        assert!(!parasolid_attribute_definitions_have_untransferred_fields(
+            &[definition(1, vec![9])],
+            &[],
+            std::slice::from_ref(&entity),
+            &[],
+            std::slice::from_ref(&topology_class_use),
+        ));
+
+        let named_definition = definition(22, vec![]);
+        let names = ParasolidAttributeFieldNames {
+            id: "names".into(),
+            stream_ordinal: 0,
+            attribute_definition: named_definition.id.clone(),
+            field_names_record: "record".into(),
+            value_records: vec!["string".into()],
+            names: vec!["field".into()],
+        };
+        assert!(parasolid_attribute_definitions_have_untransferred_fields(
+            std::slice::from_ref(&named_definition),
+            &[],
+            std::slice::from_ref(&entity),
+            &[],
+            std::slice::from_ref(&topology_class_use),
+        ));
+        assert!(!parasolid_attribute_definitions_have_untransferred_fields(
+            &[named_definition],
+            &[names],
+            std::slice::from_ref(&entity),
+            &[],
+            std::slice::from_ref(&topology_class_use),
+        ));
+    }
+
+    #[test]
+    fn attribute_field_names_require_complete_unambiguous_same_stream_relations() {
+        let definition = ParasolidAttributeDefinition {
+            id: "definition".into(),
+            stream_ordinal: 3,
+            xmt: 20,
+            next_definition_xmt: 1,
+            identifier_xmt: 21,
+            identifier_inflated_offset: 10,
+            name: "CLASS".into(),
+            type_id: 8000,
+            action_codes: [0; 8],
+            field_names_xmt: 25,
+            legal_owner_flags: [0; 16],
+            field_count: 3,
+            field_codes: vec![2, 1, 1],
+            inflated_offset: 20,
+        };
+        let list = ParasolidFieldNamesRecord {
+            id: "field-names".into(),
+            stream_ordinal: 3,
+            xmt: 25,
+            name_xmts: vec![28, 29, 30],
+            byte_len: 15,
+            inflated_offset: 30,
+        };
+        let strings = [28, 30].map(|xmt| ParasolidEntity54StringRecord {
+            id: format!("string-{xmt}"),
+            stream_ordinal: 3,
+            xmt,
+            value: (xmt - 27).to_string(),
+            byte_len: 10,
+            inflated_offset: u64::from(xmt),
+        });
+        let unicode = ParasolidEntity62UnicodeRecord {
+            id: "unicode-29".into(),
+            stream_ordinal: 3,
+            xmt: 29,
+            code_units: vec![0x03bc],
+            value: "μ".into(),
+            byte_len: 12,
+            inflated_offset: 29,
+        };
+
+        let relations = parasolid_attribute_field_names(
+            std::slice::from_ref(&definition),
+            std::slice::from_ref(&list),
+            &strings,
+            std::slice::from_ref(&unicode),
+        );
+        assert_eq!(relations.len(), 1);
+        assert_eq!(relations[0].names, ["1", "μ", "3"]);
+
+        let mut incomplete = list.clone();
+        incomplete.name_xmts.pop();
+        assert!(parasolid_attribute_field_names(
+            std::slice::from_ref(&definition),
+            &[incomplete],
+            &strings,
+            std::slice::from_ref(&unicode),
+        )
+        .is_empty());
+        assert!(parasolid_attribute_field_names(
+            &[definition.clone(), definition.clone()],
+            std::slice::from_ref(&list),
+            &strings,
+            std::slice::from_ref(&unicode),
+        )
+        .is_empty());
+
+        let ambiguous = ParasolidEntity62UnicodeRecord {
+            xmt: 28,
+            ..unicode.clone()
+        };
+        assert!(parasolid_attribute_field_names(
+            std::slice::from_ref(&definition),
+            &[ParasolidFieldNamesRecord {
+                id: "field-names".into(),
+                stream_ordinal: 3,
+                xmt: 25,
+                name_xmts: vec![28, 29, 30],
+                byte_len: 15,
+                inflated_offset: 30,
+            }],
+            &strings,
+            &[unicode, ambiguous],
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn deltas_events_subtract_type_150_state_packets_from_residuals() {
+        let mut bytes = [0xaa, 0xbb].to_vec();
+        bytes.extend(deltas_type_45(10));
+        let packet_offset = bytes.len();
+        bytes.push(150);
+        for (reference, status) in [(1u16, 1), (3, 1), (6_192, 0), (6_193, 1), (6_194, 0)] {
+            bytes.extend(reference.to_be_bytes());
+            bytes.push(status);
+        }
+        bytes.push(0x2b);
+        let values: [f64; 9] = [-0.025, -0.05, 0.25, 0.0, 1.0, 0.0, 0.0, -0.0, 1.0];
+        for value in values {
+            bytes.extend(value.to_be_bytes());
+        }
+        let packet_end = bytes.len();
+        bytes.extend(deltas_type_45(11));
+        let suffix_offset = bytes.len();
+        bytes.extend([0xcc, 0xdd]);
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: bytes.clone(),
+            kind: StreamKind::Deltas,
+            schema: None,
+        }];
+
+        let events = super::parasolid_deltas_events(&streams);
+
+        assert_eq!(events.type_150_state_packets.len(), 1);
+        let packet = &events.type_150_state_packets[0];
+        assert_eq!(packet.references, [1, 3, 6_192, 6_193, 6_194]);
+        assert_eq!(packet.marker, 0x2b);
+        assert_eq!(packet.values, values);
+        assert_eq!(packet.inflated_offset, packet_offset as u64);
+        assert_eq!(packet.byte_len, (packet_end - packet_offset) as u64);
+        assert_eq!(
+            packet.sha256,
+            cadmpeg_ir::hash::sha256_hex(&bytes[packet_offset..packet_end])
+        );
+        assert_eq!(events.residual_spans.len(), 2);
+        assert_eq!(events.residual_spans[0].byte_len, 2);
+        assert_eq!(
+            events.residual_spans[1].inflated_offset,
+            suffix_offset as u64
+        );
+        assert_eq!(events.residual_spans[1].byte_len, 2);
+    }
 
     #[test]
     fn topology_retains_entity_attribute_list_references() {
@@ -1319,7 +3945,7 @@ mod tests {
     }
 
     #[test]
-    fn topology_attribute_class_uses_resolve_instance_discriminators_by_xmt() {
+    fn topology_attribute_class_uses_resolve_type_80_definitions_by_xmt() {
         use super::{
             ParasolidAttributeDefinition, ParasolidEntity51Record,
             ParasolidTopologyAttributeListReference,
@@ -1329,13 +3955,15 @@ mod tests {
             id: "definition".into(),
             stream_ordinal: 3,
             xmt: 34,
+            next_definition_xmt: 1,
+            identifier_xmt: 35,
+            identifier_inflated_offset: 80,
             name: "UG2/PMARK_ATTRIBUTE".into(),
+            type_id: 9000,
+            action_codes: [0; 8],
+            field_names_xmt: 1,
+            legal_owner_flags: [0; 16],
             field_count: 1,
-            field_record_xmt: 19,
-            field_record_references: [21, 22],
-            field_record_header_words: [0, 9000],
-            field_descriptor_prefix: [0; 26],
-            field_storage: None,
             field_codes: vec![1],
             inflated_offset: 100,
         };
@@ -1345,8 +3973,9 @@ mod tests {
             xmt: 50,
             flags: 1,
             sequence: 7,
-            discriminator: 0x21,
-            references: vec![60, 61, 1, 62, 63, 64],
+            definition_xmt: 34,
+            leading_references: [60, 61, 1, 62, 63],
+            trailing_references: vec![64],
             byte_len: 26,
             inflated_offset: 200,
         };
@@ -1366,7 +3995,6 @@ mod tests {
         );
         assert_eq!(instance_uses.len(), 1);
         assert_eq!(instance_uses[0].entity_51_record, entity.id);
-        assert_eq!(instance_uses[0].class_discriminator, 0x21);
         assert_eq!(instance_uses[0].definition_xmt, 34);
         assert_eq!(instance_uses[0].attribute_definition, definition.id);
 
@@ -1375,12 +4003,17 @@ mod tests {
             &instance_uses,
         );
         assert_eq!(uses.len(), 1);
-        assert_eq!(uses[0].class_discriminator, 0x21);
+        assert_eq!(uses[0].attribute_class_use, instance_uses[0].id);
         assert_eq!(uses[0].definition_xmt, 34);
         assert_eq!(uses[0].attribute_definition, definition.id);
+        assert!(super::parasolid_topology_attribute_class_uses(
+            std::slice::from_ref(&reference),
+            &[instance_uses[0].clone(), instance_uses[0].clone()],
+        )
+        .is_empty());
 
         let mut invalid = entity;
-        invalid.discriminator = 0x20;
+        invalid.definition_xmt = 33;
         assert!(super::parasolid_attribute_class_uses(
             std::slice::from_ref(&invalid),
             std::slice::from_ref(&definition),
@@ -1394,6 +4027,54 @@ mod tests {
     }
 
     #[test]
+    fn entity_51_value_uses_exclude_fixed_leading_references() {
+        use super::{
+            ParasolidEntity51Record, ParasolidEntity52IntegerRecord, ParasolidEntity54StringRecord,
+        };
+
+        let entity = ParasolidEntity51Record {
+            id: "entity".into(),
+            stream_ordinal: 3,
+            xmt: 50,
+            flags: 2,
+            sequence: 7,
+            definition_xmt: 34,
+            leading_references: [60, 61, 70, 71, 72],
+            trailing_references: vec![70, 71],
+            byte_len: 28,
+            inflated_offset: 200,
+        };
+        let integers = [ParasolidEntity52IntegerRecord {
+            id: "integers".into(),
+            stream_ordinal: 3,
+            xmt: 70,
+            values: vec![1],
+            byte_len: 12,
+            inflated_offset: 300,
+        }];
+        let strings = [ParasolidEntity54StringRecord {
+            id: "string".into(),
+            stream_ordinal: 3,
+            xmt: 71,
+            value: "value".into(),
+            byte_len: 14,
+            inflated_offset: 400,
+        }];
+
+        let numeric_uses =
+            super::parasolid_entity_51_numeric_uses(std::slice::from_ref(&entity), &integers, &[]);
+        assert_eq!(numeric_uses.len(), 1);
+        assert_eq!(numeric_uses[0].reference_ordinal, 5);
+        assert_eq!(numeric_uses[0].referenced_xmt, 70);
+
+        let string_uses =
+            super::parasolid_entity_51_string_uses(std::slice::from_ref(&entity), &strings);
+        assert_eq!(string_uses.len(), 1);
+        assert_eq!(string_uses[0].reference_ordinal, 6);
+        assert_eq!(string_uses[0].referenced_xmt, 71);
+    }
+
+    #[test]
     fn parasolid_attribute_definition_requires_declared_printable_name_and_field_record() {
         let mut bytes = vec![0xaa, 0x00, 0x4f, 0xff];
         bytes.extend_from_slice(&16u32.to_be_bytes());
@@ -1401,34 +4082,42 @@ mod tests {
         bytes.extend_from_slice(b"SDL/TYSA_DENSITY");
         bytes.extend_from_slice(&[0x00, 0x50, 0x00, 0x00, 0x00, 0x01]);
         bytes.extend_from_slice(&0x012bu16.to_be_bytes());
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+        bytes.extend_from_slice(&0x012au16.to_be_bytes());
+        bytes.extend_from_slice(&9000u32.to_be_bytes());
+        bytes.extend_from_slice(&[0, 1, 2, 3, 4, 5, 6, 0]);
         bytes.extend_from_slice(&0x0030u16.to_be_bytes());
-        bytes.extend_from_slice(&0x0031u16.to_be_bytes());
-        bytes.extend_from_slice(&[0x00, 0x00, 0x23, 0x28]);
-        let descriptor = [
-            0x00, 0x00, 0x00, 0x00, 0x03, 0x06, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
-            0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
-        ];
-        bytes.extend_from_slice(&descriptor);
-        bytes.push(1);
+        bytes.extend_from_slice(&[0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]);
+        bytes.push(2);
         let definitions = crate::parasolid::attribute_definitions(&bytes);
         assert_eq!(definitions.len(), 1);
-        assert_eq!(definitions[0].offset, 1);
-        assert_eq!(definitions[0].xmt, 0x12a);
+        assert_eq!(definitions[0].offset, 26);
+        assert_eq!(definitions[0].xmt, 0x12b);
+        assert_eq!(definitions[0].identifier_xmt, 0x12a);
+        assert_eq!(definitions[0].identifier_offset, 1);
         assert_eq!(definitions[0].name, "SDL/TYSA_DENSITY");
+        assert_eq!(definitions[0].next_definition_xmt, 1);
+        assert_eq!(definitions[0].type_id, 9000);
+        assert_eq!(definitions[0].action_codes, [0, 1, 2, 3, 4, 5, 6, 0]);
+        assert_eq!(definitions[0].field_names_xmt, 0x30);
+        assert_eq!(definitions[0].legal_owner_flags[4], 1);
+        assert_eq!(definitions[0].legal_owner_flags[12], 1);
         assert_eq!(definitions[0].field_count, 1);
-        assert_eq!(definitions[0].field_record_xmt, 0x12b);
-        assert_eq!(definitions[0].field_record_references, [0x30, 0x31]);
-        assert_eq!(definitions[0].field_record_header_words, [0, 0x2328]);
-        assert_eq!(definitions[0].field_descriptor_prefix, descriptor);
-        assert_eq!(
-            super::parasolid_attribute_field_storage(&definitions[0].field_descriptor_prefix),
-            Some(super::ParasolidAttributeFieldStorage::Double)
-        );
-        assert_eq!(definitions[0].field_codes, [1]);
+        assert_eq!(definitions[0].field_codes, [2]);
 
         let truncated = &bytes[..bytes.len() - 1];
         assert!(crate::parasolid::attribute_definitions(truncated).is_empty());
 
+        let mut duplicate_identifier = bytes.clone();
+        duplicate_identifier.splice(26..26, bytes[1..26].iter().copied());
+        assert!(crate::parasolid::attribute_definitions(&duplicate_identifier).is_empty());
+
+        bytes[42] = 7;
+        assert!(crate::parasolid::attribute_definitions(&bytes).is_empty());
+        bytes[42] = 0;
+        bytes[52] = 2;
+        assert!(crate::parasolid::attribute_definitions(&bytes).is_empty());
+        bytes[52] = 0;
         bytes[20] = 0;
         assert!(crate::parasolid::attribute_definitions(&bytes).is_empty());
     }
@@ -1625,7 +4314,7 @@ mod tests {
         assert_eq!(result.ir.model.procedural_curves.len(), 1);
         assert_eq!(result.ir.model.procedural_curves[0].curve, curve.id);
         assert!(result.report.losses.iter().any(|loss| {
-            loss.category == LossCategory::Geometry
+            loss.code.category() == LossCategory::Geometry
                 && loss.message.starts_with("1 surface-intersection record(s)")
         }));
         assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
@@ -1633,8 +4322,17 @@ mod tests {
 
     #[test]
     fn decode_preserves_deltas_intersection_data_curve() {
-        let stream = deltas_intersection_curve_stream();
-        let mut cur = Cursor::new(prt_with_partition(&stream));
+        let mut partition = topology_partition_stream();
+        for (tag, xmt, offset) in [(16, 8, 24), (17, 7, 18)] {
+            let marker = [0, tag, 0, xmt];
+            let record = partition
+                .windows(marker.len())
+                .position(|window| window == marker)
+                .expect("topology record");
+            put_ref(&mut partition, record + offset, 12);
+        }
+        let deltas = deltas_intersection_curve_stream();
+        let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
         let result = NxCodec
             .decode(&mut cur, &DecodeOptions::default())
             .expect("required invariant");
@@ -1747,7 +4445,7 @@ mod tests {
         assert_eq!(context.parameter_range, [0.0, 0.01]);
         assert!(result.ir.model.coedges[0].pcurves.is_empty());
         assert!(!result.report.losses.iter().any(|loss| {
-            loss.category == LossCategory::Geometry
+            loss.code.category() == LossCategory::Geometry
                 && loss.message.contains("surface-intersection record(s)")
         }));
         let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
@@ -1774,7 +4472,10 @@ mod tests {
         assert!(records[0].sense);
         assert_eq!(records[0].boundary_index, 0);
         assert_eq!(records[0].blend_surface_xmt, 13);
-        assert!(!records[0].escaped);
+        assert_eq!(
+            records[0].framing,
+            crate::intersection::BlendBoundFraming::PartitionDirect
+        );
 
         let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
             &result.ir.model.procedural_curves[0].definition

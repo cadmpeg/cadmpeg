@@ -291,8 +291,8 @@ fn emit_carrier_surface(
                 ProceduralSurfaceDefinition::Offset {
                     support: support_id,
                     distance,
-                    u_sense: Some(u_sense),
-                    v_sense: Some(v_sense),
+                    u_sense,
+                    v_sense,
                     extension_flags,
                     revision_form,
                 }
@@ -302,6 +302,7 @@ fn emit_carrier_surface(
                 parameter_interval,
                 direction,
                 native_position,
+                revision_form,
             } => {
                 let directrix_id = CurveId(format!("f3d:brep:procedural_surface#{i}:directrix"));
                 out.curves.push(Curve {
@@ -314,6 +315,7 @@ fn emit_carrier_surface(
                     parameter_interval: Some(parameter_interval),
                     direction,
                     native_position: Some(native_position),
+                    revision_form,
                 }
             }
             DecodedProceduralSurfaceDefinition::VariableBlend(construction) => {
@@ -503,13 +505,11 @@ fn emit_loft_surface(
                                                         });
                                                         surface
                                                     });
-                                                    let pcurve = member.data.pcurve.map(|pcurve| PcurveGeometry::Nurbs {
-                                                        degree: pcurve.degree,
-                                                        knots: pcurve.knots,
-                                                        control_points: pcurve.control_points,
-                                                        weights: pcurve.weights,
-                                                        periodic: pcurve.periodic,
-                                                    });
+                                                    let pcurve = member.data.pcurve.map(embedded_pcurve_geometry);
+                                                    let secondary_pcurve = member
+                                                        .data
+                                                        .secondary_pcurve
+                                                        .map(embedded_pcurve_geometry);
                                                     cadmpeg_ir::geometry::LoftProfileMember {
                                                         type_code: member.type_code,
                                                         curve,
@@ -518,6 +518,7 @@ fn emit_loft_surface(
                                                             surface,
                                                             support_bounds: member.data.support_bounds,
                                                             pcurve,
+                                                            secondary_pcurve,
                                                             first_flag: member.data.first_flag,
                                                             asm_extension: member.data.asm_extension,
                                                             subdata: member.data.subdata,
@@ -615,6 +616,10 @@ fn emit_compound_loft_surface(
                                                 pcurve: member
                                                     .data
                                                     .pcurve
+                                                    .map(embedded_pcurve_geometry),
+                                                secondary_pcurve: member
+                                                    .data
+                                                    .secondary_pcurve
                                                     .map(embedded_pcurve_geometry),
                                                 first_flag: member.data.first_flag,
                                                 asm_extension: member.data.asm_extension,
@@ -788,6 +793,10 @@ fn emit_scaled_compound_loft_surface(
                                                 pcurve: member
                                                     .data
                                                     .pcurve
+                                                    .map(embedded_pcurve_geometry),
+                                                secondary_pcurve: member
+                                                    .data
+                                                    .secondary_pcurve
                                                     .map(embedded_pcurve_geometry),
                                                 first_flag: member.data.first_flag,
                                                 asm_extension: member.data.asm_extension,
@@ -965,6 +974,15 @@ fn emit_law_surface(
             EmbeddedLawExpression::Transform { scalars, enums } => {
                 cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
             }
+            EmbeddedLawExpression::TransformVec {
+                vectors,
+                scale,
+                flags,
+            } => cadmpeg_ir::geometry::LawExpression::TransformVec {
+                vectors,
+                scale,
+                flags,
+            },
             EmbeddedLawExpression::Edge {
                 curve,
                 endpoints,
@@ -1069,6 +1087,15 @@ fn emit_skin_surface(
             EmbeddedLawExpression::Transform { scalars, enums } => {
                 cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
             }
+            EmbeddedLawExpression::TransformVec {
+                vectors,
+                scale,
+                flags,
+            } => cadmpeg_ir::geometry::LawExpression::TransformVec {
+                vectors,
+                scale,
+                flags,
+            },
             EmbeddedLawExpression::Edge {
                 curve,
                 endpoints,
@@ -1177,6 +1204,10 @@ fn emit_skin_surface(
                             surface,
                             support_bounds: profile.data.support_bounds,
                             pcurve: profile.data.pcurve.map(embedded_pcurve_geometry),
+                            secondary_pcurve: profile
+                                .data
+                                .secondary_pcurve
+                                .map(embedded_pcurve_geometry),
                             first_flag: profile.data.first_flag,
                             asm_extension: profile.data.asm_extension,
                             subdata: profile.data.subdata,
@@ -1265,6 +1296,15 @@ fn emit_net_surface(
             EmbeddedLawExpression::Transform { scalars, enums } => {
                 cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
             }
+            EmbeddedLawExpression::TransformVec {
+                vectors,
+                scale,
+                flags,
+            } => cadmpeg_ir::geometry::LawExpression::TransformVec {
+                vectors,
+                scale,
+                flags,
+            },
             EmbeddedLawExpression::Edge {
                 curve,
                 endpoints,
@@ -1353,6 +1393,10 @@ fn emit_net_surface(
                                                             pcurve: member.data.pcurve.map(
                                                                 embedded_pcurve_geometry,
                                                             ),
+                                                            secondary_pcurve: member
+                                                                .data
+                                                                .secondary_pcurve
+                                                                .map(embedded_pcurve_geometry),
                                                             first_flag: member.data.first_flag,
                                                             asm_extension: member
                                                                 .data
@@ -1469,6 +1513,15 @@ fn emit_sweep_surface(
             EmbeddedLawExpression::Transform { scalars, enums } => {
                 cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
             }
+            EmbeddedLawExpression::TransformVec {
+                vectors,
+                scale,
+                flags,
+            } => cadmpeg_ir::geometry::LawExpression::TransformVec {
+                vectors,
+                scale,
+                flags,
+            },
             EmbeddedLawExpression::Edge {
                 curve,
                 endpoints,
@@ -1947,6 +2000,7 @@ fn emit_variable_blend_surface(
         .map(|curve| add_curve("post", CurveGeometry::Nurbs(curve)));
     ProceduralSurfaceDefinition::VariableBlend {
         construction: Box::new(VariableBlendConstruction {
+            subtype: construction.subtype,
             revision: construction.revision,
             sides: Box::new([first, second]),
             slice,
@@ -1955,17 +2009,15 @@ fn emit_variable_blend_surface(
             radius_kind: construction.radius_kind,
             first_value: construction.first_value,
             second_value: construction.second_value,
-            chamfer_selector: construction.chamfer_selector,
-            chamfer: construction.chamfer,
-            single_radius_selector: construction.single_radius_selector,
-            single_radius_tail: construction.single_radius_tail,
+            cross_section: construction.cross_section,
             u_range: construction.u_range,
             v_range: construction.v_range,
             shape_prefix: construction.shape_prefix,
             shape_parameter: construction.shape_parameter,
             shape_length: construction.shape_length,
             shape_tail: construction.shape_tail,
-            cache_selector: construction.cache_selector,
+            tail_enum: construction.tail_enum,
+            tail_parameterization: construction.tail_parameterization,
             discontinuities: construction.discontinuities,
             tail_flag: construction.tail_flag,
             tail_extensions: construction.tail_extensions,
@@ -2016,6 +2068,10 @@ fn emit_revision_compound_loft_surface(
                         surface,
                         support_bounds: member.data.support_bounds,
                         pcurve: member.data.pcurve.map(embedded_pcurve_geometry),
+                        secondary_pcurve: member
+                            .data
+                            .secondary_pcurve
+                            .map(embedded_pcurve_geometry),
                         first_flag: member.data.first_flag,
                         asm_extension: member.data.asm_extension,
                         subdata: member.data.subdata,
@@ -2095,6 +2151,7 @@ fn emit_revision_compound_loft_surface(
         construction: Box::new(cadmpeg_ir::geometry::RevisionCompoundLoftConstruction {
             revision: construction.revision,
             tail_enum: construction.tail_enum,
+            tail_parameterization: construction.tail_parameterization,
             discontinuities: construction.discontinuities,
             tail_flag: construction.tail_flag,
             base_profile,
@@ -2176,6 +2233,7 @@ fn emit_revision_g2_blend_surface(
             shape_length: construction.shape_length,
             shape_tail: construction.shape_tail,
             tail_enum: construction.tail_enum,
+            tail_parameterization: construction.tail_parameterization,
             discontinuities: construction.discontinuities,
             tail_flag: construction.tail_flag,
             tail_extensions: construction.tail_extensions,
@@ -2404,9 +2462,12 @@ fn emit_blend_surface(
             shape_prefix: native.shape_prefix,
             parameters: native.parameters,
             tail: native.tail,
-            cache_selector: native.cache_selector,
+            tail_enum: native.tail_enum,
+            tail_parameterization: native.tail_parameterization,
             discontinuities: native.discontinuities,
+            tail_flag: native.tail_flag,
             third,
+            tail_extensions: native.tail_extensions,
         })
     });
     if resolved_supports
@@ -2656,12 +2717,50 @@ fn emit_carrier_curve(
         } else if let Some(embedded) = procedural.11 {
             emit_spring_curve(out, i, embedded)
         } else if let Some(embedded) = procedural.12 {
-            let bend = CurveId(format!("f3d:brep:procedural_curve#{i}:bend"));
-            out.curves.push(Curve {
-                id: bend.clone(),
-                geometry: CurveGeometry::Nurbs(embedded.bend),
-                source_object: None,
+            let support_ids: [Option<SurfaceId>; 2] = embedded
+                .surfaces
+                .into_iter()
+                .enumerate()
+                .map(|(side, geometry)| {
+                    geometry.map(|geometry| {
+                        let id = SurfaceId(format!(
+                            "f3d:brep:procedural_curve#{i}:deformable_support{side}"
+                        ));
+                        out.surfaces.push(Surface {
+                            id: id.clone(),
+                            geometry,
+                            source_object: None,
+                        });
+                        id
+                    })
+                })
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("two fixed support sides");
+            let pcurves = embedded.pcurves.map(|pcurve| {
+                pcurve.map(|pcurve| PcurveGeometry::Nurbs {
+                    degree: pcurve.degree,
+                    knots: pcurve.knots,
+                    control_points: pcurve.control_points,
+                    weights: pcurve.weights,
+                    periodic: pcurve.periodic,
+                })
             });
+            let source = match embedded.source {
+                crate::nurbs::proc_curve::EmbeddedDeformableSource::Curve(geometry) => {
+                    let curve = CurveId(format!("f3d:brep:procedural_curve#{i}:deformable_source"));
+                    out.curves.push(Curve {
+                        id: curve.clone(),
+                        geometry: CurveGeometry::Nurbs(geometry),
+                        source_object: None,
+                    });
+                    cadmpeg_ir::geometry::DeformableCurveSource::Curve { curve }
+                }
+                crate::nurbs::proc_curve::EmbeddedDeformableSource::NativeReference {
+                    flag,
+                    index,
+                } => cadmpeg_ir::geometry::DeformableCurveSource::NativeReference { flag, index },
+            };
             let data = match embedded.data {
                 EmbeddedDeformableData::VectorField {
                     vectors,
@@ -2670,20 +2769,45 @@ fn emit_carrier_curve(
                     vectors,
                     parameter_pairs,
                 },
-                EmbeddedDeformableData::Surface(geometry) => {
-                    let surface =
-                        SurfaceId(format!("f3d:brep:procedural_curve#{i}:deformation_surface"));
-                    out.surfaces.push(Surface {
-                        id: surface.clone(),
-                        geometry,
-                        source_object: None,
-                    });
-                    cadmpeg_ir::geometry::DeformableCurveData::Surface { surface }
-                }
+                EmbeddedDeformableData::Mode3 {
+                    leading_vectors,
+                    leading_parameter,
+                    leading_flags,
+                    trailing_point,
+                    trailing_vectors,
+                    frame_parameter,
+                    frame_flags,
+                    parameters,
+                    trailing_flags,
+                    trailing_parameter,
+                    trailing_value,
+                } => cadmpeg_ir::geometry::DeformableCurveData::Mode3 {
+                    leading_vectors,
+                    leading_parameter,
+                    leading_flags,
+                    trailing_point,
+                    trailing_vectors,
+                    frame_parameter,
+                    frame_flags,
+                    parameters,
+                    trailing_flags,
+                    trailing_parameter,
+                    trailing_value,
+                },
             };
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable {
-                extension: embedded.extension,
-                bend,
+                context: cadmpeg_ir::geometry::IntcurveSupportContext {
+                    sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
+                        surface: support_ids[side].clone(),
+                        pcurve: pcurves[side].clone(),
+                        pcurve_parameter_range: None,
+                    }),
+                    parameter_range: embedded.parameter_range,
+                    discontinuities: embedded.discontinuities,
+                },
+                cache_first: embedded.form,
+                source,
+                source_parameter_range: embedded.source_parameter_range,
                 data,
             }
         } else if let Some(embedded) = procedural.13 {
@@ -2980,6 +3104,15 @@ fn emit_law_curve(
             EmbeddedLawExpression::Transform { scalars, enums } => {
                 cadmpeg_ir::geometry::LawExpression::Transform { scalars, enums }
             }
+            EmbeddedLawExpression::TransformVec {
+                vectors,
+                scale,
+                flags,
+            } => cadmpeg_ir::geometry::LawExpression::TransformVec {
+                vectors,
+                scale,
+                flags,
+            },
             EmbeddedLawExpression::Edge {
                 curve,
                 endpoints,
@@ -3071,6 +3204,13 @@ fn emit_law_curve(
             parameter_range: embedded.context.parameter_range,
             discontinuities: embedded.context.discontinuities,
         },
+        version: embedded
+            .version
+            .map(|version| cadmpeg_ir::geometry::LawCurveVersionForm {
+                stamp: version.stamp,
+                post_enum: version.post_enum,
+                parameter_range: version.parameter_range,
+            }),
         extension: embedded.extension,
         primary: map_formula("primary", embedded.primary),
         additional: embedded
@@ -3225,6 +3365,10 @@ pub(crate) fn emit_vertices(
                                 vertex: VertexId(id(i)),
                                 record_index: r.index as u32,
                                 leading_tolerances: [*first, *second],
+                                trailing_field: match r.chunk(9) {
+                                    Some(Token::Long(value)) => Some(*value),
+                                    _ => None,
+                                },
                             });
                         }
                     }
@@ -3328,14 +3472,20 @@ pub(crate) fn emit_edges(
                 Sense::Reversed => reversed_curve_id(c),
                 Sense::Forward => CurveId(id(c)),
             });
-            let tolerant_tail = match (r.head.as_str(), r.chunk(11), r.chunk(12), r.chunk(13)) {
-                (
-                    "tedge",
-                    Some(Token::Double(tolerance)),
-                    Some(Token::Long(first)),
-                    Some(Token::Long(second @ 0)),
-                ) if tolerance.is_finite() && *tolerance >= 0.0 => {
-                    Some((*tolerance, [*first, *second]))
+            // The tedge tail carries the model-space tolerance, then the
+            // per-entity serializer revision stamp, then a trailing LONG
+            // present when the stream's full format version (save format
+            // x 100 + header revision) is at least 2250003. All forms are
+            // retained verbatim.
+            let tolerant_tail = match (r.head.as_str(), r.chunk(11), r.chunk(12)) {
+                ("tedge", Some(Token::Double(tolerance)), Some(Token::Long(revision)))
+                    if tolerance.is_finite() && *tolerance >= 0.0 =>
+                {
+                    let trailing = match r.chunk(13) {
+                        Some(Token::Long(second)) => Some(*second),
+                        _ => None,
+                    };
+                    Some((*tolerance, *revision, trailing))
                 }
                 _ => None,
             };
@@ -3345,14 +3495,15 @@ pub(crate) fn emit_edges(
                 start: VertexId(id(start)),
                 end: VertexId(id(end)),
                 param_range,
-                tolerance: tolerant_tail.map(|(tolerance, _)| tolerance * LEN_TO_MM),
+                tolerance: tolerant_tail.map(|(tolerance, _, _)| tolerance * LEN_TO_MM),
             });
-            if let Some((_, trailing_integers)) = tolerant_tail {
+            if let Some((_, entity_revision, trailing_field)) = tolerant_tail {
                 out.tolerant_edge_tails.push(TolerantEdgeTail {
                     id: format!("f3d:asm:tolerant-edge-tail#{i}"),
                     edge: EdgeId(id(i)),
                     record_index: r.index as u32,
-                    trailing_integers,
+                    entity_revision,
+                    trailing_field,
                 });
             }
             out.edge_ownerships.push(EdgeOwnership {
@@ -3381,10 +3532,11 @@ pub(crate) fn emit_coedges(
     records: &[Record],
     bytes: &[u8],
     subtype_tables: &nurbs::subtypes::SubtypeTables,
-    release_major: Option<u32>,
+    save_format_major: Option<u32>,
     carriers: &Carriers,
     reach: &Reachable,
 ) {
+    let ref_width = crate::asm_header::stream_ref_width(bytes);
     let Carriers {
         pcurve_parameter_ranges,
         ..
@@ -3415,7 +3567,7 @@ pub(crate) fn emit_coedges(
             let tolerant = if r.head == "tcoedge" {
                 match (r.chunk(11), r.chunk(12)) {
                     (Some(Token::Double(start)), Some(Token::Double(end))) => {
-                        let extension = match release_major {
+                        let extension = match save_format_major {
                             Some(major) if major > 219 => tolerant_coedge_extension(r),
                             Some(215..=219) => match r.chunk(13) {
                                 Some(Token::Ref(target)) => {
@@ -3445,10 +3597,11 @@ pub(crate) fn emit_coedges(
                     return None;
                 };
                 let record_bytes = bytes.get(r.offset..r.offset.checked_add(r.len)?)?;
-                let mut curve = nurbs::core::decode_curve_cache_resolving_refs(
+                let mut curve = nurbs::core::decode_curve_cache_resolving_refs_at(
                     record_bytes,
                     bytes,
                     subtype_tables,
+                    ref_width,
                 )?;
                 if *curve_reversed {
                     reverse_nurbs_curve(&mut curve);
@@ -3609,6 +3762,7 @@ pub(crate) fn emit_containers(
     let WireShellTopology {
         wire_edges_by_shell,
         free_vertices_by_shell,
+        saved_free_edges,
     } = wire;
     let attribute_color = |entity: &Record| attribute_chain_color(entity, by_index);
     let attribute_name = |entity: &Record| attribute_chain_name(entity, by_index);
@@ -3636,7 +3790,7 @@ pub(crate) fn emit_containers(
                         .collect(),
                 });
             }
-            // ASM release 231 names this record `region`; release 227 streams
+            // Save-format 231 names this record `region`; format-227 streams
             // carry the original ACIS head `lump`. Same layout in both.
             "region" | "lump" => {
                 let Some(owner) = r.ref_at(5) else { continue };
@@ -3699,6 +3853,32 @@ pub(crate) fn emit_containers(
             _ => {}
         }
     }
+    for &edge in saved_free_edges {
+        let body_id = BodyId(format!("f3d:brep:saved-edge-body#{edge}"));
+        let region_id = RegionId(format!("f3d:brep:saved-edge-region#{edge}"));
+        let shell_id = ShellId(format!("f3d:brep:saved-edge-shell#{edge}"));
+        out.bodies.push(Body {
+            id: body_id.clone(),
+            kind: cadmpeg_ir::topology::BodyKind::Wire,
+            regions: vec![region_id.clone()],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        out.regions.push(Region {
+            id: region_id.clone(),
+            body: body_id,
+            shells: vec![shell_id.clone()],
+        });
+        out.shells.push(Shell {
+            id: shell_id,
+            region: region_id,
+            faces: Vec::new(),
+            wire_edges: vec![EdgeId(id(edge))],
+            free_vertices: Vec::new(),
+        });
+    }
 }
 
 /// Project subshell-owned faces onto their nearest shell ancestor, since the
@@ -3733,6 +3913,7 @@ pub(crate) fn emit_attributes(
 ) -> HashSet<i64> {
     let Reachable {
         faces: kept_faces,
+        loops: kept_loops,
         coedges: kept_coedges,
         edges: kept_edges,
         vertices: kept_vertices,
@@ -3746,7 +3927,11 @@ pub(crate) fn emit_attributes(
             "body" if out.bodies.iter().any(|entity| entity.id.0 == id(index)) => {
                 Some(AttributeTarget::Body(BodyId(id(index))))
             }
+            "shell" if out.shells.iter().any(|entity| entity.id.0 == id(index)) => {
+                Some(AttributeTarget::Shell(ShellId(id(index))))
+            }
             "face" if kept_faces.contains(&index) => Some(AttributeTarget::Face(FaceId(id(index)))),
+            "loop" if kept_loops.contains(&index) => Some(AttributeTarget::Loop(LoopId(id(index)))),
             "coedge" | "tcoedge" if kept_coedges.contains(&index) => {
                 Some(AttributeTarget::Coedge(CoedgeId(id(index))))
             }
@@ -3912,6 +4097,26 @@ pub(crate) fn emit_annotation_records(
         .chain(out.curves.iter().map(|entity| entity.id.0.as_str()))
         .chain(out.pcurves.iter().map(|entity| entity.id.0.as_str()))
         .collect::<HashSet<_>>();
+    let attribute_ids = out
+        .attributes
+        .iter()
+        .map(|attribute| attribute.id.0.as_str())
+        .collect::<HashSet<_>>();
+    let unknown_ids = out
+        .unknowns
+        .iter()
+        .map(|unknown| unknown.id.0.as_str())
+        .collect::<HashSet<_>>();
+    let procedural_ids = out
+        .procedural_surfaces
+        .iter()
+        .map(|entity| entity.id.0.as_str())
+        .chain(
+            out.procedural_curves
+                .iter()
+                .map(|entity| entity.id.0.as_str()),
+        )
+        .collect::<HashSet<_>>();
     for record in records {
         let entity_id = id(record.index as i64);
         if emitted_ids.contains(entity_id.as_str()) {
@@ -3960,11 +4165,7 @@ pub(crate) fn emit_annotation_records(
             });
         }
         let attribute_id = format!("f3d:brep:attribute#{}", record.index);
-        if out
-            .attributes
-            .iter()
-            .any(|attribute| attribute.id.0 == attribute_id)
-        {
+        if attribute_ids.contains(attribute_id.as_str()) {
             out.annotation_records.push(AnnotationRecord {
                 id: attribute_id,
                 stream: stream.to_owned(),
@@ -3974,11 +4175,7 @@ pub(crate) fn emit_annotation_records(
             });
         }
         let unknown_id = unknown_record_id(record);
-        if out
-            .unknowns
-            .iter()
-            .any(|unknown| unknown.id.0 == unknown_id)
-        {
+        if unknown_ids.contains(unknown_id.as_str()) {
             out.annotation_records.push(AnnotationRecord {
                 id: unknown_id,
                 stream: stream.to_owned(),
@@ -3997,15 +4194,7 @@ pub(crate) fn emit_annotation_records(
                 "procedural_curve",
             ),
         ] {
-            if out
-                .procedural_surfaces
-                .iter()
-                .any(|entity| entity.id.0 == synthetic_id)
-                || out
-                    .procedural_curves
-                    .iter()
-                    .any(|entity| entity.id.0 == synthetic_id)
-            {
+            if procedural_ids.contains(synthetic_id.as_str()) {
                 out.annotation_records.push(AnnotationRecord {
                     id: synthetic_id,
                     stream: stream.to_owned(),

@@ -14,6 +14,8 @@ keywords = ["cad", "solidworks", "sldprt", "parasolid", "geometry"]
 categories = ["encoding", "parser-implementations", "graphics"]
 
 [dependencies]
+cadmpeg-codec-core.workspace = true
+cadmpeg-container.workspace = true
 cadmpeg-ir.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
@@ -23,6 +25,11 @@ roxmltree.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true
+
+[dev-dependencies]
+# Tests build `cadmpeg_ir::examples`; the feature keeps those fixtures out of
+# the normal library build.
+cadmpeg-ir = { workspace = true }
 
 [features]
 # Exposes `pub mod fuzzing`, thin wrappers that drive the crate-private `brep`

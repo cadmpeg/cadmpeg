@@ -3,11 +3,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult};
+use cadmpeg_codec_core::CodecError;
+use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 
@@ -69,6 +70,7 @@ fn decode_exchange_mode(
         container_only: options.container_only,
         geometry_transferred: false,
         coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses: Vec::new(),
         notes: exchange
             .references
@@ -77,7 +79,10 @@ fn decode_exchange_mode(
             .collect(),
     };
     if options.container_only {
-        return (DecodeResult::new(ir, report), BTreeSet::new());
+        return (
+            DecodeResult::new(ir, report, cadmpeg_ir::SourceFidelity::default()),
+            BTreeSet::new(),
+        );
     }
 
     let geometry = geometry::decode(exchange, &mut ir);
@@ -98,8 +103,7 @@ fn decode_exchange_mode(
     report
         .losses
         .extend(geometry.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossCode::DecodeDiagnostic,
-            category: LossCategory::Geometry,
+            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
             severity: Severity::Warning,
             message,
             provenance: None,
@@ -107,8 +111,7 @@ fn decode_exchange_mode(
     report
         .losses
         .extend(topology.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossCode::DecodeDiagnostic,
-            category: LossCategory::Topology,
+            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
             severity: Severity::Warning,
             message,
             provenance: None,
@@ -116,8 +119,7 @@ fn decode_exchange_mode(
     report
         .losses
         .extend(presentation.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossCode::DecodeDiagnostic,
-            category: LossCategory::Material,
+            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
             severity: Severity::Warning,
             message,
             provenance: None,
@@ -125,8 +127,7 @@ fn decode_exchange_mode(
     report
         .losses
         .extend(product.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossCode::DecodeDiagnostic,
-            category: LossCategory::Metadata,
+            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
             severity: Severity::Warning,
             message,
             provenance: None,
@@ -134,8 +135,7 @@ fn decode_exchange_mode(
     report
         .losses
         .extend(tessellation.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossCode::DecodeDiagnostic,
-            category: LossCategory::Geometry,
+            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
             severity: Severity::Warning,
             message,
             provenance: None,
@@ -143,8 +143,7 @@ fn decode_exchange_mode(
     report
         .losses
         .extend(pmi.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossCode::DecodeDiagnostic,
-            category: LossCategory::Metadata,
+            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
             severity: Severity::Warning,
             message,
             provenance: None,
@@ -152,8 +151,7 @@ fn decode_exchange_mode(
     report
         .losses
         .extend(validation.warnings.into_iter().map(|message| LossNote {
-            code: cadmpeg_ir::LossCode::DecodeDiagnostic,
-            category: LossCategory::Geometry,
+            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
             severity: Severity::Warning,
             message,
             provenance: None,
@@ -263,13 +261,15 @@ fn decode_exchange_mode(
     report
         .losses
         .extend(counts.into_iter().map(|(name, count)| LossNote {
-            code: cadmpeg_ir::LossCode::RecordNotTyped,
-            category: LossCategory::Other,
+            code: cadmpeg_ir::LossKind::RecordNotTyped,
             severity: Severity::Warning,
             message: format!("preserved {count} {name} instance(s) as named opaque STEP records"),
             provenance: None,
         }));
-    (DecodeResult::new(ir, report), opaque_offsets)
+    (
+        DecodeResult::new(ir, report, cadmpeg_ir::SourceFidelity::default()),
+        opaque_offsets,
+    )
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

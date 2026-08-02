@@ -3,7 +3,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::decode::DecodeContext;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, PcurveGeometry, Surface, SurfaceGeometry,
@@ -32,6 +33,7 @@ type IndexedPolygon = (Vec<Point3>, Option<Vec<f64>>, f64);
 
 /// Transfer text or binary shape-set topology with placements applied once.
 pub(crate) fn transfer(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     payloads: &[ShapePayloadRecord],
     properties: &[PropertyRecord],
@@ -50,7 +52,7 @@ pub(crate) fn transfer(
         let mut builder = Builder::new(payload, tables, source_object);
         builder.emit_pcurves(ir);
         for root in builder.body_roots()? {
-            builder.append_body(ir, root)?;
+            builder.append_body(ctx, ir, root)?;
         }
         builder.emit_unowned_triangulations(ir);
     }
@@ -305,7 +307,12 @@ impl<'a> Builder<'a> {
             .collect()
     }
 
-    fn append_body(&mut self, ir: &mut CadIr, root: BodyRoot) -> Result<(), CodecError> {
+    fn append_body(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        ir: &mut CadIr,
+        root: BodyRoot,
+    ) -> Result<(), CodecError> {
         self.body_scope = root.transform;
         let root_shape = self.shape(root.shape)?;
         let root_kind = root_shape.kind;
@@ -342,13 +349,13 @@ impl<'a> Builder<'a> {
         let tessellation_start = ir.model.tessellations.len();
         let mut regions = Vec::new();
         self.append_shape_regions(
+            ctx,
             ir,
             &body_id,
             root.shape,
             Transform::identity(),
             root.reversed,
             &mut regions,
-            0,
         )?;
         if regions.is_empty() {
             ir.model.tessellations.truncate(tessellation_start);
@@ -366,22 +373,18 @@ impl<'a> Builder<'a> {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)] // Depth is explicit to bound hostile topology nesting.
+    #[allow(clippy::too_many_arguments)]
     fn append_shape_regions(
         &mut self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         body: &BodyId,
         shape_index: usize,
         transform: Transform,
         reversed: bool,
         output: &mut Vec<RegionId>,
-        depth: usize,
     ) -> Result<(), CodecError> {
-        if depth > 256 {
-            return Err(CodecError::Malformed(
-                "topology nesting limit exceeded".into(),
-            ));
-        }
+        let _depth = ctx.enter_nested("transfer FCStd topology nesting", None)?;
         let shape = self.shape(shape_index)?.clone();
         if matches!(
             shape.kind,
@@ -389,13 +392,13 @@ impl<'a> Builder<'a> {
         ) {
             for child in &shape.children {
                 self.append_shape_regions(
+                    ctx,
                     ir,
                     body,
                     child.shape,
-                    multiply(transform, self.tables.location(child.location)),
+                    transform.compose(self.tables.location(child.location)),
                     reversed ^ is_reversed(child.orientation),
                     output,
-                    depth + 1,
                 )?;
             }
             return Ok(());
@@ -439,7 +442,7 @@ impl<'a> Builder<'a> {
         parent: Transform,
         reversed: bool,
     ) -> Result<ShellId, CodecError> {
-        let transform = multiply(parent, self.tables.location(shell_use.location));
+        let transform = parent.compose(self.tables.location(shell_use.location));
         self.append_shell_shape(
             ir,
             region,
@@ -541,7 +544,7 @@ impl<'a> Builder<'a> {
         parent: Transform,
         reversed: bool,
     ) -> Result<Option<FaceId>, CodecError> {
-        let face_transform = multiply(parent, self.tables.location(face_use.location));
+        let face_transform = parent.compose(self.tables.location(face_use.location));
         let face_reversed = reversed ^ is_reversed(face_use.orientation);
         let shape = self.shape(face_use.shape)?.clone();
         let TextTShapeGeometry::Face {
@@ -554,7 +557,7 @@ impl<'a> Builder<'a> {
         else {
             return Ok(None);
         };
-        let surface_transform = multiply(face_transform, self.tables.location(location));
+        let surface_transform = face_transform.compose(self.tables.location(location));
         let face_key = self.topology_label(face_use.shape, face_transform);
         let face_id = FaceId(crate::native::model_id("face", &self.payload.id, &face_key));
         // OCCT triangulation nodes are already expressed in the face's surface-location frame.
@@ -564,7 +567,7 @@ impl<'a> Builder<'a> {
             let vertices = triangulation
                 .nodes
                 .iter()
-                .map(|point| transform_point(face_transform, *point))
+                .map(|point| face_transform.apply_point(*point))
                 .collect::<Vec<_>>();
             let triangles = triangulation
                 .triangles
@@ -610,7 +613,7 @@ impl<'a> Builder<'a> {
                 .map(|normals| {
                     normals
                         .iter()
-                        .map(|normal| transform_vector(face_transform, *normal))
+                        .map(|normal| transform_normalized_vector(face_transform, *normal))
                         .collect()
                 })
                 .unwrap_or_default();
@@ -638,7 +641,7 @@ impl<'a> Builder<'a> {
             .filter(|child| self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Wire)
             .enumerate()
         {
-            let wire_transform = multiply(face_transform, self.tables.location(wire_use.location));
+            let wire_transform = face_transform.compose(self.tables.location(wire_use.location));
             let wire = self.shape(wire_use.shape)?.clone();
             let mut edge_uses = wire
                 .children
@@ -669,7 +672,7 @@ impl<'a> Builder<'a> {
                 .collect::<Vec<_>>();
             for (index, edge_use) in edge_uses.iter().enumerate() {
                 let edge_transform =
-                    multiply(wire_transform, self.tables.location(edge_use.location));
+                    wire_transform.compose(self.tables.location(edge_use.location));
                 let edge = self.ensure_edge(ir, edge_use, wire_transform)?;
                 let pcurve = self.face_pcurve(edge_use, edge_transform, surface, surface_transform);
                 let id = coedge_ids[index].clone();
@@ -723,8 +726,8 @@ impl<'a> Builder<'a> {
         edge_use: &TextShapeUse,
         parent: Transform,
     ) -> Result<EdgeId, CodecError> {
-        let transform = multiply(parent, self.tables.location(edge_use.location));
-        let key = OccurrenceKey::new(edge_use.shape, multiply(self.body_scope, transform));
+        let transform = parent.compose(self.tables.location(edge_use.location));
+        let key = OccurrenceKey::new(edge_use.shape, self.body_scope.compose(transform));
         if let Some(id) = self.edges.get(&key) {
             return Ok(id.clone());
         }
@@ -774,7 +777,7 @@ impl<'a> Builder<'a> {
             None
         } else if let Some(representation) = curve_representation {
             let carrier_transform =
-                multiply(transform, self.tables.location(representation.location));
+                transform.compose(self.tables.location(representation.location));
             Some(self.located_curve(ir, representation.primary, carrier_transform)?)
         } else if let Some((ordinal, representation)) = polygon_representation {
             Some(self.polygon_curve(ir, &id, ordinal, representation, transform)?)
@@ -809,7 +812,7 @@ impl<'a> Builder<'a> {
         representation: &TextEdgeRepresentation,
         transform: Transform,
     ) -> Result<CurveId, CodecError> {
-        let carrier_transform = multiply(transform, self.tables.location(representation.location));
+        let carrier_transform = transform.compose(self.tables.location(representation.location));
         let scale = similarity(carrier_transform)?.scale;
         let (points, parameters, deflection) = match representation.kind {
             5 => {
@@ -833,7 +836,7 @@ impl<'a> Builder<'a> {
             geometry: CurveGeometry::Polyline {
                 points: points
                     .iter()
-                    .map(|point| transform_point(carrier_transform, *point))
+                    .map(|point| carrier_transform.apply_point(*point))
                     .collect(),
                 parameters,
                 chordal_deflection: deflection * scale,
@@ -849,7 +852,7 @@ impl<'a> Builder<'a> {
                     geometry: CurveGeometry::Polyline {
                         points: points
                             .iter()
-                            .map(|point| transform_point(carrier_transform, *point))
+                            .map(|point| carrier_transform.apply_point(*point))
                             .collect(),
                         parameters,
                         chordal_deflection: deflection * scale,
@@ -907,8 +910,8 @@ impl<'a> Builder<'a> {
         vertex_use: &TextShapeUse,
         parent: Transform,
     ) -> Result<VertexId, CodecError> {
-        let transform = multiply(parent, self.tables.location(vertex_use.location));
-        let key = OccurrenceKey::new(vertex_use.shape, multiply(self.body_scope, transform));
+        let transform = parent.compose(self.tables.location(vertex_use.location));
+        let key = OccurrenceKey::new(vertex_use.shape, self.body_scope.compose(transform));
         if let Some(id) = self.vertices.get(&key) {
             return Ok(id.clone());
         }
@@ -927,7 +930,7 @@ impl<'a> Builder<'a> {
         let vertex_id = VertexId(crate::native::model_id("vertex", &self.payload.id, &label));
         ir.model.points.push(Point {
             id: point_id.clone(),
-            position: transform_point(transform, point),
+            position: transform.apply_point(point),
             source_object: Some(SourceObjectAssociation {
                 format: "fcstd".into(),
                 object_id: self.source_object.clone(),
@@ -1043,10 +1046,7 @@ impl<'a> Builder<'a> {
                 matches!(representation.kind, 2 | 3)
                     && representation.surface == Some(surface)
                     && transforms_equal(
-                        multiply(
-                            edge_transform,
-                            self.tables.location(representation.location),
-                        ),
+                        edge_transform.compose(self.tables.location(representation.location)),
                         surface_transform,
                     )
             })
@@ -1071,7 +1071,7 @@ impl<'a> Builder<'a> {
     }
 
     fn topology_label(&self, shape: usize, local: Transform) -> String {
-        occurrence_label(shape, multiply(self.body_scope, local))
+        occurrence_label(shape, self.body_scope.compose(local))
     }
 }
 
@@ -1183,6 +1183,20 @@ fn scale_pcurve_v(geometry: &mut PcurveGeometry, scale: f64) {
             scale_point(x_axis);
             scale_point(y_axis);
         }
+        PcurveGeometry::Harmonic {
+            center,
+            cosine,
+            sine,
+        }
+        | PcurveGeometry::Hyperbolic {
+            center,
+            cosine,
+            sine,
+        } => {
+            scale_point(center);
+            scale_point(cosine);
+            scale_point(sine);
+        }
         PcurveGeometry::Parabola {
             vertex,
             x_axis,
@@ -1213,6 +1227,10 @@ fn scale_pcurve_v(geometry: &mut PcurveGeometry, scale: f64) {
             for value in axial_control_points {
                 *value *= scale;
             }
+        }
+        PcurveGeometry::SphericalGreatCircle { plane_slope, .. } => {
+            debug_assert_eq!(scale.abs(), 1.0);
+            *plane_slope *= scale;
         }
         PcurveGeometry::Trimmed { basis, .. } | PcurveGeometry::Offset { basis, .. } => {
             scale_pcurve_v(basis, scale);
@@ -1249,6 +1267,20 @@ fn scale_pcurve_u(geometry: &mut PcurveGeometry, scale: f64) {
             scale_point(x_axis);
             scale_point(y_axis);
         }
+        PcurveGeometry::Harmonic {
+            center,
+            cosine,
+            sine,
+        }
+        | PcurveGeometry::Hyperbolic {
+            center,
+            cosine,
+            sine,
+        } => {
+            scale_point(center);
+            scale_point(cosine);
+            scale_point(sine);
+        }
         PcurveGeometry::Parabola {
             vertex,
             x_axis,
@@ -1281,6 +1313,17 @@ fn scale_pcurve_u(geometry: &mut PcurveGeometry, scale: f64) {
             for point in radial_control_points {
                 point.v = -point.v;
             }
+        }
+        PcurveGeometry::SphericalGreatCircle {
+            azimuth_origin,
+            azimuth_rate,
+            plane_phase,
+            ..
+        } => {
+            debug_assert_eq!(scale, -1.0);
+            *azimuth_origin = -*azimuth_origin;
+            *azimuth_rate = -*azimuth_rate;
+            *plane_phase = -*plane_phase;
         }
         PcurveGeometry::Trimmed { basis, .. } | PcurveGeometry::Offset { basis, .. } => {
             scale_pcurve_u(basis, scale);
@@ -1351,35 +1394,8 @@ fn transform_surface(
     })
 }
 
-fn transform_point(transform: Transform, point: Point3) -> Point3 {
-    Point3::new(
-        transform.rows[0][0] * point.x
-            + transform.rows[0][1] * point.y
-            + transform.rows[0][2] * point.z
-            + transform.rows[0][3],
-        transform.rows[1][0] * point.x
-            + transform.rows[1][1] * point.y
-            + transform.rows[1][2] * point.z
-            + transform.rows[1][3],
-        transform.rows[2][0] * point.x
-            + transform.rows[2][1] * point.y
-            + transform.rows[2][2] * point.z
-            + transform.rows[2][3],
-    )
-}
-
-fn transform_vector(transform: Transform, vector: Vector3) -> Vector3 {
-    let transformed = Vector3::new(
-        transform.rows[0][0] * vector.x
-            + transform.rows[0][1] * vector.y
-            + transform.rows[0][2] * vector.z,
-        transform.rows[1][0] * vector.x
-            + transform.rows[1][1] * vector.y
-            + transform.rows[1][2] * vector.z,
-        transform.rows[2][0] * vector.x
-            + transform.rows[2][1] * vector.y
-            + transform.rows[2][2] * vector.z,
-    );
+fn transform_normalized_vector(transform: Transform, vector: Vector3) -> Vector3 {
+    let transformed = transform.apply_vector(vector);
     let magnitude = (transformed.x * transformed.x
         + transformed.y * transformed.y
         + transformed.z * transformed.z)
@@ -1393,18 +1409,6 @@ fn transform_vector(transform: Transform, vector: Vector3) -> Vector3 {
     } else {
         transformed
     }
-}
-
-fn multiply(left: Transform, right: Transform) -> Transform {
-    let mut rows = [[0.0; 4]; 4];
-    for (row, values) in rows.iter_mut().enumerate() {
-        for (column, value) in values.iter_mut().enumerate() {
-            *value = (0..4)
-                .map(|inner| left.rows[row][inner] * right.rows[inner][column])
-                .sum();
-        }
-    }
-    Transform { rows }
 }
 
 fn occurrence_label(shape: usize, transform: Transform) -> String {

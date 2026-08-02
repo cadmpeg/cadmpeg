@@ -10,20 +10,37 @@ use std::num::NonZeroU32;
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId, ShellId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::topology::Color;
 
-/// Provenance link from a solved B-rep coedge to its source sketch curve.
+/// The `sketch_attrib_def` sense value that constrains nothing, written as the
+/// unsigned decimal spelling of `0xFFFFFFFF`.
+pub(crate) const SKETCH_LINK_SENSE_UNCONSTRAINED: i64 = 0xFFFF_FFFF;
+
+/// Whether a `sketch_attrib_def` sense leaves the sense unconstrained. The
+/// tagged-field form spells the value as the unsigned decimal of `0xFFFFFFFF`
+/// and the integer forms as the signed `-1` of that same 32-bit pattern, so a
+/// reader that accepts one spelling keeps the other as a stored sense.
+pub(crate) fn sketch_link_sense_is_unconstrained(sense: i64) -> bool {
+    sense == SKETCH_LINK_SENSE_UNCONSTRAINED || sense == -1
+}
+
+/// Provenance link from a solved B-rep entity to its source sketch curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SketchCurveLink {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
-    /// Solved B-rep coedge this link provenances back to a sketch curve.
-    pub coedge: CoedgeId,
+    /// Solved B-rep entity this link provenances back to a sketch curve.
+    pub target: AttributeTarget,
     /// Numeric design-entity id of the source sketch-curve record.
     pub sketch_curve_id: i64,
-    /// Signed variant of `sketch_curve_id` carrying orientation of the sketch curve
-    /// relative to the coedge, when the source record encoded one.
+    /// Second member of the source tuple, retained in the spelling the source
+    /// writes. It is `0` in most links; what a non-zero value names is open as
+    /// `DR-30`.
+    pub ref_b: u64,
+    /// Which of the sketch curve's two senses this link takes, `0` or `1`.
+    /// Absent when the source record leaves the sense unconstrained.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub signed_reference: Option<i64>,
+    pub sense: Option<i64>,
     /// Source role tag distinguishing how the sketch curve participates in the link
     /// (e.g. profile edge vs. construction reference).
     pub role: i64,
@@ -154,9 +171,10 @@ pub struct FaceSidedness {
 }
 
 /// Native leading tolerance slots retained from one tolerant ASM vertex
-/// record. The record's three f64 tolerance slots are non-decreasing across
-/// evaluated values; the last slot is always evaluated and becomes the
-/// neutral vertex tolerance, while the first two are retained here verbatim.
+/// record. The record's three f64 tolerance slots are three independent
+/// tolerance evaluations, each using `-1` as its unset sentinel; the third
+/// slot is the effective vertex tolerance and is stored on the vertex, while
+/// the first two are retained here verbatim.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TolerantVertexTail {
     /// Globally unique deterministic identifier for this native record.
@@ -165,12 +183,18 @@ pub struct TolerantVertexTail {
     pub vertex: VertexId,
     /// Source SAB record index.
     pub record_index: u32,
-    /// The first two f64 tolerance slots, retained verbatim in native
-    /// centimetres; `-1` denotes an unevaluated tolerance.
+    /// The first two independent tolerance evaluations, retained verbatim in
+    /// native centimetres; `-1` denotes an unset evaluation.
     pub leading_tolerances: [f64; 2],
+    /// Version-gated trailing LONG following the evaluated tolerance,
+    /// retained verbatim; absent in older streams, a small non-negative
+    /// per-entity change counter when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trailing_field: Option<i64>,
 }
 
-/// Native integer tail retained from one tolerant ASM edge record.
+/// Native tail retained from one tolerant ASM edge record: the entity
+/// serializer revision stamp followed by a version-gated LONG.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TolerantEdgeTail {
     /// Globally unique deterministic identifier for this native record.
@@ -179,8 +203,13 @@ pub struct TolerantEdgeTail {
     pub edge: EdgeId,
     /// Source SAB record index.
     pub record_index: u32,
-    /// Two trailing LONG slots following the model-space tolerance.
-    pub trailing_integers: [i64; 2],
+    /// Per-entity serializer revision stamp following the model-space
+    /// tolerance, matching the stream's revision value space.
+    pub entity_revision: i64,
+    /// Version-gated trailing LONG following the revision stamp, retained
+    /// verbatim; absent in older streams, a small non-negative per-entity
+    /// change counter when present.
+    pub trailing_field: Option<i64>,
 }
 
 /// Parameter interval stored by one tolerant ASM coedge.
@@ -305,10 +334,22 @@ pub struct ConstructionRecipe {
     /// Byte offset of `design_id` in the Design `BulkStream`, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub design_id_offset: Option<u64>,
+    /// Selector following the Design entity id, when the recipe carries that id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub design_selector: Option<ConstructionRecipeSelector>,
     /// Position of this recipe in the `BulkStream` recipe sequence, in source order.
     pub recipe_index: u32,
     /// Source `BulkStream` record index this recipe was decoded from.
     pub record_index: i32,
+}
+
+/// Serialized Design selector carried by a construction recipe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ConstructionRecipeSelector {
+    /// Selector value.
+    pub value: u32,
+    /// Byte offset of `value`.
+    pub byte_offset: u64,
 }
 
 /// Semantic family of one Design parameter record.
@@ -334,10 +375,12 @@ pub struct DesignParameter {
     pub class_tag: String,
     /// Source indexed-record identity.
     pub record_index: u32,
-    /// Parameter-family discriminator: `6` for `TangencyWeight`, otherwise `0`.
-    pub prefix_value: u64,
-    /// Byte offset of `prefix_value`.
-    pub prefix_value_offset: u64,
+    /// Parameter-family discriminator when the frame carries one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub family_discriminator: Option<u64>,
+    /// Byte offset of `family_discriminator`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub family_discriminator_offset: Option<u64>,
     /// Source ordering value stored by the parameter record.
     pub source_ordinal: u32,
     /// Indexed owner record for feature and dimension parameters.
@@ -391,10 +434,11 @@ pub struct DesignParameterOwner {
     pub evaluated_value_offset: u64,
     /// Indexed parameter record owned by this frame.
     pub parameter_record_index: u32,
-    /// Position among all feature- and dimension-owned parameters.
+    /// Native owner ordering value.
     pub owned_ordinal: u32,
-    /// Source owner-frame variant flag.
-    pub variant: u8,
+    /// Source owner-frame variant flag when the frame carries one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant: Option<u8>,
     /// Paired indexed record following the parameter record.
     pub companion_record_index: u32,
 }
@@ -720,6 +764,8 @@ pub enum DesignExtrudeExtent {
     OneSidedToFace,
     /// Travel independent fixed distances on both sides of the profile.
     TwoSidedDistance,
+    /// Travel one fixed total distance symmetrically around the profile plane.
+    SymmetricDistance,
 }
 
 /// Starting support selected by the fixed Extrude prologue enum.
@@ -732,6 +778,126 @@ pub enum DesignExtrudeStart {
     OffsetProfilePlane,
     /// Start on a selected face.
     FromFace,
+}
+
+/// Indexed-record prefix preceding a reference-aware Extrude prologue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignExtrudePrologueReference {
+    /// Referenced Design record.
+    pub record_index: u32,
+    /// Byte offset of `record_index`.
+    pub record_index_offset: u64,
+    /// Number of zero bytes between `record_index` and the operation.
+    pub trailing_zero_count: u8,
+}
+
+/// Fixed fields preceding an Extrude parameter scope's reference table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case", tag = "layout")]
+pub enum DesignExtrudePrologue {
+    /// Reference-aware layout with an optional indexed-reference prefix.
+    ReferenceAware {
+        /// Indexed-record prefix, when present.
+        reference: Option<DesignExtrudePrologueReference>,
+        /// Boolean result operation.
+        operation: DesignExtrudeOperation,
+        /// Byte offset of `operation`.
+        operation_offset: u64,
+        /// Raw side-count and termination discriminators.
+        extent_discriminators: [u32; 2],
+        /// Decoded extent form.
+        extent: DesignExtrudeExtent,
+        /// Byte offsets parallel to `extent_discriminators`.
+        extent_discriminator_offsets: [u64; 2],
+        /// Whether a one-sided to-face extent travels opposite the profile normal.
+        direction_reversed: bool,
+        /// Byte offset of `direction_reversed`.
+        direction_reversed_offset: u64,
+        /// Whether the operation creates solid rather than sheet geometry.
+        solid_operation: bool,
+        /// Byte offset of `solid_operation`.
+        solid_operation_offset: u64,
+        /// Starting support.
+        start: DesignExtrudeStart,
+        /// Byte offset of `start`.
+        start_offset: u64,
+    },
+    /// Shifted layout without the reference-aware prefix.
+    LegacyShifted {
+        /// Boolean result operation.
+        operation: DesignExtrudeOperation,
+        /// Byte offset of `operation`.
+        operation_offset: u64,
+        /// Raw extent discriminators.
+        extent_discriminators: [u32; 2],
+        /// Decoded extent form.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        extent: Option<DesignExtrudeExtent>,
+        /// Byte offsets parallel to `extent_discriminators`.
+        extent_discriminator_offsets: [u64; 2],
+        /// Direction-reversal state.
+        direction_reversed: bool,
+        /// Byte offset of `direction_reversed`.
+        direction_reversed_offset: u64,
+        /// Whether the operation creates solid rather than sheet geometry.
+        solid_operation: bool,
+        /// Byte offset of `solid_operation`.
+        solid_operation_offset: u64,
+        /// Starting support.
+        start: DesignExtrudeStart,
+        /// Byte offset of `start`.
+        start_offset: u64,
+    },
+}
+
+impl DesignExtrudePrologue {
+    /// Boolean result operation.
+    pub fn operation(self) -> DesignExtrudeOperation {
+        match self {
+            Self::ReferenceAware { operation, .. } | Self::LegacyShifted { operation, .. } => {
+                operation
+            }
+        }
+    }
+
+    /// Decoded extent form.
+    pub fn extent(self) -> Option<DesignExtrudeExtent> {
+        match self {
+            Self::ReferenceAware { extent, .. } => Some(extent),
+            Self::LegacyShifted { extent, .. } => extent,
+        }
+    }
+
+    /// Direction-reversal state.
+    pub fn direction_reversed(self) -> bool {
+        match self {
+            Self::ReferenceAware {
+                direction_reversed, ..
+            }
+            | Self::LegacyShifted {
+                direction_reversed, ..
+            } => direction_reversed,
+        }
+    }
+
+    /// Whether the operation creates solid rather than sheet geometry.
+    pub fn solid_operation(self) -> bool {
+        match self {
+            Self::ReferenceAware {
+                solid_operation, ..
+            }
+            | Self::LegacyShifted {
+                solid_operation, ..
+            } => solid_operation,
+        }
+    }
+
+    /// Starting support.
+    pub fn start(self) -> DesignExtrudeStart {
+        match self {
+            Self::ReferenceAware { start, .. } | Self::LegacyShifted { start, .. } => start,
+        }
+    }
 }
 
 /// Driving-dimension mode stored by a Coil parameter scope.
@@ -868,32 +1034,51 @@ pub struct DesignMoveOperation {
     pub form_offset: u64,
 }
 
+/// One exact scalar carrier used by an Extrude scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignFixedExtrudeScalar {
+    /// Scalar value in source centimetres for a distance or radians for an angle.
+    pub value: f64,
+    /// Referenced record carrying the scalar.
+    pub record_index: u32,
+    /// Byte offset of the scalar.
+    pub value_offset: u64,
+}
+
+/// Exact carrier of an Extrude's one-sided distance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "carrier", content = "scalar", rename_all = "snake_case")]
+pub enum DesignFixedExtrudeDistance {
+    /// Signed distance in an owner-local scalar lane.
+    FixedScalar(DesignFixedExtrudeScalar),
+    /// Positive magnitude in an owned distance-construction frame.
+    DistanceConstruction(DesignFixedExtrudeScalar),
+}
+
 /// Exact fixed scalar lanes carried by an Extrude scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignFixedExtrudeParameters {
-    /// Signed one-sided distance in source centimetres.
-    pub along_distance: f64,
-    /// Referenced distance scalar record.
-    pub along_distance_record_index: u32,
-    /// Byte offset of the distance scalar.
-    pub along_distance_offset: u64,
-    /// Taper angle in radians.
-    pub taper_angle: f64,
-    /// Referenced taper-angle scalar record.
-    pub taper_angle_record_index: u32,
-    /// Byte offset of the taper-angle scalar.
-    pub taper_angle_offset: u64,
+    /// One-sided distance carrier in source centimetres.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub along_distance: Option<DesignFixedExtrudeDistance>,
+    /// Taper-angle lane in radians.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub taper_angle: Option<DesignFixedExtrudeScalar>,
 }
 
 /// Exact fixed scalar lanes carried by a Fillet scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignFixedFilletParameters {
-    /// Dimensionless tangency weight.
-    pub tangency_weight: f64,
-    /// Referenced tangency-weight scalar record.
-    pub tangency_weight_record_index: u32,
-    /// Byte offset of the tangency-weight scalar.
-    pub tangency_weight_offset: u64,
+    /// Radius laws in scalar-lane order.
+    pub groups: Vec<DesignFixedFilletGroup>,
+}
+
+/// One Fillet radius law carried by fixed scalar lanes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignFixedFilletGroup {
+    /// Optional explicit dimensionless tangency-weight lane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tangency_weight: Option<DesignFixedFilletTangencyWeight>,
     /// One constant radius, or endpoint radii followed by intermediate radii,
     /// in source centimetres.
     pub radii: Vec<f64>,
@@ -912,15 +1097,267 @@ pub struct DesignFixedFilletParameters {
     pub intermediate_parameter_offsets: Vec<u64>,
 }
 
-/// Exact fixed scalar lane carried by an equal-distance Chamfer scope.
+/// One explicit fixed Fillet tangency-weight lane and its source provenance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct DesignFixedChamferParameters {
-    /// Positive equal distance in source centimetres.
-    pub distance: f64,
-    /// Referenced distance scalar record.
-    pub distance_record_index: u32,
-    /// Byte offset of the distance scalar.
-    pub distance_offset: u64,
+pub struct DesignFixedFilletTangencyWeight {
+    /// Positive dimensionless tangency weight.
+    pub value: f64,
+    /// Referenced tangency-weight scalar record.
+    pub record_index: u32,
+    /// Byte offset of the tangency-weight scalar.
+    pub value_offset: u64,
+}
+
+/// Exact construction carried by a fixed circular-pattern scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignCircularPatternConstruction {
+    /// Positive total instance count, including the seed.
+    pub count: u32,
+    /// Referenced compact count-parameter owner.
+    pub count_record_index: u32,
+    /// Byte offset of the evaluated count scalar.
+    pub count_offset: u64,
+    /// Positive angular span in radians.
+    pub angle: f64,
+    /// Referenced total-angle scalar.
+    pub angle_record_index: u32,
+    /// Byte offset of the total-angle scalar.
+    pub angle_offset: u64,
+    /// Axis origin in source centimetres.
+    pub origin: [f64; 3],
+    /// Byte offset of the first origin coordinate.
+    pub origin_offset: u64,
+    /// Unit axis direction.
+    pub direction: [f64; 3],
+    /// Byte offset of the first direction coordinate.
+    pub direction_offset: u64,
+    /// Referenced axis record.
+    pub axis_record_index: u32,
+    /// Referenced persistent selection operand.
+    pub selection_record_index: u32,
+}
+
+/// Ordered scalar lanes carried by a rectangular-pattern scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignRectangularPatternConstruction {
+    /// Positive U-direction instance count, including the seed.
+    pub u_count: u32,
+    /// Positive V-direction instance count, including the seed.
+    pub v_count: u32,
+    /// Signed U-direction seed-to-final-instance span in source centimetres.
+    pub u_extent: f64,
+    /// Signed V-direction seed-to-final-instance span in source centimetres.
+    pub v_extent: f64,
+    /// Parameter-owner records for U count, V count, U extent, and V extent.
+    pub owner_record_indices: [u32; 4],
+    /// Evaluated-value offsets parallel to `owner_record_indices`.
+    pub value_offsets: [u64; 4],
+    /// Exact serialized instance sequence when one pattern direction is active.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instances: Option<DesignRectangularPatternInstances>,
+}
+
+/// Serialized placements of one linearized rectangular-pattern instance run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignRectangularPatternInstances {
+    /// Seed record followed by the generated-instance records in pattern order.
+    pub record_indices: Vec<u32>,
+    /// Row-major local-to-model placements parallel to `record_indices`.
+    pub transforms: Vec<[[f64; 4]; 4]>,
+    /// Byte offsets of the first transform scalar parallel to `record_indices`.
+    pub transform_offsets: Vec<u64>,
+    /// Component occurrences carried by this run when the pattern repeats a component.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component_occurrences: Option<DesignComponentPatternOccurrences>,
+}
+
+/// Component seed and generated occurrences carried by a rectangular pattern.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignComponentPatternOccurrences {
+    /// Reusable local component definition shared by every occurrence.
+    pub component_guid: String,
+    /// Existing seed occurrence.
+    pub seed_occurrence_guid: String,
+    /// Newly generated occurrences in pattern order after the seed.
+    pub generated_occurrence_guids: Vec<String>,
+}
+
+/// Alignment scalars carried by an assembly-operation scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignAssemblyAlignment {
+    /// Signed alignment rotation in radians.
+    pub angle: f64,
+    /// Signed local-frame translation in source centimetres.
+    pub offset: [f64; 3],
+    /// Parameter-owner records for angle, X offset, Y offset, and Z offset.
+    pub owner_record_indices: [u32; 4],
+    /// Evaluated-value offsets parallel to `owner_record_indices`.
+    pub value_offsets: [u64; 4],
+    /// Exact operand frames embedded by the assembly scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operand_frames: Option<[DesignAssemblyOperandFrame; 2]>,
+    /// Exact occurrence paths qualifying the two operand constructions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operand_paths: Option<[DesignAssemblyOperandPath; 2]>,
+}
+
+/// Counted occurrence path qualifying one assembly operand construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignAssemblyOperandPath {
+    /// Class-329 path record.
+    pub record_index: u32,
+    /// Byte offset of the class-329 indexed header.
+    pub byte_offset: u64,
+    /// Ordered occurrence GUIDs from the outermost occurrence to the selected occurrence.
+    pub occurrence_guids: Vec<String>,
+    /// Byte offsets of the UTF-16 GUID code units parallel to `occurrence_guids`.
+    pub occurrence_guid_offsets: Vec<u64>,
+}
+
+/// One operand frame embedded by an assembly-operation scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignAssemblyOperandFrame {
+    /// Construction record referenced by the operand.
+    pub reference_record_index: u32,
+    /// Byte offset of `reference_record_index`.
+    pub reference_offset: u64,
+    /// Row-major operand-local-to-model transform.
+    pub transform: [[f64; 4]; 4],
+    /// Byte offset of the first transform scalar.
+    pub transform_offset: u64,
+}
+
+/// External occurrence and placement joined through a `Component Insert` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignComponentInsertConstruction {
+    /// Scope-owned relation record.
+    pub relation_record_index: u32,
+    /// Grouped occurrence carrier named by the relation record.
+    pub carrier_record_index: u32,
+    /// Occurrence-role GUID joining the carrier to the external-reference table.
+    pub neutron_role: String,
+    /// Byte offset of the occurrence-role string payload.
+    pub neutron_role_offset: u64,
+    /// Row-major local occurrence transform in centimetres.
+    pub transform: [[f64; 4]; 4],
+    /// Byte offset of the scope-local transform.
+    pub transform_offset: u64,
+    /// Byte offset of the equal transform in the grouped carrier.
+    pub carrier_transform_offset: u64,
+}
+
+/// One exact local component-occurrence carrier.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignComponentOccurrence {
+    /// Stable native record identity.
+    pub id: String,
+    /// Indexed carrier record.
+    pub record_index: u32,
+    /// Byte offset of the indexed header.
+    pub byte_offset: u64,
+    /// Referenced component-definition record.
+    pub component_record_index: u64,
+    /// Stable component-definition GUID.
+    pub component_guid: String,
+    /// Byte offset of the component GUID payload.
+    pub component_guid_offset: u64,
+    /// Stable placed-occurrence GUID.
+    pub occurrence_guid: String,
+    /// Byte offset of the occurrence GUID payload.
+    pub occurrence_guid_offset: u64,
+    /// One-based occurrence ordinal within the component definition.
+    pub occurrence_ordinal: u32,
+    /// Explicit local-to-model placement for generated occurrences.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform: Option<[[f64; 4]; 4]>,
+    /// Byte offset of the explicit placement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform_offset: Option<u64>,
+}
+
+/// Legacy component copy/paste construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignCopyPasteComponentOperation {
+    /// Scope-owned relation record.
+    pub relation_record_index: u32,
+    /// Existing source occurrence carrier.
+    pub source_occurrence_record_index: u32,
+    /// Newly copied occurrence carrier.
+    pub copied_occurrence_record_index: u32,
+    /// Reusable component definition shared by source and copy.
+    pub component_guid: String,
+    /// Existing source occurrence identity.
+    pub source_occurrence_guid: String,
+    /// Newly copied occurrence identity.
+    pub copied_occurrence_guid: String,
+    /// Source placement embedded by the scope.
+    pub source_transform: [[f64; 4]; 4],
+    /// Byte offset of the source placement.
+    pub source_transform_offset: u64,
+    /// Copied placement embedded by both scope and occurrence carrier.
+    pub copied_transform: [[f64; 4]; 4],
+    /// Byte offset of the scope-local copied placement.
+    pub copied_transform_offset: u64,
+}
+
+/// Exact construction carried by a Mirror scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignMirrorConstruction {
+    /// Fixed instance count, including the seed.
+    pub count: u32,
+    /// Parameter-owner record carrying `count`.
+    pub count_record_index: u32,
+    /// Byte offset of the evaluated count scalar.
+    pub count_offset: u64,
+    /// Positive model-space stitch tolerance in source centimetres.
+    pub stitch_tolerance: f64,
+    /// Parameter-owner record carrying `stitch_tolerance`.
+    pub stitch_tolerance_record_index: u32,
+    /// Byte offset of the evaluated stitch-tolerance scalar.
+    pub stitch_tolerance_offset: u64,
+    /// Role-`0x8` seed group.
+    pub seed_group_record_index: u32,
+    /// Role-`0x5` mirror-plane group.
+    pub plane_group_record_index: u32,
+    /// Referenced seed feature scope when the seed is a complete feature.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed_feature_scope_record_index: Option<u32>,
+    /// Byte offset of the optional seed-feature reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed_feature_reference_offset: Option<u64>,
+    /// Referenced `WorkPlane` scope.
+    pub plane_scope_record_index: u32,
+    /// Byte offset of the `WorkPlane` reference.
+    pub plane_reference_offset: u64,
+}
+
+/// Exact fixed scalar lanes carried by a Chamfer scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DesignFixedChamferParameters {
+    /// One equal setback distance applies to both incident faces.
+    EqualDistance {
+        /// Equal setback distance.
+        distance: DesignFixedChamferDistance,
+    },
+    /// The two incident faces have independently oriented setback distances.
+    TwoDistances {
+        /// Setback on the first incident face.
+        first: DesignFixedChamferDistance,
+        /// Setback on the second incident face.
+        second: DesignFixedChamferDistance,
+    },
+}
+
+/// One fixed Chamfer distance lane and its source provenance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignFixedChamferDistance {
+    /// Positive distance in source centimetres.
+    pub value: f64,
+    /// Referenced scalar record.
+    pub record_index: u32,
+    /// Byte offset of the scalar.
+    pub value_offset: u64,
 }
 
 /// Exact fixed construction carried by a Loft or Sweep scope.
@@ -965,6 +1402,75 @@ pub enum DesignPathFeatureConstruction {
         /// Byte offsets of the scalar values in lane order.
         value_offsets: [u64; 6],
     },
+    /// Generated-section Pipe result and fixed dimension lanes.
+    Pipe {
+        /// Boolean result operation.
+        operation: DesignExtrudeOperation,
+        /// Byte offset of the operation u32.
+        operation_offset: u64,
+        /// Section-shape selector byte.
+        section_shape: u8,
+        /// Byte offset of the section-shape selector.
+        section_shape_offset: u64,
+        /// Whether the generated section is filled.
+        filled: bool,
+        /// Byte offset of the filled-section flag.
+        filled_offset: u64,
+        /// Four scalar values in path-fraction, reverse-path-fraction,
+        /// section-size, and section-thickness order.
+        values: [f64; 4],
+        /// Referenced scalar records in lane order.
+        record_indexes: [u32; 4],
+        /// Byte offsets of the scalar values in lane order.
+        value_offsets: [u64; 4],
+    },
+}
+
+/// Exact Boolean construction carried by a `Combine` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignCombineOperation {
+    /// Join, cut, or intersect operation.
+    pub operation: DesignExtrudeOperation,
+    /// Byte offset of the operation u32.
+    pub operation_offset: u64,
+    /// Whether the source operation retains its tool bodies.
+    pub keep_tools: bool,
+    /// Byte offset of the keep-tools Boolean.
+    pub keep_tools_offset: u64,
+    /// Ordered body-selection record indexes: target first, then tools.
+    pub body_selection_record_indexes: Vec<u32>,
+}
+
+/// Exact signed-angle lanes carried by a `Draft` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignDraftOperation {
+    /// Signed draft angle in radians.
+    pub angle: f64,
+    /// Referenced draft-angle scalar record.
+    pub angle_record_index: u32,
+    /// Byte offset of the draft-angle scalar.
+    pub angle_offset: u64,
+    /// Zero-valued opposite-side angle scalar record.
+    pub opposite_angle_record_index: u32,
+    /// Byte offset of the opposite-side angle scalar.
+    pub opposite_angle_offset: u64,
+}
+
+/// Exact solved construction carried by a two-point `WorkAxis` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignWorkAxisConstruction {
+    /// First construction point in model centimetres.
+    pub origin: [f64; 3],
+    /// Displacement from the first construction point to the second, in centimetres.
+    pub displacement: [f64; 3],
+    /// Byte offset of the first origin coordinate.
+    pub origin_offset: u64,
+    /// Byte offset of the first displacement component.
+    pub displacement_offset: u64,
+    /// Ordered point-carrier record indices corroborating the two endpoints.
+    pub point_record_indices: [u32; 2],
+    /// Byte offsets of the first coordinate in each point carrier.
+    pub point_offsets: [u64; 2],
 }
 
 /// Indexed sketch or construction-operation record that scopes parameters.
@@ -984,30 +1490,9 @@ pub struct DesignParameterScope {
     pub kind: String,
     /// Byte offset of the kind's UTF-16LE code units.
     pub kind_offset: u64,
-    /// Extrude result operation from the fixed scope prologue.
+    /// Extrude fixed prologue.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extrude_operation: Option<DesignExtrudeOperation>,
-    /// Byte offset of the Extrude operation enum.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extrude_operation_offset: Option<u64>,
-    /// Extrude extent form from the fixed scope prologue.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extrude_extent: Option<DesignExtrudeExtent>,
-    /// Byte offsets of the two u32 enums selecting the Extrude extent form.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extrude_extent_offsets: Option<[u64; 2]>,
-    /// Whether a one-sided to-face extent travels opposite the profile normal.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extrude_direction_reversed: Option<bool>,
-    /// Byte offset of the Extrude direction-reversal Boolean.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extrude_direction_reversed_offset: Option<u64>,
-    /// Extrude starting support from the fixed scope prologue.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extrude_start: Option<DesignExtrudeStart>,
-    /// Byte offset of the u8 enum selecting the Extrude starting support.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extrude_start_offset: Option<u64>,
+    pub extrude_prologue: Option<DesignExtrudePrologue>,
     /// Coil result operation from the fixed scope prologue.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_operation: Option<DesignExtrudeOperation>,
@@ -1073,9 +1558,19 @@ pub struct DesignParameterScope {
     /// Exact tolerance and setting-record references carried by a `SurfaceStitch` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface_stitch_operation: Option<DesignSurfaceStitchOperation>,
+    /// Exact distance, method, and boundary records carried by a `SurfaceExtend` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface_extend_operation: Option<DesignSurfaceExtendOperation>,
+    /// Exact distance and boundary records carried by a `SurfaceOffset` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface_offset_operation: Option<DesignSurfaceOffsetOperation>,
     /// Exact profile and thickness records carried by a `BaseFlange` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_flange_operation: Option<DesignBaseFlangeOperation>,
+    /// Per-boundary-component settings carried by a `SurfacePatch` scope, in
+    /// scope reference order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub surface_patch_boundaries: Vec<DesignSurfacePatchBoundary>,
     /// Exact edge, parameter, and settings records carried by an `EdgeFlange` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub edge_flange_operation: Option<DesignEdgeFlangeOperation>,
@@ -1094,6 +1589,30 @@ pub struct DesignParameterScope {
     /// Exact fixed construction carried by a Loft or Sweep scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path_feature_construction: Option<DesignPathFeatureConstruction>,
+    /// Exact Boolean construction carried by a `Combine` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub combine_operation: Option<DesignCombineOperation>,
+    /// Exact signed-angle construction carried by a `Draft` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft_operation: Option<DesignDraftOperation>,
+    /// Exact construction carried by a circular-pattern scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub circular_pattern_construction: Option<DesignCircularPatternConstruction>,
+    /// Exact scalar lanes carried by a rectangular-pattern scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rectangular_pattern_construction: Option<DesignRectangularPatternConstruction>,
+    /// Exact alignment scalars carried by an `Assemble` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assembly_alignment: Option<DesignAssemblyAlignment>,
+    /// Exact external-occurrence construction carried by a `Component Insert` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component_insert_construction: Option<DesignComponentInsertConstruction>,
+    /// Exact local-component construction carried by a legacy `CopyPaste` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_paste_component_operation: Option<DesignCopyPasteComponentOperation>,
+    /// Exact construction carried by a Mirror scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mirror_construction: Option<DesignMirrorConstruction>,
     /// Exact source-to-copy body mapping carried by a `CopyPasteBodies` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub copy_paste_bodies_operation: Option<DesignCopyPasteBodiesOperation>,
@@ -1112,15 +1631,44 @@ pub struct DesignParameterScope {
     /// Byte offset of the `WorkPlane` construction reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_plane_reference_offset: Option<u64>,
+    /// Exact two-point construction carried by a `WorkAxis` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_axis_construction: Option<DesignWorkAxisConstruction>,
+    /// Exact row-major local-to-model frame carried by a `JointOrigin` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub joint_origin_transform: Option<[[f64; 4]; 4]>,
+    /// Byte offset of the `JointOrigin` frame's explicit 16-f64 matrix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub joint_origin_transform_offset: Option<u64>,
+    /// Construction record referenced by the `JointOrigin` frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub joint_origin_reference: Option<u32>,
+    /// Byte offset of the `JointOrigin` construction reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub joint_origin_reference_offset: Option<u64>,
     /// Explicit model-space position carried by a `WorkPoint` construction record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_point_position: Option<[f64; 3]>,
     /// Byte offset of the `WorkPoint` position's first f64 coordinate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_point_position_offset: Option<u64>,
+    /// Reference members whose records open a construction-operand group the
+    /// group grammar does not close.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unclosed_construction_operand_groups: Vec<u32>,
+    /// `refType` construction rule carried by the `WorkPoint` point-data record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_point_reference_type: Option<u32>,
+    /// Record indices of the counted reference run closing the `WorkPoint`
+    /// point-data record's base class level.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub work_point_input_record_indices: Vec<u32>,
     /// Profile operand carried by an Extrude scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extrude_profile: Option<DesignSketchProfileOperand>,
+    /// Sketch-profile operand carried by a `Sweep` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sweep_profile: Option<DesignSketchProfileOperand>,
     /// Sketch-profile operand carried by a `BaseFlange` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_flange_profile: Option<DesignSketchProfileOperand>,
@@ -1150,6 +1698,92 @@ pub struct DesignSurfaceStitchOperation {
     pub tolerance_record_index: u32,
     /// Indexed operation-settings record identity.
     pub settings_record_index: u32,
+}
+
+/// Geometric continuation law encoded by a `SurfaceExtend` operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignSurfaceExtendMethod {
+    /// Continue the source surface parameterization.
+    Natural,
+    /// Create faces tangent to the source faces.
+    Tangent,
+    /// Create faces perpendicular to the source faces.
+    Perpendicular,
+}
+
+/// Fixed construction records named by a `SurfaceExtend` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignSurfaceExtendOperation {
+    /// Extension distance in source centimetres.
+    pub distance: f64,
+    /// Byte offset of `distance`.
+    pub distance_offset: u64,
+    /// Indexed scalar record carrying `distance`.
+    pub distance_record_index: u32,
+    /// Geometric continuation law.
+    pub method: DesignSurfaceExtendMethod,
+    /// Byte offset of the method enum.
+    pub method_offset: u64,
+    /// Indexed boundary-carrier record.
+    pub boundary_record_index: u32,
+    /// Additional indexed reference carried by the boundary tail.
+    pub boundary_reference_record_index: u32,
+    /// Byte offset of `boundary_reference_record_index`'s marked reference.
+    pub boundary_reference_offset: u64,
+    /// Ordered edge-recipe records contained by the boundary carrier.
+    pub edge_record_indices: Vec<u32>,
+    /// Positive modelling tolerance in source centimetres.
+    pub tolerance: f64,
+    /// Byte offset of `tolerance`.
+    pub tolerance_offset: u64,
+}
+
+/// Fixed construction records named by a `SurfaceOffset` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignSurfaceOffsetOperation {
+    /// Signed offset distance in source centimetres.
+    pub distance: f64,
+    /// Byte offset of `distance`.
+    pub distance_offset: u64,
+    /// Indexed scalar record carrying `distance`.
+    pub distance_record_index: u32,
+    /// Source boundary-mode enum.
+    pub boundary_mode: u32,
+    /// Byte offset of `boundary_mode`.
+    pub boundary_mode_offset: u64,
+    /// Indexed boundary-carrier record.
+    pub boundary_record_index: u32,
+    /// Additional indexed reference carried by the boundary tail.
+    pub boundary_reference_record_index: u32,
+    /// Byte offset of `boundary_reference_record_index`'s marked reference.
+    pub boundary_reference_offset: u64,
+    /// Ordered edge-recipe records contained by the boundary carrier.
+    pub edge_record_indices: Vec<u32>,
+    /// Positive modelling tolerance in source centimetres.
+    pub tolerance: f64,
+    /// Byte offset of `tolerance`.
+    pub tolerance_offset: u64,
+}
+
+/// Settings a `SurfacePatch` scope carries for one boundary component.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignSurfacePatchBoundary {
+    /// Position of the settings record in the scope's ordered reference table.
+    pub scope_reference_ordinal: u32,
+    /// Indexed settings-record identity.
+    pub record_index: u32,
+    /// Source `IsSeedSel` flag.
+    pub is_seed_selection: bool,
+    /// Source `PatchContinuity` ordinal. Retained without a neutral meaning.
+    pub continuity: u32,
+    /// Source `PatchFlip` ordinal. Retained without a neutral meaning.
+    pub flip: u32,
+    /// Source `PatchScale` value.
+    pub scale: f64,
+    /// Indexed record the `rPatchModelRef` reference names: this boundary
+    /// component's model reference.
+    pub model_reference: u32,
 }
 
 /// Fixed construction carried by a planar sheet-metal `BaseFlange` scope.
@@ -1192,11 +1826,11 @@ pub struct DesignEdgeFlangeOperation {
     pub bend_radius: f64,
     /// Byte offset of `bend_radius`.
     pub bend_radius_offset: u64,
-    /// Uninterpreted extent discriminator.
+    /// Uninterpreted extent discriminator (DR-09).
     pub extent_code: u32,
-    /// Uninterpreted height-datum discriminator.
+    /// Uninterpreted height-datum discriminator (DR-09).
     pub height_datum_code: u32,
-    /// Uninterpreted bend-position discriminator.
+    /// Uninterpreted bend-position discriminator (DR-09).
     pub bend_position_code: u32,
 }
 
@@ -1392,7 +2026,7 @@ pub enum DesignExtrudeFaceRole {
     Termination,
 }
 
-/// Counted construction-operand group owned by a feature scope.
+/// Construction-operand group owned by a feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignConstructionOperandGroup {
     /// Globally unique deterministic identifier.
@@ -1407,8 +2041,6 @@ pub struct DesignConstructionOperandGroup {
     pub byte_offset: u64,
     /// Per-file dynamic primary class tag.
     pub class_tag: String,
-    /// Byte offset of the member count.
-    pub member_count_offset: u64,
     /// Ordered operand-record references.
     pub members: Vec<u32>,
     /// Ordered unresolved-edge records whose run terminates at this group's identity.
@@ -1416,10 +2048,8 @@ pub struct DesignConstructionOperandGroup {
     pub lost_edge_references: Vec<String>,
     /// Byte offsets parallel to `members`.
     pub member_offsets: Vec<u64>,
-    /// Indexed identity-wrapper record.
-    pub identity_record_index: u32,
-    /// Byte offset of `identity_record_index`.
-    pub identity_record_offset: u64,
+    /// Exact framing of the operand-member run and its auxiliary fields.
+    pub frame: DesignConstructionOperandGroupFrame,
     /// Source u64 role code.
     pub role: u64,
     /// Extrude-specific semantic role of `role`.
@@ -1430,20 +2060,41 @@ pub struct DesignConstructionOperandGroup {
     pub extrude_face_role: Option<DesignExtrudeFaceRole>,
     /// Byte offset of `role`.
     pub role_offset: u64,
-    /// Opaque repeated nonzero u32.
+    /// Per-file dynamic paired class tag.
+    pub paired_class_tag: String,
+    /// Same-index paired-header byte offset.
+    pub paired_byte_offset: u64,
+}
+
+/// Serialized framing of a construction-operand group.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignConstructionOperandGroupFrame {
+    /// Byte offset of the member count.
+    pub member_count_offset: u64,
+    /// Auxiliary records named by the two optional references that follow the
+    /// member run; an absent reference contributes no entry.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub auxiliary_record_indices: Vec<u32>,
+    /// Byte offsets parallel to `auxiliary_record_indices`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub auxiliary_record_offsets: Vec<u64>,
+    /// Indexed identity-wrapper records named by the counted identity run.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub identity_record_indices: Vec<u32>,
+    /// Byte offsets parallel to `identity_record_indices`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub identity_record_offsets: Vec<u64>,
+    /// Opaque ordinal: nonzero and below 256, repeated after `opaque_scalar` in
+    /// every container generation but one.
     pub opaque_index: u32,
     /// Byte offset of the first `opaque_index` copy.
     pub opaque_index_offset: u64,
-    /// Opaque finite f64.
+    /// Opaque nonnegative finite f64.
     pub opaque_scalar: f64,
     /// Byte offset of `opaque_scalar`.
     pub opaque_scalar_offset: u64,
     /// Boolean tail variant.
     pub variant: bool,
-    /// Per-file dynamic paired class tag.
-    pub paired_class_tag: String,
-    /// Same-index paired-header byte offset.
-    pub paired_byte_offset: u64,
 }
 
 /// Nested identity chain named by a construction-operand group.
@@ -1673,10 +2324,9 @@ pub struct DesignBodyRecipeOperand {
     pub id: String,
     /// Owning feature scope record.
     pub scope_record_index: u32,
-    /// Owning construction-operand group record.
-    pub group_record_index: u32,
-    /// Zero-based position in the group's ordered member run.
-    pub group_member_ordinal: u32,
+    /// Exact feature-scope ownership form.
+    #[serde(flatten)]
+    pub owner: DesignBodyRecipeOperandOwner,
     /// Primary indexed-record identity.
     pub record_index: u32,
     /// Primary indexed-header byte offset.
@@ -1709,6 +2359,37 @@ pub struct DesignBodyRecipeOperand {
     pub next_record_index: u32,
     /// Byte offset of the indexed record immediately following this operand.
     pub next_byte_offset: u64,
+}
+
+/// Exact owner of a whole-body construction operand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum DesignBodyRecipeOperandOwner {
+    /// Operand named by a counted construction-operand group.
+    Group {
+        /// Owning construction-operand group record.
+        group_record_index: u32,
+        /// Zero-based position in the group's ordered member run.
+        group_member_ordinal: u32,
+    },
+    /// Standalone operand named directly by the feature scope reference table.
+    ScopeReference {
+        /// Zero-based position in the scope's ordered reference table.
+        scope_reference_ordinal: u32,
+    },
+}
+
+impl DesignBodyRecipeOperandOwner {
+    /// Return the construction-group record and member position, when grouped.
+    pub const fn group(self) -> Option<(u32, u32)> {
+        match self {
+            Self::Group {
+                group_record_index,
+                group_member_ordinal,
+            } => Some((group_record_index, group_member_ordinal)),
+            Self::ScopeReference { .. } => None,
+        }
+    }
 }
 
 /// One counted persistent reference inside a whole-body recipe operand.
@@ -2390,31 +3071,16 @@ pub struct DesignMaterialAssignment {
     pub visual_preset_offset: Option<u64>,
 }
 
-/// Design `MetaStream` object class.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum DesignObjectKind {
-    /// Root Fusion document object.
-    Fusion,
-    /// A design body object.
-    Body,
-    /// A design component object.
-    Component,
-    /// A geometry-bearing object (points, curves, surfaces).
-    Geometry,
-    /// A sketch container object.
-    Sketch,
-    /// A parametric dimension/constraint object.
-    Dimension,
-    /// A scene/view object.
-    Scene,
-    /// An entity-tracking bookkeeping object.
-    EntityTracking,
-    /// A shared common-data object referenced by other object kinds.
-    CommonData,
-    /// A forward-compatible object class retained by its exact ASCII name.
-    Other(String),
-}
+/// Add-in module that registers the Design sketch types.
+pub const DESIGN_MODULE_SKETCH: &str = "MSketch";
+/// Add-in module that registers the Design body types.
+pub const DESIGN_MODULE_BODY: &str = "Body";
+/// Add-in module that registers the Design geometry types.
+pub const DESIGN_MODULE_GEOMETRY: &str = "Geometry";
+/// Add-in module that registers the Design component types.
+pub const DESIGN_MODULE_COMPONENT: &str = "Component";
+/// Add-in module that registers the root Fusion document types.
+pub const DESIGN_MODULE_FUSION: &str = "Fusion";
 
 /// JSON configuration payload stored in a Fusion design-configuration entry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -2439,39 +3105,40 @@ pub enum DesignConfigurationKind {
     Rule,
 }
 
-/// One GUID-owned object-table record from the Design `MetaStream`.
+/// One type-table entry from the Design `MetaStream` segment header. The entry
+/// registers a record type and lists the design entities whose `BulkStream`
+/// records carry it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct DesignObject {
+pub struct DesignType {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
-    /// Byte offset of this object record in its Design `MetaStream`.
+    /// Byte offset of this type-table entry in its Design `MetaStream`.
     pub byte_offset: u64,
-    /// ASCII type name of this `MetaStream` object record.
-    pub kind: DesignObjectKind,
-    /// Design-entity ids owned by this object, in source `MetaStream` order; a count
-    /// rather than a fixed-arity id list, so length varies per record.
+    /// GUID naming this entry's record type. Class tags are segment-local, so
+    /// this GUID is the only discriminator that is stable across files.
+    pub type_guid: String,
+    /// Byte offset of the type-GUID bytes in the Design `MetaStream`.
+    pub type_guid_offset: u64,
+    /// GUID of this type's base type; `None` for a root type, whose stored base
+    /// GUID is the empty string.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_type_guid: Option<String>,
+    /// Byte offset of the base-type-GUID bytes, when the entry names one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_type_guid_offset: Option<u64>,
+    /// Record version of this type.
+    pub version: u32,
+    /// Byte offset of `version` in the Design `MetaStream`.
+    pub version_offset: u64,
+    /// Add-in module that registers this type, e.g. `Fusion`, `MSketch`, or
+    /// `Body`. Every type a module registers repeats the module name, so it
+    /// classifies a type but does not identify one. Some types record no module.
+    pub module: String,
+    /// Design-entity ids whose records carry this type, in source `MetaStream`
+    /// order; a count rather than a fixed-arity list, so length varies per entry.
     pub entity_ids: Vec<u64>,
     /// Byte offsets parallel to `entity_ids`.
     pub entity_id_offsets: Vec<u64>,
-    /// This object's own GUID.
-    pub self_guid: String,
-    /// Byte offset of the self-GUID bytes in the Design `MetaStream`.
-    pub self_guid_offset: u64,
-    /// Number of zero delimiter bytes between the self GUID and the optional
-    /// parent GUID.
-    #[serde(default)]
-    pub zero_run_length: u32,
-    /// GUID of the owning object, when the source record carried a secondary GUID
-    /// after the zero-run delimiter; `None` for root-level objects.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parent_guid: Option<String>,
-    /// Byte offset of the parent-GUID bytes, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parent_guid_offset: Option<u64>,
-    /// Trailing record-revision counter from the `MetaStream` record.
-    pub revision: u32,
-    /// Byte offset of `revision` in the Design `MetaStream`.
-    pub revision_offset: u64,
 }
 
 /// Self-validating entity-bound header in the Design `BulkStream`.
@@ -2489,10 +3156,10 @@ pub struct DesignEntityHeader {
     pub class_tag: String,
     /// Whether the flag-selected four-byte optional slot is present.
     pub optional_slot_present: bool,
-    /// `MetaStream` object kind this header cross-references, when `optional_slot_present`
-    /// resolved to a known `DesignObjectKind`.
+    /// Add-in module of the `MetaStream` type whose entity-id list contains this
+    /// header's entity, when the `MetaStream` registers that entity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub object_kind: Option<DesignObjectKind>,
+    pub module: Option<String>,
     /// Index of an associated `BulkStream` record, when the header carries one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub record_reference: Option<u32>,
@@ -2515,6 +3182,82 @@ pub struct DesignEntityHeader {
     /// Byte offsets parallel to `member_indices`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub member_offsets: Vec<u64>,
+}
+
+impl DesignEntityHeader {
+    /// Whether the `MetaStream` registers this entity under the sketch module.
+    pub fn in_sketch_module(&self) -> bool {
+        self.module.as_deref() == Some(DESIGN_MODULE_SKETCH)
+    }
+}
+
+/// Exact image-plane binding owned by one Design `Canvas` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignCanvasImage {
+    /// Globally unique deterministic identifier for this native binding.
+    pub id: String,
+    /// Canvas scope record index.
+    pub scope_record_index: u32,
+    /// Byte offset of the marked scope reference in the geometry record.
+    pub scope_reference_offset: u64,
+    /// Dynamic class tag of the primary geometry record.
+    pub geometry_class_tag: String,
+    /// Geometry record index.
+    pub geometry_record_index: u32,
+    /// Byte offset of the scope's marked geometry-record reference.
+    pub geometry_reference_offset: u64,
+    /// Byte offset of the primary geometry record.
+    pub geometry_byte_offset: u64,
+    /// Fixed geometry prologue immediately following the primary record header.
+    pub geometry_prologue: [u8; 15],
+    /// Byte length from the primary geometry header to its paired header.
+    pub geometry_frame_length: u64,
+    /// Dynamic class tag of the paired geometry record.
+    pub paired_geometry_class_tag: String,
+    /// Byte offset of the paired geometry record.
+    pub paired_geometry_byte_offset: u64,
+    /// Byte offset of the paired record's marked component reference.
+    pub paired_component_reference_offset: u64,
+    /// Two opposite boundary segments in plane-local coordinates.
+    pub boundary_segments: [[Point2; 2]; 2],
+    /// Byte offsets of the eight boundary-coordinate f64 values.
+    pub boundary_coordinate_offsets: [u64; 8],
+    /// Byte offset of the presence marker preceding the second boundary segment.
+    pub second_boundary_present_offset: u64,
+    /// Design entity suffix of the supporting construction plane.
+    pub plane_entity_suffix: u32,
+    /// Byte offset of the marked construction-plane reference.
+    pub plane_reference_offset: u64,
+    /// Design entity suffix of the component owning the Canvas.
+    pub component_entity_suffix: u32,
+    /// Byte offset of the marked component reference.
+    pub component_reference_offset: u64,
+    /// Dynamic class tag of the standalone image-asset record.
+    pub asset_class_tag: String,
+    /// Image-asset record index.
+    pub asset_record_index: u32,
+    /// Byte offset of the marked image-asset reference.
+    pub asset_reference_offset: u64,
+    /// Byte offset of the image-asset record.
+    pub asset_byte_offset: u64,
+    /// Archive entry basename stored by the image-asset record.
+    pub asset_name: String,
+    /// Byte offset of the asset name's UTF-16LE code units.
+    pub asset_name_offset: u64,
+    /// Persistent Canvas label stored after the boundary segments.
+    pub label: String,
+    /// Byte offset of the label's UTF-16LE code units.
+    pub label_offset: u64,
+    /// Normalized raster opacity.
+    pub opacity: f32,
+    /// Image-plane origin in model-space millimeters.
+    pub origin: Point3,
+    /// Unit direction of increasing image u coordinate.
+    pub u_axis: Vector3,
+    /// Unit direction of increasing image v coordinate.
+    pub v_axis: Vector3,
+    /// Uninterpreted fixed geometry payload between the plane reference and scope link.
+    pub geometry_payload: Vec<u8>,
 }
 
 /// One indexed record header in the recursive Design `BulkStream` tree.
@@ -2572,10 +3315,12 @@ pub struct SketchRelation {
     pub constraint_kinds: Vec<SketchConstraintKind>,
     /// Bits in `state` outside the defined constraint mask.
     pub unknown_constraint_bits: u64,
-    /// Member role codes parallel to `members`. Generated members carry zero;
-    /// input members carry a nonzero role.
+    /// Relation ordinals parallel to `members`. The integer beside a member
+    /// counts the relations already recorded on that member, so the ordinals
+    /// carried on one member are pairwise distinct across its relations. It is
+    /// not a role: it says nothing about the member's part in this relation.
     #[serde(default)]
-    pub member_roles: Vec<u32>,
+    pub member_relation_ordinals: Vec<u32>,
     /// `EntityGenesis` origin bitfield stored by the relation record, when present.
     #[serde(default)]
     pub entity_genesis: Option<u64>,
@@ -2738,26 +3483,58 @@ pub struct SketchText {
     pub owner_reference: u32,
     /// Source per-file dynamic ASCII class tag naming this record's type.
     pub class_tag: String,
+    /// Record version of this record's class, from its Design `MetaStream` type
+    /// table. It selects the member sequence the record was written under.
+    pub class_version: u32,
     /// Byte offset of this record within its Design `BulkStream`.
     pub byte_offset: u64,
-    /// Persistent genesis identity carried ahead of the text identities.
-    pub entity_genesis: u64,
-    /// Persistent identity of the text entity.
-    pub persistent_id: u64,
-    /// Persistent base identity of the text entity.
-    pub base_id: u64,
+    /// Persistent genesis identity, a property key absent from most records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity_genesis: Option<u64>,
+    /// Persistent identity of the text entity. A `txt_tag` record below class
+    /// version 4 writes no identity key and stores none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub persistent_id: Option<u64>,
+    /// Persistent base identity, a property key absent from some records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_id: Option<u64>,
     /// Unicode text content.
     pub text: String,
     /// Font-family name.
     pub font_family: String,
+    /// Numeric font weight stored by the sketch-text class.
+    pub font_weight: i32,
     /// Nominal text height in millimetres.
     pub height: f64,
-    /// Horizontal scale relative to the nominal font width.
-    pub width_factor: f64,
-    /// First record reference following the font-width carrier.
-    pub first_reference: u32,
-    /// Second record reference following the text content.
-    pub second_reference: u32,
+    /// Horizontal width factor stored ahead of the font-family name, absent in
+    /// the `txt_tag` identity form, which stores none. The field takes `0` and
+    /// `1`; a `0` does not scale glyph advance to zero, so what a `0` selects
+    /// is not established.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width_factor: Option<f64>,
+    /// Display colour of the glyphs. Both identity forms store it, so it is
+    /// never absent. `SketchGeometry` carries no display attribute on any
+    /// variant, so the colour stays on the native record.
+    pub color: Color,
+    /// Text anchor point in the sketch frame in millimetres. The `txt_tag`
+    /// identity form stores it directly; the `textex_tag` form stores it as the
+    /// last column of its placement transform. Path text stores neither.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor: Option<Point2>,
+    /// Rotation of the text about its anchor in radians. The `txt_tag` identity
+    /// form stores the angle directly after the property block. Frame text in the
+    /// `textex_tag` form derives it from the placement transform's 2×2 basis;
+    /// path text stores none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<f64>,
+    /// Parameter record driving the height, absent when the record omits the
+    /// member or writes it null.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_reference: Option<u32>,
+    /// Parameter record driving the text content, absent when the record omits
+    /// the member or writes it null.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub second_reference: Option<u32>,
     /// Complete source record bytes for native replay and rewrite.
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
@@ -3166,8 +3943,8 @@ pub struct XrefReference {
     /// Occurrence-role GUID joining this reference to the Design-segment
     /// `DcXRefPCIFeature` record and the ACT GUID pool.
     pub neutron_role: String,
-    /// The `neutronData` property GUID; carries the same GUID as
-    /// `neutron_role`.
+    /// The independent `neutronData` property value. It is retained exactly
+    /// and is never inferred from or aliased to `neutron_role`.
     pub neutron_data: String,
     /// Source Design occurrence transform in centimetres. `None` is the
     /// serialized identity-placement form.

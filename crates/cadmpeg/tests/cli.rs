@@ -8,6 +8,7 @@ use std::io::{Cursor, Write};
 
 use assert_cmd::Command;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+
 use cadmpeg_ir::examples::unit_cube;
 use predicates::prelude::*;
 use tempfile::tempdir;
@@ -561,7 +562,7 @@ fn rhino_inspect_detects_archive_and_reports_tables_in_text_and_json() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 4);
+    assert_eq!(value["schema_version"], 5);
     assert_eq!(value["command"], "inspect");
     assert_eq!(value["confidence"], "high");
     assert_eq!(value["summary"]["format"], "rhino");
@@ -1012,13 +1013,14 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
         .success();
     let value: serde_json::Value =
         serde_json::from_slice(&fs::read(success_report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 4);
+    assert_eq!(value["schema_version"], 5);
     assert_eq!(value["command"], "convert");
     assert!(value["decode_report"].is_null());
     assert!(value["validation_report"].is_object());
     assert_eq!(value["export"]["format"], "step");
-    assert!(value["export"]["entity_counts"].is_object());
-    assert!(value["export"]["total_entities"].is_number());
+    assert_eq!(value["export"]["census"]["basis"], "target_records");
+    assert!(value["export"]["census"]["counts"].is_object());
+    assert_eq!(value["export"]["fidelity"]["status"], "not_provided");
     assert!(value["export"]["losses"].is_array());
     assert!(value["export"]["notes"].is_array());
 
@@ -1065,7 +1067,7 @@ fn f3d_export_report_identifies_regenerated_output() {
         .assert()
         .success();
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 4);
+    assert_eq!(value["schema_version"], 5);
     assert_eq!(value["export"]["format"], "f3d");
     assert!(value["export"]["notes"]
         .as_array()
@@ -1101,7 +1103,7 @@ fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
         ])
         .assert()
         .success();
-    serde_json::from_slice::<serde_json::Value>(&fs::read(inferred).unwrap()).unwrap();
+    serde_json::from_slice::<serde_json::Value>(&fs::read(&inferred).unwrap()).unwrap();
 
     let native = geometryless_creo(dir.path(), "empty.prt");
     let stdout = Command::cargo_bin("cadmpeg")
@@ -1110,6 +1112,8 @@ fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
         .output()
         .unwrap();
     assert!(stdout.status.success());
+    assert!(String::from_utf8_lossy(&stdout.stderr)
+        .contains("stdout cannot carry its decode-fidelity sidecar"));
     let output = dir.path().join("empty.cadir.json");
     Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -1121,7 +1125,98 @@ fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
         ])
         .assert()
         .success();
-    assert_eq!(stdout.stdout, fs::read(output).unwrap());
+    assert_eq!(stdout.stdout, fs::read(&output).unwrap());
+    let sidecar_path = cadmpeg_ir::decode_sidecar_path(&output);
+    let sidecar = cadmpeg_ir::DecodeSidecar::from_json(
+        &fs::read_to_string(&sidecar_path).expect("decode writes fidelity sidecar"),
+    )
+    .unwrap();
+    assert!(sidecar.matches(&fs::read(&output).unwrap()));
+
+    let neutral_sidecar = cadmpeg_ir::decode_sidecar_path(&inferred);
+    fs::write(&neutral_sidecar, "stale").unwrap();
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "export",
+            cube.to_str().unwrap(),
+            "-o",
+            inferred.to_str().unwrap(),
+            "--force",
+        ])
+        .assert()
+        .success();
+    assert!(!neutral_sidecar.exists());
+}
+
+#[test]
+fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() {
+    let dir = tempdir().unwrap();
+    for format in ["f3d", "sldprt"] {
+        let source_ir = if format == "sldprt" {
+            sldprt_cube()
+        } else {
+            unit_cube()
+        };
+        let cube = fixture(dir.path(), &format!("cube-{format}.cadir.json"), &source_ir);
+        let native = dir.path().join(format!("source.{format}"));
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "export",
+                cube.to_str().unwrap(),
+                "-o",
+                native.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+
+        let persisted = dir.path().join(format!("decoded-{format}.cadir.json"));
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "decode",
+                native.to_str().unwrap(),
+                "-o",
+                persisted.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+        let sidecar = cadmpeg_ir::decode_sidecar_path(&persisted);
+        assert!(sidecar.exists());
+
+        let replay = dir.path().join(format!("replay.{format}"));
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "export",
+                persisted.to_str().unwrap(),
+                "-o",
+                replay.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+        assert_eq!(fs::read(&native).unwrap(), fs::read(&replay).unwrap());
+
+        fs::remove_file(sidecar).unwrap();
+        let refused = dir.path().join(format!("refused.{format}"));
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "export",
+                persisted.to_str().unwrap(),
+                "-o",
+                refused.to_str().unwrap(),
+                "--reject-lossy",
+            ])
+            .assert()
+            .code(1)
+            .stderr(
+                predicate::str::contains("Preserved")
+                    .or(predicate::str::contains("export planning reported 1 loss")),
+            );
+        assert!(!refused.exists());
+    }
 }
 
 #[test]
@@ -1134,7 +1229,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .output()
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&validate.stdout).unwrap();
-    assert_eq!(value["schema_version"], 4);
+    assert_eq!(value["schema_version"], 5);
     assert_eq!(value["command"], "validate");
 
     let diff = Command::cargo_bin("cadmpeg")
@@ -1148,7 +1243,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .output()
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&diff.stdout).unwrap();
-    assert_eq!(value["schema_version"], 4);
+    assert_eq!(value["schema_version"], 5);
     assert_eq!(value["command"], "diff");
 
     let native = geometryless_creo(dir.path(), "ambiguous.bin");
@@ -1165,7 +1260,7 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .unwrap();
     assert!(inspect.status.success());
     let value: serde_json::Value = serde_json::from_slice(&inspect.stdout).unwrap();
-    assert_eq!(value["schema_version"], 4);
+    assert_eq!(value["schema_version"], 5);
     assert_eq!(value["command"], "inspect");
 }
 
@@ -1203,4 +1298,140 @@ fn explicit_format_warns_when_known_extension_disagrees() {
         .stderr(predicate::str::contains(
             "explicit format step disagrees with output extension format cadir",
         ));
+}
+
+#[test]
+fn inspect_report_writes_versioned_summary_to_file() {
+    let dir = tempdir().unwrap();
+    let input = minimal_rhino_archive(dir.path(), "empty.3dm", "50");
+    let report = dir.path().join("inspect-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "inspect",
+            input.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("format: rhino (detected high)"));
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert_eq!(value["schema_version"], 5);
+    assert_eq!(value["command"], "inspect");
+    assert_eq!(value["confidence"], "high");
+    assert_eq!(value["summary"]["format"], "rhino");
+}
+
+#[test]
+fn validate_report_writes_versioned_result_to_file() {
+    let dir = tempdir().unwrap();
+    let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
+    let report = dir.path().join("validate-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "validate",
+            input.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("validation: OK"));
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert_eq!(value["schema_version"], 5);
+    assert_eq!(value["command"], "validate");
+    assert!(value["decode_report"].is_null());
+    assert!(value["validation_report"].is_object());
+}
+
+#[test]
+fn diff_report_writes_versioned_result_to_file() {
+    let dir = tempdir().unwrap();
+    let cube = unit_cube();
+    let a = fixture(dir.path(), "a.cadir.json", &cube);
+    let b = fixture(dir.path(), "b.cadir.json", &cube);
+    let report = dir.path().join("diff-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "diff",
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("identical"));
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert_eq!(value["schema_version"], 5);
+    assert_eq!(value["command"], "diff");
+    assert_eq!(value["different"], false);
+    assert!(value["diff"].is_object());
+}
+
+#[test]
+fn diff_input_format_forces_the_reader_per_input() {
+    let dir = tempdir().unwrap();
+    let a = fixture(dir.path(), "a.cadir.json", &unit_cube());
+    let b = fixture(dir.path(), "b.cadir.json", &unit_cube());
+
+    // Two identical CADIR documents compare equal.
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["diff", a.to_str().unwrap(), b.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("identical"));
+
+    // Forcing only the first input through the Rhino reader bypasses CADIR
+    // parsing and fails to decode the JSON bytes as a 3DM archive.
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "diff",
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+            "--input-format-a",
+            "rhino",
+        ])
+        .assert()
+        .code(2);
+
+    // The second-input flag targets its input independently.
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "diff",
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+            "--input-format-b",
+            "rhino",
+        ])
+        .assert()
+        .code(2);
+}
+
+#[test]
+fn report_to_an_unwritable_path_is_an_operational_error() {
+    // A `--report` destination whose parent directory does not exist cannot be
+    // written atomically. The command that produced the report succeeds, but the
+    // report write fails as an operational error (exit 2), not a semantic one,
+    // and leaves no file behind.
+    let dir = tempdir().unwrap();
+    let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
+    let report = dir.path().join("missing-subdir").join("report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "validate",
+            input.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .code(2);
+    assert!(!report.exists());
 }

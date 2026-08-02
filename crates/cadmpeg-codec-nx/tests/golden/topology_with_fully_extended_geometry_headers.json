@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "4",
+      "ir_version": "5",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -27,7 +27,6 @@
             "sense": "forward"
           }
         ],
-        "components": [],
         "configurations": [],
         "curves": [
           {
@@ -45,19 +44,12 @@
               }
             },
             "id": "nx:s0:crv#0"
-          },
-          {
-            "geometry": {
-              "kind": "unknown",
-              "record": "nx:container:parasolid#0"
-            },
-            "id": "nx:s0:curve#unknown-9"
           }
         ],
         "drawings": [],
         "edges": [
           {
-            "curve": "nx:s0:curve#unknown-9",
+            "curve": "nx:s0:crv#0",
             "end": "nx:s0:vertex#10",
             "id": "nx:s0:edge#8",
             "start": "nx:s0:vertex#10",
@@ -72,7 +64,7 @@
             ],
             "sense": "forward",
             "shell": "nx:s0:shell#3",
-            "surface": "nx:s0:surface#unknown-6",
+            "surface": "nx:s0:surf#0",
             "tolerance": 0.2
           }
         ],
@@ -105,8 +97,7 @@
         "presentation_layers": [],
         "procedural_curves": [],
         "procedural_surfaces": [],
-        "product_occurrences": [],
-        "products": [],
+        "product_definitions": [],
         "regions": [
           {
             "body": "nx:s0:body#2",
@@ -154,13 +145,6 @@
               }
             },
             "id": "nx:s0:surf#0"
-          },
-          {
-            "geometry": {
-              "kind": "unknown",
-              "record": "nx:container:parasolid#0"
-            },
-            "id": "nx:s0:surface#unknown-6"
           }
         ],
         "tessellations": [],
@@ -181,9 +165,7 @@
                 "id": "nx:container:parasolid#0",
                 "links": [
                   "nx:s0:surf#0",
-                  "nx:s0:surface#unknown-6",
-                  "nx:s0:crv#0",
-                  "nx:s0:curve#unknown-9"
+                  "nx:s0:crv#0"
                 ]
               }
             ]
@@ -195,8 +177,11 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "338",
-          "footer_offset": "0",
+          "file_size": "357",
+          "footer_entry_count": "0",
+          "footer_fingerprint": "00000000",
+          "footer_offset": "343",
+          "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
           "partition_streams": "1",
@@ -218,20 +203,13 @@
       "geometry_transferred": true,
       "losses": [
         {
-          "category": "geometry",
           "code": "carrier_summary",
           "message": "Decoded 1 POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, metres → millimetres), 1 analytic surface carrier(s) (1 plane, 0 cylinder, 0 cone, 0 sphere, 0 torus), and 1 analytic curve carrier(s) (1 line, 0 circle, 0 ellipse). All parameters are byte-exact at the document's millimetre scale.",
           "severity": "info"
-        },
-        {
-          "category": "attribute",
-          "code": "attributes_not_transferred",
-          "message": "Material and appearance assignment, class-specific entity attribute fields, and assembly occurrence placements were not transferred: their remaining NX object-model and Parasolid field serialization is not decoded.",
-          "severity": "warning"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 343, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -250,9 +228,6 @@
             "fields": {
               "geometry": "derived"
             }
-          },
-          "nx:s0:curve#unknown-9": {
-            "entity": "unknown"
           },
           "nx:s0:edge#8": {
             "entity": "byte_exact",
@@ -284,9 +259,6 @@
               "geometry": "derived"
             }
           },
-          "nx:s0:surface#unknown-6": {
-            "entity": "unknown"
-          },
           "nx:s0:vertex#10": {
             "entity": "byte_exact",
             "fields": {
@@ -296,7 +268,7 @@
         },
         "provenance": {
           "nx:container:parasolid#0": {
-            "offset": 72,
+            "offset": 76,
             "stream": 1,
             "tag": "partition"
           },
@@ -309,11 +281,6 @@
             "offset": 329,
             "stream": 0,
             "tag": "LINE"
-          },
-          "nx:s0:curve#unknown-9": {
-            "offset": 196,
-            "stream": 0,
-            "tag": "UNRESOLVED_CURVE_REFERENCE"
           },
           "nx:s0:edge#8": {
             "offset": 196,
@@ -355,11 +322,6 @@
             "stream": 0,
             "tag": "PLANE"
           },
-          "nx:s0:surface#unknown-6": {
-            "offset": 118,
-            "stream": 0,
-            "tag": "UNRESOLVED_SURFACE_REFERENCE"
-          },
           "nx:s0:vertex#10": {
             "offset": 406,
             "stream": 0,
@@ -376,7 +338,7 @@
           "byte_len": 490,
           "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AAAMAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAMAAAAAAAEAAgABAAQAAQABAAwAAQAOAAQAAAAAAAA/Kjbi6xxDLQABAAEABQADAAYrAAAAAAAAAAAAAAAPAAUAAAAAAAAABwAEAAEAEQAHAAAABQAHAAcACgABAAgACQAAKwAQAAgAAAAAAAA/M6kqMFUyYQAHAAAAAAAJAAAAAAAAADIABgAAAAD//wAA//8AAP//AAD//wAA//8AACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHgAJAAAAAP//AAD//wAA//8AAP//AAD//wAAKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASAAoAAAAAAAAAAAAAAAAACz8aNuLrHEMtAAAAEwAMAAAAAAAAAAAAAAAAAB0ACwAAAAAAAAAAAAAAAD+EeuFHrhR7P5R64UeuFHs/nrhR64UeuA==",
           "id": "nx:container:parasolid#0",
-          "offset": 72,
+          "offset": 76,
           "sha256": "e082de2c8ada2825cf9312c688da76a5ac4b3f5a40d5f7adfdc7f46c150d0108",
           "stream": "nx:container"
         }
@@ -389,18 +351,18 @@
     "entries": [
       {
         "attributes": {
-          "file_offset": "72",
+          "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 266,
+        "compressed_size": 267,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
-        "role": "stream",
-        "uncompressed_size": 266
+        "role": "part-payload",
+        "uncompressed_size": 267
       },
       {
         "attributes": {
-          "file_offset": "72",
+          "file_offset": "76",
           "kind": "partition",
           "records.body": "1",
           "records.edge": "1",
@@ -429,7 +391,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 343, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]

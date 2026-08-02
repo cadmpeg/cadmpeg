@@ -2,7 +2,7 @@
 
 use std::{
     cell::RefCell,
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -10,23 +10,28 @@ use cadmpeg_ir::topology::BodyKind;
 
 use crate::families::standard::fbb::{
     parse_edge_tables_at, parse_edge_tables_scoped_at, parse_fbb_edge_tables_width,
-    parse_trim_chain, parse_trim_record, parse_trim_record_layout,
+    parse_trim_chain, parse_trim_record, parse_trim_record_layout, parse_vertex_table,
     prune_edge_candidates_by_port_domains, standard_face_count, EDGE_DELIMITER,
 };
 use crate::families::standard::topology::{
-    complete_duplicate_face_slots, reconstruct_incidence, Boundary, CoedgeUse, EdgeBoundaryLayout,
-    EdgeRow, FaceTopology, StandardTopology, TrimRecord,
+    complete_duplicate_face_slots, reconstruct_incidence, solve_boundary_orientation_constraints,
+    Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopology, StandardTopology, TrimRecord,
 };
-use crate::solve::incidence::reconstruct_incidence_candidates;
+use crate::solve::incidence::{
+    compact_boundary_domain_viable, prepare_face_configuration_domains,
+    prune_face_configuration_singleton_support, prune_face_configuration_support,
+    prune_ordered_face_endpoint_support, reconstruct_incidence_candidates,
+};
 use crate::solve::matching::unique_coordinate_bijection;
 use crate::solve::mesh_quotient::{
-    canonicalize_mesh_vertex_labels, deduplicate_mesh_quotient_assignments, initial_mesh_quotient,
-    mesh_assignment_can_merge, mesh_assignment_endpoint_cycles_viable, mesh_candidates_equivalent,
-    mesh_edge_points_compatible, mesh_face_endpoint_configurations, possible_face_choices,
-    possible_face_choices_with_limit, possible_face_equations, prune_mesh_endpoint_pair_support,
-    prune_mesh_endpoint_pair_support_with_limit, uses_canonical_edge_direction_gauge,
-    MeshConstraintBudget, MeshPartialEndpointConstraint, MeshQuotient, MeshSelectionSearch,
-    MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_MESH_CONSTRAINT_OPERATIONS,
+    canonical_edge_class_assignment, canonicalize_mesh_vertex_labels,
+    deduplicate_mesh_quotient_assignments, initial_mesh_quotient, mesh_assignment_can_merge,
+    mesh_assignment_endpoint_cycles_viable, mesh_candidates_equivalent,
+    mesh_candidates_equivalent_with_edge_classes, mesh_edge_points_compatible,
+    mesh_face_endpoint_configurations, possible_face_choices, possible_face_choices_with_limit,
+    possible_face_equations, prune_mesh_endpoint_pair_support,
+    prune_mesh_endpoint_pair_support_with_limit, MeshPartialEndpointConstraint, MeshQuotient,
+    MeshSelectionSearch, MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{
     bind_edge_port_candidates, bounded_endpoint_cycle_orders, bounded_oriented_trail_orders,
@@ -36,10 +41,25 @@ use crate::solve::missing_edge::{
     MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
 };
 use crate::solve::UnionFind;
+use cadmpeg_codec_core::decode::WorkBudget;
 
 fn repeated_domain(domain: HashSet<usize>, count: usize) -> Vec<Arc<HashSet<usize>>> {
     let domain = Arc::new(domain);
     vec![domain; count]
+}
+
+fn sparse_degrees(faces: &[&[u8]]) -> Vec<BTreeMap<usize, u8>> {
+    faces
+        .iter()
+        .map(|degrees| {
+            degrees
+                .iter()
+                .copied()
+                .enumerate()
+                .filter_map(|(point, degree)| (degree != 0).then_some((point, degree)))
+                .collect()
+        })
+        .collect()
 }
 
 fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -157,6 +177,25 @@ fn standard_edge_row_arity_uses_widened_count_form() {
 }
 
 #[test]
+fn two_handle_standard_rows_select_u8_complete_boundary_layout() {
+    let mut bytes = vec![
+        0x01, 0x01, 0x02, // two kind-1 rows
+        0x02, 0x02, 0x02, 0x00, // edge 2 -> 0
+        0x02, 0x02, 0x00, 0x01, // edge 0 -> 1
+    ];
+    bytes.extend_from_slice(&EDGE_DELIMITER);
+    bytes.extend_from_slice(&[0x01, 0x06, 0x00]);
+
+    let (rows, vertex_header) = parse_edge_tables_at(&bytes, 0).expect("u8 edge rows");
+    assert_eq!(rows[0].handles, [2, 0]);
+    assert_eq!(rows[1].handles, [0, 1]);
+    assert!(rows
+        .iter()
+        .all(|row| row.boundary_layout == EdgeBoundaryLayout::CompleteBoundaryRun));
+    assert_eq!(vertex_header, bytes.len() - 3);
+}
+
+#[test]
 fn coordinate_rows_canonicalize_logical_vertex_labels() {
     let topology = |start_vertex, end_vertex| StandardTopology {
         faces: vec![FaceTopology {
@@ -243,6 +282,159 @@ fn mesh_candidate_comparison_ignores_boundary_cycle_start() {
 }
 
 #[test]
+fn mesh_candidate_comparison_ignores_boundary_direction_and_order() {
+    let boundary = |edges: &[(usize, usize, usize)]| Boundary {
+        coedges: edges
+            .iter()
+            .map(|&(edge_row, start_vertex, end_vertex)| CoedgeUse {
+                edge_row,
+                reversed: false,
+                start_vertex,
+                end_vertex,
+            })
+            .collect(),
+    };
+    let edge_rows = (0..4)
+        .map(|edge| EdgeRow {
+            kind: 1,
+            handles: vec![edge, edge + 1],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        })
+        .collect::<Vec<_>>();
+    let left_topology = StandardTopology {
+        faces: vec![FaceTopology {
+            boundaries: vec![
+                boundary(&[(0, 0, 1), (1, 1, 0)]),
+                boundary(&[(2, 2, 3), (3, 3, 2)]),
+            ],
+        }],
+        edge_rows,
+        vertex_points: vec![
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [3.0, 0.0, 0.0],
+        ],
+        logical_vertex_count: 4,
+    };
+    let mut right_topology = left_topology.clone();
+    right_topology.faces[0].boundaries.reverse();
+    for boundary in &mut right_topology.faces[0].boundaries {
+        boundary.coedges.reverse();
+        for coedge in &mut boundary.coedges {
+            coedge.reversed = !coedge.reversed;
+            std::mem::swap(&mut coedge.start_vertex, &mut coedge.end_vertex);
+        }
+    }
+    let left = (left_topology, vec![0, 1, 2, 3]);
+    let right = (right_topology, vec![0, 1, 2, 3]);
+
+    assert_ne!(left, right);
+    assert!(mesh_candidates_equivalent(&left, &right));
+}
+
+#[test]
+fn mesh_candidate_comparison_canonicalizes_equivalent_edge_allocations() {
+    let edge_rows = vec![
+        EdgeRow {
+            kind: 2,
+            handles: vec![10, 11],
+            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        },
+        EdgeRow {
+            kind: 2,
+            handles: vec![10, 12],
+            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        },
+    ];
+    let topology = |swapped: bool| StandardTopology {
+        faces: vec![FaceTopology {
+            boundaries: vec![
+                Boundary {
+                    coedges: vec![CoedgeUse {
+                        edge_row: usize::from(swapped),
+                        reversed: false,
+                        start_vertex: 0,
+                        end_vertex: 1,
+                    }],
+                },
+                Boundary {
+                    coedges: vec![CoedgeUse {
+                        edge_row: usize::from(!swapped),
+                        reversed: false,
+                        start_vertex: 1,
+                        end_vertex: 2,
+                    }],
+                },
+            ],
+        }],
+        edge_rows: edge_rows.clone(),
+        vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+        logical_vertex_count: 3,
+    };
+    let left = (topology(false), vec![0, 1, 2]);
+    let right = (topology(true), vec![0, 1, 2]);
+
+    assert!(mesh_candidates_equivalent_with_edge_classes(
+        &left,
+        &right,
+        &[7, 7]
+    ));
+    assert!(!mesh_candidates_equivalent_with_edge_classes(
+        &left,
+        &right,
+        &[7, 8]
+    ));
+    assert!(!mesh_candidates_equivalent_with_edge_classes(
+        &left,
+        &right,
+        &[7]
+    ));
+}
+
+#[test]
+fn mesh_candidate_comparison_rejects_two_invalid_candidates() {
+    let invalid = (
+        StandardTopology {
+            faces: Vec::new(),
+            edge_rows: Vec::new(),
+            vertex_points: Vec::new(),
+            logical_vertex_count: 0,
+        },
+        vec![0],
+    );
+
+    assert!(!mesh_candidates_equivalent(&invalid, &invalid));
+    assert!(!mesh_candidates_equivalent_with_edge_classes(
+        &invalid,
+        &invalid,
+        &[]
+    ));
+}
+
+#[test]
+fn equivalent_edge_classes_require_monotone_endpoint_assignments() {
+    let classes = [4, 4, 9];
+    let choices = vec![
+        vec![[0, 2], [0, 1]],
+        vec![[0, 1], [0, 2]],
+        vec![[3, 4], [3, 5]],
+    ];
+
+    assert_eq!(
+        canonical_edge_class_assignment(&classes, &choices, &[Some([2, 0]), Some([0, 2]), None]),
+        Some(vec![true, true, false])
+    );
+    assert_eq!(
+        canonical_edge_class_assignment(&classes, &choices, &[Some([0, 2]), Some([1, 0]), None]),
+        None
+    );
+    assert!(
+        canonical_edge_class_assignment(&classes, &choices, &[None, Some([0, 1]), None]).is_some()
+    );
+}
+
+#[test]
 fn standard_face_population_ignores_shorter_fbb_marker_runs() {
     let row = [0x30, 0x04, 0x04, 0xff, 0xff, 0xff, 0xd2, 0xd2];
     let mut bytes = row.to_vec();
@@ -252,6 +444,12 @@ fn standard_face_population_ignores_shorter_fbb_marker_runs() {
     bytes.extend_from_slice(&row);
 
     assert_eq!(standard_face_count(&bytes), Some(3));
+}
+
+#[test]
+fn standard_face_population_accepts_flagged_fbb_rows() {
+    let row = [0xb0, 0x04, 0x04, 0xff, 0x99, 0x1f, 0x1a, 0xd1];
+    assert_eq!(standard_face_count(&row.repeat(6)), Some(6));
 }
 
 #[test]
@@ -368,6 +566,45 @@ fn endpoint_candidate_search_selects_a_face_closing_assignment() {
 }
 
 #[test]
+fn endpoint_candidate_validation_charges_full_incidence_work() {
+    use crate::solve::incidence::{visit_incidence_endpoint_pair_solutions, IncidenceSolve};
+    use std::ops::ControlFlow;
+
+    let rows = vec![
+        EdgeRow {
+            kind: 1,
+            handles: vec![0, 1],
+            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        };
+        3
+    ];
+    let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+    let edge_faces = [[0, 0]; 3];
+    let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
+    let budget = WorkBudget::new(2);
+    let mut visited = false;
+    let outcome = visit_incidence_endpoint_pair_solutions(
+        &rows,
+        &points,
+        &edge_faces,
+        &candidates,
+        1,
+        None,
+        None,
+        None,
+        Some(&budget),
+        &|_| true,
+        &mut |_| {
+            visited = true;
+            ControlFlow::Continue(())
+        },
+    );
+
+    assert_eq!(outcome, IncidenceSolve::Exhausted);
+    assert!(!visited);
+}
+
+#[test]
 fn incidence_propagation_closes_degree_one_vertices_before_search() {
     let mut choices = vec![vec![[0, 1]], vec![[1, 2], [3, 4]], vec![[2, 0]]];
     let edge_faces = [[0, 0], [0, 0], [0, 0]];
@@ -377,37 +614,432 @@ fn incidence_propagation_closes_degree_one_vertices_before_search() {
 }
 
 #[test]
-fn incidence_component_does_not_charge_a_forced_viable_pair() {
-    let choices = vec![vec![[0, 0], [1, 1]]];
-    let edge_faces = [[0, 0]];
-    let face_edges = vec![vec![0]];
-    let edges = [0];
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+fn incidence_propagation_removes_candidates_with_unsupported_vertices() {
+    let mut choices = vec![vec![[0, 1], [2, 3]], vec![[0, 1]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    crate::solve::incidence::prune_incidence_choices(&mut choices, &edge_faces, 1, 4)
+        .expect("face incidence is satisfiable");
+    assert_eq!(choices, vec![vec![[0, 1]], vec![[0, 1]]]);
+}
+
+#[test]
+fn incidence_propagation_indexes_wide_endpoint_support_domains() {
+    let domain = (0..4096).map(|point| [0, point]).collect::<Vec<_>>();
+    let mut choices = vec![domain.clone(), domain.clone()];
+    let edge_faces = [[0, 0], [0, 0]];
+
+    crate::solve::incidence::prune_incidence_choices(&mut choices, &edge_faces, 1, domain.len())
+        .expect("each endpoint candidate has support from the other edge");
+    assert_eq!(choices, vec![domain.clone(), domain]);
+}
+
+#[test]
+fn incidence_propagation_does_not_allocate_the_declared_point_product() {
+    let mut choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    let edge_faces = [[0, 0], [0, 0]];
+
+    crate::solve::incidence::prune_incidence_choices(&mut choices, &edge_faces, 1, usize::MAX)
+        .expect("sparse endpoint incidence is independent of the declared cardinality");
+    assert_eq!(choices, vec![vec![[0, 1]], vec![[0, 1]]]);
+}
+
+#[test]
+fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
+    let choices = vec![vec![[0, 1], [0, 2]], vec![[0, 2]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    let face_edges = vec![vec![0, 1]];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: None,
+        face_configuration_domains: None,
         mesh_quotient: None,
-        active: vec![true],
-        edges: &edges,
-        constraints: vec![(0, 0), (0, 1)],
-        assignment: vec![None],
-        degrees: vec![vec![0, 2]],
+        coordinate_domains: None,
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: vec![(0, 0), (0, 1), (0, 2)],
+        assignment: vec![None; 2],
+        degrees: vec![BTreeMap::new()],
         solutions: Vec::new(),
         solution_filter: None,
+        solution_visitor: None,
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
-        states: 4_096,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
         exhausted: false,
+        stopped: false,
+    };
+
+    assert!(!search.candidate_fits(0, [0, 1]));
+    assert!(search.candidate_fits(0, [0, 2]));
+}
+
+#[test]
+fn incidence_component_indexes_and_revalidates_frontier_support() {
+    const IRRELEVANT_EDGES: usize = 32;
+    let mut choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    choices.extend((0..IRRELEVANT_EDGES).map(|edge| vec![[edge + 2, edge + 3]]));
+    let edge_faces = vec![[0, 0]; choices.len()];
+    let face_edges = vec![(0..choices.len()).collect::<Vec<_>>()];
+    let mut explicit_point_supports = vec![HashMap::new(); choices.len()];
+    for supports in explicit_point_supports.iter_mut().take(2) {
+        supports.insert(0, vec![[0, 1]]);
+        supports.insert(1, vec![[0, 1]]);
+    }
+    let point_support_edges = vec![HashMap::from([(0, vec![0, 1]), (1, vec![0, 1])])];
+    let budget = WorkBudget::new(16);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: Some(explicit_point_supports),
+        point_support_edges: Some(point_support_edges),
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![true; choices.len()],
+        edges: &[0, 1],
+        constraints: vec![(0, 0), (0, 1)],
+        assignment: vec![None; choices.len()],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    assert!(search.candidate_fits(0, [0, 1]));
+    assert!(!budget.exhausted());
+    search.assignment[1] = Some([0, 1]);
+    assert!(!search.candidate_fits(0, [0, 1]));
+}
+
+#[test]
+fn incidence_component_caches_implicit_frontier_support() {
+    let choices = vec![vec![[0, 1]], Vec::new()];
+    let edge_faces = [[0, 0], [0, 0]];
+    let face_edges = vec![vec![0, 1]];
+    let mut quotient =
+        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [0, 1]])
+            .expect("initial quotient");
+    let coordinate_domains = quotient
+        .prepare_coordinate_root_domains(2, &choices, None)
+        .expect("implicit coordinate domains");
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        mesh_quotient: None,
+        coordinate_domains: Some(&coordinate_domains),
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: vec![(0, 0), (0, 1)],
+        assignment: vec![None; 2],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    assert!(search.candidate_fits(0, [0, 1]));
+    assert_eq!(
+        *search.degree_support_witnesses.borrow(),
+        HashMap::from([((0, 0), (1, [0, 1])), ((0, 1), (1, [0, 1]))])
+    );
+}
+
+#[test]
+fn incidence_degree_support_scan_exhausts_its_component_budget() {
+    let choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    let face_edges = vec![vec![0, 1]];
+    let budget = WorkBudget::new(1);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: vec![(0, 0), (0, 1)],
+        assignment: vec![None; 2],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    assert!(!search.candidate_fits(0, [0, 1]));
+    assert!(budget.exhausted());
+    search.search();
+    assert!(search.exhausted);
+}
+
+#[test]
+fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
+    let choices = vec![vec![[0, 1]], vec![[1, 2]]];
+    let edge_faces = [[0, 0], [0, 1]];
+    let face_edges = vec![vec![0, 1], vec![1]];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: vec![(0, 0), (0, 1), (0, 2), (1, 1), (1, 2)],
+        assignment: vec![None; 2],
+        degrees: sparse_degrees(&[&[0, 0, 0], &[0, 0, 2]]),
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    assert!(!search.candidate_fits(0, [0, 1]));
+}
+
+#[test]
+fn incidence_candidate_checks_ordered_faces_with_implicit_edge_domains() {
+    let choices = vec![vec![[0, 0]], Vec::new()];
+    let edge_faces = [[0, 0], [0, 0]];
+    let face_edges = vec![vec![0, 1]];
+    let mut quotient =
+        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[10, 10], [11, 12]])
+            .expect("initial quotient");
+    let coordinate_domains = quotient
+        .prepare_coordinate_root_domains(2, &choices, None)
+        .expect("implicit coordinate domains");
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let assignments = vec![MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)]],
+        },
+    ])];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
+        mesh_quotient: None,
+        coordinate_domains: Some(&coordinate_domains),
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: Vec::new(),
+        assignment: vec![None; 2],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    assert!(!search.candidate_fits(0, [0, 0]));
+    assert!(!propagation_budget.exhausted());
+}
+
+#[test]
+fn incidence_branch_reuses_candidate_viability_across_incident_face_frontiers() {
+    let choices = vec![vec![[0, 2]], vec![[2, 4]]];
+    let edge_faces = [[0, 1], [0, 1]];
+    let face_edges = vec![vec![0, 1], vec![0, 1]];
+    let budget = WorkBudget::new(4);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![true, true],
+        edges: &[0, 1],
+        constraints: vec![(0, 0), (1, 0)],
+        assignment: vec![None, None],
+        degrees: sparse_degrees(&[&[1, 0], &[1, 0]]),
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    assert_eq!(search.branch_options(None), Some(vec![(0, [0, 2])]));
+    assert!(!budget.exhausted());
+}
+
+#[test]
+fn incidence_branch_stops_ranking_at_a_singleton_domain() {
+    let choices = vec![vec![[0, 2]], vec![[2, 4]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    let face_edges = vec![vec![0, 1], Vec::new()];
+    let budget = WorkBudget::new(4);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![true, true],
+        edges: &[0, 1],
+        constraints: vec![(0, 0), (1, 9)],
+        assignment: vec![None, None],
+        degrees: sparse_degrees(&[&[1, 0], &[1, 9]]),
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    assert_eq!(search.branch_options(None), Some(vec![(0, [0, 2])]));
+    assert!(!budget.exhausted());
+}
+
+#[test]
+fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
+    const EDGE_COUNT: usize = 9;
+    let choices = (0..EDGE_COUNT)
+        .map(|edge| vec![[edge * 2, edge * 2], [edge * 2 + 1, edge * 2 + 1]])
+        .collect::<Vec<_>>();
+    let edge_faces = (0..EDGE_COUNT).map(|face| [face, face]).collect::<Vec<_>>();
+    let face_edges = (0..EDGE_COUNT).map(|edge| vec![edge]).collect::<Vec<_>>();
+    let edges = (0..EDGE_COUNT).collect::<Vec<_>>();
+    let constraints = (0..EDGE_COUNT)
+        .flat_map(|face| [(face, face * 2), (face, face * 2 + 1)])
+        .collect::<Vec<_>>();
+    let solution_filter =
+        |solution: &[(usize, [usize; 2])]| solution.iter().all(|(_, pair)| pair[0] % 2 == 0);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![true; EDGE_COUNT],
+        edges: &edges,
+        constraints,
+        assignment: vec![None; EDGE_COUNT],
+        degrees: vec![BTreeMap::new(); EDGE_COUNT],
+        solutions: Vec::new(),
+        solution_filter: Some(&solution_filter),
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
     };
 
     search.search();
 
     assert!(!search.exhausted);
-    assert_eq!(search.states, 4_096);
-    assert_eq!(search.solutions, vec![vec![(0, [0, 0])]]);
+    assert_eq!(search.solutions.len(), 1);
 }
 
 #[test]
@@ -418,33 +1050,107 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
     let edges = [0, 1];
     let active_edges = [false, true];
     let valid = |_: &[Option<[usize; 2]>]| true;
-    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: None,
+        face_configuration_domains: None,
         mesh_quotient: None,
+        coordinate_domains: None,
         active: vec![true; 2],
         edges: &edges,
         constraints: Vec::new(),
         assignment: vec![None; 2],
-        degrees: vec![vec![0; 6]],
+        degrees: vec![BTreeMap::new()],
         solutions: Vec::new(),
         solution_filter: None,
+        solution_visitor: None,
         partial_solution_filter: Some(MeshPartialEndpointConstraint {
             active_edges: &active_edges,
+            coupled_edges: &active_edges,
+            assignment_predecessors: None,
             valid: &valid,
         }),
         dead_states: HashSet::new(),
         budget: &budget,
-        states: 0,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
         exhausted: false,
+        stopped: false,
     };
 
     assert_eq!(
-        search.branch_options(),
+        search.branch_options(None),
         Some(vec![(1, [3, 4]), (1, [3, 5]), (1, [4, 5])])
+    );
+}
+
+#[test]
+fn incidence_component_assigns_canonical_class_members_in_order() {
+    let choices = vec![
+        vec![[0, 1], [0, 2]],
+        vec![[0, 1], [0, 2]],
+        vec![[3, 4], [3, 5]],
+    ];
+    let edge_faces = [[0, 0]; 3];
+    let face_edges = vec![vec![0, 1, 2]];
+    let active_edges = [false; 3];
+    let assignment_predecessors = [None, Some(0), Some(0)];
+    let valid = |_: &[Option<[usize; 2]>]| true;
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: None,
+        face_configuration_domains: None,
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![true, true, false],
+        edges: &[0, 1],
+        constraints: Vec::new(),
+        assignment: vec![None; 3],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: Some(MeshPartialEndpointConstraint {
+            active_edges: &active_edges,
+            coupled_edges: &active_edges,
+            assignment_predecessors: Some(&assignment_predecessors),
+            valid: &valid,
+        }),
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    assert_eq!(
+        search.branch_options(None),
+        Some(vec![(0, [0, 1]), (0, [0, 2])])
+    );
+
+    let independent = crate::solve::incidence::IncidenceComponentSearch {
+        active: vec![false, false, true],
+        edges: &[2],
+        ..search
+    };
+    assert_eq!(
+        independent.branch_options(None),
+        Some(vec![(2, [3, 4]), (2, [3, 5])])
     );
 }
 
@@ -454,25 +1160,34 @@ fn incidence_component_declines_when_its_work_budget_is_exhausted() {
     let edge_faces = [[0, 0]];
     let face_edges = vec![vec![0]];
     let edges = [0];
-    let budget = MeshConstraintBudget::new(0);
+    let budget = WorkBudget::new(0);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: None,
+        face_configuration_domains: None,
         mesh_quotient: None,
+        coordinate_domains: None,
         active: vec![true],
         edges: &edges,
         constraints: vec![(0, 0)],
         assignment: vec![None],
-        degrees: vec![vec![0]],
+        degrees: vec![BTreeMap::new()],
         solutions: Vec::new(),
         solution_filter: None,
+        solution_visitor: None,
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
-        states: 0,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
         exhausted: false,
+        stopped: false,
     };
 
     search.search();
@@ -482,7 +1197,654 @@ fn incidence_component_declines_when_its_work_budget_is_exhausted() {
 }
 
 #[test]
-fn incidence_candidate_defers_global_quotient_validation_until_selection() {
+fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
+    let choices = vec![vec![[0, 0]]];
+    let edge_faces = [[0, 0]];
+    let face_edges = vec![vec![0]];
+    let assignments = vec![MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 0,
+                reversed: Some(false),
+            }]],
+        },
+    ])];
+    let budget = WorkBudget::new(0);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![false],
+        edges: &[],
+        constraints: Vec::new(),
+        assignment: vec![Some([0, 0])],
+        degrees: sparse_degrees(&[&[2]]),
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    assert_eq!(search.face_configuration_options(), None);
+    assert!(!budget.exhausted());
+}
+
+#[test]
+fn exhausted_boundary_lookahead_does_not_exhaust_exact_incidence_search() {
+    let choices = vec![vec![[0, 0]]];
+    let edge_faces = [[0, 0]];
+    let face_edges = vec![vec![0]];
+    let assignments = vec![MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 0,
+                reversed: Some(false),
+            }]],
+        },
+    ])];
+    let search_budget = WorkBudget::new(16);
+    let propagation_budget = WorkBudget::new(0);
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![true],
+        edges: &[0],
+        constraints: vec![(0, 0)],
+        assignment: vec![None],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &search_budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    search.search();
+
+    assert!(!search.exhausted);
+    assert_eq!(search.solutions, vec![vec![(0, [0, 0])]]);
+    assert!(propagation_budget.exhausted());
+}
+
+#[test]
+fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let choices = vec![
+        vec![[0, 0]],
+        (1..=300).map(|point| [point, point]).collect::<Vec<_>>(),
+    ];
+    let edge_faces = [[0, 0], [1, 1]];
+    let face_edges = vec![vec![0], vec![1]];
+    let assignments = vec![
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0)]],
+        }]),
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(1)]],
+        }]),
+    ];
+    let budget = WorkBudget::new(4);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![true, true],
+        edges: &[0, 1],
+        constraints: Vec::new(),
+        assignment: vec![None, None],
+        degrees: vec![BTreeMap::new(), BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    assert_eq!(
+        search.face_configuration_options(),
+        Some(vec![vec![(0, [0, 0])]])
+    );
+    assert!(!budget.exhausted());
+}
+
+#[test]
+fn incidence_face_configuration_branches_on_the_narrowest_projected_face() {
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let choices = vec![
+        vec![[0, 0], [1, 1]],
+        vec![[10, 11]],
+        vec![[10, 11], [12, 13], [14, 15]],
+    ];
+    let edge_faces = [[0, 0], [1, 1], [1, 1]];
+    let face_edges = vec![vec![0], vec![1, 2]];
+    let assignments = vec![
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0)]],
+        }]),
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(1), use_(2)]],
+        }]),
+    ];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![true; 3],
+        edges: &[0, 1, 2],
+        constraints: Vec::new(),
+        assignment: vec![None; 3],
+        degrees: vec![BTreeMap::new(), BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    assert_eq!(
+        search.face_configuration_options(),
+        Some(vec![vec![(1, [10, 11]), (2, [10, 11])]])
+    );
+}
+
+#[test]
+fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let choices = vec![vec![[0, 0], [1, 1]], vec![[0, 0], [1, 1]]];
+    let edge_faces = [[0, 0]; 2];
+    let face_edges = vec![vec![0, 1]];
+    let assignments = vec![MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)]],
+        },
+    ])];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(2);
+    let prepared =
+        prepare_face_configuration_domains(Some(&assignments), &choices, &[None; 2], &[true; 2])
+            .expect("compiled face factors");
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        face_configuration_domains: Some(prepared),
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: Vec::new(),
+        assignment: vec![None; 2],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    assert_eq!(
+        search.face_configuration_options(),
+        Some(vec![
+            vec![(0, [0, 0]), (1, [0, 0])],
+            vec![(0, [1, 1]), (1, [1, 1])]
+        ])
+    );
+    search.assignment[0] = Some([1, 1]);
+    assert_eq!(
+        search.face_configuration_options(),
+        Some(vec![vec![(1, [1, 1])]])
+    );
+    assert!(!propagation_budget.exhausted());
+}
+
+#[test]
+fn incidence_face_factor_masks_roll_back_between_configuration_branches() {
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let choices = vec![vec![[0, 1], [2, 3]], vec![[0, 1], [2, 3]]];
+    let assignments = vec![MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)]],
+        },
+    ])];
+
+    let edge_faces = [[0, 0]; 2];
+    let face_edges = vec![vec![0, 1]];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let prepared =
+        prepare_face_configuration_domains(Some(&assignments), &choices, &[None; 2], &[true; 2])
+            .expect("compiled face factors");
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        face_configuration_domains: Some(prepared),
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![true; 2],
+        edges: &[0, 1],
+        constraints: Vec::new(),
+        assignment: vec![None; 2],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    search.search();
+
+    assert_eq!(
+        search.solutions,
+        vec![
+            vec![(0, [0, 1]), (1, [0, 1])],
+            vec![(0, [2, 3]), (1, [2, 3])],
+        ]
+    );
+}
+
+#[test]
+fn persistent_face_configuration_preparation_retains_global_contradictions() {
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let assignments = vec![
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)]],
+        }]),
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(1), use_(2)]],
+        }]),
+    ];
+    let choices = vec![vec![[0, 1]], vec![[0, 1], [0, 2]], vec![[0, 2]]];
+    let selected = vec![Some([0, 1]), None, Some([0, 2])];
+    let prepared = prepare_face_configuration_domains(
+        Some(&assignments),
+        &choices,
+        &selected,
+        &[false, true, false],
+    )
+    .expect("ordered face factors");
+
+    assert!(prepared.domains().iter().flatten().any(Vec::is_empty));
+
+    let compatible = vec![vec![[0, 1]], vec![[0, 1], [0, 2]], vec![[0, 1]]];
+    let selected = vec![Some([0, 1]), None, Some([0, 1])];
+    let prepared = prepare_face_configuration_domains(
+        Some(&assignments),
+        &compatible,
+        &selected,
+        &[false, true, false],
+    )
+    .expect("compatible ordered face factors");
+    assert!(prepared
+        .domains()
+        .iter()
+        .flatten()
+        .all(|domain| domain.len() == 1));
+}
+
+#[test]
+fn incidence_face_configuration_support_retains_shared_edge_correlations() {
+    let correlated = vec![
+        vec![(0, [0, 1]), (1, [2, 3])],
+        vec![(0, [4, 5]), (1, [6, 7])],
+    ];
+    let mut domains = vec![correlated.clone(), vec![vec![(0, [0, 1]), (1, [2, 3])]]];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+
+    assert!(prune_face_configuration_support(&mut domains, &budget));
+    assert_eq!(domains[0], vec![correlated[0].clone()]);
+
+    let mut incompatible = vec![correlated, vec![vec![(0, [0, 1]), (1, [6, 7])]]];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    assert!(!prune_face_configuration_support(
+        &mut incompatible,
+        &budget
+    ));
+
+    let preserved = incompatible.clone();
+    let budget = WorkBudget::new(0);
+    assert!(prune_face_configuration_support(&mut incompatible, &budget));
+    assert_eq!(incompatible, preserved);
+    assert!(budget.exhausted());
+}
+
+#[test]
+fn incidence_face_configuration_support_propagates_across_a_factor_chain() {
+    let mut domains = vec![
+        vec![vec![(0, [0, 1])], vec![(0, [0, 2])]],
+        vec![
+            vec![(0, [0, 1]), (1, [1, 2])],
+            vec![(0, [0, 2]), (1, [2, 3])],
+        ],
+        vec![vec![(1, [1, 2])]],
+    ];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+
+    assert!(prune_face_configuration_support(&mut domains, &budget));
+    assert_eq!(
+        domains,
+        vec![
+            vec![vec![(0, [0, 1])]],
+            vec![vec![(0, [0, 1]), (1, [1, 2])]],
+            vec![vec![(1, [1, 2])]],
+        ]
+    );
+
+    let mut optional = vec![vec![vec![(0, [0, 1])]], vec![vec![], vec![(0, [0, 2])]]];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    assert!(prune_face_configuration_support(&mut optional, &budget));
+    assert_eq!(optional[0], vec![vec![(0, [0, 1])]]);
+}
+
+#[test]
+fn incidence_face_singleton_support_rejects_an_inconsistent_factor_cycle() {
+    let equal = |left, right| {
+        vec![
+            vec![(left, [0, 0]), (right, [0, 0])],
+            vec![(left, [1, 1]), (right, [1, 1])],
+        ]
+    };
+    let different = vec![
+        vec![(0, [0, 0]), (2, [1, 1])],
+        vec![(0, [1, 1]), (2, [0, 0])],
+    ];
+    let mut inconsistent = vec![equal(0, 1), equal(1, 2), different];
+    let arc_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+
+    assert!(prune_face_configuration_support(
+        &mut inconsistent,
+        &arc_budget
+    ));
+    assert!(inconsistent.iter().all(|domain| domain.len() == 2));
+
+    let singleton_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    assert!(!prune_face_configuration_singleton_support(
+        &mut inconsistent,
+        &singleton_budget,
+    ));
+
+    let mut consistent = vec![equal(0, 1), equal(1, 2), equal(2, 0)];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    assert!(prune_face_configuration_singleton_support(
+        &mut consistent,
+        &budget,
+    ));
+    assert!(consistent.iter().all(|domain| domain.len() == 2));
+
+    let preserved = consistent.clone();
+    let exhausted = WorkBudget::new(0);
+    assert!(prune_face_configuration_singleton_support(
+        &mut consistent,
+        &exhausted,
+    ));
+    assert_eq!(consistent, preserved);
+    assert!(exhausted.exhausted());
+}
+
+#[test]
+fn incidence_face_singleton_support_tracks_multiword_configuration_masks() {
+    let wide = (0..130)
+        .map(|point| vec![(0, [point, point])])
+        .collect::<Vec<_>>();
+    let mut domains = vec![wide, vec![vec![(0, [129, 129])]]];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+
+    assert!(prune_face_configuration_singleton_support(
+        &mut domains,
+        &budget,
+    ));
+    assert_eq!(domains[0], vec![vec![(0, [129, 129])]]);
+    assert_eq!(domains[1], vec![vec![(0, [129, 129])]]);
+}
+
+#[test]
+fn ordered_face_support_prunes_edge_pairs_to_complete_configurations() {
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: None,
+    };
+    let domains = vec![MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)]],
+        },
+    ])];
+    let mut choices = vec![vec![[0, 1], [0, 2], [3, 4]], vec![[0, 1], [0, 2]]];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+
+    assert!(prune_ordered_face_endpoint_support(
+        &domains,
+        &mut choices,
+        &budget,
+    ));
+    assert_eq!(choices, vec![vec![[0, 1], [0, 2]], vec![[0, 1], [0, 2]]]);
+
+    let mut unpruned = vec![vec![[0, 1], [0, 2], [3, 4]], vec![[0, 1], [0, 2]]];
+    let exhausted = WorkBudget::new(0);
+    assert!(prune_ordered_face_endpoint_support(
+        &domains,
+        &mut unpruned,
+        &exhausted,
+    ));
+    assert_eq!(
+        unpruned,
+        vec![vec![[0, 1], [0, 2], [3, 4]], vec![[0, 1], [0, 2]]]
+    );
+    assert!(exhausted.exhausted());
+}
+
+#[test]
+fn incidence_forced_face_chain_does_not_consume_branch_budget() {
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let choices = vec![vec![[0, 0]], vec![[1, 1]]];
+    let edge_faces = [[0, 0], [1, 1]];
+    let face_edges = vec![vec![0], vec![1]];
+    let assignments = vec![
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0)]],
+        }]),
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(1)]],
+        }]),
+    ];
+    let budget = WorkBudget::new(1);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![true, true],
+        edges: &[0, 1],
+        constraints: Vec::new(),
+        assignment: vec![None, None],
+        degrees: vec![BTreeMap::new(), BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    search.search();
+
+    assert!(!search.exhausted);
+    assert_eq!(search.solutions, vec![vec![(0, [0, 0]), (1, [1, 1])]]);
+}
+
+#[test]
+fn incidence_forced_face_configuration_closes_its_frontier_atomically() {
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    let face_edges = vec![vec![0, 1]];
+    let assignments = vec![MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)]],
+        },
+    ])];
+    let budget = WorkBudget::new(1);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
+        edge_faces: &edge_faces,
+        face_edges: &face_edges,
+        mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
+        mesh_quotient: None,
+        coordinate_domains: None,
+        active: vec![true, true],
+        edges: &[0, 1],
+        constraints: vec![(0, 0), (0, 1)],
+        assignment: vec![None, None],
+        degrees: vec![BTreeMap::new()],
+        solutions: Vec::new(),
+        solution_filter: None,
+        solution_visitor: None,
+        partial_solution_filter: None,
+        dead_states: HashSet::new(),
+        budget: &budget,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
+        exhausted: false,
+        stopped: false,
+    };
+
+    search.search();
+
+    assert!(!search.exhausted);
+    assert_eq!(search.solutions, vec![vec![(0, [0, 1]), (1, [0, 1])]]);
+}
+
+#[test]
+fn incidence_candidate_uses_a_separate_global_quotient_validation_budget() {
     let choices = vec![vec![[0, 0]]];
     let edge_faces = [[0, 0]];
     let face_edges = vec![vec![0]];
@@ -508,33 +1870,42 @@ fn incidence_candidate_defers_global_quotient_validation_until_selection() {
         domains: repeated_domain(HashSet::from([0]), 2),
         members: vec![vec![0], vec![1]],
     };
-    let budget = MeshConstraintBudget::new(0);
+    let budget = WorkBudget::new(0);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
         mesh_quotient: Some(&quotient),
+        coordinate_domains: None,
         active: vec![true],
         edges: &[0],
         constraints: vec![(0, 0)],
         assignment: vec![None],
-        degrees: vec![vec![0]],
+        degrees: vec![BTreeMap::new()],
         solutions: Vec::new(),
         solution_filter: None,
+        solution_visitor: None,
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
-        states: 0,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
         exhausted: false,
+        stopped: false,
     };
 
     assert!(search.candidate_fits(0, [0, 0]));
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
     search.adjust(0, [0, 0], true);
     search.assignment[0] = Some([0, 0]);
-    assert!(!search.ordered_faces_feasible([0]));
-    assert!(budget.exhausted.get());
+    assert!(search.ordered_faces_feasible([0]));
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -556,25 +1927,34 @@ fn incidence_selection_validates_only_its_affected_faces() {
         ],
         members: (0..4).map(|node| vec![node]).collect(),
     };
-    let budget = MeshConstraintBudget::new(1_000);
+    let budget = WorkBudget::new(1_000);
+    let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
+        explicit_point_supports: None,
+        point_support_edges: None,
+        degree_support_witnesses: RefCell::new(HashMap::new()),
         edge_faces: &edge_faces,
         face_edges: &face_edges,
         mesh_assignments: Some(&assignments),
+        face_configuration_domains: None,
         mesh_quotient: Some(&quotient),
+        coordinate_domains: None,
         active: vec![true, false],
         edges: &[0],
         constraints: vec![(0, 0)],
         assignment: vec![Some([0, 0]), Some([0, 1])],
-        degrees: vec![vec![2, 0], vec![1, 1]],
+        degrees: sparse_degrees(&[&[2, 0], &[1, 1]]),
         solutions: Vec::new(),
         solution_filter: None,
+        solution_visitor: None,
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
-        states: 0,
+        coordinate_propagation_budget: &propagation_budget,
+        boundary_propagation_budget: &propagation_budget,
         exhausted: false,
+        stopped: false,
     };
 
     assert!(search.ordered_faces_feasible([0]));
@@ -591,7 +1971,194 @@ fn incidence_components_join_only_through_shared_face_vertices() {
     ];
     let edge_faces = [[0, 0], [0, 0], [0, 0], [0, 0]];
     assert_eq!(
-        crate::solve::incidence::incidence_choice_components(&choices, &edge_faces, None),
+        crate::solve::incidence::incidence_choice_components(&choices, &edge_faces, None, None),
+        vec![vec![0, 1], vec![2]]
+    );
+}
+
+#[test]
+fn incidence_component_preflight_ignores_disjoint_unassigned_cycles_on_the_same_face() {
+    let choices = vec![vec![[0, 0], [1, 1]], vec![[2, 2], [3, 3]]];
+    let edge_faces = [[0, 0], [0, 0]];
+
+    let solutions = crate::solve::incidence::component_incidence_pair_solutions(
+        &choices,
+        &edge_faces,
+        1,
+        4,
+        None,
+        None,
+        None,
+        &|_| true,
+    )
+    .expect("independent same-face cycle solutions");
+
+    assert_eq!(solutions.len(), 4);
+}
+
+#[test]
+fn incidence_component_composition_does_not_allocate_the_declared_point_product() {
+    let solutions = crate::solve::incidence::component_incidence_pair_solutions(
+        &[vec![[usize::MAX - 1, usize::MAX - 1]]],
+        &[[0, 0]],
+        1,
+        usize::MAX,
+        None,
+        None,
+        None,
+        &|_| true,
+    )
+    .expect("sparse component degree state");
+
+    assert_eq!(solutions, vec![vec![[usize::MAX - 1, usize::MAX - 1]]]);
+}
+
+#[test]
+fn incidence_component_preflight_retains_fixed_chain_frontiers() {
+    let choices = vec![
+        vec![[0, 1], [0, 2]],
+        vec![[1, 3]],
+        vec![[3, 4], [3, 5]],
+        vec![[4, 0]],
+    ];
+    let edge_faces = [[0, 0]; 4];
+
+    let solutions = crate::solve::incidence::component_incidence_pair_solutions(
+        &choices,
+        &edge_faces,
+        1,
+        6,
+        None,
+        None,
+        None,
+        &|_| true,
+    )
+    .expect("fixed-chain component frontier");
+
+    assert_eq!(solutions, vec![vec![[0, 1], [1, 3], [3, 4], [4, 0]]]);
+}
+
+#[test]
+fn partial_incidence_constraint_joins_every_component_it_can_couple() {
+    let components = vec![vec![0, 2], vec![1], vec![3, 5], vec![4]];
+    let active = [true, false, false, true, false, false];
+
+    assert_eq!(
+        crate::solve::incidence::join_partial_constraint_components(components, &active, None),
+        vec![vec![0, 2, 3, 5], vec![1], vec![4]],
+    );
+}
+
+#[test]
+fn partial_incidence_predecessors_join_only_their_class_components() {
+    let components = vec![vec![0, 2], vec![1], vec![3, 5], vec![4]];
+    let predecessors = [None, None, None, Some(0), None, None];
+
+    assert_eq!(
+        crate::solve::incidence::join_partial_constraint_components(
+            components,
+            &[false; 6],
+            Some(&predecessors),
+        ),
+        vec![vec![0, 2, 3, 5], vec![1], vec![4]],
+    );
+}
+
+#[test]
+fn incidence_components_order_by_endpoint_branch_width() {
+    let choices = vec![
+        vec![[0, 0], [1, 1]],
+        vec![[2, 2], [3, 3], [4, 4]],
+        vec![[5, 5], [6, 6]],
+        vec![[7, 7]],
+    ];
+    let mut components = vec![vec![0, 2], vec![1], vec![3]];
+
+    crate::solve::incidence::order_incidence_components_by_branch_width(&mut components, &choices)
+        .expect("valid component edges");
+
+    assert_eq!(components, vec![vec![3], vec![1], vec![0, 2]]);
+}
+
+#[test]
+fn incidence_components_keep_fixed_face_boundaries_independent() {
+    let choices = vec![
+        vec![[0, 1], [0, 2]],
+        vec![[1, 2], [1, 3]],
+        vec![[4, 5], [4, 6]],
+        vec![[5, 6], [5, 7]],
+    ];
+    let edge_faces = [[0, 0]; 4];
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 1,
+        reversed: None,
+    };
+    let fixed = [MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)], vec![use_(2), use_(3)]],
+        },
+    ])];
+    assert_eq!(
+        crate::solve::incidence::incidence_choice_components(
+            &choices,
+            &edge_faces,
+            Some(&fixed),
+            None,
+        ),
+        vec![vec![0, 1], vec![2, 3]]
+    );
+
+    let alternatives = [MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(1)], vec![use_(2), use_(3)]],
+        },
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_(0), use_(2)], vec![use_(1), use_(3)]],
+        },
+    ])];
+    assert_eq!(
+        crate::solve::incidence::incidence_choice_components(
+            &choices,
+            &edge_faces,
+            Some(&alternatives),
+            None,
+        ),
+        vec![vec![0, 1, 2, 3]]
+    );
+}
+
+#[test]
+fn incidence_components_include_overlapping_quotient_domains() {
+    let choices = vec![
+        vec![[0, 1], [0, 2]],
+        vec![[3, 4], [3, 5]],
+        vec![[6, 7], [6, 8]],
+    ];
+    let edge_faces = [[0, 0], [1, 1], [2, 2]];
+    let quotient = MeshQuotient {
+        union: UnionFind::new(6),
+        domains: [
+            HashSet::from([0, 1]),
+            HashSet::from([0, 2]),
+            HashSet::from([1, 3]),
+            HashSet::from([3, 4]),
+            HashSet::from([6, 7]),
+            HashSet::from([6, 8]),
+        ]
+        .map(Arc::new)
+        .to_vec(),
+        members: (0..6).map(|node| vec![node]).collect(),
+    };
+
+    assert_eq!(
+        crate::solve::incidence::incidence_choice_components(
+            &choices,
+            &edge_faces,
+            None,
+            Some(&quotient)
+        ),
         vec![vec![0, 1], vec![2]]
     );
 }
@@ -796,7 +2363,7 @@ fn deferred_anchored_runs_propagate_forced_adjacencies() {
     let mut quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 2, &[[0, 1], [2, 3]])
             .expect("initial quotient");
-    let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(100);
+    let budget = WorkBudget::new(100);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
         &domains,
@@ -835,7 +2402,7 @@ fn deferred_gap_search_propagates_quotient_forced_edge_order() {
             .collect(),
         members: (0..8).map(|node| vec![node]).collect(),
     };
-    let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(10_000);
+    let budget = WorkBudget::new(10_000);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
         &domains,
@@ -879,7 +2446,7 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
     };
     quotient.merge(0, 1).expect("first closed edge");
     quotient.merge(2, 3).expect("second closed edge");
-    let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(100);
+    let budget = WorkBudget::new(100);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
         &domains,
@@ -915,7 +2482,7 @@ fn ordered_face_options_preflight_exact_signature_work() {
         domains: vec![broad; 4],
         members: (0..4).map(|node| vec![node]).collect(),
     };
-    let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(100);
+    let budget = WorkBudget::new(100);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
         &domains,
@@ -926,7 +2493,7 @@ fn ordered_face_options_preflight_exact_signature_work() {
     .expect("bounded common quotient propagation");
 
     assert_eq!(quotient.root_count(), 4);
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -960,7 +2527,7 @@ fn ordered_cycle_support_propagates_domain_forced_directions() {
         ],
         members: (0..4).map(|node| vec![node]).collect(),
     };
-    let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(100);
+    let budget = WorkBudget::new(100);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
         &domains,
@@ -1038,13 +2605,40 @@ fn unordered_components_close_cycles_in_the_abstract_quotient() {
 }
 
 #[test]
+fn compact_unordered_boundary_rejects_partial_subtours() {
+    let domain = MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2, 3, 4]);
+
+    assert!(!compact_boundary_domain_viable(
+        &domain,
+        &[Some([0, 1]), Some([1, 2]), Some([2, 0]), None, None],
+        None,
+    ));
+    assert!(compact_boundary_domain_viable(
+        &domain,
+        &[Some([0, 1]), Some([1, 2]), Some([2, 3]), None, None],
+        None,
+    ));
+    assert!(compact_boundary_domain_viable(
+        &domain,
+        &[
+            Some([0, 1]),
+            Some([1, 2]),
+            Some([2, 3]),
+            Some([3, 4]),
+            Some([4, 0]),
+        ],
+        None,
+    ));
+}
+
+#[test]
 fn unordered_component_enumeration_is_atomic_at_its_state_limit() {
     let quotient = MeshQuotient {
         union: UnionFind::new(16),
         domains: repeated_domain(HashSet::from([0]), 16),
         members: (0..16).map(|node| vec![node]).collect(),
     };
-    let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(10_000);
+    let budget = WorkBudget::new(10_000);
 
     assert!(
         crate::solve::mesh_quotient::bounded_unordered_cycle_assignments(
@@ -1119,7 +2713,7 @@ fn deferred_faces_share_one_endpoint_quotient() {
     let quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
             .expect("initial quotient");
-    let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(10_000);
+    let budget = WorkBudget::new(10_000);
 
     assert!(
         crate::solve::incidence::compact_boundary_domains_jointly_viable(
@@ -1166,7 +2760,7 @@ fn compact_faces_share_one_physical_edge_direction_gauge() {
         &[[0, 1], [2, 3], [4, 5], [6, 7], [8, 9]],
     )
     .expect("initial quotient");
-    let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(10_000);
+    let budget = WorkBudget::new(10_000);
 
     assert!(
         crate::solve::incidence::compact_boundary_domains_jointly_viable(
@@ -1204,7 +2798,7 @@ fn compact_face_quotient_states_accumulate_across_calls() {
     let quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
             .expect("initial quotient");
-    let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(10_000);
+    let budget = WorkBudget::new(10_000);
     let first = domain(false);
     let conflicting = domain(true);
     let initial = vec![(quotient.clone(), HashSet::new())];
@@ -1284,6 +2878,8 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
         None,
         Some(MeshPartialEndpointConstraint {
             active_edges: &active_edges,
+            coupled_edges: &active_edges,
+            assignment_predecessors: None,
             valid: &partial,
         }),
         &|_| true,
@@ -1291,6 +2887,325 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
     .expect("partially constrained component solutions");
 
     assert_eq!(solutions, vec![vec![[0, 0], [300, 300]]]);
+}
+
+#[test]
+fn incidence_components_reuse_independent_solution_domains() {
+    use std::ops::ControlFlow;
+
+    const COMPONENT_COUNT: usize = 15;
+    let choices = (0..COMPONENT_COUNT)
+        .map(|component| {
+            let first = component * 2;
+            vec![[first, first], [first + 1, first + 1]]
+        })
+        .collect::<Vec<_>>();
+    let edge_faces = (0..COMPONENT_COUNT)
+        .map(|face| [face, face])
+        .collect::<Vec<_>>();
+    let mut visited = 0usize;
+
+    let outcome = crate::solve::incidence::visit_component_incidence_pair_solutions(
+        &choices,
+        &edge_faces,
+        COMPONENT_COUNT,
+        COMPONENT_COUNT * 2,
+        None,
+        None,
+        None,
+        &|_| true,
+        &mut |_| {
+            visited += 1;
+            ControlFlow::Continue(())
+        },
+    );
+
+    assert_eq!(
+        outcome,
+        crate::solve::incidence::IncidenceSolve::Solved(1 << COMPONENT_COUNT)
+    );
+    assert_eq!(visited, 1 << COMPONENT_COUNT);
+}
+
+#[test]
+fn incidence_components_include_fixed_incidence_chains() {
+    let choices = vec![vec![[0, 0], [0, 1]], vec![[2, 2], [2, 3]], vec![[0, 2]]];
+    let components =
+        crate::solve::incidence::incidence_choice_components(&choices, &[[0, 0]; 3], None, None);
+
+    assert_eq!(components, vec![vec![0, 1]]);
+}
+
+#[test]
+fn incidence_components_preflight_independent_unsatisfiable_domains() {
+    use std::ops::ControlFlow;
+
+    const BROAD_COMPONENT_COUNT: usize = 15;
+    let mut choices = (0..BROAD_COMPONENT_COUNT)
+        .map(|component| {
+            let first = component * 2;
+            vec![[first, first], [first + 1, first + 1]]
+        })
+        .collect::<Vec<_>>();
+    choices.push(vec![[30, 30], [31, 31], [32, 32], [33, 33]]);
+    let edge_faces = (0..choices.len())
+        .map(|face| [face, face])
+        .collect::<Vec<_>>();
+    let constrained_edge = choices.len() - 1;
+    let active_edges = (0..choices.len())
+        .map(|edge| edge == constrained_edge)
+        .collect::<Vec<_>>();
+    let partial = |assignment: &[Option<[usize; 2]>]| assignment[constrained_edge].is_none();
+    let mut visited = false;
+
+    let outcome = crate::solve::incidence::visit_component_incidence_pair_solutions(
+        &choices,
+        &edge_faces,
+        choices.len(),
+        34,
+        None,
+        None,
+        Some(MeshPartialEndpointConstraint {
+            active_edges: &active_edges,
+            coupled_edges: &active_edges,
+            assignment_predecessors: None,
+            valid: &partial,
+        }),
+        &|_| true,
+        &mut |_| {
+            visited = true;
+            ControlFlow::Continue(())
+        },
+    );
+
+    assert_eq!(
+        outcome,
+        crate::solve::incidence::IncidenceSolve::Rejected(
+            crate::solve::incidence::IncidenceRejection::ComponentDomain
+        )
+    );
+    assert!(!visited);
+}
+
+#[test]
+fn incidence_components_discard_quotient_impossible_complete_solutions() {
+    let choices = vec![vec![[0, 0], [1, 1]], vec![[1, 1]]];
+    let edge_faces = [[0, 0], [1, 1]];
+    let mut union = UnionFind::new(4);
+    union.union(0, 1);
+    union.union(2, 3);
+    let quotient = MeshQuotient {
+        union,
+        domains: (0..4).map(|_| Arc::new(HashSet::from([0, 1]))).collect(),
+        members: vec![vec![0, 1], Vec::new(), vec![2, 3], Vec::new()],
+    };
+
+    let solutions = crate::solve::incidence::component_incidence_pair_solutions(
+        &choices,
+        &edge_faces,
+        2,
+        2,
+        None,
+        Some(&quotient),
+        None,
+        &|_| true,
+    )
+    .expect("globally assignable component solution");
+
+    assert_eq!(solutions, vec![vec![[0, 0], [1, 1]]]);
+}
+
+#[test]
+fn incidence_components_preflight_quotient_impossible_domains() {
+    use std::ops::ControlFlow;
+
+    const BROAD_COMPONENT_COUNT: usize = 15;
+    let mut choices = (0..BROAD_COMPONENT_COUNT)
+        .map(|component| {
+            let first = component * 2;
+            vec![[first, first], [first + 1, first + 1]]
+        })
+        .collect::<Vec<_>>();
+    choices.extend([vec![[30, 30], [31, 31]], vec![[30, 30]], vec![[31, 31]]]);
+    let edge_faces = (0..choices.len())
+        .map(|face| [face, face])
+        .collect::<Vec<_>>();
+    let mut union = UnionFind::new(choices.len() * 2);
+    let mut domains = Vec::with_capacity(choices.len() * 2);
+    let mut members = (0..choices.len() * 2)
+        .map(|node| vec![node])
+        .collect::<Vec<_>>();
+    for edge in 0..choices.len() {
+        union.union(edge * 2, edge * 2 + 1);
+        members[edge * 2].push(edge * 2 + 1);
+        members[edge * 2 + 1].clear();
+        let points = if edge < BROAD_COMPONENT_COUNT {
+            HashSet::from([edge * 2, edge * 2 + 1])
+        } else {
+            HashSet::from([30, 31])
+        };
+        let points = Arc::new(points);
+        domains.extend([points.clone(), points]);
+    }
+    let quotient = MeshQuotient {
+        union,
+        domains,
+        members,
+    };
+    let mut visited = false;
+
+    let outcome = crate::solve::incidence::visit_component_incidence_pair_solutions(
+        &choices,
+        &edge_faces,
+        choices.len(),
+        32,
+        None,
+        Some(&quotient),
+        None,
+        &|_| true,
+        &mut |_| {
+            visited = true;
+            ControlFlow::Continue(())
+        },
+    );
+
+    assert_eq!(
+        outcome,
+        crate::solve::incidence::IncidenceSolve::Rejected(
+            crate::solve::incidence::IncidenceRejection::ComponentDomain
+        )
+    );
+    assert!(!visited);
+}
+
+#[test]
+fn fixed_incidence_assignments_must_satisfy_the_mesh_quotient() {
+    let choices = vec![vec![[0, 0]], vec![[0, 0]]];
+    let edge_faces = [[0, 0], [1, 1]];
+    let quotient = MeshQuotient {
+        union: UnionFind::new(4),
+        domains: (0..4).map(|_| Arc::new(HashSet::from([0]))).collect(),
+        members: (0..4).map(|node| vec![node]).collect(),
+    };
+
+    assert_eq!(
+        crate::solve::incidence::component_incidence_pair_solution_outcome(
+            &choices,
+            &edge_faces,
+            2,
+            1,
+            None,
+            Some(&quotient),
+            None,
+            &|_| true,
+        ),
+        crate::solve::incidence::IncidenceSolve::Rejected(
+            crate::solve::incidence::IncidenceRejection::FixedAssignment
+        )
+    );
+}
+
+#[test]
+fn incidence_outcome_distinguishes_exhaustion_from_rejection() {
+    use crate::solve::incidence::{component_incidence_pair_solution_outcome, IncidenceSolve};
+
+    let choices = vec![(0..300).map(|point| [point, point]).collect::<Vec<_>>()];
+    assert_eq!(
+        component_incidence_pair_solution_outcome(
+            &choices,
+            &[[0, 0]],
+            1,
+            300,
+            None,
+            None,
+            None,
+            &|_| true,
+        ),
+        IncidenceSolve::Exhausted
+    );
+    assert_eq!(
+        component_incidence_pair_solution_outcome(
+            &[Vec::new()],
+            &[[0, 0]],
+            1,
+            1,
+            None,
+            None,
+            None,
+            &|_| true,
+        ),
+        IncidenceSolve::Rejected(crate::solve::incidence::IncidenceRejection::FixedAssignment)
+    );
+}
+
+#[test]
+fn incidence_component_products_stream_until_the_consumer_stops() {
+    use crate::solve::incidence::{visit_component_incidence_pair_solutions, IncidenceSolve};
+    use std::ops::ControlFlow;
+
+    let choices = (0..9)
+        .map(|edge| vec![[edge * 2, edge * 2], [edge * 2 + 1, edge * 2 + 1]])
+        .collect::<Vec<_>>();
+    let edge_faces = (0..9).map(|face| [face, face]).collect::<Vec<_>>();
+    let mut visited = 0usize;
+
+    let outcome = visit_component_incidence_pair_solutions(
+        &choices,
+        &edge_faces,
+        9,
+        18,
+        None,
+        None,
+        None,
+        &|_| true,
+        &mut |_| {
+            visited += 1;
+            if visited == 2 {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        },
+    );
+
+    assert_eq!(outcome, IncidenceSolve::Solved(2));
+    assert_eq!(visited, 2);
+}
+
+#[test]
+fn incidence_component_prefix_can_prove_the_consumer_result_before_exhaustion() {
+    use crate::solve::incidence::{visit_component_incidence_pair_solutions, IncidenceSolve};
+    use std::cell::Cell;
+    use std::ops::ControlFlow;
+
+    let choices = vec![(0..300).map(|point| [point, point]).collect::<Vec<_>>()];
+    let mut visited = 0usize;
+    let validated = Cell::new(0usize);
+    let outcome = visit_component_incidence_pair_solutions(
+        &choices,
+        &[[0, 0]],
+        1,
+        300,
+        None,
+        None,
+        None,
+        &|_| {
+            validated.set(validated.get() + 1);
+            true
+        },
+        &mut |_| {
+            visited += 1;
+            if visited == 2 {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        },
+    );
+
+    assert_eq!(outcome, IncidenceSolve::Solved(2));
+    assert_eq!(visited, 2);
+    assert_eq!(validated.get(), 2);
 }
 
 #[test]
@@ -1342,50 +3257,6 @@ fn quotient_assignments_ignore_span_allocation_with_identical_edge_order() {
 }
 
 #[test]
-fn mesh_direction_search_fixes_each_new_edge_gauge_once() {
-    let assignment = MeshFaceBoundaryAssignment {
-        boundaries: vec![vec![
-            MeshBoundaryEdgeCandidate {
-                edge: 0,
-                start: 0,
-                end: 1,
-                reversed: None,
-            },
-            MeshBoundaryEdgeCandidate {
-                edge: 1,
-                start: 1,
-                end: 2,
-                reversed: None,
-            },
-            MeshBoundaryEdgeCandidate {
-                edge: 0,
-                start: 2,
-                end: 3,
-                reversed: None,
-            },
-            MeshBoundaryEdgeCandidate {
-                edge: 2,
-                start: 3,
-                end: 0,
-                reversed: Some(true),
-            },
-        ]],
-    };
-    let already_oriented = HashSet::from([1]);
-
-    assert!(uses_canonical_edge_direction_gauge(
-        &assignment.boundaries,
-        &[vec![false, true, true, true]],
-        &already_oriented,
-    ));
-    assert!(!uses_canonical_edge_direction_gauge(
-        &assignment.boundaries,
-        &[vec![true, false, false, true]],
-        &already_oriented,
-    ));
-}
-
-#[test]
 fn mesh_option_enumeration_does_not_scan_fixed_direction_gauges() {
     const EDGE_COUNT: usize = 10;
     let assignment = MeshFaceBoundaryAssignment {
@@ -1404,7 +3275,7 @@ fn mesh_option_enumeration_does_not_scan_fixed_direction_gauges() {
         members: (0..EDGE_COUNT * 2).map(|node| vec![node]).collect(),
     };
     let candidates = vec![vec![[0, 0]]; EDGE_COUNT];
-    let budget = MeshConstraintBudget::new(30);
+    let budget = WorkBudget::new(30);
 
     let options = quotient.assignment_options_limited(
         &assignment,
@@ -1416,7 +3287,46 @@ fn mesh_option_enumeration_does_not_scan_fixed_direction_gauges() {
 
     assert_eq!(options.len(), 1);
     assert_eq!(options[0].0, vec![vec![false; EDGE_COUNT]]);
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
+}
+
+#[test]
+fn mesh_option_enumeration_preserves_asymmetric_endpoint_directions() {
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 1,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 1,
+                start: 1,
+                end: 0,
+                reversed: None,
+            },
+        ]],
+    };
+    let quotient = MeshQuotient {
+        union: UnionFind::new(4),
+        domains: [vec![0], vec![1], vec![0], vec![1]]
+            .map(|domain| Arc::new(domain.into_iter().collect()))
+            .into(),
+        members: (0..4).map(|node| vec![node]).collect(),
+    };
+
+    let options = quotient.assignment_options_limited(
+        &assignment,
+        &[vec![[0, 1]], vec![[0, 1]]],
+        &HashSet::new(),
+        4,
+        None,
+    );
+
+    assert!(options
+        .iter()
+        .any(|(directions, _)| directions == &[vec![false, true]]));
 }
 
 #[test]
@@ -1469,6 +3379,49 @@ fn port_quotient_completes_only_supported_unknown_edge_pairs() {
 }
 
 #[test]
+fn coordinate_root_fixpoint_removes_unsupported_edge_pairs() {
+    let candidates = [
+        vec![[0, 1], [0, 2]],
+        vec![[0, 1]],
+        vec![[0, 1]],
+        vec![[2, 2]],
+    ];
+    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &candidates,
+        3,
+        &[[10, 11], [10, 12], [13, 11], [14, 14]],
+    )
+    .expect("initial quotient");
+    let domains = quotient
+        .prepare_coordinate_root_domains(3, &candidates, None)
+        .expect("coordinate root domains");
+
+    assert_eq!(
+        domains.edge_candidates(),
+        &[vec![[0, 1]], vec![[0, 1]], vec![[0, 1]], vec![[2, 2]]]
+    );
+}
+
+#[test]
+fn selected_edge_pair_propagates_through_shared_coordinate_roots() {
+    let candidates = [vec![[0, 1], [0, 2]], vec![[1, 3], [2, 3]], vec![[2, 3]]];
+    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &candidates,
+        4,
+        &[[10, 11], [11, 12], [13, 14]],
+    )
+    .expect("initial quotient");
+    let domains = quotient
+        .prepare_coordinate_root_domains(4, &candidates, None)
+        .expect("coordinate root domains")
+        .refine_edge_candidate_arc(0, [0, 1], None)
+        .expect("selected edge pair");
+
+    assert!(domains.supports_edge_candidate(1, [1, 3]));
+    assert!(!domains.supports_edge_candidate(1, [2, 3]));
+}
+
+#[test]
 fn port_quotient_declines_unbounded_unknown_edge_pairs() {
     let candidates = [Vec::new()];
     let mut quotient =
@@ -1483,6 +3436,108 @@ fn port_quotient_declines_unbounded_unknown_edge_pairs() {
         )
         .is_none()
     );
+}
+
+#[test]
+fn coordinate_root_domains_keep_unknown_edge_pairs_implicit() {
+    let candidates = [Vec::new()];
+    let mut quotient =
+        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 2, &[[10, 11]])
+            .expect("initial quotient");
+    let domains = quotient
+        .prepare_coordinate_root_domains(2, &candidates, None)
+        .expect("implicit coordinate domains");
+
+    assert!(domains.edge_candidates()[0].is_empty());
+    assert_eq!(domains.edge_candidate_points(0), Some(vec![0, 1]));
+    assert_eq!(
+        domains
+            .implicit_edge_candidates(0, Some(0))
+            .expect("implicit candidates")
+            .collect::<Vec<_>>(),
+        vec![[0, 1]]
+    );
+    assert!(domains.refine_edge_candidate_arc(0, [0, 1], None).is_some());
+    assert!(domains.refine_edge_candidate_arc(0, [0, 0], None).is_none());
+}
+
+#[test]
+fn required_implicit_coordinate_pairs_scale_with_root_domains_not_their_product() {
+    let candidates = [Vec::new(), Vec::new()];
+    let mut quotient =
+        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 4, &[[10, 11], [12, 13]])
+            .expect("initial quotient");
+    let domains = quotient
+        .prepare_coordinate_root_domains(4, &candidates, None)
+        .expect("implicit coordinate domains");
+    let implicit = domains
+        .implicit_edge_candidates(0, Some(1))
+        .expect("required implicit candidates");
+
+    assert_eq!(implicit.width_upper_bound(), 3);
+    assert_eq!(implicit.collect::<Vec<_>>(), vec![[0, 1], [1, 2], [1, 3]]);
+
+    let mut visited = Vec::new();
+    assert_eq!(
+        domains.any_implicit_edge_candidate_with_point(0, 1, None, |pair| {
+            visited.push(pair);
+            pair == [1, 3]
+        }),
+        Some(true)
+    );
+    assert_eq!(visited, vec![[0, 1], [1, 2], [1, 3]]);
+
+    let budget = WorkBudget::new(2);
+    assert_eq!(
+        domains.any_implicit_edge_candidate_with_point(0, 1, Some(&budget), |_| false),
+        None
+    );
+    assert!(budget.exhausted());
+}
+
+#[test]
+fn coordinate_domain_preparation_scales_with_constraint_graph_work() {
+    let candidates = vec![Vec::new(); 100];
+    let ports = (0..100)
+        .map(|edge| [(edge * 2) as u32, (edge * 2 + 1) as u32])
+        .collect::<Vec<_>>();
+    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 200, &ports)
+        .expect("initial quotient");
+
+    assert!(
+        quotient
+            .coordinate_domain_preparation_limit(200, &candidates)
+            .expect("preparation limit")
+            > crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS
+    );
+}
+
+#[test]
+fn incidence_search_consumes_implicit_coordinate_root_pairs() {
+    use crate::solve::incidence::{component_incidence_pair_solution_outcome, IncidenceSolve};
+
+    let candidates = vec![Vec::new(); 3];
+    let quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &candidates,
+        3,
+        &[[10, 11], [11, 12], [12, 10]],
+    )
+    .expect("cycle quotient");
+    let outcome = component_incidence_pair_solution_outcome(
+        &candidates,
+        &[[0, 0]; 3],
+        1,
+        3,
+        None,
+        Some(&quotient),
+        None,
+        &|_| true,
+    );
+
+    assert!(matches!(
+        outcome,
+        IncidenceSolve::Solved(_) | IncidenceSolve::Ambiguous
+    ));
 }
 
 #[test]
@@ -1506,7 +3561,7 @@ fn ordered_face_equations_narrow_unknown_edge_roots_before_pair_completion() {
                 .collect()],
         },
     ])];
-    let budget = crate::solve::mesh_quotient::MeshConstraintBudget::new(10_000);
+    let budget = WorkBudget::new(10_000);
 
     crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
         &domains,
@@ -1592,10 +3647,10 @@ fn quotient_assignment_declines_when_its_work_budget_is_exhausted() {
             reversed: None,
         }]],
     };
-    let budget = MeshConstraintBudget::new(0);
+    let budget = WorkBudget::new(0);
 
     assert!(!quotient.assignment_has_option(&assignment, &[vec![[0, 0]]], Some(&budget),));
-    assert!(budget.exhausted.get());
+    assert!(budget.exhausted());
 }
 
 #[test]
@@ -1707,7 +3762,7 @@ fn quotient_options_decline_when_their_work_budget_is_exhausted() {
             reversed: None,
         }]],
     };
-    let budget = MeshConstraintBudget::new(0);
+    let budget = WorkBudget::new(0);
 
     let options = quotient.assignment_options_limited(
         &assignment,
@@ -1718,7 +3773,7 @@ fn quotient_options_decline_when_their_work_budget_is_exhausted() {
     );
 
     assert!(options.is_empty());
-    assert!(budget.exhausted.get());
+    assert!(budget.exhausted());
 }
 
 #[test]
@@ -1751,10 +3806,10 @@ fn quotient_point_existence_declines_when_its_work_budget_is_exhausted() {
         domains: repeated_domain(HashSet::from([0, 1]), 2),
         members: (0..2).map(|node| vec![node]).collect(),
     };
-    let budget = MeshConstraintBudget::new(0);
+    let budget = WorkBudget::new(0);
 
     assert!(!quotient.point_assignment_exists(2, &[vec![]], Some(&budget)));
-    assert!(budget.exhausted.get());
+    assert!(budget.exhausted());
 }
 
 #[test]
@@ -1788,6 +3843,24 @@ fn quotient_point_existence_rejects_an_all_different_conflict() {
     };
 
     assert!(!quotient.point_assignment_exists(2, &[vec![]], None));
+}
+
+#[test]
+fn quotient_point_existence_can_become_viable_after_a_root_merge() {
+    let mut quotient = MeshQuotient {
+        union: UnionFind::new(4),
+        domains: vec![
+            Arc::new(HashSet::from([0])),
+            Arc::new(HashSet::from([0])),
+            Arc::new(HashSet::from([1])),
+            Arc::new(HashSet::from([2])),
+        ],
+        members: vec![vec![0], vec![1], vec![2], vec![3]],
+    };
+
+    assert!(!quotient.point_assignment_exists(3, &[vec![], vec![]], None));
+    quotient.merge(0, 1).expect("compatible roots merge");
+    assert!(quotient.point_assignment_exists(3, &[vec![], vec![]], None));
 }
 
 #[test]
@@ -1990,7 +4063,6 @@ fn mesh_selection_rejects_an_odd_boundary_orientation_cycle() {
         ],
         states: 0,
         solution: None,
-        stop_after_first_solution: false,
         ambiguous: false,
         exhausted: false,
         face_equation_cache: RefCell::default(),
@@ -1999,6 +4071,44 @@ fn mesh_selection_rejects_an_odd_boundary_orientation_cycle() {
     assert!(!search.selected_orientable());
     search.selected[2] = Some((0, vec![vec![false, true]]));
     assert!(search.selected_orientable());
+}
+
+#[test]
+fn partial_boundary_orientation_constraints_reject_an_odd_parity_cycle() {
+    let mut edge_uses = HashMap::from([
+        (0, vec![(0, false), (1, false)]),
+        (1, vec![(1, false), (2, false)]),
+        (2, vec![(2, false), (0, false)]),
+        (3, vec![(3, false)]),
+    ]);
+
+    assert!(solve_boundary_orientation_constraints(4, &edge_uses, false).is_none());
+    edge_uses.get_mut(&2).expect("third paired edge")[1].1 = true;
+    assert!(solve_boundary_orientation_constraints(4, &edge_uses, false).is_some());
+    assert!(solve_boundary_orientation_constraints(4, &edge_uses, true).is_none());
+}
+
+#[test]
+fn partial_face_orientability_rejects_an_odd_open_path_cycle() {
+    let edge_faces = [[0, 1], [1, 2], [2, 0]];
+    let face_edges = vec![vec![0, 2], vec![0, 1], vec![1, 2]];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let complete = [Some([0, 1]), Some([1, 2]), Some([0, 2])];
+
+    assert!(!crate::solve::incidence::partial_face_orientability_viable(
+        &complete,
+        &edge_faces,
+        &face_edges,
+        &budget,
+    ));
+    let partial = [Some([0, 1]), Some([1, 2]), None];
+    assert!(crate::solve::incidence::partial_face_orientability_viable(
+        &partial,
+        &edge_faces,
+        &face_edges,
+        &budget,
+    ));
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -2039,7 +4149,6 @@ fn mesh_selection_rejects_a_branch_with_no_orientable_remaining_face() {
         ],
         states: 0,
         solution: None,
-        stop_after_first_solution: false,
         ambiguous: false,
         exhausted: false,
         face_equation_cache: RefCell::default(),
@@ -2083,7 +4192,6 @@ fn mesh_selection_checks_all_fixed_remaining_faces_together() {
         selected: vec![Some((0, vec![vec![false, false]])), None, None],
         states: 0,
         solution: None,
-        stop_after_first_solution: false,
         ambiguous: false,
         exhausted: false,
         face_equation_cache: RefCell::default(),
@@ -2134,7 +4242,6 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
         selected: vec![None],
         states: 0,
         solution: None,
-        stop_after_first_solution: false,
         ambiguous: false,
         exhausted: false,
         face_equation_cache: RefCell::default(),
@@ -2142,7 +4249,7 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
     let mut quotient =
         initial_mesh_quotient(&edge_candidates, 2, &[[0, 1], [2, 3]]).expect("initial quotient");
     quotient.merge(1, 2).expect("selected face corner");
-    let propagation_budget = MeshConstraintBudget::new(0);
+    let propagation_budget = WorkBudget::new(0);
     let changed_edges = HashSet::from([0]);
 
     let mut prepared = search
@@ -2150,7 +4257,7 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
         .expect("partial quotient remains viable");
 
     assert_eq!(prepared.root_count(), 3);
-    assert!(propagation_budget.exhausted.get());
+    assert!(propagation_budget.exhausted());
 }
 
 #[test]
@@ -2217,7 +4324,6 @@ fn remaining_merge_capacity_counts_distinct_quotient_equations() {
         selected: vec![None; 2],
         states: 0,
         solution: None,
-        stop_after_first_solution: false,
         ambiguous: false,
         exhausted: false,
         face_equation_cache: RefCell::default(),
@@ -2271,7 +4377,6 @@ fn remaining_merge_capacity_respects_mutually_exclusive_orientations() {
         selected: vec![None],
         states: 0,
         solution: None,
-        stop_after_first_solution: false,
         ambiguous: false,
         exhausted: false,
         face_equation_cache: RefCell::default(),
@@ -2313,7 +4418,6 @@ fn remaining_equations_must_connect_equal_singleton_domains() {
         selected: vec![None],
         states: 0,
         solution: None,
-        stop_after_first_solution: false,
         ambiguous: false,
         exhausted: false,
         face_equation_cache: RefCell::default(),
@@ -2350,7 +4454,6 @@ fn remaining_equation_components_require_a_coordinate_matching() {
         selected: Vec::new(),
         states: 0,
         solution: None,
-        stop_after_first_solution: false,
         ambiguous: false,
         exhausted: false,
         face_equation_cache: RefCell::default(),
@@ -2387,7 +4490,6 @@ fn coordinate_matching_reserves_unavoidable_roots_per_component() {
         selected: vec![None],
         states: 0,
         solution: None,
-        stop_after_first_solution: false,
         ambiguous: false,
         exhausted: false,
         face_equation_cache: RefCell::default(),
@@ -2410,7 +4512,7 @@ fn coordinate_matching_reserves_unavoidable_roots_per_component() {
 }
 
 #[test]
-fn singleton_mesh_search_stops_after_its_first_complete_solution() {
+fn completed_mesh_search_continues_to_check_uniqueness() {
     let assignments = Vec::new();
     let edge_candidates = Vec::new();
     let edge_rows = Vec::new();
@@ -2434,13 +4536,12 @@ fn singleton_mesh_search_stops_after_its_first_complete_solution() {
             },
             Vec::new(),
         )),
-        stop_after_first_solution: true,
         ambiguous: false,
         exhausted: false,
         face_equation_cache: RefCell::default(),
     };
 
-    assert!(search.should_stop());
+    assert!(!search.should_stop());
 }
 
 #[test]
@@ -2456,7 +4557,6 @@ fn mesh_selection_declines_when_its_work_budget_is_exhausted() {
         selected: Vec::new(),
         states: 0,
         solution: None,
-        stop_after_first_solution: false,
         ambiguous: false,
         exhausted: false,
         face_equation_cache: RefCell::default(),
@@ -2517,7 +4617,6 @@ fn mesh_selection_finishes_the_active_face_component_first() {
         selected,
         states: 0,
         solution: None,
-        stop_after_first_solution: false,
         ambiguous: false,
         exhausted: false,
         face_equation_cache: RefCell::default(),
@@ -2527,8 +4626,8 @@ fn mesh_selection_finishes_the_active_face_component_first() {
         domains,
         members: (0..edge_count * 2).map(|node| vec![node]).collect(),
     };
-    let budget = MeshConstraintBudget::new(5);
-    let propagation_budget = MeshConstraintBudget::new(0);
+    let budget = WorkBudget::new(5);
+    let propagation_budget = WorkBudget::new(0);
 
     search.search_from_state(&quotient, true, &budget, &propagation_budget);
 
@@ -2566,7 +4665,6 @@ fn forced_face_selection_does_not_consume_the_branch_budget() {
         selected: vec![None],
         states: 512,
         solution: None,
-        stop_after_first_solution: false,
         ambiguous: false,
         exhausted: false,
         face_equation_cache: RefCell::default(),
@@ -2624,7 +4722,6 @@ fn overmerged_face_options_do_not_consume_the_branch_budget() {
         selected: vec![None],
         states: 512,
         solution: None,
-        stop_after_first_solution: false,
         ambiguous: false,
         exhausted: false,
         face_equation_cache: RefCell::default(),
@@ -2682,7 +4779,6 @@ fn mesh_selection_merges_corner_equations_common_to_every_option() {
         selected: vec![None],
         states: 0,
         solution: None,
-        stop_after_first_solution: false,
         ambiguous: false,
         exhausted: false,
         face_equation_cache: RefCell::default(),
@@ -2731,7 +4827,6 @@ fn mesh_selection_merges_equations_common_to_every_assignment() {
         selected: vec![None],
         states: 0,
         solution: None,
-        stop_after_first_solution: false,
         ambiguous: false,
         exhausted: false,
         face_equation_cache: RefCell::default(),
@@ -2778,7 +4873,6 @@ fn mesh_selection_common_equations_ignore_infeasible_assignments() {
         selected: vec![None],
         states: 0,
         solution: None,
-        stop_after_first_solution: false,
         ambiguous: false,
         exhausted: false,
         face_equation_cache: RefCell::default(),
@@ -2826,7 +4920,6 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
         selected: vec![None],
         states: 0,
         solution: None,
-        stop_after_first_solution: false,
         ambiguous: false,
         exhausted: false,
         face_equation_cache: RefCell::default(),
@@ -2878,7 +4971,6 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
         selected: vec![None],
         states: 0,
         solution: None,
-        stop_after_first_solution: false,
         ambiguous: false,
         exhausted: false,
         face_equation_cache: RefCell::default(),
@@ -2940,6 +5032,24 @@ fn partial_endpoint_ports_propagate_known_components_only() {
             Some([2, 3]),
             Some([3, 0]),
         ])
+    );
+}
+
+#[test]
+fn unbound_native_edge_pair_must_be_unique_in_the_geometric_domain() {
+    use crate::families::standard::decode::unique_unbound_native_endpoint_pair;
+
+    assert_eq!(
+        unique_unbound_native_endpoint_pair(&[2, 4, 7], &[[7, 2], [2, 7], [1, 4]]),
+        Some([2, 7])
+    );
+    assert_eq!(
+        unique_unbound_native_endpoint_pair(&[2, 4, 7], &[[7, 2], [2, 4]]),
+        None
+    );
+    assert_eq!(
+        unique_unbound_native_endpoint_pair(&[2, 4, 7], &[[1, 4], [2, 9]]),
+        None
     );
 }
 
@@ -3067,12 +5177,12 @@ fn quotient_coordinate_closure_declines_when_its_work_budget_is_exhausted() {
         domains: repeated_domain(HashSet::from([0]), 2),
         members: (0..2).map(|node| vec![node]).collect(),
     };
-    let budget = MeshConstraintBudget::new(0);
+    let budget = WorkBudget::new(0);
 
     assert!(quotient
         .close_coordinate_roots(1, &[vec![]], Some(&budget))
         .is_none());
-    assert!(budget.exhausted.get());
+    assert!(budget.exhausted());
 }
 
 #[test]
@@ -3083,7 +5193,7 @@ fn quotient_coordinate_closure_does_not_rescan_assigned_roots() {
         domains: repeated_domain(HashSet::from([0]), ROOT_COUNT),
         members: (0..ROOT_COUNT).map(|node| vec![node]).collect(),
     };
-    let budget = MeshConstraintBudget::new(2 * ROOT_COUNT + 1);
+    let budget = WorkBudget::new(2 * ROOT_COUNT + 1);
 
     let assignment = quotient
         .close_coordinate_roots(1, &[], Some(&budget))
@@ -3091,7 +5201,43 @@ fn quotient_coordinate_closure_does_not_rescan_assigned_roots() {
 
     assert_eq!(quotient.root_count(), 1);
     assert_eq!(assignment.values().copied().collect::<Vec<_>>(), [0]);
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
+}
+
+#[test]
+fn quotient_incidence_closure_updates_face_degrees_incrementally() {
+    const EDGE_COUNT: usize = 64;
+    let singleton = |point| Arc::new(HashSet::from([point]));
+    let mut quotient = MeshQuotient {
+        union: UnionFind::new(2 * EDGE_COUNT),
+        domains: (0..EDGE_COUNT)
+            .flat_map(|edge| [singleton(edge), singleton((edge + 1) % EDGE_COUNT)])
+            .collect(),
+        members: (0..2 * EDGE_COUNT).map(|node| vec![node]).collect(),
+    };
+    for edge in 0..EDGE_COUNT {
+        quotient
+            .merge(edge * 2 + 1, ((edge + 1) % EDGE_COUNT) * 2)
+            .expect("adjacent boundary ports share one coordinate root");
+    }
+    let edge_candidates = vec![Vec::new(); EDGE_COUNT];
+    let edge_faces = vec![[0, 0]; EDGE_COUNT];
+    let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(
+        (0..EDGE_COUNT).collect(),
+    )];
+    let budget = WorkBudget::new(45_000);
+
+    assert!(quotient
+        .close_coordinate_roots_for_incidence_with_budget(
+            EDGE_COUNT,
+            &edge_candidates,
+            &edge_faces,
+            1,
+            &domains,
+            Some(&budget),
+        )
+        .is_some());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -3105,7 +5251,7 @@ fn quotient_coordinate_closure_enforces_sparse_endpoint_membership_before_search
     let candidates = (0..EDGE_COUNT)
         .map(|edge| vec![[edge % 2, edge % 2]])
         .collect::<Vec<_>>();
-    let budget = MeshConstraintBudget::new(1_000);
+    let budget = WorkBudget::new(1_000);
 
     let assignment = quotient
         .close_coordinate_roots(2, &candidates, Some(&budget))
@@ -3116,7 +5262,7 @@ fn quotient_coordinate_closure_enforces_sparse_endpoint_membership_before_search
         assignment.values().copied().collect::<HashSet<_>>(),
         HashSet::from([0, 1])
     );
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -3128,7 +5274,7 @@ fn quotient_coordinate_closure_propagates_edge_arc_consistency_to_a_fixpoint() {
     };
     quotient.merge(1, 2).expect("shared relation root");
     let candidates = vec![vec![[0, 0], [1, 1]], vec![[0, 0]], vec![[1, 1]]];
-    let budget = MeshConstraintBudget::new(1_000);
+    let budget = WorkBudget::new(1_000);
 
     let assignment = quotient
         .close_coordinate_roots(2, &candidates, Some(&budget))
@@ -3137,7 +5283,7 @@ fn quotient_coordinate_closure_propagates_edge_arc_consistency_to_a_fixpoint() {
     assert_eq!(quotient.root_count(), 2);
     assert_eq!(assignment[&quotient.union.find(0)], 0);
     assert_eq!(assignment[&quotient.union.find(4)], 1);
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -3150,7 +5296,7 @@ fn quotient_coordinate_closure_forces_the_only_root_supporting_a_point() {
             .collect(),
         members: (0..4).map(|node| vec![node]).collect(),
     };
-    let budget = MeshConstraintBudget::new(100);
+    let budget = WorkBudget::new(100);
 
     let assignment = quotient
         .close_coordinate_roots(3, &[Vec::new(), Vec::new()], Some(&budget))
@@ -3160,7 +5306,7 @@ fn quotient_coordinate_closure_forces_the_only_root_supporting_a_point() {
     assert_eq!(assignment[&quotient.union.find(0)], 1);
     assert_eq!(assignment[&quotient.union.find(1)], 0);
     assert_eq!(assignment[&quotient.union.find(2)], 2);
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -3173,12 +5319,12 @@ fn quotient_coordinate_closure_rejects_a_coordinate_support_hall_conflict() {
             .collect(),
         members: (0..4).map(|node| vec![node]).collect(),
     };
-    let budget = MeshConstraintBudget::new(1_000);
+    let budget = WorkBudget::new(1_000);
 
     assert!(quotient
         .close_coordinate_roots(4, &[Vec::new(), Vec::new()], Some(&budget))
         .is_none());
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -3242,7 +5388,7 @@ fn quotient_coordinate_closure_enforces_complete_face_degrees() {
     let candidates = vec![Vec::new(); 2];
     let edge_faces = [[0, 0]; 2];
     let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1])];
-    let budget = MeshConstraintBudget::new(1_000);
+    let budget = WorkBudget::new(1_000);
     open.merge(0, 2).expect("shared endpoint");
 
     assert!(open
@@ -3280,7 +5426,7 @@ fn quotient_coordinate_closure_enforces_complete_face_degrees() {
             &edge_faces,
             1,
             &domains,
-            Some(&MeshConstraintBudget::new(1_000)),
+            Some(&WorkBudget::new(1_000)),
         )
         .is_some());
 }
@@ -3306,7 +5452,7 @@ fn quotient_coordinate_closure_rejects_sealed_unordered_subcycles() {
     let candidates = vec![vec![[0, 1]], vec![[0, 1]], vec![[2, 3]], vec![[2, 3]]];
     let edge_faces = [[0, 0]; 4];
     let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2, 3])];
-    let budget = MeshConstraintBudget::new(10_000);
+    let budget = WorkBudget::new(10_000);
 
     assert!(quotient
         .close_coordinate_roots_for_incidence_with_budget(
@@ -3318,7 +5464,7 @@ fn quotient_coordinate_closure_rejects_sealed_unordered_subcycles() {
             Some(&budget),
         )
         .is_none());
-    assert!(!budget.exhausted.get());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -3364,7 +5510,7 @@ fn quotient_coordinate_closure_enforces_ordered_face_cycles() {
             &edge_faces,
             1,
             &domain([0, 1, 2, 3]),
-            Some(&MeshConstraintBudget::new(10_000)),
+            Some(&WorkBudget::new(10_000)),
         )
         .is_none());
     assert!(quotient()
@@ -3374,7 +5520,7 @@ fn quotient_coordinate_closure_enforces_ordered_face_cycles() {
             &edge_faces,
             1,
             &domain([0, 2, 1, 3]),
-            Some(&MeshConstraintBudget::new(10_000)),
+            Some(&WorkBudget::new(10_000)),
         )
         .is_some());
 
@@ -3398,7 +5544,7 @@ fn quotient_coordinate_closure_enforces_ordered_face_cycles() {
             &edge_faces,
             1,
             &fixed,
-            Some(&MeshConstraintBudget::new(10_000)),
+            Some(&WorkBudget::new(10_000)),
         )
         .is_none());
 }
@@ -3444,6 +5590,67 @@ fn quotient_closes_independent_coordinate_components_with_local_budgets() {
         let node = component * 6;
         assert_eq!(quotient.union.find(node), quotient.union.find(node + 5));
     }
+}
+
+#[test]
+fn quotient_counts_global_face_incidence_once_across_coordinate_components() {
+    const COMPONENT_COUNT: usize = 40;
+    let point_count = COMPONENT_COUNT * 3;
+    let mut quotient = MeshQuotient {
+        union: UnionFind::new(COMPONENT_COUNT * 6),
+        domains: (0..COMPONENT_COUNT)
+            .flat_map(|component| {
+                let points = Arc::new((component * 3..component * 3 + 3).collect::<HashSet<_>>());
+                std::iter::repeat_n(points, 6)
+            })
+            .collect(),
+        members: (0..COMPONENT_COUNT * 6).map(|node| vec![node]).collect(),
+    };
+    let mut candidates = Vec::new();
+    let mut edge_faces = Vec::new();
+    let mut domains = Vec::new();
+    for component in 0..COMPONENT_COUNT {
+        let node = component * 6;
+        let point = component * 3;
+        let first_edge = candidates.len();
+        quotient
+            .merge(node + 1, node + 2)
+            .expect("shared first corner");
+        quotient
+            .merge(node + 3, node + 4)
+            .expect("shared second corner");
+        candidates.extend([
+            vec![[point, point + 1]],
+            vec![[point + 1, point + 2]],
+            vec![[point, point + 2]],
+        ]);
+        edge_faces.extend([[component, component]; 3]);
+        domains.push(MeshFaceBoundaryDomain::Ordered(vec![
+            MeshFaceBoundaryAssignment {
+                boundaries: vec![(first_edge..first_edge + 3)
+                    .map(|edge| MeshBoundaryEdgeCandidate {
+                        edge,
+                        start: 0,
+                        end: 0,
+                        reversed: None,
+                    })
+                    .collect()],
+            },
+        ]));
+    }
+    let budget = WorkBudget::new(20_000);
+
+    assert!(quotient
+        .close_coordinate_roots_for_incidence_with_budget(
+            point_count,
+            &candidates,
+            &edge_faces,
+            COMPONENT_COUNT,
+            &domains,
+            Some(&budget),
+        )
+        .is_some());
+    assert!(!budget.exhausted());
 }
 
 #[test]
@@ -3589,6 +5796,42 @@ fn duplicate_face_reference_slot_is_completed_by_face_closure() {
 }
 
 #[test]
+fn duplicate_face_completion_keeps_sparse_endpoint_identities() {
+    let rows = (0..3)
+        .map(|handle| EdgeRow {
+            kind: 0,
+            handles: vec![handle],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        })
+        .collect::<Vec<_>>();
+    let faces = complete_duplicate_face_slots(
+        &rows,
+        &[[0, 1], [0, 1], [0, 0]],
+        &[
+            [usize::MAX, usize::MAX - 1],
+            [usize::MAX - 1, 0],
+            [0, usize::MAX],
+        ],
+        2,
+        None,
+        Some(&[]),
+    )
+    .expect("sparse endpoint identities");
+
+    assert_eq!(faces, vec![[0, 1], [0, 1], [0, 1]]);
+}
+
+#[test]
+fn vertex_table_rejects_unbacked_extended_count_before_allocation() {
+    assert!(parse_vertex_table(&[0x01, 0x06, 0xff, 0xff, 0xff, 0xff, 0xff], 0).is_none());
+}
+
+#[test]
+fn vertex_table_rejects_an_overflowing_start_offset() {
+    assert!(parse_vertex_table(&[], usize::MAX).is_none());
+}
+
+#[test]
 fn mesh_assignment_endpoint_cycles_reject_crossed_edge_order() {
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,
@@ -3612,6 +5855,131 @@ fn mesh_assignment_endpoint_cycles_reject_crossed_edge_order() {
 }
 
 #[test]
+fn mesh_assignment_endpoint_cycles_index_incident_candidates() {
+    let dense = (0..10)
+        .flat_map(|left| ((left + 1)..10).map(move |right| [left, right]))
+        .collect::<Vec<_>>();
+    let candidates = vec![dense.clone(), dense.clone(), dense];
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![(0..3)
+            .map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: 0,
+                end: 0,
+                reversed: None,
+            })
+            .collect()],
+    };
+    let budget = WorkBudget::new(1_800);
+
+    assert_eq!(
+        crate::solve::mesh_quotient::mesh_assignment_endpoint_cycles_viable_where(
+            &assignment,
+            &candidates,
+            Some(&budget),
+            |_, _| true,
+        ),
+        Some(true),
+    );
+    assert!(!budget.exhausted());
+}
+
+#[test]
+fn mesh_assignment_endpoint_cycle_support_removes_open_layered_paths() {
+    let candidates = [vec![[0, 1], [0, 2]], vec![[1, 3], [2, 4]], vec![[0, 3]]];
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![(0..3)
+            .map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: 0,
+                end: 0,
+                reversed: None,
+            })
+            .collect()],
+    };
+    let budget = WorkBudget::new(1_000);
+    let support = crate::solve::mesh_quotient::mesh_assignment_endpoint_cycle_support_by(
+        &assignment,
+        Some(&budget),
+        |edge| {
+            candidates
+                .get(edge)
+                .map(|values| crate::solve::mesh_quotient::MeshEndpointCandidates::Explicit(values))
+        },
+        |_, _| true,
+    )
+    .expect("bounded layered-cycle support");
+
+    assert_eq!(support[&0], HashSet::from([[0, 1]]));
+    assert_eq!(support[&1], HashSet::from([[1, 3]]));
+    assert_eq!(support[&2], HashSet::from([[0, 3]]));
+    assert!(!budget.exhausted());
+}
+
+#[test]
+fn mesh_assignment_endpoint_cycle_support_requires_one_complete_traversal() {
+    let candidates = [vec![[0, 1]]];
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 0,
+            reversed: None,
+        }]],
+    };
+    let support = crate::solve::mesh_quotient::mesh_assignment_endpoint_cycle_support_by(
+        &assignment,
+        None,
+        |edge| {
+            candidates
+                .get(edge)
+                .map(|values| crate::solve::mesh_quotient::MeshEndpointCandidates::Explicit(values))
+        },
+        |_, _| true,
+    )
+    .expect("one-layer support");
+
+    assert!(support.is_empty());
+}
+
+#[test]
+fn ordered_face_cycle_support_materializes_only_supported_implicit_pairs() {
+    let mut choices = vec![vec![[0, 1], [0, 2]], Vec::new(), vec![[0, 3]]];
+    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &choices,
+        4,
+        &[[10, 11], [12, 13], [14, 15]],
+    )
+    .expect("initial quotient");
+    let coordinate_domains = quotient
+        .prepare_coordinate_root_domains(4, &choices, None)
+        .expect("implicit coordinate domains");
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![(0..3)
+            .map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: 0,
+                end: 0,
+                reversed: None,
+            })
+            .collect()],
+    };
+    let domains = [MeshFaceBoundaryDomain::Ordered(vec![assignment])];
+    let budget = WorkBudget::new(10_000);
+
+    assert!(
+        crate::solve::incidence::prune_implicit_ordered_face_endpoint_support(
+            &domains,
+            &mut choices,
+            &coordinate_domains,
+            &budget,
+        )
+    );
+    assert_eq!(choices[1], vec![[1, 3], [2, 3]]);
+    assert!(!budget.exhausted());
+}
+
+#[test]
 fn mesh_face_endpoint_configurations_preserve_pair_correlation() {
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![(0..4)
@@ -3629,14 +5997,26 @@ fn mesh_face_endpoint_configurations_preserve_pair_correlation() {
         vec![[2, 3], [1, 2]],
         vec![[3, 0]],
     ];
-    let configurations =
-        mesh_face_endpoint_configurations(&[assignment], &candidates, &[None; 4], 4_096)
-            .expect("bounded face configurations");
+    let budget = WorkBudget::new(4_096);
+    let configurations = mesh_face_endpoint_configurations(
+        std::slice::from_ref(&assignment),
+        &candidates,
+        &[None; 4],
+        &budget,
+    )
+    .expect("bounded face configurations");
 
     assert_eq!(
         configurations,
         vec![vec![(0, [0, 1]), (1, [1, 2]), (2, [2, 3]), (3, [0, 3])]],
     );
+
+    let exhausted = WorkBudget::new(1);
+    assert!(
+        mesh_face_endpoint_configurations(&[assignment], &candidates, &[None; 4], &exhausted)
+            .is_none()
+    );
+    assert!(exhausted.exhausted());
 }
 
 #[test]
@@ -3716,6 +6096,25 @@ fn mesh_endpoint_pair_support_does_not_treat_budget_exhaustion_as_a_contradictio
         &mut candidates,
         0,
     ));
+}
+
+#[test]
+fn independent_duplicate_face_slots_have_one_canonical_search_order() {
+    let rows = (0..12)
+        .map(|edge| EdgeRow {
+            kind: 1,
+            handles: vec![edge],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        })
+        .collect::<Vec<_>>();
+    let serialized = vec![[0, 0]; rows.len()];
+    let points = (0..rows.len())
+        .map(|point| [point, point])
+        .collect::<Vec<_>>();
+
+    let completed = complete_duplicate_face_slots(&rows, &serialized, &points, 2, None, None)
+        .expect("independent closed edges have one face completion");
+    assert_eq!(completed, vec![[0, 1]; rows.len()]);
 }
 
 #[test]
@@ -4006,9 +6405,10 @@ mod record_decoders {
     use cadmpeg_ir::math::{Point3, Vector3};
     use std::collections::{HashMap, HashSet};
 
+    use crate::families::standard::records::{StandardFaceBounds, StandardSurfaceRecord};
     use crate::tests::{
-        a8_freeform_curve_stream, append_b5_record, b5_closed_triangle_stream, le_f32, le_f64,
-        standard_quad_topology_stream,
+        a8_freeform_curve_stream, a8_surface_stream, append_b5_record, b5_closed_triangle_stream,
+        le_f32, le_f64, standard_quad_topology_stream,
     };
 
     #[test]
@@ -4038,6 +6438,110 @@ mod record_decoders {
         assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
         assert_eq!(major_radius, 20.0);
         assert_eq!(minor_radius, 5.0);
+    }
+
+    #[test]
+    fn standard_analytic_carriers_have_no_model_size_cutoff() {
+        for (kind, values, expected_radius) in [
+            (0x35, vec![0.0_f32, 0.0, 0.0, 2_000_000.0], 2_000_000.0),
+            (
+                0x33,
+                vec![0.0_f32, 0.0, 0.0, 0.0, 0.0, 2_000_000.0],
+                2_000_000.0,
+            ),
+        ] {
+            let mut bytes = vec![0x00, 0x33, kind];
+            for value in values {
+                bytes.extend_from_slice(&value.to_be_bytes());
+            }
+            let surface = crate::families::standard::records::decode_curved(
+                &bytes,
+                &crate::families::standard::records::SurfacePrefix {
+                    pos: 0,
+                    target: 0,
+                    kind,
+                },
+            )
+            .expect("large analytic carrier");
+            let (SurfaceGeometry::Sphere { radius, .. } | SurfaceGeometry::Cylinder { radius, .. }) =
+                surface
+            else {
+                panic!("expected sphere or cylinder");
+            };
+            assert_eq!(radius, expected_radius);
+        }
+
+        let mut bytes = vec![0x00, 0x33, 0x38];
+        for value in [0.0_f32, 0.0, 0.0, 0.0, 0.0, 2_000_000.0, 1_500_000.0] {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        assert!(matches!(
+            crate::families::standard::records::decode_curved(
+                &bytes,
+                &crate::families::standard::records::SurfacePrefix {
+                    pos: 0,
+                    target: 0,
+                    kind: 0x38,
+                },
+            ),
+            Some(SurfaceGeometry::Torus {
+                major_radius: 2_000_000.0,
+                minor_radius: 1_500_000.0,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn standard_f32_frames_canonicalize_to_orthonormal_ir() {
+        let component = (0.5_f64 + 4.0e-6).sqrt() as f32;
+        let mut bytes = vec![0x00, 0x33, 0x33];
+        for value in [0.0_f32, 0.0, 0.0, component, component, 5.0] {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        let surface = crate::families::standard::records::decode_curved(
+            &bytes,
+            &crate::families::standard::records::SurfacePrefix {
+                pos: 0,
+                target: 0,
+                kind: 0x33,
+            },
+        )
+        .expect("near-unit cylinder carrier");
+        let SurfaceGeometry::Cylinder {
+            axis,
+            ref_direction,
+            ..
+        } = surface
+        else {
+            panic!("cylinder geometry");
+        };
+        assert!((axis.norm() - 1.0).abs() < 1.0e-12);
+        assert!((ref_direction.norm() - 1.0).abs() < 1.0e-12);
+        assert!(axis.dot(ref_direction).abs() < 1.0e-12);
+
+        let plane = crate::families::standard::records::decode_plane(
+            &crate::families::standard::records::PlaneParams {
+                target: 0,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 0.999_999),
+            },
+        )
+        .expect("near-unit plane carrier");
+        let SurfaceGeometry::Plane { normal, u_axis, .. } = plane else {
+            panic!("plane geometry");
+        };
+        assert!((normal.norm() - 1.0).abs() < 1.0e-12);
+        assert!((u_axis.norm() - 1.0).abs() < 1.0e-12);
+        assert!(normal.dot(u_axis).abs() < 1.0e-12);
+        assert!(crate::families::standard::records::decode_plane(
+            &crate::families::standard::records::PlaneParams {
+                target: 0,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 0.0),
+            },
+        )
+        .is_none());
     }
 
     #[test]
@@ -4460,6 +6964,19 @@ mod record_decoders {
     }
 
     #[test]
+    fn standard_circle_parser_has_no_model_size_cutoff() {
+        let mut bytes = vec![0x60, 1, 2, 3, 0x00, 0x12, 0x00, 0x33, 0x37];
+        for value in [0.0_f32, 0.0, 0.0, 2_000_000.0] {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        bytes.extend_from_slice(&[0, 1]);
+        assert_eq!(
+            crate::families::standard::records::standard_circles(&bytes, 2)[0].radius,
+            2_000_000.0
+        );
+    }
+
+    #[test]
     fn standard_surface_roster_walks_freeform_and_analytic_records() {
         use crate::families::standard::records::StandardSurfaceRecord;
 
@@ -4555,6 +7072,49 @@ mod record_decoders {
     }
 
     #[test]
+    fn analytic_surface_records_retain_trimmed_face_bounds_after_their_parameters() {
+        for (kind, relative) in [(0x32, 3), (0x33, 27), (0x34, 27), (0x35, 19), (0x38, 31)] {
+            let mut bytes = vec![0; 96];
+            for (index, value) in [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 2.0, 3.0, 8.0]
+                .into_iter()
+                .enumerate()
+            {
+                let at = 5 + relative + 4 * index;
+                bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
+            }
+            let record = StandardSurfaceRecord::Analytic(
+                crate::families::standard::records::SurfacePrefix {
+                    pos: 5,
+                    target: 1,
+                    kind,
+                },
+            );
+            assert_eq!(
+                crate::families::standard::records::standard_face_bounds(&bytes, &record),
+                Some(StandardFaceBounds {
+                    aabb_center: [1.0, 2.0, 3.0],
+                    aabb_half_extents: [4.0, 5.0, 6.0],
+                    sphere_center: [1.0, 2.0, 3.0],
+                    sphere_radius: 8.0,
+                })
+            );
+        }
+        assert_eq!(
+            crate::families::standard::records::standard_face_bounds(
+                &[0; 96],
+                &StandardSurfaceRecord::Analytic(
+                    crate::families::standard::records::SurfacePrefix {
+                        pos: 5,
+                        target: 1,
+                        kind: 0x34,
+                    },
+                ),
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn standard_face_witness_requires_an_analytic_marker() {
         let mut record = vec![0u8; 48];
         record[5..8].copy_from_slice(&[0x00, 0x33, 0x33]);
@@ -4589,7 +7149,7 @@ mod record_decoders {
     }
 
     #[test]
-    fn standard_freeform_tag_resolves_object_stream_face_carrier() {
+    fn standard_freeform_tag_resolves_direct_and_face_carriers() {
         let mut stream = b5_closed_triangle_stream();
         let vertex_start = stream
             .windows(3)
@@ -4605,11 +7165,92 @@ mod record_decoders {
         stream.splice(vertex_start..vertex_start, unresolved_face);
         let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
             [stream],
-            &HashSet::from([501]),
+            &HashSet::from([100, 501]),
+            &HashSet::new(),
         );
+        assert!(matches!(
+            evidence.surface_geometries.get(&100),
+            Some(SurfaceGeometry::Plane { .. })
+        ));
         assert!(matches!(
             evidence.surface_geometries.get(&501),
             Some(SurfaceGeometry::Plane { .. })
+        ));
+    }
+
+    #[test]
+    fn standard_freeform_tag_resolves_standalone_a8_carrier() {
+        let mut stream = a8_surface_stream();
+        stream[7..11].copy_from_slice(&100u32.to_le_bytes());
+        append_b5_record(&mut stream, 0x2e, 501, &[0x18, 100, 0]);
+        let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
+            [stream],
+            &HashSet::from([100, 501]),
+            &HashSet::new(),
+        );
+        for tag in [100, 501] {
+            assert!(matches!(
+                evidence.surface_geometries.get(&tag),
+                Some(SurfaceGeometry::Nurbs(surface))
+                    if surface.u_degree == 2
+                        && surface.v_degree == 2
+                        && surface.u_count == 3
+                        && surface.v_count == 3
+            ));
+        }
+    }
+
+    #[test]
+    fn standard_freeform_tag_rejects_conflicting_standalone_a8_carriers() {
+        let mut first = a8_surface_stream();
+        first[7..11].copy_from_slice(&100u32.to_le_bytes());
+        let mut second = first.clone();
+        second[67..75].copy_from_slice(&1.0f64.to_le_bytes());
+        first.extend(second);
+
+        let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
+            [first],
+            &HashSet::from([100]),
+            &HashSet::new(),
+        );
+        assert!(!evidence.surface_geometries.contains_key(&100));
+    }
+
+    #[test]
+    fn standard_freeform_tag_collapses_repeated_standalone_a8_carrier() {
+        let mut stream = a8_surface_stream();
+        stream[7..11].copy_from_slice(&100u32.to_le_bytes());
+        stream.extend(stream.clone());
+
+        let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
+            [stream],
+            &HashSet::from([100]),
+            &HashSet::new(),
+        );
+        assert!(matches!(
+            evidence.surface_geometries.get(&100),
+            Some(SurfaceGeometry::Nurbs(_))
+        ));
+    }
+
+    #[test]
+    fn standard_freeform_tag_resolves_standalone_a8_rolling_ball() {
+        let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
+            [a8_freeform_curve_stream()],
+            &HashSet::from([0x1234_5678]),
+            &HashSet::new(),
+        );
+        assert!(matches!(
+            evidence.procedural_surfaces.get(&0x1234_5678),
+            Some(
+                crate::families::standard::decode::StandardSurfaceProcedure::RollingBall {
+                    carrier_object_id: 0x1234_5678,
+                    definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
+                        degree: 5,
+                        ..
+                    },
+                }
+            )
         ));
     }
 
@@ -4626,6 +7267,7 @@ mod record_decoders {
         let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
             [first, second],
             &HashSet::new(),
+            &HashSet::new(),
         );
         assert!(evidence.edge_owner_faces.is_empty());
     }
@@ -4638,8 +7280,8 @@ mod record_decoders {
             .position(|bytes| bytes == [0x05, 0x08, 0x01])
             .expect("vertex run");
         let mut records = a8_freeform_curve_stream();
-        records[7..11].copy_from_slice(&100u32.to_le_bytes());
-        let mut offset = vec![0x82, 0xe4, 0xe5];
+        records[7..11].copy_from_slice(&110u32.to_le_bytes());
+        let mut offset = vec![0x82, 0xee, 0xef];
         offset.extend_from_slice(&le_f64(-0.5));
         offset.push(0x19);
         for bound in [-2.0, 3.0, -4.0, 5.0] {
@@ -4652,13 +7294,14 @@ mod record_decoders {
         let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
             [stream],
             &HashSet::from([501]),
+            &HashSet::new(),
         );
         assert!(!evidence.surface_geometries.contains_key(&501));
         assert!(matches!(
             evidence.procedural_surfaces.get(&501),
             Some(
                 crate::families::standard::decode::StandardSurfaceProcedure::RollingBall {
-                    carrier_object_id: 100,
+                    carrier_object_id: 110,
                     definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet { .. },
                 }
             )

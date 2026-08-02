@@ -1,0 +1,204 @@
+{
+  "ir": {
+    "ir_version": "4",
+    "source": {
+      "format": "f3d",
+      "attributes": {
+        "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+        "active_brep_sha256": "1f3c3da3821c98610282c3b53568a7b800c2904066df3ce7d8043972ca502ba3",
+        "active_slice_len": "151",
+        "asset_folder": "FusionAssetName[Active]",
+        "product_family": "Autodesk Neutron",
+        "product_version": "ASM 231.6.3.65535 OSX",
+        "save_date": "Tue Mar 31 16:16:19 2026",
+        "semantic_sha256": "54b186d482b53e03af0ecbfb1f6c6bf6bb9186e1abf9a4bf85204f42b8ab17a4",
+        "zip_entry_count": "2"
+      }
+    },
+    "units": {
+      "length": "millimeter"
+    },
+    "tolerances": {
+      "linear": 1e-6,
+      "angular": 1e-10
+    },
+    "model": {
+      "bodies": [],
+      "regions": [],
+      "shells": [],
+      "faces": [],
+      "loops": [],
+      "coedges": [],
+      "edges": [],
+      "vertices": [],
+      "points": [],
+      "surfaces": [],
+      "curves": [],
+      "subds": [],
+      "pcurves": [],
+      "procedural_surfaces": [],
+      "procedural_curves": [],
+      "features": [],
+      "configurations": [],
+      "parameters": [],
+      "sketches": [],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spreadsheets": [],
+      "components": [],
+      "occurrences": [],
+      "assembly_joints": [],
+      "drawings": [],
+      "semantic_annotations": [],
+      "presentation_documents": [],
+      "view_presentations": [],
+      "tessellations": [],
+      "appearances": [],
+      "appearance_bindings": [],
+      "attributes": [],
+      "products": [],
+      "product_occurrences": [],
+      "pmi": [],
+      "presentation_layers": []
+    },
+    "native": {
+      "f3d": {
+        "version": 5,
+        "arenas": {
+          "act_entities": [],
+          "act_guids": [],
+          "act_root_components": [],
+          "asm_bulletin_boards": [],
+          "asm_delta_states": [],
+          "asm_entity_changes": [],
+          "asm_histories": [],
+          "asm_history_records": [],
+          "body_native_keys": [],
+          "body_visibilities": [],
+          "construction_recipes": [],
+          "creation_timestamps": [],
+          "design_body_bindings": [],
+          "design_body_bounds": [],
+          "design_body_members": [],
+          "design_body_recipe_operands": [],
+          "design_configurations": [],
+          "design_construction_operand_groups": [],
+          "design_construction_operand_identities": [],
+          "design_dimension_annotation_frames": [],
+          "design_dimension_locus_groups": [],
+          "design_dimension_locus_pairs": [],
+          "design_dimension_null_locus_pairs": [],
+          "design_dimension_recipe_records": [],
+          "design_edge_identity_operands": [],
+          "design_edge_operands": [],
+          "design_entity_headers": [],
+          "design_entity_selection_operands": [],
+          "design_extrude_selection_groups": [],
+          "design_extrude_selection_members": [],
+          "design_face_operands": [],
+          "design_fillet_radius_groups": [],
+          "design_material_assignments": [],
+          "design_objects": [],
+          "design_parameter_companions": [],
+          "design_parameter_owners": [],
+          "design_parameter_scopes": [],
+          "design_parameters": [],
+          "design_record_headers": [],
+          "design_sketch_placements": [],
+          "edge_continuities": [],
+          "edge_ownerships": [],
+          "face_sidedness": [],
+          "lost_edge_references": [],
+          "mesh_surface_sentinels": [],
+          "persistent_design_links": [],
+          "persistent_references": [],
+          "persistent_subentity_tags": [],
+          "sketch_curve_identities": [],
+          "sketch_curve_links": [],
+          "sketch_points": [],
+          "sketch_relations": [],
+          "sketch_surfaces": [],
+          "sketch_texts": [],
+          "tolerant_coedge_parameters": [],
+          "tolerant_edge_tails": [],
+          "tolerant_vertex_tails": [],
+          "transform_hints": [],
+          "unknowns": [
+            {
+              "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:unknown#0"
+            }
+          ],
+          "vertex_ownerships": [],
+          "wire_topologies": [],
+          "xref_designs": [],
+          "xref_references": []
+        }
+      }
+    }
+  },
+  "report": {
+    "format": "f3d",
+    "container_only": false,
+    "geometry_transferred": false,
+    "losses": [
+      {
+        "code": "geometry_not_transferred",
+        "category": "geometry",
+        "severity": "blocking",
+        "message": "ASM BREP geometry was not transferred: the active stream is not a decodable BinaryFile4/BinaryFile8 SAB (or its framing failed). 1 BREP stream(s) were located, but no surfaces, curves, or points were produced."
+      },
+      {
+        "code": "topology_not_transferred",
+        "category": "topology",
+        "severity": "blocking",
+        "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this stream."
+      },
+      {
+        "code": "material_not_transferred",
+        "category": "material",
+        "severity": "warning",
+        "message": "Materials/appearances (.protein assets, ACT/design assignments) were not transferred."
+      }
+    ],
+    "notes": [
+      "asset folder (from entry paths): FusionAssetName[Active]",
+      "active BREP candidate: FusionAssetName[Active]/Breps.BlobParts/Body1.smbh (178 bytes uncompressed, authoritative .smbh history stream)",
+      "container-level inspection only; run `decode` to build the B-rep graph and analytic geometry from the active BREP's SAB record stream"
+    ]
+  },
+  "source_fidelity": {
+    "version": "3",
+    "annotations": {
+      "streams": [
+        "f3d:native",
+        "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh"
+      ],
+      "provenance": {
+        "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:unknown#0": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "opaque_brep"
+        }
+      }
+    },
+    "retained_records": [
+      {
+        "id": "f3d:file:source-image#0",
+        "stream": "f3d",
+        "offset": 0,
+        "byte_len": 494,
+        "sha256": "f419a94a700b7b975c247b133115ea212931b9f387c96f957740c3bb6cf210d0",
+        "data": "UEsDBAoAAAAAAAAAIQDgjy/+EgAAABIAAAAMAAAATWFuaWZlc3QuZGF0c3ludGhldGljLW1hbmlmZXN0UEsDBAoAAAAAAAAAIQDcYw3xsgAAALIAAAAyAAAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vQnJlcHMuQmxvYlBhcnRzL0JvZHkxLnNtYmhBU00gQmluYXJ5RmlsZTg8WgAAAAAAAAAAAAAAAAAABwAAAAAAAAADAAAAAAAAAAcQQXV0b2Rlc2sgTmV1dHJvbgcVQVNNIDIzMS42LjMuNjU1MzUgT1NYBxhUdWUgTWFyIDMxIDE2OjE2OjE5IDIwMjYGAAAAAAAATkAGje21oPfGsD4Gu73X2d982z0NBGJvZHkREQ0LZGVsdGFfc3RhdGUAAAAAAAAAAAAAAAAAAAAAUEsBAgoDCgAAAAAAAAAhAOCPL/4SAAAAEgAAAAwAAAAAAAAAAAAAAKSBAAAAAE1hbmlmZXN0LmRhdFBLAQIKAwoAAAAAAAAAIQDcYw3xsgAAALIAAAAyAAAAAAAAAAAAAACkgTwAAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9CcmVwcy5CbG9iUGFydHMvQm9keTEuc21iaFBLBQYAAAAAAgACAJoAAAA+AQAAAAA="
+      },
+      {
+        "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:unknown#0",
+        "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+        "offset": 0,
+        "byte_len": 178,
+        "sha256": "1f3c3da3821c98610282c3b53568a7b800c2904066df3ce7d8043972ca502ba3"
+      }
+    ]
+  }
+}

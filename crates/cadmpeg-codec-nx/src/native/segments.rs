@@ -4,8 +4,8 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::native::features::{
-    FeatureBodyReference, FeatureBooleanOperation, FeatureOperationBodyOperand,
-    FeatureOperationLabel,
+    FeatureBodyDataBlockUse, FeatureBodyReference, FeatureBooleanOperation,
+    FeatureOperationBodyOperand, FeatureOperationLabel,
 };
 use crate::native::om::OmSchemaRole;
 
@@ -71,7 +71,7 @@ pub struct SegmentStreamLink {
     pub row: String,
     /// Row word containing the wrapper offset.
     pub slot: SegmentIndexSlot,
-    /// Zero-based stream ordinal in source-file order.
+    /// Zero-based stream ordinal in first segment-wrapper order.
     pub stream_ordinal: u32,
     /// Decoded stream classification.
     pub stream_kind: String,
@@ -88,7 +88,7 @@ pub struct SegmentBodyBinding {
     pub id: String,
     /// Validated stream-wrapper link owning the metadata tuple.
     pub stream_link: String,
-    /// Zero-based stream ordinal in source-file order.
+    /// Zero-based stream ordinal in first segment-wrapper order.
     pub stream_ordinal: u32,
     /// Partition or plain cached-body stream classification.
     pub stream_kind: String,
@@ -140,15 +140,26 @@ pub struct SegmentOmLink {
 
 /// Return body objects whose latest decoded writer is not consumed by a later
 /// Boolean, sewing, or trimming operation. Segment-bound bodies exist before
-/// the retained history area unless a decoded operation writes them.
+/// the retained history area unless a decoded operation writes them. Primary
+/// references resolved in an offset-store block namespace do not participate
+/// in object-identity lineage.
 pub fn terminal_feature_body_indices(
     labels: &[FeatureOperationLabel],
     references: &[FeatureBodyReference],
+    data_block_uses: &[FeatureBodyDataBlockUse],
     booleans: &[FeatureBooleanOperation],
     operands: &[FeatureOperationBodyOperand],
     bindings: &[SegmentBodyBinding],
 ) -> Option<BTreeSet<u32>> {
-    if references.is_empty() && bindings.is_empty() {
+    let offset_store_references = data_block_uses
+        .iter()
+        .map(|use_| use_.feature_body_reference.as_str())
+        .collect::<BTreeSet<_>>();
+    let object_references = references
+        .iter()
+        .filter(|reference| !offset_store_references.contains(reference.id.as_str()))
+        .collect::<Vec<_>>();
+    if object_references.is_empty() && bindings.is_empty() {
         return None;
     }
     let positions = labels
@@ -167,12 +178,24 @@ pub fn terminal_feature_body_indices(
         .flat_map(|binding| [binding.body_object_index, binding.body_alias_object_index])
         .map(|identity| (canonical(identity), None))
         .collect::<BTreeMap<u32, Option<usize>>>();
-    for reference in references {
-        let position = *positions.get(reference.operation_label.as_str())?;
-        if operation_kinds.get(reference.operation_label.as_str()) == Some(&"DELETE") {
-            continue;
+    {
+        let mut record_writer = |body, position| {
+            let writer = last_writers.entry(body).or_default();
+            if writer.is_none_or(|writer| writer < position) {
+                *writer = Some(position);
+            }
+        };
+        for reference in &object_references {
+            let position = *positions.get(reference.operation_label.as_str())?;
+            if operation_kinds.get(reference.operation_label.as_str()) == Some(&"DELETE") {
+                continue;
+            }
+            record_writer(canonical(reference.body_object_index), position);
         }
-        last_writers.insert(canonical(reference.body_object_index), Some(position));
+        for operation in booleans {
+            let position = *positions.get(operation.operation_label.as_str())?;
+            record_writer(canonical(operation.target_object_index), position);
+        }
     }
     let mut consumed = BTreeSet::new();
     for operation in booleans {
@@ -187,7 +210,7 @@ pub fn terminal_feature_body_indices(
             }
         }
     }
-    for reference in references {
+    for reference in &object_references {
         if operation_kinds.get(reference.operation_label.as_str()) == Some(&"DELETE") {
             let position = *positions.get(reference.operation_label.as_str())?;
             let body = canonical(reference.body_object_index);
@@ -220,7 +243,7 @@ pub fn terminal_feature_body_indices(
         .filter(|body| !consumed.contains(body))
         .collect::<BTreeSet<_>>();
     Some(
-        references
+        object_references
             .iter()
             .map(|reference| reference.body_object_index)
             .chain(
@@ -237,11 +260,19 @@ pub fn terminal_feature_body_indices(
 pub fn segment_body_lineage_statuses(
     labels: &[FeatureOperationLabel],
     references: &[FeatureBodyReference],
+    data_block_uses: &[FeatureBodyDataBlockUse],
     booleans: &[FeatureBooleanOperation],
     operands: &[FeatureOperationBodyOperand],
     bindings: &[SegmentBodyBinding],
 ) -> Option<Vec<SegmentBodyLineageStatus>> {
-    let terminal = terminal_feature_body_indices(labels, references, booleans, operands, bindings)?;
+    let terminal = terminal_feature_body_indices(
+        labels,
+        references,
+        data_block_uses,
+        booleans,
+        operands,
+        bindings,
+    )?;
     bindings
         .iter()
         .map(|binding| {
@@ -375,58 +406,36 @@ pub fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
 
 /// Resolve segment-index words that point to validated compressed wrappers.
 pub fn segment_stream_links(container: &Container, streams: &[Stream]) -> Vec<SegmentStreamLink> {
-    let Some((entry, index)) = container.segment_index() else {
-        return Vec::new();
-    };
-    let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-    let entry_start = usize::try_from(entry_offset).expect("in-bounds directory offset");
     let mut links = Vec::new();
-    for (row_ordinal, row) in index.rows.into_iter().enumerate() {
-        for (slot, relative) in [
-            (SegmentIndexSlot::TypeCode, row.type_code),
-            (SegmentIndexSlot::SubtypeCode, row.subtype_code),
-            (SegmentIndexSlot::Value, row.value),
-        ] {
-            let relative = relative as usize;
-            let Some(wrapper) = container.data.get(entry_start + relative..) else {
-                continue;
-            };
-            let Some(wrapper_word) = cadmpeg_ir::le::u32_at(wrapper, 0) else {
-                continue;
-            };
-            let extension = (wrapper_word & 0x3fff_ffff) as usize;
-            let wrapper_byte_len = match wrapper_word & 0xc000_0000 {
-                0x8000_0000 => 8usize.checked_add(extension),
-                0xc000_0000 => 33usize.checked_add(extension),
-                _ => continue,
-            };
-            let Some(wrapper_byte_len) = wrapper_byte_len else {
-                continue;
-            };
-            let zlib_offset = entry_start + relative + wrapper_byte_len;
-            let Some((stream_ordinal, stream)) = streams
-                .iter()
-                .enumerate()
-                .find(|(_, stream)| stream.file_offset == zlib_offset)
-            else {
-                continue;
-            };
-            links.push(SegmentStreamLink {
-                id: format!("nx:segment-stream-links:link#{}", links.len()),
-                row: format!("nx:segment-index:row#{row_ordinal}"),
-                slot,
-                stream_ordinal: stream_ordinal as u32,
-                stream_kind: match stream.kind {
-                    StreamKind::Partition => "partition",
-                    StreamKind::Deltas => "deltas",
-                    StreamKind::Plain => "plain",
-                    StreamKind::Preview => "preview",
-                }
-                .to_string(),
-                wrapper_byte_len: wrapper_byte_len as u32,
-                source_offset: entry_offset + relative as u64,
-            });
-        }
+    for wrapper in container.segment_stream_wrappers() {
+        let slot = match wrapper.word_ordinal {
+            0 => SegmentIndexSlot::TypeCode,
+            1 => SegmentIndexSlot::SubtypeCode,
+            2 => SegmentIndexSlot::Value,
+            _ => continue,
+        };
+        let Some((stream_ordinal, stream)) = streams
+            .iter()
+            .enumerate()
+            .find(|(_, stream)| stream.file_offset == wrapper.zlib_offset)
+        else {
+            continue;
+        };
+        links.push(SegmentStreamLink {
+            id: format!("nx:segment-stream-links:link#{}", links.len()),
+            row: format!("nx:segment-index:row#{}", wrapper.row_ordinal),
+            slot,
+            stream_ordinal: stream_ordinal as u32,
+            stream_kind: match stream.kind {
+                StreamKind::Partition => "partition",
+                StreamKind::Deltas => "deltas",
+                StreamKind::Plain => "plain",
+                StreamKind::Preview => "preview",
+            }
+            .to_string(),
+            wrapper_byte_len: wrapper.wrapper_byte_len as u32,
+            source_offset: wrapper.wrapper_offset as u64,
+        });
     }
     links
 }
@@ -481,6 +490,7 @@ mod tests {
     use flate2::Compression;
 
     use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+
     use cadmpeg_ir::geometry::{
         BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
         ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -503,7 +513,7 @@ mod tests {
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .expect("required invariant");
         let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-        assert_eq!(namespace.version, 155);
+        assert_eq!(namespace.version, 181);
         let rows = namespace
             .arena_as::<super::SegmentIndexRow>("segment_index_rows")
             .expect("required invariant");
@@ -557,7 +567,7 @@ mod tests {
         assert_eq!(bindings[0].body_object_index, 94);
         assert_eq!(bindings[0].body_alias_object_index, 150);
         assert_eq!(bindings[0].stream_role, 19);
-        assert_eq!(bindings[0].source_offset, 104);
+        assert_eq!(bindings[0].source_offset, 108);
     }
 
     #[test]
@@ -683,8 +693,141 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &references, &booleans, &[], &[]),
+            super::terminal_feature_body_indices(&labels, &references, &[], &booleans, &[], &[]),
             Some([10].into_iter().collect())
+        );
+    }
+
+    #[test]
+    fn later_boolean_target_write_supersedes_earlier_consumption() {
+        use super::SegmentBodyBinding;
+        use crate::native::features::{
+            FeatureBooleanKind, FeatureBooleanOperation, FeatureOperationLabel,
+        };
+
+        let label = |ordinal: u32| FeatureOperationLabel {
+            id: format!("operation#{ordinal}"),
+            section_link: "history#0".to_string(),
+            ordinal,
+            value: "UNITE".to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: u64::from(ordinal),
+        };
+        let labels = [label(0), label(1)];
+        let boolean = |ordinal: usize, target: u32, tools: Vec<u32>| FeatureBooleanOperation {
+            id: format!("boolean#{ordinal}"),
+            operation_label: labels[ordinal].id.clone(),
+            kind: FeatureBooleanKind::Unite,
+            target_object_index: target,
+            raw_target_object_index: vec![target as u8],
+            target_source_offset: ordinal as u64,
+            tool_object_indices: tools,
+            raw_tool_object_indices: Vec::new(),
+            tool_source_offsets: Vec::new(),
+            source_offset: ordinal as u64,
+        };
+        let booleans = [boolean(0, 20, vec![10]), boolean(1, 10, vec![20])];
+        let bindings = [
+            SegmentBodyBinding {
+                id: "binding#0".to_string(),
+                stream_link: "stream#0".to_string(),
+                stream_ordinal: 0,
+                stream_kind: "partition".to_string(),
+                body_object_index: 10,
+                body_alias_object_index: 11,
+                stream_role: 19,
+                source_offset: 0,
+            },
+            SegmentBodyBinding {
+                id: "binding#1".to_string(),
+                stream_link: "stream#1".to_string(),
+                stream_ordinal: 1,
+                stream_kind: "partition".to_string(),
+                body_object_index: 20,
+                body_alias_object_index: 21,
+                stream_role: 19,
+                source_offset: 1,
+            },
+        ];
+
+        assert_eq!(
+            super::terminal_feature_body_indices(&labels, &[], &[], &booleans, &[], &bindings),
+            Some([10, 11].into_iter().collect())
+        );
+    }
+
+    #[test]
+    fn latest_writer_is_selected_across_primary_and_boolean_sources() {
+        use super::SegmentBodyBinding;
+        use crate::native::features::{
+            FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation,
+            FeatureOperationLabel,
+        };
+
+        let label = |ordinal: u32, value: &str| FeatureOperationLabel {
+            id: format!("operation#{ordinal}"),
+            section_link: "history#0".to_string(),
+            ordinal,
+            value: value.to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: u64::from(ordinal),
+        };
+        let labels = [label(0, "UNITE"), label(1, "UNITE"), label(2, "EXTRUDE")];
+        let references = [FeatureBodyReference {
+            id: "reference#10".to_string(),
+            operation_label: labels[2].id.clone(),
+            body_object_index: 10,
+            raw_body_object_index: vec![10],
+            source_offset: 2,
+        }];
+        let boolean = |ordinal: usize, target: u32, tools: Vec<u32>| FeatureBooleanOperation {
+            id: format!("boolean#{ordinal}"),
+            operation_label: labels[ordinal].id.clone(),
+            kind: FeatureBooleanKind::Unite,
+            target_object_index: target,
+            raw_target_object_index: vec![target as u8],
+            target_source_offset: ordinal as u64,
+            tool_object_indices: tools,
+            raw_tool_object_indices: Vec::new(),
+            tool_source_offsets: Vec::new(),
+            source_offset: ordinal as u64,
+        };
+        let booleans = [boolean(0, 10, Vec::new()), boolean(1, 20, vec![10])];
+        let bindings = [
+            SegmentBodyBinding {
+                id: "binding#0".to_string(),
+                stream_link: "stream#0".to_string(),
+                stream_ordinal: 0,
+                stream_kind: "partition".to_string(),
+                body_object_index: 10,
+                body_alias_object_index: 11,
+                stream_role: 19,
+                source_offset: 0,
+            },
+            SegmentBodyBinding {
+                id: "binding#1".to_string(),
+                stream_link: "stream#1".to_string(),
+                stream_ordinal: 1,
+                stream_kind: "partition".to_string(),
+                body_object_index: 20,
+                body_alias_object_index: 21,
+                stream_role: 19,
+                source_offset: 1,
+            },
+        ];
+
+        assert_eq!(
+            super::terminal_feature_body_indices(
+                &labels,
+                &references,
+                &[],
+                &booleans,
+                &[],
+                &bindings,
+            ),
+            Some([10, 11, 20, 21].into_iter().collect())
         );
     }
 
@@ -721,9 +864,102 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &references, &[], &[], &bindings,),
+            super::terminal_feature_body_indices(&labels, &references, &[], &[], &[], &bindings,),
             Some(std::collections::BTreeSet::new())
         );
+    }
+
+    #[test]
+    fn delete_only_history_distinguishes_consumed_and_terminal_images() {
+        use super::SegmentBodyBinding;
+        use crate::native::features::{FeatureBodyReference, FeatureOperationLabel};
+
+        let labels = [FeatureOperationLabel {
+            id: "operation#delete".to_string(),
+            section_link: "history#0".to_string(),
+            ordinal: 0,
+            value: "DELETE".to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: 0,
+        }];
+        let references = [FeatureBodyReference {
+            id: "reference#10".to_string(),
+            operation_label: labels[0].id.clone(),
+            body_object_index: 10,
+            raw_body_object_index: vec![10],
+            source_offset: 0,
+        }];
+        let binding = |ordinal, body_object_index, body_alias_object_index| SegmentBodyBinding {
+            id: format!("binding#{ordinal}"),
+            stream_link: format!("stream#{ordinal}"),
+            stream_ordinal: ordinal,
+            stream_kind: "partition".to_string(),
+            body_object_index,
+            body_alias_object_index,
+            stream_role: 19,
+            source_offset: u64::from(ordinal),
+        };
+        let bindings = [binding(0, 10, 11), binding(1, 20, 21)];
+
+        let statuses =
+            super::segment_body_lineage_statuses(&labels, &references, &[], &[], &[], &bindings)
+                .expect("complete delete-only lineage");
+        assert_eq!(statuses.len(), 2);
+        assert!(!statuses[0].terminal);
+        assert!(statuses[1].terminal);
+    }
+
+    #[test]
+    fn feature_body_lineage_excludes_offset_store_reference_collisions() {
+        use super::SegmentBodyBinding;
+        use crate::native::features::{
+            FeatureBodyDataBlockUse, FeatureBodyReference, FeatureOperationLabel,
+        };
+
+        let labels = [FeatureOperationLabel {
+            id: "operation#delete".to_string(),
+            section_link: "history#0".to_string(),
+            ordinal: 0,
+            value: "DELETE".to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: 0,
+        }];
+        let references = [FeatureBodyReference {
+            id: "reference#11".to_string(),
+            operation_label: "operation#delete".to_string(),
+            body_object_index: 11,
+            raw_body_object_index: vec![11],
+            source_offset: 0,
+        }];
+        let data_block_uses = [FeatureBodyDataBlockUse {
+            id: "data-block-use#11".to_string(),
+            feature_body_reference: references[0].id.clone(),
+            data_block: "block#11".to_string(),
+        }];
+        let bindings = [SegmentBodyBinding {
+            id: "binding#0".to_string(),
+            stream_link: "stream#0".to_string(),
+            stream_ordinal: 0,
+            stream_kind: "partition".to_string(),
+            body_object_index: 10,
+            body_alias_object_index: 11,
+            stream_role: 19,
+            source_offset: 0,
+        }];
+
+        let statuses = super::segment_body_lineage_statuses(
+            &labels,
+            &references,
+            &data_block_uses,
+            &[],
+            &[],
+            &bindings,
+        )
+        .expect("segment binding establishes lineage");
+        assert_eq!(statuses.len(), 1);
+        assert!(statuses[0].terminal);
     }
 
     #[test]
@@ -761,7 +997,7 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &references, &[], &[], &bindings,),
+            super::terminal_feature_body_indices(&labels, &references, &[], &[], &[], &bindings,),
             Some([10, 11].into_iter().collect())
         );
     }
@@ -807,7 +1043,7 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &references, &booleans, &[], &[],),
+            super::terminal_feature_body_indices(&labels, &references, &[], &booleans, &[], &[],),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -861,7 +1097,14 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &references, &booleans, &[], &bindings,),
+            super::terminal_feature_body_indices(
+                &labels,
+                &references,
+                &[],
+                &booleans,
+                &[],
+                &bindings,
+            ),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -897,11 +1140,12 @@ mod tests {
             ordinal: 0,
             operand_object_index: 30,
             raw_operand_object_index: vec![30],
+            operand_data_block: None,
             segment_body_bindings: vec!["binding#0".to_string()],
             source_offset: 0,
         }];
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &[], &[], &operands, &bindings),
+            super::terminal_feature_body_indices(&labels, &[], &[], &[], &operands, &bindings),
             Some(std::collections::BTreeSet::new())
         );
     }

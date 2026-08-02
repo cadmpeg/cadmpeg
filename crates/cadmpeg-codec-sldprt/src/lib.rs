@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(
+    test,
+    allow(
+        clippy::redundant_field_names,
+        clippy::unreadable_literal,
+        clippy::unwrap_used
+    )
+)]
 //! Read and write `SolidWorks` `.sldprt` part documents.
 //!
 //! [`SldprtCodec`] decodes B-rep topology, analytic and NURBS geometry,
@@ -17,7 +25,7 @@
 //! use cadmpeg_codec_sldprt::SldprtCodec;
 //! use cadmpeg_ir::{CodecEntry, DecodeOptions};
 //!
-//! # fn decode(bytes: Vec<u8>) -> Result<(), cadmpeg_ir::CodecError> {
+//! # fn decode(bytes: Vec<u8>) -> Result<(), cadmpeg_codec_core::CodecError> {
 //! let decoded = SldprtCodec.decode(
 //!     &mut Cursor::new(bytes),
 //!     &DecodeOptions::default(),
@@ -62,7 +70,7 @@
 //! tessellation. It bakes right-handed rigid body transforms into geometry.
 //!
 //! [`Codec::inspect`]: cadmpeg_ir::Codec::inspect
-//! [`CodecError::NotImplemented`]: cadmpeg_ir::CodecError::NotImplemented
+//! [`CodecError::NotImplemented`]: cadmpeg_codec_core::CodecError::NotImplemented
 //! [`DecodeOptions::container_only`]: cadmpeg_ir::DecodeOptions::container_only
 
 mod annotations;
@@ -73,6 +81,8 @@ mod compound;
 pub mod container;
 pub mod decode;
 mod feature_schema;
+#[cfg(feature = "fuzzing")]
+pub mod fuzzing;
 mod history;
 pub mod loss;
 mod metadata;
@@ -86,18 +96,28 @@ mod writer;
 mod writer_patch;
 mod writer_transform;
 
-use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult, Encoder};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::{CodecError, ContainerSummary};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::{Annotations, Finding, SourceFidelity};
+use cadmpeg_ir::{Annotations, FidelityResolution, Finding, LossNote, Severity, SourceFidelity};
 use std::io::Write;
 
 /// Codec for `SolidWorks` `.sldprt` part documents.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SldprtCodec;
+
+/// A joined native-record reference whose retained payload stays owned by the
+/// source-fidelity sidecar throughout export.
+struct SourceRecord<'a> {
+    id: UnknownId,
+    byte_len: u64,
+    sha256: &'a str,
+    data: Option<&'a [u8]>,
+}
 
 /// Validate `SolidWorks` native feature-input byte references.
 pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
@@ -119,7 +139,7 @@ impl SldprtCodec {
     fn write_preserved_with_annotations(
         ir: &CadIr,
         annotations: &Annotations,
-        records: &[UnknownRecord],
+        records: &[SourceRecord<'_>],
         writer: &mut dyn Write,
     ) -> Result<(), CodecError> {
         let expected = ir
@@ -129,12 +149,12 @@ impl SldprtCodec {
         if expected.is_none_or(|expected| decode::semantic_hash(ir) != *expected) {
             return writer::write_semantic_with_records(ir, annotations, records, writer);
         }
-        let record = records
+        let Some(record) = records
             .iter()
             .find(|record| record.id.0 == "sldprt:file:source-image#0")
-            .ok_or_else(|| {
-                CodecError::NotImplemented("IR has no retained SLDPRT source image".into())
-            })?;
+        else {
+            return writer::write_semantic_with_records(ir, annotations, records, writer);
+        };
         let data = record.data.as_ref().ok_or_else(|| {
             CodecError::Malformed("retained SLDPRT source image has no bytes".into())
         })?;
@@ -157,6 +177,8 @@ impl Codec for SldprtCodec {
     fn detect(&self, prefix: &[u8]) -> Confidence {
         if container::looks_like_sldprt(prefix) {
             Confidence::High
+        } else if container::looks_like_compound_file(prefix) {
+            Confidence::Low
         } else {
             Confidence::No
         }
@@ -185,20 +207,50 @@ impl Encoder for SldprtCodec {
         "sldprt"
     }
 
-    fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
-        Self::encode_with_annotations(ir, &Annotations::default(), &[], writer)
-    }
-
-    fn encode_with_source_fidelity(
-        &self,
-        ir: &CadIr,
-        source_fidelity: Option<&SourceFidelity>,
-        writer: &mut dyn Write,
-    ) -> Result<ExportReport, CodecError> {
-        match source_fidelity {
-            Some(value) => Self::encode_with_fidelity(ir, value, writer),
-            None => Self::encode_with_annotations(ir, &Annotations::default(), &[], writer),
+    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
+        let mut bytes = Vec::new();
+        let mut report = match input.fidelity {
+            Some(value) => Self::encode_with_fidelity(input.ir, value, &mut bytes)?,
+            None => {
+                Self::encode_with_annotations(input.ir, &Annotations::default(), &[], &mut bytes)?
+            }
+        };
+        let replay = input
+            .fidelity
+            .and_then(|value| value.retained_record("sldprt:file:source-image#0"))
+            .is_some();
+        let expects_preserved_source = input
+            .ir
+            .source
+            .as_ref()
+            .is_some_and(|source| source.format == "sldprt");
+        let fidelity = match (input.fidelity.is_some() || expects_preserved_source, replay) {
+            (_, true) => FidelityResolution::Replayed,
+            (true, false) => FidelityResolution::Degraded {
+                reason: "preserved SLDPRT source image is unavailable".into(),
+            },
+            (false, false) => FidelityResolution::NotProvided,
+        };
+        if replay {
+            report.notes[0] = input
+                .fidelity
+                .and_then(|value| value.retained_record("sldprt:file:source-image#0"))
+                .filter(|source| source.data.as_deref() == Some(bytes.as_slice()))
+                .map_or(
+                    "preserved source container replayed with semantic patches",
+                    |_| "preserved source container replayed verbatim",
+                )
+                .into();
         }
+        if matches!(fidelity, FidelityResolution::Degraded { .. }) {
+            report.losses.push(LossNote {
+                code: cadmpeg_ir::LossKind::PreservedSourceUnavailable,
+                severity: Severity::Blocking,
+                message: "preserved SLDPRT source image is unavailable; regenerated from IR".into(),
+                provenance: None,
+            });
+        }
+        Ok(ExportPlan::buffered(report, fidelity, bytes))
     }
 }
 
@@ -215,7 +267,7 @@ impl SldprtCodec {
     fn encode_with_annotations(
         ir: &CadIr,
         annotations: &Annotations,
-        records: &[UnknownRecord],
+        records: &[SourceRecord<'_>],
         writer: &mut dyn Write,
     ) -> Result<ExportReport, CodecError> {
         let replay = records
@@ -223,11 +275,13 @@ impl SldprtCodec {
             .any(|record| record.id.0 == "sldprt:file:source-image#0");
         Self::write_preserved_with_annotations(ir, annotations, records, writer)?;
         let validation = cadmpeg_ir::validate(ir, Vec::new());
-        let total_entities = validation.entity_counts.values().sum();
         Ok(ExportReport {
             format: "sldprt".into(),
-            entity_counts: validation.entity_counts,
-            total_entities,
+            census: cadmpeg_ir::EntityCensus {
+                basis: cadmpeg_ir::CensusBasis::IrArenas,
+                counts: validation.entity_counts,
+            },
+            fidelity: FidelityResolution::NotProvided,
             losses: Vec::new(),
             notes: vec![
                 if replay {
@@ -242,19 +296,38 @@ impl SldprtCodec {
     }
 }
 
-fn source_records(
+fn source_records<'a>(
     ir: &CadIr,
-    source_fidelity: &SourceFidelity,
-) -> Result<Vec<UnknownRecord>, CodecError> {
-    let mut records = source_fidelity.native_unknown_records(ir, "sldprt")?;
+    source_fidelity: &'a SourceFidelity,
+) -> Result<Vec<SourceRecord<'a>>, CodecError> {
+    let retained_by_id = source_fidelity
+        .retained_records
+        .iter()
+        .map(|record| (record.id.as_str(), record))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut records = ir
+        .native_unknowns_iter("sldprt")
+        .map(|reference| {
+            let reference = reference?;
+            let retained = retained_by_id.get(reference.id.0.as_str()).ok_or_else(|| {
+                cadmpeg_ir::native::NativeConvertError::MissingRetainedSourceRecord(
+                    reference.id.0.clone(),
+                )
+            })?;
+            Ok(SourceRecord {
+                id: reference.id,
+                byte_len: retained.byte_len,
+                sha256: &retained.sha256,
+                data: retained.data.as_deref(),
+            })
+        })
+        .collect::<Result<Vec<_>, cadmpeg_ir::native::NativeConvertError>>()?;
     if let Some(source) = source_fidelity.retained_record("sldprt:file:source-image#0") {
-        records.push(UnknownRecord {
+        records.push(SourceRecord {
             id: source.id.clone().into(),
-            offset: source.offset,
             byte_len: source.byte_len,
-            sha256: source.sha256.clone(),
-            data: source.data.clone(),
-            links: Vec::new(),
+            sha256: &source.sha256,
+            data: source.data.as_deref(),
         });
     }
     Ok(records)

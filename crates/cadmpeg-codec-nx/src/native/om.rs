@@ -80,7 +80,7 @@ pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
 }
 
 /// Unit declared by an NX numeric expression.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExpressionUnit {
     /// Canonical model length in millimeters.
@@ -163,6 +163,28 @@ pub(crate) fn expression_parameter_names(expression: &str) -> Vec<&str> {
         at = end;
     }
     names
+}
+
+pub(crate) fn evaluate_parameterized_expression(
+    expression: &str,
+    mut parameter_value: impl FnMut(&str) -> Option<f64>,
+) -> Option<f64> {
+    let bytes = expression.as_bytes();
+    let mut substituted = String::with_capacity(expression.len());
+    let mut at = 0usize;
+    while at < bytes.len() {
+        if let Some(end) = expression_parameter_reference_end(bytes, at) {
+            let value = parameter_value(&expression[at..end])?;
+            substituted.push('(');
+            substituted.push_str(&value.to_string());
+            substituted.push(')');
+            at = end;
+        } else {
+            substituted.push(char::from(bytes[at]));
+            at += 1;
+        }
+    }
+    crate::om::evaluate_constant_expression(&substituted)
 }
 
 fn expression_parameter_reference_end(bytes: &[u8], at: usize) -> Option<usize> {
@@ -327,6 +349,37 @@ pub struct DataBlock {
     pub source_offset: u64,
 }
 
+/// Admitted complete grammar selected for one offset-store control block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DataBlockControlFormKind {
+    ZeroPrefixed,
+    ProductAnchored,
+}
+
+/// Atomic classification of one complete offset-store control block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataBlockControlForm {
+    /// Globally unique control-form identity.
+    pub id: String,
+    /// Owning control block in the native `data_blocks` arena.
+    pub data_block: String,
+    /// Selected complete control grammar.
+    pub kind: DataBlockControlFormKind,
+    /// Number of values in the admitted control array.
+    pub value_count: u32,
+    /// Byte width of the compact leading value before a product-anchored array.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub leading_value_width: Option<u8>,
+    /// Compact leading little-endian value before a product-anchored array.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub leading_value: Option<u32>,
+    /// Exact serialized control-block length.
+    pub byte_len: u64,
+    /// Absolute file offset of the control block.
+    pub source_offset: u64,
+}
+
 /// Ordered value from a zero-prefixed offset-only OM store control array.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataBlockControlValue {
@@ -342,7 +395,7 @@ pub struct DataBlockControlValue {
     pub source_offset: u64,
 }
 
-/// Ordered little-endian value preceding a control-block product record.
+/// Ordered little-endian value preceding a control-block product anchor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataBlockControlIndexValue {
     /// Globally unique value identity.
@@ -351,8 +404,6 @@ pub struct DataBlockControlIndexValue {
     pub data_block: String,
     /// Zero-based value order in the aligned prefix array.
     pub ordinal: u32,
-    /// Number of leading zero bytes before the aligned array.
-    pub prefix_byte_len: u8,
     /// Unsigned little-endian value.
     pub value: u32,
     /// Same-section offset-store block addressed by an in-range value.
@@ -373,10 +424,14 @@ pub struct DataBlockControlClassReference {
     pub ordinal: u32,
     /// Zero-based ordinal in the store's class registry.
     pub class_ordinal: u32,
-    /// Target in the native `class_definitions` arena.
-    pub class_definition: String,
-    /// Exact registered class name.
-    pub class_name: String,
+    /// Target in the native `class_definitions` arena when that registry slot
+    /// has a retained declaration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class_definition: Option<String>,
+    /// Exact registered class name when that registry slot has a retained
+    /// declaration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class_name: Option<String>,
     /// Absolute file offset of the four-byte control word.
     pub source_offset: u64,
 }
@@ -642,6 +697,23 @@ pub struct StringValue {
     pub source_offset: u64,
 }
 
+/// Canonical UUID text spanning one or more contiguous bounded OM records.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObjectUuidValue {
+    /// Globally unique value identity.
+    pub id: String,
+    /// Zero-based indexed-section ordinal within the container.
+    pub section_ordinal: u32,
+    /// Exact UUID text.
+    pub uuid: String,
+    /// Bounded OM records intersected by the complete UUID frame.
+    pub records: Vec<String>,
+    /// Directory entry containing the OM section.
+    pub source_entry: String,
+    /// Absolute file offset of the `03 26` marker.
+    pub source_offset: u64,
+}
+
 /// Tagged reference family serialized in an NX OM record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -674,6 +746,27 @@ pub struct ObjectReference {
     /// Directory entry containing the OM section.
     pub source_entry: String,
     /// Absolute file offset of the reference marker.
+    pub source_offset: u64,
+}
+
+/// Exact two-token persistent-handle run in one bounded OM object record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObjectRecordHandlePair {
+    /// Globally unique pair identity.
+    pub id: String,
+    /// Owning entry in the native OM record directory.
+    pub record: String,
+    /// Persistent OM object identifier when the section carries an ID table.
+    pub object_id: Option<u32>,
+    /// First handle-reference occurrence.
+    pub first_reference: String,
+    /// Second handle-reference occurrence.
+    pub second_reference: String,
+    /// First persistent-handle value.
+    pub first_handle: u32,
+    /// Second persistent-handle value.
+    pub second_handle: u32,
+    /// Absolute file offset of the first `e0` marker.
     pub source_offset: u64,
 }
 
@@ -1807,6 +1900,53 @@ pub fn data_blocks(container: &Container) -> Vec<DataBlock> {
         .collect()
 }
 
+/// Classify every admitted complete offset-only store control block.
+pub fn data_block_control_forms(container: &Container) -> Vec<DataBlockControlForm> {
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .filter_map(|(section_ordinal, (entry, section))| {
+            let control = section.control?;
+            let (kind, leading_value_width, leading_value, value_count) =
+                match crate::om::offset_store_control_form(control.bytes)? {
+                    crate::om::OffsetStoreControlForm::ZeroPrefixed { values } => (
+                        DataBlockControlFormKind::ZeroPrefixed,
+                        None,
+                        None,
+                        values.len(),
+                    ),
+                    crate::om::OffsetStoreControlForm::ProductAnchored {
+                        leading_value,
+                        values,
+                    } => {
+                        let (leading_value_width, leading_value) = match leading_value {
+                            Some((width, value)) => (Some(u8::try_from(width).ok()?), Some(value)),
+                            None => (None, None),
+                        };
+                        (
+                            DataBlockControlFormKind::ProductAnchored,
+                            leading_value_width,
+                            leading_value,
+                            values.len(),
+                        )
+                    }
+                };
+            Some(DataBlockControlForm {
+                id: format!("nx:om-data-block-control-forms:form#{section_ordinal}"),
+                data_block: format!("nx:om-data-blocks-{section_ordinal}:block#0"),
+                kind,
+                value_count: u32::try_from(value_count).ok()?,
+                leading_value_width,
+                leading_value,
+                byte_len: control.bytes.len() as u64,
+                source_offset: entry.file_span.map_or(0, |(offset, _)| offset)
+                    + control.offset as u64,
+            })
+        })
+        .collect()
+}
+
 /// Decode complete zero-prefixed control arrays from offset-only OM stores.
 pub fn data_block_control_values(container: &Container) -> Vec<DataBlockControlValue> {
     container
@@ -1817,7 +1957,9 @@ pub fn data_block_control_values(container: &Container) -> Vec<DataBlockControlV
             let Some(control) = section.control else {
                 return Vec::new();
             };
-            let Some(values) = crate::om::offset_store_control_values(control.bytes) else {
+            let Some(crate::om::OffsetStoreControlForm::ZeroPrefixed { values }) =
+                crate::om::offset_store_control_form(control.bytes)
+            else {
                 return Vec::new();
             };
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
@@ -1851,11 +1993,31 @@ pub fn data_block_control_class_references(
             let Some(control) = section.control else {
                 return Vec::new();
             };
-            let registry = section.types;
-            let Some(ordinals) = crate::om::offset_store_control_class_ordinals(
-                control.bytes,
-                registry.len(),
-            ) else {
+            if !matches!(
+                crate::om::offset_store_control_form(control.bytes),
+                Some(crate::om::OffsetStoreControlForm::ZeroPrefixed { .. })
+            ) {
+                return Vec::new();
+            }
+            let mut registry = BTreeMap::new();
+            for definition in container
+                .om_sections()
+                .into_iter()
+                .filter(|(candidate, _)| std::ptr::eq(*candidate, entry))
+                .flat_map(|(_, section)| section.types)
+                .chain(
+                    container
+                        .indexed_om_sections()
+                        .into_iter()
+                        .filter(|(candidate, _)| std::ptr::eq(*candidate, entry))
+                        .flat_map(|(_, section)| section.types),
+                )
+            {
+                registry.entry(definition.offset).or_insert(definition);
+            }
+            let registry = registry.into_values().collect::<Vec<_>>();
+            let Some(ordinals) = crate::om::offset_store_control_class_ordinals(control.bytes)
+            else {
                 return Vec::new();
             };
             let entry_index = container
@@ -1868,29 +2030,30 @@ pub fn data_block_control_class_references(
             ordinals
                 .into_iter()
                 .enumerate()
-                .filter_map(|(ordinal, class_ordinal)| {
-                    let definition = registry.get(usize::try_from(class_ordinal).ok()?)?;
-                    Some(DataBlockControlClassReference {
+                .map(|(ordinal, class_ordinal)| {
+                    let definition = usize::try_from(class_ordinal)
+                        .ok()
+                        .and_then(|ordinal| registry.get(ordinal));
+                    DataBlockControlClassReference {
                         id: format!(
                             "nx:om-data-block-control-class-references-{section_ordinal}:class#{ordinal}"
                         ),
                         data_block: data_block.clone(),
                         ordinal: ordinal as u32,
                         class_ordinal,
-                        class_definition: format!(
-                            "nx:om-entry-{entry_index}:class#{}",
-                            definition.offset
-                        ),
-                        class_name: definition.name.to_string(),
+                        class_definition: definition.map(|definition| {
+                            format!("nx:om-entry-{entry_index}:class#{}", definition.offset)
+                        }),
+                        class_name: definition.map(|definition| definition.name.to_string()),
                         source_offset: entry_offset + control.offset as u64 + ordinal as u64 * 4,
-                    })
+                    }
                 })
                 .collect()
         })
         .collect()
 }
 
-/// Decode aligned index arrays ending at a unique control-block product record.
+/// Decode aligned index arrays preceding a unique control-block product anchor.
 pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockControlIndexValue> {
     container
         .indexed_om_sections()
@@ -1900,11 +2063,14 @@ pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockCo
             let Some(control) = section.control else {
                 return Vec::new();
             };
-            let Some((prefix_byte_len, values)) =
-                crate::om::offset_store_index_values(control.bytes)
+            let Some(crate::om::OffsetStoreControlForm::ProductAnchored {
+                leading_value,
+                values,
+            }) = crate::om::offset_store_control_form(control.bytes)
             else {
                 return Vec::new();
             };
+            let leading_value_width = leading_value.map_or(0, |(width, _)| width);
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
             let block_count = section.records.len() + 1;
@@ -1917,7 +2083,6 @@ pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockCo
                     ),
                     data_block: data_block.clone(),
                     ordinal: ordinal as u32,
-                    prefix_byte_len: prefix_byte_len as u8,
                     value,
                     target_data_block: control_index_data_block(
                         section_ordinal,
@@ -1926,7 +2091,7 @@ pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockCo
                     ),
                     source_offset: entry_offset
                         + control.offset as u64
-                        + prefix_byte_len as u64
+                        + leading_value_width as u64
                         + ordinal as u64 * 4,
                 })
                 .collect()
@@ -2591,6 +2756,84 @@ pub fn string_values(container: &Container) -> Vec<StringValue> {
         .collect()
 }
 
+/// Decode canonical UUID frames across the contiguous storage of ID-bounded
+/// OM records. A value retains every physical record intersected by its frame.
+pub fn object_uuid_values(container: &Container) -> Vec<ObjectUuidValue> {
+    const FRAME_LEN: usize = 2 + 36 + 1;
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, (entry, section))| {
+            let Some(first) = section.records.first() else {
+                return Vec::new();
+            };
+            let Some(last) = section.records.last() else {
+                return Vec::new();
+            };
+            if first.object_id.is_none()
+                || section.records.windows(2).any(|records| {
+                    records[0].offset.checked_add(records[0].bytes.len()) != Some(records[1].offset)
+                })
+            {
+                return Vec::new();
+            }
+            let Some(end) = last.offset.checked_add(last.bytes.len()) else {
+                return Vec::new();
+            };
+            let Some((entry_offset, _)) = entry.file_span else {
+                return Vec::new();
+            };
+            let Ok(entry_offset_usize) = usize::try_from(entry_offset) else {
+                return Vec::new();
+            };
+            let Some(storage_start) = entry_offset_usize.checked_add(first.offset) else {
+                return Vec::new();
+            };
+            let Some(storage_end) = entry_offset_usize.checked_add(end) else {
+                return Vec::new();
+            };
+            let Some(storage) = container.data.get(storage_start..storage_end) else {
+                return Vec::new();
+            };
+            crate::om::uuid_string_values(storage, first.offset)
+                .into_iter()
+                .filter_map(|value| {
+                    let frame_end = value.offset.checked_add(FRAME_LEN)?;
+                    let records = section
+                        .records
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, record)| {
+                            record.offset < frame_end
+                                && record
+                                    .offset
+                                    .checked_add(record.bytes.len())
+                                    .is_some_and(|record_end| value.offset < record_end)
+                        })
+                        .map(|(record_ordinal, _)| {
+                            format!(
+                                "nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    (!records.is_empty()).then(|| ObjectUuidValue {
+                        id: format!(
+                            "nx:om-object-uuid-values-{section_ordinal}:value#{}",
+                            value.offset
+                        ),
+                        section_ordinal: section_ordinal as u32,
+                        uuid: value.value.to_owned(),
+                        records,
+                        source_entry: entry.name.clone(),
+                        source_offset: entry_offset + value.offset as u64,
+                    })
+                })
+                .collect()
+        })
+        .collect()
+}
+
 /// Decode ordered tagged references from bounded NX OM records.
 pub fn object_references(container: &Container) -> Vec<ObjectReference> {
     container
@@ -2648,6 +2891,49 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
                 .collect()
         })
         .collect()
+}
+
+/// Join maximal two-token adjacent persistent-handle runs within object records.
+pub fn object_record_handle_pairs(references: &[ObjectReference]) -> Vec<ObjectRecordHandlePair> {
+    let mut by_record = BTreeMap::<&str, Vec<&ObjectReference>>::new();
+    for reference in references
+        .iter()
+        .filter(|reference| reference.kind == ObjectReferenceKind::PersistentHandle)
+    {
+        by_record
+            .entry(reference.record.as_str())
+            .or_default()
+            .push(reference);
+    }
+    let mut pairs = Vec::new();
+    for (record, mut record_references) in by_record {
+        record_references.sort_by_key(|reference| reference.source_offset);
+        let mut at = 0;
+        while at < record_references.len() {
+            let start = at;
+            while record_references
+                .get(at + 1)
+                .is_some_and(|next| next.source_offset == record_references[at].source_offset + 5)
+            {
+                at += 1;
+            }
+            let run = &record_references[start..=at];
+            if let [first, second] = run {
+                pairs.push(ObjectRecordHandlePair {
+                    id: format!("nx:om-object-record:handle-pair#{}", first.source_offset),
+                    record: record.to_string(),
+                    object_id: first.object_id,
+                    first_reference: first.id.clone(),
+                    second_reference: second.id.clone(),
+                    first_handle: first.value,
+                    second_handle: second.value,
+                    source_offset: first.source_offset,
+                });
+            }
+            at += 1;
+        }
+    }
+    pairs
 }
 
 /// Group persistent-handle occurrences into cross-record identities.
@@ -2874,27 +3160,29 @@ fn expression_scope(expression: &Expression) -> &str {
 }
 
 pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
-    let mut name_counts = BTreeMap::<(String, String), usize>::new();
+    let mut name_counts = BTreeMap::<(String, String, ExpressionUnit), usize>::new();
     for expression in expressions.iter() {
         *name_counts
             .entry((
                 expression_scope(expression).to_string(),
                 expression.name.clone(),
+                expression.unit,
             ))
             .or_default() += 1;
     }
-    let mut values = BTreeMap::<(String, String), (ExpressionUnit, f64)>::new();
+    let mut values = BTreeMap::<(String, String, ExpressionUnit), f64>::new();
     for expression in expressions.iter_mut() {
         let key = (
             expression_scope(expression).to_string(),
             expression.name.clone(),
+            expression.unit,
         );
         if name_counts.get(&key) != Some(&1) {
             expression.value = None;
             continue;
         }
         if let Some(value) = expression.value {
-            values.insert(key, (expression.unit, value));
+            values.insert(key, value);
         }
     }
 
@@ -2907,42 +3195,26 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
             let expression_key = (
                 expression_scope(expression).to_string(),
                 expression.name.clone(),
+                expression.unit,
             );
             if name_counts.get(&expression_key) != Some(&1) {
                 continue;
             }
-            let mut substituted = String::with_capacity(expression.expression.len());
-            let bytes = expression.expression.as_bytes();
-            let mut at = 0usize;
-            let mut complete = true;
-            while at < bytes.len() {
-                if let Some(end) = expression_parameter_reference_end(bytes, at) {
-                    let start = at;
-                    at = end;
-                    let name = &expression.expression[start..at];
-                    let key = (expression_scope(expression).to_string(), name.to_string());
-                    let Some((unit, value)) = values.get(&key).copied() else {
-                        complete = false;
-                        break;
-                    };
-                    if name_counts.get(&key) != Some(&1) || expression.unit != unit {
-                        complete = false;
-                        break;
-                    }
-                    substituted.push('(');
-                    substituted.push_str(&value.to_string());
-                    substituted.push(')');
-                    continue;
+            let evaluated = evaluate_parameterized_expression(&expression.expression, |name| {
+                let key = (
+                    expression_scope(expression).to_string(),
+                    name.to_string(),
+                    expression.unit,
+                );
+                if name_counts.get(&key) != Some(&1) {
+                    return None;
                 }
-                substituted.push(char::from(bytes[at]));
-                at += 1;
-            }
-            if complete {
-                if let Some(value) = crate::om::evaluate_constant_expression(&substituted) {
-                    expression.value = Some(value);
-                    values.insert(expression_key.clone(), (expression.unit, value));
-                    changed = true;
-                }
+                values.get(&key).copied()
+            });
+            if let Some(value) = evaluated {
+                expression.value = Some(value);
+                values.insert(expression_key.clone(), value);
+                changed = true;
             }
         }
         if !changed {
@@ -2960,6 +3232,7 @@ mod tests {
     use flate2::Compression;
 
     use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+
     use cadmpeg_ir::geometry::{
         BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
         ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -3140,6 +3413,65 @@ mod tests {
     }
 
     #[test]
+    fn nx_expression_graph_scopes_equal_names_by_declared_unit() {
+        let expression =
+            |id: &str, name: &str, unit: super::ExpressionUnit, formula: &str, value| {
+                super::Expression {
+                    id: id.into(),
+                    object_id: None,
+                    record: None,
+                    declaration: None,
+                    name: name.into(),
+                    parameter_index: None,
+                    qualifier: None,
+                    unit,
+                    expression: formula.into(),
+                    value,
+                    source_entry: "part".into(),
+                    source_table: "table".into(),
+                    source_offset: 0,
+                }
+            };
+        let mut expressions = vec![
+            expression(
+                "length-p1",
+                "p1",
+                super::ExpressionUnit::Millimeter,
+                "5",
+                Some(5.0),
+            ),
+            expression(
+                "angle-p1",
+                "p1",
+                super::ExpressionUnit::Degree,
+                "45",
+                Some(45.0),
+            ),
+            expression(
+                "length-p2",
+                "p2",
+                super::ExpressionUnit::Millimeter,
+                "p1 * 2",
+                None,
+            ),
+            expression(
+                "angle-p2",
+                "p2",
+                super::ExpressionUnit::Degree,
+                "p1 / 3",
+                None,
+            ),
+        ];
+
+        super::evaluate_expression_graphs(&mut expressions);
+
+        assert_eq!(expressions[0].value, Some(5.0));
+        assert_eq!(expressions[1].value, Some(45.0));
+        assert_eq!(expressions[2].value, Some(10.0));
+        assert_eq!(expressions[3].value, Some(15.0));
+    }
+
+    #[test]
     fn nx_formula_dependencies_resolve_to_section_parameters() {
         let expression = |key: u32,
                           name: &str,
@@ -3219,6 +3551,91 @@ mod tests {
     }
 
     #[test]
+    fn nx_formula_dependencies_bind_equal_names_within_declared_unit() {
+        let expression = |key: u32, name: &str, unit: super::ExpressionUnit, text: &str, value| {
+            super::Expression {
+                id: format!("nx:test:expression#{key}"),
+                object_id: Some(key),
+                record: None,
+                declaration: None,
+                name: name.into(),
+                parameter_index: Some(key),
+                qualifier: None,
+                unit,
+                expression: text.into(),
+                value,
+                source_entry: "/Root/UG_PART/UG_PART".into(),
+                source_table: "table".into(),
+                source_offset: u64::from(key),
+            }
+        };
+        let expressions = [
+            expression(10, "p1", super::ExpressionUnit::Millimeter, "5", Some(5.0)),
+            expression(11, "p1", super::ExpressionUnit::Degree, "45", Some(45.0)),
+            expression(
+                20,
+                "p2",
+                super::ExpressionUnit::Millimeter,
+                "p1 * 2",
+                Some(10.0),
+            ),
+            expression(
+                21,
+                "p2",
+                super::ExpressionUnit::Degree,
+                "p1 / 3",
+                Some(15.0),
+            ),
+        ];
+        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+
+        crate::native::attach::attach_expression_parameters(
+            &mut ir,
+            &expressions,
+            &[],
+            &[],
+            &mut annotations,
+        );
+
+        assert_eq!(
+            ir.model.parameters[2].dependencies,
+            [ir.model.parameters[0].id.clone()]
+        );
+        assert_eq!(
+            ir.model.parameters[3].dependencies,
+            [ir.model.parameters[1].id.clone()]
+        );
+        assert_eq!(
+            ir.model.parameters[0]
+                .properties
+                .get("unit")
+                .map(String::as_str),
+            Some("millimeter")
+        );
+        assert_eq!(
+            ir.model.parameters[1]
+                .properties
+                .get("unit")
+                .map(String::as_str),
+            Some("degree")
+        );
+        assert!(crate::decode::incomplete_expression_parameters(&ir).is_empty());
+
+        ir.model.parameters[0]
+            .properties
+            .insert("unit".into(), "native".into());
+        assert_eq!(
+            crate::decode::incomplete_expression_parameters(&ir),
+            [
+                ir.model.parameters[0].id.clone(),
+                ir.model.parameters[2].id.clone(),
+            ]
+            .into()
+        );
+    }
+
+    #[test]
     fn nx_formula_dependencies_resolve_within_the_expression_table() {
         let expression =
             |id: &str, table: &str, name: &str, text: &str, source_offset: u64| super::Expression {
@@ -3277,12 +3694,21 @@ mod tests {
             [ir.model.parameters[2].id.clone()]
         );
         assert_ne!(ir.model.parameters[1].owner, ir.model.parameters[3].owner);
-        for parameter in &mut ir.model.parameters {
+        for (parameter, value) in ir.model.parameters.iter_mut().zip([7.0, 14.0, 5.0, 10.0]) {
             parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-                cadmpeg_ir::features::Length(1.0),
+                cadmpeg_ir::features::Length(value),
             ));
         }
         assert!(crate::decode::incomplete_expression_parameters(&ir).is_empty());
+
+        let mut inconsistent = ir.clone();
+        inconsistent.model.parameters[1].value = Some(
+            cadmpeg_ir::features::ParameterValue::Length(cadmpeg_ir::features::Length(1.0)),
+        );
+        assert_eq!(
+            crate::decode::incomplete_expression_parameters(&inconsistent),
+            [inconsistent.model.parameters[1].id.clone()].into()
+        );
 
         let mut duplicate_name = ir.clone();
         duplicate_name.model.parameters[1].name = duplicate_name.model.parameters[0].name.clone();
@@ -3414,9 +3840,9 @@ mod tests {
         );
         assert!(ir.model.parameters[2].dependencies.is_empty());
         assert!(ir.model.parameters[3].dependencies.is_empty());
-        for parameter in &mut ir.model.parameters {
+        for (parameter, value) in ir.model.parameters.iter_mut().zip([7.0, 14.0, 1.0, 1.0]) {
             parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-                cadmpeg_ir::features::Length(1.0),
+                cadmpeg_ir::features::Length(value),
             ));
         }
         assert_eq!(
@@ -3578,12 +4004,8 @@ mod tests {
         let dependencies = crate::native::attach::parameter_owner_dependencies(
             &parameter_owners,
             &[
-                cadmpeg_ir::features::FeatureSourceContent::Parameter(
-                    cadmpeg_ir::features::ParameterId("nx:test:parameter#20".into()),
-                ),
-                cadmpeg_ir::features::FeatureSourceContent::Parameter(
-                    cadmpeg_ir::features::ParameterId("nx:test:parameter#20".into()),
-                ),
+                cadmpeg_ir::features::ParameterId("nx:test:parameter#20".into()),
+                cadmpeg_ir::features::ParameterId("nx:test:parameter#20".into()),
             ],
         );
 
@@ -3672,19 +4094,33 @@ mod tests {
     }
 
     #[test]
-    fn om_offset_store_index_values_end_at_unique_aligned_product_record() {
+    fn om_offset_store_values_precede_unique_product_anchor() {
         let mut bytes = vec![0, 0];
         bytes.extend_from_slice(&7u32.to_le_bytes());
         bytes.extend_from_slice(&0x1020u32.to_le_bytes());
         bytes.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0tail");
         assert_eq!(
-            crate::om::offset_store_index_values(&bytes),
-            Some((2, vec![7, 0x1020]))
+            crate::om::offset_store_control_form(&bytes),
+            Some(crate::om::OffsetStoreControlForm::ProductAnchored {
+                leading_value: Some((2, 0)),
+                values: vec![7, 0x1020],
+            })
+        );
+
+        let mut nonzero_leading = vec![0x34, 0x12, 0x00];
+        nonzero_leading.extend_from_slice(&7u32.to_le_bytes());
+        nonzero_leading.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0tail");
+        assert_eq!(
+            crate::om::offset_store_control_form(&nonzero_leading),
+            Some(crate::om::OffsetStoreControlForm::ProductAnchored {
+                leading_value: Some((3, 0x1234)),
+                values: vec![7],
+            })
         );
 
         let mut duplicate = bytes;
         duplicate.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
-        assert!(crate::om::offset_store_index_values(&duplicate).is_none());
+        assert!(crate::om::offset_store_control_form(&duplicate).is_none());
         assert_eq!(
             super::control_index_data_block(2, 700, 496).as_deref(),
             Some("nx:om-data-blocks-2:block#496")
@@ -3705,6 +4141,14 @@ mod tests {
         assert_eq!(blocks[0].role, super::DataBlockRole::Control);
         assert_eq!(blocks[1].role, super::DataBlockRole::Column);
         assert!(blocks[0].byte_len > 0);
+        let forms = super::data_block_control_forms(&container);
+        assert_eq!(forms.len(), 1);
+        assert_eq!(forms[0].data_block, blocks[0].id);
+        assert_eq!(forms[0].kind, super::DataBlockControlFormKind::ZeroPrefixed);
+        assert_eq!(forms[0].value_count, 2);
+        assert_eq!(forms[0].leading_value_width, None);
+        assert_eq!(forms[0].leading_value, None);
+        assert_eq!(forms[0].byte_len, blocks[0].byte_len);
         let control_values = super::data_block_control_values(&container);
         assert_eq!(control_values.len(), 2);
         assert_eq!(control_values[0].data_block, blocks[0].id);
@@ -3716,14 +4160,56 @@ mod tests {
         assert_eq!(classes[0].data_block, blocks[0].id);
         assert_eq!(classes[0].ordinal, 0);
         assert_eq!(classes[0].class_ordinal, 0);
-        assert_eq!(classes[0].class_name, "UGS::ModlFeature");
-        assert_eq!(classes[0].class_definition, "nx:om-entry-0:class#8");
+        assert_eq!(classes[0].class_name.as_deref(), Some("UGS::ModlFeature"));
+        assert_eq!(
+            classes[0].class_definition.as_deref(),
+            Some("nx:om-entry-0:class#8")
+        );
         assert!(super::string_values(&container).is_empty());
         assert!(super::object_references(&container).is_empty());
         let expressions = super::expressions(&container);
         assert_eq!(expressions.len(), 1);
         assert_eq!(expressions[0].object_id, None);
         assert_eq!(expressions[0].record, None);
+    }
+
+    #[test]
+    fn native_catalog_classifies_product_anchored_control_atomically() {
+        let file = prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            offset_only_indexed_om_section_with_index_values(),
+        )]);
+        let container = container::scan_bytes(file).expect("required invariant");
+
+        let forms = super::data_block_control_forms(&container);
+        assert_eq!(forms.len(), 1);
+        assert_eq!(
+            forms[0].kind,
+            super::DataBlockControlFormKind::ProductAnchored
+        );
+        assert_eq!(forms[0].value_count, 2);
+        assert_eq!(forms[0].leading_value_width, Some(2));
+        assert_eq!(forms[0].leading_value, Some(0));
+        assert!(super::data_block_control_values(&container).is_empty());
+        assert_eq!(super::data_block_control_index_values(&container).len(), 2);
+    }
+
+    #[test]
+    fn offset_store_class_identities_span_ordered_registries() {
+        let mut store =
+            offset_only_indexed_om_section_with_control(&[0, 1, 0, 0, 0, 10, 0, 0, 0, 5, 0, 0]);
+        store.extend_from_slice(&size_framed_om_section());
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", store)]);
+        let container = container::scan_bytes(file).expect("required invariant");
+
+        let classes = super::data_block_control_class_references(&container);
+        assert_eq!(classes.len(), 1);
+        assert_eq!(classes[0].class_ordinal, 1);
+        assert_eq!(
+            classes[0].class_name.as_deref(),
+            Some("UGS::FEATURE_RECORD")
+        );
+        assert!(classes[0].class_definition.is_some());
     }
 
     #[test]
@@ -3795,7 +4281,7 @@ mod tests {
                 .namespace("nx")
                 .expect("required invariant")
                 .version,
-            155
+            181
         );
         assert_eq!(expressions.len(), 1);
         assert_eq!(expressions[0].object_id, Some(0x102));
@@ -4403,6 +4889,39 @@ mod tests {
         assert_eq!(pairs[0].second_reference, "reference#1");
         assert_eq!(pairs[0].first_handle, 100);
         assert_eq!(pairs[0].second_handle, 101);
+    }
+
+    #[test]
+    fn nx_object_record_handle_pairs_do_not_cross_records_or_long_runs() {
+        let reference = |record: &str, ordinal: u32, offset: u64| super::ObjectReference {
+            id: format!("{record}:reference#{ordinal}"),
+            record: record.into(),
+            object_id: Some(7),
+            ordinal,
+            kind: super::ObjectReferenceKind::PersistentHandle,
+            value: ordinal + 100,
+            target_record: None,
+            source_entry: "om".into(),
+            source_offset: offset,
+        };
+        let references = [
+            reference("record#0", 0, 10),
+            reference("record#0", 1, 15),
+            reference("record#0", 2, 30),
+            reference("record#0", 3, 35),
+            reference("record#0", 4, 40),
+            reference("record#1", 5, 20),
+            reference("record#1", 6, 25),
+        ];
+
+        let pairs = super::object_record_handle_pairs(&references);
+        assert_eq!(pairs.len(), 2);
+        assert_eq!(pairs[0].record, "record#0");
+        assert_eq!(pairs[0].first_reference, "record#0:reference#0");
+        assert_eq!(pairs[0].second_reference, "record#0:reference#1");
+        assert_eq!(pairs[0].object_id, Some(7));
+        assert_eq!(pairs[1].record, "record#1");
+        assert_eq!(pairs[1].source_offset, 20);
     }
 
     #[test]

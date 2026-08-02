@@ -1,0 +1,41 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "2226",
+        "crc32": "c81cba4a",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compressed_size": 1496,
+      "compression": "deflate",
+      "name": "Document.xml",
+      "role": "document",
+      "uncompressed_size": 7408
+    },
+    {
+      "attributes": {
+        "central_header_offset": "2284",
+        "crc32": "228e4b89",
+        "data_offset": "1591",
+        "header_offset": "1538"
+      },
+      "compressed_size": 635,
+      "compression": "deflate",
+      "name": "BinaryCarrier.Shape.bin",
+      "role": "auxiliary",
+      "uncompressed_size": 2387
+    }
+  ],
+  "format": "fcstd",
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=part",
+    "object count=2",
+    "physical ledger spans=15 coverage=exact",
+    "ProgramVersion=1.1R20260414 (Git shallow)"
+  ]
+}

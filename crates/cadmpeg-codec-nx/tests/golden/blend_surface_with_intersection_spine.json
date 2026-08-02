@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "4",
+      "ir_version": "5",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -27,7 +27,6 @@
             "sense": "forward"
           }
         ],
-        "components": [],
         "configurations": [],
         "curves": [
           {
@@ -143,8 +142,7 @@
             "surface": "nx:s0:blend-surf#0"
           }
         ],
-        "product_occurrences": [],
-        "products": [],
+        "product_definitions": [],
         "regions": [
           {
             "body": "nx:s0:body#2",
@@ -286,15 +284,18 @@
               }
             ]
           },
-          "version": 155
+          "version": 181
         }
       },
       "source": {
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "383",
-          "footer_offset": "0",
+          "file_size": "400",
+          "footer_entry_count": "0",
+          "footer_fingerprint": "00000000",
+          "footer_offset": "386",
+          "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
           "partition_streams": "1",
@@ -316,26 +317,18 @@
       "geometry_transferred": true,
       "losses": [
         {
-          "category": "geometry",
           "code": "carrier_summary",
           "message": "Decoded 1 POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, metres → millimetres), 2 analytic surface carrier(s) (1 plane, 0 cylinder, 0 cone, 0 sphere, 0 torus), and 2 analytic curve carrier(s) (1 line, 0 circle, 0 ellipse). All parameters are byte-exact at the document's millimetre scale.",
           "severity": "info"
         },
         {
-          "category": "geometry",
           "code": "object_records_untransferred",
           "message": "1 surface-intersection record(s) without a complete validated CHART_s and term-endpoint witness remain opaque constructions. Support-UV values govern optional pcurve attachment and do not invalidate a witnessed 3D carrier. Each Parasolid stream is preserved verbatim as an unknown passthrough record so the unresolved source bytes remain available. Rejections: 1 missing chart, 0 missing start term, 0 missing end term, 0 endpoint mismatch.",
-          "severity": "warning"
-        },
-        {
-          "category": "attribute",
-          "code": "attributes_not_transferred",
-          "message": "Material and appearance assignment, class-specific entity attribute fields, and assembly occurrence placements were not transferred: their remaining NX object-model and Parasolid field serialization is not decoded.",
           "severity": "warning"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 386, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -412,7 +405,7 @@
         },
         "provenance": {
           "nx:container:parasolid#0": {
-            "offset": 72,
+            "offset": 76,
             "stream": 1,
             "tag": "partition"
           },
@@ -503,7 +496,7 @@
           "byte_len": 567,
           "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AAAMAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAMAAAAAAAEAAgABAAQAAQABAAwAAQAOAAQAAAAAAAA/Kjbi6xxDLQABAAEABQADAAwrAAAAAAAAAAAAAAAPAAUAAAAAAAAABwAEAAEAEQAHAAAABQAHAAcACgABAAgACQAAKwAQAAgAAAAAAAA/M6kqMFUyYQAHAAAAAAAJAAAAAAAAADIABgAAAAAAAAAAAAAAAAAAKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAkAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEgAKAAAAAAAAAAAAAAAAAAs/Gjbi6xxDLQAAABMADAAAAAAAAAAAAAAAAAAdAAsAAAAAAAAAAAAAAAA/hHrhR64Uez+UeuFHrhR7P564UeuFHrgAOAAMAAAAAAAAAAAAAAAAAAArUgAGAAYAEr9ok3S8an76P2iTdLxqfvo/8AAAAAAAAD/wAAAAAAAAAAEAAQABAAEAJgASAAAAAAABAAAAAAAAAAArAAYABgABAAEAAQAB",
           "id": "nx:container:parasolid#0",
-          "offset": 72,
+          "offset": 76,
           "sha256": "0b2991c703a41aa90fd17069bfe647210eabdc6050b83d777c8b247b4ccb306c",
           "stream": "nx:container"
         }
@@ -516,18 +509,18 @@
     "entries": [
       {
         "attributes": {
-          "file_offset": "72",
+          "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 311,
+        "compressed_size": 310,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
-        "role": "stream",
-        "uncompressed_size": 311
+        "role": "part-payload",
+        "uncompressed_size": 310
       },
       {
         "attributes": {
-          "file_offset": "72",
+          "file_offset": "76",
           "kind": "partition",
           "records.body": "2",
           "records.edge": "1",
@@ -556,7 +549,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 386, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]

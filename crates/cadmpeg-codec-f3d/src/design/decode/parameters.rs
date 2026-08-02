@@ -11,8 +11,8 @@ use crate::records::{
     ConstructionRecipe, DesignParameter, DesignParameterCompanion, DesignParameterKind,
     DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
 };
-use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::le::{f64_at, u32_at, u64_at as read_u64};
+use cadmpeg_codec_core::le::{f64_at, u32_at, u64_at as read_u64};
+use cadmpeg_codec_core::CodecError;
 use std::collections::HashMap;
 
 /// Decode every parametric construction-recipe record (`body_recipe_data`,
@@ -50,7 +50,9 @@ pub fn decode_parameters(scan: &ContainerScan) -> Result<Vec<DesignParameter>, C
             if let Some(mut parameter) = parse_design_parameter(&bytes[at..end]) {
                 parameter.id = ids::native_design_parameter_id(&entry.name, at);
                 parameter.byte_offset = at as u64;
-                parameter.prefix_value_offset += at as u64;
+                parameter.family_discriminator_offset = parameter
+                    .family_discriminator_offset
+                    .map(|offset| offset + at as u64);
                 parameter.expression_offset += at as u64;
                 parameter.source_kind_offset += at as u64;
                 parameter.unit_offset = parameter.unit_offset.map(|offset| offset + at as u64);
@@ -73,37 +75,67 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || after_tag != 7
         || payload.get(11..22) != Some(&[0; 11])
-        || payload.get(30) != Some(&0)
     {
         return None;
     }
     let record_index = u32_at(payload, 7)?;
-    let prefix_value = read_u64(payload, 22)?;
-    let source_ordinal = u32_at(payload, 31)?;
-    let (owner_record_index, expression_at, expression_trailer) = match payload.get(35)? {
-        0 => (None, 36, [0, 0, 0, 0, 0, 0, 0, 0, 1]),
-        1 if payload.get(40..46) == Some(&[0; 6]) => (Some(u32_at(payload, 36)?), 46, [0; 9]),
-        _ => return None,
-    };
+    let compact_owned = payload.get(11..26) == Some(&[0; 15])
+        && payload.get(30) == Some(&1)
+        && payload.get(35..41) == Some(&[0; 6]);
+    let discriminated = !compact_owned && payload.get(30) == Some(&0);
+    let (family_discriminator, source_ordinal, owner_record_index, expression_at, trailer_len) =
+        if discriminated {
+            let discriminator = read_u64(payload, 22)?;
+            let owner = match payload.get(35)? {
+                0 => (None, 36, 9),
+                1 if payload.get(40..46) == Some(&[0; 6]) => (Some(u32_at(payload, 36)?), 46, 9),
+                _ => return None,
+            };
+            (
+                Some(discriminator),
+                u32_at(payload, 31)?,
+                owner.0,
+                owner.1,
+                owner.2,
+            )
+        } else if compact_owned {
+            (
+                None,
+                u32_at(payload, 26)?,
+                Some(u32_at(payload, 31)?),
+                41,
+                5,
+            )
+        } else {
+            return None;
+        };
     let (expression, expression_end) = lp_utf16_bounded(payload, expression_at, 1..=256)?;
-    if payload.get(expression_end..expression_end + 9) != Some(&expression_trailer) {
+    let expression_trailer = payload.get(expression_end..expression_end + trailer_len)?;
+    let valid_expression_trailer = if discriminated && owner_record_index.is_none() {
+        expression_trailer == [0, 0, 0, 0, 0, 0, 0, 0, 1]
+    } else {
+        expression_trailer.iter().all(|byte| *byte == 0)
+    };
+    if !valid_expression_trailer {
         return None;
     }
-    let source_kind_at = if owner_record_index.is_some()
+    let source_kind_at = if discriminated
+        && owner_record_index.is_some()
         && payload.get(expression_end..expression_end + 10) == Some(&[0; 10])
         && lp_utf16_bounded(payload, expression_end + 10, 1..=256).is_some()
     {
         expression_end + 10
     } else {
-        expression_end + 9
+        expression_end + trailer_len
     };
     let (source_kind, source_kind_end) = lp_utf16_bounded(payload, source_kind_at, 1..=256)?;
-    if u32_at(payload, source_kind_end) != Some(0)
-        || !valid_design_parameter_prefix(prefix_value, &source_kind)
-    {
+    if family_discriminator.is_some_and(|value| !valid_design_parameter_discriminator(value)) {
         return None;
     }
-    let first_at = source_kind_end + 4;
+    let first_at = source_kind_end + usize::from(discriminated) * 4;
+    if discriminated && u32_at(payload, source_kind_end) != Some(0) {
+        return None;
+    }
     let (unit, unit_offset, name, name_at, name_end) = if u32_at(payload, first_at) == Some(0) {
         let name_at = first_at + 4;
         let (name, name_end) = lp_utf16_bounded(payload, name_at, 1..=256)?;
@@ -126,8 +158,8 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
     let tail = payload.get(name_end + 8..)?;
     if tail.len() != 12
         || tail[0..2] != [0, 1]
-        || tail[3..] != [0; 9]
-        || !valid_design_parameter_family(prefix_value, &source_kind, tail[2])
+        || tail[3..].iter().any(|byte| *byte != 0)
+        || !valid_design_parameter_family(family_discriminator, &source_kind, tail[2])
         || expression.is_empty()
         || source_kind.is_empty()
         || name.is_empty()
@@ -147,8 +179,8 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
         byte_offset: 0,
         class_tag,
         record_index,
-        prefix_value,
-        prefix_value_offset: 22,
+        family_discriminator,
+        family_discriminator_offset: family_discriminator.map(|_| 22),
         source_ordinal,
         owner_record_index,
         expression,
@@ -165,7 +197,7 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
     })
 }
 
-pub(crate) fn design_parameter_prefix(source_kind: &str) -> u64 {
+pub(crate) fn design_parameter_discriminator(source_kind: &str) -> u64 {
     if source_kind == "TangencyWeight" {
         6
     } else {
@@ -173,14 +205,16 @@ pub(crate) fn design_parameter_prefix(source_kind: &str) -> u64 {
     }
 }
 
-pub(crate) fn valid_design_parameter_prefix(prefix: u64, source_kind: &str) -> bool {
-    prefix == 6 || (prefix == 0 && source_kind != "TangencyWeight")
+pub(crate) fn valid_design_parameter_discriminator(value: u64) -> bool {
+    matches!(value, 0 | 3 | 4 | 6)
 }
 
-fn valid_design_parameter_family(prefix: u64, source_kind: &str, tail: u8) -> bool {
+fn valid_design_parameter_family(discriminator: Option<u64>, source_kind: &str, tail: u8) -> bool {
     match tail {
-        16 => prefix == 6,
-        19 => prefix == design_parameter_prefix(source_kind),
+        16 => discriminator == Some(6),
+        19 => discriminator.is_none_or(|value| {
+            matches!(value, 0 | 3 | 4) || (value == 6 && source_kind == "TangencyWeight")
+        }),
         _ => false,
     }
 }
@@ -219,11 +253,13 @@ pub fn decode_parameter_owners(
         let bytes = scan.entry_bytes(&entry.name)?;
         let at = usize::try_from(header.byte_offset).ok();
         let owner = at.and_then(|at| {
-            [104, 101].into_iter().find_map(|length| {
-                at.checked_add(length)
-                    .and_then(|end| bytes.get(at..end))
-                    .and_then(parse_parameter_owner)
-            })
+            [108, 107, 104, 103, 101, 99]
+                .into_iter()
+                .find_map(|length| {
+                    at.checked_add(length)
+                        .and_then(|end| bytes.get(at..end))
+                        .and_then(parse_parameter_owner)
+                })
         });
         let Some(mut owner) = owner else {
             continue;
@@ -246,7 +282,9 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
         || frame.get(19..24) != Some(&[1, 1, 0, 0, 0])
         || frame.get(24) != Some(&1)
         || frame.get(29..35) != Some(&[0; 6])
-        || frame.get(39) != Some(&0)
+        || (!matches!(frame.len(), 107 | 108) && frame.get(39) != Some(&0))
+        || (matches!(frame.len(), 107 | 108)
+            && (frame.get(39) != Some(&1) || frame.get(40..44) != Some(&[0; 4])))
     {
         return None;
     }
@@ -259,9 +297,7 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
         repeated_scope_marker,
         repeated_scope_index,
         repeated_scope_tail,
-        variant_marker,
-        variant,
-        variant_tail,
+        variant_fields,
         companion_marker,
         companion_index,
         companion_tail,
@@ -278,9 +314,7 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
             67,
             68,
             72..78,
-            78,
-            79,
-            80,
+            Some((78, 79, 80)),
             81,
             82,
             86..93,
@@ -297,9 +331,7 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
             64,
             65,
             69..75,
-            75,
-            76,
-            77,
+            Some((75, 76, 77)),
             78,
             79,
             83..90,
@@ -307,15 +339,86 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
             91,
             95..101,
         ),
+        103 => (
+            f64_at(frame, 40)?,
+            48,
+            49,
+            53..59,
+            59,
+            67,
+            68,
+            72..80,
+            None,
+            80,
+            81,
+            85..92,
+            92,
+            93,
+            97..103,
+        ),
+        99 => (
+            f64::from(u32_at(frame, 40)?),
+            44,
+            45,
+            49..55,
+            55,
+            63,
+            64,
+            68..76,
+            None,
+            76,
+            77,
+            81..88,
+            88,
+            89,
+            93..99,
+        ),
+        107 => (
+            f64_at(frame, 44)?,
+            52,
+            53,
+            57..63,
+            63,
+            71,
+            72,
+            76..84,
+            None,
+            84,
+            85,
+            89..96,
+            96,
+            97,
+            101..107,
+        ),
+        108 => (
+            f64_at(frame, 44)?,
+            52,
+            53,
+            57..63,
+            63,
+            71,
+            72,
+            76..82,
+            Some((82, 83, 84)),
+            85,
+            86,
+            90..97,
+            97,
+            98,
+            102..108,
+        ),
         _ => return None,
     };
     if frame.get(parameter_marker) != Some(&1)
         || frame.get(parameter_tail) != Some(&[0; 6])
         || frame.get(owned_ordinal + 4..repeated_scope_marker) != Some(&[0; 4])
         || frame.get(repeated_scope_marker) != Some(&1)
-        || frame.get(repeated_scope_tail) != Some(&[0; 6])
-        || frame.get(variant_marker) != Some(&1)
-        || frame.get(variant_tail) != Some(&0)
+        || frame
+            .get(repeated_scope_tail)
+            .is_none_or(|tail| tail.iter().any(|byte| *byte != 0))
+        || variant_fields.is_some_and(|(marker, _, tail)| {
+            frame.get(marker) != Some(&1) || frame.get(tail) != Some(&0)
+        })
         || frame.get(companion_marker) != Some(&1)
         || frame.get(companion_tail) != Some(&[0; 7])
         || frame.get(final_scope_marker) != Some(&1)
@@ -330,10 +433,12 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
         && companion_record_index == record_index.checked_add(2)?;
     let parameter_first = record_index == parameter_record_index.checked_add(1)?
         && companion_record_index == record_index.checked_add(1)?;
+    let companion_first = companion_record_index == record_index.checked_add(1)?
+        && parameter_record_index == record_index.checked_add(2)?;
     let scope_record_index = u32_at(frame, 25)?;
     if u32_at(frame, repeated_scope_index)? != scope_record_index
         || u32_at(frame, final_scope_index)? != scope_record_index
-        || !(owner_first || parameter_first)
+        || !(owner_first || parameter_first || companion_first)
         || !evaluated_value.is_finite()
     {
         return None;
@@ -346,10 +451,19 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
         scope_record_index,
         local_ordinal: u32_at(frame, 35)?,
         evaluated_value,
-        evaluated_value_offset: if frame.len() == 104 { 40 } else { 41 },
+        // The frame length already selected the field layout above, and any
+        // length outside that set returned there. The remaining lengths 99,
+        // 103, and 104 all read the evaluated value at 40; only the counted
+        // form at 101 and the tagged forms at 107 and 108 shift it. A new
+        // layout arm above must add its own offset here rather than inherit 40.
+        evaluated_value_offset: match frame.len() {
+            101 => 41,
+            107 | 108 => 44,
+            _ => 40,
+        },
         parameter_record_index,
         owned_ordinal: u32_at(frame, owned_ordinal)?,
-        variant: *frame.get(variant)?,
+        variant: variant_fields.and_then(|(_, value, _)| frame.get(value).copied()),
         companion_record_index,
     })
 }

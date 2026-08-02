@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use cadmpeg_ir::le::u32_at;
+use cadmpeg_codec_core::le::u32_at;
 
 /// One NX object-model entity with persistent object identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,6 +51,15 @@ pub struct StringValue<'a> {
     /// Absolute byte offset of the `66 32 03` marker.
     pub offset: usize,
     /// Printable value bytes.
+    pub value: &'a str,
+}
+
+/// One canonical UUID in the compact NX OM string frame `03 26, text, 00`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UuidStringValue<'a> {
+    /// Absolute byte offset of the `03 26` marker.
+    pub offset: usize,
+    /// Canonical lowercase UUID text.
     pub value: &'a str,
 }
 
@@ -791,6 +800,58 @@ pub struct OperationRecord<'a> {
     pub label: OperationLabel<'a>,
 }
 
+/// Exactly framed common record in one bounded operation payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationCommonFrame {
+    /// Three compact prefix indices.
+    pub indices: [u32; 3],
+    /// Exact compact-index tokens in order.
+    pub raw_indices: [Vec<u8>; 3],
+    /// Fixed marker selecting the index layout.
+    pub marker: [u8; 3],
+    /// Exact eight-byte state lane following the fixed state marker.
+    pub state: [u8; 8],
+    /// Absolute offset of the first compact index token.
+    pub offset: usize,
+    /// Absolute offsets of the compact prefix-index tokens.
+    pub index_offsets: [usize; 3],
+    /// Absolute offset of the first state byte.
+    pub state_offset: usize,
+    /// Duplicated frame-local ordinal.
+    pub local_ordinal: u32,
+    /// Exact canonical token repeated for the local ordinal.
+    pub raw_local_ordinal: Vec<u8>,
+    /// Nullable object reference following the duplicated ordinal.
+    pub object_index: Option<u32>,
+    /// Exact canonical nullable object-reference token.
+    pub raw_object_index: Vec<u8>,
+    /// Absolute offset of the first local-ordinal token.
+    pub local_ordinal_offset: usize,
+    /// Absolute offset of the object-reference token.
+    pub object_index_offset: usize,
+    /// Exclusive absolute end offset after the frame terminator.
+    pub end_offset: usize,
+}
+
+/// Canonical terminal common-frame suffix in one bounded operation payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationTerminalFrame {
+    /// Absolute offset of the exact common frame immediately preceding this suffix.
+    pub immediate_common_frame_offset: Option<usize>,
+    /// Duplicated frame-local ordinal.
+    pub local_ordinal: u32,
+    /// Exact canonical token repeated for the local ordinal.
+    pub raw_local_ordinal: Vec<u8>,
+    /// Nullable object reference following the duplicated ordinal.
+    pub object_index: Option<u32>,
+    /// Exact canonical nullable object-reference token.
+    pub raw_object_index: Vec<u8>,
+    /// Absolute offset of the first local-ordinal token.
+    pub offset: usize,
+    /// Absolute offset of the object-reference token.
+    pub object_index_offset: usize,
+}
+
 /// One length-framed UTF-8 string in a bounded operation payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationPayloadString<'a> {
@@ -834,13 +895,59 @@ pub struct PatternPayloadReferenceField {
     pub references: Vec<PayloadObjectReference>,
 }
 
-/// Scalar width selected by a counted pattern-transform lane.
+/// Exact two-group reference graph in an `FSET` payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FsetPayloadReferenceGraph {
+    /// Printable selector preceding the reference groups.
+    pub selector: String,
+    /// Two references before the group separator.
+    pub first: [PayloadObjectReference; 2],
+    /// Three references after the group separator.
+    pub second: [PayloadObjectReference; 3],
+    /// Absolute offset of the graph prefix.
+    pub offset: usize,
+}
+
+/// One nullable object-index slot in a counted `DELETE` payload field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeletePayloadReferenceSlot {
+    /// Decoded object index, or `None` for the exact `ff` null token.
+    pub object_index: Option<u32>,
+    /// Exact serialized object-index token.
+    pub raw_object_index: Vec<u8>,
+    /// Absolute offset of the token.
+    pub offset: usize,
+}
+
+/// Exact five-slot nullable reference field in a `DELETE` payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeletePayloadReferenceField {
+    /// Leading operation-local control byte.
+    pub control: u8,
+    /// Five slots in serialized order.
+    pub references: [DeletePayloadReferenceSlot; 5],
+    /// Absolute offset of the leading control byte.
+    pub offset: usize,
+}
+
+/// Scalar width selected by one pattern-transform row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PatternTransformEncoding {
-    /// Four-byte shifted IEEE-754 binary32 rows.
+    /// Single-byte exact one used by a wide row terminal value.
+    ExactOne,
+    /// Four-byte shifted IEEE-754 binary32 atom.
     Binary32,
-    /// Eight-byte shifted IEEE-754 binary64 rows.
+    /// Eight-byte shifted IEEE-754 binary64 atom.
     Binary64,
+}
+
+/// Byte layout selected by a counted pattern-transform lane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PatternTransformLayout {
+    /// One shifted scalar per row and terminal mode `01`.
+    ScalarRows,
+    /// Four shifted binary64 values and one terminal value per row, with terminal mode `02`.
+    WideRows,
 }
 
 /// One exact counted transform lane in a pattern operation payload.
@@ -848,16 +955,64 @@ pub enum PatternTransformEncoding {
 pub struct PatternPayloadTransformLane {
     /// Absolute offset of the opening `01, count` field.
     pub offset: usize,
+    /// Schema index framing every row in the lane.
+    pub row_schema_index: u8,
+    /// Row byte layout selected by the terminal mode.
+    pub layout: PatternTransformLayout,
     /// Count including the implicit seed row.
     pub declared_count: u8,
-    /// Homogeneous scalar encoding selected by the operation family.
-    pub encoding: PatternTransformEncoding,
-    /// Ordered finite row scalars.
+    /// Scalar encodings in row-major order.
+    pub encodings: Vec<PatternTransformEncoding>,
+    /// Finite scalars in row-major order.
     pub values: Vec<f64>,
     /// Absolute offsets of the scalar encodings.
     pub value_offsets: Vec<usize>,
     /// Exact scalar bytes in row order.
     pub raw_values: Vec<Vec<u8>>,
+    /// Ordered non-null compact selectors.
+    pub selectors: Vec<u32>,
+    /// Exact compact-index selector tokens in row order.
+    pub raw_selectors: Vec<Vec<u8>>,
+    /// Absolute offsets of the compact-index selector tokens.
+    pub selector_offsets: Vec<usize>,
+}
+
+/// Exact counted instance-output lane in a multi-instance operation payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MultiInstanceOutputPayloadLane {
+    /// Absolute offset of the opening `25 01, count` field.
+    pub offset: usize,
+    /// Count including the implicit seed row.
+    pub declared_count: u8,
+    /// Ordered non-null compact selectors.
+    pub selectors: Vec<u32>,
+    /// Exact compact-index selector tokens in row order.
+    pub raw_selectors: Vec<Vec<u8>>,
+    /// Absolute offsets of the compact-index selector tokens.
+    pub selector_offsets: Vec<usize>,
+    /// Ordered serialized instance ordinals.
+    pub ordinals: Vec<u8>,
+    /// Ordered serialized row indices.
+    pub row_indices: Vec<u8>,
+    /// Count including the implicit seed instance.
+    pub instance_count: u8,
+    /// Ordered non-null trailing object references.
+    pub trailing_references: Vec<PayloadObjectReference>,
+}
+
+/// Exact counted selector lane in an identical-instance output payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdenticalInstanceOutputPayloadLane {
+    /// Absolute offset of the leading schema index.
+    pub offset: usize,
+    /// Schema index preceding the count field.
+    pub leading_schema_index: u8,
+    /// Schema index framing the serialized count.
+    pub count_schema_index: u8,
+    /// Three consecutive schema indices framing every selector row.
+    pub row_schema_indices: [u8; 3],
+    /// Count including the implicit owner row.
+    pub declared_count: u8,
     /// Ordered non-null compact selectors.
     pub selectors: Vec<u32>,
     /// Exact compact-index selector tokens in row order.
@@ -1076,6 +1231,27 @@ pub struct SketchPayloadFixedPair {
     pub value_offsets: [usize; 2],
     /// Exact seven-byte two's-complement payloads.
     pub raw_values: [[u8; 7]; 2],
+    /// Exact discriminator and branch prefix selecting the pair layout.
+    pub discriminator: Vec<u8>,
+}
+
+/// Exact mixed Q1.55 and shifted-binary32 pair in a sketch payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SketchPayloadMixedPair {
+    /// Payload-relative offset of the discriminator.
+    pub offset: usize,
+    /// Dimensionless signed Q1.55 value.
+    pub fixed_value: f64,
+    /// Finite shifted-IEEE binary32 value widened exactly to binary64.
+    pub binary32_value: f64,
+    /// Exact seven-byte two's-complement Q1.55 payload.
+    pub fixed_raw_value: [u8; 7],
+    /// Exact four-byte shifted-binary32 encoding.
+    pub binary32_raw_value: [u8; 4],
+    /// Payload-relative offsets of the two atom markers.
+    pub value_offsets: [usize; 2],
+    /// Exact discriminator selecting the mixed pair layout.
+    pub discriminator: Vec<u8>,
 }
 
 /// Exact pair of signed Q1.55 atoms following a datum-CSYS branch discriminator.
@@ -1194,9 +1370,9 @@ pub struct ExtrudePayloadHeader {
     pub raw_scalars: [[u8; 8]; 2],
 }
 
-/// Exact terminal discriminator lane in a bounded extrusion payload.
+/// Exact terminal discriminator lane at the end of a bounded operation payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExtrudePayloadFooter {
+pub struct OperationTerminalDiscriminator {
     /// Payload-relative offset of the fixed footer prelude.
     pub offset: usize,
     /// Two compact type indices following `01 01 02`.
@@ -1205,8 +1381,6 @@ pub struct ExtrudePayloadFooter {
     pub raw_type_indices: [Vec<u8>; 2],
     /// Absolute offsets of the two type-index tokens.
     pub type_index_offsets: [usize; 2],
-    /// Two values in the exact `01 03` counted lane.
-    pub mode_indices: [u32; 2],
     /// Four serialized one-byte flags.
     pub flags: [u8; 4],
     /// Compact values between `29 29` and the terminal zero.
@@ -1237,6 +1411,19 @@ pub struct SimpleHoleRepeatedScalarLaneBlockReferences {
     pub second: [u32; 2],
     /// Absolute offsets of the four tagged-index tokens.
     pub offsets: [[usize; 2]; 2],
+}
+
+/// Four construction-block references carried by a `HOLE PACKAGE` payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HolePackageConstructionGroupLane {
+    /// Payload-relative offset of the fixed lane prefix.
+    pub offset: usize,
+    /// Compact selector preceding the repeated branch byte.
+    pub selector: u8,
+    /// Branch byte repeated between the two reference pairs.
+    pub branch: u8,
+    /// Ordered first and second construction-block pairs.
+    pub references: [PayloadObjectReference; 4],
 }
 
 /// Width form of one self-delimiting operation-payload scalar.
@@ -1832,6 +2019,74 @@ pub fn simple_hole_repeated_scalar_lane_block_references(
     })
 }
 
+/// Decode the unique four-block construction-group lane in a `HOLE PACKAGE` payload.
+pub fn hole_package_construction_group_lane(
+    record: OperationRecord<'_>,
+) -> Option<HolePackageConstructionGroupLane> {
+    const PREFIX: [u8; 5] = [0x00, 0x00, 0x01, 0x00, 0x00];
+    const ZEROES: [u8; 4] = [0; 4];
+    const SUFFIX: [u8; 3] = [0x00, 0x00, 0xff];
+    if record.label.value != "HOLE PACKAGE" {
+        return None;
+    }
+    let mut matches = Vec::new();
+    for start in 0..record.payload.len().saturating_sub(PREFIX.len()) {
+        if record.payload.get(start..start + PREFIX.len()) != Some(&PREFIX) {
+            continue;
+        }
+        let Some(lane) = (|| {
+            let selector = *record.payload.get(start + 5)?;
+            let branch = *record.payload.get(start + 7)?;
+            if selector == 0
+                || branch == 0
+                || record.payload.get(start + 6) != Some(&0)
+                || record.payload.get(start + 8..start + 12) != Some(&ZEROES)
+            {
+                return None;
+            }
+            let mut at = start + 12;
+            let mut references = Vec::with_capacity(4);
+            for ordinal in 0..4 {
+                if ordinal == 2 {
+                    if record.payload.get(at) != Some(&branch)
+                        || record.payload.get(at + 1..at + 5) != Some(&ZEROES)
+                    {
+                        return None;
+                    }
+                    at += 5;
+                }
+                let reference_offset = at;
+                let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+                if !matches!(record.payload.get(at), Some(0xf0 | 0xf1)) {
+                    return None;
+                }
+                references.push(PayloadObjectReference {
+                    offset: record.payload_offset + reference_offset,
+                    object_index,
+                    raw_object_index: record.payload.get(at..at + width)?.to_vec(),
+                });
+                at += width;
+            }
+            if record.payload.get(at..at + SUFFIX.len()) != Some(&SUFFIX) {
+                return None;
+            }
+            Some(HolePackageConstructionGroupLane {
+                offset: start,
+                selector,
+                branch,
+                references: references.try_into().ok()?,
+            })
+        })() else {
+            continue;
+        };
+        matches.push(lane);
+    }
+    let [lane] = matches.as_slice() else {
+        return None;
+    };
+    Some(lane.clone())
+}
+
 /// Decode the unique counted reference field in a bounded `SKETCH` payload.
 pub fn sketch_payload_references(
     record: OperationRecord<'_>,
@@ -2093,32 +2348,134 @@ pub fn pattern_payload_references(
     Some(field.clone())
 }
 
+/// Decode the unique exactly bounded two-group reference graph in an `FSET`
+/// payload without assigning selection roles to either group.
+pub fn fset_payload_reference_graph(
+    record: OperationRecord<'_>,
+) -> Option<FsetPayloadReferenceGraph> {
+    const SUFFIX: [u8; 3] = [0x00, 0x03, 0x00];
+    if record.label.value != "FSET" {
+        return None;
+    }
+    let decode_reference = |at: &mut usize| {
+        let offset = *at;
+        (record.payload.get(offset) == Some(&0x90)).then_some(())?;
+        let object_index = u32::from(u16::from_be_bytes([
+            *record.payload.get(offset + 1)?,
+            *record.payload.get(offset + 2)?,
+        ]));
+        let width = 3;
+        *at += width;
+        Some(PayloadObjectReference {
+            offset: record.payload_offset + offset,
+            object_index,
+            raw_object_index: record.payload[offset..offset + width].to_vec(),
+        })
+    };
+    let decode = |start: usize| {
+        (record.payload.get(start) == Some(&0x01)).then_some(())?;
+        let declared_len = usize::from(*record.payload.get(start + 1)?);
+        let body_start = start.checked_add(2)?;
+        let body_end = body_start.checked_add(declared_len)?;
+        (declared_len >= 9
+            && record.payload.get(body_start) == Some(&0x3c)
+            && record.payload.get(body_end.checked_sub(1)?) == Some(&0x3e))
+        .then_some(())?;
+        let first = (body_start + 2..body_end - 1)
+            .filter_map(|selector_end| {
+                let selector = record.payload.get(body_start + 1..selector_end)?;
+                (!selector.is_empty()
+                    && selector
+                        .iter()
+                        .all(|byte| byte.is_ascii_graphic() && *byte != 0x3e))
+                .then_some(())?;
+                let mut at = selector_end;
+                let first = [decode_reference(&mut at)?, decode_reference(&mut at)?];
+                (at == body_end - 1)
+                    .then_some((std::str::from_utf8(selector).ok()?.to_string(), first))
+            })
+            .collect::<Vec<_>>();
+        let [(selector, first)] = first.as_slice() else {
+            return None;
+        };
+        let mut at = body_end;
+        let second = [
+            decode_reference(&mut at)?,
+            decode_reference(&mut at)?,
+            decode_reference(&mut at)?,
+        ];
+        (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
+        Some(FsetPayloadReferenceGraph {
+            selector: selector.clone(),
+            first: first.clone(),
+            second,
+            offset: record.payload_offset + start,
+        })
+    };
+    let matches = (0..record.payload.len().saturating_sub(1))
+        .filter_map(decode)
+        .collect::<Vec<_>>();
+    let [graph] = matches.as_slice() else {
+        return None;
+    };
+    Some(graph.clone())
+}
+
+/// Decode the exactly counted nullable construction-reference field at the
+/// start of a bounded `DELETE` payload.
+pub fn delete_payload_references(
+    record: OperationRecord<'_>,
+) -> Option<DeletePayloadReferenceField> {
+    const PREFIX: [u8; 6] = [0x00, 0x00, 0x01, 0x00, 0x01, 0x06];
+    if record.label.value != "DELETE" || record.payload.get(1..1 + PREFIX.len()) != Some(&PREFIX) {
+        return None;
+    }
+    let control = *record.payload.first()?;
+    let mut at = 1 + PREFIX.len();
+    let mut references = Vec::with_capacity(5);
+    for _ in 0..5 {
+        let offset = at;
+        let (object_index, width) = if record.payload.get(at) == Some(&0xff) {
+            (None, 1)
+        } else {
+            let (object_index, width) = payload_object_index(&record.payload[at..])?;
+            (Some(object_index), width)
+        };
+        at += width;
+        references.push(DeletePayloadReferenceSlot {
+            object_index,
+            raw_object_index: record.payload[offset..at].to_vec(),
+            offset: record.payload_offset + offset,
+        });
+    }
+    let references = references.try_into().ok()?;
+    (record.payload.get(at) == Some(&0x00)).then_some(DeletePayloadReferenceField {
+        control,
+        references,
+        offset: record.payload_offset,
+    })
+}
+
 /// Decode the unique exactly counted transform lane in a bounded pattern payload.
 pub fn pattern_payload_transform_lane(
     record: OperationRecord<'_>,
 ) -> Option<PatternPayloadTransformLane> {
-    const FEATURE_PREFIX: [u8; 4] = [0x60, 0x01, 0x00, 0x00];
+    const FEATURE_PREFIX_TAIL: [u8; 3] = [0x01, 0x00, 0x00];
     const FEATURE_SCALAR_SUFFIX: [u8; 14] = [
         0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03,
     ];
-    const GEOMETRY_PREFIX: [u8; 8] = [0x60, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00];
+    const GEOMETRY_PREFIX_TAIL: [u8; 7] = [0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00];
     const GEOMETRY_SCALAR_SUFFIX: [u8; 10] =
         [0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03];
     const ROW_TAIL: [u8; 5] = [0x00, 0x00, 0xff, 0x00, 0x00];
-    const TERMINATOR: [u8; 4] = [0x5f, 0x00, 0x00, 0x01];
-
-    let (prefix, scalar_suffix, encoding, scalar_width) = match record.label.value {
+    let (prefix_tail, scalar_suffix) = match record.label.value {
         "Pattern Feature" => (
-            FEATURE_PREFIX.as_slice(),
+            FEATURE_PREFIX_TAIL.as_slice(),
             FEATURE_SCALAR_SUFFIX.as_slice(),
-            PatternTransformEncoding::Binary32,
-            4usize,
         ),
         "Pattern Geometry" => (
-            GEOMETRY_PREFIX.as_slice(),
+            GEOMETRY_PREFIX_TAIL.as_slice(),
             GEOMETRY_SCALAR_SUFFIX.as_slice(),
-            PatternTransformEncoding::Binary64,
-            8usize,
         ),
         _ => return None,
     };
@@ -2128,6 +2485,8 @@ pub fn pattern_payload_transform_lane(
         (declared_count >= 2).then_some(())?;
         let row_count = usize::from(declared_count - 1);
         let mut at = start + 2;
+        let row_schema_index = *record.payload.get(at)?;
+        let mut encodings = Vec::with_capacity(row_count);
         let mut values = Vec::with_capacity(row_count);
         let mut value_offsets = Vec::with_capacity(row_count);
         let mut raw_values = Vec::with_capacity(row_count);
@@ -2135,21 +2494,20 @@ pub fn pattern_payload_transform_lane(
         let mut raw_selectors = Vec::with_capacity(row_count);
         let mut selector_offsets = Vec::with_capacity(row_count);
         for ordinal in 1..declared_count {
-            (record.payload.get(at..at + prefix.len()) == Some(prefix)).then_some(())?;
-            at += prefix.len();
-            let raw = record.payload.get(at..at + scalar_width)?;
-            let (value, actual_encoding, width) = payload_scalar(raw)?;
-            (actual_encoding
-                == match encoding {
-                    PatternTransformEncoding::Binary32 => PayloadScalarEncoding::Binary32,
-                    PatternTransformEncoding::Binary64 => PayloadScalarEncoding::Binary64,
-                }
-                && width == scalar_width)
+            (record.payload.get(at) == Some(&row_schema_index)).then_some(())?;
+            (record.payload.get(at + 1..at + 1 + prefix_tail.len()) == Some(prefix_tail))
                 .then_some(())?;
+            at += 1 + prefix_tail.len();
+            let (value, actual_encoding, width) = payload_scalar(record.payload.get(at..)?)?;
+            encodings.push(match actual_encoding {
+                PayloadScalarEncoding::Zero => return None,
+                PayloadScalarEncoding::Binary32 => PatternTransformEncoding::Binary32,
+                PayloadScalarEncoding::Binary64 => PatternTransformEncoding::Binary64,
+            });
             values.push(value);
             value_offsets.push(record.payload_offset + at);
-            raw_values.push(raw.to_vec());
-            at += scalar_width;
+            raw_values.push(record.payload.get(at..at + width)?.to_vec());
+            at += width;
             (record.payload.get(at..at + scalar_suffix.len()) == Some(scalar_suffix))
                 .then_some(())?;
             at += scalar_suffix.len();
@@ -2168,11 +2526,16 @@ pub fn pattern_payload_transform_lane(
                 .then_some(())?;
             at += 2 + ROW_TAIL.len();
         }
-        (record.payload.get(at..at + TERMINATOR.len()) == Some(&TERMINATOR)).then_some(())?;
+        let terminal_schema_index = row_schema_index.checked_sub(1)?;
+        (record.payload.get(at) == Some(&terminal_schema_index)).then_some(())?;
+        (record.payload.get(at + 1..at + 3) == Some(&[0x00, 0x00])).then_some(())?;
+        (record.payload.get(at + 3) == Some(&0x01)).then_some(())?;
         Some(PatternPayloadTransformLane {
             offset: record.payload_offset + start,
+            row_schema_index,
+            layout: PatternTransformLayout::ScalarRows,
             declared_count,
-            encoding,
+            encodings,
             values,
             value_offsets,
             raw_values,
@@ -2181,7 +2544,258 @@ pub fn pattern_payload_transform_lane(
             selector_offsets,
         })
     };
-    let matches = (0..record.payload.len().saturating_sub(1))
+    let decode_wide = |start: usize| {
+        (record.label.value == "Pattern Feature").then_some(())?;
+        (record.payload.get(start) == Some(&0x01)).then_some(())?;
+        let declared_count = *record.payload.get(start + 1)?;
+        (declared_count >= 2).then_some(())?;
+        let row_count = usize::from(declared_count - 1);
+        let mut at = start + 2;
+        let row_schema_index = *record.payload.get(at)?;
+        let mut encodings = Vec::with_capacity(row_count * 5);
+        let mut values = Vec::with_capacity(row_count * 5);
+        let mut value_offsets = Vec::with_capacity(row_count * 5);
+        let mut raw_values = Vec::with_capacity(row_count * 5);
+        let mut selectors = Vec::with_capacity(row_count);
+        let mut raw_selectors = Vec::with_capacity(row_count);
+        let mut selector_offsets = Vec::with_capacity(row_count);
+        for ordinal in 1..declared_count {
+            (record.payload.get(at) == Some(&row_schema_index)).then_some(())?;
+            at += 1;
+            for value_ordinal in 0..4 {
+                let value_offset = at;
+                let (value, encoding, width) = payload_scalar(record.payload.get(at..)?)?;
+                (encoding == PayloadScalarEncoding::Binary64 && width == 8).then_some(())?;
+                values.push(value);
+                encodings.push(PatternTransformEncoding::Binary64);
+                value_offsets.push(record.payload_offset + value_offset);
+                raw_values.push(record.payload.get(at..at + width)?.to_vec());
+                at += width;
+                if value_ordinal == 1 {
+                    (record.payload.get(at..at + 2) == Some(&[0x00, 0x00])).then_some(())?;
+                    at += 2;
+                }
+            }
+            (record.payload.get(at..at + 4) == Some(&[0x00; 4])).then_some(())?;
+            at += 4;
+            let terminal_value_offset = at;
+            let (terminal_value, encoding, width) = if record.payload.get(at) == Some(&0x01) {
+                (1.0, PatternTransformEncoding::ExactOne, 1)
+            } else {
+                let (value, encoding, width) = payload_scalar(record.payload.get(at..)?)?;
+                let encoding = match encoding {
+                    PayloadScalarEncoding::Binary32 => PatternTransformEncoding::Binary32,
+                    _ => return None,
+                };
+                (value, encoding, width)
+            };
+            values.push(terminal_value);
+            encodings.push(encoding);
+            value_offsets.push(record.payload_offset + terminal_value_offset);
+            raw_values.push(record.payload.get(at..at + width)?.to_vec());
+            at += width;
+            (record.payload.get(at..at + 7) == Some(&[0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03]))
+                .then_some(())?;
+            at += 7;
+            let selector_offset = at;
+            let (selector, width) = compact_index(record.payload.get(at..)?)?;
+            let CompactIndex::Value(selector) = selector else {
+                return None;
+            };
+            selectors.push(selector);
+            raw_selectors.push(record.payload.get(at..at + width)?.to_vec());
+            selector_offsets.push(record.payload_offset + selector_offset);
+            at += width;
+            (record.payload.get(at) == Some(&0x01)).then_some(())?;
+            (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
+            (record.payload.get(at + 2..at + 2 + ROW_TAIL.len()) == Some(&ROW_TAIL))
+                .then_some(())?;
+            at += 2 + ROW_TAIL.len();
+        }
+        let terminal_schema_index = row_schema_index.checked_sub(1)?;
+        (record.payload.get(at) == Some(&terminal_schema_index)).then_some(())?;
+        (record.payload.get(at + 1..at + 4) == Some(&[0x00, 0x00, 0x02])).then_some(())?;
+        Some(PatternPayloadTransformLane {
+            offset: record.payload_offset + start,
+            row_schema_index,
+            layout: PatternTransformLayout::WideRows,
+            declared_count,
+            encodings,
+            values,
+            value_offsets,
+            raw_values,
+            selectors,
+            raw_selectors,
+            selector_offsets,
+        })
+    };
+    let mut matches = (0..record.payload.len().saturating_sub(1))
+        .filter_map(decode)
+        .collect::<Vec<_>>();
+    matches.extend((0..record.payload.len().saturating_sub(1)).filter_map(decode_wide));
+    let [lane] = matches.as_slice() else {
+        return None;
+    };
+    Some(lane.clone())
+}
+
+/// Decode the unique exactly counted instance-output lane in a bounded payload.
+pub fn multi_instance_output_payload_lane(
+    record: OperationRecord<'_>,
+) -> Option<MultiInstanceOutputPayloadLane> {
+    const ENVELOPE: [u8; 10] = [0x3a, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x25, 0x01];
+    const ROW_PREFIX: [u8; 7] = [0x26, 0x27, 0x01, 0x02, 0x65, 0x01, 0x02];
+    const ROW_ORDINAL_MARKER: u8 = 0x28;
+    const REFERENCE_PREFIX: [u8; 2] = [0x00, 0x3b];
+
+    if record.label.value != "Multi Instance Output" {
+        return None;
+    }
+    let decode = |start: usize| {
+        (record.payload.get(start..start + ENVELOPE.len()) == Some(&ENVELOPE)).then_some(())?;
+        let declared_count = *record.payload.get(start + ENVELOPE.len())?;
+        (declared_count >= 2).then_some(())?;
+        let row_count = usize::from(declared_count - 1);
+        let mut at = start + ENVELOPE.len() + 1;
+        let mut selectors = Vec::with_capacity(row_count);
+        let mut raw_selectors = Vec::with_capacity(row_count);
+        let mut selector_offsets = Vec::with_capacity(row_count);
+        let mut ordinals = Vec::with_capacity(row_count);
+        let mut row_indices = Vec::with_capacity(row_count);
+        for expected_row_index in 2..=declared_count {
+            (record.payload.get(at..at + ROW_PREFIX.len()) == Some(&ROW_PREFIX)).then_some(())?;
+            at += ROW_PREFIX.len();
+            let selector_offset = at;
+            let (selector, width) = compact_index(record.payload.get(at..)?)?;
+            let CompactIndex::Value(selector) = selector else {
+                return None;
+            };
+            selectors.push(selector);
+            raw_selectors.push(record.payload[at..at + width].to_vec());
+            selector_offsets.push(record.payload_offset + selector_offset);
+            at += width;
+            (record.payload.get(at) == Some(&ROW_ORDINAL_MARKER)).then_some(())?;
+            let ordinal = *record.payload.get(at + 1)?;
+            (ordinal >= 2).then_some(())?;
+            ordinals.push(ordinal);
+            (record.payload.get(at + 2) == Some(&expected_row_index)).then_some(())?;
+            row_indices.push(expected_row_index);
+            at += 3;
+        }
+        let instance_count = *ordinals.iter().max()?;
+        let expected_ordinals = (2..=instance_count).collect::<Vec<_>>();
+        let mut distinct_selectors = Vec::new();
+        for selector in &selectors {
+            if !distinct_selectors.contains(selector) {
+                distinct_selectors.push(*selector);
+            }
+        }
+        for selector in distinct_selectors {
+            let actual = selectors
+                .iter()
+                .zip(&ordinals)
+                .filter_map(|(candidate, ordinal)| (*candidate == selector).then_some(*ordinal))
+                .collect::<Vec<_>>();
+            (actual == expected_ordinals).then_some(())?;
+        }
+        (record.payload.get(at..at + REFERENCE_PREFIX.len()) == Some(&REFERENCE_PREFIX))
+            .then_some(())?;
+        at += REFERENCE_PREFIX.len();
+        let mut trailing_references =
+            Vec::with_capacity(usize::from(instance_count.saturating_sub(1)));
+        for _ in 1..instance_count {
+            let reference_offset = at;
+            let (Some(object_index), end) = feature_object_index(record.payload, at)? else {
+                return None;
+            };
+            trailing_references.push(PayloadObjectReference {
+                offset: record.payload_offset + reference_offset,
+                object_index,
+                raw_object_index: record.payload[reference_offset..end].to_vec(),
+            });
+            at = end;
+        }
+        (record.payload.get(at..at + 2) == Some(&[0x01, instance_count])).then_some(())?;
+        Some(MultiInstanceOutputPayloadLane {
+            offset: record.payload_offset + start + 8,
+            declared_count,
+            selectors,
+            raw_selectors,
+            selector_offsets,
+            ordinals,
+            row_indices,
+            instance_count,
+            trailing_references,
+        })
+    };
+    let matches = (0..=record.payload.len().saturating_sub(ENVELOPE.len()))
+        .filter_map(decode)
+        .collect::<Vec<_>>();
+    let [lane] = matches.as_slice() else {
+        return None;
+    };
+    Some(lane.clone())
+}
+
+/// Decode the unique exactly counted selector lane in an
+/// `IDENTICAL INSTANCE OUTPUT` payload.
+pub fn identical_instance_output_payload_lane(
+    record: OperationRecord<'_>,
+) -> Option<IdenticalInstanceOutputPayloadLane> {
+    const ROW_MIDDLE: [u8; 2] = [0x01, 0x02];
+    const SENTINEL: [u8; 7] = [0xe0, 0x7f, 0xff, 0xff, 0xff, 0x00, 0x00];
+
+    if record.label.value != "IDENTICAL INSTANCE OUTPUT" {
+        return None;
+    }
+    let decode = |start: usize| {
+        let leading_schema_index = *record.payload.get(start)?;
+        let count_schema_index = *record.payload.get(start + 1)?;
+        (record.payload.get(start + 2) == Some(&0x01)).then_some(())?;
+        let declared_count = *record.payload.get(start + 3)?;
+        (declared_count >= 2).then_some(())?;
+        let first_schema_index = count_schema_index.checked_add(1)?;
+        let second_schema_index = count_schema_index.checked_add(2)?;
+        let third_schema_index = count_schema_index.checked_add(3)?;
+        let mut at = start + 4;
+        let mut selectors = Vec::with_capacity(usize::from(declared_count - 1));
+        let mut raw_selectors = Vec::with_capacity(usize::from(declared_count - 1));
+        let mut selector_offsets = Vec::with_capacity(usize::from(declared_count - 1));
+        for ordinal in 2..=declared_count {
+            (record.payload.get(at) == Some(&first_schema_index)).then_some(())?;
+            (record.payload.get(at + 1) == Some(&second_schema_index)).then_some(())?;
+            (record.payload.get(at + 2..at + 4) == Some(&ROW_MIDDLE)).then_some(())?;
+            (record.payload.get(at + 4) == Some(&third_schema_index)).then_some(())?;
+            at += 5;
+            let selector_offset = at;
+            let (selector, width) = compact_index(record.payload.get(at..)?)?;
+            let CompactIndex::Value(selector) = selector else {
+                return None;
+            };
+            selectors.push(selector);
+            raw_selectors.push(record.payload[at..at + width].to_vec());
+            selector_offsets.push(record.payload_offset + selector_offset);
+            at += width;
+            (record.payload.get(at) == Some(&0x00)).then_some(())?;
+            (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
+            at += 2;
+        }
+        let terminal_count = declared_count.checked_add(1)?;
+        (record.payload.get(at) == Some(&0x00)).then_some(())?;
+        (record.payload.get(at + 1) == Some(&terminal_count)).then_some(())?;
+        (record.payload.get(at + 2..at + 2 + SENTINEL.len()) == Some(&SENTINEL)).then_some(())?;
+        Some(IdenticalInstanceOutputPayloadLane {
+            offset: record.payload_offset + start,
+            leading_schema_index,
+            count_schema_index,
+            row_schema_indices: [first_schema_index, second_schema_index, third_schema_index],
+            declared_count,
+            selectors,
+            raw_selectors,
+            selector_offsets,
+        })
+    };
+    let matches = (0..record.payload.len().saturating_sub(3))
         .filter_map(decode)
         .collect::<Vec<_>>();
     let [lane] = matches.as_slice() else {
@@ -2698,9 +3312,11 @@ pub fn extrude_payload_header(record: OperationRecord<'_>) -> Option<ExtrudePayl
     })
 }
 
-/// Decode the unique terminal discriminator lane in an `EXTRUDE` payload.
-pub fn extrude_payload_footer(record: OperationRecord<'_>) -> Option<ExtrudePayloadFooter> {
-    if record.label.value != "EXTRUDE" || record.payload.last() != Some(&0) {
+/// Decode the unique terminal discriminator lane in a bounded operation payload.
+pub fn operation_terminal_discriminator(
+    record: OperationRecord<'_>,
+) -> Option<OperationTerminalDiscriminator> {
+    if record.payload.last() != Some(&0) {
         return None;
     }
     let mut matches = Vec::new();
@@ -2766,12 +3382,11 @@ pub fn extrude_payload_footer(record: OperationRecord<'_>) -> Option<ExtrudePayl
         if !valid || at != trailing_end {
             continue;
         }
-        matches.push(ExtrudePayloadFooter {
+        matches.push(OperationTerminalDiscriminator {
             offset: record.payload_offset + start,
             type_indices,
             raw_type_indices,
             type_index_offsets,
-            mode_indices: [2, 1],
             flags,
             trailing_indices,
             raw_trailing_indices,
@@ -3517,37 +4132,95 @@ pub fn object_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair>
 
 /// Decode every exactly framed signed Q1.55 pair in a reconstructed sketch payload.
 pub fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
+    const LEGACY: [u8; 8] = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
+    const SHORT: [u8; 15] = [
+        0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x01,
+    ];
+    const EXTENDED: [u8; 17] = [
+        0x08, 0x02, 0x03, 0x01, 0xc0, 0x40, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02,
+        0x00, 0x01,
+    ];
+    let mut pairs = Vec::new();
+    for (discriminator, separator_width) in [
+        (LEGACY.as_slice(), 1usize),
+        (SHORT.as_slice(), 0),
+        (EXTENDED.as_slice(), 0),
+    ] {
+        for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
+            if window != discriminator {
+                continue;
+            }
+            let first = offset + discriminator.len();
+            let second = first + 8 + separator_width;
+            if bytes.get(first) != Some(&0x30)
+                || (separator_width != 0 && bytes.get(first + 8) != Some(&0x00))
+                || bytes.get(second) != Some(&0x30)
+            {
+                continue;
+            }
+            let Some(first_raw) = bytes
+                .get(first + 1..first + 8)
+                .and_then(|raw| raw.try_into().ok())
+            else {
+                continue;
+            };
+            let Some(second_raw) = bytes
+                .get(second + 1..second + 8)
+                .and_then(|raw| raw.try_into().ok())
+            else {
+                continue;
+            };
+            pairs.push(SketchPayloadFixedPair {
+                offset,
+                values: [decode_q1_55(first_raw), decode_q1_55(second_raw)],
+                value_offsets: [first, second],
+                raw_values: [first_raw, second_raw],
+                discriminator: discriminator.to_vec(),
+            });
+        }
+    }
+    pairs.sort_by_key(|pair| pair.offset);
+    pairs
+}
+
+/// Decode every exactly framed mixed Q1.55/binary32 pair in a sketch payload.
+pub fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
     const DISCRIMINATOR: [u8; 8] = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
     let mut pairs = Vec::new();
     for (offset, window) in bytes.windows(DISCRIMINATOR.len()).enumerate() {
         if window != DISCRIMINATOR {
             continue;
         }
-        let first = offset + DISCRIMINATOR.len();
-        let second = first + 9;
-        if bytes.get(first) != Some(&0x30)
-            || bytes.get(first + 8) != Some(&0x00)
-            || bytes.get(second) != Some(&0x30)
-        {
+        let fixed_offset = offset + DISCRIMINATOR.len();
+        let binary32_offset = fixed_offset + 9;
+        if bytes.get(fixed_offset) != Some(&0x30) || bytes.get(fixed_offset + 8) != Some(&0x00) {
             continue;
         }
-        let Some(first_raw) = bytes
-            .get(first + 1..first + 8)
+        let Some(fixed_raw_value) = bytes
+            .get(fixed_offset + 1..fixed_offset + 8)
             .and_then(|raw| raw.try_into().ok())
         else {
             continue;
         };
-        let Some(second_raw) = bytes
-            .get(second + 1..second + 8)
+        let Some(binary32_raw_value): Option<[u8; 4]> = bytes
+            .get(binary32_offset..binary32_offset + 4)
             .and_then(|raw| raw.try_into().ok())
         else {
             continue;
         };
-        pairs.push(SketchPayloadFixedPair {
+        let Some((binary32_value, PayloadScalarEncoding::Binary32, 4)) =
+            payload_scalar(&binary32_raw_value)
+        else {
+            continue;
+        };
+        pairs.push(SketchPayloadMixedPair {
             offset,
-            values: [decode_q1_55(first_raw), decode_q1_55(second_raw)],
-            value_offsets: [first, second],
-            raw_values: [first_raw, second_raw],
+            fixed_value: decode_q1_55(fixed_raw_value),
+            binary32_value,
+            fixed_raw_value,
+            binary32_raw_value,
+            value_offsets: [fixed_offset, binary32_offset],
+            discriminator: DISCRIMINATOR.to_vec(),
         });
     }
     pairs
@@ -4053,6 +4726,148 @@ fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)>
     }
 }
 
+fn canonical_feature_object_index(value: Option<u32>, raw: &[u8]) -> bool {
+    matches!(
+        (value, raw),
+        (None, [0xff])
+            | (Some(0..=0x7f), [_])
+            | (Some(0x80..=0x0fff), [0x80..=0x8f, _])
+            | (Some(0x1000..=0xffff), [0x90, _, _])
+    )
+}
+
+/// Decode every exact common frame in one bounded operation payload.
+pub fn operation_common_frames(record: OperationRecord<'_>) -> Vec<OperationCommonFrame> {
+    let decode = |prefix_start: usize, widths: [usize; 3], marker: [u8; 3]| {
+        if marker == [0x01, 0x01, 0x01] && record.label.value != "DELETE" {
+            return None;
+        }
+        let mut at = prefix_start;
+        let mut indices = Vec::with_capacity(3);
+        let mut raw_indices = Vec::with_capacity(3);
+        let mut index_offsets = Vec::with_capacity(3);
+        for width in widths {
+            let token = record.payload.get(at..at + width)?;
+            let (index, end) = compact_index(record.payload.get(at..)?)?;
+            let CompactIndex::Value(index) = index else {
+                return None;
+            };
+            (end == width).then_some(())?;
+            indices.push(index);
+            raw_indices.push(token.to_vec());
+            index_offsets.push(record.payload_offset + at);
+            at += width;
+        }
+        (record.payload.get(at..at + marker.len()) == Some(&marker)).then_some(())?;
+        at += marker.len();
+        let state_offset = at;
+        let state = record.payload.get(at..at + 8)?.try_into().ok()?;
+        at += 8;
+        let local_ordinal_offset = at;
+        let (Some(local_ordinal), first_end) = feature_object_index(record.payload, at)? else {
+            return None;
+        };
+        let first_raw = &record.payload[at..first_end];
+        canonical_feature_object_index(Some(local_ordinal), first_raw).then_some(())?;
+        let (Some(repeated), second_end) = feature_object_index(record.payload, first_end)? else {
+            return None;
+        };
+        let second_raw = &record.payload[first_end..second_end];
+        (repeated == local_ordinal && second_raw == first_raw).then_some(())?;
+        let object_index_offset = second_end;
+        let (object_index, object_end) = feature_object_index(record.payload, second_end)?;
+        let object_raw = &record.payload[second_end..object_end];
+        canonical_feature_object_index(object_index, object_raw).then_some(())?;
+        (record.payload.get(object_end) == Some(&0)).then_some(())?;
+        let indices: [u32; 3] = indices.try_into().ok()?;
+        let raw_indices: [Vec<u8>; 3] = raw_indices.try_into().ok()?;
+        let index_offsets: [usize; 3] = index_offsets.try_into().ok()?;
+        Some(OperationCommonFrame {
+            indices,
+            raw_indices,
+            marker,
+            state,
+            offset: record.payload_offset + prefix_start,
+            index_offsets,
+            state_offset: record.payload_offset + state_offset,
+            local_ordinal,
+            raw_local_ordinal: first_raw.to_vec(),
+            object_index,
+            raw_object_index: object_raw.to_vec(),
+            local_ordinal_offset: record.payload_offset + local_ordinal_offset,
+            object_index_offset: record.payload_offset + object_index_offset,
+            end_offset: record.payload_offset + object_end + 1,
+        })
+    };
+
+    let mut frames = Vec::new();
+    for start in 0..record.payload.len() {
+        if let Some(frame) = decode(start, [1, 2, 2], [0x01, 0x03, 0x02]) {
+            frames.push(frame);
+        }
+        if let Some(frame) = decode(start, [1, 1, 1], [0x01, 0x01, 0x01]) {
+            frames.push(frame);
+        }
+    }
+    frames.sort_by_key(|frame| frame.offset);
+    frames
+}
+
+/// Decode the unique terminal common-frame suffix and its exact immediate common frame.
+pub fn operation_terminal_frame(record: OperationRecord<'_>) -> Option<OperationTerminalFrame> {
+    let terminator = record.payload.len().checked_sub(1)?;
+    (record.payload.get(terminator) == Some(&0)).then_some(())?;
+    let common_frames = operation_common_frames(record);
+    let mut matches = Vec::new();
+    for start in terminator.saturating_sub(9)..terminator {
+        let Some((Some(local_ordinal), first_end)) = feature_object_index(record.payload, start)
+        else {
+            continue;
+        };
+        let first_raw = &record.payload[start..first_end];
+        if !canonical_feature_object_index(Some(local_ordinal), first_raw) {
+            continue;
+        }
+        let Some((Some(repeated), second_end)) = feature_object_index(record.payload, first_end)
+        else {
+            continue;
+        };
+        let second_raw = &record.payload[first_end..second_end];
+        if repeated != local_ordinal || second_raw != first_raw {
+            continue;
+        }
+        let Some((object_index, object_end)) = feature_object_index(record.payload, second_end)
+        else {
+            continue;
+        };
+        let object_raw = &record.payload[second_end..object_end];
+        if object_end != terminator || !canonical_feature_object_index(object_index, object_raw) {
+            continue;
+        }
+        let local_ordinal_offset = record.payload_offset + start;
+        let immediate_common_frame_offset = common_frames
+            .iter()
+            .find(|frame| {
+                frame.local_ordinal_offset == local_ordinal_offset
+                    && frame.end_offset == record.payload_offset + object_end + 1
+            })
+            .map(|frame| frame.offset);
+        matches.push(OperationTerminalFrame {
+            immediate_common_frame_offset,
+            local_ordinal,
+            raw_local_ordinal: first_raw.to_vec(),
+            object_index,
+            raw_object_index: object_raw.to_vec(),
+            offset: local_ordinal_offset,
+            object_index_offset: record.payload_offset + second_end,
+        });
+    }
+    let [frame] = matches.as_slice() else {
+        return None;
+    };
+    Some(frame.clone())
+}
+
 /// Decode ordered `04 00, object_index, 02 0b` references from one bounded block.
 pub fn data_block_object_references(bytes: &[u8]) -> Vec<DataBlockObjectReference> {
     let mut references = Vec::new();
@@ -4310,6 +5125,68 @@ pub fn string_values(bytes: &[u8], base_offset: usize) -> Vec<StringValue<'_>> {
         .collect()
 }
 
+/// Return whether `value` is canonical lowercase UUID text.
+pub fn canonical_uuid_text(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)
+            }
+        })
+}
+
+/// Decode complete `03 26, canonical UUID text, 00` values in `bytes`.
+pub fn uuid_string_values(bytes: &[u8], base_offset: usize) -> Vec<UuidStringValue<'_>> {
+    const MARKER: &[u8] = &[0x03, 0x26];
+    const TEXT_LEN: usize = 36;
+    bytes
+        .windows(MARKER.len())
+        .enumerate()
+        .filter(|(_, window)| *window == MARKER)
+        .filter_map(|(offset, _)| {
+            let start = offset.checked_add(MARKER.len())?;
+            let end = start.checked_add(TEXT_LEN)?;
+            let raw = bytes.get(start..end)?;
+            let value = std::str::from_utf8(raw).ok()?;
+            (canonical_uuid_text(value) && bytes.get(end) == Some(&0)).then_some(UuidStringValue {
+                offset: base_offset + offset,
+                value,
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod uuid_string_value_tests {
+    use super::*;
+
+    #[test]
+    fn decodes_only_complete_canonical_uuid_frames() {
+        let mut bytes = b"prefix\x03\x2601234567-89ab-cdef-0123-456789abcdef\0suffix".to_vec();
+        let values = uuid_string_values(&bytes, 100);
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0].offset, 106);
+        assert_eq!(values[0].value, "01234567-89ab-cdef-0123-456789abcdef");
+
+        bytes[6 + 2 + 9] = b'A';
+        assert!(uuid_string_values(&bytes, 0).is_empty());
+        assert!(!canonical_uuid_text("01234567-89ab-cdef-0123-456789abcde"));
+        assert!(!canonical_uuid_text("01234567-89ab-cdef-0123_456789abcdef"));
+        assert!(!canonical_uuid_text("01234567-89ab-cdef-0123-456789abcdeg"));
+    }
+
+    #[test]
+    fn rejects_truncated_or_unterminated_uuid_frames() {
+        let frame = b"\x03\x2601234567-89ab-cdef-0123-456789abcdef\0";
+        assert!(uuid_string_values(&frame[..frame.len() - 1], 0).is_empty());
+        let mut unterminated = frame.to_vec();
+        *unterminated.last_mut().expect("nonempty frame") = 1;
+        assert!(uuid_string_values(&unterminated, 0).is_empty());
+    }
+}
+
 /// Decode `66 1b 03, byte-length, printable UTF-8, 00` values in `bytes`.
 pub fn surface_payload_strings(bytes: &[u8]) -> Vec<SurfacePayloadString<'_>> {
     const MARKER: &[u8] = &[0x66, 0x1b, 0x03];
@@ -4378,9 +5255,16 @@ pub fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
         else {
             break;
         };
-        let Some(end) = offset
+        let standard_end = offset
             .checked_add(16)
+            .and_then(|header_end| header_end.checked_add(payload_len));
+        let compact_terminal_end = offset
+            .checked_add(12)
             .and_then(|header_end| header_end.checked_add(payload_len))
+            .filter(|end| *end == bytes.len());
+        let Some(end) = standard_end
+            .filter(|end| *end <= bytes.len())
+            .or(compact_terminal_end)
         else {
             at = offset + 4;
             continue;
@@ -4652,42 +5536,96 @@ pub fn offset_store_control_values(bytes: &[u8]) -> Option<Vec<u32>> {
         .collect()
 }
 
-/// Decode the distinct leading class-registry ordinals in an offset-store
-/// control block. The remaining metadata words are all outside the registry.
-pub fn offset_store_control_class_ordinals(bytes: &[u8], class_count: usize) -> Option<Vec<u32>> {
-    (class_count > 0).then_some(())?;
+/// Decode the distinct leading class-registry identities in an offset-store
+/// control block.
+///
+/// The registry may omit declarations that this decoder cannot type, so its
+/// retained declaration count is not an ordinal bound. The class lane is
+/// instead the unique nonempty prefix whose identities are distinct and all
+/// smaller than every following metadata value.
+pub fn offset_store_control_class_ordinals(bytes: &[u8]) -> Option<Vec<u32>> {
     let values = offset_store_control_values(bytes)?;
-    let boundary = values
-        .iter()
-        .position(|value| usize::try_from(*value).map_or(true, |value| value >= class_count))?;
-    (boundary > 0
-        && values[boundary..]
-            .iter()
-            .all(|value| usize::try_from(*value).map_or(true, |value| value >= class_count)))
-    .then_some(())?;
-    let ordinals = values[..boundary].to_vec();
-    let distinct = ordinals.iter().copied().collect::<BTreeSet<_>>();
-    (distinct.len() == ordinals.len()).then_some(ordinals)
+    let mut suffix_minima = vec![u32::MAX; values.len()];
+    for index in (0..values.len().saturating_sub(1)).rev() {
+        suffix_minima[index] = suffix_minima[index + 1].min(values[index + 1]);
+    }
+    let mut identities = BTreeSet::new();
+    let mut maximum_identity = 0;
+    let mut boundary = None;
+    for index in 0..values.len().saturating_sub(1) {
+        let identity = values[index];
+        if !identities.insert(identity) {
+            break;
+        }
+        maximum_identity = maximum_identity.max(identity);
+        if maximum_identity < suffix_minima[index] && boundary.replace(index + 1).is_some() {
+            return None;
+        }
+    }
+    let boundary = boundary?;
+    if boundary == values.len() {
+        return None;
+    }
+    Some(values[..boundary].to_vec())
 }
 
-/// Decode the aligned little-endian value array preceding one product record.
-pub fn offset_store_index_values(bytes: &[u8]) -> Option<(usize, Vec<u32>)> {
+fn offset_store_product_anchored_form(bytes: &[u8]) -> Option<OffsetStoreControlForm> {
     let matches = (0..bytes.len())
         .filter(|offset| is_product_record(&bytes[*offset..]))
         .collect::<Vec<_>>();
     let [product_offset] = matches.as_slice() else {
         return None;
     };
-    let prefix_len = (0..=3).find(|prefix_len| {
-        *product_offset > *prefix_len
-            && (*product_offset - *prefix_len).is_multiple_of(4)
-            && bytes[..*prefix_len].iter().all(|byte| *byte == 0)
-    })?;
-    let values = bytes[prefix_len..*product_offset]
+    let leading_width = *product_offset % 4;
+    (*product_offset > leading_width).then_some(())?;
+    let leading_value = (leading_width != 0).then(|| {
+        bytes[..leading_width]
+            .iter()
+            .enumerate()
+            .fold(0u32, |value, (shift, byte)| {
+                value | (u32::from(*byte) << (shift * 8))
+            })
+    });
+    let values = bytes[leading_width..*product_offset]
         .chunks_exact(4)
         .map(|word| u32::from_le_bytes(word.try_into().expect("four-byte chunk")))
         .collect();
-    Some((prefix_len, values))
+    Some(OffsetStoreControlForm::ProductAnchored {
+        leading_value: leading_value.map(|value| (leading_width, value)),
+        values,
+    })
+}
+
+/// One complete admitted offset-only store control-block form.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OffsetStoreControlForm {
+    /// Complete `00 + value:u24 LE` word array.
+    ZeroPrefixed {
+        /// Ordered values decoded from the complete control block.
+        values: Vec<u32>,
+    },
+    /// Compact leading value and aligned `u32 LE` array preceding one
+    /// self-framed product record.
+    ProductAnchored {
+        /// Width and value of the compact leading little-endian integer.
+        leading_value: Option<(usize, u32)>,
+        /// Ordered values preceding the product record.
+        values: Vec<u32>,
+    },
+}
+
+/// Classify one complete offset-only store control block atomically.
+///
+/// Exactly one admitted grammar must accept the complete control envelope.
+pub fn offset_store_control_form(bytes: &[u8]) -> Option<OffsetStoreControlForm> {
+    match (
+        offset_store_control_values(bytes),
+        offset_store_product_anchored_form(bytes),
+    ) {
+        (Some(values), None) => Some(OffsetStoreControlForm::ZeroPrefixed { values }),
+        (None, Some(form)) => Some(form),
+        _ => None,
+    }
 }
 
 fn type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDefinition<'_>> {

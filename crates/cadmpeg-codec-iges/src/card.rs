@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact physical-line and fixed-card framing.
 
+use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::Confidence;
-use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
 use std::collections::BTreeMap;
-use std::io::Read;
 
 const CARD_WIDTH: usize = 80;
-const MAX_SOURCE_BYTES: usize = 256 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Section {
@@ -85,8 +83,8 @@ impl PhysicalLine {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct CardScan {
-    pub(crate) source: Vec<u8>,
+pub(crate) struct CardScan<'a> {
+    pub(crate) source: &'a [u8],
     pub(crate) lines: Vec<PhysicalLine>,
 }
 
@@ -281,26 +279,17 @@ fn validate_terminate_counts(lines: &[PhysicalLine]) -> Result<(), CodecError> {
     Ok(())
 }
 
-pub(crate) fn scan(reader: &mut dyn ReadSeek) -> Result<CardScan, CodecError> {
-    let mut source = Vec::new();
-    reader
-        .take(u64::try_from(MAX_SOURCE_BYTES + 1).unwrap_or(u64::MAX))
-        .read_to_end(&mut source)?;
-    if source.len() > MAX_SOURCE_BYTES {
-        return Err(CodecError::Malformed(format!(
-            "IGES source exceeds {MAX_SOURCE_BYTES} byte limit"
-        )));
-    }
+pub(crate) fn scan(source: &[u8]) -> Result<CardScan<'_>, CodecError> {
     if source.is_empty() {
         return Err(CodecError::WrongFormat("empty IGES source".into()));
     }
-    let lines = physical_lines(&source)?;
+    let lines = physical_lines(source)?;
     validate_card_order(&lines)?;
     validate_terminate_counts(&lines)?;
     Ok(CardScan { source, lines })
 }
 
-pub(crate) fn summarize(scan: &CardScan) -> ContainerSummary {
+pub(crate) fn summarize(scan: &CardScan<'_>) -> ContainerSummary {
     let sections = [
         Section::Start,
         Section::Global,

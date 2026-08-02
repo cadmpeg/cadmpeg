@@ -8,7 +8,8 @@
 use std::io::Cursor;
 
 use cadmpeg_codec_f3d::F3dCodec;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, Encoder};
+
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
@@ -18,7 +19,7 @@ fuzz_target!(|data: &[u8]| {
         return;
     };
     let mut encoded = Vec::new();
-    assert!(codec.encode(&decoded.ir, &mut encoded).is_ok());
+    assert!(codec.plan(cadmpeg_ir::codec::EncodeInput { ir: &decoded.ir, fidelity: None }).and_then(|plan| plan.write_to(&mut encoded)).is_ok());
     let mut round_trip = Cursor::new(encoded);
     assert!(codec
         .decode(&mut round_trip, &DecodeOptions::default())

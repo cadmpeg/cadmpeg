@@ -167,9 +167,16 @@ pub(super) fn orient_loop_members(
         let member_count = graph.loops[&loop_id].edges.len();
         let flip = flips[node]?;
         let mut member_order: Vec<usize> = (0..member_count).collect();
+        let mut pcurve_reversed = graph.loops[&loop_id].pcurve_senses();
+        if pcurve_reversed.len() != member_count {
+            return None;
+        }
         if flip {
             member_order.reverse();
             for sense in reversed.get_mut(&loop_id)? {
+                *sense = !*sense;
+            }
+            for sense in &mut pcurve_reversed {
                 *sense = !*sense;
             }
         }
@@ -178,6 +185,7 @@ pub(super) fn orient_loop_members(
             OrientedLoop {
                 member_order,
                 reversed: reversed.remove(&loop_id)?,
+                pcurve_reversed,
             },
         );
     }
@@ -192,7 +200,7 @@ pub(super) fn emit_faces(
     graph: &B5Graph,
     plan: &TransferPlan,
     surface_ids: &HashMap<u32, SurfaceId>,
-    pcurve_ids: &HashMap<(u32, usize), PcurveId>,
+    pcurve_uses: &HashMap<(u32, usize), (PcurveId, [f64; 2])>,
     edge_id_map: &HashMap<u32, EdgeId>,
 ) {
     let ownership = &plan.ownership;
@@ -361,13 +369,16 @@ pub(super) fn emit_faces(
                     } else {
                         Sense::Forward
                     },
-                    pcurves: pcurve_ids
+                    pcurves: pcurve_uses
                         .get(&(loop_.object_id, member))
-                        .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
-                            pcurve: pcurve.clone(),
-                            isoparametric: None,
-                            parameter_range: None,
-                        })
+                        .map(
+                            |(pcurve, parameter_range)| cadmpeg_ir::topology::PcurveUse {
+                                pcurve: pcurve.clone(),
+                                isoparametric: None,
+                                parameter_range: orientation.pcurve_reversed[member]
+                                    .then_some([parameter_range[1], parameter_range[0]]),
+                            },
+                        )
                         .into_iter()
                         .collect(),
                     use_curve: None,

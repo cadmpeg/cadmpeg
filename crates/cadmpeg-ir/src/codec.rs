@@ -12,24 +12,20 @@
 //! `Codec`, so a codec cannot override an entry point and drop the
 //! enforcement.
 
-use std::collections::BTreeMap;
 use std::fmt;
-use std::io::{Read, Seek, Write};
+use std::io::Write;
 
-use crate::decode::{
-    DecodeArena, DecodeContext, DecodeMode, DecodePolicy, ErrorContext, InspectOptions,
-    ResourceLimit, SourceLocation, View,
-};
 use crate::document::CadIr;
 use crate::report::DecodeReport;
-use crate::report::ExportReport;
+use crate::report::StrictConsequence;
+use crate::report::{CensusBasis, EntityCensus, ExportReport, FidelityResolution};
 use crate::source_fidelity::SourceFidelity;
+use cadmpeg_codec_core::decode::{
+    DecodeArena, DecodeContext, DecodeMode, DecodePolicy, InspectOptions, View,
+};
+use cadmpeg_codec_core::{CodecError, ContainerSummary, ReadSeek};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-
-/// Object-safe input bound combining [`Read`] and [`Seek`].
-pub trait ReadSeek: Read + Seek {}
-impl<T: Read + Seek> ReadSeek for T {}
 
 /// How confident a codec is that it can handle a given byte prefix.
 #[derive(
@@ -58,40 +54,6 @@ impl fmt::Display for Confidence {
     }
 }
 
-/// One stream or segment in a container summary.
-///
-/// `role` and `attributes` are codec-defined. The ordered attribute map keeps
-/// the format-independent summary deterministic.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct ContainerEntry {
-    /// Entry name/path within the container.
-    pub name: String,
-    /// Codec-defined role classification.
-    pub role: String,
-    /// Compression method label (e.g. `"stored"`, `"deflate"`, `"zstd"`).
-    pub compression: String,
-    /// Compressed size in bytes.
-    pub compressed_size: u64,
-    /// Uncompressed size in bytes.
-    pub uncompressed_size: u64,
-    /// Extra codec-extracted attributes, sorted by key.
-    #[serde(default)]
-    pub attributes: BTreeMap<String, String>,
-}
-
-/// The result of inspecting a container without decoding its geometry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct ContainerSummary {
-    /// Source format id.
-    pub format: String,
-    /// Container kind, e.g. `"zip"`.
-    pub container_kind: String,
-    /// Enumerated entries.
-    pub entries: Vec<ContainerEntry>,
-    /// Codec-defined informational notes.
-    pub notes: Vec<String>,
-}
-
 /// Options controlling source decoding.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct DecodeOptions {
@@ -117,22 +79,8 @@ pub struct DecodeResult {
 }
 
 impl DecodeResult {
-    /// Build a result after canonicalizing the document's arena order.
-    pub fn new(mut ir: CadIr, report: DecodeReport) -> Self {
-        ir.finalize();
-        Self {
-            ir,
-            report,
-            source_fidelity: SourceFidelity::default(),
-        }
-    }
-
-    /// Build a result with an explicit source-fidelity sidecar.
-    pub fn with_source_fidelity(
-        mut ir: CadIr,
-        report: DecodeReport,
-        mut source_fidelity: SourceFidelity,
-    ) -> Self {
+    /// Build a result with mandatory source fidelity after canonicalizing it and the IR.
+    pub fn new(mut ir: CadIr, report: DecodeReport, mut source_fidelity: SourceFidelity) -> Self {
         ir.finalize();
         source_fidelity.finalize();
         Self {
@@ -140,56 +88,6 @@ impl DecodeResult {
             report,
             source_fidelity,
         }
-    }
-}
-
-/// Errors a codec can raise.
-///
-/// Marked `#[non_exhaustive]`: external exhaustive matches must carry a
-/// wildcard arm. Same-crate matches keep exhaustiveness checking.
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum CodecError {
-    /// The bytes are not this codec's format.
-    #[error("not the expected format: {0}")]
-    WrongFormat(String),
-    /// The container was structurally malformed.
-    #[error("malformed container: {0}")]
-    Malformed(String),
-    /// A required read extended past the end of its window after commitment.
-    ///
-    /// Distinct from [`CodecError::Malformed`]: a truncation is missing input,
-    /// not an inconsistency inside the bytes that are present.
-    #[error(
-        "truncated input during {} at space {} offset {}",
-        .context.operation, .location.space.index(), .location.offset
-    )]
-    Truncated {
-        /// Where the truncated read began.
-        location: SourceLocation,
-        /// Static context for the failure.
-        context: ErrorContext,
-    },
-    /// A resource limit refused the decode: policy or the allocator.
-    ///
-    /// Never reported as [`CodecError::Malformed`]: a budget refusal is a
-    /// statement about policy, not about the input.
-    #[error(
-        "resource limit on {:?}: {:?} (limit {}, used {}, requested {})",
-        .0.dimension, .0.reason, .0.limit, .0.used, .0.additional
-    )]
-    ResourceLimit(ResourceLimit),
-    /// The codec does not implement a required capability.
-    #[error("not implemented yet: {0}")]
-    NotImplemented(String),
-    /// Underlying I/O failure.
-    #[error("io error: {0}")]
-    Io(#[from] std::io::Error),
-}
-
-impl From<crate::native::NativeConvertError> for CodecError {
-    fn from(error: crate::native::NativeConvertError) -> Self {
-        Self::Malformed(error.to_string())
     }
 }
 
@@ -236,11 +134,11 @@ mod sealed {
 ///
 /// ```compile_fail
 /// use cadmpeg_ir::codec::{
-///     Codec, CodecEntry, CodecError, Confidence, ContainerSummary, DecodeOptions,
-///     DecodeResult, ReadSeek,
+///     Codec, CodecEntry, Confidence, DecodeOptions, DecodeResult,
 /// };
-/// use cadmpeg_ir::decode::{DecodeContext, View};
-/// use cadmpeg_ir::decode::InspectOptions;
+/// use cadmpeg_codec_core::{CodecError, ContainerSummary, ReadSeek};
+/// use cadmpeg_codec_core::decode::{DecodeContext, View};
+/// use cadmpeg_codec_core::decode::InspectOptions;
 ///
 /// struct Rogue;
 /// impl Codec for Rogue {
@@ -287,7 +185,8 @@ impl<C: Codec + ?Sized> CodecEntry for C {
         };
         let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy)?;
         let result = self.inspect_impl(&ctx, root);
-        ctx.finish_inspection(result)
+        ctx.finish_session()?;
+        result
     }
 
     fn decode(
@@ -299,7 +198,22 @@ impl<C: Codec + ?Sized> CodecEntry for C {
         let (mut ctx, root) = DecodeContext::read_root(reader, &arena, &options.policy)?;
         ctx.set_container_only(options.container_only);
         let result = self.decode_impl(&ctx, root);
-        ctx.finish(result)
+        ctx.finish_session()?;
+        let result = result?;
+        if options.policy.mode == DecodeMode::Strict && !result.report.container_only {
+            if let Some(loss) = result
+                .report
+                .losses
+                .iter()
+                .find(|loss| loss.strict_consequence() == StrictConsequence::Reject)
+            {
+                return Err(CodecError::Malformed(format!(
+                    "strict mode rejects {}: {}",
+                    loss.code, loss.message
+                )));
+            }
+        }
+        Ok(result)
     }
 }
 
@@ -308,21 +222,70 @@ pub trait Encoder {
     /// Stable output format id.
     fn id(&self) -> &'static str;
 
-    /// Encode one IR document to the target format.
-    fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError>;
+    /// Plans one export without writing to the destination.
+    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError>;
+}
 
-    /// Encode with decode-time source fidelity when the caller retained it.
-    ///
-    /// Encoders that do not consume source accounting use the neutral model
-    /// through [`Encoder::encode`].
-    fn encode_with_source_fidelity(
-        &self,
-        ir: &CadIr,
-        source_fidelity: Option<&SourceFidelity>,
-        writer: &mut dyn Write,
-    ) -> Result<ExportReport, CodecError> {
-        let _ = source_fidelity;
-        self.encode(ir, writer)
+/// Borrowed inputs used to plan an export.
+#[derive(Debug, Clone, Copy)]
+pub struct EncodeInput<'a> {
+    /// Neutral document to export.
+    pub ir: &'a CadIr,
+    /// Decode-time fidelity state, when available.
+    pub fidelity: Option<&'a SourceFidelity>,
+}
+
+type DeferredExport<'a> = Box<dyn FnOnce(&mut dyn Write) -> Result<(), CodecError> + 'a>;
+
+enum ExportPayload<'a> {
+    Buffered(Vec<u8>),
+    Deferred(DeferredExport<'a>),
+}
+
+/// A fully reported export awaiting its atomic destination write.
+pub struct ExportPlan<'a> {
+    report: ExportReport,
+    payload: ExportPayload<'a>,
+}
+
+impl<'a> ExportPlan<'a> {
+    /// Creates a plan whose bytes have already been materialized.
+    pub fn buffered(report: ExportReport, fidelity: FidelityResolution, bytes: Vec<u8>) -> Self {
+        Self {
+            report: ExportReport { fidelity, ..report },
+            payload: ExportPayload::Buffered(bytes),
+        }
+    }
+
+    /// Creates a plan that writes through a deferred, report-invariant operation.
+    pub fn deferred(
+        report: ExportReport,
+        fidelity: FidelityResolution,
+        write: impl FnOnce(&mut dyn Write) -> Result<(), CodecError> + 'a,
+    ) -> Self {
+        Self {
+            report: ExportReport { fidelity, ..report },
+            payload: ExportPayload::Deferred(Box::new(write)),
+        }
+    }
+
+    /// Returns the complete plan-time export report.
+    pub fn report(&self) -> &ExportReport {
+        &self.report
+    }
+
+    /// Returns how source fidelity was resolved while planning.
+    pub fn fidelity_resolution(&self) -> &FidelityResolution {
+        &self.report.fidelity
+    }
+
+    /// Writes the planned payload and returns the unchanged plan-time report.
+    pub fn write_to(self, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
+        match self.payload {
+            ExportPayload::Buffered(bytes) => writer.write_all(&bytes)?,
+            ExportPayload::Deferred(write) => write(writer)?,
+        }
+        Ok(self.report)
     }
 }
 
@@ -335,20 +298,31 @@ impl Encoder for CadirEncoder {
         "cadir"
     }
 
-    fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
-        let mut json = ir
-            .to_canonical_json()
-            .map_err(|error| CodecError::Malformed(error.to_string()))?;
-        json.push('\n');
-        writer.write_all(json.as_bytes())?;
-        let validation = crate::validate(ir, Vec::new());
-        let total_entities = validation.entity_counts.values().sum();
-        Ok(ExportReport {
+    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
+        let validation = crate::validate(input.ir, Vec::new());
+        let report = ExportReport {
             format: "cadir".into(),
-            entity_counts: validation.entity_counts,
-            total_entities,
+            census: EntityCensus {
+                basis: CensusBasis::IrArenas,
+                counts: validation.entity_counts,
+            },
+            fidelity: FidelityResolution::NotProvided,
             losses: Vec::new(),
             notes: Vec::new(),
-        })
+        };
+        let fidelity = if input.fidelity.is_some() {
+            FidelityResolution::NotConsumed
+        } else {
+            FidelityResolution::NotProvided
+        };
+        Ok(ExportPlan::deferred(report, fidelity, move |writer| {
+            let mut json = input
+                .ir
+                .to_canonical_json()
+                .map_err(|error| CodecError::Malformed(error.to_string()))?;
+            json.push('\n');
+            writer.write_all(json.as_bytes())?;
+            Ok(())
+        }))
     }
 }

@@ -2,7 +2,7 @@
 //!
 //! Pure combinatorics over caller-supplied domains; no byte knowledge.
 
-use crate::solve::mesh_quotient::MeshConstraintBudget;
+use cadmpeg_codec_core::decode::WorkBudget;
 use std::collections::{HashSet, VecDeque};
 
 pub(crate) fn domains_have_distinct_matching<'a>(
@@ -21,7 +21,7 @@ pub(crate) enum MatchingEdgeConstraint {
 pub(crate) fn distinct_domain_matching_with_budget<'a>(
     domains: impl IntoIterator<Item = &'a [usize]>,
     point_count: usize,
-    budget: Option<&MeshConstraintBudget>,
+    budget: Option<&WorkBudget<'_>>,
     edge_constraint: Option<MatchingEdgeConstraint>,
 ) -> Option<Vec<usize>> {
     let domains = domains.into_iter().collect::<Vec<_>>();
@@ -152,6 +152,191 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
         }
     }
     assignment.into_iter().collect()
+}
+
+pub(crate) fn repair_distinct_domain_matching_with_budget<'a>(
+    domains: impl IntoIterator<Item = &'a [usize]>,
+    point_count: usize,
+    matching: &[usize],
+    budget: Option<&WorkBudget<'_>>,
+) -> Option<Vec<usize>> {
+    let domains = domains.into_iter().collect::<Vec<_>>();
+    if domains.len() != matching.len() || domains.len() > point_count {
+        return None;
+    }
+    let mut matching = matching.to_vec();
+    let mut owner = vec![None; point_count];
+    let mut unmatched = Vec::new();
+    for domain in 0..matching.len() {
+        let point = matching[domain];
+        if point < point_count && domains[domain].contains(&point) && owner[point].is_none() {
+            owner[point] = Some(domain);
+        } else {
+            matching[domain] = usize::MAX;
+            unmatched.push(domain);
+        }
+    }
+    for start in unmatched {
+        let mut seen_domains = vec![false; domains.len()];
+        let mut seen_points = vec![false; point_count];
+        let mut incoming_point = vec![None; domains.len()];
+        let mut via_domain = vec![None; point_count];
+        let mut queue = VecDeque::from([start]);
+        seen_domains[start] = true;
+        let mut free_point = None;
+        while let Some(domain) = queue.pop_front() {
+            for &point in domains[domain] {
+                if budget.is_some_and(|budget| !budget.charge()) {
+                    return None;
+                }
+                if point >= point_count || seen_points[point] {
+                    continue;
+                }
+                seen_points[point] = true;
+                via_domain[point] = Some(domain);
+                let Some(next) = owner[point] else {
+                    free_point = Some(point);
+                    break;
+                };
+                if !seen_domains[next] {
+                    seen_domains[next] = true;
+                    incoming_point[next] = Some(point);
+                    queue.push_back(next);
+                }
+            }
+            if free_point.is_some() {
+                break;
+            }
+        }
+        let mut point = free_point?;
+        loop {
+            let domain = via_domain[point]?;
+            owner[point] = Some(domain);
+            matching[domain] = point;
+            if domain == start {
+                break;
+            }
+            point = incoming_point[domain]?;
+        }
+    }
+    Some(matching)
+}
+
+pub(crate) fn retain_distinct_matching_supports(
+    domains: &mut [Vec<usize>],
+    point_count: usize,
+    matching: &[usize],
+    budget: Option<&WorkBudget<'_>>,
+) -> Option<bool> {
+    if domains.len() != matching.len()
+        || domains.len() > point_count
+        || matching.iter().any(|point| *point >= point_count)
+    {
+        return None;
+    }
+    let node_count = domains.len().checked_add(point_count)?;
+    let mut graph = vec![Vec::new(); node_count];
+    let mut reverse = vec![Vec::new(); node_count];
+    let mut matched_points = vec![false; point_count];
+    for (domain, values) in domains.iter().enumerate() {
+        if !values.contains(&matching[domain]) || matched_points[matching[domain]] {
+            return None;
+        }
+        matched_points[matching[domain]] = true;
+        for &point in values {
+            if point >= point_count || budget.is_some_and(|budget| !budget.charge()) {
+                return None;
+            }
+            let point_node = domains.len() + point;
+            let (from, to) = if point == matching[domain] {
+                (point_node, domain)
+            } else {
+                (domain, point_node)
+            };
+            graph[from].push(to);
+            reverse[to].push(from);
+        }
+    }
+
+    let mut visited = vec![false; node_count];
+    let mut finish_order = Vec::with_capacity(node_count);
+    for start in 0..node_count {
+        if visited[start] {
+            continue;
+        }
+        visited[start] = true;
+        let mut stack = vec![(start, 0usize)];
+        while let Some((node, edge_index)) = stack.pop() {
+            if let Some(&next) = graph[node].get(edge_index) {
+                stack.push((node, edge_index + 1));
+                if budget.is_some_and(|budget| !budget.charge()) {
+                    return None;
+                }
+                if !visited[next] {
+                    visited[next] = true;
+                    stack.push((next, 0));
+                }
+            } else {
+                finish_order.push(node);
+            }
+        }
+    }
+
+    let mut component = vec![usize::MAX; node_count];
+    let mut component_count = 0usize;
+    for &start in finish_order.iter().rev() {
+        if component[start] != usize::MAX {
+            continue;
+        }
+        component[start] = component_count;
+        let mut stack = vec![start];
+        while let Some(node) = stack.pop() {
+            for &next in &reverse[node] {
+                if budget.is_some_and(|budget| !budget.charge()) {
+                    return None;
+                }
+                if component[next] == usize::MAX {
+                    component[next] = component_count;
+                    stack.push(next);
+                }
+            }
+        }
+        component_count += 1;
+    }
+
+    let mut reaches_free = vec![false; node_count];
+    let mut queue = VecDeque::new();
+    for (point, matched) in matched_points.into_iter().enumerate() {
+        if !matched {
+            let node = domains.len() + point;
+            reaches_free[node] = true;
+            queue.push_back(node);
+        }
+    }
+    while let Some(node) = queue.pop_front() {
+        for &previous in &reverse[node] {
+            if budget.is_some_and(|budget| !budget.charge()) {
+                return None;
+            }
+            if !reaches_free[previous] {
+                reaches_free[previous] = true;
+                queue.push_back(previous);
+            }
+        }
+    }
+
+    let domain_count = domains.len();
+    let mut changed = false;
+    for (domain, values) in domains.iter_mut().enumerate() {
+        let before = values.len();
+        values.retain(|point| {
+            *point == matching[domain]
+                || component[domain] == component[domain_count + *point]
+                || reaches_free[domain_count + *point]
+        });
+        changed |= values.len() != before;
+    }
+    Some(changed)
 }
 
 pub(crate) fn unique_coordinate_bijection(
@@ -310,4 +495,104 @@ pub(crate) fn unique_coordinate_bijection(
             })
             .collect(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        distinct_domain_matching_with_budget, repair_distinct_domain_matching_with_budget,
+        retain_distinct_matching_supports, MatchingEdgeConstraint,
+    };
+
+    #[test]
+    fn repairs_matching_after_a_matched_edge_is_removed() {
+        let domains = [vec![1], vec![0, 2], vec![0, 1]];
+        let repaired = repair_distinct_domain_matching_with_budget(
+            domains.iter().map(Vec::as_slice),
+            3,
+            &[0, 1, 2],
+            None,
+        )
+        .expect("the remaining augmenting path should repair the matching");
+
+        assert_eq!(repaired, vec![1, 2, 0]);
+    }
+
+    #[test]
+    fn rejects_domains_when_a_removed_edge_cannot_be_repaired() {
+        let domains = [vec![0], vec![0]];
+
+        assert!(repair_distinct_domain_matching_with_budget(
+            domains.iter().map(Vec::as_slice),
+            2,
+            &[0, 1],
+            None,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn matching_supports_retain_alternating_cycles_and_paths_to_free_points() {
+        let mut domains = [vec![0, 1], vec![0, 2]];
+
+        assert_eq!(
+            retain_distinct_matching_supports(&mut domains, 3, &[1, 0], None),
+            Some(false)
+        );
+        assert_eq!(domains, [vec![0, 1], vec![0, 2]]);
+    }
+
+    #[test]
+    fn matching_supports_remove_edges_outside_every_complete_matching() {
+        let mut domains = [vec![0, 1], vec![0]];
+
+        assert_eq!(
+            retain_distinct_matching_supports(&mut domains, 2, &[1, 0], None),
+            Some(true)
+        );
+        assert_eq!(domains, [vec![1], vec![0]]);
+    }
+
+    #[test]
+    fn matching_support_pruning_matches_forced_edge_search() {
+        const POINT_COUNT: usize = 4;
+        for first_mask in 1u8..1 << POINT_COUNT {
+            for second_mask in 1u8..1 << POINT_COUNT {
+                for third_mask in 1u8..1 << POINT_COUNT {
+                    let original = [first_mask, second_mask, third_mask].map(|mask| {
+                        (0..POINT_COUNT)
+                            .filter(|point| mask & (1 << point) != 0)
+                            .collect::<Vec<_>>()
+                    });
+                    let Some(matching) = distinct_domain_matching_with_budget(
+                        original.iter().map(Vec::as_slice),
+                        POINT_COUNT,
+                        None,
+                        None,
+                    ) else {
+                        continue;
+                    };
+                    let mut pruned = original.clone();
+                    retain_distinct_matching_supports(&mut pruned, POINT_COUNT, &matching, None)
+                        .expect("valid matching");
+                    for (domain, values) in original.iter().enumerate() {
+                        for &point in values {
+                            let supported = distinct_domain_matching_with_budget(
+                                original.iter().map(Vec::as_slice),
+                                POINT_COUNT,
+                                None,
+                                Some(MatchingEdgeConstraint::Require(domain, point)),
+                            )
+                            .is_some();
+                            assert_eq!(
+                                pruned[domain].contains(&point),
+                                supported,
+                                "domains={original:?}, edge=({domain}, {point})"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

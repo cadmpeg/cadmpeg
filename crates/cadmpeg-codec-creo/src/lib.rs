@@ -15,7 +15,7 @@
 //!
 //! use cadmpeg_codec_creo::CreoCodec;
 //! use cadmpeg_ir::codec::CodecEntry;
-//! use cadmpeg_ir::decode::InspectOptions;
+//! use cadmpeg_codec_core::decode::InspectOptions;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.prt")?;
@@ -53,6 +53,7 @@
 
 mod compress;
 pub mod container;
+pub(crate) mod coverage;
 pub mod curve;
 pub mod datum;
 pub mod decode;
@@ -65,8 +66,9 @@ pub mod scalar;
 pub mod surface;
 pub mod topology;
 
-use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::{CodecError, ContainerSummary};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult};
 
 /// Codec for Creo Parametric and Pro/ENGINEER PSB `.prt` files.
 #[derive(Debug, Default, Clone, Copy)]
@@ -92,7 +94,7 @@ impl Codec for CreoCodec {
         _ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan_bytes(root.window().to_vec());
+        let scan = container::scan_bytes(root.window());
         Ok(container::summarize(&scan))
     }
 

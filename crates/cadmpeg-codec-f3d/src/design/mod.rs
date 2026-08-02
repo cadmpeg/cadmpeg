@@ -5,6 +5,8 @@
 //! selected by [`crate::container`]. Returned records retain source offsets and
 //! stable identifiers for native regeneration.
 
+pub mod assembly;
+pub mod components;
 pub mod configurations;
 pub mod constraints;
 pub mod decode;
@@ -23,10 +25,14 @@ use crate::records::ConstructionRecipeKind;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum DesignFeatureFamily {
     Sketch,
+    Assemble,
     Extrude,
     Fillet,
     Chamfer,
+    Combine,
+    Draft,
     CircularPattern,
+    RectangularPattern,
     Mirror,
     Move,
     OffsetFaces,
@@ -36,8 +42,12 @@ pub(crate) enum DesignFeatureFamily {
     Coil,
     Loft,
     Sweep,
+    Pipe,
     SurfacePatch,
+    SurfaceExtend,
+    SurfaceOffset,
     BoundaryFill,
+    Hole,
     Split,
     Scale,
 }
@@ -47,21 +57,31 @@ pub(crate) enum DesignFeatureFamily {
 pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
     match kind {
         "Sketch" | "Esquisse" | "Skizze" | "Esboço" => Some(DesignFeatureFamily::Sketch),
+        "Assemble" => Some(DesignFeatureFamily::Assemble),
         "Extrude" | "Extrusion" | "Extrusão" => Some(DesignFeatureFamily::Extrude),
         "Fillet" | "Congé" | "Abrundung" | "Arredondamento" => Some(DesignFeatureFamily::Fillet),
         "Chamfer" | "Chanfrein" => Some(DesignFeatureFamily::Chamfer),
-        "Circular Pattern" | "Réseau C" => Some(DesignFeatureFamily::CircularPattern),
+        "Combine" => Some(DesignFeatureFamily::Combine),
+        "Draft" => Some(DesignFeatureFamily::Draft),
+        "C-Pattern" | "Circular Pattern" | "Réseau C" => {
+            Some(DesignFeatureFamily::CircularPattern)
+        }
+        "R-Pattern" | "Rectangular Pattern" => Some(DesignFeatureFamily::RectangularPattern),
         "Mirror" | "Symétrie miroir" => Some(DesignFeatureFamily::Mirror),
         "Move" => Some(DesignFeatureFamily::Move),
         "OffsetFaces" | "DécalerLesFaces" => Some(DesignFeatureFamily::OffsetFaces),
         "Revolve" => Some(DesignFeatureFamily::Revolve),
         "Shell" | "Schale" => Some(DesignFeatureFamily::Shell),
         "Thicken" => Some(DesignFeatureFamily::Thicken),
-        "SpirePrimitive" => Some(DesignFeatureFamily::Coil),
+        "SpirePrimitive" | "CoilPrimitive" => Some(DesignFeatureFamily::Coil),
         "Loft" => Some(DesignFeatureFamily::Loft),
         "Sweep" => Some(DesignFeatureFamily::Sweep),
+        "Pipe" => Some(DesignFeatureFamily::Pipe),
         "SurfacePatch" => Some(DesignFeatureFamily::SurfacePatch),
+        "SurfaceExtend" => Some(DesignFeatureFamily::SurfaceExtend),
+        "SurfaceOffset" => Some(DesignFeatureFamily::SurfaceOffset),
         "BoundaryFill" => Some(DesignFeatureFamily::BoundaryFill),
+        "Hole" => Some(DesignFeatureFamily::Hole),
         "Split" => Some(DesignFeatureFamily::Split),
         "Scale" | "Maßstab" => Some(DesignFeatureFamily::Scale),
         _ => None,

@@ -8,7 +8,7 @@
 //! that path so the ~60 emission sites route through one audited helper instead
 //! of one hand-copied block each.
 
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
@@ -78,8 +78,10 @@ const CREO_ARENAS: &[&str] = &[
     "feature_entity_tables",
     "feature_surface_replays",
     "feature_geometry_tables",
+    "feature_loop_history_entries",
     "feature_affected_ids",
     "feature_replay_affected_ids",
+    "surface_merge_replay_affected_ids",
     "feature_loop_restore_directions",
     "feature_revolution_extents",
     "feature_rows",

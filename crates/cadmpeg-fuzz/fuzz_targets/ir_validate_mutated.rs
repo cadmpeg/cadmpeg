@@ -25,7 +25,7 @@ fuzz_target!(|data: &[u8]| {
         Ok(ir) => ir,
         Err(_) => return,
     };
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+    let mut source_fidelity = cadmpeg_ir::source_fidelity::SourceFidelity::default();
 
     match strategy % 15 {
         0 => {
@@ -133,5 +133,5 @@ fuzz_target!(|data: &[u8]| {
         _ => {}
     }
 
-    let _ = cadmpeg_ir::validate_with_source_fidelity(&ir, &source_fidelity, Vec::new());
+    let _ = cadmpeg_ir::validate::validate_with_source_fidelity(&ir, &source_fidelity, Vec::new());
 });

@@ -4,7 +4,7 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
-use crate::eval::{curve_point, pcurve_uv, surface_point};
+use crate::eval::{curve_point, model_curve_point_by_id, pcurve_uv, surface_point};
 use crate::geometry::PcurveGeometry;
 use crate::math::Point3;
 use crate::topology::Sense;
@@ -32,6 +32,7 @@ fn allowance(tolerances: &[Option<f64>]) -> f64 {
 /// Embedded support pcurves must map through their surfaces onto the solved
 /// procedural curve at both ends of the construction interval.
 pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let index = crate::index::ModelIndex::new(ir);
     let curves = ir
         .model
         .curves
@@ -45,6 +46,40 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
         .map(|surface| (surface.id.0.as_str(), &surface.geometry))
         .collect::<HashMap<_, _>>();
     for procedural in &ir.model.procedural_curves {
+        if let crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
+            endpoints,
+            tolerance,
+            parameterization: Some(parameterization),
+            ..
+        } = &procedural.definition
+        {
+            let evaluated = parameterization
+                .parameter_range
+                .map(|parameter| model_curve_point_by_id(&index, &procedural.curve, parameter));
+            let [Some(start), Some(end)] = evaluated else {
+                findings.push(Finding {
+                    check: Check::GeometricConsistency,
+                    severity: Severity::Error,
+                    message: "charted tolerant intersection does not evaluate at both endpoints"
+                        .into(),
+                    entity: Some(procedural.id.0.clone()),
+                });
+                continue;
+            };
+            let mismatch = distance(start, endpoints[0]).max(distance(end, endpoints[1]));
+            if !mismatch.is_finite() || mismatch > *tolerance {
+                findings.push(Finding {
+                    check: Check::GeometricConsistency,
+                    severity: Severity::Error,
+                    message: format!(
+                        "charted tolerant intersection misses its endpoint witnesses by \
+                         {mismatch:.6}"
+                    ),
+                    entity: Some(procedural.id.0.clone()),
+                });
+            }
+            continue;
+        }
         let (context, third) = match &procedural.definition {
             crate::geometry::ProceduralCurveDefinition::Law { context, .. }
             | crate::geometry::ProceduralCurveDefinition::Intersection { context, .. }
@@ -123,7 +158,8 @@ fn vertex_positions(ir: &CadIr) -> HashMap<&str, (Point3, Option<f64>)> {
 }
 
 /// An edge's curve evaluated at its parameter range must land on the edge's
-/// start and end vertex positions.
+/// start and end vertex positions within the topology tolerances or the
+/// evaluated curve cache's fit tolerance.
 pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
     let curves = ir
         .model
@@ -131,12 +167,27 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         .iter()
         .map(|curve| (curve.id.0.as_str(), &curve.geometry))
         .collect::<HashMap<_, _>>();
+    let curve_cache_tolerances = ir
+        .model
+        .procedural_curves
+        .iter()
+        .map(|curve| {
+            (
+                curve.curve.0.as_str(),
+                curve.cache_fit_tolerance.filter(|value| value.is_finite()),
+            )
+        })
+        .collect::<HashMap<_, _>>();
     let vertices = vertex_positions(ir);
     for edge in &ir.model.edges {
         let Some([start_t, end_t]) = edge.param_range else {
             continue;
         };
-        let Some(geometry) = edge.curve.as_ref().and_then(|id| curves.get(id.0.as_str())) else {
+        let Some((curve_id, geometry)) = edge
+            .curve
+            .as_ref()
+            .and_then(|id| curves.get(id.0.as_str()).map(|geometry| (id, geometry)))
+        else {
             continue;
         };
         let (Some((start, start_tol)), Some((end, end_tol))) = (
@@ -150,7 +201,15 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         else {
             continue;
         };
-        let bound = allowance(&[edge.tolerance, *start_tol, *end_tol]);
+        let bound = allowance(&[
+            edge.tolerance,
+            *start_tol,
+            *end_tol,
+            curve_cache_tolerances
+                .get(curve_id.0.as_str())
+                .copied()
+                .flatten(),
+        ]);
         let mismatch = distance(at_start, *start).max(distance(at_end, *end));
         if !mismatch.is_finite() || mismatch > bound {
             findings.push(Finding {
@@ -173,10 +232,10 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         let Some([start_t, end_t]) = coedge.use_curve_parameter_range else {
             continue;
         };
-        let Some(geometry) = coedge
+        let Some((curve_id, geometry)) = coedge
             .use_curve
             .as_ref()
-            .and_then(|id| curves.get(id.0.as_str()))
+            .and_then(|id| curves.get(id.0.as_str()).map(|geometry| (id, geometry)))
         else {
             continue;
         };
@@ -198,7 +257,15 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         else {
             continue;
         };
-        let bound = allowance(&[edge.tolerance, *start_tol, *end_tol]);
+        let bound = allowance(&[
+            edge.tolerance,
+            *start_tol,
+            *end_tol,
+            curve_cache_tolerances
+                .get(curve_id.0.as_str())
+                .copied()
+                .flatten(),
+        ]);
         let mismatch = distance(at_start, *start).max(distance(at_end, *end));
         if !mismatch.is_finite() || mismatch > bound {
             findings.push(Finding {
@@ -214,9 +281,10 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
 }
 
 /// A coedge's pcurve, mapped through its face's surface, must land on the
-/// owning edge's vertex positions over the edge's parameter interval. Pcurve
-/// parameter sign and direction are independent of edge sense, so either sign
-/// and either endpoint assignment satisfy the check.
+/// owning edge's vertex positions over the edge's parameter interval within
+/// the topology tolerances or the evaluated pcurve carriers' fit tolerances.
+/// Pcurve parameter sign and direction are independent of edge sense, so
+/// either sign and either endpoint assignment satisfy the check.
 pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
     let surfaces = ir
         .model
@@ -228,12 +296,6 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         .model
         .procedural_surfaces
         .iter()
-        .filter(|surface| {
-            !matches!(
-                surface.definition,
-                crate::geometry::ProceduralSurfaceDefinition::Exact { .. }
-            )
-        })
         .map(|surface| surface.surface.0.as_str())
         .collect::<HashSet<_>>();
     let pcurves = ir
@@ -321,7 +383,14 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         let Some(intervals) = intervals else {
             continue;
         };
-        let bound = allowance(&[edge.tolerance, *start_tol, *end_tol, face.tolerance]);
+        let bound = allowance(&[
+            edge.tolerance,
+            *start_tol,
+            *end_tol,
+            face.tolerance,
+            first.fit_tolerance,
+            last.fit_tolerance,
+        ]);
         let Some(mismatch) = intervals
             .into_iter()
             .filter_map(|[t0, t1]| {
@@ -389,6 +458,7 @@ fn pcurve_parameter_extremes(pcurve: &crate::geometry::Pcurve) -> Option<[f64; 2
         PcurveGeometry::PolarNurbs { knots, .. } => pcurve
             .parameter_range
             .or_else(|| Some([*knots.first()?, *knots.last()?])),
+        PcurveGeometry::SphericalGreatCircle { .. } => pcurve.parameter_range,
         geometry => pcurve_geometry_parameter_extremes(geometry),
     }
 }
@@ -405,9 +475,12 @@ fn pcurve_geometry_parameter_extremes(geometry: &PcurveGeometry) -> Option<[f64;
         PcurveGeometry::Line { .. }
         | PcurveGeometry::Circle { .. }
         | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::Harmonic { .. }
         | PcurveGeometry::Parabola { .. }
         | PcurveGeometry::Hyperbola { .. }
-        | PcurveGeometry::PolarHarmonic { .. } => None,
+        | PcurveGeometry::Hyperbolic { .. }
+        | PcurveGeometry::PolarHarmonic { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. } => None,
     }
 }
 

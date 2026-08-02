@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "4",
+      "ir_version": "5",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -27,7 +27,6 @@
             "sense": "forward"
           }
         ],
-        "components": [],
         "configurations": [],
         "curves": [
           {
@@ -175,6 +174,66 @@
                         },
                         {
                           "u": 0.0,
+                          "v": 0.625
+                        },
+                        {
+                          "u": 0.0,
+                          "v": 1.25
+                        },
+                        {
+                          "u": 0.0,
+                          "v": 1.875
+                        },
+                        {
+                          "u": 0.0,
+                          "v": 2.5
+                        },
+                        {
+                          "u": 0.0,
+                          "v": 3.125
+                        },
+                        {
+                          "u": 0.0,
+                          "v": 3.75
+                        },
+                        {
+                          "u": 0.0,
+                          "v": 4.375000000000001
+                        },
+                        {
+                          "u": 0.0,
+                          "v": 5.0
+                        },
+                        {
+                          "u": 0.0,
+                          "v": 5.625
+                        },
+                        {
+                          "u": 0.0,
+                          "v": 6.25
+                        },
+                        {
+                          "u": 0.0,
+                          "v": 6.875
+                        },
+                        {
+                          "u": 0.0,
+                          "v": 7.5
+                        },
+                        {
+                          "u": 0.0,
+                          "v": 8.125
+                        },
+                        {
+                          "u": 0.0,
+                          "v": 8.750000000000002
+                        },
+                        {
+                          "u": 0.0,
+                          "v": 9.375
+                        },
+                        {
+                          "u": 0.0,
                           "v": 10.0
                         }
                       ],
@@ -183,6 +242,21 @@
                       "knots": [
                         0.0,
                         0.0,
+                        0.000625,
+                        0.00125,
+                        0.001875,
+                        0.0025,
+                        0.003125,
+                        0.00375,
+                        0.004375,
+                        0.005,
+                        0.005625,
+                        0.00625,
+                        0.006875,
+                        0.0075,
+                        0.008125,
+                        0.00875,
+                        0.009375,
                         0.01,
                         0.01
                       ],
@@ -199,8 +273,7 @@
           }
         ],
         "procedural_surfaces": [],
-        "product_occurrences": [],
-        "products": [],
+        "product_definitions": [],
         "regions": [
           {
             "body": "nx:s0:body#2",
@@ -421,15 +494,18 @@
               }
             ]
           },
-          "version": 155
+          "version": 181
         }
       },
       "source": {
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "482",
-          "footer_offset": "0",
+          "file_size": "487",
+          "footer_entry_count": "0",
+          "footer_fingerprint": "00000000",
+          "footer_offset": "473",
+          "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
           "partition_streams": "1",
@@ -451,20 +527,13 @@
       "geometry_transferred": true,
       "losses": [
         {
-          "category": "geometry",
           "code": "carrier_summary",
           "message": "Decoded 1 POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, metres → millimetres), 2 analytic surface carrier(s) (2 plane, 0 cylinder, 0 cone, 0 sphere, 0 torus), and 2 analytic curve carrier(s) (1 line, 0 circle, 0 ellipse). All parameters are byte-exact at the document's millimetre scale.",
           "severity": "info"
-        },
-        {
-          "category": "attribute",
-          "code": "attributes_not_transferred",
-          "message": "Material and appearance assignment, class-specific entity attribute fields, and assembly occurrence placements were not transferred: their remaining NX object-model and Parasolid field serialization is not decoded.",
-          "severity": "warning"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 473, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -541,7 +610,7 @@
         },
         "provenance": {
           "nx:container:parasolid#0": {
-            "offset": 72,
+            "offset": 76,
             "stream": 1,
             "tag": "partition"
           },
@@ -627,7 +696,7 @@
           "byte_len": 969,
           "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AAAMAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAMAAAAAAAEAAgABAAQAAQABAAwAAQAOAAQAAAAAAAA/Kjbi6xxDLQABAAEABQADAAYrAAAAAAAAAAAAAAAPAAUAAAAAAAAABwAEAAEAEQAHAAAABQAHAAcACgABAAgADAAAKwAQAAgAAAAAAAA/M6kqMFUyYQAHAAAAAAAMAAAAAAAAADIABgAAAAAAAAAAAAAAAAAAKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAkAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEgAKAAAAAAAAAAAAAAAAAAs/Gjbi6xxDLQAAABMADAAAAAAAAAAAAAAAAAAdAAsAAAAAAAAAAAAAAAA/hHrhR64Uez+UeuFHrhR7P564UeuFHrgAJgAMAAAAAAABAAAAAAAAAAArAAYADQAUABUAFgABACgAAAACABQAAAAAAAAAAD/wAAAAAAAAAAAAAj7k+LWI42jxP1BiTdLxqfzCvJKPmW4AAMK8ko+ZbgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+EeuFHrhR7AAAAAAAAAAAAAAAAAAAAAD+EeuFHrhR7wrySj5luAAAAAAAAAAAAAD+EeuFHrhR7P/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP4R64UeuFHsAKQAAAAEAFUw/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACkAAAABABZMPz+EeuFHrhR7AAAAAAAAAAAAAAAAAAAAAADMAAAACAAXBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP4R64UeuFHsAAAAAAAAAAD+EeuFHrhR7AAAAAAAAAAAAMgANAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAA",
           "id": "nx:container:parasolid#0",
-          "offset": 72,
+          "offset": 76,
           "sha256": "ce836d5d52f0f6039a6840e085ecffa8cf82cba7790420094c1e81eb21d546b5",
           "stream": "nx:container"
         }
@@ -640,18 +709,18 @@
     "entries": [
       {
         "attributes": {
-          "file_offset": "72",
+          "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 410,
+        "compressed_size": 397,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
-        "role": "stream",
-        "uncompressed_size": 410
+        "role": "part-payload",
+        "uncompressed_size": 397
       },
       {
         "attributes": {
-          "file_offset": "72",
+          "file_offset": "76",
           "kind": "partition",
           "records.body": "1",
           "records.edge": "1",
@@ -680,7 +749,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 3351057, footer offset 0, 1 directory entry/ies",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 473, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]

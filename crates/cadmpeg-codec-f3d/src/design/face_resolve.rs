@@ -10,7 +10,7 @@ use crate::records::{
     DesignParameterScope, DesignSketchPlacement, SketchCurveGeometry, SketchCurveIdentity,
     SketchPoint,
 };
-use cadmpeg_ir::le::f64_at;
+use cadmpeg_codec_core::le::f64_at;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::HashSet;
 
@@ -50,6 +50,29 @@ pub(crate) fn resolved_profile_face_group(
 ) -> Option<cadmpeg_ir::features::ProfileRef> {
     use cadmpeg_ir::features::ProfileRef;
 
+    let selection = resolved_historical_face_group(scope, group, operands)?;
+    let cadmpeg_ir::features::FaceSelection::Historical {
+        state,
+        faces,
+        native,
+    } = selection
+    else {
+        return None;
+    };
+    Some(ProfileRef::HistoricalFaces {
+        state,
+        faces,
+        native: vec![native],
+    })
+}
+
+pub(crate) fn resolved_historical_face_group(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    operands: &[DesignFaceOperand],
+) -> Option<cadmpeg_ir::features::FaceSelection> {
+    use cadmpeg_ir::features::FaceSelection;
+
     let previous_state_id = scope.previous_history_state_id?;
     let stream = native_stream(&group.id)?;
     let mut faces = Vec::with_capacity(group.members.len());
@@ -81,7 +104,7 @@ pub(crate) fn resolved_profile_face_group(
             .0
             .split_once('#')
             .map_or(feature.0.as_str(), |(_, key)| key);
-        ProfileRef::HistoricalFaces {
+        FaceSelection::Historical {
             state: feature_input_topology_id(&feature, previous_state_id),
             faces: faces
                 .into_iter()
@@ -92,7 +115,7 @@ pub(crate) fn resolved_profile_face_group(
                     )
                 })
                 .collect(),
-            native: vec![group.id.clone()],
+            native: group.id.clone(),
         }
     })
 }
@@ -111,8 +134,30 @@ fn resolved_face_operand(operand: &DesignFaceOperand) -> Option<Vec<cadmpeg_ir::
     if !operand.alternate_selector_candidate_faces.is_empty() {
         return Some(candidates.to_vec());
     }
+    if !operand.unreferenced_candidate_faces.is_empty()
+        && complete_counted_face_recipe(operand).is_some()
+    {
+        return Some(candidates.to_vec());
+    }
     let [face] = candidates else { return None };
     Some(vec![face.clone()])
+}
+
+fn complete_counted_face_recipe(operand: &DesignFaceOperand) -> Option<usize> {
+    if operand.recipe_kind != crate::records::ConstructionRecipeKind::BoundedFace {
+        return None;
+    }
+    let Some(crate::design::decode::operands::FaceRecipeProgramKind::Counted { header_value }) =
+        crate::design::decode::operands::face_recipe_program_kind(&operand.recipe_program)
+    else {
+        return None;
+    };
+    (operand.recipe_nodes.len() == header_value
+        && operand
+            .recipe_nodes
+            .iter()
+            .all(|node| node.recipe_structure.is_some()))
+    .then_some(header_value)
 }
 
 pub(crate) fn resolve_face_operand_history_candidates(operand: &DesignFaceOperand) -> Option<i64> {
@@ -129,6 +174,106 @@ pub(crate) fn resolve_face_operand_history_candidates(operand: &DesignFaceOperan
         return None;
     }
     direct.0.rsplit_once('#')?.1.parse().ok()
+}
+
+pub(crate) fn resolve_bounded_face_history_candidates(
+    operand: &DesignFaceOperand,
+) -> Option<Vec<i64>> {
+    if operand.recipe_kind != crate::records::ConstructionRecipeKind::BoundedFace {
+        return None;
+    }
+    if let Some(candidate) = convergent_effective_face_support(operand) {
+        return Some(candidate);
+    }
+    let header_value = complete_counted_face_recipe(operand)?;
+    bounded_face_candidate_by_boundary_cardinality(
+        header_value,
+        &operand.historical_support_contexts,
+    )
+}
+
+fn convergent_effective_face_support(operand: &DesignFaceOperand) -> Option<Vec<i64>> {
+    let mut active_faces = face_operand_candidates(operand)
+        .iter()
+        .filter_map(|face| face.0.rsplit_once('#')?.1.parse::<i64>().ok())
+        .collect::<Vec<_>>();
+    active_faces.sort_unstable();
+    active_faces.dedup();
+    convergent_face_support(&active_faces, &operand.historical_support_contexts)
+}
+
+fn convergent_face_support(
+    active_faces: &[i64],
+    support_contexts: &[crate::records::DesignHistoricalFaceSupportContext],
+) -> Option<Vec<i64>> {
+    if active_faces.is_empty() {
+        return None;
+    }
+    let mut contexts = support_contexts.iter();
+    let first = contexts.next()?;
+    let mut support = first.preceding_face_slots.clone();
+    support.sort_unstable();
+    support.dedup();
+    if support.is_empty() {
+        return None;
+    }
+    let mut covered = vec![first.active_face_slot];
+    for context in contexts {
+        let mut candidate = context.preceding_face_slots.clone();
+        candidate.sort_unstable();
+        candidate.dedup();
+        if candidate != support {
+            return None;
+        }
+        covered.push(context.active_face_slot);
+    }
+    covered.sort_unstable();
+    covered.dedup();
+    (covered == active_faces).then_some(support)
+}
+
+fn bounded_face_candidate_by_boundary_cardinality(
+    header_value: usize,
+    contexts: &[crate::records::DesignHistoricalFaceSupportContext],
+) -> Option<Vec<i64>> {
+    let mut candidates = contexts
+        .iter()
+        .filter_map(|context| {
+            let mut faces = context.preceding_face_slots.clone();
+            faces.sort_unstable();
+            faces.dedup();
+            if faces.is_empty()
+                || faces.len() != context.preceding_face_boundaries.len()
+                || !faces.iter().all(|face| {
+                    context
+                        .preceding_face_boundaries
+                        .iter()
+                        .any(|boundary| boundary.face_slot == *face)
+                })
+            {
+                return None;
+            }
+            let boundary_edge_count =
+                context
+                    .preceding_face_boundaries
+                    .iter()
+                    .try_fold(0usize, |total, face| {
+                        face.loops.iter().try_fold(total, |total, loop_| {
+                            (!loop_.edge_slots.is_empty()
+                                && loop_.edge_slots.len() == loop_.coedge_slots.len())
+                            .then(|| total.checked_add(loop_.edge_slots.len()))
+                            .flatten()
+                        })
+                    })?;
+            (boundary_edge_count == header_value).then_some(faces)
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_unstable();
+    candidates.dedup();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
 }
 
 fn resolve_face_operand_support_candidate(operand: &DesignFaceOperand) -> Option<i64> {
@@ -201,6 +346,7 @@ pub(crate) fn bind_extrude_start_planes(
             ProfileRef::Sketch(sketch)
             | ProfileRef::SketchProfiles { sketch, .. }
             | ProfileRef::SketchRegions { sketch, .. }
+            | ProfileRef::SketchEntities { sketch, .. }
             | ProfileRef::SketchSelection { sketch, .. } => sketch,
             ProfileRef::Native(_)
             | ProfileRef::Unresolved(_)
@@ -420,4 +566,83 @@ pub(crate) fn sketch_curve_is_spatial(curve: &SketchCurveIdentity) -> bool {
 
 pub(crate) fn sketch_point_depth(point: &SketchPoint) -> Option<f64> {
     f64_at(&point.raw_bytes, point.coordinate_offset as usize + 16).map(|value| value * 10.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{bounded_face_candidate_by_boundary_cardinality, convergent_face_support};
+    use crate::records::{
+        DesignHistoricalFaceBoundaryContext, DesignHistoricalFaceLoopContext,
+        DesignHistoricalFaceSupportContext,
+    };
+
+    fn support(active: i64, faces: &[(i64, usize)]) -> DesignHistoricalFaceSupportContext {
+        DesignHistoricalFaceSupportContext {
+            active_face_slot: active,
+            surface_slot: active + 1_000,
+            preceding_face_slots: faces.iter().map(|(face, _)| *face).collect(),
+            preceding_face_boundaries: faces
+                .iter()
+                .map(|(face, edge_count)| DesignHistoricalFaceBoundaryContext {
+                    face_slot: *face,
+                    loops: vec![DesignHistoricalFaceLoopContext {
+                        loop_slot: face + 2_000,
+                        coedge_slots: (0..*edge_count)
+                            .map(|ordinal| i64::try_from(ordinal).expect("test ordinal"))
+                            .collect(),
+                        edge_slots: (0..*edge_count)
+                            .map(|ordinal| i64::try_from(ordinal).expect("test ordinal") + 10_000)
+                            .collect(),
+                        vertex_slots: Vec::new(),
+                        point_slots: Vec::new(),
+                        positions: Vec::new(),
+                    }],
+                })
+                .collect(),
+            changed_preceding_face_slots: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn bounded_face_cardinality_resolves_one_complete_predecessor_set() {
+        let contexts = [
+            support(10, &[(100, 12)]),
+            support(11, &[(101, 4), (102, 4)]),
+            support(12, &[(101, 4), (102, 4)]),
+        ];
+        assert_eq!(
+            bounded_face_candidate_by_boundary_cardinality(8, &contexts),
+            Some(vec![101, 102])
+        );
+        assert_eq!(
+            bounded_face_candidate_by_boundary_cardinality(12, &contexts),
+            Some(vec![100])
+        );
+    }
+
+    #[test]
+    fn bounded_face_cardinality_rejects_conflicting_complete_sets() {
+        let contexts = [support(10, &[(100, 4)]), support(11, &[(101, 4)])];
+        assert_eq!(
+            bounded_face_candidate_by_boundary_cardinality(4, &contexts),
+            None
+        );
+    }
+
+    #[test]
+    fn effective_faces_resolve_only_with_complete_convergent_support() {
+        let contexts = [
+            support(10, &[(100, 4)]),
+            support(11, &[(100, 4)]),
+            support(12, &[(100, 4)]),
+        ];
+        assert_eq!(
+            convergent_face_support(&[10, 11, 12], &contexts),
+            Some(vec![100])
+        );
+        assert_eq!(convergent_face_support(&[10, 11, 12, 13], &contexts), None);
+
+        let conflicting = [support(10, &[(100, 4)]), support(11, &[(101, 4)])];
+        assert_eq!(convergent_face_support(&[10, 11], &conflicting), None);
+    }
 }

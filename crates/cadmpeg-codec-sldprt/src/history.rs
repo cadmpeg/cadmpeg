@@ -2,25 +2,26 @@
 //! `SolidWorks` Keywords XML feature history.
 
 use crate::classification::{
-    classify, native_object_class, principal_plane, FeatureClass, NativeClassKind,
+    classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
 };
 use crate::container::ContainerScan;
 use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
-use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
     Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
     ConfigurationBodies, ConfigurationId, CosmeticThreadExtent, CurveProjectionDirection,
-    CurveProjectionDirectionState, DesignConfiguration, DesignParameter, DimensionDisplay,
-    EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceMotion, FaceSelection, FeatureDefinition,
-    FeatureId, FeatureSourceContent, FeatureTreeNodeRole, FlexForm, FlexMode, HoleForm, HoleKind,
-    Length, ParameterId, ParameterValue, PathRef, PatternForm, PatternKind, PatternSeed,
-    ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction, RevolveExtent,
-    RibConstruction, RibDraft, RibSide, RuledSurfaceMode, ScaleCenter, ScaleFactors, SketchSpace,
-    SweepMode, Termination, VariableRadius, VertexSelection, WrapMode,
+    CurveProjectionDirectionState, DatumPlaneReference, DesignConfiguration, DesignParameter,
+    DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceMotion, FaceSelection,
+    FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, FlexForm, FlexMode,
+    HoleBottom, HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm,
+    PatternKind, PatternSeed, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
+    RevolutionConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide, RuledSurfaceMode,
+    ScaleCenter, ScaleFactors, SketchSpace, SweepMode, Termination, VariableRadius,
+    VertexSelection, WrapMode,
 };
-use cadmpeg_ir::geometry::Curve;
+use cadmpeg_ir::geometry::{Curve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, Edge, Face};
@@ -339,7 +340,7 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
         .iter()
         .flat_map(|history| {
             let source_bindings = unique_source_bindings(history);
-            let by_source = source_bindings
+            let mut by_source = source_bindings
                 .iter()
                 .filter_map(|(source, binding)| {
                     binding
@@ -347,6 +348,12 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                         .map(|(_, neutral)| (*source, neutral.clone()))
                 })
                 .collect::<HashMap<_, _>>();
+            by_source.extend(
+                history
+                    .features
+                    .iter()
+                    .map(|feature| (feature.id.as_str(), neutral_feature_id(&feature.id))),
+            );
             let by_native = history
                 .features
                 .iter()
@@ -364,13 +371,27 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                 .iter()
                 .filter_map(|feature| Some((feature.source_id.as_deref()?, feature)))
                 .collect::<HashMap<_, _>>();
+            let source_ordered = history.features.iter().any(|feature| {
+                feature.input_class.is_none()
+                    && feature.xml_tag.eq_ignore_ascii_case("Extrusion")
+                    && feature.parameters.len() == 1
+                    && feature
+                        .source_id
+                        .as_deref()
+                        .and_then(|source| source.parse::<u32>().ok())
+                        .is_some_and(|source| source > 0)
+            });
             history
                 .features
                 .iter()
                 .filter(|feature| !is_history_metadata_record(feature, &history.features))
                 .map(move |feature| cadmpeg_ir::features::Feature {
                     id: neutral_feature_id(&feature.id),
-                    ordinal: u64::from(feature.ordinal),
+                    ordinal: source_ordered
+                        .then(|| feature.source_id.as_deref()?.parse::<u64>().ok())
+                        .flatten()
+                        .filter(|source| *source > 0)
+                        .unwrap_or(u64::from(feature.ordinal)),
                     name: (!feature.name.is_empty()).then(|| feature.name.clone()),
                     suppressed: Some(feature.suppressed),
                     parent: feature
@@ -400,8 +421,275 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                 })
         })
         .collect::<Vec<_>>();
+    bind_offset_plane_references(&mut features);
     bind_native_profile_features(&mut features, histories);
     features
+}
+
+fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) {
+    fn history_key(feature: &cadmpeg_ir::features::Feature) -> Option<&str> {
+        feature
+            .native_ref
+            .as_deref()
+            .and_then(|native| native.rsplit_once(':').map(|(history, _)| history))
+    }
+
+    const FRAME_TOLERANCE: f64 = 1.0e-8;
+
+    let stored_frame = |feature: &cadmpeg_ir::features::Feature| {
+        let origin = parse_point3_mm(feature.source_properties.get("Origin")?)?;
+        let normal = parse_vector3(feature.source_properties.get("Normal")?)?;
+        let u_axis = parse_vector3(feature.source_properties.get("UAxis")?)?;
+        valid_plane_frame(normal, u_axis).then_some((origin, normal, u_axis))
+    };
+    let principal_frame = |plane| match plane {
+        cadmpeg_ir::features::PrincipalPlane::Front => (
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, -1.0, 0.0),
+            Vector3::new(0.0, 0.0, -1.0),
+        ),
+        cadmpeg_ir::features::PrincipalPlane::Top => (
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ),
+        cadmpeg_ir::features::PrincipalPlane::Right => (
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, -1.0),
+        ),
+    };
+    let same_scalar = |left: f64, right: f64| {
+        (left - right).abs() <= FRAME_TOLERANCE * left.abs().max(right.abs()).max(1.0)
+    };
+    let offset_frame_matches = |reference: (Point3, Vector3, Vector3),
+                                result: (Point3, Vector3, Vector3),
+                                distance: Length| {
+        let reference_normal_length = reference.1.norm();
+        let result_normal_length = result.1.norm();
+        let normal_dot =
+            (reference.1.x * result.1.x + reference.1.y * result.1.y + reference.1.z * result.1.z)
+                / (reference_normal_length * result_normal_length);
+        if !same_scalar(normal_dot.abs(), 1.0) {
+            return false;
+        }
+        let displacement = Vector3::new(
+            result.0.x - reference.0.x,
+            result.0.y - reference.0.y,
+            result.0.z - reference.0.z,
+        );
+        let signed_distance = (displacement.x * reference.1.x
+            + displacement.y * reference.1.y
+            + displacement.z * reference.1.z)
+            / reference_normal_length;
+        let tangent = Vector3::new(
+            displacement.x - reference.1.x * signed_distance / reference_normal_length,
+            displacement.y - reference.1.y * signed_distance / reference_normal_length,
+            displacement.z - reference.1.z * signed_distance / reference_normal_length,
+        );
+        same_scalar(tangent.norm(), 0.0) && same_scalar(signed_distance.abs(), distance.0.abs())
+    };
+    let ordinals = features
+        .iter()
+        .map(|feature| {
+            (
+                feature.id.clone(),
+                (
+                    feature.ordinal,
+                    match feature.definition {
+                        FeatureDefinition::DatumPrincipalPlane { plane } => {
+                            Some(principal_frame(plane))
+                        }
+                        FeatureDefinition::DatumPlane { .. }
+                        | FeatureDefinition::DatumOffsetPlane { .. } => stored_frame(feature),
+                        _ => None,
+                    },
+                ),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    for feature in features.iter_mut() {
+        let explicit_native_reference = feature.source_properties.contains_key("Reference")
+            || feature.source_properties.contains_key("Plane");
+        let result_frame = stored_frame(feature);
+        let FeatureDefinition::DatumOffsetPlane {
+            reference,
+            distance,
+        } = &mut feature.definition
+        else {
+            continue;
+        };
+        let Some(DatumPlaneReference::Feature(reference_id)) = reference.as_ref() else {
+            continue;
+        };
+        let reference_id = reference_id.clone();
+        let invalid = match ordinals.get(&reference_id) {
+            None => true,
+            Some((reference_ordinal, reference_frame)) => {
+                let geometrically_compatible =
+                    reference_frame
+                        .zip(result_frame)
+                        .map(|(reference_frame, result_frame)| {
+                            offset_frame_matches(reference_frame, result_frame, *distance)
+                        });
+                *reference_ordinal >= feature.ordinal
+                    && !(explicit_native_reference && geometrically_compatible == Some(true))
+            }
+        };
+        if invalid {
+            *reference = None;
+            feature
+                .dependencies
+                .retain(|dependency| dependency != &reference_id);
+            continue;
+        }
+        if !feature.dependencies.contains(&reference_id) {
+            feature.dependencies.push(reference_id);
+        }
+    }
+    let mut frames = features
+        .iter()
+        .filter_map(|feature| {
+            let frame = match feature.definition {
+                FeatureDefinition::DatumPrincipalPlane { plane } => principal_frame(plane),
+                FeatureDefinition::DatumPlane {
+                    origin,
+                    normal,
+                    u_axis,
+                } => (origin, normal, u_axis),
+                _ => return None,
+            };
+            Some((feature.id.clone(), frame))
+        })
+        .collect::<HashMap<_, _>>();
+
+    loop {
+        let mut changed = false;
+        for feature in features.iter() {
+            let FeatureDefinition::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Feature(reference)),
+                distance,
+            } = &feature.definition
+            else {
+                continue;
+            };
+            if frames.contains_key(&feature.id) {
+                continue;
+            }
+            let Some(&(origin, normal, u_axis)) = frames.get(reference) else {
+                continue;
+            };
+            let normal_length = normal.norm();
+            frames.insert(
+                feature.id.clone(),
+                (
+                    Point3::new(
+                        origin.x + normal.x * distance.0 / normal_length,
+                        origin.y + normal.y * distance.0 / normal_length,
+                        origin.z + normal.z * distance.0 / normal_length,
+                    ),
+                    normal,
+                    u_axis,
+                ),
+            );
+            changed = true;
+        }
+
+        let bindings = features
+            .iter()
+            .enumerate()
+            .filter_map(|(index, feature)| {
+                let FeatureDefinition::DatumOffsetPlane {
+                    reference: None,
+                    distance,
+                } = &feature.definition
+                else {
+                    return None;
+                };
+                let (origin, normal, _) = stored_frame(feature)?;
+                if same_scalar(distance.0, 0.0) {
+                    return None;
+                }
+                let history = history_key(feature)?;
+                let mut candidates = features
+                    .iter()
+                    .filter(|candidate| candidate.ordinal < feature.ordinal)
+                    .filter(|candidate| history_key(candidate) == Some(history))
+                    .filter_map(|candidate| {
+                        let &(candidate_origin, candidate_normal, _) = frames.get(&candidate.id)?;
+                        let candidate_normal_length = candidate_normal.norm();
+                        let result_normal_length = normal.norm();
+                        let normal_dot = (normal.x * candidate_normal.x
+                            + normal.y * candidate_normal.y
+                            + normal.z * candidate_normal.z)
+                            / (result_normal_length * candidate_normal_length);
+                        if !same_scalar(normal_dot.abs(), 1.0) {
+                            return None;
+                        }
+                        let displacement = Vector3::new(
+                            origin.x - candidate_origin.x,
+                            origin.y - candidate_origin.y,
+                            origin.z - candidate_origin.z,
+                        );
+                        let signed_distance = (displacement.x * candidate_normal.x
+                            + displacement.y * candidate_normal.y
+                            + displacement.z * candidate_normal.z)
+                            / candidate_normal_length;
+                        let tangent = Vector3::new(
+                            displacement.x
+                                - candidate_normal.x * signed_distance / candidate_normal_length,
+                            displacement.y
+                                - candidate_normal.y * signed_distance / candidate_normal_length,
+                            displacement.z
+                                - candidate_normal.z * signed_distance / candidate_normal_length,
+                        );
+                        (same_scalar(tangent.norm(), 0.0)
+                            && same_scalar(signed_distance.abs(), distance.0.abs()))
+                        .then_some((
+                            candidate.id.clone(),
+                            distance.0.abs().copysign(signed_distance),
+                        ))
+                    });
+                let candidate = candidates.next()?;
+                candidates.next().is_none().then_some((index, candidate))
+            })
+            .collect::<Vec<_>>();
+        for (index, (reference, distance)) in bindings {
+            let FeatureDefinition::DatumOffsetPlane {
+                reference: slot,
+                distance: stored_distance,
+            } = &mut features[index].definition
+            else {
+                continue;
+            };
+            *slot = Some(DatumPlaneReference::Feature(reference.clone()));
+            *stored_distance = Length(distance);
+            if !features[index].dependencies.contains(&reference) {
+                features[index].dependencies.push(reference);
+            }
+            changed = true;
+        }
+        if !changed {
+            break;
+        }
+    }
+    for feature in features {
+        let FeatureDefinition::DatumOffsetPlane {
+            reference: reference @ None,
+            ..
+        } = &mut feature.definition
+        else {
+            continue;
+        };
+        *reference = (|| {
+            Some(DatumPlaneReference::Face {
+                face: FaceSelection::Unresolved,
+                origin: parse_point3_mm(feature.source_properties.get("ReferenceFaceOrigin")?)?,
+                normal: parse_vector3(feature.source_properties.get("ReferenceFaceNormal")?)?,
+                u_axis: parse_vector3(feature.source_properties.get("ReferenceFaceUAxis")?)?,
+            })
+        })();
+    }
 }
 
 fn bind_native_profile_features(
@@ -460,11 +748,11 @@ fn bind_native_profile_features(
                     bind(profile);
                 }
             }
-            FeatureDefinition::Sweep {
-                profile: Some(profile),
-                ..
-            } => bind(profile),
-            FeatureDefinition::Sweep { profile: None, .. } => {}
+            FeatureDefinition::Sweep { section, .. } => {
+                if let Some(profile) = section.referenced_profile_mut() {
+                    bind(profile);
+                }
+            }
             FeatureDefinition::Loft { sections, .. } => {
                 for section in sections {
                     if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
@@ -512,7 +800,7 @@ fn is_custom_property(feature: &Feature) -> bool {
     feature.xml_tag.eq_ignore_ascii_case("CustomProperty")
 }
 
-fn is_history_metadata_record(feature: &Feature, features: &[Feature]) -> bool {
+pub(crate) fn is_history_metadata_record(feature: &Feature, features: &[Feature]) -> bool {
     if is_custom_property(feature)
         || matches!(
             feature.input_class.as_deref(),
@@ -798,7 +1086,37 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
     populate_parameter_dependencies(&mut parameters, &feature_names, &global_owners);
     order_parameters_by_dependencies(&mut parameters);
     evaluate_parameter_expressions(&mut parameters, &feature_names, &global_owners);
+    for parameter in parameters
+        .iter_mut()
+        .filter(|parameter| parameter.value.is_none())
+    {
+        parameter.value = bare_text_parameter_literal(&parameter.expression);
+    }
     parameters
+}
+
+fn bare_text_parameter_literal(expression: &str) -> Option<ParameterValue> {
+    let expression = expression.trim();
+    if expression.is_empty()
+        || expression.chars().any(|character| {
+            matches!(
+                character,
+                '+' | '-' | '*' | '/' | '^' | '=' | '<' | '>' | '(' | ')' | ','
+            )
+        })
+    {
+        return None;
+    }
+    let identifiers = expression_identifier_tokens(expression);
+    if identifiers.unclosed_quote
+        || identifiers
+            .identifiers
+            .iter()
+            .any(definite_parameter_reference)
+    {
+        return None;
+    }
+    Some(ParameterValue::String(expression.to_owned()))
 }
 
 pub(crate) fn global_parameter_owners(
@@ -935,7 +1253,7 @@ fn populate_parameter_dependencies(
 ) {
     let aliases = parameter_aliases_by_owner(parameters, feature_names, global_owners);
     for parameter in parameters.iter_mut() {
-        let aliases = &aliases[&parameter.owner];
+        let aliases = aliases.for_owner(parameter.owner.as_ref());
         let mut seen = std::collections::HashSet::new();
         parameter.dependencies = expression_identifiers(&parameter.expression)
             .filter_map(|identifier| aliases.get(&identifier).and_then(Clone::clone))
@@ -986,98 +1304,151 @@ fn order_parameters_by_dependencies(parameters: &mut [DesignParameter]) {
     }
 }
 
+#[cfg(test)]
 fn parameter_aliases(
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
     expression_owner: Option<&FeatureId>,
 ) -> HashMap<String, Option<ParameterId>> {
-    fn insert(
-        aliases: &mut HashMap<String, Option<ParameterId>>,
-        alias: String,
-        parameter: &ParameterId,
-    ) {
-        aliases
-            .entry(alias)
-            .and_modify(|candidate| {
-                if candidate
-                    .as_ref()
-                    .is_some_and(|existing| existing != parameter)
-                {
-                    *candidate = None;
+    ParameterAliases::new(parameters, feature_names, global_owners).materialize(expression_owner)
+}
+
+fn insert_parameter_alias(
+    aliases: &mut HashMap<String, Option<ParameterId>>,
+    alias: String,
+    parameter: &ParameterId,
+) {
+    aliases
+        .entry(alias)
+        .and_modify(|candidate| {
+            if candidate
+                .as_ref()
+                .is_some_and(|existing| existing != parameter)
+            {
+                *candidate = None;
+            }
+        })
+        .or_insert_with(|| Some(parameter.clone()));
+}
+
+struct ParameterAliases {
+    global: HashMap<String, Option<ParameterId>>,
+    exact: HashMap<String, Option<ParameterId>>,
+    document_local: HashMap<String, Option<ParameterId>>,
+    feature_local: HashMap<FeatureId, HashMap<String, Option<ParameterId>>>,
+}
+
+impl ParameterAliases {
+    fn new(
+        parameters: &[DesignParameter],
+        feature_names: &HashMap<FeatureId, String>,
+        global_owners: &HashSet<FeatureId>,
+    ) -> Self {
+        let mut aliases = Self {
+            global: HashMap::new(),
+            exact: HashMap::new(),
+            document_local: HashMap::new(),
+            feature_local: HashMap::new(),
+        };
+        for parameter in parameters {
+            insert_parameter_alias(&mut aliases.exact, parameter.id.0.clone(), &parameter.id);
+            let mut unqualified = vec![parameter.name.clone()];
+            if let Some(equation_id) = parameter
+                .properties
+                .get("EquationId")
+                .filter(|equation_id| !equation_id.contains('@'))
+            {
+                unqualified.push(equation_id.clone());
+            }
+            if let Some(owner_name) = parameter
+                .owner
+                .as_ref()
+                .and_then(|owner| feature_names.get(owner))
+            {
+                insert_parameter_alias(
+                    &mut aliases.exact,
+                    format!("{}@{owner_name}", parameter.name),
+                    &parameter.id,
+                );
+                if let Some(equation_id) = parameter.properties.get("EquationId") {
+                    let qualified = if equation_id.contains('@') {
+                        equation_id.clone()
+                    } else {
+                        format!("{equation_id}@{owner_name}")
+                    };
+                    insert_parameter_alias(&mut aliases.exact, qualified, &parameter.id);
                 }
-            })
-            .or_insert_with(|| Some(parameter.clone()));
+            }
+            if parameter
+                .owner
+                .as_ref()
+                .is_some_and(|owner| global_owners.contains(owner))
+            {
+                for alias in &unqualified {
+                    insert_parameter_alias(&mut aliases.global, alias.clone(), &parameter.id);
+                }
+            }
+            let local = parameter
+                .owner
+                .as_ref()
+                .map(|owner| aliases.feature_local.entry(owner.clone()).or_default())
+                .unwrap_or(&mut aliases.document_local);
+            for alias in unqualified {
+                insert_parameter_alias(local, alias, &parameter.id);
+            }
+        }
+        aliases
     }
 
-    let mut global = HashMap::new();
-    let mut local = HashMap::new();
-    let mut exact = HashMap::new();
-    for parameter in parameters {
-        insert(&mut exact, parameter.id.0.clone(), &parameter.id);
-        let mut unqualified = vec![parameter.name.clone()];
-        if let Some(equation_id) = parameter
-            .properties
-            .get("EquationId")
-            .filter(|equation_id| !equation_id.contains('@'))
-        {
-            unqualified.push(equation_id.clone());
-        }
-        if let Some(owner_name) = parameter
-            .owner
-            .as_ref()
-            .and_then(|owner| feature_names.get(owner))
-        {
-            insert(
-                &mut exact,
-                format!("{}@{owner_name}", parameter.name),
-                &parameter.id,
-            );
-            if let Some(equation_id) = parameter.properties.get("EquationId") {
-                let qualified = if equation_id.contains('@') {
-                    equation_id.clone()
-                } else {
-                    format!("{equation_id}@{owner_name}")
-                };
-                insert(&mut exact, qualified, &parameter.id);
-            }
-        }
-        if parameter
-            .owner
-            .as_ref()
-            .is_some_and(|owner| global_owners.contains(owner))
-        {
-            for alias in &unqualified {
-                insert(&mut global, alias.clone(), &parameter.id);
-            }
-        }
-        if parameter.owner.as_ref() == expression_owner {
-            for alias in unqualified {
-                insert(&mut local, alias, &parameter.id);
-            }
+    fn for_owner<'a>(&'a self, owner: Option<&'a FeatureId>) -> ParameterAliasView<'a> {
+        ParameterAliasView {
+            aliases: self,
+            owner,
         }
     }
-    global.extend(local);
-    global.extend(exact);
-    global
+
+    #[cfg(test)]
+    fn materialize(&self, owner: Option<&FeatureId>) -> HashMap<String, Option<ParameterId>> {
+        let mut aliases = self.global.clone();
+        aliases.extend(
+            owner
+                .and_then(|owner| self.feature_local.get(owner))
+                .unwrap_or(&self.document_local)
+                .clone(),
+        );
+        aliases.extend(self.exact.clone());
+        aliases
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ParameterAliasView<'a> {
+    aliases: &'a ParameterAliases,
+    owner: Option<&'a FeatureId>,
+}
+
+impl ParameterAliasView<'_> {
+    fn get(&self, alias: &str) -> Option<&Option<ParameterId>> {
+        self.aliases
+            .exact
+            .get(alias)
+            .or_else(|| {
+                self.owner
+                    .and_then(|owner| self.aliases.feature_local.get(owner))
+                    .unwrap_or(&self.aliases.document_local)
+                    .get(alias)
+            })
+            .or_else(|| self.aliases.global.get(alias))
+    }
 }
 
 fn parameter_aliases_by_owner(
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
-) -> HashMap<Option<FeatureId>, HashMap<String, Option<ParameterId>>> {
-    parameters
-        .iter()
-        .map(|parameter| parameter.owner.clone())
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .map(|owner| {
-            let aliases =
-                parameter_aliases(parameters, feature_names, global_owners, owner.as_ref());
-            (owner, aliases)
-        })
-        .collect()
+) -> ParameterAliases {
+    ParameterAliases::new(parameters, feature_names, global_owners)
 }
 
 fn evaluate_parameter_expressions(
@@ -1101,7 +1472,7 @@ fn evaluate_parameter_expressions(
             .iter_mut()
             .filter(|parameter| parameter.value.is_none())
         {
-            let aliases = &aliases[&parameter.owner];
+            let aliases = aliases.for_owner(parameter.owner.as_ref());
             let Some(value) =
                 ParameterExpressionParser::new(&parameter.expression, aliases, &values).parse()
             else {
@@ -1123,12 +1494,42 @@ fn evaluate_parameter_expressions(
 struct ParameterExpressionParser<'a> {
     input: &'a str,
     offset: usize,
-    aliases: &'a HashMap<String, Option<ParameterId>>,
+    aliases: ParameterAliasMap<'a>,
     values: &'a HashMap<ParameterId, ParameterValue>,
+}
+
+enum ParameterAliasMap<'a> {
+    Layered(ParameterAliasView<'a>),
+    #[cfg(test)]
+    Flat(&'a HashMap<String, Option<ParameterId>>),
+}
+
+impl ParameterAliasMap<'_> {
+    fn get(&self, alias: &str) -> Option<&Option<ParameterId>> {
+        match self {
+            Self::Layered(aliases) => aliases.get(alias),
+            #[cfg(test)]
+            Self::Flat(aliases) => aliases.get(alias),
+        }
+    }
 }
 
 impl<'a> ParameterExpressionParser<'a> {
     fn new(
+        input: &'a str,
+        aliases: ParameterAliasView<'a>,
+        values: &'a HashMap<ParameterId, ParameterValue>,
+    ) -> Self {
+        Self {
+            input,
+            offset: 0,
+            aliases: ParameterAliasMap::Layered(aliases),
+            values,
+        }
+    }
+
+    #[cfg(test)]
+    fn new_flat(
         input: &'a str,
         aliases: &'a HashMap<String, Option<ParameterId>>,
         values: &'a HashMap<ParameterId, ParameterValue>,
@@ -1136,7 +1537,7 @@ impl<'a> ParameterExpressionParser<'a> {
         Self {
             input,
             offset: 0,
-            aliases,
+            aliases: ParameterAliasMap::Flat(aliases),
             values,
         }
     }
@@ -1676,7 +2077,7 @@ pub(crate) fn parameters_with_unresolved_references(
     parameters
         .iter()
         .filter(|parameter| {
-            let aliases = &aliases[&parameter.owner];
+            let aliases = aliases.for_owner(parameter.owner.as_ref());
             let parsed = expression_identifier_tokens(&parameter.expression);
             parsed.unclosed_quote
                 || parsed
@@ -1707,12 +2108,13 @@ pub(crate) fn parameters_with_unevaluable_expressions(
     parameters
         .iter()
         .filter(|parameter| {
-            let aliases = &aliases[&parameter.owner];
+            let aliases = aliases.for_owner(parameter.owner.as_ref());
             states.iter_mut().any(|values| {
                 let own = values.remove(&parameter.id);
                 let evaluated =
                     ParameterExpressionParser::new(&parameter.expression, aliases, values)
                         .parse()
+                        .or_else(|| bare_text_parameter_literal(&parameter.expression))
                         .filter(parameter_value_is_finite);
                 if let Some(value) = own {
                     values.insert(parameter.id.clone(), value);
@@ -1749,7 +2151,7 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
         .iter()
         .filter(|parameter| !parameter.dependencies.is_empty())
         .filter(|parameter| {
-            let aliases = &aliases[&parameter.owner];
+            let aliases = aliases.for_owner(parameter.owner.as_ref());
             states.iter_mut().any(|values| {
                 let actual = values.remove(&parameter.id);
                 let evaluated =
@@ -2000,6 +2402,345 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn source_less_offset_plane_resolves_a_native_feature_reference() {
+        let mut principal = feature("principal-native", None, 0);
+        principal.name = "Right".into();
+        principal.input_class = Some("moRefPlane_c".into());
+        let mut offset = feature("offset-native", None, 1);
+        offset.input_class = Some("moRefPlane_c".into());
+        offset.parameters.insert("D1".into(), "6".into());
+        offset
+            .properties
+            .insert("Reference".into(), principal.id.clone());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![principal, offset],
+        };
+
+        let projected = project_features(&[history]);
+        assert!(matches!(
+            &projected[1].definition,
+            FeatureDefinition::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Feature(reference)),
+                distance: Length(6.0),
+            } if reference == &projected[0].id
+        ));
+        assert_eq!(projected[1].dependencies, [projected[0].id.clone()]);
+    }
+
+    #[test]
+    fn offset_plane_frame_resolves_one_preceding_parallel_plane() {
+        let mut reference = feature("sldprt:history:feature#0:0", None, 0);
+        reference.input_class = Some("moRefPlane_c".into());
+        reference
+            .properties
+            .insert("Origin".into(), "0mm,0mm,0mm".into());
+        reference.properties.insert("Normal".into(), "1,0,0".into());
+        reference.properties.insert("UAxis".into(), "0,0,-1".into());
+        let mut offset = feature("sldprt:history:feature#0:1", None, 1);
+        offset.input_class = Some("moRefPlane_c".into());
+        offset.parameters.insert("D1".into(), "6mm".into());
+        offset
+            .properties
+            .insert("Origin".into(), "6mm,0mm,0mm".into());
+        offset.properties.insert("Normal".into(), "1,0,0".into());
+        offset.properties.insert("UAxis".into(), "0,0,1".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![reference, offset],
+        };
+
+        let projected = project_features(&[history]);
+        assert!(matches!(
+            &projected[1].definition,
+            FeatureDefinition::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Feature(bound)),
+                distance: Length(6.0),
+            } if bound == &projected[0].id
+        ));
+        assert_eq!(projected[1].dependencies, [projected[0].id.clone()]);
+    }
+
+    #[test]
+    fn coincident_plane_frame_does_not_infer_an_offset_reference() {
+        let mut reference = feature("sldprt:history:feature#0:0", None, 0);
+        reference.input_class = Some("moRefPlane_c".into());
+        reference
+            .properties
+            .insert("Origin".into(), "0mm,0mm,0mm".into());
+        reference.properties.insert("Normal".into(), "1,0,0".into());
+        reference.properties.insert("UAxis".into(), "0,0,-1".into());
+        let mut offset = feature("sldprt:history:feature#0:1", None, 1);
+        offset.input_class = Some("moRefPlane_c".into());
+        offset.parameters.insert("D1".into(), "0mm".into());
+        offset
+            .properties
+            .insert("Origin".into(), "0mm,0mm,0mm".into());
+        offset.properties.insert("Normal".into(), "1,0,0".into());
+        offset.properties.insert("UAxis".into(), "0,0,-1".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![reference, offset],
+        };
+
+        let projected = project_features(&[history]);
+        assert!(matches!(
+            &projected[1].definition,
+            FeatureDefinition::DatumOffsetPlane {
+                reference: None,
+                distance: Length(0.0),
+            }
+        ));
+    }
+
+    #[test]
+    fn planar_face_reference_requires_one_coincident_face() {
+        let surface = Surface {
+            id: cadmpeg_ir::ids::SurfaceId("surface".into()),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 12.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        };
+        let face = Face {
+            id: cadmpeg_ir::ids::FaceId("face".into()),
+            shell: cadmpeg_ir::ids::ShellId("shell".into()),
+            surface: surface.id.clone(),
+            sense: cadmpeg_ir::topology::Sense::Forward,
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: None,
+        };
+        let surfaces = HashMap::from([(&surface.id, &surface)]);
+        let mut selection = FaceSelection::Unresolved;
+        resolve_planar_face_selection(
+            &mut selection,
+            Point3::new(5.0, -3.0, 12.0),
+            Vector3::new(0.0, 0.0, -1.0),
+            std::slice::from_ref(&face),
+            &surfaces,
+        );
+        assert_eq!(selection, FaceSelection::Faces(vec![face.id.clone()]));
+
+        let mut native = FaceSelection::Native("component-path".into());
+        resolve_planar_face_selection(
+            &mut native,
+            Point3::new(5.0, -3.0, 12.0),
+            Vector3::new(0.0, 0.0, -1.0),
+            std::slice::from_ref(&face),
+            &surfaces,
+        );
+        assert_eq!(
+            native,
+            FaceSelection::Resolved {
+                faces: vec![face.id.clone()],
+                native: "component-path".into(),
+            }
+        );
+
+        let mut duplicate = face.clone();
+        duplicate.id = cadmpeg_ir::ids::FaceId("duplicate".into());
+        let mut ambiguous = FaceSelection::Unresolved;
+        resolve_planar_face_selection(
+            &mut ambiguous,
+            Point3::new(0.0, 0.0, 12.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            &[face.clone(), duplicate.clone()],
+            &surfaces,
+        );
+        assert_eq!(ambiguous, FaceSelection::Unresolved);
+
+        let mut split = FaceSelection::Native("historical-face".into());
+        resolve_planar_face_selection(
+            &mut split,
+            Point3::new(0.0, 0.0, 12.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            &[face.clone(), duplicate.clone()],
+            &surfaces,
+        );
+        assert_eq!(
+            split,
+            FaceSelection::Resolved {
+                faces: vec![face.id, duplicate.id],
+                native: "historical-face".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn offset_plane_frame_does_not_bind_a_later_builtin_principal_plane() {
+        let mut offset = feature("sldprt:history:feature#0:0", None, 0);
+        offset.input_class = Some("moRefPlane_c".into());
+        offset.parameters.insert("D1".into(), "6mm".into());
+        offset
+            .properties
+            .insert("Origin".into(), "6mm,0mm,0mm".into());
+        offset.properties.insert("Normal".into(), "1,0,0".into());
+        offset.properties.insert("UAxis".into(), "0,0,1".into());
+        let mut principal = feature("sldprt:history:feature#0:1", Some("4"), 1);
+        principal.name = "Right".into();
+        principal.input_class = Some("moRefPlane_c".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![offset, principal],
+        };
+
+        let projected = project_features(&[history]);
+        assert!(matches!(
+            &projected[0].definition,
+            FeatureDefinition::DatumOffsetPlane {
+                reference: None,
+                distance: Length(6.0),
+            }
+        ));
+        assert!(projected[0].dependencies.is_empty());
+    }
+
+    #[test]
+    fn explicit_offset_plane_reference_orders_a_later_serialized_principal_first() {
+        let mut offset = feature("sldprt:history:feature#0:0", Some("35"), 0);
+        offset.input_class = Some("moRefPlane_c".into());
+        offset.parameters.insert("D1".into(), "6mm".into());
+        offset.properties.insert("Reference".into(), "4".into());
+        offset
+            .properties
+            .insert("Origin".into(), "6mm,0mm,0mm".into());
+        offset.properties.insert("Normal".into(), "1,0,0".into());
+        offset.properties.insert("UAxis".into(), "0,0,-1".into());
+        let mut principal = feature("sldprt:history:feature#0:1", Some("4"), 1);
+        principal.name = "Right".into();
+        principal.input_class = Some("moRefPlane_c".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![offset, principal],
+        };
+
+        let mut projected = project_features(&[history]);
+        assert!(matches!(
+            &projected[0].definition,
+            FeatureDefinition::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Feature(reference)),
+                distance: Length(6.0),
+            } if reference == &projected[1].id
+        ));
+        assert_eq!(projected[0].dependencies, [projected[1].id.clone()]);
+        assert!(order_features_for_regeneration(&mut projected));
+        assert_eq!(projected[1].ordinal, 0);
+        assert_eq!(projected[0].ordinal, 1);
+    }
+
+    #[test]
+    fn incompatible_later_principal_falls_back_to_the_serialized_face_frame() {
+        let mut offset = feature("sldprt:history:feature#0:0", Some("35"), 0);
+        offset.input_class = Some("moRefPlane_c".into());
+        offset.parameters.insert("D1".into(), "0mm".into());
+        offset.properties.insert("Reference".into(), "4".into());
+        offset
+            .properties
+            .insert("Origin".into(), "0mm,5mm,0mm".into());
+        offset.properties.insert("Normal".into(), "0,1,0".into());
+        offset.properties.insert("UAxis".into(), "1,0,0".into());
+        offset
+            .properties
+            .insert("ReferenceFaceOrigin".into(), "0mm,5mm,0mm".into());
+        offset
+            .properties
+            .insert("ReferenceFaceNormal".into(), "0,1,0".into());
+        offset
+            .properties
+            .insert("ReferenceFaceUAxis".into(), "1,0,0".into());
+        let mut principal = feature("sldprt:history:feature#0:1", Some("4"), 1);
+        principal.name = "Right".into();
+        principal.input_class = Some("moRefPlane_c".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![offset, principal],
+        };
+
+        let projected = project_features(&[history]);
+
+        assert!(matches!(
+            &projected[0].definition,
+            FeatureDefinition::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Face {
+                    face: FaceSelection::Unresolved,
+                    ..
+                }),
+                distance: Length(0.0),
+            }
+        ));
+        assert!(projected[0].dependencies.is_empty());
+    }
+
+    #[test]
+    fn explicit_offset_plane_reference_orders_a_later_derived_plane_first() {
+        let mut offset = feature("sldprt:history:feature#0:0", Some("35"), 0);
+        offset.input_class = Some("moRefPlane_c".into());
+        offset.parameters.insert("D1".into(), "6mm".into());
+        offset.properties.insert("Reference".into(), "40".into());
+        offset
+            .properties
+            .insert("Origin".into(), "6mm,0mm,0mm".into());
+        offset.properties.insert("Normal".into(), "1,0,0".into());
+        offset.properties.insert("UAxis".into(), "0,1,0".into());
+        let mut reference = feature("sldprt:history:feature#0:1", Some("40"), 1);
+        reference.input_class = Some("moRefPlane_c".into());
+        reference
+            .properties
+            .insert("Origin".into(), "0mm,0mm,0mm".into());
+        reference.properties.insert("Normal".into(), "1,0,0".into());
+        reference.properties.insert("UAxis".into(), "0,1,0".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![offset, reference],
+        };
+
+        let mut projected = project_features(&[history]);
+
+        assert!(matches!(
+            &projected[0].definition,
+            FeatureDefinition::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Feature(reference)),
+                distance: Length(6.0),
+            } if reference == &projected[1].id
+        ));
+        assert!(order_features_for_regeneration(&mut projected));
+        assert_eq!(projected[1].ordinal, 0);
+        assert_eq!(projected[0].ordinal, 1);
+    }
+
+    #[test]
     fn blind_extrusion_uses_its_sole_dimension_as_depth() {
         let mut feature = feature("sldprt:history:feature#1:2", Some("12"), 2);
         feature.xml_tag = "Extrusion".into();
@@ -2011,7 +2752,7 @@ mod history_reference_tests {
 
         assert!(native_parameter_is_length(&feature, "s", Some("2.1")));
         assert!(matches!(
-            project_extrude(&feature, &HashMap::new()),
+            project_extrude(&feature, &HashMap::new(), &HashMap::new()),
             Some(FeatureDefinition::Extrude {
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
@@ -2023,6 +2764,51 @@ mod history_reference_tests {
                 },
                 ..
             })
+        ));
+    }
+
+    #[test]
+    fn legacy_history_extrusion_uses_preceding_profile_and_sole_depth() {
+        let mut profile = feature("sldprt:history:feature#1:0", Some("9"), 0);
+        profile.xml_tag = "Sketch".into();
+        profile.kind = "Sketch".into();
+        let mut extrusion = feature("sldprt:history:feature#1:1", Some("20"), 1);
+        extrusion.xml_tag = "Extrusion".into();
+        extrusion.kind = "localized-boss-kind".into();
+        extrusion.input_class = None;
+        extrusion.parameters.insert("m".into(), "6.8".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![extrusion, profile],
+        };
+
+        let projected = project_features(&[history]);
+        let extrusion = projected
+            .iter()
+            .find(|feature| feature.native_ref.as_deref() == Some("sldprt:history:feature#1:1"))
+            .expect("legacy extrusion feature");
+        let profile = projected
+            .iter()
+            .find(|feature| feature.native_ref.as_deref() == Some("sldprt:history:feature#1:0"))
+            .expect("legacy extrusion profile");
+        assert!(profile.ordinal < extrusion.ordinal);
+        assert!(matches!(
+            &extrusion.definition,
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Feature(profile_ref),
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: Termination::Blind { length: Length(6.8) },
+                        ..
+                    }
+                },
+                op: BooleanOp::Join,
+                ..
+            } if profile_ref == &profile.id
         ));
     }
 
@@ -2120,6 +2906,129 @@ mod history_reference_tests {
             }
         ));
 
+        let tapered_thread = profile(&[
+            ("a", "3.43°"),
+            ("b", "6.92"),
+            ("c", "118°"),
+            ("d", "<MOD-DIAM>8.43"),
+            ("e", "11.62"),
+            ("f", "<MOD-DIAM>10.29"),
+        ]);
+        let construction =
+            hole_sketch_construction(&tapered_thread).expect("tapered thread profile");
+        assert_eq!(construction.diameter, Length(8.43));
+        assert_eq!(construction.depth, Some(Length(11.62)));
+        assert!(matches!(
+            construction.kind,
+            HoleKind::Threaded {
+                major_diameter: Length(10.29),
+                thread_depth: Length(6.92),
+                pitch: None,
+                drill_point_angle: Angle(angle),
+            } if (angle - 118_f64.to_radians()).abs() < 1.0e-12
+        ));
+        assert_eq!(
+            construction.bottom,
+            Some(HoleBottom::Angled {
+                included_angle: Angle(118_f64.to_radians()),
+                depth_to_tip: false,
+            })
+        );
+        assert_eq!(construction.taper_angle, Some(Angle(3.43_f64.to_radians())));
+
+        let counterbore_with_exit_countersink = profile(&[
+            ("a", "4.6"),
+            ("b", "<MOD-DIAM>8"),
+            ("c", "90°"),
+            ("d", "10"),
+            ("e", "<MOD-DIAM>4.5"),
+            ("f", "<MOD-DIAM>4.55"),
+        ]);
+        let construction = hole_sketch_construction(&counterbore_with_exit_countersink)
+            .expect("dual-ended profile");
+        assert_eq!(construction.diameter, Length(4.5));
+        assert_eq!(construction.depth, Some(Length(10.0)));
+        assert_eq!(
+            construction.kind,
+            HoleKind::Counterbore {
+                diameter: Length(8.0),
+                depth: Length(4.6),
+            }
+        );
+        assert_eq!(
+            construction.exit_kind,
+            Some(HoleKind::Countersink {
+                diameter: Length(4.55),
+                angle: Angle(std::f64::consts::FRAC_PI_2),
+            })
+        );
+
+        let counterdrill = profile(&[
+            ("a", "12.4"),
+            ("b", "<MOD-DIAM>5.5"),
+            ("c", "118°"),
+            ("d", "<MOD-DIAM>10.05"),
+            ("e", "90°"),
+            ("f", "5.4"),
+            ("g", "<MOD-DIAM>9.95"),
+        ]);
+        let construction = hole_sketch_construction(&counterdrill).expect("counterdrill profile");
+        assert_eq!(construction.diameter, Length(5.5));
+        assert_eq!(construction.depth, Some(Length(12.4)));
+        assert_eq!(
+            construction.kind,
+            HoleKind::Counterdrill {
+                diameter: Length(9.95),
+                entry_diameter: Some(Length(10.05)),
+                depth: Length(5.4),
+                angle: Angle(std::f64::consts::FRAC_PI_2),
+            }
+        );
+        assert_eq!(
+            construction.bottom,
+            Some(HoleBottom::Angled {
+                included_angle: Angle(118_f64.to_radians()),
+                depth_to_tip: false,
+            })
+        );
+
+        let placement_dimensions = profile(&[
+            ("a", "<MOD-DIAM>9"),
+            ("b", "6"),
+            ("c", "4"),
+            ("d", "4"),
+            ("e", "6"),
+        ]);
+        assert_eq!(
+            hole_sketch_construction(&placement_dimensions)
+                .expect("diameter remains exact")
+                .depth,
+            None
+        );
+
+        let mut native_profile = profile(&[("diameter", "<MOD-DIAM>6.6"), ("depth", "9.4")]);
+        native_profile.id = "native-profile".into();
+        native_profile.source_id = None;
+        let mut native_owned = feature("native-owned-hole", None, 0);
+        native_owned
+            .properties
+            .insert("DissectableChildren".into(), native_profile.id.clone());
+        let projected = project_hole(
+            &native_owned,
+            &HashMap::new(),
+            &[native_owned.clone(), native_profile],
+        );
+        assert!(matches!(
+            projected,
+            FeatureDefinition::Hole {
+                diameter: Some(Length(6.6)),
+                extent: Some(Termination::Blind {
+                    length: Length(9.4)
+                }),
+                ..
+            }
+        ));
+
         let mut canonical = feature("hole", Some("8"), 0);
         canonical.parameters = [
             ("Diameter".into(), "4.2mm".into()),
@@ -2129,7 +3038,11 @@ mod history_reference_tests {
             ("DrillPointAngle".into(), "118°".into()),
         ]
         .into();
-        let projected = project_hole(&canonical, &HashMap::new());
+        let projected = project_hole(
+            &canonical,
+            &HashMap::new(),
+            std::slice::from_ref(&canonical),
+        );
         let FeatureDefinition::Hole {
             kind:
                 HoleKind::Threaded {
@@ -2489,11 +3402,41 @@ mod history_reference_tests {
     #[test]
     fn principal_plane_requires_the_reference_plane_native_class() {
         let mut plane = feature("plane", Some("2"), 0);
-        assert_eq!(principal_plane(&plane), None);
+        assert_eq!(crate::classification::principal_plane(&plane), None);
         plane.input_class = Some("moRefPlane_c".into());
         assert_eq!(
-            principal_plane(&plane),
+            crate::classification::principal_plane(&plane),
             Some(cadmpeg_ir::features::PrincipalPlane::Front)
+        );
+    }
+
+    #[test]
+    fn shifted_reserved_triplet_classifies_principal_planes_in_order() {
+        let mut scene = feature("scene", Some("2"), 0);
+        let mut front = feature("front", Some("3"), 1);
+        let mut top = feature("top", Some("4"), 2);
+        let mut right = feature("right", Some("5"), 3);
+        for plane in [&mut front, &mut top, &mut right] {
+            plane.input_class = Some("moRefPlane_c".into());
+        }
+        scene.input_class = Some("moSceneFolder_c".into());
+        let features = [scene, front.clone(), top.clone(), right.clone()];
+        let by_source = features
+            .iter()
+            .filter_map(|feature| Some((feature.source_id.as_deref()?, feature)))
+            .collect::<HashMap<_, _>>();
+
+        assert_eq!(
+            principal_plane_in_history(&front, &by_source, &features),
+            Some(cadmpeg_ir::features::PrincipalPlane::Front)
+        );
+        assert_eq!(
+            principal_plane_in_history(&top, &by_source, &features),
+            Some(cadmpeg_ir::features::PrincipalPlane::Top)
+        );
+        assert_eq!(
+            principal_plane_in_history(&right, &by_source, &features),
+            Some(cadmpeg_ir::features::PrincipalPlane::Right)
         );
     }
 
@@ -2964,6 +3907,91 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
+        let mut chamfer = feature("chamfer", Some("42"), 0);
+        chamfer.input_class = Some("Chamfer_c".into());
+        chamfer
+            .parameters
+            .insert("localized length".into(), "1.5".into());
+        chamfer
+            .parameters
+            .insert("localized angle".into(), "45°".into());
+        chamfer
+            .content
+            .push(FeatureContent::Dimension("localized length".into()));
+        chamfer
+            .content
+            .push(FeatureContent::Dimension("localized angle".into()));
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![chamfer],
+        };
+
+        let projected = project_features(&[history]);
+        assert!(matches!(
+            projected[0].definition,
+            FeatureDefinition::Chamfer { ref groups, .. }
+                if matches!(
+                    groups.as_slice(),
+                    [cadmpeg_ir::features::ChamferGroup {
+                        spec: ChamferSpec::DistanceAngle {
+                            distance: Length(1.5),
+                            angle: Angle(value),
+                        },
+                        ..
+                    }] if (*value - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
+                )
+        ));
+
+        let mut distance = feature("distance", Some("43"), 0);
+        distance.input_class = Some("Chamfer_c".into());
+        distance
+            .parameters
+            .insert("localized distance".into(), "2mm".into());
+        distance
+            .content
+            .push(FeatureContent::Dimension("localized distance".into()));
+        assert!(matches!(
+            project_chamfer(&distance),
+            FeatureDefinition::Chamfer { ref groups, .. }
+                if matches!(
+                    groups.as_slice(),
+                    [cadmpeg_ir::features::ChamferGroup {
+                        spec: ChamferSpec::Distance {
+                            distance: Length(2.0),
+                        },
+                        ..
+                    }]
+                )
+        ));
+
+        distance
+            .parameters
+            .insert("localized second distance".into(), "3mm".into());
+        distance.content.push(FeatureContent::Dimension(
+            "localized second distance".into(),
+        ));
+        assert!(matches!(
+            project_chamfer(&distance),
+            FeatureDefinition::Chamfer { ref groups, .. }
+                if matches!(
+                    groups.as_slice(),
+                    [cadmpeg_ir::features::ChamferGroup {
+                        spec: ChamferSpec::TwoDistances {
+                            first: Length(2.0),
+                            second: Length(3.0),
+                        },
+                        ..
+                    }]
+                )
+        ));
+    }
+
+    #[test]
     fn cosmetic_thread_retains_nominal_diameter_and_blind_length() {
         let mut thread = feature("thread", Some("42"), 0);
         thread.input_class = Some("moCosmeticThread_c".into());
@@ -3014,6 +4042,62 @@ mod history_reference_tests {
                 extent: Some(CosmeticThreadExtent::Through),
             }
         );
+    }
+
+    #[test]
+    fn cosmetic_thread_non_length_d1_and_named_diameter_are_through() {
+        for d1 in ["0", "6.2831853071796rad"] {
+            let mut thread = feature("thread", Some("42"), 0);
+            thread.input_class = Some("moCosmeticThread_c".into());
+            thread.parameters.insert("D1".into(), d1.into());
+            thread
+                .parameters
+                .insert("thread size".into(), "<MOD-DIAM>4.9".into());
+            let history = FeatureHistory {
+                id: "history".into(),
+                part_name: None,
+                properties: BTreeMap::new(),
+                content: Vec::new(),
+                configurations: Vec::new(),
+                features: vec![thread],
+            };
+
+            let projected = project_features(&[history]);
+            assert_eq!(
+                projected[0].definition,
+                FeatureDefinition::CosmeticThread {
+                    face: FaceSelection::Unresolved,
+                    diameter: Some(Length(4.9)),
+                    extent: Some(CosmeticThreadExtent::Through),
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn cosmetic_thread_requires_one_named_diameter() {
+        let mut thread = feature("thread", Some("42"), 0);
+        thread.input_class = Some("moCosmeticThread_c".into());
+        thread
+            .parameters
+            .insert("major".into(), "<MOD-DIAM>8".into());
+        thread
+            .parameters
+            .insert("minor".into(), "<MOD-DIAM>6.8".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![thread],
+        };
+
+        let projected = project_features(&[history]);
+        let FeatureDefinition::CosmeticThread { diameter, .. } = &projected[0].definition else {
+            panic!("expected a cosmetic thread");
+        };
+        assert_eq!(*diameter, None);
     }
 
     #[test]
@@ -3138,6 +4222,19 @@ mod history_reference_tests {
         }
     }
 
+    fn with_configuration_id(
+        mut configuration: DesignConfiguration,
+        id: u32,
+    ) -> DesignConfiguration {
+        configuration.properties.insert("id".into(), id.to_string());
+        configuration
+    }
+
+    fn native_with_configuration_id(mut configuration: Configuration, id: u32) -> Configuration {
+        configuration.properties.insert("id".into(), id.to_string());
+        configuration
+    }
+
     fn native_with_configuration_lanes(
         configurations: Vec<Configuration>,
         lanes: Vec<crate::records::FeatureInputLane>,
@@ -3180,6 +4277,50 @@ mod history_reference_tests {
         );
 
         assert_eq!(aliases.get("Width"), Some(&Some(parameters[0].id.clone())));
+    }
+
+    #[test]
+    fn layered_parameter_aliases_match_materialized_precedence() {
+        let global_owner = FeatureId("global".into());
+        let local_owner = FeatureId("local".into());
+        let parameters = [
+            DesignParameter {
+                id: ParameterId("global-id".into()),
+                owner: Some(global_owner.clone()),
+                ordinal: 0,
+                name: "Width".into(),
+                expression: "1".into(),
+                display: None,
+                value: None,
+                dependencies: Vec::new(),
+                properties: BTreeMap::new(),
+                pmi: None,
+                native_ref: None,
+            },
+            DesignParameter {
+                id: ParameterId("local-id".into()),
+                owner: Some(local_owner.clone()),
+                ordinal: 0,
+                name: "Width".into(),
+                expression: "2".into(),
+                display: None,
+                value: None,
+                dependencies: Vec::new(),
+                properties: BTreeMap::new(),
+                pmi: None,
+                native_ref: None,
+            },
+        ];
+        let aliases =
+            ParameterAliases::new(&parameters, &HashMap::new(), &HashSet::from([global_owner]));
+
+        for owner in [Some(local_owner), Some(FeatureId("unrelated".into())), None] {
+            let materialized = aliases.materialize(owner.as_ref());
+            let layered = aliases.for_owner(owner.as_ref());
+            for alias in ["Width", "global-id", "local-id", "missing"] {
+                assert_eq!(layered.get(alias), materialized.get(alias));
+            }
+        }
     }
 
     #[test]
@@ -3422,9 +4563,9 @@ mod history_reference_tests {
     }
 
     #[test]
-    fn explicit_configuration_index_precedes_ordinal_fallback() {
+    fn stored_configuration_id_precedes_ordinal_fallback() {
         let configurations = [
-            design_configuration("explicit", 0, Some(1), None),
+            with_configuration_id(design_configuration("explicit", 0, Some(7), None), 1),
             design_configuration("fallback", 1, None, None),
         ];
         let lanes = [feature_input_lane("lane", Some("1"))];
@@ -3436,9 +4577,39 @@ mod history_reference_tests {
     }
 
     #[test]
-    fn changing_shadowed_ordinal_does_not_steal_explicit_lane() {
+    fn configuration_lane_loss_uses_stored_ids_not_partition_indices() {
+        let configurations = [
+            with_configuration_id(design_configuration("first", 0, Some(8), None), 1),
+            with_configuration_id(design_configuration("second", 1, Some(9), None), 2),
+        ];
+
+        assert_eq!(
+            unresolved_configuration_lanes(
+                &configurations,
+                &[
+                    feature_input_lane("first", Some("1")),
+                    feature_input_lane("second", Some("2")),
+                ],
+            ),
+            0
+        );
+        assert_eq!(
+            unresolved_configuration_lanes(
+                &configurations,
+                &[
+                    feature_input_lane("duplicate-first", Some("1")),
+                    feature_input_lane("duplicate-second", Some("1")),
+                    feature_input_lane("unmatched", Some("3")),
+                ],
+            ),
+            3
+        );
+    }
+
+    #[test]
+    fn changing_shadowed_ordinal_does_not_steal_stored_id_lane() {
         let native_configurations = vec![
-            native_configuration("explicit-native", 0, Some(1)),
+            native_with_configuration_id(native_configuration("explicit-native", 0, Some(7)), 1),
             native_configuration("fallback-native", 1, None),
         ];
         let mut native = native_with_configuration_lanes(
@@ -3447,7 +4618,10 @@ mod history_reference_tests {
         )
         .into();
         let configurations = [
-            design_configuration("explicit", 0, Some(1), Some("explicit-native")),
+            with_configuration_id(
+                design_configuration("explicit", 0, Some(8), Some("explicit-native")),
+                1,
+            ),
             design_configuration("fallback", 2, None, Some("fallback-native")),
         ];
 
@@ -3465,8 +4639,8 @@ mod history_reference_tests {
     fn configuration_lane_index_swaps_are_simultaneous() {
         let mut native = native_with_configuration_lanes(
             vec![
-                native_configuration("first-native", 0, Some(1)),
-                native_configuration("second-native", 1, Some(2)),
+                native_with_configuration_id(native_configuration("first-native", 0, None), 1),
+                native_with_configuration_id(native_configuration("second-native", 1, None), 2),
             ],
             vec![
                 feature_input_lane("first-lane", Some("1")),
@@ -3475,8 +4649,14 @@ mod history_reference_tests {
         )
         .into();
         let configurations = [
-            design_configuration("first", 0, Some(2), Some("first-native")),
-            design_configuration("second", 1, Some(1), Some("second-native")),
+            with_configuration_id(
+                design_configuration("first", 0, None, Some("first-native")),
+                2,
+            ),
+            with_configuration_id(
+                design_configuration("second", 1, None, Some("second-native")),
+                1,
+            ),
         ];
 
         sync_neutral_configurations(&configurations, &mut native);
@@ -3496,8 +4676,11 @@ mod history_reference_tests {
     fn deleting_configuration_removes_its_uniquely_owned_lane() {
         let mut native = native_with_configuration_lanes(
             vec![
-                native_configuration("kept-native", 0, Some(1)),
-                native_configuration("deleted-native", 1, Some(2)),
+                native_with_configuration_id(native_configuration("kept-native", 0, Some(9)), 1),
+                native_with_configuration_id(
+                    native_configuration("deleted-native", 1, Some(10)),
+                    2,
+                ),
             ],
             vec![
                 feature_input_lane("kept-lane", Some("1")),
@@ -3507,11 +4690,9 @@ mod history_reference_tests {
         .into();
 
         sync_neutral_configurations(
-            &[design_configuration(
-                "kept",
-                0,
-                Some(1),
-                Some("kept-native"),
+            &[with_configuration_id(
+                design_configuration("kept", 0, Some(11), Some("kept-native")),
+                1,
             )],
             &mut native,
         );
@@ -3521,7 +4702,10 @@ mod history_reference_tests {
         assert_eq!(native.feature_input_lanes[0].id, "kept-lane");
 
         let mut native = native_with_configuration_lanes(
-            vec![native_configuration("deleted-native", 0, Some(1))],
+            vec![native_with_configuration_id(
+                native_configuration("deleted-native", 0, Some(1)),
+                1,
+            )],
             vec![
                 feature_input_lane("global-lane", None),
                 feature_input_lane("deleted-lane", Some("1")),
@@ -3536,26 +4720,30 @@ mod history_reference_tests {
     }
 
     #[test]
-    fn configuration_lane_follows_effective_index_changes() {
-        for (previous_ordinal, previous_source, previous_lane, ordinal, source, expected) in [
+    fn configuration_lane_follows_stored_id_or_ordinal_changes() {
+        for (previous_ordinal, previous_id, previous_lane, ordinal, id, expected) in [
             (2, Some(7), "7", 3, None, "3"),
             (2, None, "2", 4, None, "4"),
         ] {
+            let native_configuration =
+                native_configuration("native-configuration", previous_ordinal, Some(19));
+            let native_configuration = previous_id.map_or(native_configuration.clone(), |id| {
+                native_with_configuration_id(native_configuration, id)
+            });
             let mut native = native_with_configuration_lanes(
-                vec![native_configuration(
-                    "native-configuration",
-                    previous_ordinal,
-                    previous_source,
-                )],
+                vec![native_configuration],
                 vec![feature_input_lane("lane", Some(previous_lane))],
             )
             .into();
             let mut configuration = design_configuration(
                 "configuration",
                 ordinal,
-                source,
+                Some(23),
                 Some("native-configuration"),
             );
+            if let Some(id) = id {
+                configuration = with_configuration_id(configuration, id);
+            }
             configuration.active = true;
             sync_neutral_configurations(&[configuration], &mut native);
 
@@ -3707,6 +4895,201 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn configuration_spatial_sketch_state_reuses_shared_geometry_across_lanes() {
+        use cadmpeg_ir::features::{
+            ConfigurationFeatureState, DesignConfiguration, Feature as NeutralFeature,
+            FeatureDefinition, FeatureId,
+        };
+        use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchId};
+
+        let feature_id = FeatureId("sldprt:model:feature#spatial".into());
+        let sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#spatial".into());
+        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.features.push(NeutralFeature {
+            id: feature_id.clone(),
+            ordinal: 0,
+            name: Some("spatial".into()),
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::SpatialSketch {
+                sketch: Some(sketch_id.clone()),
+            },
+            native_ref: Some("spatial-native".into()),
+        });
+        ir.model.spatial_sketches.push(SpatialSketch {
+            id: sketch_id.clone(),
+            name: Some("spatial".into()),
+            configuration: None,
+            profiles: Vec::new(),
+            native_ref: Some("first-lane".into()),
+        });
+        for ordinal in 0..2 {
+            ir.model.configurations.push(DesignConfiguration {
+                id: cadmpeg_ir::features::ConfigurationId(format!("configuration-{ordinal}")),
+                ordinal,
+                active: ordinal == 0,
+                source_index: Some(ordinal),
+                name: format!("Configuration {ordinal}"),
+                material: None,
+                properties: BTreeMap::new(),
+                bodies: ConfigurationBodies::Resolved(Vec::new()),
+                parameter_values: BTreeMap::new(),
+                suppressed_features: Vec::new(),
+                parameter_overrides: BTreeMap::new(),
+                feature_states: BTreeMap::from([(
+                    feature_id.clone(),
+                    ConfigurationFeatureState {
+                        suppressed: false,
+                        dependencies: Vec::new(),
+                        outputs: Vec::new(),
+                        definition: FeatureDefinition::SpatialSketch { sketch: None },
+                    },
+                )]),
+                native_ref: None,
+            });
+        }
+        let lanes = [
+            feature_input_lane("first-lane", Some("0")),
+            feature_input_lane("second-lane", Some("1")),
+        ];
+
+        project_configuration_sketch_states(
+            &mut ir,
+            &[],
+            &lanes,
+            &cadmpeg_ir::Annotations::default(),
+        );
+
+        assert!(ir.model.configurations.iter().all(|configuration| matches!(
+            &configuration.feature_states[&feature_id].definition,
+            FeatureDefinition::SpatialSketch {
+                sketch: Some(projected),
+            } if projected == &sketch_id
+        )));
+    }
+
+    #[test]
+    fn supplemental_edge_paths_project_into_matching_configuration_state() {
+        use cadmpeg_ir::features::{
+            ChamferGroup, ChamferSpec, ConfigurationFeatureState, DesignConfiguration,
+            EdgeSelection, Feature as NeutralFeature, FeatureDefinition, FeatureId, Length,
+        };
+
+        let producer_id = FeatureId("producer".into());
+        let consumer_id = FeatureId("consumer".into());
+        let unresolved = FeatureDefinition::Chamfer {
+            groups: vec![ChamferGroup {
+                edges: EdgeSelection::Unresolved,
+                spec: ChamferSpec::Distance {
+                    distance: Length(1.0),
+                },
+            }],
+            flip_direction: false,
+        };
+        let neutral_feature =
+            |id: FeatureId, ordinal, native_ref: &str, definition| NeutralFeature {
+                id,
+                ordinal,
+                name: None,
+                suppressed: Some(false),
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition,
+                native_ref: Some(native_ref.into()),
+            };
+        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.features = vec![
+            neutral_feature(
+                producer_id.clone(),
+                0,
+                "producer-native",
+                FeatureDefinition::StoredGeometry,
+            ),
+            neutral_feature(
+                consumer_id.clone(),
+                1,
+                "consumer-native",
+                unresolved.clone(),
+            ),
+        ];
+        ir.model.configurations.push(DesignConfiguration {
+            id: cadmpeg_ir::features::ConfigurationId("configuration".into()),
+            ordinal: 0,
+            active: true,
+            source_index: Some(1),
+            name: "Default".into(),
+            material: None,
+            properties: BTreeMap::from([("id".into(), "1".into())]),
+            bodies: ConfigurationBodies::Resolved(Vec::new()),
+            parameter_values: BTreeMap::new(),
+            suppressed_features: Vec::new(),
+            parameter_overrides: BTreeMap::new(),
+            feature_states: BTreeMap::from([
+                (
+                    producer_id.clone(),
+                    ConfigurationFeatureState {
+                        suppressed: false,
+                        dependencies: Vec::new(),
+                        outputs: Vec::new(),
+                        definition: FeatureDefinition::StoredGeometry,
+                    },
+                ),
+                (
+                    consumer_id.clone(),
+                    ConfigurationFeatureState {
+                        suppressed: false,
+                        dependencies: Vec::new(),
+                        outputs: Vec::new(),
+                        definition: unresolved,
+                    },
+                ),
+            ]),
+            native_ref: None,
+        });
+        let mut lane = feature_input_lane("sldprt:feature-input:config-objects#1", Some("1"));
+        lane.edge_selections
+            .push(crate::records::FeatureInputEdgeSelection {
+                id: "selection".into(),
+                parent: lane.id.clone(),
+                ordinal: 0,
+                offset: 100,
+                object_name_ref: "name".into(),
+                feature_ref: "consumer-native".into(),
+                local_edge_ids: vec![7],
+                components: Vec::new(),
+                producer_feature_refs: vec!["producer-native".into()],
+                terminal_feature_ref: Some("producer-native".into()),
+            });
+
+        project_configuration_supplemental_edge_selections(&mut ir, &[lane]);
+
+        let state = &ir.model.configurations[0].feature_states[&consumer_id];
+        assert_eq!(state.dependencies, vec![producer_id.clone()]);
+        assert!(matches!(
+            &state.definition,
+            FeatureDefinition::Chamfer { groups, .. }
+                if matches!(
+                    &groups[0].edges,
+                    EdgeSelection::Generated { edges, .. }
+                        if edges.len() == 1
+                            && edges[0].feature == producer_id
+                            && edges[0].local_id == "7"
+                )
+        ));
+    }
+
+    #[test]
     fn configuration_hole_inherits_shared_construction_and_placement() {
         use cadmpeg_ir::features::{
             FeatureDefinition, FeatureId, HoleKind, HolePlacement, Length, Termination,
@@ -3769,9 +5152,78 @@ mod history_reference_tests {
             allow_multi_profile_faces: None,
         };
 
-        inherit_configuration_hole_semantics(&mut configured.definition, &base.definition);
+        inherit_configuration_shared_semantics(&mut configured.definition, &base.definition);
 
         assert_eq!(configured.definition, base.definition);
+    }
+
+    #[test]
+    fn configuration_offset_plane_inherits_shared_reference() {
+        use cadmpeg_ir::features::{DatumPlaneReference, FaceSelection, FeatureDefinition, Length};
+
+        let base = FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Faces(vec!["test:model:face#1".into()]),
+                origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            }),
+            distance: Length(5.0),
+        };
+        let mut configured = FeatureDefinition::DatumOffsetPlane {
+            reference: None,
+            distance: Length(8.0),
+        };
+
+        inherit_configuration_shared_semantics(&mut configured, &base);
+
+        let FeatureDefinition::DatumOffsetPlane {
+            reference,
+            distance,
+        } = configured
+        else {
+            panic!("offset-plane definition retained its variant");
+        };
+        assert!(reference.is_some());
+        assert_eq!(distance, Length(8.0));
+    }
+
+    #[test]
+    fn configuration_offset_plane_replaces_only_an_unresolved_face() {
+        use cadmpeg_ir::features::{DatumPlaneReference, FaceSelection, FeatureDefinition, Length};
+
+        let base = FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Faces(vec!["test:model:face#1".into()]),
+                origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            }),
+            distance: Length(5.0),
+        };
+        let configured_origin = cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0);
+        let mut configured = FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Unresolved,
+                origin: configured_origin,
+                normal: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                u_axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            }),
+            distance: Length(8.0),
+        };
+
+        inherit_configuration_shared_semantics(&mut configured, &base);
+
+        let FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face { face, origin, .. }),
+            distance,
+        } = configured
+        else {
+            panic!("offset-plane definition retained its face reference");
+        };
+        assert_eq!(face, FaceSelection::Faces(vec!["test:model:face#1".into()]));
+        assert_eq!(origin, configured_origin);
+        assert_eq!(distance, Length(8.0));
     }
 
     #[test]
@@ -4021,12 +5473,94 @@ fn extrude_extent_sides_mut(extent: &mut ExtrudeExtent) -> Vec<&mut ExtrudeSide>
     }
 }
 
+/// Bind each decoded face to the body owning it.
+fn face_owner_bodies(
+    faces: &[Face],
+    shells: &[cadmpeg_ir::topology::Shell],
+    regions: &[cadmpeg_ir::topology::Region],
+) -> HashMap<String, cadmpeg_ir::ids::BodyId> {
+    let region_bodies = regions
+        .iter()
+        .map(|region| (region.id.0.as_str(), &region.body))
+        .collect::<HashMap<_, _>>();
+    let shell_bodies = shells
+        .iter()
+        .filter_map(|shell| {
+            region_bodies
+                .get(shell.region.0.as_str())
+                .map(|body| (shell.id.0.as_str(), (*body).clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    faces
+        .iter()
+        .filter_map(|face| {
+            shell_bodies
+                .get(face.shell.0.as_str())
+                .map(|body| (face.id.0.clone(), body.clone()))
+        })
+        .collect()
+}
+
+/// Derive feature output bodies from the producing-feature identity the
+/// Parasolid attribute lane binds to each surviving face.
+///
+/// `face_producers` pairs an emitted face identity with the native source id of
+/// the history feature that produced it. A feature outputs every body owning at
+/// least one face it produced. Features whose produced faces did not survive
+/// regeneration keep an empty output list.
+pub fn derive_feature_outputs(
+    features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[FeatureHistory],
+    face_producers: &[(String, u32)],
+    faces: &[Face],
+    shells: &[cadmpeg_ir::topology::Shell],
+    regions: &[cadmpeg_ir::topology::Region],
+) {
+    if face_producers.is_empty() {
+        return;
+    }
+    let owners = face_owner_bodies(faces, shells, regions);
+    let mut produced: HashMap<u32, Vec<cadmpeg_ir::ids::BodyId>> = HashMap::new();
+    for (face, source_id) in face_producers {
+        let Some(body) = owners.get(face) else {
+            continue;
+        };
+        let bodies = produced.entry(*source_id).or_default();
+        if !bodies.contains(body) {
+            bodies.push(body.clone());
+        }
+    }
+    for feature in features {
+        if !feature.outputs.is_empty() {
+            continue;
+        }
+        let Some(source_id) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native_ref| {
+                histories
+                    .iter()
+                    .flat_map(|history| &history.features)
+                    .find(|record| record.id == native_ref)
+            })
+            .and_then(|record| record.source_id.as_deref())
+            .and_then(|source_id| source_id.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        if let Some(bodies) = produced.get(&source_id) {
+            feature.outputs.clone_from(bodies);
+        }
+    }
+}
+
 /// Resolve native topology selections against decoded B-rep identities.
 pub fn bind_topology_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
     bodies: &[Body],
     faces: &[Face],
+    surfaces: &[Surface],
     edges: &[Edge],
     curves: &[Curve],
 ) {
@@ -4050,6 +5584,10 @@ pub fn bind_topology_selections(
             .iter()
             .map(|curve| (curve.id.0.as_str(), None, curve.id.clone())),
     );
+    let surfaces_by_id = surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect::<HashMap<_, _>>();
     for feature in features {
         if let Some(scope) = feature
             .native_ref
@@ -4067,6 +5605,65 @@ pub fn bind_topology_selections(
             }
         }
         match &mut feature.definition {
+            FeatureDefinition::DatumOffsetPlane {
+                reference:
+                    Some(DatumPlaneReference::Face {
+                        face: reference,
+                        origin,
+                        normal,
+                        ..
+                    }),
+                ..
+            } => {
+                resolve_planar_face_selection(reference, *origin, *normal, faces, &surfaces_by_id);
+            }
+            FeatureDefinition::DatumOffsetPlane {
+                reference,
+                distance,
+            } if reference.is_none() => {
+                let Some(origin) = feature
+                    .source_properties
+                    .get("Origin")
+                    .and_then(|value| parse_point3_mm(value))
+                else {
+                    continue;
+                };
+                let Some(normal) = feature
+                    .source_properties
+                    .get("Normal")
+                    .and_then(|value| parse_vector3(value))
+                else {
+                    continue;
+                };
+                let Some(u_axis) = feature
+                    .source_properties
+                    .get("UAxis")
+                    .and_then(|value| parse_vector3(value))
+                else {
+                    continue;
+                };
+                let support_origin = Point3::new(
+                    origin.x + normal.x * distance.0,
+                    origin.y + normal.y * distance.0,
+                    origin.z + normal.z * distance.0,
+                );
+                let mut face = FaceSelection::Unresolved;
+                resolve_planar_face_selection(
+                    &mut face,
+                    support_origin,
+                    normal,
+                    faces,
+                    &surfaces_by_id,
+                );
+                if !matches!(face, FaceSelection::Unresolved) {
+                    *reference = Some(DatumPlaneReference::Face {
+                        face,
+                        origin: support_origin,
+                        normal,
+                        u_axis,
+                    });
+                }
+            }
             FeatureDefinition::Extrude {
                 profile, extent, ..
             } => {
@@ -4089,8 +5686,8 @@ pub fn bind_topology_selections(
                     resolve_profile_ref(profile, &face_ids);
                 }
             }
-            FeatureDefinition::Sweep { profile, path, .. } => {
-                if let Some(profile) = profile {
+            FeatureDefinition::Sweep { section, path, .. } => {
+                if let Some(profile) = section.referenced_profile_mut() {
                     resolve_profile_ref(profile, &face_ids);
                 }
                 if let Some(path) = path {
@@ -4227,6 +5824,64 @@ pub fn bind_topology_selections(
     }
 }
 
+fn resolve_planar_face_selection(
+    selection: &mut FaceSelection,
+    origin: Point3,
+    normal: Vector3,
+    faces: &[Face],
+    surfaces: &HashMap<&cadmpeg_ir::ids::SurfaceId, &Surface>,
+) {
+    let native = match selection {
+        FaceSelection::Unresolved => None,
+        FaceSelection::Native(native) => Some(native.clone()),
+        _ => return,
+    };
+    let normal_length = normal.norm();
+    if !normal_length.is_finite() || normal_length <= f64::EPSILON {
+        return;
+    }
+    let matching = faces
+        .iter()
+        .filter_map(|face| {
+            let SurfaceGeometry::Plane {
+                origin: candidate_origin,
+                normal: candidate_normal,
+                ..
+            } = &surfaces.get(&face.surface)?.geometry
+            else {
+                return None;
+            };
+            let candidate_length = candidate_normal.norm();
+            if !candidate_length.is_finite() || candidate_length <= f64::EPSILON {
+                return None;
+            }
+            let alignment = (normal.x * candidate_normal.x
+                + normal.y * candidate_normal.y
+                + normal.z * candidate_normal.z)
+                / (normal_length * candidate_length);
+            let displacement = Vector3::new(
+                origin.x - candidate_origin.x,
+                origin.y - candidate_origin.y,
+                origin.z - candidate_origin.z,
+            );
+            let separation = (displacement.x * candidate_normal.x
+                + displacement.y * candidate_normal.y
+                + displacement.z * candidate_normal.z)
+                / candidate_length;
+            ((alignment.abs() - 1.0).abs() <= 1.0e-9 && separation.abs() <= 1.0e-8)
+                .then_some(face.id.clone())
+        })
+        .collect::<Vec<_>>();
+    *selection = match (native, matching.as_slice()) {
+        (Some(native), [_, ..]) => FaceSelection::Resolved {
+            faces: matching,
+            native,
+        },
+        (None, [face]) => FaceSelection::Faces(vec![face.clone()]),
+        _ => return,
+    };
+}
+
 fn resolve_profile_ref(
     profile: &mut ProfileRef,
     faces: &HashMap<String, Option<cadmpeg_ir::ids::FaceId>>,
@@ -4356,8 +6011,9 @@ fn bind_definition_sketch(
         FeatureDefinition::Revolve { construction, .. } => {
             construction.profile.as_mut().is_some_and(bind_profile)
         }
-        FeatureDefinition::Sweep { profile, path, .. } => {
-            profile.as_mut().is_some_and(bind_profile) | path.as_mut().is_some_and(bind_path)
+        FeatureDefinition::Sweep { section, path, .. } => {
+            section.referenced_profile_mut().is_some_and(bind_profile)
+                | path.as_mut().is_some_and(bind_path)
         }
         FeatureDefinition::TrimSurface { tool, .. } => bind_path(tool),
         FeatureDefinition::ProjectedCurve { source, .. } => bind_path(source),
@@ -4464,7 +6120,8 @@ fn project_definition(
             .unwrap_or_else(|| native_definition(feature));
     }
     if class == Some(FeatureClass::Extrude) {
-        project_extrude(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
+        project_extrude(feature, native_by_source, features_by_source)
+            .unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Fillet) {
         project_fillet(feature)
     } else if class == Some(FeatureClass::Chamfer) {
@@ -4509,7 +6166,7 @@ fn project_definition(
     } else if class == Some(FeatureClass::Scale) {
         project_scale(feature)
     } else if class == Some(FeatureClass::Hole) {
-        project_hole(feature, features_by_source)
+        project_hole(feature, features_by_source, history_features)
     } else if class == Some(FeatureClass::Revolve) {
         project_revolve(feature, native_by_source)
     } else if class == Some(FeatureClass::Pattern) {
@@ -4526,26 +6183,41 @@ fn project_definition(
 }
 
 fn project_cosmetic_thread(feature: &Feature) -> FeatureDefinition {
+    let diameter = feature
+        .parameters
+        .get("D2")
+        .and_then(|value| parse_dimension_display_length(value))
+        .or_else(|| {
+            let mut tagged = feature
+                .parameters
+                .values()
+                .filter(|value| strip_diameter_modifier(value).is_some())
+                .filter_map(|value| parse_dimension_display_length(value));
+            let diameter = tagged.next()?;
+            tagged.next().is_none().then_some(diameter)
+        })
+        .filter(|value| *value > 0.0)
+        .map(Length);
+    let extent = match feature.parameters.get("D1") {
+        Some(value) => parse_positive_dimension_length_mm(value)
+            .map(|length| CosmeticThreadExtent::Blind {
+                length: Length(length),
+            })
+            .or_else(|| {
+                (parse_angle_rad(value).is_some()
+                    || parse_dimension_display_length(value) == Some(0.0))
+                .then_some(CosmeticThreadExtent::Through)
+            }),
+        None => Some(CosmeticThreadExtent::Through),
+    };
     FeatureDefinition::CosmeticThread {
         face: feature
             .properties
             .get("Face")
             .cloned()
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        diameter: feature
-            .parameters
-            .get("D2")
-            .and_then(|value| parse_dimension_display_length(value))
-            .filter(|value| *value > 0.0)
-            .map(Length),
-        extent: match feature.parameters.get("D1") {
-            Some(value) => parse_positive_dimension_length_mm(value).map(|length| {
-                CosmeticThreadExtent::Blind {
-                    length: Length(length),
-                }
-            }),
-            None => Some(CosmeticThreadExtent::Through),
-        },
+        diameter,
+        extent,
     }
 }
 
@@ -4915,7 +6587,7 @@ fn principal_plane_in_history(
 ) -> Option<cadmpeg_ir::features::PrincipalPlane> {
     use cadmpeg_ir::features::PrincipalPlane;
 
-    if let Some(plane) = principal_plane(feature) {
+    if let Some(plane) = principal_plane_with_siblings(feature, history_features) {
         return Some(plane);
     }
     let legacy_shape = |record: &Feature| {
@@ -4989,12 +6661,32 @@ fn principal_plane_in_history(
 fn project_extrude(
     feature: &Feature,
     native_by_source: &HashMap<&str, &str>,
+    features_by_source: &HashMap<&str, &Feature>,
 ) -> Option<FeatureDefinition> {
+    let legacy_profile = (feature.input_class.is_none()
+        && feature.xml_tag.eq_ignore_ascii_case("Extrusion")
+        && feature.parameters.len() == 1)
+        .then(|| {
+            let source = feature.source_id.as_deref()?.parse::<i64>().ok()?;
+            features_by_source
+                .iter()
+                .filter_map(|(candidate_source, candidate)| {
+                    let candidate_source = candidate_source.parse::<i64>().ok()?;
+                    (candidate_source < source
+                        && classify(candidate) == Some(FeatureClass::Sketch)
+                        && candidate.input_class.as_deref() != Some("moOriginProfileFeature_c"))
+                    .then_some((candidate_source, candidate.id.as_str()))
+                })
+                .max_by_key(|candidate| candidate.0)
+                .map(|(_, profile)| profile.to_string())
+        })
+        .flatten();
     let op = feature
         .properties
         .get("Operation")
         .and_then(|value| parse_boolean_op(value))
         .or_else(|| extrude_feature_op(feature))
+        .or_else(|| legacy_profile.is_some().then_some(BooleanOp::Join))
         .unwrap_or(BooleanOp::Unresolved);
     let sole_length = || {
         let mut values = feature.parameters.values();
@@ -5027,9 +6719,11 @@ fn project_extrude(
             offset: None,
         },
     };
+    let legacy_history_extrusion = legacy_profile.is_some();
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
         None if !feature.parameters.contains_key("Depth")
-            && !feature.parameters.contains_key("D1") =>
+            && !feature.parameters.contains_key("D1")
+            && !legacy_history_extrusion =>
         {
             one_sided(Termination::Unresolved)
         }
@@ -5112,6 +6806,8 @@ fn project_extrude(
             [profile] => ProfileRef::Native(profile.clone()),
             _ => ProfileRef::Unresolved(feature.id.clone()),
         }
+    } else if let Some(profile) = legacy_profile {
+        ProfileRef::Native(profile)
     } else {
         ProfileRef::Unresolved(feature.id.clone())
     };
@@ -5145,14 +6841,38 @@ fn project_offset_plane(
     feature: &Feature,
     by_source: &HashMap<&str, FeatureId>,
 ) -> Option<FeatureDefinition> {
+    let distance = Length(parse_dimension_length_mm(feature.parameters.get("D1")?)?);
     let reference = feature
         .properties
         .get("Reference")
         .or_else(|| feature.properties.get("Plane"))
-        .and_then(|source| by_source.get(source.as_str()).cloned());
+        .and_then(|source| by_source.get(source.as_str()).cloned())
+        .map(DatumPlaneReference::Feature)
+        .or_else(|| {
+            Some(DatumPlaneReference::Face {
+                face: FaceSelection::Unresolved,
+                origin: parse_point3_mm(feature.properties.get("ReferenceFaceOrigin")?)?,
+                normal: parse_vector3(feature.properties.get("ReferenceFaceNormal")?)?,
+                u_axis: parse_vector3(feature.properties.get("ReferenceFaceUAxis")?)?,
+            })
+        })
+        .or_else(|| {
+            let origin = parse_point3_mm(feature.properties.get("Origin")?)?;
+            let normal = parse_vector3(feature.properties.get("Normal")?)?;
+            Some(DatumPlaneReference::Face {
+                face: FaceSelection::Native(feature.properties.get("ReferenceFaceNative")?.clone()),
+                origin: Point3::new(
+                    origin.x + normal.x * distance.0,
+                    origin.y + normal.y * distance.0,
+                    origin.z + normal.z * distance.0,
+                ),
+                normal,
+                u_axis: parse_vector3(feature.properties.get("UAxis")?)?,
+            })
+        });
     Some(FeatureDefinition::DatumOffsetPlane {
         reference,
-        distance: Length(parse_dimension_length_mm(feature.parameters.get("D1")?)?),
+        distance,
     })
 }
 
@@ -5648,7 +7368,10 @@ fn project_sweep(
         None => None,
     };
     Some(FeatureDefinition::Sweep {
-        profile,
+        section: profile.map_or(
+            cadmpeg_ir::features::SweepSection::Unresolved(None),
+            cadmpeg_ir::features::SweepSection::Profile,
+        ),
         sections: Vec::new(),
         path,
         mode,
@@ -5658,6 +7381,9 @@ fn project_sweep(
         path_tangent: false,
         linearize: false,
         twist,
+        path_extent: None,
+        guide_rail: None,
+        taper: None,
         scale,
         allow_multi_profile_faces: None,
     })
@@ -5872,8 +7598,9 @@ fn project_revolve(feature: &Feature, native_by_source: &HashMap<&str, &str>) ->
 fn project_hole(
     feature: &Feature,
     features_by_source: &HashMap<&str, &Feature>,
+    history_features: &[Feature],
 ) -> FeatureDefinition {
-    let profile = hole_profile_construction(feature, features_by_source);
+    let profile = hole_profile_construction(feature, features_by_source, history_features);
     let diameter = feature
         .parameters
         .get("Diameter")
@@ -5981,6 +7708,13 @@ fn project_hole(
             .map_or(HoleKind::Simple, |profile| profile.kind)
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
+        None | Some("Blind")
+            if profile
+                .as_ref()
+                .is_some_and(|profile| profile.exit_kind.is_some()) =>
+        {
+            Some(Termination::ThroughAll)
+        }
         None | Some("Blind") => feature
             .parameters
             .get("Depth")
@@ -6020,11 +7754,11 @@ fn project_hole(
             })
             .unwrap_or_default(),
         kind,
-        exit_kind: None,
+        exit_kind: profile.as_ref().and_then(|profile| profile.exit_kind),
         diameter,
         extent,
-        bottom: None,
-        taper_angle: None,
+        bottom: profile.as_ref().and_then(|profile| profile.bottom),
+        taper_angle: profile.as_ref().and_then(|profile| profile.taper_angle),
         specification: None,
         allow_multi_profile_faces: None,
     }
@@ -6035,22 +7769,45 @@ struct HoleProfileConstruction {
     diameter: Length,
     depth: Option<Length>,
     kind: HoleKind,
+    exit_kind: Option<HoleKind>,
+    bottom: Option<HoleBottom>,
+    taper_angle: Option<Angle>,
 }
 
 fn hole_profile_construction(
     feature: &Feature,
     features_by_source: &HashMap<&str, &Feature>,
+    history_features: &[Feature],
 ) -> Option<HoleProfileConstruction> {
     let children = feature.properties.get("DissectableChildren")?;
-    let mut constructions = children
+    let constructions = children
         .split(',')
         .map(str::trim)
         .filter(|source| !source.is_empty())
-        .filter_map(|source| features_by_source.get(source).copied())
+        .filter_map(|source| {
+            features_by_source.get(source).copied().or_else(|| {
+                let mut profiles = history_features
+                    .iter()
+                    .filter(|candidate| candidate.id == source);
+                let profile = profiles.next()?;
+                profiles.next().is_none().then_some(profile)
+            })
+        })
         .filter(|profile| classify(profile) == Some(FeatureClass::Sketch))
-        .filter_map(hole_sketch_construction);
-    let construction = constructions.next()?;
-    constructions.next().is_none().then_some(construction)
+        .filter_map(hole_sketch_construction)
+        .collect::<Vec<_>>();
+    let complete = constructions
+        .iter()
+        .filter(|construction| construction.depth.is_some())
+        .collect::<Vec<_>>();
+    match complete.as_slice() {
+        [construction] => Some((**construction).clone()),
+        [] => match constructions.as_slice() {
+            [construction] => Some(construction.clone()),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction> {
@@ -6100,6 +7857,7 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
     }
     diameters.sort_by(|left, right| left.0.total_cmp(&right.0));
     lengths.sort_by(|left, right| left.0.total_cmp(&right.0));
+    angles.sort_by(|left, right| left.0.total_cmp(&right.0));
     match (diameters.as_slice(), lengths.as_slice(), angles.as_slice()) {
         ([diameter], depths, []) => Some(HoleProfileConstruction {
             diameter: *diameter,
@@ -6108,6 +7866,9 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                 _ => None,
             },
             kind: HoleKind::Simple,
+            exit_kind: None,
+            bottom: matches!(depths, [_]).then_some(HoleBottom::Flat),
+            taper_angle: None,
         }),
         ([diameter], [depth], [drill_point_angle]) => Some(HoleProfileConstruction {
             diameter: *diameter,
@@ -6115,6 +7876,12 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
             kind: HoleKind::SimpleDrilled {
                 drill_point_angle: *drill_point_angle,
             },
+            exit_kind: None,
+            bottom: Some(HoleBottom::Angled {
+                included_angle: *drill_point_angle,
+                depth_to_tip: false,
+            }),
+            taper_angle: None,
         }),
         ([diameter, entry_diameter], [depth], [angle]) if diameter.0 < entry_diameter.0 => {
             Some(HoleProfileConstruction {
@@ -6124,6 +7891,9 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                     diameter: *entry_diameter,
                     angle: *angle,
                 },
+                exit_kind: None,
+                bottom: None,
+                taper_angle: None,
             })
         }
         ([diameter, major_diameter], [thread_depth, drill_depth], [drill_point_angle])
@@ -6147,6 +7917,37 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                     pitch: None,
                     drill_point_angle: *drill_point_angle,
                 },
+                exit_kind: None,
+                bottom: Some(HoleBottom::Angled {
+                    included_angle: *drill_point_angle,
+                    depth_to_tip: false,
+                }),
+                taper_angle: None,
+            })
+        }
+        (
+            [diameter, major_diameter],
+            [thread_depth, drill_depth],
+            [taper_angle, drill_point_angle],
+        ) if diameter.0 < major_diameter.0
+            && thread_depth.0 < drill_depth.0
+            && taper_angle.0 < drill_point_angle.0 =>
+        {
+            Some(HoleProfileConstruction {
+                diameter: *diameter,
+                depth: Some(*drill_depth),
+                kind: HoleKind::Threaded {
+                    major_diameter: *major_diameter,
+                    thread_depth: *thread_depth,
+                    pitch: None,
+                    drill_point_angle: *drill_point_angle,
+                },
+                exit_kind: None,
+                bottom: Some(HoleBottom::Angled {
+                    included_angle: *drill_point_angle,
+                    depth_to_tip: false,
+                }),
+                taper_angle: Some(*taper_angle),
             })
         }
         ([diameter, entry_diameter], [entry_depth, depth], [drill_point_angle])
@@ -6162,6 +7963,12 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                     depth: *entry_depth,
                     drill_point_angle: *drill_point_angle,
                 },
+                exit_kind: None,
+                bottom: Some(HoleBottom::Angled {
+                    included_angle: *drill_point_angle,
+                    depth_to_tip: false,
+                }),
+                taper_angle: None,
             })
         }
         ([diameter, entry_diameter], [entry_depth, depth], [])
@@ -6174,6 +7981,67 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                     diameter: *entry_diameter,
                     depth: *entry_depth,
                 },
+                exit_kind: None,
+                bottom: None,
+                taper_angle: None,
+            })
+        }
+        (
+            [diameter, exit_diameter, counterbore_diameter],
+            [counterbore_depth, through_depth],
+            [exit_angle],
+        ) if roles
+            == [
+                DimensionRole::Length,
+                DimensionRole::Diameter,
+                DimensionRole::Angle,
+                DimensionRole::Length,
+                DimensionRole::Diameter,
+                DimensionRole::Diameter,
+            ]
+            && diameter.0 < exit_diameter.0
+            && exit_diameter.0 < counterbore_diameter.0
+            && counterbore_depth.0 < through_depth.0 =>
+        {
+            Some(HoleProfileConstruction {
+                diameter: *diameter,
+                depth: Some(*through_depth),
+                kind: HoleKind::Counterbore {
+                    diameter: *counterbore_diameter,
+                    depth: *counterbore_depth,
+                },
+                exit_kind: Some(HoleKind::Countersink {
+                    diameter: *exit_diameter,
+                    angle: *exit_angle,
+                }),
+                bottom: None,
+                taper_angle: None,
+            })
+        }
+        (
+            [diameter, recess_diameter, entry_diameter],
+            [recess_depth, drill_depth],
+            [entry_angle, drill_point_angle],
+        ) if diameter.0 < recess_diameter.0
+            && recess_diameter.0 < entry_diameter.0
+            && recess_depth.0 < drill_depth.0
+            && entry_angle.0 < drill_point_angle.0 =>
+        {
+            Some(HoleProfileConstruction {
+                diameter: *diameter,
+                depth: Some(*drill_depth),
+                kind: HoleKind::Counterdrill {
+                    diameter: *recess_diameter,
+                    entry_diameter: Some(*entry_diameter),
+                    depth: *recess_depth,
+                    angle: *entry_angle,
+                },
+                exit_kind: None,
+                bottom: Some(HoleBottom::Angled {
+                    included_angle: *drill_point_angle,
+                    depth_to_tip: false,
+                }),
+                taper_angle: None,
             })
         }
         _ => None,
@@ -6200,6 +8068,7 @@ fn project_shell(feature: &Feature) -> FeatureDefinition {
         .get("Outward")
         .and_then(|value| parse_bool(value));
     FeatureDefinition::Shell {
+        bodies: None,
         removed_faces: feature
             .properties
             .get("RemovedFaces")
@@ -6405,6 +8274,7 @@ fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
             .cloned()
             .map_or(BodySelection::Unresolved, BodySelection::Native),
         op,
+        keep_tools: false,
     })
 }
 
@@ -6668,6 +8538,36 @@ fn project_chamfer(feature: &Feature) -> FeatureDefinition {
         .parameters
         .get("D2")
         .filter(|value| parse_bounded_angle_rad(value).is_some());
+    let ordered_dimensions = feature
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            FeatureContent::Dimension(name) => feature.parameters.get(name),
+            FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
+        })
+        .collect::<Vec<_>>();
+    let ordered_spec = || match ordered_dimensions.as_slice() {
+        [distance] => Some(ChamferSpec::Distance {
+            distance: Length(parse_positive_dimension_length_mm(distance)?),
+        }),
+        [first, second] => {
+            let first_length = parse_positive_dimension_length_mm(first).map(Length);
+            let second_length = parse_positive_dimension_length_mm(second).map(Length);
+            let first_angle = parse_bounded_angle_rad(first).map(Angle);
+            let second_angle = parse_bounded_angle_rad(second).map(Angle);
+            match (first_length, second_length, first_angle, second_angle) {
+                (Some(distance), None, None, Some(angle))
+                | (None, Some(distance), Some(angle), None) => {
+                    Some(ChamferSpec::DistanceAngle { distance, angle })
+                }
+                (Some(first), Some(second), None, None) => {
+                    Some(ChamferSpec::TwoDistances { first, second })
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    };
     let spec = (|| {
         Some(
             if let Some(value) = feature.parameters.get("Angle").or(positional_angle) {
@@ -6686,6 +8586,7 @@ fn project_chamfer(feature: &Feature) -> FeatureDefinition {
             },
         )
     })()
+    .or_else(ordered_spec)
     .unwrap_or_else(|| ChamferSpec::Unresolved {
         form: if feature.parameters.contains_key("Angle") {
             Some(ChamferForm::DistanceAngle)
@@ -6839,7 +8740,7 @@ fn parse_positive_angle_rad(value: &str) -> Option<f64> {
     parse_angle_rad(value).filter(|value| *value > 0.0)
 }
 
-fn parse_bounded_angle_rad(value: &str) -> Option<f64> {
+pub(crate) fn parse_bounded_angle_rad(value: &str) -> Option<f64> {
     parse_positive_angle_rad(value).filter(|value| *value < std::f64::consts::PI)
 }
 
@@ -6859,9 +8760,10 @@ fn format_f64_literal(value: f64) -> String {
 #[cfg(test)]
 mod literal_tests {
     use super::{
-        apply_parameter_function, compare_parameter_values, dimension_display, exact_integer_f64,
-        exponentiate_parameter_value, format_f64_literal, parse_length_mm, parse_parameter_literal,
-        rewrite_parameter_expression, DimensionDisplay, ParameterExpressionParser, ParameterValue,
+        apply_parameter_function, bare_text_parameter_literal, compare_parameter_values,
+        dimension_display, exact_integer_f64, exponentiate_parameter_value, format_f64_literal,
+        parse_length_mm, parse_parameter_literal, rewrite_parameter_expression, DimensionDisplay,
+        ParameterExpressionParser, ParameterValue,
     };
 
     #[test]
@@ -6911,15 +8813,16 @@ mod literal_tests {
         let aliases = std::collections::HashMap::new();
         let values = std::collections::HashMap::new();
         assert_eq!(
-            ParameterExpressionParser::new("<MOD-DIAM>4mm / 2", &aliases, &values).parse(),
+            ParameterExpressionParser::new_flat("<MOD-DIAM>4mm / 2", &aliases, &values).parse(),
             Some(ParameterValue::Length(cadmpeg_ir::features::Length(2.0)))
         );
         assert_eq!(
-            ParameterExpressionParser::new("<MOD-DIAM>4 + 1mm", &aliases, &values).parse(),
+            ParameterExpressionParser::new_flat("<MOD-DIAM>4 + 1mm", &aliases, &values).parse(),
             Some(ParameterValue::Length(cadmpeg_ir::features::Length(5.0)))
         );
         assert_eq!(
-            ParameterExpressionParser::new("&lt;MOD-DIAM&gt;4mm / 2", &aliases, &values).parse(),
+            ParameterExpressionParser::new_flat("&lt;MOD-DIAM&gt;4mm / 2", &aliases, &values,)
+                .parse(),
             Some(ParameterValue::Length(cadmpeg_ir::features::Length(2.0)))
         );
         assert_eq!(
@@ -6933,11 +8836,12 @@ mod literal_tests {
         let aliases = std::collections::HashMap::new();
         let values = std::collections::HashMap::new();
         assert_eq!(
-            ParameterExpressionParser::new("<MOD-RHO>4mm / 2", &aliases, &values).parse(),
+            ParameterExpressionParser::new_flat("<MOD-RHO>4mm / 2", &aliases, &values).parse(),
             Some(ParameterValue::Length(cadmpeg_ir::features::Length(2.0)))
         );
         assert_eq!(
-            ParameterExpressionParser::new("&lt;MOD-RHO&gt;4 + 1mm", &aliases, &values).parse(),
+            ParameterExpressionParser::new_flat("&lt;MOD-RHO&gt;4 + 1mm", &aliases, &values,)
+                .parse(),
             Some(ParameterValue::Length(cadmpeg_ir::features::Length(5.0)))
         );
         assert_eq!(
@@ -6969,7 +8873,7 @@ mod literal_tests {
             );
             assert_eq!(dimension_display(expression), Some(display), "{expression}");
             assert_eq!(
-                ParameterExpressionParser::new(expression, &aliases, &values).parse(),
+                ParameterExpressionParser::new_flat(expression, &aliases, &values).parse(),
                 Some(ParameterValue::Length(cadmpeg_ir::features::Length(
                     expected
                 ))),
@@ -6979,6 +8883,23 @@ mod literal_tests {
         assert_eq!(parse_parameter_literal("x2"), None);
         assert_eq!(parse_parameter_literal("15mmH7"), None);
         assert_eq!(parse_parameter_literal("<MOD-DIAM>15H"), None);
+    }
+
+    #[test]
+    fn bare_native_text_is_distinct_from_scalar_expressions_and_references() {
+        for text in ["M16x2.0", "740四件等高", "plain text"] {
+            assert_eq!(
+                bare_text_parameter_literal(text),
+                Some(ParameterValue::String(text.into()))
+            );
+        }
+        for expression in ["", "1 +", "width/2", "\"D1@Sketch1\"", "D12"] {
+            assert_eq!(
+                bare_text_parameter_literal(expression),
+                None,
+                "{expression}"
+            );
+        }
     }
 
     #[test]
@@ -7106,7 +9027,7 @@ mod literal_tests {
     }
 }
 
-fn parse_point3_mm(value: &str) -> Option<Point3> {
+pub(crate) fn parse_point3_mm(value: &str) -> Option<Point3> {
     let values = value
         .split(',')
         .map(|component| parse_length_mm(component.trim()))
@@ -7114,7 +9035,7 @@ fn parse_point3_mm(value: &str) -> Option<Point3> {
     (values.len() == 3).then(|| Point3::new(values[0], values[1], values[2]))
 }
 
-fn parse_vector3(value: &str) -> Option<Vector3> {
+pub(crate) fn parse_vector3(value: &str) -> Option<Vector3> {
     let values = value
         .split(',')
         .map(|component| component.trim().parse::<f64>().ok())
@@ -7339,7 +9260,7 @@ fn strip_dimension_fit(value: &str) -> Option<&str> {
     .then_some(nominal)
 }
 
-fn strip_diameter_modifier(expression: &str) -> Option<&str> {
+pub(crate) fn strip_diameter_modifier(expression: &str) -> Option<&str> {
     let expression = expression.trim();
     expression
         .strip_prefix("<MOD-DIAM>")
@@ -7537,6 +9458,10 @@ pub(crate) fn project_configuration_design_states(
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
 ) {
+    for configuration in &mut ir.model.configurations {
+        configuration.parameter_values.clear();
+        configuration.feature_states.clear();
+    }
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
@@ -7590,6 +9515,54 @@ pub(crate) fn project_configuration_design_states(
     }
 }
 
+/// Project edge operands carried only by supplemental config-object lanes into
+/// the matching configuration-local feature snapshots.
+pub(crate) fn project_configuration_supplemental_edge_selections(
+    ir: &mut cadmpeg_ir::CadIr,
+    lanes: &[crate::records::FeatureInputLane],
+) {
+    for lane in lanes
+        .iter()
+        .filter(|lane| crate::resolved_features::is_supplemental_config_lane(lane))
+    {
+        let Some(slot_index) = lane
+            .configuration
+            .as_deref()
+            .and_then(|value| value.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let Some(configuration_index) =
+            configuration_index_for_slot(&ir.model.configurations, slot_index)
+        else {
+            continue;
+        };
+        let states = &ir.model.configurations[configuration_index].feature_states;
+        let mut features = ir.model.features.clone();
+        for feature in &mut features {
+            let Some(state) = states.get(&feature.id) else {
+                continue;
+            };
+            feature.suppressed = Some(state.suppressed);
+            feature.dependencies.clone_from(&state.dependencies);
+            feature.outputs.clone_from(&state.outputs);
+            feature.definition.clone_from(&state.definition);
+        }
+        crate::resolved_features::project_compact_edge_selections(
+            &mut features,
+            std::slice::from_ref(lane),
+        );
+        let states = &mut ir.model.configurations[configuration_index].feature_states;
+        for feature in features {
+            let Some(state) = states.get_mut(&feature.id) else {
+                continue;
+            };
+            state.dependencies = feature.dependencies;
+            state.definition = feature.definition;
+        }
+    }
+}
+
 fn restore_configuration_tree_node_definitions(
     features: &mut [cadmpeg_ir::features::Feature],
     base_features: &[cadmpeg_ir::features::Feature],
@@ -7620,11 +9593,6 @@ pub(crate) fn project_configuration_sketch_states(
     lanes: &[crate::records::FeatureInputLane],
     annotations: &cadmpeg_ir::Annotations,
 ) {
-    let modeller_generation = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("parasolid_schema"))
-        .and_then(|schema| crate::container::parasolid_modeler_generation(schema));
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
@@ -7645,11 +9613,14 @@ pub(crate) fn project_configuration_sketch_states(
                 Some(feature)
             })
             .collect::<Vec<_>>();
-        let scoped_spatial_sketches = ir
+        let reusable_spatial_sketches = ir
             .model
             .spatial_sketches
             .iter()
-            .filter(|sketch| sketch.native_ref.as_deref() == Some(scoped_lanes[0].id.as_str()))
+            .filter(|sketch| {
+                sketch.configuration.is_none()
+                    || sketch.native_ref.as_deref() == Some(scoped_lanes[0].id.as_str())
+            })
             .map(|sketch| &sketch.id)
             .collect::<HashSet<_>>();
         for feature in &mut features {
@@ -7661,7 +9632,7 @@ pub(crate) fn project_configuration_sketch_states(
                 ":model:spatial-sketch#",
                 1,
             ));
-            if sketch.is_none() && scoped_spatial_sketches.contains(&expected) {
+            if sketch.is_none() && reusable_spatial_sketches.contains(&expected) {
                 *sketch = Some(expected);
             }
         }
@@ -7696,7 +9667,6 @@ pub(crate) fn project_configuration_sketch_states(
             &mut ir.model.sketch_entities,
             histories,
             scoped_lanes,
-            modeller_generation,
         );
         bind_unique_sketch_feature(&mut features, &ir.model.sketches, histories);
         crate::resolved_features::project_dissected_sketches(
@@ -7722,6 +9692,12 @@ pub(crate) fn project_configuration_sketch_states(
             histories,
             scoped_lanes,
         );
+        crate::resolved_features::project_profiled_hole_constructions(
+            &mut features,
+            &ir.model.sketch_entities,
+            histories,
+            scoped_lanes,
+        );
         crate::resolved_features::project_hole_position_sketches(
             &mut features,
             &ir.model.sketches,
@@ -7737,9 +9713,30 @@ pub(crate) fn project_configuration_sketch_states(
             histories,
             scoped_lanes,
         );
+        crate::resolved_features::project_topological_hole_constructions(
+            &mut features,
+            &crate::resolved_features::HoleTopology {
+                surfaces: &surfaces,
+                faces: &ir.model.faces,
+                loops: &ir.model.loops,
+                coedges: &ir.model.coedges,
+                edges: &ir.model.edges,
+                vertices: &ir.model.vertices,
+                points: &ir.model.points,
+            },
+        );
         crate::resolved_features::project_hole_axes(
             &mut features,
-            &surfaces,
+            &ir.model.sketch_entities,
+            &crate::resolved_features::HoleTopology {
+                surfaces: &surfaces,
+                faces: &ir.model.faces,
+                loops: &ir.model.loops,
+                coedges: &ir.model.coedges,
+                edges: &ir.model.edges,
+                vertices: &ir.model.vertices,
+                points: &ir.model.points,
+            },
             histories,
             scoped_lanes,
         );
@@ -7765,16 +9762,52 @@ pub(crate) fn project_configuration_sketch_states(
     for configuration in &mut ir.model.configurations {
         for (feature_id, state) in &mut configuration.feature_states {
             if let Some(base_definition) = base.get(feature_id) {
-                inherit_configuration_hole_semantics(&mut state.definition, base_definition);
+                inherit_configuration_shared_semantics(&mut state.definition, base_definition);
             }
         }
     }
 }
 
-fn inherit_configuration_hole_semantics(
+fn inherit_configuration_shared_semantics(
     definition: &mut FeatureDefinition,
     base_definition: &FeatureDefinition,
 ) {
+    if let (
+        FeatureDefinition::DatumOffsetPlane { reference, .. },
+        FeatureDefinition::DatumOffsetPlane {
+            reference: base_reference,
+            ..
+        },
+    ) = (&mut *definition, base_definition)
+    {
+        if reference.is_none() {
+            reference.clone_from(base_reference);
+        } else if let (
+            Some(cadmpeg_ir::features::DatumPlaneReference::Face { face, .. }),
+            Some(cadmpeg_ir::features::DatumPlaneReference::Face {
+                face: base_face, ..
+            }),
+        ) = (reference, base_reference)
+        {
+            let incomplete = match face {
+                cadmpeg_ir::features::FaceSelection::Faces(faces)
+                | cadmpeg_ir::features::FaceSelection::Resolved { faces, .. } => faces.is_empty(),
+                cadmpeg_ir::features::FaceSelection::Historical { faces, .. } => faces.is_empty(),
+                cadmpeg_ir::features::FaceSelection::Generated { faces, .. } => faces.is_empty(),
+                cadmpeg_ir::features::FaceSelection::HistoricalPartial {
+                    faces,
+                    unresolved,
+                    ..
+                } => faces.is_empty() || !unresolved.is_empty(),
+                cadmpeg_ir::features::FaceSelection::Unresolved
+                | cadmpeg_ir::features::FaceSelection::Native(_) => true,
+            };
+            if incomplete {
+                face.clone_from(base_face);
+            }
+        }
+        return;
+    }
     let FeatureDefinition::Hole {
         face,
         placements,
@@ -7907,8 +9940,12 @@ pub(crate) fn configuration_lane_assignments(
     lanes: &[crate::records::FeatureInputLane],
 ) -> Vec<(usize, usize)> {
     let mut lanes_by_configuration = BTreeMap::<u32, Vec<usize>>::new();
-    for (lane_index, lane) in lanes.iter().enumerate() {
-        let Some(source_index) = lane
+    for (lane_index, lane) in lanes
+        .iter()
+        .enumerate()
+        .filter(|(_, lane)| configuration_state_lane(lane))
+    {
+        let Some(slot_index) = lane
             .configuration
             .as_deref()
             .and_then(|value| value.parse::<u32>().ok())
@@ -7916,41 +9953,93 @@ pub(crate) fn configuration_lane_assignments(
             continue;
         };
         lanes_by_configuration
-            .entry(source_index)
+            .entry(slot_index)
             .or_default()
             .push(lane_index);
     }
     lanes_by_configuration
         .into_iter()
-        .filter_map(|(source_index, lane_indices)| {
+        .filter_map(|(slot_index, lane_indices)| {
             let [lane_index] = lane_indices.as_slice() else {
                 return None;
             };
-            let explicit_candidates = configurations
-                .iter()
-                .enumerate()
-                .filter(|(_, configuration)| configuration.source_index == Some(source_index))
-                .map(|(position, _)| position)
-                .collect::<Vec<_>>();
-            let candidates = if explicit_candidates.is_empty() {
-                configurations
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, configuration)| {
-                        configuration.source_index.is_none()
-                            && configuration.ordinal == source_index
-                    })
-                    .map(|(position, _)| position)
-                    .collect::<Vec<_>>()
-            } else {
-                explicit_candidates
-            };
-            let [configuration_index] = candidates.as_slice() else {
-                return None;
-            };
-            Some((*configuration_index, *lane_index))
+            Some((
+                configuration_index_for_slot(configurations, slot_index)?,
+                *lane_index,
+            ))
         })
         .collect()
+}
+
+fn configuration_index_for_slot(
+    configurations: &[DesignConfiguration],
+    slot_index: u32,
+) -> Option<usize> {
+    let explicit_candidates = configurations
+        .iter()
+        .enumerate()
+        .filter(|(_, configuration)| {
+            configuration
+                .properties
+                .get("id")
+                .and_then(|value| value.parse::<u32>().ok())
+                == Some(slot_index)
+        })
+        .map(|(position, _)| position)
+        .collect::<Vec<_>>();
+    let candidates = if explicit_candidates.is_empty() {
+        configurations
+            .iter()
+            .enumerate()
+            .filter(|(_, configuration)| {
+                configuration
+                    .properties
+                    .get("id")
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .is_none()
+                    && configuration.ordinal == slot_index
+            })
+            .map(|(position, _)| position)
+            .collect::<Vec<_>>()
+    } else {
+        explicit_candidates
+    };
+    let [configuration_index] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*configuration_index)
+}
+
+pub(crate) fn unresolved_configuration_lanes(
+    configurations: &[DesignConfiguration],
+    lanes: &[crate::records::FeatureInputLane],
+) -> usize {
+    let assigned_lanes = configuration_lane_assignments(configurations, lanes)
+        .into_iter()
+        .map(|(_, lane_index)| lane_index)
+        .collect::<HashSet<_>>();
+    let mut occurrences = HashMap::<&str, usize>::new();
+    for lane in lanes
+        .iter()
+        .filter(|lane| configuration_state_lane(lane))
+        .filter_map(|lane| lane.configuration.as_deref())
+    {
+        *occurrences.entry(lane).or_default() += 1;
+    }
+    lanes
+        .iter()
+        .enumerate()
+        .filter(|(_, lane)| configuration_state_lane(lane))
+        .filter(|(lane_index, lane)| {
+            lane.configuration.as_deref().is_some_and(|slot| {
+                occurrences.get(slot).copied() != Some(1) || !assigned_lanes.contains(lane_index)
+            })
+        })
+        .count()
+}
+
+fn configuration_state_lane(lane: &crate::records::FeatureInputLane) -> bool {
+    !crate::resolved_features::is_supplemental_config_lane(lane)
 }
 
 /// Stable hash of native configuration records.
@@ -8208,10 +10297,12 @@ fn validate_surface_sweep_profile_edits(
     let expected = project_features_with_native_inputs(native)
         .into_iter()
         .filter_map(|feature| {
-            let FeatureDefinition::Sweep {
-                profile: Some(profile @ (ProfileRef::Feature(_) | ProfileRef::Generated { .. })),
-                ..
-            } = feature.definition
+            let FeatureDefinition::Sweep { section, .. } = feature.definition else {
+                return None;
+            };
+            let cadmpeg_ir::features::SweepSection::Profile(
+                profile @ (ProfileRef::Feature(_) | ProfileRef::Generated { .. }),
+            ) = section
             else {
                 return None;
             };
@@ -8224,11 +10315,13 @@ fn validate_surface_sweep_profile_edits(
         let Some(expected) = expected.get(&feature.id) else {
             continue;
         };
-        let FeatureDefinition::Sweep {
-            profile: Some(profile),
-            ..
-        } = &feature.definition
-        else {
+        let FeatureDefinition::Sweep { section, .. } = &feature.definition else {
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT feature {} changes a reference-curve sweep profile",
+                feature.id
+            )));
+        };
+        let Some(profile) = section.referenced_profile() else {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a reference-curve sweep profile",
                 feature.id
@@ -9258,7 +11351,7 @@ fn sync_neutral_configurations(
                 .unwrap_or_else(|| format!("sldprt:generated:configuration#{}", configuration.id.0))
         })
         .collect::<std::collections::HashSet<_>>();
-    let previous_index_owners = native_configuration_index_owners(&native.feature_histories);
+    let previous_slot_owners = native_configuration_slot_owners(&native.feature_histories);
     let deleted_ids = native
         .feature_histories
         .iter()
@@ -9274,7 +11367,7 @@ fn sync_neutral_configurations(
         else {
             return true;
         };
-        previous_index_owners
+        previous_slot_owners
             .get(&index)
             .and_then(Option::as_deref)
             .is_none_or(|owner| !deleted_ids.contains(owner))
@@ -9293,21 +11386,22 @@ fn sync_neutral_configurations(
             .find(|candidate| configuration.native_ref.as_deref() == Some(candidate.id.as_str()));
         if let Some(existing) = existing {
             let existing_id = existing.id.clone();
-            let previous_index = existing.source_index.unwrap_or(existing.ordinal);
+            let previous_slot = configuration_slot(&existing.properties, existing.ordinal);
             existing.ordinal = configuration.ordinal;
             existing.source_index = configuration.source_index;
             existing.name.clone_from(&configuration.name);
             existing.material.clone_from(&configuration.material);
             existing.properties.clone_from(&configuration.properties);
-            let configuration_index = configuration.source_index.unwrap_or(configuration.ordinal);
-            if previous_index != configuration_index
-                && previous_index_owners
-                    .get(&previous_index)
+            let configuration_slot =
+                configuration_slot(&configuration.properties, configuration.ordinal);
+            if previous_slot != configuration_slot
+                && previous_slot_owners
+                    .get(&previous_slot)
                     .and_then(Clone::clone)
                     == Some(existing_id)
             {
                 lane_configuration_remaps
-                    .insert(previous_index.to_string(), configuration_index.to_string());
+                    .insert(previous_slot.to_string(), configuration_slot.to_string());
             }
         } else {
             let parent = native.feature_histories[0].id.clone();
@@ -9342,30 +11436,41 @@ fn sync_neutral_configurations(
     synchronize_history_content_order(native);
 }
 
-fn native_configuration_index_owners(
-    histories: &[FeatureHistory],
-) -> BTreeMap<u32, Option<String>> {
+fn configuration_slot(properties: &BTreeMap<String, String>, ordinal: u32) -> u32 {
+    properties
+        .get("id")
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(ordinal)
+}
+
+fn native_configuration_slot_owners(histories: &[FeatureHistory]) -> BTreeMap<u32, Option<String>> {
     let configurations = histories
         .iter()
         .flat_map(|history| &history.configurations)
         .collect::<Vec<_>>();
     let mut owners = BTreeMap::<u32, Option<String>>::new();
-    for configuration in configurations
-        .iter()
-        .filter(|configuration| configuration.source_index.is_some())
-    {
-        let index = configuration.source_index.expect("filtered above");
+    for configuration in configurations.iter().filter(|configuration| {
+        configuration
+            .properties
+            .get("id")
+            .and_then(|value| value.parse::<u32>().ok())
+            .is_some()
+    }) {
+        let index = configuration_slot(&configuration.properties, configuration.ordinal);
         owners
             .entry(index)
             .and_modify(|owner| *owner = None)
             .or_insert_with(|| Some(configuration.id.clone()));
     }
-    let explicit_indices = owners.keys().copied().collect::<HashSet<_>>();
-    for configuration in configurations
-        .into_iter()
-        .filter(|configuration| configuration.source_index.is_none())
-    {
-        if explicit_indices.contains(&configuration.ordinal) {
+    let explicit_slots = owners.keys().copied().collect::<HashSet<_>>();
+    for configuration in configurations.into_iter().filter(|configuration| {
+        configuration
+            .properties
+            .get("id")
+            .and_then(|value| value.parse::<u32>().ok())
+            .is_none()
+    }) {
+        if explicit_slots.contains(&configuration.ordinal) {
             continue;
         }
         owners
@@ -9984,7 +12089,7 @@ pub fn sync_neutral_features(
                 }
                 let mut properties = feature.source_properties.clone();
                 match reference {
-                    Some(reference) => {
+                    Some(DatumPlaneReference::Feature(reference)) => {
                         let source = parent_sources.get(reference).ok_or_else(|| {
                             CodecError::Malformed(format!(
                                 "SLDPRT feature {} references a missing datum plane",
@@ -9999,6 +12104,15 @@ pub fn sync_neutral_features(
                             "Reference"
                         };
                         properties.insert(key.into(), source.clone());
+                    }
+                    Some(DatumPlaneReference::Face { .. }) => {
+                        let Some(record) = existing.as_deref() else {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} cannot create a face-supported datum plane",
+                                feature.id
+                            )));
+                        };
+                        properties = record.properties.clone();
                     }
                     None if existing.is_some() => {}
                     None => {
@@ -10842,6 +12956,12 @@ pub fn sync_neutral_features(
                     }
                 }
                 match direction {
+                    cadmpeg_ir::features::ExtrudeDirection::Unresolved => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has an unresolved extrusion direction",
+                            feature.id
+                        )));
+                    }
                     cadmpeg_ir::features::ExtrudeDirection::ProfileNormal => {
                         properties.remove("Direction");
                     }
@@ -11226,6 +13346,7 @@ pub fn sync_neutral_features(
                 )));
             }
             FeatureDefinition::Shell {
+                bodies,
                 removed_faces,
                 thickness,
                 outward,
@@ -11234,7 +13355,8 @@ pub fn sync_neutral_features(
                 resolve_intersections,
                 allow_self_intersections,
             } => {
-                if mode.is_some()
+                if bodies.is_some()
+                    || mode.is_some()
                     || join.is_some()
                     || resolve_intersections.is_some()
                     || allow_self_intersections.is_some()
@@ -11605,11 +13727,17 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
-            FeatureDefinition::Combine { target, tools, op } => {
+            FeatureDefinition::Combine {
+                target,
+                tools,
+                op,
+                keep_tools,
+            } => {
                 if existing.as_deref().is_some_and(|record| {
                     !feature_family(record, "Combine")
                         && !feature_input_class(record, NativeClassKind::Combine)
                 }) || *op == BooleanOp::NewBody
+                    || *keep_tools
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported combine semantics",
@@ -12550,7 +14678,7 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Sweep {
-                profile,
+                section,
                 sections,
                 path,
                 mode,
@@ -12560,6 +14688,9 @@ pub fn sync_neutral_features(
                 path_tangent,
                 linearize,
                 twist,
+                path_extent,
+                guide_rail,
+                taper,
                 scale,
                 allow_multi_profile_faces,
             } => {
@@ -12569,6 +14700,9 @@ pub fn sync_neutral_features(
                     || transformation.is_some()
                     || *path_tangent
                     || *linearize
+                    || path_extent.is_some()
+                    || guide_rail.is_some()
+                    || taper.is_some()
                     || allow_multi_profile_faces.is_some()
                 {
                     return Err(CodecError::NotImplemented(format!(
@@ -12582,16 +14716,18 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                let profile_source = match profile {
-                    Some(ProfileRef::Generated { .. }) if existing.is_some() => None,
-                    Some(ProfileRef::Feature(_))
+                let profile_source = match section {
+                    cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Generated {
+                        ..
+                    }) if existing.is_some() => None,
+                    cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(_))
                         if existing
                             .as_deref()
                             .is_some_and(|record| !record.properties.contains_key("Profile")) =>
                     {
                         None
                     }
-                    Some(profile) => Some(
+                    cadmpeg_ir::features::SweepSection::Profile(profile) => Some(
                         profile_source(profile, &record_sources, &feature_sources, &sketch_sources)
                             .ok_or_else(|| {
                                 CodecError::Malformed(format!(
@@ -12600,7 +14736,13 @@ pub fn sync_neutral_features(
                                 ))
                             })?,
                     ),
-                    None => None,
+                    cadmpeg_ir::features::SweepSection::Unresolved(_) => None,
+                    cadmpeg_ir::features::SweepSection::Generated(_) => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} uses an unsupported generated sweep section",
+                            feature.id
+                        )));
+                    }
                 };
                 let path_source = match path {
                     Some(path) => Some(
@@ -12900,6 +15042,12 @@ pub fn sync_neutral_features(
                         PatternSeed::Faces(_) | PatternSeed::Bodies(_) => {
                             return Err(CodecError::NotImplemented(format!(
                                 "SLDPRT feature {} has a source-less topology pattern seed",
+                                feature.id
+                            )));
+                        }
+                        PatternSeed::Occurrences(_) => {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} has component-occurrence pattern seeds",
                                 feature.id
                             )));
                         }
@@ -13486,6 +15634,7 @@ fn profile_source(
         ProfileRef::Sketch(id) => sketches.get(id).cloned(),
         ProfileRef::SketchProfiles { sketch, .. }
         | ProfileRef::SketchRegions { sketch, .. }
+        | ProfileRef::SketchEntities { sketch, .. }
         | ProfileRef::SketchSelection { sketch, .. } => sketches.get(sketch).cloned(),
         ProfileRef::SpatialSketchProfiles { .. }
         | ProfileRef::SpatialSketchSelection { .. }
@@ -13512,7 +15661,9 @@ fn path_source(
         PathRef::Unresolved(_) => None,
         PathRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
         PathRef::Sketch(id) => sketches.get(id).cloned(),
-        PathRef::SpatialSketchSelection { .. } | PathRef::HistoricalEdges { .. } => None,
+        PathRef::SketchCurves { .. }
+        | PathRef::SpatialSketchSelection { .. }
+        | PathRef::HistoricalEdges { .. } => None,
         PathRef::Edges(edges) if !edges.is_empty() => Some(
             edges
                 .iter()

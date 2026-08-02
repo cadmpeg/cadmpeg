@@ -9,13 +9,14 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
-use cadmpeg_ir::decode::{DecodeMode, InspectOptions};
+
+use cadmpeg_codec_core::decode::{DecodeMode, InspectOptions};
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
     ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
-use cadmpeg_ir::report::LossCategory;
+use cadmpeg_ir::report::{LossCategory, LossKind};
 use cadmpeg_ir::Exactness;
 
 use crate::container;
@@ -24,10 +25,11 @@ use crate::test_support::*;
 use crate::NxCodec;
 
 fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
-    let arena = cadmpeg_ir::decode::DecodeArena::new();
-    let policy = cadmpeg_ir::decode::DecodePolicy::default();
-    let (ctx, root) = cadmpeg_ir::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
-        .expect("bounded test input");
+    let arena = cadmpeg_codec_core::decode::DecodeArena::new();
+    let policy = cadmpeg_codec_core::decode::DecodePolicy::default();
+    let (ctx, root) =
+        cadmpeg_codec_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .expect("bounded test input");
     let container = container::scan_bytes(bytes.to_vec()).expect("test SPLMSSTR container");
     parasolid::extract_streams(&ctx, root, &container).expect("test Parasolid streams")
 }
@@ -35,7 +37,7 @@ fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
 fn options_in(mode: DecodeMode, container_only: bool) -> DecodeOptions {
     DecodeOptions {
         container_only,
-        policy: cadmpeg_ir::decode::DecodePolicy {
+        policy: cadmpeg_codec_core::decode::DecodePolicy {
             mode,
             ..Default::default()
         },
@@ -471,23 +473,98 @@ fn jt_vertex_flags_require_a_complete_binary_value_packet() {
 
 #[test]
 fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operands() {
-    use cadmpeg_ir::features::{FaceSelection, HoleKind, Length, ProfileRef, Termination};
+    use cadmpeg_ir::features::{
+        FaceSelection, HoleKind, HolePlacement, Length, ProfileRef, Termination,
+    };
     use cadmpeg_ir::math::{Point3, Vector3};
 
     assert!(!crate::decode::hole_feature_is_incomplete(
         None,
         None,
-        Some(Point3::new(1.0, 2.0, 3.0)),
-        Some(Vector3::new(0.0, 0.0, 1.0)),
+        (
+            Some(Point3::new(1.0, 2.0, 3.0)),
+            Some(Vector3::new(0.0, 0.0, 1.0)),
+        ),
+        &[],
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
         Some(&Termination::ThroughAll),
     ));
+    assert!(crate::decode::hole_feature_is_incomplete(
+        None,
+        None,
+        (
+            Some(Point3::new(f64::NAN, 2.0, 3.0)),
+            Some(Vector3::new(0.0, 0.0, 1.0)),
+        ),
+        &[],
+        (&HoleKind::Simple, None),
+        Some(Length(5.0)),
+        Some(&Termination::ThroughAll),
+    ));
+    let directed = HolePlacement::Directed {
+        position: Point3::new(1.0, 2.0, 3.0),
+        direction: Vector3::new(0.0, 0.0, 1.0),
+    };
+    assert!(!crate::decode::hole_feature_is_incomplete(
+        None,
+        None,
+        (None, None),
+        std::slice::from_ref(&directed),
+        (&HoleKind::Simple, None),
+        Some(Length(5.0)),
+        Some(&Termination::ThroughAll),
+    ));
+    let axis = HolePlacement::Axis {
+        origin: Point3::new(1.0, 2.0, 3.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+    };
+    assert!(!crate::decode::hole_feature_is_incomplete(
+        None,
+        None,
+        (None, None),
+        std::slice::from_ref(&axis),
+        (&HoleKind::Simple, None),
+        Some(Length(5.0)),
+        Some(&Termination::ThroughAll),
+    ));
+    for (placements, exit, extent) in [
+        (
+            vec![axis.clone()],
+            None,
+            Termination::Blind {
+                length: Length(10.0),
+            },
+        ),
+        (
+            vec![axis],
+            Some(HoleKind::Chamfer {
+                diameter: Length(7.0),
+                angle: cadmpeg_ir::features::Angle(0.5),
+            }),
+            Termination::ThroughAll,
+        ),
+        (
+            vec![directed.clone(), directed],
+            None,
+            Termination::ThroughAll,
+        ),
+    ] {
+        assert!(crate::decode::hole_feature_is_incomplete(
+            None,
+            None,
+            (None, None),
+            &placements,
+            (&HoleKind::Simple, exit.as_ref()),
+            Some(Length(5.0)),
+            Some(&extent),
+        ));
+    }
     assert!(crate::decode::hole_feature_is_incomplete(
         Some(&ProfileRef::Unresolved("hole".into())),
         Some(&FaceSelection::Unresolved),
-        None,
-        None,
+        (None, None),
+        &[],
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
         Some(&Termination::ThroughAll),
@@ -495,8 +572,11 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
     assert!(crate::decode::hole_feature_is_incomplete(
         None,
         None,
-        Some(Point3::new(1.0, 2.0, 3.0)),
-        Some(Vector3::new(0.0, 0.0, 1.0)),
+        (
+            Some(Point3::new(1.0, 2.0, 3.0)),
+            Some(Vector3::new(0.0, 0.0, 1.0)),
+        ),
+        &[],
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
         Some(&Termination::Unresolved),
@@ -504,8 +584,11 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
     assert!(crate::decode::hole_feature_is_incomplete(
         None,
         None,
-        Some(Point3::new(1.0, 2.0, 3.0)),
-        Some(Vector3::new(0.0, 0.0, 1.0)),
+        (
+            Some(Point3::new(1.0, 2.0, 3.0)),
+            Some(Vector3::new(0.0, 0.0, 1.0)),
+        ),
+        &[],
         (
             &HoleKind::Simple,
             Some(&HoleKind::Unresolved {
@@ -519,11 +602,218 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(Length(5.0)),
         Some(&Termination::ThroughAll),
     ));
+    assert!(crate::decode::hole_feature_is_incomplete(
+        None,
+        None,
+        (
+            Some(Point3::new(1.0, 2.0, 3.0)),
+            Some(Vector3::new(0.0, 0.0, 1.0)),
+        ),
+        &[],
+        (&HoleKind::Simple, None),
+        Some(Length(0.0)),
+        Some(&Termination::ThroughAll),
+    ));
+    assert!(crate::decode::hole_feature_is_incomplete(
+        None,
+        None,
+        (
+            Some(Point3::new(1.0, 2.0, 3.0)),
+            Some(Vector3::new(0.0, 0.0, 1.0)),
+        ),
+        &[],
+        (
+            &HoleKind::Chamfer {
+                diameter: Length(7.0),
+                angle: cadmpeg_ir::features::Angle(f64::NAN),
+            },
+            None,
+        ),
+        Some(Length(5.0)),
+        Some(&Termination::ThroughAll),
+    ));
+    for kind in [
+        HoleKind::Chamfer {
+            diameter: Length(5.0),
+            angle: cadmpeg_ir::features::Angle(0.5),
+        },
+        HoleKind::Counterbore {
+            diameter: Length(4.0),
+            depth: Length(2.0),
+        },
+        HoleKind::CounterboreDrilled {
+            diameter: Length(5.0),
+            depth: Length(2.0),
+            drill_point_angle: cadmpeg_ir::features::Angle(0.5),
+        },
+        HoleKind::Countersink {
+            diameter: Length(4.0),
+            angle: cadmpeg_ir::features::Angle(0.5),
+        },
+        HoleKind::Counterdrill {
+            diameter: Length(5.0),
+            entry_diameter: None,
+            depth: Length(2.0),
+            angle: cadmpeg_ir::features::Angle(0.5),
+        },
+    ] {
+        assert!(crate::decode::hole_feature_is_incomplete(
+            None,
+            None,
+            (
+                Some(Point3::new(1.0, 2.0, 3.0)),
+                Some(Vector3::new(0.0, 0.0, 1.0)),
+            ),
+            &[],
+            (&kind, None),
+            Some(Length(5.0)),
+            Some(&Termination::ThroughAll),
+        ));
+    }
+}
+
+#[test]
+fn nx_datum_completeness_requires_coherent_finite_frames() {
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let origin = Point3::new(1.0, 2.0, 3.0);
+    let x_axis = Vector3::new(1.0, 0.0, 0.0);
+    let y_axis = Vector3::new(0.0, 1.0, 0.0);
+    let z_axis = Vector3::new(0.0, 0.0, 1.0);
+
+    assert!(!crate::decode::datum_plane_is_incomplete(
+        origin, z_axis, x_axis,
+    ));
+    assert!(crate::decode::datum_plane_is_incomplete(
+        origin,
+        z_axis,
+        Vector3::new(1.0, 0.0, 1.0),
+    ));
+    assert!(crate::decode::datum_plane_is_incomplete(
+        Point3::new(f64::NAN, 2.0, 3.0),
+        z_axis,
+        x_axis,
+    ));
+
+    assert!(!crate::decode::datum_coordinate_system_is_incomplete(
+        origin, x_axis, y_axis, z_axis,
+    ));
+    assert!(crate::decode::datum_coordinate_system_is_incomplete(
+        origin,
+        x_axis,
+        y_axis,
+        Vector3::new(0.0, 0.0, -1.0),
+    ));
+    assert!(crate::decode::datum_coordinate_system_is_incomplete(
+        origin,
+        Vector3::new(2.0, 0.0, 0.0),
+        y_axis,
+        z_axis,
+    ));
+    assert!(crate::decode::datum_coordinate_system_is_incomplete(
+        origin,
+        x_axis,
+        Vector3::new(1e-6, 1.0, 0.0),
+        z_axis,
+    ));
+}
+
+#[test]
+fn nx_hole_completeness_checks_nested_auxiliary_semantics() {
+    use cadmpeg_ir::features::{
+        Angle, HoleBottom, HoleProfileFilter, HoleSpecification, HoleThreadDepth, Length,
+        ThreadHand,
+    };
+
+    assert!(!crate::decode::hole_auxiliary_semantics_are_incomplete(
+        Some(&HoleProfileFilter {
+            points: true,
+            circles: false,
+            arcs: false,
+        }),
+        Some(&HoleBottom::Angled {
+            included_angle: Angle(0.5),
+            depth_to_tip: true,
+        }),
+        Some(Angle(0.1)),
+        None,
+    ));
+    assert!(crate::decode::hole_auxiliary_semantics_are_incomplete(
+        Some(&HoleProfileFilter {
+            points: false,
+            circles: false,
+            arcs: false,
+        }),
+        None,
+        None,
+        None,
+    ));
+    assert!(crate::decode::hole_auxiliary_semantics_are_incomplete(
+        None,
+        Some(&HoleBottom::Angled {
+            included_angle: Angle(f64::NAN),
+            depth_to_tip: false,
+        }),
+        None,
+        None,
+    ));
+    assert!(crate::decode::hole_auxiliary_semantics_are_incomplete(
+        None,
+        None,
+        Some(Angle(std::f64::consts::PI)),
+        None,
+    ));
+    let invalid_specification = HoleSpecification {
+        standard: " ".into(),
+        designation: None,
+        class: None,
+        fit: None,
+        threaded: true,
+        modeled: false,
+        cosmetic: true,
+        pitch: Some(Length(0.0)),
+        major_diameter: Some(Length(5.0)),
+        hand: ThreadHand::Right,
+        depth: HoleThreadDepth::Blind { depth: Length(0.0) },
+        clearance: None,
+    };
+    assert!(crate::decode::hole_auxiliary_semantics_are_incomplete(
+        None,
+        None,
+        None,
+        Some(&invalid_specification),
+    ));
+}
+
+#[test]
+fn nx_projected_curve_completeness_requires_a_valid_direction_law() {
+    use cadmpeg_ir::features::{CurveProjectionDirection, CurveProjectionDirectionState};
+    use cadmpeg_ir::math::Vector3;
+
+    assert!(!crate::decode::projected_curve_direction_is_incomplete(
+        CurveProjectionDirection::State(CurveProjectionDirectionState::TargetNormal),
+    ));
+    assert!(!crate::decode::projected_curve_direction_is_incomplete(
+        CurveProjectionDirection::Vector(Vector3::new(0.0, 0.0, 1.0)),
+    ));
+    assert!(crate::decode::projected_curve_direction_is_incomplete(
+        CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved),
+    ));
+    assert!(crate::decode::projected_curve_direction_is_incomplete(
+        CurveProjectionDirection::Vector(Vector3::new(0.0, 0.0, 0.0)),
+    ));
+    assert!(crate::decode::projected_curve_direction_is_incomplete(
+        CurveProjectionDirection::Vector(Vector3::new(f64::NAN, 0.0, 1.0)),
+    ));
 }
 
 #[test]
 fn nx_extent_completeness_checks_nested_and_face_termination() {
-    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, FaceSelection, Length, Termination};
+    use cadmpeg_ir::features::FeatureId;
+    use cadmpeg_ir::features::{
+        ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, GeneratedVertexRef, Length,
+        Termination, VertexSelection,
+    };
 
     let side = |termination: Termination| ExtrudeSide {
         termination,
@@ -537,12 +827,32 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
                 length: Length(5.0),
             }),
             second: side(Termination::ThroughAll),
-        }
+        },
+        &[],
     ));
     assert!(crate::decode::extrude_extent_is_incomplete(
         &ExtrudeExtent::Symmetric {
             side: side(Termination::Unresolved),
-        }
+        },
+        &[],
+    ));
+    assert!(crate::decode::extrude_extent_is_incomplete(
+        &ExtrudeExtent::OneSided {
+            side: side(Termination::Blind {
+                length: Length(f64::NAN),
+            }),
+        },
+        &[],
+    ));
+    assert!(crate::decode::extrude_extent_is_incomplete(
+        &ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: Termination::ThroughAll,
+                draft: Some(cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2,)),
+                offset: None,
+            },
+        },
+        &[],
     ));
     assert!(crate::decode::termination_is_incomplete(
         &Termination::ToFace {
@@ -556,6 +866,53 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
                 faces: Vec::new(),
                 native: "nx:face-selection#1".to_string(),
             },
+        }
+    ));
+    assert!(crate::decode::termination_is_incomplete(
+        &Termination::OffsetFromFace {
+            face: FaceSelection::Native("nx:face-selection#2".to_string()),
+            offset: Length(1.0),
+        }
+    ));
+    assert!(crate::decode::termination_is_incomplete(
+        &Termination::ToVertex {
+            vertex: VertexSelection::Native("nx:vertex-selection#0".to_string()),
+        }
+    ));
+    let vertex_feature = FeatureId("test:feature#0".into());
+    let generated_vertex = Termination::ToVertex {
+        vertex: VertexSelection::Generated {
+            vertex: GeneratedVertexRef {
+                feature: vertex_feature.clone(),
+                local_id: "vertex-0".into(),
+            },
+            native: "nx:vertex-selection#1".into(),
+        },
+    };
+    assert!(!crate::decode::termination_is_incomplete(&generated_vertex));
+    assert!(crate::decode::termination_dependency_is_incomplete(
+        &generated_vertex,
+        &[],
+    ));
+    assert!(!crate::decode::termination_dependency_is_incomplete(
+        &generated_vertex,
+        &[vertex_feature],
+    ));
+    assert!(crate::decode::extrude_start_is_incomplete(
+        &ExtrudeStart::FromFace {
+            face: FaceSelection::Native("nx:face-selection#3".to_string()),
+            offset: None,
+        }
+    ));
+    assert!(!crate::decode::extrude_start_is_incomplete(
+        &ExtrudeStart::FromFace {
+            face: FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId("test:face#start".into(),)]),
+            offset: None,
+        }
+    ));
+    assert!(crate::decode::extrude_start_is_incomplete(
+        &ExtrudeStart::OffsetProfilePlane {
+            offset: Length(f64::INFINITY),
         }
     ));
 }
@@ -583,10 +940,80 @@ fn nx_rib_completeness_requires_a_resolved_profile() {
         &construction,
         BooleanOp::Join,
     ));
+    construction.direction = Some(Vector3::new(0.0, 0.0, 0.0));
+    assert!(crate::decode::rib_feature_is_incomplete(
+        &construction,
+        BooleanOp::Join,
+    ));
+    construction.direction = Some(Vector3::new(0.0, 0.0, 1.0));
+    construction.thickness = Some(Length(0.0));
+    assert!(crate::decode::rib_feature_is_incomplete(
+        &construction,
+        BooleanOp::Join,
+    ));
+    construction.thickness = Some(Length(2.0));
     construction.profile = Some(ProfileRef::Faces(Vec::new()));
     assert!(crate::decode::rib_feature_is_incomplete(
         &construction,
         BooleanOp::Join,
+    ));
+    construction.profile = Some(ProfileRef::Faces(vec![cadmpeg_ir::ids::FaceId(
+        "face#0".to_string(),
+    )]));
+    construction.draft = RibDraft::Angle(cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2));
+    assert!(crate::decode::rib_feature_is_incomplete(
+        &construction,
+        BooleanOp::Join,
+    ));
+}
+
+#[test]
+fn nx_loft_completeness_validates_point_sections() {
+    use cadmpeg_ir::features::{LoftPointSection, LoftSection};
+    use cadmpeg_ir::ids::VertexId;
+    use cadmpeg_ir::math::Point3;
+
+    assert!(!crate::decode::loft_section_is_incomplete(
+        &LoftSection::Point(LoftPointSection::Point(Point3::new(1.0, 2.0, 3.0))),
+    ));
+    assert!(crate::decode::loft_section_is_incomplete(
+        &LoftSection::Point(LoftPointSection::Point(Point3::new(1.0, f64::NAN, 3.0,))),
+    ));
+    assert!(crate::decode::loft_section_is_incomplete(
+        &LoftSection::Point(LoftPointSection::Vertex(VertexId(" ".into()))),
+    ));
+}
+
+#[test]
+fn nx_sweep_completeness_checks_nested_mode_and_orientation_operands() {
+    use cadmpeg_ir::features::{BooleanOp, PathRef, SweepMode, SweepOrientation};
+
+    assert!(crate::decode::sweep_mode_is_incomplete(SweepMode::Solid {
+        op: BooleanOp::Unresolved,
+    }));
+    assert!(!crate::decode::sweep_mode_is_incomplete(SweepMode::Solid {
+        op: BooleanOp::NewBody,
+    }));
+    assert!(crate::decode::sweep_orientation_is_incomplete(
+        &SweepOrientation::Auxiliary {
+            path: PathRef::Native("nx:auxiliary-path#0".into()),
+            tangent: false,
+            curvilinear: false,
+        }
+    ));
+    assert!(!crate::decode::sweep_orientation_is_incomplete(
+        &SweepOrientation::Auxiliary {
+            path: PathRef::Curves(vec![cadmpeg_ir::ids::CurveId(
+                "test:curve#auxiliary".into(),
+            )]),
+            tangent: false,
+            curvilinear: false,
+        }
+    ));
+    assert!(crate::decode::sweep_orientation_is_incomplete(
+        &SweepOrientation::Binormal {
+            direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0),
+        }
     ));
 }
 
@@ -610,6 +1037,24 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         count: 3,
         second: None,
     }));
+    assert!(crate::decode::pattern_is_incomplete(&PatternKind::Linear {
+        direction: Some(Vector3::new(1.0, 0.0, 0.0)),
+        spacing: Length(0.0),
+        count: 3,
+        second: None,
+    }));
+    assert!(crate::decode::pattern_is_incomplete(&PatternKind::Linear {
+        direction: Some(Vector3::new(0.0, 0.0, 0.0)),
+        spacing: Length(10.0),
+        count: 3,
+        second: None,
+    }));
+    assert!(crate::decode::pattern_is_incomplete(&PatternKind::Linear {
+        direction: Some(Vector3::new(1.0, 0.0, 0.0)),
+        spacing: Length(10.0),
+        count: 1,
+        second: None,
+    }));
     assert!(crate::decode::pattern_is_incomplete(
         &PatternKind::CurveDriven {
             path: Some(PathRef::Native("nx:path".into())),
@@ -630,6 +1075,41 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
             }],
         }
     ));
+    assert!(crate::decode::pattern_is_incomplete(
+        &PatternKind::Composite {
+            stages: vec![
+                PatternStage {
+                    pattern: Box::new(linear.clone()),
+                    combination: PatternStageCombination::Initialize,
+                },
+                PatternStage {
+                    pattern: Box::new(PatternKind::Scale {
+                        center: cadmpeg_ir::features::PatternScaleCenter::FirstSeedCentroid,
+                        final_factor: 2.0,
+                        count: 2,
+                    }),
+                    combination: PatternStageCombination::AlignedSlices,
+                },
+            ],
+        }
+    ));
+    let composite = PatternKind::Composite {
+        stages: vec![
+            PatternStage {
+                pattern: Box::new(linear),
+                combination: PatternStageCombination::Initialize,
+            },
+            PatternStage {
+                pattern: Box::new(PatternKind::Mirror {
+                    plane_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    plane_normal: Vector3::new(1.0, 0.0, 0.0),
+                }),
+                combination: PatternStageCombination::CartesianProduct,
+            },
+        ],
+    };
+    assert!(!crate::decode::pattern_is_incomplete(&composite));
+    assert_eq!(crate::decode::pattern_occurrence_count(&composite), Some(6));
 }
 
 #[test]
@@ -645,6 +1125,20 @@ fn nx_variable_radius_completeness_requires_a_law_interval() {
                 parameter: 0.0,
                 radius: Length(2.0),
             }],
+        }
+    ));
+    assert!(crate::decode::radius_spec_is_incomplete(
+        &RadiusSpec::Variable {
+            points: vec![
+                VariableRadius {
+                    parameter: 0.5,
+                    radius: Length(2.0),
+                },
+                VariableRadius {
+                    parameter: 0.5,
+                    radius: Length(3.0),
+                },
+            ],
         }
     ));
     assert!(!crate::decode::radius_spec_is_incomplete(
@@ -666,14 +1160,34 @@ fn nx_variable_radius_completeness_requires_a_law_interval() {
             radius: Length(2.0),
         }
     ));
+    assert!(crate::decode::radius_spec_is_incomplete(
+        &RadiusSpec::Constant {
+            radius: Length(0.0),
+        }
+    ));
 }
 
 #[test]
-fn nx_empty_resolved_selections_remain_incomplete() {
-    use cadmpeg_ir::features::{BodySelection, EdgeSelection, FaceSelection, PathRef, ProfileRef};
+fn nx_selection_completeness_requires_nonempty_unique_identities() {
+    use cadmpeg_ir::features::{
+        BodySelection, EdgeSelection, FaceSelection, LoftPointSection, LoftSection, PathRef,
+        ProfileRef,
+    };
 
     assert!(crate::decode::body_selection_is_incomplete(
         &BodySelection::Bodies(Vec::new())
+    ));
+    assert!(!crate::decode::body_selection_is_incomplete(
+        &BodySelection::Local {
+            bodies: vec!["nx:om-body-object#12".into()],
+            native: "nx:om-object-index#12".into(),
+        }
+    ));
+    assert!(crate::decode::body_selection_is_incomplete(
+        &BodySelection::Local {
+            bodies: vec!["nx:om-body-object#12".into(), "nx:om-body-object#12".into()],
+            native: "nx:om-object-indices#12,13".into(),
+        }
     ));
     assert!(crate::decode::face_selection_is_incomplete(
         &FaceSelection::Resolved {
@@ -690,9 +1204,27 @@ fn nx_empty_resolved_selections_remain_incomplete() {
     assert!(crate::decode::profile_ref_is_incomplete(
         &ProfileRef::Faces(Vec::new())
     ));
+    assert!(crate::decode::profile_ref_is_incomplete(
+        &ProfileRef::SketchSelection {
+            sketch: cadmpeg_ir::sketches::SketchId("test:sketch#0".into()),
+            selections: vec!["nx:sketch-selection#0".into()],
+        }
+    ));
+    assert!(crate::decode::profile_ref_is_incomplete(
+        &ProfileRef::SketchProfiles {
+            sketch: cadmpeg_ir::sketches::SketchId("test:sketch#0".into()),
+            profiles: Vec::new(),
+        }
+    ));
     assert!(crate::decode::path_ref_is_incomplete(&PathRef::Curves(
         Vec::new()
     )));
+    assert!(crate::decode::path_ref_is_incomplete(
+        &PathRef::SpatialSketchSelection {
+            sketch: cadmpeg_ir::sketches::SpatialSketchId("test:spatial-sketch#0".into()),
+            selections: vec!["nx:path-selection#0".into()],
+        }
+    ));
     let edge = cadmpeg_ir::ids::EdgeId("edge#0".into());
     assert!(crate::decode::path_ref_is_incomplete(&PathRef::Edges(
         vec![edge.clone(), edge]
@@ -701,6 +1233,86 @@ fn nx_empty_resolved_selections_remain_incomplete() {
     assert!(crate::decode::path_ref_is_incomplete(&PathRef::Curves(
         vec![curve.clone(), curve]
     )));
+    assert!(crate::decode::loft_section_is_incomplete(
+        &LoftSection::Point(LoftPointSection::Native("nx:point-selection#0".into(),))
+    ));
+    assert!(!crate::decode::loft_section_is_incomplete(
+        &LoftSection::Point(LoftPointSection::Point(cadmpeg_ir::math::Point3::new(
+            1.0, 2.0, 3.0
+        ),))
+    ));
+}
+
+#[test]
+fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
+    use cadmpeg_ir::features::{
+        BooleanOp, Feature, FeatureDefinition, FeatureId, LoftPointSection, LoftSection, PathRef,
+    };
+    use cadmpeg_ir::math::Point3;
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let output = ir.model.bodies[0].id.clone();
+    let definition = |sections, centerline| FeatureDefinition::Loft {
+        sections,
+        centerline,
+        guides: Vec::new(),
+        op: BooleanOp::NewBody,
+        closed: false,
+        solid: true,
+        ruled: false,
+        max_degree: None,
+        check_compatibility: None,
+        allow_multi_profile_faces: None,
+    };
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#loft".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: vec![output],
+        definition: definition(
+            vec![
+                LoftSection::Point(LoftPointSection::Point(Point3::new(0.0, 0.0, 0.0))),
+                LoftSection::Point(LoftPointSection::Point(Point3::new(0.0, 0.0, 1.0))),
+            ],
+            Some(PathRef::Native("nx:centerline#0".into())),
+        ),
+        native_ref: None,
+    });
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("loft (1)"));
+
+    ir.model.features[0].definition = definition(
+        vec![
+            LoftSection::Point(LoftPointSection::Native("nx:point#0".into())),
+            LoftSection::Point(LoftPointSection::Point(Point3::new(0.0, 0.0, 1.0))),
+        ],
+        None,
+    );
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("loft (1)"));
+
+    ir.model.features[0].definition = definition(
+        vec![
+            LoftSection::Point(LoftPointSection::Point(Point3::new(0.0, 0.0, 0.0))),
+            LoftSection::Point(LoftPointSection::Point(Point3::new(0.0, 0.0, 1.0))),
+        ],
+        None,
+    );
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
 }
 
 #[test]
@@ -751,9 +1363,10 @@ fn ug_part_segment_index_uses_row_one_self_boundary() {
 
 #[test]
 fn nx_pattern_completeness_requires_distinct_seeds() {
-    let seed = cadmpeg_ir::features::PatternSeed::Feature(cadmpeg_ir::features::FeatureId(
-        "test:feature#seed".into(),
-    ));
+    use cadmpeg_ir::features::{BodySelection, FaceSelection, PatternSeed};
+
+    let seed_id = cadmpeg_ir::features::FeatureId("test:feature#seed".into());
+    let seed = cadmpeg_ir::features::PatternSeed::Feature(seed_id.clone());
     let pattern = cadmpeg_ir::features::PatternKind::Mirror {
         plane_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         plane_normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -762,10 +1375,36 @@ fn nx_pattern_completeness_requires_distinct_seeds() {
     assert!(!crate::decode::pattern_feature_is_incomplete(
         std::slice::from_ref(&seed),
         &pattern,
+        std::slice::from_ref(&seed_id),
+    ));
+    assert!(crate::decode::pattern_feature_is_incomplete(
+        std::slice::from_ref(&seed),
+        &pattern,
+        &[],
     ));
     assert!(crate::decode::pattern_feature_is_incomplete(
         &[seed.clone(), seed],
         &pattern,
+        std::slice::from_ref(&seed_id),
+    ));
+    assert!(crate::decode::pattern_feature_is_incomplete(
+        &[PatternSeed::Faces(FaceSelection::Native(
+            "nx:pattern-face-selection#0".into(),
+        ))],
+        &pattern,
+        &[],
+    ));
+    assert!(crate::decode::pattern_feature_is_incomplete(
+        &[PatternSeed::Bodies(BodySelection::Unresolved)],
+        &pattern,
+        &[],
+    ));
+    assert!(!crate::decode::pattern_feature_is_incomplete(
+        &[PatternSeed::Bodies(BodySelection::Bodies(vec![
+            cadmpeg_ir::ids::BodyId("test:body#seed".into()),
+        ]))],
+        &pattern,
+        &[],
     ));
 }
 
@@ -796,8 +1435,288 @@ fn nx_face_blend_completeness_requires_disjoint_supports() {
 }
 
 #[test]
+fn nx_replace_face_completeness_requires_resolved_disjoint_operands() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
+    use cadmpeg_ir::ids::FaceId;
+
+    let target = FaceId("test:face#target".into());
+    let complete_targets = FaceSelection::Faces(vec![target.clone()]);
+    let complete_replacements = FaceSelection::Faces(vec![FaceId("test:face#replacement".into())]);
+    let overlapping_replacements = FaceSelection::Resolved {
+        faces: vec![target],
+        native: "test:replacement".into(),
+    };
+
+    assert_eq!(
+        FeatureDefinition::ReplaceFace {
+            targets: complete_targets.clone(),
+            replacements: complete_replacements.clone(),
+        }
+        .body_output_family(),
+        Some("replace face")
+    );
+    assert!(!crate::decode::face_selection_is_incomplete(
+        &complete_targets
+    ));
+    assert!(!crate::decode::face_selection_is_incomplete(
+        &complete_replacements
+    ));
+    assert!(!crate::decode::face_selections_overlap(
+        &complete_targets,
+        &complete_replacements
+    ));
+    assert!(crate::decode::face_selections_overlap(
+        &complete_targets,
+        &overlapping_replacements
+    ));
+}
+
+#[test]
+fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
+    use cadmpeg_ir::features::{
+        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature,
+        FeatureDefinition, FeatureId, Length, ProfileRef, Termination,
+    };
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let output = ir.model.bodies[0].id.clone();
+    let definition = |direction, start, solid| FeatureDefinition::Extrude {
+        profile: ProfileRef::Sketch(cadmpeg_ir::sketches::SketchId("test:sketch#0".into())),
+        direction,
+        start,
+        extent: ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: Termination::Blind {
+                    length: Length(5.0),
+                },
+                draft: None,
+                offset: None,
+            },
+        },
+        op: BooleanOp::NewBody,
+        direction_source: None,
+        solid,
+        face_maker: None,
+        inner_wire_taper: None,
+        length_along_profile_normal: None,
+        allow_multi_profile_faces: None,
+    };
+    let complete = definition(
+        ExtrudeDirection::ProfileNormal,
+        ExtrudeStart::ProfilePlane,
+        Some(true),
+    );
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#extrude".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: vec![output],
+        definition: complete,
+        native_ref: None,
+    });
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
+
+    for incomplete in [
+        definition(
+            ExtrudeDirection::Unresolved,
+            ExtrudeStart::ProfilePlane,
+            Some(true),
+        ),
+        definition(
+            ExtrudeDirection::Explicit(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0)),
+            ExtrudeStart::ProfilePlane,
+            Some(true),
+        ),
+        definition(
+            ExtrudeDirection::ProfileNormal,
+            ExtrudeStart::Unresolved,
+            Some(true),
+        ),
+        definition(
+            ExtrudeDirection::ProfileNormal,
+            ExtrudeStart::ProfilePlane,
+            None,
+        ),
+    ] {
+        ir.model.features[0].definition = incomplete;
+        losses.clear();
+        crate::decode::append_design_intent_losses(&ir, &mut losses);
+        assert_eq!(losses.len(), 1);
+        assert!(losses[0].message.contains("extrude (1)"));
+    }
+}
+
+#[test]
+fn nx_revolve_completeness_checks_construction_and_output_lineage() {
+    use cadmpeg_ir::features::{
+        Angle, BooleanOp, Feature, FeatureDefinition, FeatureId, GeneratedVertexRef, PathRef,
+        ProfileRef, RevolutionAxis, RevolutionConstruction, RevolveExtent, Termination,
+        VertexSelection,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let output = ir.model.bodies[0].id.clone();
+    let face = ir.model.faces[0].id.clone();
+    let complete = RevolutionConstruction {
+        profile: Some(ProfileRef::Faces(vec![face])),
+        axis: Some(RevolutionAxis {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(0.0, 0.0, 1.0),
+        }),
+        extent: Some(RevolveExtent::OneSided {
+            termination: Termination::Angle { angle: Angle(1.0) },
+        }),
+        axis_reference: None,
+        solid: Some(true),
+        face_maker_class: None,
+        fuse_order: None,
+        allow_multi_profile_faces: None,
+    };
+    assert!(!crate::decode::revolve_feature_is_incomplete(
+        &complete,
+        BooleanOp::NewBody,
+        &[],
+    ));
+    assert_eq!(
+        FeatureDefinition::Revolve {
+            construction: complete.clone(),
+            op: BooleanOp::NewBody,
+        }
+        .body_output_family(),
+        Some("revolve"),
+    );
+
+    let mut incomplete = complete.clone();
+    incomplete.profile = None;
+    assert!(crate::decode::revolve_feature_is_incomplete(
+        &incomplete,
+        BooleanOp::NewBody,
+        &[],
+    ));
+    incomplete = complete.clone();
+    incomplete.axis = None;
+    assert!(crate::decode::revolve_feature_is_incomplete(
+        &incomplete,
+        BooleanOp::NewBody,
+        &[],
+    ));
+    incomplete = complete.clone();
+    incomplete.axis.as_mut().unwrap().direction = Vector3::new(0.0, 0.0, 2.0);
+    assert!(crate::decode::revolve_feature_is_incomplete(
+        &incomplete,
+        BooleanOp::NewBody,
+        &[],
+    ));
+    incomplete = complete.clone();
+    incomplete.extent = None;
+    assert!(crate::decode::revolve_feature_is_incomplete(
+        &incomplete,
+        BooleanOp::NewBody,
+        &[],
+    ));
+    incomplete = complete.clone();
+    incomplete.extent = Some(RevolveExtent::OneSided {
+        termination: Termination::Angle { angle: Angle(0.0) },
+    });
+    assert!(crate::decode::revolve_feature_is_incomplete(
+        &incomplete,
+        BooleanOp::NewBody,
+        &[],
+    ));
+    incomplete = complete.clone();
+    incomplete.axis_reference = Some(PathRef::Native("test:axis".into()));
+    assert!(crate::decode::revolve_feature_is_incomplete(
+        &incomplete,
+        BooleanOp::NewBody,
+        &[],
+    ));
+    incomplete = complete.clone();
+    incomplete.solid = None;
+    assert!(crate::decode::revolve_feature_is_incomplete(
+        &incomplete,
+        BooleanOp::NewBody,
+        &[],
+    ));
+    incomplete = complete.clone();
+    incomplete.face_maker_class = Some(" ".into());
+    assert!(crate::decode::revolve_feature_is_incomplete(
+        &incomplete,
+        BooleanOp::NewBody,
+        &[],
+    ));
+    let source = FeatureId("test:feature#vertex-source".into());
+    incomplete = complete.clone();
+    incomplete.extent = Some(RevolveExtent::OneSided {
+        termination: Termination::ToVertex {
+            vertex: VertexSelection::Generated {
+                vertex: GeneratedVertexRef {
+                    feature: source.clone(),
+                    local_id: "vertex-0".into(),
+                },
+                native: "test:vertex-selection".into(),
+            },
+        },
+    });
+    assert!(crate::decode::revolve_feature_is_incomplete(
+        &incomplete,
+        BooleanOp::NewBody,
+        &[],
+    ));
+    assert!(!crate::decode::revolve_feature_is_incomplete(
+        &incomplete,
+        BooleanOp::NewBody,
+        &[source],
+    ));
+    assert!(crate::decode::revolve_feature_is_incomplete(
+        &complete,
+        BooleanOp::Unresolved,
+        &[],
+    ));
+
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#revolve".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: vec![output],
+        definition: FeatureDefinition::Revolve {
+            construction: complete,
+            op: BooleanOp::NewBody,
+        },
+        native_ref: None,
+    });
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
+
+    ir.model.features[0].outputs.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("revolve (1)"));
+}
+
+#[test]
 fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
-    use cadmpeg_ir::features::{EdgeSelection, FaceSelection, ProfileRef};
+    use cadmpeg_ir::features::{
+        EdgeSelection, FaceSelection, FeatureId, GeneratedCurveRef, ProfileRef,
+    };
     use cadmpeg_ir::ids::{EdgeId, FaceId};
 
     let face = FaceId("test:face#repeated".into());
@@ -808,6 +1727,32 @@ fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
     let face = FaceId("test:profile-face#repeated".into());
     assert!(crate::decode::profile_ref_is_incomplete(
         &ProfileRef::Faces(vec![face.clone(), face]),
+    ));
+    let producer = FeatureId("test:feature#profile-producer".into());
+    let generated = ProfileRef::Generated {
+        curves: vec![GeneratedCurveRef {
+            feature: producer.clone(),
+            local_id: "curve-0".into(),
+        }],
+        native: "test:profile-selection".into(),
+    };
+    assert!(!crate::decode::profile_ref_is_incomplete(&generated));
+    assert!(crate::decode::profile_dependency_is_incomplete(
+        &generated,
+        &[],
+    ));
+    assert!(!crate::decode::profile_dependency_is_incomplete(
+        &generated,
+        std::slice::from_ref(&producer),
+    ));
+    let direct = ProfileRef::Feature(producer.clone());
+    assert!(crate::decode::profile_dependency_is_incomplete(
+        &direct,
+        &[],
+    ));
+    assert!(!crate::decode::profile_dependency_is_incomplete(
+        &direct,
+        &[producer],
     ));
 
     let edge = EdgeId("test:edge#repeated".into());
@@ -825,8 +1770,11 @@ fn nx_hole_completeness_rejects_opaque_supplied_operands() {
         crate::decode::hole_feature_is_incomplete(
             profile,
             face,
-            Some(Point3::new(0.0, 0.0, 0.0)),
-            Some(Vector3::new(0.0, 0.0, 1.0)),
+            (
+                Some(Point3::new(0.0, 0.0, 0.0)),
+                Some(Vector3::new(0.0, 0.0, 1.0)),
+            ),
+            &[],
             (&HoleKind::Simple, None),
             Some(Length(1.0)),
             Some(&Termination::ThroughAll),
@@ -901,6 +1849,8 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
             parameter: None,
             operands: Vec::new(),
             native_state: None,
+            native_flags: None,
+            native_properties: std::collections::BTreeMap::new(),
         },
         name: None,
         driving: None,
@@ -985,11 +1935,25 @@ fn nx_body_operation_completeness_requires_disjoint_roles() {
         &target,
         &BodySelection::Unresolved,
     ));
+    assert!(crate::decode::body_selections_overlap(
+        &BodySelection::Local {
+            bodies: vec!["nx:om-body-object#10".into()],
+            native: "nx:om-object-index#10".into(),
+        },
+        &BodySelection::Local {
+            bodies: vec!["nx:om-body-object#10".into()],
+            native: "nx:om-object-index#20".into(),
+        },
+    ));
 }
 
 #[test]
 fn nx_configuration_completeness_requires_one_active_full_body_set() {
-    use cadmpeg_ir::features::{ConfigurationBodies, ConfigurationId, DesignConfiguration};
+    use cadmpeg_ir::features::{
+        BodySelection, ConfigurationBodies, ConfigurationFeatureState, ConfigurationId,
+        DesignConfiguration, DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId,
+        ParameterValue,
+    };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let bodies = ir
@@ -1029,11 +1993,106 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     crate::decode::append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("1 NX design configuration"));
+
+    ir.model.configurations[0].active = true;
+    let output = ir.model.bodies[0].id.clone();
+    let feature = Feature {
+        id: FeatureId("test:feature#base".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: vec![output.clone()],
+        definition: FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Bodies(vec![output]),
+        },
+        native_ref: None,
+    };
+    ir.model.features.push(feature.clone());
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("1 NX design configuration"));
+
+    ir.model.configurations[0].feature_states.insert(
+        feature.id.clone(),
+        ConfigurationFeatureState {
+            suppressed: false,
+            dependencies: feature.dependencies.clone(),
+            outputs: feature.outputs.clone(),
+            definition: feature.definition.clone(),
+        },
+    );
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
+
+    let parameter = DesignParameter {
+        id: ParameterId("test:parameter#length".into()),
+        owner: Some(feature.id),
+        ordinal: 0,
+        name: "length".into(),
+        expression: "2".into(),
+        display: None,
+        value: Some(ParameterValue::Real(2.0)),
+        dependencies: Vec::new(),
+        properties: Default::default(),
+        pmi: None,
+        native_ref: None,
+    };
+    ir.model.parameters.push(parameter.clone());
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("1 NX design configuration"));
+
+    ir.model.configurations[0]
+        .parameter_values
+        .insert(parameter.id, parameter.value.expect("evaluated parameter"));
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
+
+    let suppressed = Feature {
+        id: FeatureId("test:feature#suppressed".into()),
+        ordinal: 1,
+        name: None,
+        suppressed: Some(true),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::DatumPoint {
+            position: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        },
+        native_ref: None,
+    };
+    ir.model.features.push(suppressed.clone());
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains("1 NX design configuration")));
+
+    ir.model.configurations[0]
+        .suppressed_features
+        .push(suppressed.id);
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
 }
 
 #[test]
 fn nx_body_producing_feature_families_require_history_outputs() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, Length};
+    use cadmpeg_ir::features::{BooleanOp, Feature, FeatureDefinition, FeatureId, Length};
     use std::collections::BTreeMap;
 
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
@@ -1052,6 +2111,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         definition: FeatureDefinition::Block {
             dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
             placement: Some(cadmpeg_ir::transform::Transform::identity()),
+            op: BooleanOp::NewBody,
         },
         native_ref: None,
     });
@@ -1078,6 +2138,29 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     losses.clear();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
+
+    for invalid_placement in [
+        {
+            let mut placement = cadmpeg_ir::transform::Transform::identity();
+            placement.rows[3][0] = 1.0;
+            placement
+        },
+        {
+            let mut placement = cadmpeg_ir::transform::Transform::identity();
+            placement.rows[0][0] = 2.0;
+            placement
+        },
+    ] {
+        ir.model.features[0].definition = FeatureDefinition::Block {
+            dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
+            placement: Some(invalid_placement),
+            op: BooleanOp::NewBody,
+        };
+        crate::decode::append_design_intent_losses(&ir, &mut losses);
+        assert_eq!(losses.len(), 1);
+        assert!(losses[0].message.contains("block (1)"));
+        losses.clear();
+    }
 
     ir.model.features[0].definition = FeatureDefinition::Loft {
         sections: Vec::new(),
@@ -1107,6 +2190,42 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("draft (1)"));
 
+    let draft = |pull_direction, angle, outward| FeatureDefinition::Draft {
+        faces: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId(
+            "test:face#draft".into(),
+        )]),
+        neutral_plane: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId(
+            "test:face#neutral".into(),
+        )]),
+        pull_direction,
+        angle,
+        outward,
+    };
+    for incomplete in [
+        draft(None, Some(cadmpeg_ir::features::Angle(0.1)), Some(false)),
+        draft(
+            Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
+            None,
+            Some(false),
+        ),
+        draft(
+            Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
+            Some(cadmpeg_ir::features::Angle(0.1)),
+            None,
+        ),
+        draft(
+            Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
+            Some(cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2)),
+            Some(false),
+        ),
+    ] {
+        ir.model.features[0].definition = incomplete;
+        losses.clear();
+        crate::decode::append_design_intent_losses(&ir, &mut losses);
+        assert_eq!(losses.len(), 1);
+        assert!(losses[0].message.contains("draft (1)"));
+    }
+
     ir.model.features[0].definition = FeatureDefinition::DatumOffsetPlane {
         reference: None,
         distance: Length(5.0),
@@ -1118,7 +2237,9 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 
     let datum = FeatureId("test:feature#datum-source".into());
     ir.model.features[0].definition = FeatureDefinition::DatumOffsetPlane {
-        reference: Some(datum.clone()),
+        reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature(
+            datum.clone(),
+        )),
         distance: Length(5.0),
     };
     losses.clear();
@@ -1163,12 +2284,56 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("sew bodies (1)"));
 
+    ir.model.features[0].definition = FeatureDefinition::SewBodies {
+        bodies: cadmpeg_ir::features::BodySelection::Local {
+            bodies: vec![output.0.clone()],
+            native: "nx:body-selection#sew".into(),
+        },
+        gap_tolerance: Some(Length(0.01)),
+    };
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("sew bodies (1)"));
+
+    ir.model.features[0].definition = FeatureDefinition::Combine {
+        target: cadmpeg_ir::features::BodySelection::Local {
+            bodies: vec!["target-a".into(), "target-b".into()],
+            native: "nx:body-selection#targets".into(),
+        },
+        tools: cadmpeg_ir::features::BodySelection::Local {
+            bodies: vec!["tool".into()],
+            native: "nx:body-selection#tools".into(),
+        },
+        op: cadmpeg_ir::features::BooleanOp::Join,
+        keep_tools: false,
+    };
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("body combine (1)"));
+
+    ir.model.features[0].definition = FeatureDefinition::BaseFeature {
+        bodies: cadmpeg_ir::features::BodySelection::Unresolved,
+    };
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("base feature (1)"));
+
     assert_eq!(
-        crate::decode::body_output_feature_family(&FeatureDefinition::DatumPointUnresolved),
+        FeatureDefinition::DatumPointUnresolved.body_output_family(),
         None
     );
     assert_eq!(
-        crate::decode::body_output_feature_family(&FeatureDefinition::Loft {
+        FeatureDefinition::BaseFeature {
+            bodies: cadmpeg_ir::features::BodySelection::Unresolved,
+        }
+        .body_output_family(),
+        Some("base feature")
+    );
+    assert_eq!(
+        FeatureDefinition::Loft {
             sections: Vec::new(),
             centerline: None,
             guides: Vec::new(),
@@ -1179,31 +2344,34 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             max_degree: None,
             check_compatibility: None,
             allow_multi_profile_faces: None,
-        }),
+        }
+        .body_output_family(),
         Some("loft")
     );
     assert_eq!(
-        crate::decode::body_output_feature_family(&FeatureDefinition::Draft {
+        FeatureDefinition::Draft {
             faces: cadmpeg_ir::features::FaceSelection::Unresolved,
             neutral_plane: cadmpeg_ir::features::FaceSelection::Unresolved,
             pull_direction: Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
             angle: Some(cadmpeg_ir::features::Angle(0.1)),
             outward: Some(false),
-        }),
+        }
+        .body_output_family(),
         Some("draft")
     );
     assert_eq!(
-        crate::decode::body_output_feature_family(&FeatureDefinition::DeleteBody {
+        FeatureDefinition::DeleteBody {
             bodies: cadmpeg_ir::features::BodySelection::Unresolved,
             mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
-        }),
+        }
+        .body_output_family(),
         None
     );
 }
 
 #[test]
 fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
-    use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId, Length};
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let first = ir.model.bodies[0].id.clone();
@@ -1233,6 +2401,19 @@ fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
     let mut losses = Vec::new();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
+
+    for tolerance in [Length(0.0), Length(-0.01), Length(f64::NAN)] {
+        let FeatureDefinition::SewBodies { gap_tolerance, .. } =
+            &mut ir.model.features[0].definition
+        else {
+            unreachable!();
+        };
+        *gap_tolerance = Some(tolerance);
+        losses.clear();
+        crate::decode::append_design_intent_losses(&ir, &mut losses);
+        assert_eq!(losses.len(), 1);
+        assert!(losses[0].message.contains("sew bodies (1)"));
+    }
 }
 
 #[test]
@@ -1582,10 +2763,63 @@ fn sketch_fixed_pair_parser_reads_signed_q1_55_atoms() {
     assert_eq!(pairs[0].values, [0.5, -0.5]);
     assert_eq!(pairs[0].value_offsets, [8, 17]);
     assert_eq!(pairs[0].raw_values[0], [0x40, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(pairs[0].discriminator, bytes[..8]);
 
     let mut malformed = bytes;
     malformed[16] = 1;
     assert!(crate::om::sketch_payload_fixed_pairs(&malformed).is_empty());
+}
+
+#[test]
+fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
+    let short = [
+        0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x01,
+        0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00,
+    ];
+    let extended = [
+        0x08, 0x02, 0x03, 0x01, 0xc0, 0x40, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02,
+        0x00, 0x01, 0x30, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xe0, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+    ];
+
+    let short_pair = crate::om::sketch_payload_fixed_pairs(&short);
+    assert_eq!(short_pair.len(), 1);
+    assert_eq!(short_pair[0].values, [0.5, -0.5]);
+    assert_eq!(short_pair[0].value_offsets, [15, 23]);
+    assert_eq!(short_pair[0].discriminator, short[..15]);
+
+    let extended_pair = crate::om::sketch_payload_fixed_pairs(&extended);
+    assert_eq!(extended_pair.len(), 1);
+    assert_eq!(extended_pair[0].values, [0.25, -0.25]);
+    assert_eq!(extended_pair[0].value_offsets, [17, 25]);
+    assert_eq!(extended_pair[0].discriminator, extended[..17]);
+
+    let mut malformed = short;
+    malformed[23] = 0x31;
+    assert!(crate::om::sketch_payload_fixed_pairs(&malformed).is_empty());
+}
+
+#[test]
+fn sketch_mixed_pair_parser_requires_q1_55_then_shifted_binary32() {
+    let mut bytes = vec![0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84, 0x30];
+    bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);
+    bytes.push(0x00);
+    let mut shifted = 3.25_f32.to_be_bytes();
+    shifted[0] += 0x10;
+    bytes.extend_from_slice(&shifted);
+
+    let pairs = crate::om::sketch_payload_mixed_pairs(&bytes);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].fixed_value, 0.5);
+    assert_eq!(pairs[0].binary32_value, 3.25);
+    assert_eq!(pairs[0].fixed_raw_value, [0x40, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(pairs[0].binary32_raw_value, shifted);
+    assert_eq!(pairs[0].value_offsets, [8, 17]);
+
+    let mut malformed = bytes;
+    malformed[16] = 1;
+    assert!(crate::om::sketch_payload_mixed_pairs(&malformed).is_empty());
 }
 
 #[test]
@@ -1740,6 +2974,56 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
         crate::om::simple_hole_repeated_scalar_lane_block_references(crate::om::OperationRecord {
             bytes: &null,
             payload: &null,
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
+fn om_hole_package_lane_retains_the_exact_four_block_group() {
+    let payload = [
+        0x7e, 0x00, 0x00, 0x01, 0x00, 0x00, 0x46, 0x00, 0x11, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xcd,
+        0xf0, 0xce, 0x11, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xcf, 0xf0, 0xd0, 0x00, 0x00, 0xff, 0x7f,
+    ];
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: &payload,
+        payload_offset: 200,
+        payload: &payload,
+        label: crate::om::OperationLabel {
+            header_offset: 100,
+            offset: 120,
+            value: "HOLE PACKAGE",
+            object_indices: [None; 4],
+            object_index_offsets: [0; 4],
+        },
+    };
+    let lane = crate::om::hole_package_construction_group_lane(record).unwrap();
+    assert_eq!(lane.offset, 1);
+    assert_eq!(lane.selector, 0x46);
+    assert_eq!(lane.branch, 0x11);
+    assert_eq!(
+        lane.references
+            .iter()
+            .map(|reference| reference.object_index)
+            .collect::<Vec<_>>(),
+        [205, 206, 207, 208]
+    );
+    assert_eq!(
+        lane.references
+            .iter()
+            .map(|reference| reference.offset)
+            .collect::<Vec<_>>(),
+        [213, 215, 222, 224]
+    );
+
+    let mut mismatched_branch = payload;
+    mismatched_branch[17] = 0x12;
+    assert!(
+        crate::om::hole_package_construction_group_lane(crate::om::OperationRecord {
+            bytes: &mismatched_branch,
+            payload: &mismatched_branch,
             ..record
         })
         .is_none()
@@ -2209,6 +3493,267 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
 }
 
 #[test]
+fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 100,
+        value: "FSET",
+        object_indices: [None; 4],
+        object_index_offsets: [0; 4],
+    };
+    let bytes = [
+        0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
+        0x00, 0x81, 0x23, 0x81, 0x23, 0xff, 0x00,
+    ];
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: &bytes,
+        payload_offset: 104,
+        payload: &bytes,
+        label,
+    };
+    assert_eq!(
+        crate::om::operation_terminal_frame(record),
+        Some(crate::om::OperationTerminalFrame {
+            immediate_common_frame_offset: Some(104),
+            local_ordinal: 0x0123,
+            raw_local_ordinal: vec![0x81, 0x23],
+            object_index: None,
+            raw_object_index: vec![0xff],
+            offset: 120,
+            object_index_offset: 124,
+        })
+    );
+
+    let direct = [
+        0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
+        0x00, 0x29, 0x29, 0x41, 0x00,
+    ];
+    assert_eq!(
+        crate::om::operation_terminal_frame(crate::om::OperationRecord {
+            offset: 0,
+            bytes: &direct,
+            payload_offset: 200,
+            payload: &direct,
+            label,
+        }),
+        Some(crate::om::OperationTerminalFrame {
+            immediate_common_frame_offset: Some(200),
+            local_ordinal: 41,
+            raw_local_ordinal: vec![0x29],
+            object_index: Some(65),
+            raw_object_index: vec![0x41],
+            offset: 216,
+            object_index_offset: 218,
+        })
+    );
+
+    let noncanonical = [
+        0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
+        0x00, 0x80, 0x01, 0x80, 0x01, 0xff, 0x00,
+    ];
+    assert!(
+        crate::om::operation_terminal_frame(crate::om::OperationRecord {
+            offset: 0,
+            bytes: &noncanonical,
+            payload_offset: 0,
+            payload: &noncanonical,
+            label,
+        })
+        .is_none()
+    );
+    let mismatched = [
+        0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
+        0x00, 0x23, 0x24, 0xff, 0x00,
+    ];
+    assert!(
+        crate::om::operation_terminal_frame(crate::om::OperationRecord {
+            offset: 0,
+            bytes: &mismatched,
+            payload_offset: 0,
+            payload: &mismatched,
+            label,
+        })
+        .is_none()
+    );
+
+    let delete = [
+        0x01, 0x00, 0x00, 0x01, 0x01, 0x01, 0x06, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x29,
+        0x29, 0x41, 0x00,
+    ];
+    let delete_frame = crate::om::operation_terminal_frame(crate::om::OperationRecord {
+        offset: 0,
+        bytes: &delete,
+        payload_offset: 300,
+        payload: &delete,
+        label: crate::om::OperationLabel {
+            value: "DELETE",
+            ..label
+        },
+    })
+    .expect("DELETE common-frame variant");
+    assert_eq!(delete_frame.immediate_common_frame_offset, Some(300));
+    let [delete_common] = crate::om::operation_common_frames(crate::om::OperationRecord {
+        offset: 0,
+        bytes: &delete,
+        payload_offset: 300,
+        payload: &delete,
+        label: crate::om::OperationLabel {
+            value: "DELETE",
+            ..label
+        },
+    })
+    .try_into()
+    .expect("one DELETE common frame");
+    assert_eq!(delete_common.indices, [1, 0, 0]);
+    assert_eq!(delete_common.marker, [1, 1, 1]);
+    assert_eq!(delete_common.state, [6, 1, 1, 0, 1, 0, 0, 0]);
+
+    let suffix_only = [0x02, 0x02, 0xff, 0x00];
+    let suffix = crate::om::operation_terminal_frame(crate::om::OperationRecord {
+        offset: 0,
+        bytes: &suffix_only,
+        payload_offset: 400,
+        payload: &suffix_only,
+        label,
+    })
+    .expect("canonical suffix without immediate state prefix");
+    assert!(suffix.immediate_common_frame_offset.is_none());
+    assert_eq!(suffix.local_ordinal, 2);
+    assert_eq!(suffix.offset, 400);
+
+    let mut embedded = direct.to_vec();
+    embedded.extend_from_slice(&[0xaa, 0x02, 0x02, 0xff, 0x00]);
+    let embedded_record = crate::om::OperationRecord {
+        offset: 0,
+        bytes: &embedded,
+        payload_offset: 500,
+        payload: &embedded,
+        label,
+    };
+    let [common] = crate::om::operation_common_frames(embedded_record)
+        .try_into()
+        .expect("one embedded common frame");
+    assert_eq!(common.offset, 500);
+    assert_eq!(common.end_offset, 520);
+    let outer = crate::om::operation_terminal_frame(embedded_record).expect("outer suffix");
+    assert_eq!(outer.offset, 521);
+    assert!(outer.immediate_common_frame_offset.is_none());
+}
+
+#[test]
+fn om_fset_reference_graph_requires_exact_groups_and_bounds() {
+    fn record(payload: &[u8]) -> crate::om::OperationRecord<'_> {
+        crate::om::OperationRecord {
+            offset: 0,
+            bytes: payload,
+            payload_offset: 100,
+            payload,
+            label: crate::om::OperationLabel {
+                header_offset: 0,
+                offset: 0,
+                value: "FSET",
+                object_indices: [None; 4],
+                object_index_offsets: [0; 4],
+            },
+        }
+    }
+
+    let payload = [
+        0x01, 0x13, 0x3c, b'T', b';', b':', b'S', b'5', b'6', b'7', b'R', b'8', b'9', b'3', 0x90,
+        0x19, 0x40, 0x90, 0x19, 0x41, 0x3e, 0x90, 0x19, 0x30, 0x90, 0x19, 0x31, 0x90, 0x19, 0x32,
+        0x00, 0x03, 0x00,
+    ];
+    let graph = crate::om::fset_payload_reference_graph(record(&payload)).unwrap();
+    assert_eq!(graph.selector, "T;:S567R893");
+    assert_eq!(graph.offset, 100);
+    assert_eq!(
+        graph
+            .first
+            .each_ref()
+            .map(|reference| reference.object_index),
+        [6464, 6465]
+    );
+    assert_eq!(
+        graph
+            .second
+            .each_ref()
+            .map(|reference| reference.object_index),
+        [6448, 6449, 6450]
+    );
+    assert_eq!(
+        graph
+            .first
+            .each_ref()
+            .map(|reference| reference.raw_object_index.as_slice()),
+        [[0x90, 0x19, 0x40].as_slice(), [0x90, 0x19, 0x41].as_slice(),]
+    );
+
+    let mut wrong_length = payload;
+    wrong_length[1] -= 1;
+    assert!(crate::om::fset_payload_reference_graph(record(&wrong_length)).is_none());
+    let mut wrong_suffix = payload;
+    wrong_suffix[31] = 0x04;
+    assert!(crate::om::fset_payload_reference_graph(record(&wrong_suffix)).is_none());
+    let mut wrong_reference_form = payload;
+    wrong_reference_form[14] = 0xf1;
+    assert!(crate::om::fset_payload_reference_graph(record(&wrong_reference_form)).is_none());
+    let duplicate = [payload.as_slice(), payload.as_slice()].concat();
+    assert!(crate::om::fset_payload_reference_graph(record(&duplicate)).is_none());
+}
+
+#[test]
+fn om_delete_reference_field_requires_five_canonical_nullable_slots() {
+    fn record(payload: &[u8]) -> crate::om::OperationRecord<'_> {
+        crate::om::OperationRecord {
+            offset: 0,
+            bytes: payload,
+            payload_offset: 100,
+            payload,
+            label: crate::om::OperationLabel {
+                header_offset: 0,
+                offset: 0,
+                value: "DELETE",
+                object_indices: [None; 4],
+                object_index_offsets: [0; 4],
+            },
+        }
+    }
+
+    let payload = [
+        0x0c, 0x00, 0x00, 0x01, 0x00, 0x01, 0x06, 0xf0, 0x20, 0xff, 0xf1, 0x02, 0x08, 0xf1, 0x02,
+        0x09, 0xff, 0x00,
+    ];
+    let field = crate::om::delete_payload_references(record(&payload)).unwrap();
+    assert_eq!(field.control, 0x0c);
+    assert_eq!(field.offset, 100);
+    assert_eq!(
+        field
+            .references
+            .each_ref()
+            .map(|reference| reference.object_index),
+        [Some(0x20), None, Some(0x208), Some(0x209), None]
+    );
+    assert_eq!(
+        field
+            .references
+            .each_ref()
+            .map(|reference| reference.offset),
+        [107, 109, 110, 113, 116]
+    );
+
+    let mut noncanonical = payload;
+    noncanonical[11] = 0x00;
+    noncanonical[12] = 0x20;
+    assert!(crate::om::delete_payload_references(record(&noncanonical)).is_none());
+    let truncated = &payload[..payload.len() - 1];
+    assert!(crate::om::delete_payload_references(record(truncated)).is_none());
+    let mut wrong_count = payload;
+    wrong_count[6] = 0x05;
+    assert!(crate::om::delete_payload_references(record(&wrong_count)).is_none());
+}
+
+#[test]
 fn om_data_block_object_references_require_complete_field_frames() {
     let bytes = [
         0x04, 0x00, 0x2a, 0x02, 0x0b, 0xff, 0x04, 0x00, 0x80, 0xc9, 0x02, 0x0b, 0x04, 0x00, 0x90,
@@ -2262,6 +3807,20 @@ fn om_size_frame_bounds_its_type_declarations() {
     let mut truncated = bytes;
     truncated.pop();
     assert!(crate::om::sections(&truncated).is_empty());
+}
+
+#[test]
+fn om_size_frame_accepts_exact_terminal_twelve_byte_envelope() {
+    let mut bytes = size_framed_om_section();
+    let payload_len = u32::try_from(bytes.len() - 12).expect("short OM fixture");
+    bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
+    let sections = crate::om::sections(&bytes);
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].byte_len, bytes.len());
+    assert_eq!(sections[0].types[0].name, "UGS::FEATURE_RECORD");
+
+    bytes.push(0);
+    assert!(crate::om::sections(&bytes).is_empty());
 }
 
 #[test]
@@ -2547,8 +4106,16 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
     };
     let lane = crate::om::pattern_payload_transform_lane(record).expect("feature lane");
     assert_eq!(lane.offset, 201);
+    assert_eq!(lane.row_schema_index, 0x60);
+    assert_eq!(lane.layout, crate::om::PatternTransformLayout::ScalarRows);
     assert_eq!(lane.declared_count, 3);
-    assert_eq!(lane.encoding, crate::om::PatternTransformEncoding::Binary32);
+    assert_eq!(
+        lane.encodings,
+        [
+            crate::om::PatternTransformEncoding::Binary32,
+            crate::om::PatternTransformEncoding::Binary32,
+        ]
+    );
     assert_eq!(lane.values, [3.3125, -3.3125]);
     assert_eq!(lane.value_offsets, [207, 237]);
     assert_eq!(lane.selectors, [2, 8190]);
@@ -2566,11 +4133,118 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         ..record
     };
     let lane = crate::om::pattern_payload_transform_lane(geometry_record).expect("geometry lane");
-    assert_eq!(lane.encoding, crate::om::PatternTransformEncoding::Binary64);
+    assert_eq!(lane.row_schema_index, 0x60);
+    assert_eq!(lane.layout, crate::om::PatternTransformLayout::ScalarRows);
+    assert_eq!(
+        lane.encodings,
+        [
+            crate::om::PatternTransformEncoding::Binary64,
+            crate::om::PatternTransformEncoding::Binary64,
+        ]
+    );
     assert_eq!(lane.values, [132.0, 264.0]);
     assert_eq!(lane.selectors, [2, 3]);
     assert_eq!(lane.raw_selectors, [vec![0x02], vec![0x03]]);
     assert_eq!(lane.selector_offsets, [228, 262]);
+
+    let schema_relative_payload = b"\x01\x04\
+        \x3d\x01\x00\x00\x50\x9e\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\
+        \x3d\x01\x00\x00\x50\xae\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x03\x01\x02\x00\x00\xff\x00\x00\
+        \x3d\x01\x00\x00\x30\xb6\x80\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x04\x01\x03\x00\x00\xff\x00\x00\
+        \x3c\x00\x00\x01";
+    let relative_lane = crate::om::pattern_payload_transform_lane(crate::om::OperationRecord {
+        bytes: schema_relative_payload,
+        payload: schema_relative_payload,
+        ..record
+    })
+    .expect("schema-relative feature lane");
+    assert_eq!(relative_lane.row_schema_index, 0x3d);
+    assert_eq!(
+        relative_lane.layout,
+        crate::om::PatternTransformLayout::ScalarRows
+    );
+    assert_eq!(relative_lane.declared_count, 4);
+    assert_eq!(
+        relative_lane.encodings,
+        [
+            crate::om::PatternTransformEncoding::Binary32,
+            crate::om::PatternTransformEncoding::Binary32,
+            crate::om::PatternTransformEncoding::Binary64,
+        ]
+    );
+    assert_eq!(relative_lane.selectors, [2, 3, 4]);
+
+    let wide_payload = b"\x01\x03\
+        \x35\x2f\xf3\xc6\xef\x37\x2f\xe9\x60\xb0\x0e\x6f\x0e\x13\x44\x54\xfd\x00\x00\x30\x0e\x6f\x0e\x13\x44\x54\xfd\x2f\xf3\xc6\xef\x37\x2f\xe9\x60\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\
+        \x35\xb0\x09\xe3\x77\x9b\x97\xf4\xb9\x30\x02\xcf\x23\x04\x75\x5a\x46\x00\x00\xb0\x02\xcf\x23\x04\x75\x5a\x46\xb0\x09\xe3\x77\x9b\x97\xf4\xb9\x00\x00\x00\x00\x50\x0f\xff\xff\x00\x00\x00\x00\x01\x01\x03\x03\x01\x02\x00\x00\xff\x00\x00\
+        \x34\x00\x00\x02";
+    let wide_lane = crate::om::pattern_payload_transform_lane(crate::om::OperationRecord {
+        bytes: wide_payload,
+        payload: wide_payload,
+        ..record
+    })
+    .expect("wide feature lane");
+    assert_eq!(wide_lane.row_schema_index, 0x35);
+    assert_eq!(
+        wide_lane.layout,
+        crate::om::PatternTransformLayout::WideRows
+    );
+    assert_eq!(wide_lane.declared_count, 3);
+    assert_eq!(wide_lane.values.len(), 10);
+    assert_eq!(
+        wide_lane.encodings,
+        [
+            crate::om::PatternTransformEncoding::Binary64,
+            crate::om::PatternTransformEncoding::Binary64,
+            crate::om::PatternTransformEncoding::Binary64,
+            crate::om::PatternTransformEncoding::Binary64,
+            crate::om::PatternTransformEncoding::ExactOne,
+            crate::om::PatternTransformEncoding::Binary64,
+            crate::om::PatternTransformEncoding::Binary64,
+            crate::om::PatternTransformEncoding::Binary64,
+            crate::om::PatternTransformEncoding::Binary64,
+            crate::om::PatternTransformEncoding::Binary32,
+        ]
+    );
+    assert_eq!(wide_lane.selectors, [2, 3]);
+
+    let mut zero_terminal_value = wide_payload.to_vec();
+    let terminal_value = zero_terminal_value
+        .windows(12)
+        .position(|bytes| {
+            bytes
+                == [
+                    0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03,
+                ]
+        })
+        .expect("exact-one terminal value")
+        + 4;
+    zero_terminal_value[terminal_value] = 0x00;
+    assert!(
+        crate::om::pattern_payload_transform_lane(crate::om::OperationRecord {
+            bytes: &zero_terminal_value,
+            payload: &zero_terminal_value,
+            ..record
+        })
+        .is_none()
+    );
+
+    let mut changed_schema = feature_payload.to_vec();
+    let second_row = changed_schema
+        .windows(4)
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == [0x60, 0x01, 0x00, 0x00]).then_some(offset))
+        .nth(1)
+        .expect("second row");
+    changed_schema[second_row] = 0x61;
+    assert!(
+        crate::om::pattern_payload_transform_lane(crate::om::OperationRecord {
+            bytes: &changed_schema,
+            payload: &changed_schema,
+            ..record
+        })
+        .is_none()
+    );
 
     let mut wrong_ordinal = feature_payload.to_vec();
     wrong_ordinal[29] = 2;
@@ -2586,6 +4260,149 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         crate::om::pattern_payload_transform_lane(crate::om::OperationRecord {
             bytes: &feature_payload[..feature_payload.len() - 1],
             payload: &feature_payload[..feature_payload.len() - 1],
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
+fn om_multi_instance_output_lane_requires_consistent_counts_and_groups() {
+    let mut payload = b"\xaa\x3a\x00\x00\x01\x00\x00\x00\x00\x25\x01\x07".to_vec();
+    let mut row_index = 2;
+    for selector in [2, 3, 4] {
+        for ordinal in 2..=3 {
+            payload.extend_from_slice(b"\x26\x27\x01\x02\x65\x01\x02");
+            payload.extend_from_slice(&[selector, 0x28, ordinal, row_index]);
+            row_index += 1;
+        }
+    }
+    payload.extend_from_slice(b"\x00\x3b\x90\x3d\xea\x90\x3d\xeb\x01\x03\xbb");
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "Multi Instance Output",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: &payload,
+        payload_offset: 200,
+        payload: &payload,
+        label,
+    };
+    let lane = crate::om::multi_instance_output_payload_lane(record).expect("complete output lane");
+    assert_eq!(lane.offset, 209);
+    assert_eq!(lane.declared_count, 7);
+    assert_eq!(lane.selectors, [2, 2, 3, 3, 4, 4]);
+    assert_eq!(lane.ordinals, [2, 3, 2, 3, 2, 3]);
+    assert_eq!(lane.row_indices, [2, 3, 4, 5, 6, 7]);
+    assert_eq!(lane.instance_count, 3);
+    assert_eq!(lane.selector_offsets, [219, 230, 241, 252, 263, 274]);
+    assert_eq!(
+        lane.trailing_references
+            .iter()
+            .map(|reference| reference.object_index)
+            .collect::<Vec<_>>(),
+        [15850, 15851]
+    );
+    assert_eq!(lane.trailing_references[0].offset, 280);
+    assert_eq!(
+        lane.trailing_references[0].raw_object_index,
+        [0x90, 0x3d, 0xea]
+    );
+
+    let mut incomplete_group = payload.clone();
+    incomplete_group[76] = 2;
+    assert!(
+        crate::om::multi_instance_output_payload_lane(crate::om::OperationRecord {
+            bytes: &incomplete_group,
+            payload: &incomplete_group,
+            ..record
+        })
+        .is_none()
+    );
+    let mut wrong_row_index = payload.clone();
+    wrong_row_index[77] = 6;
+    assert!(
+        crate::om::multi_instance_output_payload_lane(crate::om::OperationRecord {
+            bytes: &wrong_row_index,
+            payload: &wrong_row_index,
+            ..record
+        })
+        .is_none()
+    );
+    let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
+    assert!(
+        crate::om::multi_instance_output_payload_lane(crate::om::OperationRecord {
+            bytes: &ambiguous,
+            payload: &ambiguous,
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
+fn om_identical_instance_output_lane_requires_complete_ordered_rows() {
+    let payload = b"\xaa\x34\x13\x01\x04\x14\x15\x01\x02\x16\x80\x20\x00\x02\
+          \x14\x15\x01\x02\x16\x0f\x00\x03\
+          \x14\x15\x01\x02\x16\x81\x23\x00\x04\
+          \x00\x05\xe0\x7f\xff\xff\xff\x00\x00\xbb";
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "IDENTICAL INSTANCE OUTPUT",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 200,
+        payload,
+        label,
+    };
+    let lane = crate::om::identical_instance_output_payload_lane(record)
+        .expect("complete identical-instance lane");
+    assert_eq!(lane.offset, 201);
+    assert_eq!(lane.leading_schema_index, 0x34);
+    assert_eq!(lane.count_schema_index, 0x13);
+    assert_eq!(lane.row_schema_indices, [0x14, 0x15, 0x16]);
+    assert_eq!(lane.declared_count, 4);
+    assert_eq!(lane.selectors, [0x20, 0x0f, 0x123]);
+    assert_eq!(
+        lane.raw_selectors,
+        [vec![0x80, 0x20], vec![0x0f], vec![0x81, 0x23]]
+    );
+    assert_eq!(lane.selector_offsets, [210, 219, 227]);
+
+    let mut wrong_ordinal = payload.to_vec();
+    wrong_ordinal[21] = 4;
+    assert!(
+        crate::om::identical_instance_output_payload_lane(crate::om::OperationRecord {
+            bytes: &wrong_ordinal,
+            payload: &wrong_ordinal,
+            ..record
+        })
+        .is_none()
+    );
+    let mut wrong_terminal_count = payload.to_vec();
+    wrong_terminal_count[32] = 4;
+    assert!(
+        crate::om::identical_instance_output_payload_lane(crate::om::OperationRecord {
+            bytes: &wrong_terminal_count,
+            payload: &wrong_terminal_count,
+            ..record
+        })
+        .is_none()
+    );
+    let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
+    assert!(
+        crate::om::identical_instance_output_payload_lane(crate::om::OperationRecord {
+            bytes: &ambiguous,
+            payload: &ambiguous,
             ..record
         })
         .is_none()
@@ -3124,7 +4941,7 @@ fn om_extrude_header_decodes_shifted_ieee_scalars() {
 }
 
 #[test]
-fn om_extrude_footer_requires_one_complete_terminal_lane() {
+fn om_operation_terminal_discriminator_requires_one_complete_lane() {
     let label = crate::om::OperationLabel {
         header_offset: 100,
         offset: 119,
@@ -3140,23 +4957,31 @@ fn om_extrude_footer_requires_one_complete_terminal_lane() {
         payload,
         label,
     };
-    let footer = crate::om::extrude_payload_footer(record).unwrap();
-    assert_eq!(footer.offset, 200);
-    assert_eq!(footer.type_indices, [351, 171]);
+    let lane = crate::om::operation_terminal_discriminator(record).unwrap();
+    assert_eq!(lane.offset, 200);
+    assert_eq!(lane.type_indices, [351, 171]);
+    assert_eq!(lane.raw_type_indices, [vec![0x81, 0x5f], vec![0x80, 0xab]]);
+    assert_eq!(lane.type_index_offsets, [203, 205]);
+    assert_eq!(lane.flags, [1, 2, 1, 1]);
+    assert_eq!(lane.trailing_indices, [5, 255]);
+    assert_eq!(lane.raw_trailing_indices, [vec![0x05], vec![0x80, 0xff]]);
+    assert_eq!(lane.trailing_index_offsets, [220, 221]);
+
+    let subtract = crate::om::OperationRecord {
+        label: crate::om::OperationLabel {
+            value: "SUBTRACT",
+            ..label
+        },
+        ..record
+    };
     assert_eq!(
-        footer.raw_type_indices,
-        [vec![0x81, 0x5f], vec![0x80, 0xab]]
+        crate::om::operation_terminal_discriminator(subtract),
+        Some(lane.clone())
     );
-    assert_eq!(footer.type_index_offsets, [203, 205]);
-    assert_eq!(footer.mode_indices, [2, 1]);
-    assert_eq!(footer.flags, [1, 2, 1, 1]);
-    assert_eq!(footer.trailing_indices, [5, 255]);
-    assert_eq!(footer.raw_trailing_indices, [vec![0x05], vec![0x80, 0xff]]);
-    assert_eq!(footer.trailing_index_offsets, [220, 221]);
 
     let truncated = &payload[..payload.len() - 1];
     assert!(
-        crate::om::extrude_payload_footer(crate::om::OperationRecord {
+        crate::om::operation_terminal_discriminator(crate::om::OperationRecord {
             payload: truncated,
             bytes: truncated,
             ..record
@@ -3167,7 +4992,7 @@ fn om_extrude_footer_requires_one_complete_terminal_lane() {
     let mut ambiguous = payload[..payload.len() - 1].to_vec();
     ambiguous.extend_from_slice(payload);
     assert!(
-        crate::om::extrude_payload_footer(crate::om::OperationRecord {
+        crate::om::operation_terminal_discriminator(crate::om::OperationRecord {
             payload: &ambiguous,
             bytes: &ambiguous,
             ..record
@@ -3698,6 +5523,53 @@ fn om_offset_store_control_values_require_complete_zero_prefixed_words() {
 }
 
 #[test]
+fn om_offset_store_control_form_requires_one_complete_grammar() {
+    assert_eq!(
+        crate::om::offset_store_control_form(&[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff]),
+        Some(crate::om::OffsetStoreControlForm::ZeroPrefixed {
+            values: vec![0x1234, 0x00ff_ffff],
+        })
+    );
+
+    let mut product = vec![0, 0];
+    product.extend_from_slice(&7u32.to_le_bytes());
+    product.extend_from_slice(&0x1020u32.to_le_bytes());
+    product.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
+    assert_eq!(
+        crate::om::offset_store_control_form(&product),
+        Some(crate::om::OffsetStoreControlForm::ProductAnchored {
+            leading_value: Some((2, 0)),
+            values: vec![7, 0x1020],
+        })
+    );
+
+    product.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
+    assert!(crate::om::offset_store_control_form(&product).is_none());
+    assert!(crate::om::offset_store_control_form(&[1, 2, 3, 4]).is_none());
+}
+
+#[test]
+fn decode_reports_unclassified_bounded_offset_store_controls() {
+    let file = prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        offset_only_indexed_om_section_with_control(&[1, 2, 3, 4]),
+    )]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let attributes = &result.ir.source.as_ref().unwrap().attributes;
+    assert_eq!(attributes["offset_store_control_count"], "1");
+    assert_eq!(attributes["classified_offset_store_control_count"], "0");
+    assert_eq!(attributes["unclassified_offset_store_control_count"], "1");
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code.category() == LossCategory::Other
+            && loss
+                .message
+                .contains("1 of 1 bounded offset-store control block(s)")
+    }));
+}
+
+#[test]
 fn om_offset_store_index_rows_require_complete_exact_frames() {
     let first =
         b"\x2d\x02\x0b\x2a\x93\x8a\x03\x80\x18\x20\x20\x41\x00\x47\x04\x04\x01\xc0\x44\x04\x00";
@@ -3817,12 +5689,15 @@ fn om_offset_store_control_class_lane_is_a_distinct_in_range_prefix() {
             .collect::<Vec<_>>()
     };
     assert_eq!(
-        crate::om::offset_store_control_class_ordinals(&encode(&[2, 0, 4, 8]), 4),
+        crate::om::offset_store_control_class_ordinals(&encode(&[2, 0, 4, 8, 3])),
         Some(vec![2, 0])
     );
-    assert!(crate::om::offset_store_control_class_ordinals(&encode(&[2, 2, 4]), 4).is_none());
-    assert!(crate::om::offset_store_control_class_ordinals(&encode(&[2, 4, 1]), 4).is_none());
-    assert!(crate::om::offset_store_control_class_ordinals(&encode(&[4, 8]), 4).is_none());
+    assert!(crate::om::offset_store_control_class_ordinals(&encode(&[2, 2, 4])).is_none());
+    assert!(crate::om::offset_store_control_class_ordinals(&encode(&[2, 4, 1])).is_none());
+    assert_eq!(
+        crate::om::offset_store_control_class_ordinals(&encode(&[4, 8])),
+        Some(vec![4])
+    );
 }
 
 #[test]
@@ -4025,8 +5900,87 @@ fn parasolid_entity_51_records_retain_layout_selected_references() {
     assert_eq!(records[0].byte_len, 26);
     assert_eq!(records[0].xmt, 10);
     assert_eq!(records[0].sequence, 2);
-    assert_eq!(records[0].discriminator, 0x21);
-    assert_eq!(records[0].references, vec![3, 4, 5, 6, 7, 8]);
+    assert_eq!(records[0].definition_xmt, 0x21);
+    assert_eq!(records[0].leading_references, [3, 4, 5, 6, 7]);
+    assert_eq!(records[0].trailing_references, [8]);
+    assert_eq!(
+        crate::parasolid::entity_51_record_at(&bytes, 0),
+        Some(records[0].clone())
+    );
+    assert!(crate::parasolid::entity_51_record_at(&bytes[..25], 0).is_none());
+}
+
+#[test]
+fn parasolid_entity_51_definition_uses_extended_xmt_framing() {
+    let mut bytes = vec![0, 0x51];
+    bytes.extend_from_slice(&1u32.to_be_bytes());
+    bytes.extend_from_slice(&10u16.to_be_bytes());
+    bytes.extend_from_slice(&2u32.to_be_bytes());
+    bytes.extend_from_slice(&(-7_233i16).to_be_bytes());
+    bytes.extend_from_slice(&1u16.to_be_bytes());
+    for reference in 3..=8u16 {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+    }
+
+    let record = crate::parasolid::entity_51_record_at(&bytes, 0).unwrap();
+    assert_eq!(record.definition_xmt, 40_000);
+    assert_eq!(record.byte_len, 28);
+    assert!(crate::parasolid::entity_51_record_at(&bytes[..27], 0).is_none());
+}
+
+#[test]
+fn parasolid_entity_51_reference_count_is_five_plus_flags() {
+    for flags in 1..=0x20u32 {
+        let mut direct = vec![0, 0x51];
+        direct.extend_from_slice(&flags.to_be_bytes());
+        direct.extend_from_slice(&10u16.to_be_bytes());
+        direct.extend_from_slice(&2u32.to_be_bytes());
+        direct.extend_from_slice(&0x21u16.to_be_bytes());
+        for reference in 0..flags + 5 {
+            direct.extend_from_slice(&(reference as u16 + 3).to_be_bytes());
+        }
+        direct.extend_from_slice(&[0xaa, 0xbb]);
+
+        let record = crate::parasolid::entity_51_record_at(&direct, 0).unwrap();
+        assert_eq!(record.leading_references.len(), 5);
+        assert_eq!(record.trailing_references.len(), flags as usize);
+        assert_eq!(record.byte_len, direct.len() - 2);
+        assert!(crate::parasolid::entity_51_record_at(&direct[..direct.len() - 3], 0).is_none());
+
+        let mut prefixed = vec![0, 0x51];
+        prefixed.extend_from_slice(&flags.to_be_bytes());
+        prefixed.extend_from_slice(&10u16.to_be_bytes());
+        prefixed.extend_from_slice(&2u32.to_be_bytes());
+        prefixed.extend_from_slice(&0x21u16.to_be_bytes());
+        for reference in 0..flags + 5 {
+            prefixed.push(u8::from(reference % 2 == 0));
+            prefixed.extend_from_slice(&(reference as u16 + 3).to_be_bytes());
+        }
+        prefixed.push(0);
+        prefixed.extend_from_slice(&[0xaa, 0xbb]);
+
+        let record = crate::parasolid::entity_51_record_at(&prefixed, 0).unwrap();
+        assert_eq!(record.leading_references.len(), 5);
+        assert_eq!(record.trailing_references.len(), flags as usize);
+        assert_eq!(record.byte_len, prefixed.len() - 2);
+        assert!(
+            crate::parasolid::entity_51_record_at(&prefixed[..prefixed.len() - 3], 0).is_none()
+        );
+    }
+}
+
+#[test]
+fn parasolid_entity_51_rejects_nonzero_upper_flag_bytes() {
+    let mut bytes = vec![0, 0x51];
+    bytes.extend_from_slice(&0x0100_0001u32.to_be_bytes());
+    bytes.extend_from_slice(&10u16.to_be_bytes());
+    bytes.extend_from_slice(&2u32.to_be_bytes());
+    bytes.extend_from_slice(&0x21u16.to_be_bytes());
+    for reference in 3..=8u16 {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+    }
+
+    assert!(crate::parasolid::entity_51_record_at(&bytes, 0).is_none());
 }
 
 #[test]
@@ -4043,6 +5997,17 @@ fn parasolid_entity_54_strings_require_exact_length_and_terminator() {
     assert_eq!(records[0].byte_len, 17);
     assert_eq!(records[0].xmt, 17);
     assert_eq!(records[0].value, "deadbeef");
+    assert_eq!(
+        crate::parasolid::entity_54_string_record_at(&bytes, 1),
+        Some(records[0].clone())
+    );
+    assert!(crate::parasolid::entity_54_string_record_at(&bytes, bytes.len() - 12).is_none());
+
+    let minimum = [0, 0x54, 0, 0, 0, 1, 0, 2, b'a', 0];
+    assert_eq!(
+        crate::parasolid::entity_54_string_records(&minimum)[0].value,
+        "a"
+    );
 }
 
 #[test]
@@ -4059,7 +6024,30 @@ fn parasolid_entity_52_integers_require_complete_counted_values() {
     assert_eq!(records[0].xmt, 17);
     assert_eq!(records[0].values, [3, u32::MAX]);
     assert_eq!(records[0].byte_len, 16);
+    assert_eq!(
+        crate::parasolid::entity_52_integer_record_at(&bytes, 1),
+        Some(records[0].clone())
+    );
     assert!(crate::parasolid::entity_52_integer_records(&bytes[..bytes.len() - 1]).is_empty());
+    assert!(crate::parasolid::entity_52_integer_record_at(&bytes[..bytes.len() - 1], 1).is_none());
+}
+
+#[test]
+fn parasolid_field_names_require_a_complete_nonempty_reference_lane() {
+    let bytes = [
+        0xaa, 0x00, 0x63, 0x00, 0x00, 0x00, 0x03, 0x00, 0x19, 0x00, 0x1c, 0x00, 0x1d, 0x00, 0x1e,
+        0xbb,
+    ];
+    let records = crate::parasolid::field_names_records(&bytes);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].offset, 1);
+    assert_eq!(records[0].byte_len, 14);
+    assert_eq!(records[0].xmt, 25);
+    assert_eq!(records[0].name_xmts, [28, 29, 30]);
+    assert!(crate::parasolid::field_names_record_at(&bytes[..14], 1).is_none());
+
+    let empty = [0x00, 0x63, 0, 0, 0, 0, 0, 25];
+    assert!(crate::parasolid::field_names_records(&empty).is_empty());
 }
 
 #[test]
@@ -4076,10 +6064,99 @@ fn parasolid_entity_53_doubles_require_complete_finite_values() {
     assert_eq!(records[0].xmt, 18);
     assert_eq!(records[0].values, [0.001, 0.25]);
     assert_eq!(records[0].byte_len, 25);
+    assert_eq!(
+        crate::parasolid::entity_53_double_record_at(&bytes, 1),
+        Some(records[0].clone())
+    );
 
     let last = bytes.len() - 8;
     bytes[last..].copy_from_slice(&f64::NAN.to_be_bytes());
     assert!(crate::parasolid::entity_53_double_records(&bytes).is_empty());
+    assert!(crate::parasolid::entity_53_double_record_at(&bytes, 1).is_none());
+}
+
+#[test]
+fn parasolid_transformable_attribute_values_preserve_vector_and_axis_grouping() {
+    let vector_record = |tag: u8, xmt: u16, vectors: &[[f64; 3]]| {
+        let mut bytes = vec![0x00, tag];
+        bytes.extend_from_slice(
+            &u32::try_from(vectors.len())
+                .expect("test vector count fits u32")
+                .to_be_bytes(),
+        );
+        bytes.extend_from_slice(&xmt.to_be_bytes());
+        for vector in vectors {
+            for component in vector {
+                bytes.extend_from_slice(&component.to_be_bytes());
+            }
+        }
+        bytes
+    };
+    let vectors = [[1.0, 2.0, 3.0], [-4.0, 5.0, 6.0]];
+
+    let points = crate::parasolid::entity_55_point_records(&vector_record(0x55, 20, &vectors));
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].values, vectors);
+    let vector_values =
+        crate::parasolid::entity_56_vector_records(&vector_record(0x56, 21, &vectors));
+    assert_eq!(vector_values.len(), 1);
+    assert_eq!(vector_values[0].values, vectors);
+    let directions =
+        crate::parasolid::entity_59_direction_records(&vector_record(0x59, 22, &vectors));
+    assert_eq!(directions.len(), 1);
+    assert_eq!(directions[0].values, vectors);
+
+    let four_vectors = [vectors[0], vectors[1], [7.0, 8.0, 9.0], [0.0, 1.0, 0.0]];
+    let axes = crate::parasolid::entity_57_axis_records(&vector_record(0x57, 23, &four_vectors));
+    assert_eq!(axes.len(), 1);
+    assert_eq!(
+        axes[0].values,
+        [
+            [four_vectors[0], four_vectors[1]],
+            [four_vectors[2], four_vectors[3]],
+        ]
+    );
+    assert!(crate::parasolid::entity_57_axis_records(
+        &vector_record(0x57, 23, &four_vectors[..3],)
+    )
+    .is_empty());
+
+    let mut nonfinite = vectors;
+    nonfinite[1][2] = f64::INFINITY;
+    assert!(
+        crate::parasolid::entity_55_point_records(&vector_record(0x55, 20, &nonfinite)).is_empty()
+    );
+}
+
+#[test]
+fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
+    let tags = [
+        0x00, 0x58, 0, 0, 0, 2, 0, 24, 0, 0, 0, 7, 0xff, 0xff, 0xff, 0xff,
+    ];
+    let records = crate::parasolid::entity_58_tag_records(&tags);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].xmt, 24);
+    assert_eq!(records[0].values, [7, u32::MAX]);
+    assert!(crate::parasolid::entity_58_tag_records(&tags[..tags.len() - 1]).is_empty());
+
+    let code_units = [b'N' as u16, b'X' as u16, 0xd83d, 0xde80];
+    let mut unicode = vec![0x00, 0x62, 0xff];
+    unicode.extend_from_slice(&4u32.to_be_bytes());
+    unicode.extend_from_slice(&[0xff, 0xff, 0x00, 0x01]);
+    for code_unit in code_units {
+        unicode.extend_from_slice(&code_unit.to_be_bytes());
+    }
+    let records = crate::parasolid::entity_62_unicode_records(&unicode);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].xmt, 32_768);
+    assert_eq!(records[0].code_units, code_units);
+    assert_eq!(records[0].value, "NX🚀");
+    assert!(crate::parasolid::entity_62_unicode_records(&unicode[..unicode.len() - 1]).is_empty());
+
+    let mut invalid = unicode;
+    invalid[15..17].copy_from_slice(&0xd800u16.to_be_bytes());
+    invalid[17..19].copy_from_slice(&0x0041u16.to_be_bytes());
+    assert!(crate::parasolid::entity_62_unicode_records(&invalid).is_empty());
 }
 
 #[test]
@@ -4491,12 +6568,48 @@ fn decode_retains_native_carrierless_edge() {
 fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let edge_id = ir.model.edges[0].id.clone();
+    let expected_endpoints = [&ir.model.edges[0].start, &ir.model.edges[0].end].map(|vertex_id| {
+        let point_id = &ir
+            .model
+            .vertices
+            .iter()
+            .find(|vertex| &vertex.id == vertex_id)
+            .expect("edge vertex")
+            .point;
+        ir.model
+            .points
+            .iter()
+            .find(|point| &point.id == point_id)
+            .expect("vertex point")
+            .position
+    });
     ir.model.edges[0].curve = None;
     ir.model.edges[0].param_range = None;
     ir.model.edges[0].tolerance = Some(0.01);
     let mut edges = std::collections::BTreeMap::new();
-    edges.insert(12, edge_id.clone());
-    let graph = crate::topology::Graph::parse(&[]);
+    edges.insert(8, edge_id.clone());
+    let mut incident_coedges = ir
+        .model
+        .coedges
+        .iter_mut()
+        .filter(|coedge| coedge.edge == edge_id)
+        .collect::<Vec<_>>();
+    assert_eq!(incident_coedges.len(), 2);
+    incident_coedges[0].id = cadmpeg_ir::ids::CoedgeId("nx:test:fin#7".into());
+    incident_coedges[1].id = cadmpeg_ir::ids::CoedgeId("nx:test:fin#22".into());
+    let mut stream = partnered_trimmed_topology_partition_stream();
+    let edge = stream
+        .windows(2)
+        .position(|window| window == [0, 16])
+        .expect("edge record");
+    put_ref(&mut stream, edge + 24, 1);
+    let fin = stream
+        .windows(2)
+        .position(|window| window == [0, 17])
+        .expect("fin record");
+    put_ref(&mut stream, fin + 18, 1);
+    let graph = crate::topology::Graph::parse(&stream);
+    let mut off_support_ir = ir.clone();
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let stream = annotations.stream("nx:test");
 
@@ -4515,7 +6628,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         .iter()
         .find(|edge| edge.id == edge_id)
         .expect("tolerant edge");
-    assert_eq!(edge.param_range, Some([0.0, 1.0]));
+    assert_eq!(edge.param_range, None);
     let curve = ir
         .model
         .curves
@@ -4529,13 +6642,87 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         .iter()
         .find(|procedural| procedural.curve == curve.id)
         .expect("intersection construction");
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &procedural.definition
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+        supports,
+        endpoints,
+        tolerance,
+        parameterization,
+    } = &procedural.definition
     else {
-        panic!("intersection definition");
+        panic!("tolerant intersection definition");
     };
-    assert!(context.sides.iter().all(|side| side.surface.is_some()));
-    assert_ne!(context.sides[0].surface, context.sides[1].surface);
+    assert_ne!(supports[0], supports[1]);
+    assert_eq!(*endpoints, expected_endpoints);
+    assert_eq!(*tolerance, 0.01);
+    assert_eq!(*parameterization, None);
+
+    let start = off_support_ir.model.edges[0].start.clone();
+    let point_id = off_support_ir
+        .model
+        .vertices
+        .iter()
+        .find(|vertex| vertex.id == start)
+        .expect("edge vertex")
+        .point
+        .clone();
+    let point = off_support_ir
+        .model
+        .points
+        .iter_mut()
+        .find(|point| point.id == point_id)
+        .expect("vertex point");
+    point.position.x += 0.5;
+    point.position.y += 0.5;
+    point.position.z += 0.5;
+    let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
+    let stream = annotations.stream("nx:test");
+    crate::decode::attach_tolerant_edge_intersections(
+        &mut off_support_ir,
+        &graph,
+        &edges,
+        "nx:test",
+        stream,
+        &mut annotations,
+    );
+    assert_eq!(off_support_ir.model.edges[0].curve, None);
+}
+
+#[test]
+fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let edge_id = ir.model.edges[0].id.clone();
+    ir.model.edges[0].curve = None;
+    ir.model.edges[0].param_range = None;
+    ir.model.edges[0].tolerance = Some(0.01);
+    let edges = std::collections::BTreeMap::from([(8, edge_id.clone())]);
+    let mut stream = partnered_trimmed_topology_partition_stream();
+    let edge = stream
+        .windows(2)
+        .position(|window| window == [0, 16])
+        .expect("edge record");
+    put_ref(&mut stream, edge + 24, 1);
+    let graph = crate::topology::Graph::parse(&stream);
+    let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
+    let source_stream = annotations.stream("nx:test");
+
+    crate::decode::attach_tolerant_edge_intersections(
+        &mut ir,
+        &graph,
+        &edges,
+        "nx:test",
+        source_stream,
+        &mut annotations,
+    );
+
+    let edge = ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.id == edge_id)
+        .expect("tolerant edge");
+    assert_eq!(edge.curve, None);
+    assert_eq!(edge.param_range, None);
+    assert!(ir.model.procedural_curves.is_empty());
 }
 
 #[test]
@@ -4887,9 +7074,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
 
 #[test]
 fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
-    use cadmpeg_ir::geometry::{
-        Curve, IntcurveSupportContext, IntcurveSupportSide, NurbsSurface, ProceduralCurve, Surface,
-    };
+    use cadmpeg_ir::geometry::{Curve, NurbsSurface, ProceduralCurve, Surface};
     use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, SurfaceId, VertexId};
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::topology::{Edge, Point, Vertex};
@@ -4941,24 +7126,11 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     ir.model.procedural_curves.push(ProceduralCurve {
         id: construction,
         curve: curve.clone(),
-        definition: ProceduralCurveDefinition::Intersection {
-            context: IntcurveSupportContext {
-                sides: [
-                    IntcurveSupportSide {
-                        surface: Some(nurbs),
-                        pcurve_parameter_range: None,
-                        pcurve: None,
-                    },
-                    IntcurveSupportSide {
-                        surface: Some(plane),
-                        pcurve_parameter_range: None,
-                        pcurve: None,
-                    },
-                ],
-                parameter_range: [0.0, 1.0],
-                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-            },
-            discontinuity_flag: false,
+        definition: ProceduralCurveDefinition::TolerantIntersection {
+            supports: [nurbs, plane],
+            endpoints: [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+            tolerance: 1.0e-8,
+            parameterization: None,
         },
         cache_fit_tolerance: None,
     });
@@ -4999,30 +7171,52 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         curve: Some(curve),
         start: vertex_ids[0].clone(),
         end: vertex_ids[1].clone(),
-        param_range: Some([0.0, 1.0]),
+        param_range: None,
         tolerance: Some(1.0e-8),
     });
 
-    crate::decode::complete_isoparametric_intersection_pcurves(&mut ir);
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    crate::decode::complete_exact_boundary_intersection_pcurves(&mut ir, &mut annotations);
 
-    let ProceduralCurveDefinition::Intersection { context, .. } =
-        &ir.model.procedural_curves[0].definition
+    let ProceduralCurveDefinition::TolerantIntersection {
+        supports,
+        parameterization: Some(parameterization),
+        ..
+    } = &ir.model.procedural_curves[0].definition
     else {
         unreachable!()
     };
-    assert!(context.sides.iter().all(|side| side.pcurve.is_some()));
+    assert_eq!(ir.model.procedural_curves[0].cache_fit_tolerance, None);
+    assert_eq!(parameterization.parameter_range, [0.0, 1.0]);
+    assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-        let points = context.sides.each_ref().map(|side| {
-            let uv = cadmpeg_ir::eval::pcurve_uv(side.pcurve.as_ref().unwrap(), parameter).unwrap();
+        let evaluated = cadmpeg_ir::eval::model_curve_point_by_id(
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
+            &ir.model.procedural_curves[0].curve,
+            parameter,
+        )
+        .expect("charted tolerant intersection evaluates");
+        let inverted = cadmpeg_ir::eval::model_curve_parameter_near_point(
+            &ir,
+            &ir.model.procedural_curves[0].curve,
+            evaluated,
+            parameter,
+        )
+        .expect("charted tolerant intersection inverts");
+        assert!((inverted - parameter).abs() < 1.0e-8);
+        let points: [Point3; 2] = std::array::from_fn(|side| {
+            let uv =
+                cadmpeg_ir::eval::pcurve_uv(&parameterization.pcurves[side], parameter).unwrap();
             let surface = ir
                 .model
                 .surfaces
                 .iter()
-                .find(|surface| Some(&surface.id) == side.surface.as_ref())
+                .find(|surface| surface.id == supports[side])
                 .unwrap();
             cadmpeg_ir::eval::surface_point(&surface.geometry, uv.u, uv.v).unwrap()
         });
         assert!((points[0].x - 10.0 * parameter).abs() < 1.0e-8);
+        assert_eq!(evaluated, points[0]);
         assert!(
             (points[0].x - points[1].x)
                 .hypot(points[0].y - points[1].y)
@@ -5030,6 +7224,30 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                 < 1.0e-8
         );
     }
+    let ProceduralCurveDefinition::TolerantIntersection {
+        parameterization: Some(parameterization),
+        ..
+    } = &mut ir.model.procedural_curves[0].definition
+    else {
+        unreachable!()
+    };
+    parameterization.pcurves[1] = PcurveGeometry::Line {
+        origin: Point2::new(0.0, 1.0),
+        direction: Point2::new(1.0, 0.0),
+    };
+    assert!(cadmpeg_ir::eval::model_curve_point_by_id(
+        &cadmpeg_ir::index::ModelIndex::new(&ir),
+        &ir.model.procedural_curves[0].curve,
+        0.5,
+    )
+    .is_none());
+    assert!(cadmpeg_ir::eval::model_curve_parameter_near_point(
+        &ir,
+        &ir.model.procedural_curves[0].curve,
+        Point3::new(5.0, 0.0, 0.0),
+        0.5,
+    )
+    .is_none());
 }
 
 #[test]
@@ -5077,6 +7295,35 @@ fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
         "findings: {:?}",
         validation.findings
     );
+}
+
+#[test]
+fn decode_assigns_descending_pcurve_trim_to_the_coedge_use() {
+    let mut stream = pcurve_topology_partition_stream();
+    let fin = stream
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("fin record");
+    put_ref(&mut stream, fin + 18, 26);
+    let mut trim = record(133, 85);
+    put_ref(&mut trim, 2, 26);
+    trim[18] = b'+';
+    put_ref(&mut trim, 19, 25);
+    put_f64(&mut trim, 69, 1.0);
+    put_f64(&mut trim, 77, 0.0);
+    stream.extend(trim);
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.model.pcurves[0].parameter_range, None);
+    assert_eq!(
+        result.ir.model.coedges[0].pcurves[0].parameter_range,
+        Some([0.0, 1.0])
+    );
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -5206,10 +7453,68 @@ fn container_parses_header_and_directory() {
     let c = container::scan_bytes(single_part_prt()).unwrap();
     assert_eq!(c.version, 0x06);
     assert_eq!(c.file_tag, 0x33_22_11);
+    assert_eq!(c.header_entry_count, 1);
+    assert_eq!(c.footer_entry_count, 0);
+    assert_eq!(c.footer_fingerprint, [0; 4]);
     assert!(c
         .entries
         .iter()
         .any(|e| e.name == "/Root/UG_PART/UG_PART" && e.file_span.is_some()));
+}
+
+#[test]
+fn container_rejects_incomplete_counted_directories() {
+    let mut header = single_part_prt();
+    header[0x1f..0x23].copy_from_slice(&2_u32.to_le_bytes());
+    assert!(container::scan_bytes(header).is_err());
+
+    let mut footer = single_part_prt();
+    let footer_offset = usize::try_from(u64::from_le_bytes([
+        footer[0x11],
+        footer[0x12],
+        footer[0x13],
+        footer[0x14],
+        footer[0x15],
+        footer[0x16],
+        0,
+        0,
+    ]))
+    .expect("synthetic footer offset");
+    footer[footer_offset + 6..footer_offset + 10].copy_from_slice(&1_u32.to_le_bytes());
+    assert!(container::scan_bytes(footer).is_err());
+}
+
+#[test]
+fn container_rejects_trailing_or_overlapping_footer_data() {
+    let mut trailing = single_part_prt();
+    trailing.push(0);
+    assert!(container::scan_bytes(trailing).is_err());
+
+    let mut overlap = single_part_prt();
+    let name_len = usize::try_from(u32::from_le_bytes(
+        overlap[0x23..0x27]
+            .try_into()
+            .expect("synthetic name length"),
+    ))
+    .expect("synthetic name length fits usize");
+    let span = 0x27 + name_len;
+    let offset = u64::from_le_bytes(
+        overlap[span..span + 8]
+            .try_into()
+            .expect("synthetic file offset"),
+    );
+    let footer_offset = u64::from_le_bytes([
+        overlap[0x11],
+        overlap[0x12],
+        overlap[0x13],
+        overlap[0x14],
+        overlap[0x15],
+        overlap[0x16],
+        0,
+        0,
+    ]);
+    overlap[span + 8..span + 16].copy_from_slice(&(footer_offset - offset + 1).to_le_bytes());
+    assert!(container::scan_bytes(overlap).is_err());
 }
 
 #[test]
@@ -5369,12 +7674,9 @@ fn decode_transfers_point_plane_cylinder_line() {
 
     // No topology graph is fabricated; the loss is reported as blocking.
     assert!(result.ir.model.faces.is_empty() && result.ir.model.edges.is_empty());
-    assert!(result
-        .report
-        .losses
-        .iter()
-        .any(|l| l.category == cadmpeg_ir::report::LossCategory::Topology
-            && l.severity == cadmpeg_ir::report::Severity::Blocking));
+    assert!(result.report.losses.iter().any(|l| l.code.category()
+        == cadmpeg_ir::report::LossCategory::Topology
+        && l.severity == cadmpeg_ir::report::Severity::Blocking));
 
     // The Parasolid stream is preserved verbatim.
     let unknowns = result.ir.native_unknowns("nx").unwrap();
@@ -5430,9 +7732,67 @@ fn decode_emits_connected_primitive_brep() {
         .report
         .losses
         .iter()
-        .all(|loss| loss.category != cadmpeg_ir::report::LossCategory::Topology));
+        .all(|loss| loss.code.category() != cadmpeg_ir::report::LossCategory::Topology));
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| loss.code != LossKind::MaterialNotTransferred));
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| loss.code != LossKind::AttributesNotTransferred));
+    assert!(!result.report.losses.iter().any(|loss| {
+        loss.code == LossKind::AssemblyPlacementsNotTransferred
+            && loss.message.contains("Assembly occurrence placements")
+    }));
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn decode_reports_missing_assembly_placements_only_for_external_references() {
+    let file = prt_with_named_payloads(&[
+        (
+            "/Root/UG_PART/UG_PART",
+            zlib_compress(&topology_partition_stream()),
+        ),
+        (
+            "/Root/UG_PART/ExternalReferences",
+            external_reference_stream(),
+        ),
+    ]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == LossKind::AssemblyPlacementsNotTransferred
+            && loss.message.contains("Assembly occurrence placements")
+    }));
+}
+
+#[test]
+fn decode_reports_material_loss_only_for_retained_material_assets() {
+    let file = prt_with_named_payloads(&[
+        (
+            "/Root/UG_PART/UG_PART",
+            zlib_compress(&topology_partition_stream()),
+        ),
+        (
+            "/Root/materialsTif/Steel",
+            vec![b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 0],
+        ),
+    ]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == LossKind::MaterialNotTransferred
+            && loss.message.contains("Embedded material texture assets")
+    }));
 }
 
 #[test]
@@ -5442,15 +7802,93 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let surface = result.ir.model.procedural_surfaces[0].surface.clone();
     let expected = Point2::new(12.0, 7.0);
-    let point =
-        cadmpeg_ir::eval::model_surface_point_by_id(&result.ir, &surface, expected.u, expected.v)
-            .unwrap();
+    let point = cadmpeg_ir::eval::model_surface_point_by_id(
+        &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+        &surface,
+        expected.u,
+        expected.v,
+    )
+    .unwrap();
 
     let actual =
         crate::decode::offset_surface_parameters(&result.ir, &surface, point, None).unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-8);
     assert!((actual.v - expected.v).abs() < 1.0e-8);
+
+    let mut translated = result.ir.clone();
+    for carrier in &mut translated.model.surfaces {
+        if let SurfaceGeometry::Plane { origin, .. } = &mut carrier.geometry {
+            origin.x += 1.0e12;
+            origin.y += 1.0e12;
+            origin.z += 1.0e12;
+        }
+    }
+    let translated_point = cadmpeg_ir::eval::model_surface_point_by_id(
+        &cadmpeg_ir::index::ModelIndex::new(&translated),
+        &surface,
+        expected.u,
+        expected.v,
+    )
+    .unwrap();
+    let translated_parameters = crate::decode::offset_surface_parameters_with_tolerance(
+        &translated,
+        &surface,
+        translated_point,
+        Some(Point2::new(expected.u + 0.1, expected.v - 0.1)),
+        Some(1.0e-3),
+    )
+    .expect("exact offset tangents are independent of model-space magnitude");
+    assert!((translated_parameters.u - expected.u).abs() < 1.0e-3);
+    assert!((translated_parameters.v - expected.v).abs() < 1.0e-3);
+
+    let nested_surface = cadmpeg_ir::ids::SurfaceId("synthetic:nested-offset".into());
+    let nested_construction =
+        cadmpeg_ir::ids::ProceduralSurfaceId("synthetic:nested-offset-construction".into());
+    translated
+        .model
+        .surfaces
+        .push(cadmpeg_ir::geometry::Surface {
+            id: nested_surface.clone(),
+            geometry: SurfaceGeometry::Procedural {
+                construction: nested_construction.clone(),
+            },
+            source_object: None,
+        });
+    translated
+        .model
+        .procedural_surfaces
+        .push(cadmpeg_ir::geometry::ProceduralSurface {
+            id: nested_construction,
+            surface: nested_surface.clone(),
+            definition: ProceduralSurfaceDefinition::Offset {
+                support: surface,
+                distance: -0.75,
+                u_sense: None,
+                v_sense: None,
+                extension_flags: Vec::new(),
+                revision_form: None,
+            },
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        });
+    let nested_point = cadmpeg_ir::eval::model_surface_point_by_id(
+        &cadmpeg_ir::index::ModelIndex::new(&translated),
+        &nested_surface,
+        expected.u,
+        expected.v,
+    )
+    .unwrap();
+    let nested_parameters = crate::decode::offset_surface_parameters_with_tolerance(
+        &translated,
+        &nested_surface,
+        nested_point,
+        Some(Point2::new(expected.u - 0.1, expected.v + 0.1)),
+        Some(1.0e-3),
+    )
+    .expect("nested offsets share the exact base-surface normal derivative");
+    assert!((nested_parameters.u - expected.u).abs() < 1.0e-3);
+    assert!((nested_parameters.v - expected.v).abs() < 1.0e-3);
 }
 
 #[test]
@@ -5460,8 +7898,13 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let surface = result.ir.model.procedural_surfaces[0].surface.clone();
     let seed = Point2::new(12.0, 7.0);
-    let mut point =
-        cadmpeg_ir::eval::model_surface_point_by_id(&result.ir, &surface, seed.u, seed.v).unwrap();
+    let mut point = cadmpeg_ir::eval::model_surface_point_by_id(
+        &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+        &surface,
+        seed.u,
+        seed.v,
+    )
+    .unwrap();
     point.x += 0.01;
 
     let actual = crate::decode::offset_surface_parameters_with_tolerance(
@@ -5636,6 +8079,53 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
 }
 
 #[test]
+fn intersection_rejection_census_requires_resolved_supports() {
+    let mut stream = charted_intersection_curve_topology_partition_stream();
+    let intersection = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("intersection record");
+    put_ref(&mut stream, intersection + 19, 998);
+    put_ref(&mut stream, intersection + 21, 999);
+    put_ref(&mut stream, intersection + 23, 997);
+
+    let scan = crate::intersection::scan(&stream);
+    assert!(scan.constructions.is_empty());
+    assert!(scan.curves.is_empty());
+    assert_eq!(
+        scan.rejected,
+        crate::intersection::RejectionCounts::default()
+    );
+}
+
+#[test]
+fn uncharted_intersection_requires_exact_topology_bounds() {
+    let mut stream = two_support_charted_intersection_curve_stream();
+    let intersection = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("intersection record");
+    for offset in [23, 25, 27] {
+        put_ref(&mut stream, intersection + offset, 1);
+    }
+
+    let scan = crate::intersection::scan(&stream);
+    let [uncharted] = scan.uncharted.as_slice() else {
+        panic!("one bounded uncharted intersection");
+    };
+    assert!(uncharted.supports.iter().all(|support| *support > 1));
+    assert_ne!(uncharted.supports[0], uncharted.supports[1]);
+    assert!(uncharted.tolerance.is_finite() && uncharted.tolerance > 0.0);
+
+    let edge = stream
+        .windows(4)
+        .position(|window| window == [0, 16, 0, 8])
+        .expect("edge record");
+    stream[edge + 10..edge + 18].copy_from_slice(&f64::NAN.to_be_bytes());
+    assert!(crate::intersection::scan(&stream).uncharted.is_empty());
+}
+
+#[test]
 fn intersection_chart_accepts_one_matching_parameter_complement() {
     let ext11 = ext11_charted_intersection_curve_stream();
     let ext11_start = ext11
@@ -5751,6 +8241,10 @@ fn decode_resolves_forward_blend_support_reference() {
 #[test]
 fn decode_reports_status_framed_deltas_records_and_tombstones() {
     let stream = status_framed_deltas_stream();
+    assert_eq!(
+        crate::deltas::walk(&stream).bytes_decoded,
+        stream.len() - DELTAS_PREAMBLE.len()
+    );
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let attributes = &result.ir.source.expect("source metadata").attributes;
@@ -5767,7 +8261,7 @@ fn decode_reports_status_framed_deltas_records_and_tombstones() {
     );
     assert_eq!(
         attributes.get("deltas.0.grammar").map(String::as_str),
-        Some("status_byte_framed_topology")
+        Some("typed_status_framed_records")
     );
 }
 
@@ -5783,6 +8277,559 @@ fn decode_accepts_exact_loop_and_rejects_incomplete_fin_deltas() {
         attributes.get("deltas.0.full.LOOP").map(String::as_str),
         Some("1")
     );
+}
+
+#[test]
+fn deltas_walks_complete_status_prefixed_entity_51_records() {
+    let mut stream = vec![0, 81];
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&10u16.to_be_bytes());
+    stream.extend_from_slice(&2u32.to_be_bytes());
+    stream.extend_from_slice(&0x21u16.to_be_bytes());
+    for (status, reference) in [1, 1, 0, 1, 0, 1].into_iter().zip(3..=8u16) {
+        stream.push(status);
+        stream.extend_from_slice(&reference.to_be_bytes());
+    }
+    stream.push(0);
+    let entity_len = stream.len();
+    stream.extend(status_framed_deltas_point_stream());
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.records.len(), 2);
+    assert_eq!(census.records[0].kind, 81);
+    assert_eq!(census.records[0].xmt, 10);
+    assert_eq!(census.records[0].node_id, None);
+    assert_eq!(census.records[0].references, [3, 4, 5, 6, 7, 8]);
+    assert_eq!(census.records[0].end, entity_len);
+    assert_eq!(census.full_counts["ENTITY_51"], 1);
+    assert_eq!(census.bytes_decoded, stream.len());
+    let residual = crate::deltas::semantic_residual(&stream);
+    let retained = crate::parasolid::entity_51_records(&residual);
+    assert_eq!(retained.len(), 1);
+    assert_eq!(retained[0].xmt, 10);
+    assert!(residual[..stream.len()].iter().all(|byte| *byte == 0xff));
+
+    stream[entity_len - 1] = 1;
+    assert_eq!(
+        crate::deltas::walk(&stream)
+            .records
+            .iter()
+            .filter(|record| record.kind == 81)
+            .count(),
+        1
+    );
+    stream[entity_len - 1] = 2;
+    assert!(crate::deltas::walk(&stream)
+        .records
+        .iter()
+        .all(|record| record.kind != 81));
+}
+
+#[test]
+fn deltas_walks_attribute_records_that_share_a_terminal_zero() {
+    let mut stream = vec![0, 84];
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&9u16.to_be_bytes());
+    stream.extend_from_slice(b"a\0");
+    stream.push(81);
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&10u16.to_be_bytes());
+    stream.extend_from_slice(&2u32.to_be_bytes());
+    stream.extend_from_slice(&0x21u16.to_be_bytes());
+    for (status, reference) in [1, 1, 0, 1, 0, 1].into_iter().zip(3..=8u16) {
+        stream.push(status);
+        stream.extend_from_slice(&reference.to_be_bytes());
+    }
+    stream.push(0);
+    stream.push(82);
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&11u16.to_be_bytes());
+    stream.extend_from_slice(&12u32.to_be_bytes());
+
+    let census = crate::deltas::walk(&stream);
+
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(|record| record.kind)
+            .collect::<Vec<_>>(),
+        [84, 81, 82]
+    );
+    assert_eq!(census.records[1].offset, census.records[0].end - 1);
+    assert_eq!(census.records[2].offset, census.records[1].end - 1);
+    assert_eq!(census.bytes_decoded, stream.len());
+    assert!(crate::deltas::semantic_residual(&stream)[..stream.len()]
+        .iter()
+        .all(|byte| *byte == 0xff));
+}
+
+#[test]
+fn deltas_walks_fixed_record_that_shares_a_terminal_zero() {
+    let mut stream = vec![0, 84];
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&9u16.to_be_bytes());
+    stream.extend_from_slice(b"a\0");
+    let point = status_framed_deltas_point_stream();
+    stream.extend_from_slice(&point[1..]);
+
+    let census = crate::deltas::walk(&stream);
+
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(|record| record.kind)
+            .collect::<Vec<_>>(),
+        [84, 29]
+    );
+    assert_eq!(census.records[1].offset, census.records[0].end - 1);
+    assert_eq!(census.bytes_decoded, stream.len());
+}
+
+#[test]
+fn deltas_fixed_records_share_a_terminal_zero_with_their_successor() {
+    let mut stream = Vec::new();
+    stream.extend_from_slice(&13u16.to_be_bytes());
+    stream.extend_from_slice(&47u16.to_be_bytes());
+    stream.extend_from_slice(&61u32.to_be_bytes());
+    for (reference, status) in [1u16, 2, 1, 3, 1, 1, 4, 3]
+        .into_iter()
+        .zip([1, 1, 1, 1, 1, 1, 1, 0])
+    {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(status);
+    }
+    let intersection = status_framed_deltas_intersection_stream();
+    stream.extend_from_slice(&intersection[1..]);
+
+    let census = crate::deltas::walk(&stream);
+
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(|record| record.kind)
+            .collect::<Vec<_>>(),
+        [13, 38]
+    );
+    assert_eq!(census.records[1].offset, census.records[0].end - 1);
+    assert_eq!(census.bytes_decoded, stream.len());
+}
+
+#[test]
+fn deltas_type_101_record_takes_precedence_over_an_overlapping_fixed_candidate() {
+    let mut type_101 = vec![0, 101];
+    type_101.extend_from_slice(&2u16.to_be_bytes());
+    for reference in 3u16..15 {
+        type_101.extend_from_slice(&reference.to_be_bytes());
+        type_101.push(1);
+    }
+    type_101.push(1);
+    type_101.extend_from_slice(&[0; 12]);
+    for reference in 15u16..18 {
+        type_101.extend_from_slice(&reference.to_be_bytes());
+        type_101.push(1);
+    }
+
+    let mut stream = 13u16.to_be_bytes().to_vec();
+    stream.extend(encoded_xmt(256));
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    for reference in [1u32, 2, 1, 3, 1, 1, 4] {
+        stream.extend(encoded_xmt(reference));
+        stream.push(1);
+    }
+    stream.extend_from_slice(&type_101[..3]);
+    stream.extend_from_slice(&type_101[3..]);
+
+    let census = crate::deltas::walk(&stream);
+
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(|record| record.kind)
+            .collect::<Vec<_>>(),
+        [101]
+    );
+    assert_eq!(census.records[0].offset, 29);
+    assert_eq!(census.bytes_decoded, type_101.len());
+}
+
+#[test]
+fn deltas_does_not_share_a_consecutive_reference_byte() {
+    let mut stream = vec![0, 81];
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&10u16.to_be_bytes());
+    stream.extend_from_slice(&2u32.to_be_bytes());
+    stream.extend_from_slice(&0x21u16.to_be_bytes());
+    for reference in [3u16, 4, 5, 6, 7, 256] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+    }
+    let point = status_framed_deltas_point_stream();
+    stream.extend_from_slice(&point[1..]);
+
+    let census = crate::deltas::walk(&stream);
+
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(|record| record.kind)
+            .collect::<Vec<_>>(),
+        [81]
+    );
+}
+
+#[test]
+fn deltas_walks_complete_entity_value_records() {
+    let mut stream = vec![0, 82];
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&20u16.to_be_bytes());
+    stream.extend_from_slice(&u32::MAX.to_be_bytes());
+    stream.extend_from_slice(&[0, 83, 0xff]);
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&21u16.to_be_bytes());
+    stream.extend_from_slice(&0.25f64.to_be_bytes());
+    stream.extend_from_slice(&[0, 84]);
+    stream.extend_from_slice(&3u32.to_be_bytes());
+    stream.extend_from_slice(&22u16.to_be_bytes());
+    stream.extend_from_slice(b"abc\0");
+    let decoded_len = stream.len();
+    stream.extend_from_slice(&[0xfe, 0xdc, 0xba]);
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(|record| record.kind)
+            .collect::<Vec<_>>(),
+        [82, 83, 84]
+    );
+    assert_eq!(census.full_counts["ENTITY_52"], 1);
+    assert_eq!(census.full_counts["ENTITY_53"], 1);
+    assert_eq!(census.full_counts["ENTITY_54"], 1);
+    assert_eq!(census.bytes_decoded, decoded_len);
+
+    let residual = crate::deltas::semantic_residual(&stream);
+    assert!(residual[..decoded_len].iter().all(|byte| *byte == 0xff));
+    assert_eq!(&residual[decoded_len..stream.len()], &[0xfe, 0xdc, 0xba]);
+    assert_eq!(
+        crate::parasolid::entity_52_integer_records(&residual)[0].values,
+        [u32::MAX]
+    );
+    assert_eq!(
+        crate::parasolid::entity_53_double_records(&residual)[0].values,
+        [0.25]
+    );
+    assert_eq!(
+        crate::parasolid::entity_54_string_records(&residual)[0].value,
+        "abc"
+    );
+}
+
+#[test]
+fn deltas_walks_complete_type_91_records() {
+    fn record(escape: bool, xmt: u32, flag: u32) -> Vec<u8> {
+        let mut bytes = vec![0, 91];
+        if escape {
+            bytes.push(0xff);
+        }
+        bytes.extend(encoded_xmt(xmt));
+        bytes.extend_from_slice(&flag.to_be_bytes());
+        for (reference, status) in [(3u16, 1u8), (4, 1), (5, 0), (6, 1), (7, 0), (8, 0)] {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+            bytes.push(status);
+        }
+        bytes
+    }
+
+    let direct = record(false, 10, 0);
+    let escaped = record(true, 11, 1);
+    let zero_flag_escaped = record(true, 12, 0);
+    let escaped_with_null_tail = vec![
+        0, 91, 0xff, 1, 89, 0, 0, 0, 0, 0, 202, 1, 1, 88, 1, 1, 90, 1, 1, 41, 1, 0, 1, 1, 0, 1, 1,
+    ];
+    let mut stream = direct.clone();
+    stream.extend_from_slice(&escaped);
+    stream.extend_from_slice(&zero_flag_escaped);
+    stream.extend_from_slice(&escaped_with_null_tail);
+    let record_len = stream.len();
+    stream.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.records.len(), 4);
+    assert_eq!(census.records[0].kind, 91);
+    assert_eq!(census.records[0].xmt, 10);
+    assert_eq!(census.records[0].node_id, None);
+    assert_eq!(census.records[0].references, [3, 4, 5, 6, 7, 8]);
+    assert_eq!(census.records[0].canonical_bytes, direct);
+    assert_eq!(census.records[1].xmt, 11);
+    assert_eq!(census.records[1].canonical_bytes, escaped);
+    assert_eq!(census.records[2].canonical_bytes, zero_flag_escaped);
+    assert_eq!(census.records[3].canonical_bytes, escaped_with_null_tail);
+    assert_eq!(census.full_counts["TYPE_91"], 4);
+    assert_eq!(census.bytes_decoded, record_len);
+
+    let residual = crate::deltas::semantic_residual(&stream);
+    assert!(residual[..record_len].iter().all(|byte| *byte == 0xff));
+    assert_eq!(&residual[record_len..stream.len()], &[0xfe, 0xdc]);
+    assert!(residual.ends_with(&stream[..record_len]));
+
+    let mut invalid = direct;
+    invalid[4..8].copy_from_slice(&2u32.to_be_bytes());
+    assert!(crate::deltas::walk(&invalid).records.is_empty());
+    invalid[4..8].copy_from_slice(&0u32.to_be_bytes());
+    invalid[10] = 2;
+    assert!(crate::deltas::walk(&invalid).records.is_empty());
+}
+
+#[test]
+fn deltas_walks_complete_group_records() {
+    let mut direct = vec![0, 90, 0xff, 0xfe, 0, 1];
+    direct.extend_from_slice(&7u32.to_be_bytes());
+    for reference in [3u16, 4, 5, 6] {
+        direct.extend_from_slice(&reference.to_be_bytes());
+        direct.push(1);
+    }
+    direct.push(4);
+    direct.extend_from_slice(&8u16.to_be_bytes());
+    direct.push(0);
+    let direct_len = direct.len();
+    direct.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&direct);
+    assert_eq!(census.records.len(), 1);
+    assert_eq!(census.records[0].kind, 90);
+    assert_eq!(census.records[0].xmt, 32_769);
+    assert_eq!(census.records[0].node_id, Some(7));
+    assert_eq!(census.records[0].references, [3, 4, 5, 6, 8]);
+    assert_eq!(census.records[0].canonical_bytes, direct[..direct_len]);
+    assert_eq!(census.full_counts["GROUP"], 1);
+    assert_eq!(census.bytes_decoded, direct_len);
+
+    let residual = crate::deltas::semantic_residual(&direct);
+    assert!(residual[..direct_len].iter().all(|byte| *byte == 0xff));
+    assert_eq!(&residual[direct_len..], &[0xfe, 0xdc]);
+
+    let mut escaped = vec![0, 90, 0xff];
+    escaped.extend_from_slice(&10u16.to_be_bytes());
+    escaped.extend_from_slice(&11u32.to_be_bytes());
+    for reference in [3u16, 4, 5, 6] {
+        escaped.extend_from_slice(&reference.to_be_bytes());
+        escaped.push(1);
+    }
+    escaped.push(9);
+    escaped.extend_from_slice(&8u16.to_be_bytes());
+    escaped.push(1);
+    assert_eq!(crate::deltas::walk(&escaped).records[0].xmt, 10);
+
+    escaped[11] = 0;
+    assert!(crate::deltas::walk(&escaped).records.is_empty());
+    escaped[11] = 1;
+    escaped[21] = 3;
+    assert!(crate::deltas::walk(&escaped).records.is_empty());
+    escaped[21] = 9;
+    escaped[24] = 2;
+    assert!(crate::deltas::walk(&escaped).records.is_empty());
+}
+
+#[test]
+fn deltas_walks_complete_attdef_lists() {
+    let mut direct = vec![0, 74];
+    direct.extend_from_slice(&3u32.to_be_bytes());
+    direct.extend_from_slice(&10u16.to_be_bytes());
+    direct.extend_from_slice(&2u32.to_be_bytes());
+    direct.extend_from_slice(&0u32.to_be_bytes());
+    for reference in [1u16, 20, 21, 1] {
+        direct.extend_from_slice(&reference.to_be_bytes());
+        direct.push(1);
+    }
+    let direct_len = direct.len();
+    direct.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&direct);
+    assert_eq!(census.records.len(), 1);
+    assert_eq!(census.records[0].kind, 74);
+    assert_eq!(census.records[0].xmt, 10);
+    assert_eq!(census.records[0].node_id, None);
+    assert_eq!(census.records[0].references, [1, 20, 21, 1]);
+    assert_eq!(census.records[0].canonical_bytes, direct[..direct_len]);
+    assert_eq!(census.full_counts["ATTDEF_LIST"], 1);
+    assert_eq!(census.bytes_decoded, direct_len);
+
+    let residual = crate::deltas::semantic_residual(&direct);
+    assert!(residual[..direct_len].iter().all(|byte| *byte == 0xff));
+    assert_eq!(&residual[direct_len..], &[0xfe, 0xdc]);
+
+    let mut escaped = vec![0, 74, 0xff];
+    escaped.extend_from_slice(&2u32.to_be_bytes());
+    escaped.extend_from_slice(&11u16.to_be_bytes());
+    escaped.extend_from_slice(&1u32.to_be_bytes());
+    escaped.extend_from_slice(&0u32.to_be_bytes());
+    for reference in [1u16, 30, 1] {
+        escaped.extend_from_slice(&reference.to_be_bytes());
+        escaped.push(1);
+    }
+    assert_eq!(crate::deltas::walk(&escaped).records[0].xmt, 11);
+
+    escaped[9..13].copy_from_slice(&3u32.to_be_bytes());
+    assert!(crate::deltas::walk(&escaped).records.is_empty());
+    escaped[9..13].copy_from_slice(&1u32.to_be_bytes());
+    escaped[20..22].copy_from_slice(&1u16.to_be_bytes());
+    assert!(crate::deltas::walk(&escaped).records.is_empty());
+}
+
+#[test]
+fn deltas_walks_complete_type_101_records() {
+    let mut direct = vec![0, 101];
+    direct.extend_from_slice(&2u16.to_be_bytes());
+    for reference in 3u16..15 {
+        direct.extend_from_slice(&reference.to_be_bytes());
+        direct.push(1);
+    }
+    direct.push(1);
+    direct.extend_from_slice(&[0; 12]);
+    for reference in 15u16..18 {
+        direct.extend_from_slice(&reference.to_be_bytes());
+        direct.push(1);
+    }
+    let direct_len = direct.len();
+    direct.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&direct);
+    assert_eq!(census.records.len(), 1);
+    assert_eq!(census.records[0].kind, 101);
+    assert_eq!(census.records[0].xmt, 2);
+    assert_eq!(census.records[0].node_id, None);
+    assert_eq!(census.records[0].references, (3u32..18).collect::<Vec<_>>());
+    assert_eq!(census.records[0].canonical_bytes, direct[..direct_len]);
+    assert_eq!(census.full_counts["TYPE_101"], 1);
+    assert_eq!(census.bytes_decoded, direct_len);
+
+    let residual = crate::deltas::semantic_residual(&direct);
+    assert!(residual[..direct_len].iter().all(|byte| *byte == 0xff));
+    assert_eq!(&residual[direct_len..], &[0xfe, 0xdc]);
+
+    let mut escaped = vec![0, 101, 0xff];
+    escaped.extend_from_slice(&2u16.to_be_bytes());
+    for reference in 3u16..15 {
+        escaped.extend_from_slice(&reference.to_be_bytes());
+        escaped.push(1);
+    }
+    escaped.push(1);
+    escaped.extend_from_slice(&[0; 12]);
+    for reference in 15u16..18 {
+        escaped.extend_from_slice(&reference.to_be_bytes());
+        escaped.push(1);
+    }
+    assert_eq!(crate::deltas::walk(&escaped).records[0].xmt, 2);
+
+    escaped[41] = 0;
+    assert!(crate::deltas::walk(&escaped).records.is_empty());
+    escaped[41] = 1;
+    escaped[42] = 1;
+    assert!(crate::deltas::walk(&escaped).records.is_empty());
+}
+
+#[test]
+fn deltas_walks_auxiliary_family_tombstones() {
+    let mut stream = Vec::new();
+    for kind in [41u16, 45, 125, 136, 141, 204] {
+        stream.extend_from_slice(&kind.to_be_bytes());
+        stream.extend_from_slice(&(-2i16).to_be_bytes());
+        stream.extend_from_slice(&1u16.to_be_bytes());
+    }
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.records.len(), 0);
+    assert_eq!(census.tombstones.len(), 6);
+    assert!(census
+        .tombstones
+        .iter()
+        .all(|tombstone| tombstone.xmt == 32_769));
+    for family in [
+        "TERM_USE",
+        "TYPE_45",
+        "B_SURFACE_DATA",
+        "B_CURVE_DESCRIPTOR",
+        "TYPE_141",
+        "SUPPORT_UV",
+    ] {
+        assert_eq!(census.tombstone_counts[family], 1);
+    }
+    assert_eq!(census.bytes_decoded, stream.len());
+    assert!(crate::deltas::semantic_residual(&stream)
+        .iter()
+        .all(|byte| *byte == 0xff));
+}
+
+#[test]
+fn deltas_term_use_numeric_tails_follow_the_declared_endpoint_count() {
+    fn term_use(count: u32, xmt: u16, form: [u8; 2], value_count: usize) -> Vec<u8> {
+        let mut bytes = 41u16.to_be_bytes().to_vec();
+        bytes.extend_from_slice(&count.to_be_bytes());
+        bytes.extend_from_slice(&xmt.to_be_bytes());
+        bytes.extend_from_slice(&form);
+        for coordinate in [1.0f64, 2.0, 3.0] {
+            bytes.extend_from_slice(&coordinate.to_be_bytes());
+        }
+        for ordinal in 0..value_count {
+            bytes.extend_from_slice(&(ordinal as f64 + 0.25).to_be_bytes());
+        }
+        bytes
+    }
+
+    let first = term_use(1, 20, *b"L?", 8);
+    let second = term_use(2, 21, *b"TF", 19);
+    let mut stream = first.clone();
+    stream.extend_from_slice(&second);
+    let census = crate::deltas::walk(&stream);
+
+    assert_eq!(census.records.len(), 2);
+    assert_eq!(census.term_use_numeric_tails.len(), 2);
+    assert_eq!(census.term_use_numeric_tails[0].term_use_xmt, 20);
+    assert_eq!(census.term_use_numeric_tails[0].term_use_count, 1);
+    assert_eq!(census.term_use_numeric_tails[0].values.len(), 8);
+    assert_eq!(census.term_use_numeric_tails[1].term_use_xmt, 21);
+    assert_eq!(census.term_use_numeric_tails[1].term_use_count, 2);
+    assert_eq!(census.term_use_numeric_tails[1].values.len(), 19);
+    assert_eq!(census.bytes_decoded, stream.len());
+
+    let mut nonfinite = term_use(1, 22, *b"L?", 8);
+    nonfinite[34..42].copy_from_slice(&f64::NAN.to_be_bytes());
+    let census = crate::deltas::walk(&nonfinite);
+    assert_eq!(census.records.len(), 1);
+    assert!(census.term_use_numeric_tails.is_empty());
+    assert_eq!(census.bytes_decoded, 34);
+}
+
+#[test]
+fn deltas_tagged_reference_lanes_require_complete_known_kind_and_xmt_pairs() {
+    let stream = [
+        0x00, 0x4f, 0x00, 0x0a, // direct type-79 reference
+        0x00, 0x50, 0xff, 0xff, 0x00, 0x01, // extended type-80 reference
+    ];
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.tagged_reference_lanes.len(), 1);
+    assert_eq!(
+        census.tagged_reference_lanes[0].references,
+        [(79, 10), (80, 32_768)]
+    );
+    assert_eq!(census.tagged_reference_lanes[0].offset, 0);
+    assert_eq!(census.tagged_reference_lanes[0].end, stream.len());
+    assert_eq!(census.bytes_decoded, stream.len());
+
+    for invalid in [
+        &[0x00, 0x4e, 0x00, 0x0a][..],
+        &[0x00, 0x4f, 0x00, 0x01],
+        &[0x00, 0x50, 0xff, 0xff, 0x00],
+    ] {
+        assert!(crate::deltas::walk(invalid)
+            .tagged_reference_lanes
+            .is_empty());
+    }
 }
 
 #[test]
@@ -5802,7 +8849,16 @@ fn deltas_point_normalizes_to_partition_record_framing() {
 
 #[test]
 fn deltas_intersection_normalizes_before_partition_style_decode() {
-    let residual = crate::deltas::procedural_residual(&status_framed_deltas_intersection_stream());
+    let mut stream = status_framed_deltas_intersection_stream();
+    stream[10] = 0;
+    let record_len = stream.len();
+    stream.extend_from_slice(&[0xfe, 0xdc]);
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.records.len(), 1);
+    assert_eq!(census.records[0].kind, 38);
+    assert_eq!(census.bytes_decoded, record_len);
+
+    let residual = crate::deltas::semantic_residual(&stream);
     let intersections = crate::topology::composite_curves(&residual);
     assert_eq!(intersections.len(), 1);
     assert_eq!(intersections[0].xmt, 12);
@@ -5810,21 +8866,554 @@ fn deltas_intersection_normalizes_before_partition_style_decode() {
 }
 
 #[test]
+fn deltas_walks_complete_single_byte_intersection_data_records() {
+    let mut stream = vec![0x5a];
+    stream.extend_from_slice(&12u16.to_be_bytes());
+    stream.extend_from_slice(&7u32.to_be_bytes());
+    for reference in [1u16, 1, 1, 1, 1] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+    }
+    stream.push(b'+');
+    for reference in [6u16, 6, 1, 1, 1, 1] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+    }
+    let record_len = stream.len();
+    stream.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.records.len(), 1);
+    assert_eq!(census.records[0].kind, 90);
+    assert_eq!(census.records[0].xmt, 12);
+    assert_eq!(
+        census.records[0].references,
+        [1, 1, 1, 1, 1, 6, 6, 1, 1, 1, 1]
+    );
+    assert_eq!(census.records[0].canonical_bytes, stream[..record_len]);
+    assert_eq!(census.full_counts["INTERSECTION_DATA"], 1);
+    assert_eq!(census.bytes_decoded, record_len);
+    assert_eq!(
+        crate::topology::intersection_data_curves(&stream)[0].references,
+        [6, 6, 1, 1, 1, 1]
+    );
+
+    let residual = crate::deltas::semantic_residual(&stream);
+    assert!(residual[..record_len].iter().all(|byte| *byte == 0xff));
+    assert!(residual.ends_with(&stream[..record_len]));
+}
+
+#[test]
+fn deltas_rejects_denormal_topology_tolerance_payload_coincidences() {
+    fn edge(tolerance: f64) -> Vec<u8> {
+        let mut bytes = 16u16.to_be_bytes().to_vec();
+        bytes.extend(encoded_xmt(20));
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend(encoded_xmt(1));
+        bytes.push(1);
+        bytes.extend_from_slice(&tolerance.to_be_bytes());
+        for reference in [2u32, 3, 4, 5, 6, 7, 8] {
+            bytes.extend(encoded_xmt(reference));
+            bytes.push(1);
+        }
+        bytes
+    }
+
+    let valid = edge(1.0e-8);
+    let census = crate::deltas::walk(&valid);
+    assert_eq!(census.records.len(), 1);
+    assert_eq!(census.records[0].kind, 16);
+    assert_eq!(census.bytes_decoded, valid.len());
+
+    let denormal = edge(1.0e-120);
+    assert!(crate::deltas::walk(&denormal).records.is_empty());
+
+    let mut vertex = 18u16.to_be_bytes().to_vec();
+    vertex.extend(encoded_xmt(20));
+    vertex.extend_from_slice(&1u32.to_be_bytes());
+    for reference in [2u32, 3, 4, 5, 6] {
+        vertex.extend(encoded_xmt(reference));
+        vertex.push(1);
+    }
+    let tolerance_at = vertex.len();
+    vertex.extend_from_slice(&1.0e-8f64.to_be_bytes());
+    vertex.extend(encoded_xmt(7));
+    vertex.push(1);
+
+    let census = crate::deltas::walk(&vertex);
+    assert_eq!(census.records.len(), 1);
+    assert_eq!(census.records[0].kind, 18);
+
+    vertex[tolerance_at..tolerance_at + 8].copy_from_slice(&1.0e-120f64.to_be_bytes());
+    assert!(crate::deltas::walk(&vertex).records.is_empty());
+}
+
+#[test]
+fn deltas_rejects_denormal_point_payload_coincidences() {
+    let mut point = status_framed_deltas_point_stream();
+    let position = point.len() - 24;
+    for (ordinal, value) in [f64::from_bits(1), f64::from_bits(2), f64::from_bits(3)]
+        .into_iter()
+        .enumerate()
+    {
+        point[position + ordinal * 8..position + (ordinal + 1) * 8]
+            .copy_from_slice(&value.to_be_bytes());
+    }
+    assert!(crate::deltas::walk(&point)
+        .records
+        .iter()
+        .all(|record| record.kind != 29));
+
+    point[position..position + 8].copy_from_slice(&1.0e-200f64.to_be_bytes());
+    point[position + 8..].fill(0);
+    assert_eq!(crate::deltas::walk(&point).full_counts["POINT"], 1);
+}
+
+#[test]
+fn deltas_walks_complete_intersection_auxiliary_records() {
+    let source = charted_intersection_curve_topology_partition_stream();
+    let blend_source = blend_bound_charted_intersection_curve_stream();
+    let chart_pos = crate::intersection::chart_source_records(&source)[0].pos;
+    let (_, chart_end) =
+        crate::intersection::chart_source_record_at(&source, chart_pos).expect("chart");
+    let term_pos = crate::intersection::term_use_records(&source)[0].pos;
+    let (_, term_end) = crate::intersection::term_use_at(&source, term_pos).expect("term use");
+    let support_uv_pos = crate::intersection::support_uv_records(&source)[0].pos;
+    let (_, support_uv_end) =
+        crate::intersection::support_uv_record_at(&source, support_uv_pos).expect("support UV");
+    let blend_bound_pos = crate::intersection::blend_bounds(&blend_source)[0].pos;
+    let (_, blend_bound_end) =
+        crate::intersection::blend_bound_at(&blend_source, blend_bound_pos).expect("blend bound");
+
+    for (bytes, kind, family) in [
+        (&source[chart_pos..chart_end], 40, "CHART"),
+        (&source[term_pos..term_end], 41, "TERM_USE"),
+        (
+            &blend_source[blend_bound_pos..blend_bound_end],
+            59,
+            "BLEND_BOUND",
+        ),
+        (&source[support_uv_pos..support_uv_end], 204, "SUPPORT_UV"),
+    ] {
+        let mut stream = bytes.to_vec();
+        stream.extend_from_slice(&[0xfe, 0xdc]);
+        let census = crate::deltas::walk(&stream);
+        assert_eq!(census.records.len(), 1);
+        assert_eq!(census.records[0].kind, kind);
+        assert_eq!(census.records[0].canonical_bytes, bytes);
+        assert_eq!(census.full_counts[family], 1);
+        assert_eq!(census.bytes_decoded, bytes.len());
+
+        let residual = crate::deltas::semantic_residual(&stream);
+        assert!(residual[..bytes.len()].iter().all(|byte| *byte == 0xff));
+        assert!(residual.ends_with(bytes));
+    }
+}
+
+#[test]
+fn deltas_walks_status_framed_blend_bound_records() {
+    fn record(escape: bool, xmt: u32, surface: u32) -> Vec<u8> {
+        let mut bytes = 59u16.to_be_bytes().to_vec();
+        if escape {
+            bytes.push(0xff);
+        }
+        bytes.extend(encoded_xmt(xmt));
+        bytes.extend_from_slice(&17u32.to_be_bytes());
+        for (reference, status) in [(1u32, 1u8), (3, 1), (40_001, 0), (1, 1), (40_002, 0)] {
+            bytes.extend(encoded_xmt(reference));
+            bytes.push(status);
+        }
+        bytes.push(b'+');
+        bytes.extend(encoded_xmt(0));
+        bytes.extend(encoded_xmt(surface));
+        bytes.push(1);
+        bytes
+    }
+
+    let direct = record(false, 24, 40_003);
+    let escaped = record(true, 40_004, 40_005);
+    let mut stream = direct.clone();
+    stream.extend_from_slice(&escaped);
+
+    let census = crate::deltas::walk(&stream);
+
+    assert_eq!(census.full_counts["BLEND_BOUND"], 2);
+    assert_eq!(census.bytes_decoded, stream.len());
+    assert_eq!(census.records[0].canonical_bytes, direct);
+    assert_eq!(
+        census.records[0].references,
+        [1, 3, 40_001, 1, 40_002, 0, 40_003]
+    );
+    assert_eq!(census.records[1].canonical_bytes, escaped);
+    assert_eq!(
+        crate::intersection::blend_bounds(&stream)
+            .into_iter()
+            .map(|record| record.framing)
+            .collect::<Vec<_>>(),
+        [
+            crate::intersection::BlendBoundFraming::DeltasDirect,
+            crate::intersection::BlendBoundFraming::DeltasEscaped,
+        ]
+    );
+
+    let mut invalid_status = record(false, 24, 40_003);
+    *invalid_status.last_mut().expect("terminal status") = 0;
+    assert!(crate::deltas::walk(&invalid_status).records.is_empty());
+}
+
+#[test]
+fn deltas_walks_complete_nurbs_auxiliary_records() {
+    let source = bspline_partition_stream();
+    for (kind, family) in [
+        (125u16, "B_SURFACE_DATA"),
+        (126, "B_SURFACE_DESCRIPTOR"),
+        (127, "MULTIPLICITIES"),
+        (128, "KNOTS"),
+        (135, "B_CURVE_DATA"),
+        (136, "B_CURVE_DESCRIPTOR"),
+    ] {
+        let (pos, auxiliary) = (0..source.len())
+            .find_map(|pos| {
+                let auxiliary = crate::nurbs::auxiliary_record_at(&source, pos)?;
+                (auxiliary.kind == kind).then_some((pos, auxiliary))
+            })
+            .expect("complete NURBS auxiliary record");
+        let bytes = &source[pos..auxiliary.end];
+        let mut stream = bytes.to_vec();
+        stream.extend_from_slice(&[0xfe, 0xdc]);
+
+        let census = crate::deltas::walk(&stream);
+        assert_eq!(census.records.len(), 1);
+        assert_eq!(census.records[0].kind, kind);
+        assert_eq!(census.records[0].canonical_bytes, bytes);
+        assert_eq!(census.full_counts[family], 1);
+        assert_eq!(census.bytes_decoded, bytes.len());
+
+        let residual = crate::deltas::semantic_residual(&stream);
+        assert!(residual[..bytes.len()].iter().all(|byte| *byte == 0xff));
+        assert!(residual.ends_with(bytes));
+    }
+}
+
+#[test]
+fn deltas_walks_complete_status_framed_surface_descriptors() {
+    let mut descriptor = 126u16.to_be_bytes().to_vec();
+    descriptor.push(0xff);
+    descriptor.extend(encoded_xmt(98));
+    descriptor.extend_from_slice(&5u32.to_be_bytes());
+    descriptor.extend_from_slice(&3u16.to_be_bytes());
+    descriptor.extend_from_slice(&30u32.to_be_bytes());
+    descriptor.extend_from_slice(&4u32.to_be_bytes());
+    descriptor.extend_from_slice(&[6, 5]);
+    descriptor.extend_from_slice(&10u32.to_be_bytes());
+    descriptor.extend_from_slice(&2u32.to_be_bytes());
+    descriptor.extend_from_slice(&1u32.to_be_bytes());
+    descriptor.extend_from_slice(&3u16.to_be_bytes());
+    for reference in [106u32, 107, 108, 109, 110] {
+        descriptor.extend(encoded_xmt(reference));
+        descriptor.push(0);
+    }
+    let descriptor_len = descriptor.len();
+    descriptor.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&descriptor);
+    assert_eq!(census.records.len(), 1);
+    assert_eq!(census.records[0].kind, 126);
+    assert_eq!(census.records[0].xmt, 98);
+    assert_eq!(census.records[0].end, descriptor_len);
+    assert_eq!(census.full_counts["B_SURFACE_DESCRIPTOR"], 1);
+    assert_eq!(census.bytes_decoded, descriptor_len);
+
+    let mut invalid_status = descriptor[..descriptor_len].to_vec();
+    *invalid_status.last_mut().expect("final reference status") = 1;
+    assert!(crate::deltas::walk(&invalid_status).records.is_empty());
+}
+
+#[test]
+fn deltas_walks_complete_surface_data_headers() {
+    fn record(escape: bool, xmt: u32, marker: u8) -> Vec<u8> {
+        let mut bytes = 125u16.to_be_bytes().to_vec();
+        if escape {
+            bytes.push(0xff);
+        }
+        bytes.extend(encoded_xmt(xmt));
+        for value in [0.0f64, 1.0, -0.25, 0.5, 0.0, 1.0, -0.25, 0.5] {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        bytes.push(marker);
+        bytes.extend(std::iter::repeat_n(b'B', usize::from(marker) * 4));
+        bytes.extend(std::iter::repeat_n(b'?', 12 - usize::from(marker) * 4));
+        for reference in [1u32, 20, 21, 1] {
+            bytes.extend(encoded_xmt(reference));
+            bytes.push(1);
+        }
+        bytes
+    }
+
+    let direct = record(false, 20, 1);
+    let escaped = record(true, 40_000, 2);
+    let mut extended_marker_one = record(false, 21, 1);
+    extended_marker_one[73..77].fill(b'B');
+    let mut stream = direct.clone();
+    stream.extend_from_slice(&escaped);
+    stream.extend_from_slice(&extended_marker_one);
+    let decoded_len = stream.len();
+    stream.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.full_counts["B_SURFACE_DATA"], 3);
+    assert_eq!(census.bytes_decoded, decoded_len);
+    assert_eq!(census.records[0].canonical_bytes, direct);
+    assert_eq!(census.records[1].canonical_bytes, escaped);
+    assert_eq!(census.records[2].canonical_bytes, extended_marker_one);
+
+    let mut invalid_marker = record(false, 20, 2);
+    invalid_marker[68] = 3;
+    assert!(crate::deltas::walk(&invalid_marker).records.is_empty());
+
+    let mut invalid_status = record(false, 20, 1);
+    *invalid_status.last_mut().expect("final status") = 0;
+    assert!(crate::deltas::walk(&invalid_status).records.is_empty());
+}
+
+#[test]
+fn deltas_walks_complete_curve_data_headers() {
+    fn record(escape: bool, xmt: u32, mode: u8, reference: u32) -> Vec<u8> {
+        let mut bytes = 135u16.to_be_bytes().to_vec();
+        if escape {
+            bytes.push(0xff);
+        }
+        bytes.extend(encoded_xmt(xmt));
+        bytes.push(mode);
+        bytes.extend(encoded_xmt(reference));
+        bytes.push(1);
+        bytes
+    }
+
+    let direct = record(false, 20, 2, 1);
+    let escaped = record(true, 40_000, 1, 21);
+    let mut stream = direct.clone();
+    stream.extend_from_slice(&escaped);
+    let decoded_len = stream.len();
+    stream.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.full_counts["B_CURVE_DATA"], 2);
+    assert_eq!(census.bytes_decoded, decoded_len);
+    assert_eq!(census.records[0].canonical_bytes, direct);
+    assert_eq!(census.records[1].canonical_bytes, escaped);
+
+    let mut invalid_marker = record(false, 20, 2, 1);
+    invalid_marker[4] = 3;
+    assert!(crate::deltas::walk(&invalid_marker).records.is_empty());
+
+    let mut invalid_status = record(false, 20, 2, 1);
+    *invalid_status.last_mut().expect("final status") = 0;
+    assert!(crate::deltas::walk(&invalid_status).records.is_empty());
+}
+
+#[test]
+fn deltas_walks_complete_type_141_records() {
+    fn record(escape: bool, xmt: u32, references: [u32; 4], boundary_statuses: [u8; 2]) -> Vec<u8> {
+        let mut bytes = 141u16.to_be_bytes().to_vec();
+        if escape {
+            bytes.push(0xff);
+        }
+        bytes.extend(encoded_xmt(xmt));
+        for (reference, status) in
+            references
+                .into_iter()
+                .zip([boundary_statuses[0], 0, 0, boundary_statuses[1]])
+        {
+            bytes.extend(encoded_xmt(reference));
+            bytes.push(status);
+        }
+        bytes
+    }
+
+    let direct = record(false, 3158, [646, 3943, 3165, 131], [0, 1]);
+    let direct_extended = record(false, 33_000, [646, 3943, 3165, 131], [1, 0]);
+    let escaped = record(true, 40_000, [40_001, 1, 0, 40_002], [1, 1]);
+    let ambiguous_escaped = record(true, 325, [317, 44, 44, 8], [1, 1]);
+    let mut stream = direct.clone();
+    stream.extend_from_slice(&direct_extended);
+    stream.extend_from_slice(&escaped);
+    stream.extend_from_slice(&ambiguous_escaped);
+    let decoded_len = stream.len();
+    stream.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.full_counts["TYPE_141"], 4);
+    assert_eq!(census.bytes_decoded, decoded_len);
+    assert_eq!(census.records[0].canonical_bytes, direct);
+    assert_eq!(census.records[1].canonical_bytes, direct_extended);
+    assert_eq!(census.records[1].xmt, 33_000);
+    assert_eq!(census.records[2].canonical_bytes, escaped);
+    assert_eq!(census.records[2].xmt, 40_000);
+    assert_eq!(census.records[2].references, [40_001, 1, 0, 40_002]);
+    assert_eq!(census.records[3].canonical_bytes, ambiguous_escaped);
+    assert_eq!(census.records[3].xmt, 325);
+    assert_eq!(census.records[3].references, [317, 44, 44, 8]);
+
+    let residual = crate::deltas::semantic_residual(&stream);
+    assert!(residual[..decoded_len].iter().all(|byte| *byte == 0xff));
+    assert!(residual.ends_with(&[direct, direct_extended, escaped, ambiguous_escaped].concat()));
+}
+
+#[test]
+fn deltas_walks_complete_type_45_records() {
+    fn record(escape: bool, xmt: u32, values: &[f64], count_offset: usize) -> Vec<u8> {
+        let mut bytes = 45u16.to_be_bytes().to_vec();
+        if escape {
+            bytes.push(0xff);
+        }
+        bytes.extend_from_slice(
+            &u32::try_from(values.len() - count_offset)
+                .expect("test value count")
+                .to_be_bytes(),
+        );
+        bytes.extend(encoded_xmt(xmt));
+        for value in values {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        bytes
+    }
+
+    let direct = record(false, 33_000, &[1.0, -2.0, 3.0, 4.0, 5.0], 1);
+    let escaped = record(true, 40_000, &[0.0, 0.25, -0.5, 0.75, 1.0], 1);
+    let mut stream = direct.clone();
+    stream.extend_from_slice(&escaped);
+    let decoded_len = stream.len();
+    stream.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.full_counts["TYPE_45"], 2);
+    assert_eq!(census.bytes_decoded, decoded_len);
+    assert_eq!(census.records[0].canonical_bytes, direct);
+    assert_eq!(census.records[0].xmt, 33_000);
+    assert_eq!(census.records[1].canonical_bytes, escaped);
+    assert_eq!(census.records[1].xmt, 40_000);
+
+    let residual = crate::deltas::semantic_residual(&stream);
+    assert!(residual[..decoded_len].iter().all(|byte| *byte == 0xff));
+    assert!(residual.ends_with(&[direct, escaped].concat()));
+
+    let mut counted = record(false, 41_000, &[1.0, 2.0, 3.0], 0);
+    let counted_end = counted.len();
+    let mut surface_header = 125u16.to_be_bytes().to_vec();
+    surface_header.extend(encoded_xmt(42_000));
+    for value in [0.0f64, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0] {
+        surface_header.extend_from_slice(&value.to_be_bytes());
+    }
+    surface_header.extend_from_slice(&[2, b'B', b'B', b'B', b'B', b'B', b'B', b'B', b'B']);
+    surface_header.extend_from_slice(b"????");
+    for reference in [1u32, 1, 1, 1] {
+        surface_header.extend(encoded_xmt(reference));
+        surface_header.push(1);
+    }
+    counted.extend_from_slice(&surface_header);
+    let census = crate::deltas::walk(&counted);
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(|record| (record.kind, record.offset, record.end))
+            .collect::<Vec<_>>(),
+        [(45, 0, counted_end), (125, counted_end, counted.len())]
+    );
+
+    let mut counted = record(false, 41_001, &[1.0, 2.0, 3.0], 0);
+    let counted_end = counted.len();
+    let mut curve_header = 135u16.to_be_bytes().to_vec();
+    curve_header.extend(encoded_xmt(42_001));
+    curve_header.push(2);
+    curve_header.extend(encoded_xmt(1));
+    curve_header.push(1);
+    counted.extend_from_slice(&curve_header);
+    let census = crate::deltas::walk(&counted);
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(|record| (record.kind, record.offset, record.end))
+            .collect::<Vec<_>>(),
+        [(45, 0, counted_end), (135, counted_end, counted.len())]
+    );
+
+    let mut nonfinite = record(false, 12, &[1.0, 2.0, 3.0, 4.0, f64::NAN], 1);
+    nonfinite.extend_from_slice(&[0xfe, 0xdc]);
+    assert!(crate::deltas::walk(&nonfinite).records.is_empty());
+
+    let subnormal = record(false, 12, &[1.0, 2.0, f64::from_bits(1)], 0);
+    assert!(crate::deltas::walk(&subnormal).records.is_empty());
+}
+
+#[test]
+fn deltas_walks_complete_type_70_records() {
+    fn record(escape: bool, xmt: u32, count: u16, trailing_reference: u32) -> Vec<u8> {
+        let mut bytes = 70u16.to_be_bytes().to_vec();
+        if escape {
+            bytes.push(0xff);
+        }
+        bytes.extend(encoded_xmt(xmt));
+        bytes.extend_from_slice(&0u32.to_be_bytes());
+        bytes.push(4);
+        for reference in [3u32, 1, 1, 0] {
+            bytes.push(1);
+            bytes.extend(encoded_xmt(reference));
+        }
+        bytes.extend_from_slice(&count.to_be_bytes());
+        bytes.extend_from_slice(&20u32.to_be_bytes());
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        for _ in 0..2 {
+            bytes.extend(encoded_xmt(trailing_reference));
+            bytes.push(0);
+        }
+        bytes
+    }
+
+    let direct = record(false, 7, 11, 52);
+    let escaped = record(true, 40_000, 14, 40_001);
+    let mut stream = direct.clone();
+    stream.extend_from_slice(&escaped);
+
+    let census = crate::deltas::walk(&stream);
+
+    assert_eq!(census.full_counts["TYPE_70"], 2);
+    assert_eq!(census.bytes_decoded, stream.len());
+    assert_eq!(census.records[0].canonical_bytes, direct);
+    assert_eq!(census.records[0].node_id, Some(0));
+    assert_eq!(census.records[0].references, [3, 1, 1, 0, 52, 52]);
+    assert_eq!(census.records[1].canonical_bytes, escaped);
+    assert_eq!(census.records[1].xmt, 40_000);
+
+    let mut mismatched = record(false, 7, 11, 52);
+    let end = mismatched.len();
+    mismatched[end - 2] = 53;
+    assert!(crate::deltas::walk(&mismatched).records.is_empty());
+}
+
+#[test]
 fn deltas_offset_surface_normalizes_exact_record_envelope() {
     let stream = deltas_offset_surface_partition_stream();
     let record = crate::deltas::walk(&stream).records.remove(0);
-    assert_eq!(record.canonical_bytes.len(), 31);
+    assert_eq!(record.canonical_bytes.len(), 39);
     assert_eq!(
         crate::topology::offset_surfaces(&record.canonical_bytes)[0].distance,
         4.5
     );
+
+    let mut finite_state = stream.clone();
+    let state = finite_state.len() - 8;
+    put_f64(&mut finite_state, state, 4.0);
+    assert_eq!(crate::deltas::walk(&finite_state).records.len(), 1);
+    put_f64(&mut finite_state, state, f64::NAN);
+    assert!(crate::deltas::walk(&finite_state).records.is_empty());
 
     let mut invalid_status = stream.clone();
     let offset = invalid_status
         .windows(4)
         .position(|window| window == [0, 60, 0, 12])
         .expect("OFFSET_SURF record");
-    invalid_status[offset + 28] = 0;
+    invalid_status[offset + 28] = 2;
     assert!(!crate::deltas::walk(&invalid_status)
         .records
         .iter()
@@ -5878,6 +9467,75 @@ fn deltas_procedural_wrappers_normalize_complete_record_envelopes() {
         .records
         .iter()
         .any(|record| record.kind == 56));
+}
+
+#[test]
+fn deltas_fixed_record_boundary_accepts_known_auxiliary_tag() {
+    let mut stream = deltas_bspline_curve_wrapper_stream();
+    let wrapper_len = stream.len();
+    stream.extend_from_slice(&[0, 141, 0xfe]);
+
+    let census = crate::deltas::walk(&stream);
+    let wrapper = census
+        .records
+        .iter()
+        .find(|record| record.kind == 134)
+        .expect("B_CURVE wrapper");
+    assert_eq!(wrapper.end, wrapper_len);
+    assert_eq!(wrapper.canonical_bytes.len(), 23);
+}
+
+#[test]
+fn deltas_fixed_records_accept_direct_extended_and_escaped_envelopes() {
+    fn fin(escape: bool, xmt: u32) -> (Vec<u8>, Vec<u8>) {
+        let mut source = 17u16.to_be_bytes().to_vec();
+        let mut canonical = source.clone();
+        if escape {
+            source.push(0xff);
+            canonical.push(0xff);
+        }
+        let encoded_identity = encoded_xmt(xmt);
+        source.extend_from_slice(&encoded_identity);
+        canonical.extend_from_slice(&encoded_identity);
+        for reference in 20..29 {
+            let encoded_reference = encoded_xmt(reference);
+            source.extend_from_slice(&encoded_reference);
+            source.push(1);
+            canonical.extend_from_slice(&encoded_reference);
+        }
+        source.push(b'+');
+        canonical.push(b'+');
+        (source, canonical)
+    }
+
+    let (direct_extended, direct_canonical) = fin(false, 32_768);
+    let (escaped, escaped_canonical) = fin(true, 40);
+    let mut stream = direct_extended.clone();
+    stream.extend_from_slice(&escaped);
+    let mut escaped_point = vec![0, 29, 0xff, 0, 41];
+    escaped_point.extend_from_slice(&42u32.to_be_bytes());
+    for reference in 43..47 {
+        escaped_point.extend(encoded_xmt(reference));
+        escaped_point.push(1);
+    }
+    for coordinate in [1.0f64, 2.0, 3.0] {
+        escaped_point.extend_from_slice(&coordinate.to_be_bytes());
+    }
+    stream.extend_from_slice(&escaped_point);
+    let decoded_len = stream.len();
+    stream.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.full_counts["FIN"], 2);
+    assert_eq!(census.full_counts["POINT"], 1);
+    assert_eq!(census.bytes_decoded, decoded_len);
+    assert_eq!(census.records[0].xmt, 32_768);
+    assert_eq!(census.records[0].canonical_bytes, direct_canonical);
+    assert_eq!(census.records[1].xmt, 40);
+    assert_eq!(census.records[1].canonical_bytes, escaped_canonical);
+    assert_eq!(census.records[2].xmt, 41);
+    assert_eq!(census.records[2].node_id, Some(42));
+    assert_eq!(census.records[2].position, Some([1.0, 2.0, 3.0]));
 }
 
 #[test]
@@ -5938,6 +9596,71 @@ fn merged_deltas_uses_last_full_or_tombstone_event() {
     assert_eq!(crate::geometry::points(&merged)[0].position.x, 10.0);
 }
 
+fn deltas_body_revision(node_id: u32) -> Vec<u8> {
+    let mut revision = Vec::with_capacity(32);
+    revision.extend_from_slice(&12u16.to_be_bytes());
+    revision.extend_from_slice(&3u16.to_be_bytes());
+    revision.extend_from_slice(&node_id.to_be_bytes());
+    for _ in 0..8 {
+        revision.extend_from_slice(&0u16.to_be_bytes());
+        revision.push(1);
+    }
+    revision
+}
+
+#[test]
+fn final_body_revision_scopes_deltas_overlay_events() {
+    let mut partition = record(29, 40);
+    put_ref(&mut partition, 2, 11);
+    put_vec3(&mut partition, 16, [0.01, 0.02, 0.03]);
+    let known_tombstone = [0, 29, 0, 11, 0, 1];
+
+    let mut historical_delete = deltas_body_revision(1);
+    historical_delete.extend_from_slice(&known_tombstone);
+    historical_delete.extend_from_slice(&deltas_body_revision(2));
+    let merged = crate::deltas::merge_full_records(&partition, &historical_delete);
+    assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_some());
+
+    let mut current_delete = historical_delete;
+    current_delete.extend_from_slice(&known_tombstone);
+    let merged = crate::deltas::merge_full_records(&partition, &current_delete);
+    assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_none());
+}
+
+#[test]
+fn unmatched_tombstones_are_scoped_to_the_final_body_revision() {
+    let partition = topology_partition_stream();
+    let unknown_tombstone = [0, 29, 0, 99, 0, 1];
+    let mut historical_delete = deltas_body_revision(1);
+    historical_delete.extend_from_slice(&unknown_tombstone);
+    historical_delete.extend_from_slice(&deltas_body_revision(2));
+    assert_eq!(
+        crate::deltas::unmatched_terminal_tombstones(&partition, &historical_delete),
+        0
+    );
+
+    historical_delete.extend_from_slice(&unknown_tombstone);
+    assert_eq!(
+        crate::deltas::unmatched_terminal_tombstones(&partition, &historical_delete),
+        1
+    );
+}
+
+#[test]
+fn semantic_residual_masks_historical_body_revisions() {
+    let mut deltas = deltas_body_revision(1);
+    let historical_len = deltas.len();
+    deltas.extend_from_slice(&[0, 38, 0xaa, 0xbb, 0xcc]);
+    deltas.extend_from_slice(&deltas_body_revision(2));
+    deltas.extend_from_slice(&[0, 38, 0x11, 0x22, 0x33]);
+
+    let residual = crate::deltas::semantic_residual(&deltas);
+    assert!(residual[..historical_len + 5]
+        .iter()
+        .all(|byte| *byte == 0xff));
+    assert!(residual.ends_with(&[0, 38, 0x11, 0x22, 0x33]));
+}
+
 #[test]
 fn unmatched_delta_tombstones_follow_exact_last_event_identity() {
     let partition = topology_partition_stream();
@@ -5950,6 +9673,10 @@ fn unmatched_delta_tombstones_follow_exact_last_event_identity() {
     assert_eq!(
         crate::deltas::unmatched_terminal_tombstones(&partition, &unknown),
         1
+    );
+    assert_eq!(
+        crate::deltas::unmatched_terminal_tombstones_by_family(&partition, &unknown).get("POINT"),
+        Some(&1)
     );
 
     let mut full = status_framed_deltas_point_stream();
@@ -5967,6 +9694,217 @@ fn unmatched_delta_tombstones_follow_exact_last_event_identity() {
         crate::deltas::unmatched_terminal_tombstones(&partition, &delete_then_add),
         0
     );
+}
+
+#[test]
+fn deltas_tombstone_decodes_compact_and_extended_xmt_identities() {
+    let compact = [0, 29, 0, 11, 0, 1];
+    let extended = [0, 29, 0xe3, 0xbf, 0, 1];
+
+    assert_eq!(crate::deltas::walk(&compact).tombstones[0].xmt, 11);
+    assert_eq!(crate::deltas::walk(&extended).tombstones[0].xmt, 40_000);
+}
+
+#[test]
+fn deltas_body_revision_retains_prefix_identities_and_bounded_state_tail() {
+    let mut bytes = vec![0, 12, 3, 0x10];
+    bytes.extend_from_slice(&223u32.to_be_bytes());
+    bytes.extend_from_slice(&[0xe3, 0xbf, 0, 1, 1]);
+    for reference in [6u16, 1, 1, 1, 1, 1, 1] {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+        bytes.push(1);
+    }
+    bytes.extend_from_slice(&[0x40, 0x8f, 0x40, 0, 0, 0, 0, 0]);
+
+    let census = crate::deltas::walk(&bytes);
+
+    assert!(census.records.is_empty());
+    assert_eq!(census.body_revisions.len(), 1);
+    assert_eq!(census.body_revisions[0].xmt, 784);
+    assert_eq!(census.body_revisions[0].node_id, 223);
+    assert_eq!(
+        census.body_revisions[0].references,
+        [40_000, 6, 1, 1, 1, 1, 1, 1]
+    );
+    assert_eq!(census.body_revisions[0].prefix_end, 34);
+    assert_eq!(
+        &bytes[census.body_revisions[0].prefix_end..census.body_revisions[0].end],
+        [0x40, 0x8f, 0x40, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(census.body_revisions[0].end, bytes.len());
+    assert_eq!(census.bytes_decoded, bytes.len());
+}
+
+#[test]
+fn deltas_reference_state_packets_decode_compact_and_extended_references() {
+    let mut packet = vec![0, 1, 0, 1, 0, 4];
+    packet.extend_from_slice(&2u16.to_be_bytes());
+    packet.extend_from_slice(&3u16.to_be_bytes());
+    packet.extend_from_slice(&[0xe3, 0xbf, 0, 1]);
+    packet.extend_from_slice(&1u16.to_be_bytes());
+    packet.extend_from_slice(&1u16.to_be_bytes());
+    for word in [34u32, 6, 11, 22_362, 1] {
+        packet.extend_from_slice(&word.to_be_bytes());
+    }
+    packet.push(65);
+
+    let census = crate::deltas::walk(&packet);
+
+    assert_eq!(census.reference_state_packets.len(), 1);
+    assert_eq!(
+        census.reference_state_packets[0].frames,
+        [crate::deltas::ReferenceStateFrame {
+            references: [2, 3, 40_000, 1],
+            state_words: [34, 6, 11, 22_362, 1],
+            state_byte: 65,
+        }]
+    );
+    assert!(!census.reference_state_packets[0].terminal);
+    assert_eq!(census.reference_state_packets[0].offset, 0);
+    assert_eq!(census.reference_state_packets[0].end, packet.len());
+    assert_eq!(census.bytes_decoded, packet.len());
+
+    let truncated = packet[..packet.len() - 1].to_vec();
+    let null_required_reference = [&packet[..6], &[0, 1], &packet[8..]].concat();
+    let trailing_byte = [packet.as_slice(), &[0]].concat();
+    for malformed in [&truncated, &null_required_reference] {
+        assert!(crate::deltas::walk(malformed)
+            .reference_state_packets
+            .is_empty());
+    }
+    let trailing_census = crate::deltas::walk(&trailing_byte);
+    assert_eq!(trailing_census.reference_state_packets.len(), 1);
+    assert_eq!(trailing_census.reference_state_packets[0].end, packet.len());
+    assert_eq!(trailing_census.bytes_decoded, packet.len());
+
+    let mut compound = vec![0, 1, 0, 1];
+    for (references, words, state_byte) in [
+        ([7u16, 1, 8, 1], [0u32; 5], 1),
+        ([8, 7, 9, 1], [0, 0, 0, 17, 0], 2),
+    ] {
+        compound.extend_from_slice(&4u16.to_be_bytes());
+        for reference in references {
+            compound.extend_from_slice(&reference.to_be_bytes());
+        }
+        compound.extend_from_slice(&1u16.to_be_bytes());
+        for word in words {
+            compound.extend_from_slice(&word.to_be_bytes());
+        }
+        compound.push(state_byte);
+    }
+    for _ in 0..3 {
+        compound.extend_from_slice(&1u16.to_be_bytes());
+    }
+    compound.extend_from_slice(&1u32.to_be_bytes());
+
+    let compound_census = crate::deltas::walk(&compound);
+    assert_eq!(compound_census.reference_state_packets.len(), 1);
+    assert_eq!(compound_census.reference_state_packets[0].frames.len(), 2);
+    assert!(compound_census.reference_state_packets[0].terminal);
+    assert_eq!(
+        compound_census.reference_state_packets[0].end,
+        compound.len()
+    );
+    assert_eq!(compound_census.bytes_decoded, compound.len());
+}
+
+#[test]
+fn deltas_reference_marker_packets_decode_extended_references_atomically() {
+    let packet = [
+        0xe3, 0xbf, 0x00, 0x01, 0x01, // extended reference 40_000, status
+        0x00, 0x01, 0x01, // null reference, status
+        0x56, // marker
+        0x00, 0x01, 0x01, // null reference, status
+    ];
+
+    let census = crate::deltas::walk(&packet);
+
+    assert_eq!(census.reference_marker_packets.len(), 1);
+    assert_eq!(census.reference_marker_packets[0].reference, 40_000);
+    assert_eq!(census.reference_marker_packets[0].marker, 0x56);
+    assert_eq!(census.reference_marker_packets[0].offset, 0);
+    assert_eq!(census.reference_marker_packets[0].end, packet.len());
+    assert_eq!(census.bytes_decoded, packet.len());
+
+    let truncated = packet[..packet.len() - 1].to_vec();
+    let trailing_byte = [packet.as_slice(), &[0]].concat();
+    let unknown_marker = [
+        0xe3, 0xbf, 0x00, 0x01, 0x01, 0x00, 0x01, 0x01, 0x55, 0x00, 0x01, 0x01,
+    ]
+    .to_vec();
+    for malformed in [&truncated, &trailing_byte, &unknown_marker] {
+        assert!(crate::deltas::walk(malformed)
+            .reference_marker_packets
+            .is_empty());
+    }
+}
+
+#[test]
+fn deltas_region_schema_declaration_exposes_a_following_marker_packet() {
+    let mut bytes = vec![
+        0x00, 0x13, 0x09, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x49, 0x05, 0x66, 0x72, 0x61, 0x6d,
+        0x65, 0x00, 0xe6, 0x00, 0x01, 0x43, 0x41, 0x05, 0x6f, 0x77, 0x6e, 0x65, 0x72, 0x00, 0x0c,
+        0x00, 0x01, 0x5a,
+    ];
+    bytes.extend_from_slice(&[0xe3, 0xbf, 0, 1]);
+    bytes.extend_from_slice(&5u32.to_be_bytes());
+    for reference in [1u16, 3, 1, 9] {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+        bytes.push(1);
+    }
+    let declaration_end = bytes.len();
+    bytes.extend([0, 7, 1, 0, 1, 1, 0x56, 0, 1, 1]);
+
+    let census = crate::deltas::walk(&bytes);
+
+    assert_eq!(census.inline_schema_declarations.len(), 1);
+    let declaration = &census.inline_schema_declarations[0];
+    assert_eq!(
+        declaration.fields,
+        crate::deltas::InlineSchemaFields::Region {
+            xmt: 40_000,
+            state_word: 5,
+            references: [1, 3, 1, 9],
+        }
+    );
+    assert_eq!(declaration.offset, 0);
+    assert_eq!(declaration.end, declaration_end);
+    assert_eq!(census.reference_marker_packets.len(), 1);
+    assert_eq!(census.reference_marker_packets[0].offset, declaration_end);
+    assert_eq!(census.reference_marker_packets[0].reference, 7);
+    assert_eq!(census.bytes_decoded, bytes.len());
+
+    let mut truncated = bytes[..declaration_end - 1].to_vec();
+    truncated.extend([0, 7, 1, 0, 1, 1, 0x56, 0, 1, 1]);
+    assert!(crate::deltas::walk(&truncated)
+        .inline_schema_declarations
+        .is_empty());
+}
+
+#[test]
+fn deltas_body_revision_does_not_absorb_an_adjacent_tagged_reference_lane() {
+    let mut bytes = vec![0, 12, 0, 3];
+    bytes.extend_from_slice(&223u32.to_be_bytes());
+    for reference in [2u16, 3, 4, 5, 6, 7, 8, 9] {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+        bytes.push(1);
+    }
+    let lane_offset = bytes.len();
+    bytes.extend_from_slice(&29u16.to_be_bytes());
+    bytes.extend_from_slice(&10u16.to_be_bytes());
+
+    let census = crate::deltas::walk(&bytes);
+
+    assert_eq!(census.body_revisions.len(), 1);
+    assert_eq!(
+        census.body_revisions[0].prefix_end,
+        census.body_revisions[0].end
+    );
+    assert_eq!(census.body_revisions[0].end, lane_offset);
+    assert_eq!(census.tagged_reference_lanes.len(), 1);
+    assert_eq!(census.tagged_reference_lanes[0].offset, lane_offset);
+    assert_eq!(census.tagged_reference_lanes[0].references, [(29, 10)]);
+    assert_eq!(census.bytes_decoded, bytes.len());
 }
 
 #[test]
@@ -6588,11 +10526,22 @@ fn nurbs_carriers_reject_invalid_basis_cardinality() {
 }
 
 #[test]
+fn nurbs_surface_rejects_mismatched_descriptor_payload_reference() {
+    let mut stream = bspline_partition_stream();
+    let descriptor = stream
+        .windows(4)
+        .position(|window| window == [0, 126, 0, 20])
+        .expect("surface descriptor");
+    put_ref(&mut stream, descriptor + 46, 22);
+    assert!(crate::nurbs::surfaces(&stream).is_empty());
+}
+
+#[test]
 fn nurbs_carriers_reject_duplicate_support_identities() {
     fn duplicate_record(stream: &mut Vec<u8>, tag: u8, xmt_offset: usize, xmt: u16, len: usize) {
         let start = stream
             .windows(len)
-            .position(|record| {
+            .rposition(|record| {
                 record[..2] == [0, tag] && record[xmt_offset..xmt_offset + 2] == xmt.to_be_bytes()
             })
             .expect("support record");
@@ -6724,6 +10673,12 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         .find(|candidate| candidate.id == edge)
         .and_then(|edge| edge.curve.clone())
         .expect("edge curve");
+    let edge_tolerance = ir
+        .model
+        .edges
+        .iter()
+        .find(|candidate| candidate.id == edge)
+        .and_then(|edge| edge.tolerance);
     ir.model
         .procedural_curves
         .push(cadmpeg_ir::geometry::ProceduralCurve {
@@ -6773,6 +10728,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         .iter()
         .find(|pcurve| pcurve.id.0.contains("intersection-pcurve-completed"))
         .expect("validated completed support lane attaches");
+    assert_eq!(completed.fit_tolerance, edge_tolerance);
     assert!(ir.model.coedges.iter().any(|coedge| coedge
         .pcurves
         .iter()
@@ -7047,6 +11003,41 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
 }
 
 #[test]
+fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
+    let stream = two_support_ext11_charted_intersection_curve_stream(false);
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let procedural_id = result.ir.model.procedural_curves[0].id.clone();
+    let ProceduralCurveDefinition::Intersection { context, .. } =
+        &mut result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("typed intersection");
+    };
+    let Some(PcurveGeometry::Nurbs { control_points, .. }) = context.sides[0].pcurve.as_mut()
+    else {
+        panic!("NURBS support lane");
+    };
+    for point in control_points {
+        point.u += 100.0;
+    }
+    let pending = vec![(
+        procedural_id,
+        vec![
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Point3::new(10.0, 0.0, 0.0),
+        ],
+        vec![0.0, 0.01],
+        0.01,
+        [None, None],
+    )];
+
+    crate::decode::invalidate_inconsistent_support_uv(&mut result.ir, &pending);
+    crate::decode::complete_support_uv(&mut result.ir, &pending);
+
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn equivalent_offset_supports_share_a_complete_parameter_lane() {
     use cadmpeg_ir::geometry::{ProceduralCurve, ProceduralSurface, Surface};
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
@@ -7221,14 +11212,14 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     assert_eq!(lanes[0].len(), chart.len());
     for (ordinal, expected_z) in [0.0, 2.0, 5.0].into_iter().enumerate() {
         let first_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &ir,
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
             &first,
             lanes[0][ordinal].u,
             lanes[0][ordinal].v,
         )
         .unwrap();
         let second_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &ir,
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
             &second,
             lanes[1][ordinal].u,
             lanes[1][ordinal].v,
@@ -7290,14 +11281,14 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     .unwrap();
     for (cylinder_uv, plane_uv) in circular_lanes[0].iter().zip(&circular_lanes[1]) {
         let cylinder_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &ir,
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
             &cylinder,
             cylinder_uv.u,
             cylinder_uv.v,
         )
         .unwrap();
         let plane_point = cadmpeg_ir::eval::model_surface_point_by_id(
-            &ir,
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
             &section_plane,
             plane_uv.u,
             plane_uv.v,
@@ -7403,6 +11394,78 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
 }
 
 #[test]
+fn surface_intersection_jacobian_is_stable_at_large_model_coordinates() {
+    use cadmpeg_ir::geometry::Surface;
+    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::math::Point3;
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let horizontal = SurfaceId("synthetic:large-horizontal-plane".into());
+    let vertical = SurfaceId("synthetic:large-vertical-plane".into());
+    let origin = Point3::new(1.0e16, 1.0e16, 0.0);
+    ir.model.surfaces.extend([
+        Surface {
+            id: horizontal.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin,
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: vertical.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin,
+                normal: Vector3::new(0.0, 1.0, 0.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+    ]);
+    let chart =
+        [0.0, 4.0, 8.0].map(|distance| Point3::new(origin.x + distance, origin.y, origin.z));
+
+    let lanes = crate::decode::continue_surface_intersection_parameters(
+        &ir,
+        [&horizontal, &vertical],
+        &chart,
+        0.1,
+    )
+    .expect("exact plane partials keep the continuation Jacobian full rank");
+
+    for (ordinal, expected) in [0.0, 4.0, 8.0].into_iter().enumerate() {
+        assert_eq!(lanes[0][ordinal], Point2::new(expected, 0.0));
+        assert_eq!(lanes[1][ordinal], Point2::new(expected, 0.0));
+    }
+}
+
+#[test]
+fn damped_intersection_correction_reduces_a_rank_deficient_system() {
+    let matrix = [
+        [1.0, 0.0, -1.0, 0.0],
+        [0.0, 1.0, 0.0, -1.0],
+        [0.0, 0.0, 0.0, 0.0],
+        [1.0, 0.0, 1.0, 0.0],
+    ];
+    let rhs = [2.0, -4.0, 0.0, 6.0];
+
+    let step = crate::decode::solve_damped_least_squares_4x4(matrix, rhs).unwrap();
+    let residual = std::array::from_fn::<_, 4, _>(|row| {
+        (0..4)
+            .map(|column| matrix[row][column] * step[column])
+            .sum::<f64>()
+            - rhs[row]
+    });
+
+    assert!(residual.iter().all(|value| value.abs() < 1.0e-8));
+    assert!(step.iter().all(|value| value.is_finite()));
+    for (actual, expected) in step.into_iter().zip([4.0, -2.0, 2.0, 2.0]) {
+        assert!((actual - expected).abs() < 1.0e-8);
+    }
+}
+
+#[test]
 fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
     use cadmpeg_ir::geometry::{ProceduralSurface, Surface};
     use cadmpeg_ir::ids::{ProceduralSurfaceId, SurfaceId};
@@ -7481,6 +11544,37 @@ fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
 }
 
 #[test]
+fn nurbs_parameter_solver_preserves_close_equal_branches() {
+    let mut control_points = Vec::new();
+    for (x, z) in [(-1.0, 0.0), (0.0, 0.0), (1.0, 1.0), (0.0, 0.0), (-1.0, 2.0)] {
+        control_points.extend([
+            cadmpeg_ir::math::Point3::new(x, 0.0, z),
+            cadmpeg_ir::math::Point3::new(x, 10.0, z),
+        ]);
+    }
+    let surface = cadmpeg_ir::geometry::NurbsSurface {
+        u_degree: 1,
+        v_degree: 1,
+        u_knots: vec![0.0, 0.0, 0.4999, 0.5, 0.5001, 1.0, 1.0],
+        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+        u_count: 5,
+        v_count: 2,
+        control_points,
+        weights: Some(vec![1.0, 1.2, 1.0, 1.2, 1.0, 1.2, 1.0, 1.2, 1.0, 1.2]),
+        u_periodic: false,
+        v_periodic: false,
+    };
+    let expected = Point2::new(0.5001, 0.3);
+    let point = cadmpeg_ir::eval::nurbs_surface_point(&surface, expected.u, expected.v).unwrap();
+
+    let actual =
+        crate::decode::nurbs_parameters(&surface, point, Some(Point2::new(0.50011, 0.3))).unwrap();
+
+    assert!((actual.u - expected.u).abs() < 1.0e-10);
+    assert!((actual.v - expected.v).abs() < 1.0e-10);
+}
+
+#[test]
 fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
     use cadmpeg_ir::geometry::{Curve, NurbsCurve};
     use cadmpeg_ir::ids::CurveId;
@@ -7528,8 +11622,10 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         periodic: false,
     };
 
-    let first = crate::decode::closest_pcurve_parameter(&pcurve, Point2::new(0.5, 4.5)).unwrap();
-    let second = crate::decode::closest_pcurve_parameter(&pcurve, Point2::new(5.0, 4.5)).unwrap();
+    let first =
+        crate::decode::closest_pcurve_parameters(&pcurve, Point2::new(0.5, 4.5), None).unwrap()[0];
+    let second =
+        crate::decode::closest_pcurve_parameters(&pcurve, Point2::new(5.0, 4.5), None).unwrap()[0];
 
     assert!((first - 3.5).abs() < 1.0e-12);
     assert!((second - 8.0).abs() < 1.0e-12);
@@ -7542,7 +11638,8 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         periodic: false,
     };
     let rational_parameter =
-        crate::decode::closest_pcurve_parameter(&rational, Point2::new(0.5, 0.0)).unwrap();
+        crate::decode::closest_pcurve_parameters(&rational, Point2::new(0.5, 0.0), None).unwrap()
+            [0];
     assert!((rational_parameter - 1.0 / 3.0).abs() < 1.0e-10);
 
     let quadratic = PcurveGeometry::Nurbs {
@@ -7557,8 +11654,93 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         periodic: false,
     };
     let quadratic_parameter =
-        crate::decode::closest_pcurve_parameter(&quadratic, Point2::new(1.0, 0.5)).unwrap();
+        crate::decode::closest_pcurve_parameters(&quadratic, Point2::new(1.0, 0.5), None).unwrap()
+            [0];
     assert!((quadratic_parameter - 0.5).abs() < 1.0e-10);
+
+    let folded = PcurveGeometry::Nurbs {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
+        control_points: vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(0.0, 0.0),
+        ],
+        weights: None,
+        periodic: false,
+    };
+    let first_fold =
+        crate::decode::closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1))
+            .unwrap()[0];
+    let second_fold =
+        crate::decode::closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(1.9))
+            .unwrap()[0];
+    assert_eq!(first_fold, 0.0);
+    assert_eq!(second_fold, 2.0);
+    assert_eq!(
+        crate::decode::closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1))
+            .unwrap(),
+        [0.0, 2.0]
+    );
+    assert_eq!(
+        crate::decode::closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(1.9))
+            .unwrap(),
+        [2.0, 0.0]
+    );
+
+    let mut rational_folded = folded.clone();
+    let PcurveGeometry::Nurbs { weights, .. } = &mut rational_folded else {
+        unreachable!("folded test pcurve is NURBS");
+    };
+    *weights = Some(vec![1.0; 3]);
+    assert_eq!(
+        crate::decode::closest_pcurve_parameters(
+            &rational_folded,
+            Point2::new(0.0, 0.0),
+            Some(0.1),
+        )
+        .unwrap(),
+        [0.0, 2.0]
+    );
+    assert_eq!(
+        crate::decode::closest_pcurve_parameters(
+            &rational_folded,
+            Point2::new(0.0, 0.0),
+            Some(1.9),
+        )
+        .unwrap(),
+        [2.0, 0.0]
+    );
+
+    let quadratic_folded = PcurveGeometry::Nurbs {
+        degree: 2,
+        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        control_points: vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(0.0, 0.0),
+        ],
+        weights: None,
+        periodic: false,
+    };
+    assert_eq!(
+        crate::decode::closest_pcurve_parameters(
+            &quadratic_folded,
+            Point2::new(0.0, 0.0),
+            Some(0.1),
+        )
+        .unwrap(),
+        [0.0, 1.0]
+    );
+    assert_eq!(
+        crate::decode::closest_pcurve_parameters(
+            &quadratic_folded,
+            Point2::new(0.0, 0.0),
+            Some(0.9),
+        )
+        .unwrap(),
+        [1.0, 0.0]
+    );
 }
 
 #[test]
@@ -7778,6 +11960,18 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
         (continued - parameter - std::f64::consts::TAU).abs() < 1.0e-8,
         "{continued}"
     );
+
+    let center = Point3::new(2.0, 3.0, 4.0);
+    let upper = crate::decode::closest_spine_parameter(&ir, &ellipse, center, Some(1.4)).unwrap();
+    let lower = crate::decode::closest_spine_parameter(&ir, &ellipse, center, Some(4.8)).unwrap();
+    assert!(
+        (upper - std::f64::consts::FRAC_PI_2).abs() < 1.0e-8,
+        "{upper}"
+    );
+    assert!(
+        (lower - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-8,
+        "{lower}"
+    );
 }
 
 #[test]
@@ -7932,6 +12126,100 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     .unwrap();
     assert!((continued.u - expected.u).abs() < 1.0e-8);
     assert!((continued.v - expected.v).abs() < 1.0e-8);
+
+    let mut varying_frame = ir.clone();
+    varying_frame
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == spine)
+        .unwrap()
+        .geometry = CurveGeometry::Parabola {
+        vertex: cadmpeg_ir::math::Point3::new(2.0, 2.0, 0.0),
+        axis: Vector3::new(0.0, 1.0, 0.0),
+        major_direction: Vector3::new(1.0, 0.0, 0.0),
+        focal_distance: 0.5,
+    };
+    let ProceduralCurveDefinition::Intersection { context, .. } = &mut varying_frame
+        .model
+        .procedural_curves
+        .iter_mut()
+        .find(|curve| curve.curve == spine)
+        .unwrap()
+        .definition
+    else {
+        unreachable!()
+    };
+    context.sides[0].pcurve = Some(PcurveGeometry::Offset {
+        distance: 0.1,
+        basis: Box::new(context.sides[0].pcurve.take().unwrap()),
+    });
+    let parameters = Point2::new(0.4, 0.35);
+    let exact = crate::decode::blend_surface_u_derivative(
+        &varying_frame,
+        &surface,
+        parameters.u,
+        parameters.v,
+        0,
+    )
+    .expect("complete rolling-ball frame has an exact derivative");
+    let step = 1.0e-6;
+    let before = crate::decode::blend_surface_point(
+        &varying_frame,
+        &surface,
+        parameters.u - step,
+        parameters.v,
+    )
+    .unwrap();
+    let after = crate::decode::blend_surface_point(
+        &varying_frame,
+        &surface,
+        parameters.u + step,
+        parameters.v,
+    )
+    .unwrap();
+    let numerical = Vector3::new(
+        (after.x - before.x) / (2.0 * step),
+        (after.y - before.y) / (2.0 * step),
+        (after.z - before.z) / (2.0 * step),
+    );
+    assert!((exact.x - numerical.x).abs() < 1.0e-7);
+    assert!((exact.y - numerical.y).abs() < 1.0e-7);
+    assert!((exact.z - numerical.z).abs() < 1.0e-7);
+
+    let mut translated = ir.clone();
+    for carrier in &mut translated.model.surfaces {
+        if let SurfaceGeometry::Plane { origin, .. } = &mut carrier.geometry {
+            origin.x += 1.0e12;
+            origin.y += 1.0e12;
+            origin.z += 1.0e12;
+        }
+    }
+    let CurveGeometry::Line { origin, .. } = &mut translated
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == spine)
+        .expect("translated spine")
+        .geometry
+    else {
+        unreachable!()
+    };
+    origin.x += 1.0e12;
+    origin.y += 1.0e12;
+    origin.z += 1.0e12;
+    let translated_point =
+        crate::decode::blend_surface_point(&translated, &surface, expected.u, expected.v).unwrap();
+    let translated_parameters = crate::decode::blend_surface_parameters_for_fit(
+        &translated,
+        &surface,
+        translated_point,
+        Some(Point2::new(expected.u + 0.1, expected.v - 0.05)),
+        1.0e-3,
+    )
+    .expect("exact section tangent is independent of model-space magnitude");
+    assert!((translated_parameters.u - expected.u).abs() < 1.0e-3);
+    assert!((translated_parameters.v - expected.v).abs() < 1.0e-3);
 
     let boundary_curve = CurveId("synthetic:blend-boundary-curve".into());
     ir.model.procedural_curves.push(ProceduralCurve {
@@ -8144,6 +12432,321 @@ fn decode_emits_both_intersection_support_pcurves() {
 }
 
 #[test]
+fn decode_retains_uncharted_intersection_without_inventing_a_range() {
+    let mut stream = two_support_charted_intersection_curve_stream();
+    let intersection = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("intersection record");
+    for offset in [23, 25, 27] {
+        put_ref(&mut stream, intersection + offset, 1);
+    }
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let procedural = &result.ir.model.procedural_curves[0];
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+        supports,
+        parameterization,
+        ..
+    } = &procedural.definition
+    else {
+        panic!("typed tolerant intersection");
+    };
+    assert_ne!(supports[0], supports[1]);
+    assert!(parameterization.is_none());
+    let curve = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == procedural.curve)
+        .expect("intersection carrier");
+    assert!(matches!(curve.geometry, CurveGeometry::Procedural { .. }));
+    assert!(result
+        .ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| edge.curve.as_ref() == Some(&procedural.curve))
+        .all(|edge| edge.param_range.is_none()));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn terminal_plane_intersection_establishes_exact_bidirectional_charts() {
+    let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
+    let intersection = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("intersection record");
+    put_ref(&mut stream, intersection + 21, 13);
+    for offset in [23, 25, 27] {
+        put_ref(&mut stream, intersection + offset, 1);
+    }
+    let second_support_source = two_support_charted_intersection_curve_stream();
+    let second_support = second_support_source
+        .windows(4)
+        .position(|window| window == [0, 50, 0, 13])
+        .expect("second plane");
+    stream.extend_from_slice(&second_support_source[second_support..second_support + 91]);
+
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let procedural = &result.ir.model.procedural_curves[0];
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+        parameterization: Some(parameterization),
+        ..
+    } = &procedural.definition
+    else {
+        panic!("charted tolerant intersection");
+    };
+    assert_eq!(parameterization.parameter_range, [0.0, 1.0]);
+    for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let point = cadmpeg_ir::eval::model_curve_point_by_id(
+            &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+            &procedural.curve,
+            parameter,
+        )
+        .expect("exact plane intersection evaluates");
+        let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
+            &result.ir,
+            &procedural.curve,
+            point,
+            parameter,
+        )
+        .expect("exact plane intersection inverts");
+        assert!((inverse - parameter).abs() < 1.0e-10);
+    }
+    let edge = result
+        .ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.curve.as_ref() == Some(&procedural.curve))
+        .expect("carrying edge");
+    assert_eq!(edge.param_range, Some([0.0, 1.0]));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn terminal_cylinder_generator_establishes_exact_bidirectional_charts() {
+    let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
+    let intersection = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("intersection record");
+    put_ref(&mut stream, intersection + 21, 13);
+    for offset in [23, 25, 27] {
+        put_ref(&mut stream, intersection + offset, 1);
+    }
+    let mut cylinder = record(51, 99);
+    put_ref(&mut cylinder, 2, 13);
+    cylinder[18] = b'+';
+    put_vec3(&mut cylinder, 19, [0.0, -0.001, 0.0]);
+    put_vec3(&mut cylinder, 43, [1.0, 0.0, 0.0]);
+    put_f64(&mut cylinder, 67, 0.001);
+    put_vec3(&mut cylinder, 75, [0.0, 1.0, 0.0]);
+    stream.extend(cylinder);
+
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let procedural = &result.ir.model.procedural_curves[0];
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+        parameterization: Some(parameterization),
+        ..
+    } = &procedural.definition
+    else {
+        panic!("charted tolerant intersection");
+    };
+    assert!(parameterization.pcurves.iter().any(|pcurve| {
+        matches!(
+            pcurve,
+            PcurveGeometry::Line { direction, .. }
+                if direction.u == 0.0 && direction.v != 0.0
+        )
+    }));
+    for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let point = cadmpeg_ir::eval::model_curve_point_by_id(
+            &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+            &procedural.curve,
+            parameter,
+        )
+        .expect("exact generator evaluates");
+        let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
+            &result.ir,
+            &procedural.curve,
+            point,
+            parameter,
+        )
+        .expect("exact generator inverts");
+        assert!((inverse - parameter).abs() < 1.0e-10);
+    }
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+
+    let second_point = stream
+        .windows(4)
+        .position(|window| window == [0, 29, 0, 15])
+        .expect("second endpoint");
+    put_vec3(&mut stream, second_point + 16, [0.01, -0.002, 0.0]);
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let cross_branch = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    assert!(matches!(
+        cross_branch.ir.model.procedural_curves[0].definition,
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+            parameterization: None,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn terminal_cone_generator_establishes_exact_bidirectional_charts() {
+    let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
+    let intersection = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("intersection record");
+    put_ref(&mut stream, intersection + 21, 13);
+    for offset in [23, 25, 27] {
+        put_ref(&mut stream, intersection + offset, 1);
+    }
+    let sin_half = 0.5;
+    let cos_half = 3.0_f64.sqrt() * 0.5;
+    let mut cone = record(52, 115);
+    put_ref(&mut cone, 2, 13);
+    cone[18] = b'+';
+    put_vec3(&mut cone, 19, [-0.0005, -0.001 * cos_half, 0.0]);
+    put_vec3(&mut cone, 43, [cos_half, -sin_half, 0.0]);
+    put_f64(&mut cone, 67, 0.001);
+    put_f64(&mut cone, 75, sin_half);
+    put_f64(&mut cone, 83, cos_half);
+    put_vec3(&mut cone, 91, [sin_half, cos_half, 0.0]);
+    stream.extend(cone);
+
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let procedural = &result.ir.model.procedural_curves[0];
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+        parameterization: Some(parameterization),
+        ..
+    } = &procedural.definition
+    else {
+        panic!("charted tolerant intersection");
+    };
+    assert_eq!(parameterization.parameter_range, [0.0, 1.0]);
+    for parameter in [0.0, 0.5, 1.0] {
+        let point = cadmpeg_ir::eval::model_curve_point_by_id(
+            &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+            &procedural.curve,
+            parameter,
+        )
+        .expect("exact cone generator evaluates");
+        let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
+            &result.ir,
+            &procedural.curve,
+            point,
+            parameter,
+        )
+        .expect("exact cone generator inverts");
+        assert!((inverse - parameter).abs() < 1.0e-10);
+    }
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn terminal_sphere_and_torus_meridians_establish_exact_bidirectional_charts() {
+    let terminal_stream = || {
+        let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
+        let intersection = stream
+            .windows(4)
+            .position(|window| window == [0, 38, 0, 12])
+            .expect("intersection record");
+        put_ref(&mut stream, intersection + 21, 13);
+        for offset in [23, 25, 27] {
+            put_ref(&mut stream, intersection + offset, 1);
+        }
+        stream
+    };
+    let radial_height = (0.01_f64.powi(2) - 0.005_f64.powi(2)).sqrt();
+    let mut sphere = record(53, 99);
+    put_ref(&mut sphere, 2, 13);
+    sphere[18] = b'+';
+    put_vec3(&mut sphere, 19, [0.005, -radial_height, 0.0]);
+    put_f64(&mut sphere, 43, 0.01);
+    put_vec3(&mut sphere, 51, [1.0, 0.0, 0.0]);
+    put_vec3(&mut sphere, 75, [0.0, 1.0, 0.0]);
+
+    let mut torus = record(54, 107);
+    put_ref(&mut torus, 2, 13);
+    torus[18] = b'+';
+    put_vec3(&mut torus, 19, [0.005, -0.03 - radial_height, 0.0]);
+    put_vec3(&mut torus, 43, [1.0, 0.0, 0.0]);
+    put_f64(&mut torus, 67, 0.03);
+    put_f64(&mut torus, 75, 0.01);
+    put_vec3(&mut torus, 83, [0.0, 1.0, 0.0]);
+
+    for (family, record) in [("sphere", sphere), ("torus", torus)] {
+        let mut stream = terminal_stream();
+        stream.extend(record);
+        let mut result = NxCodec
+            .decode(
+                &mut Cursor::new(prt_with_partition(&stream)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        if family == "torus" {
+            let ProceduralCurveDefinition::TolerantIntersection {
+                parameterization: Some(parameterization),
+                ..
+            } = &mut result.ir.model.procedural_curves[0].definition
+            else {
+                panic!("exact torus meridian");
+            };
+            for pcurve in &mut parameterization.pcurves {
+                if let PcurveGeometry::Line { origin, direction } = pcurve {
+                    if direction.u == 0.0 && direction.v != 0.0 {
+                        origin.v += std::f64::consts::TAU;
+                    }
+                }
+            }
+        }
+        let procedural = &result.ir.model.procedural_curves[0];
+        let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+            parameterization: Some(parameterization),
+            ..
+        } = &procedural.definition
+        else {
+            panic!("exact {family} meridian");
+        };
+        assert!(parameterization.pcurves.iter().any(|pcurve| {
+            matches!(
+                pcurve,
+                PcurveGeometry::Line { direction, .. }
+                    if direction.u == 0.0 && direction.v != 0.0
+            )
+        }));
+        for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            let point = cadmpeg_ir::eval::model_curve_point_by_id(
+                &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+                &procedural.curve,
+                parameter,
+            )
+            .unwrap_or_else(|| panic!("{family} meridian evaluates"));
+            let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
+                &result.ir,
+                &procedural.curve,
+                point,
+                parameter,
+            )
+            .unwrap_or_else(|| panic!("{family} meridian inverts at {parameter}"));
+            assert!((inverse - parameter).abs() < 1.0e-8);
+        }
+        assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+    }
+}
+
+#[test]
 fn decode_emits_inline_descriptor_intersection_witnesses() {
     let stream = inline_descriptor_intersection_curve_stream();
     let mut cur = Cursor::new(prt_with_partition(&stream));
@@ -8289,6 +12892,82 @@ fn nurbs_decodes_extended_xmt_arrays_payload_and_long_surface_descriptor() {
 }
 
 #[test]
+fn nurbs_decodes_escaped_surface_payload_envelope() {
+    let mut stream = bspline_partition_stream();
+    let payload = stream
+        .windows(4)
+        .position(|window| window == [0, 125, 0, 21])
+        .expect("surface payload");
+    stream.insert(payload + 2, 0xff);
+
+    let surfaces = crate::nurbs::surfaces(&stream);
+    assert_eq!(surfaces.len(), 1);
+    let SurfaceGeometry::Nurbs(surface) = &surfaces[0].geometry else {
+        panic!("expected NURBS surface");
+    };
+    assert_eq!(surface.control_points.len(), 4);
+    assert_eq!(surface.control_points[3].y, 20.0);
+}
+
+#[test]
+fn nurbs_coalesces_equivalent_surface_descriptor_representations() {
+    let mut stream = bspline_partition_stream();
+    let mut descriptor = record(126, 49);
+    put_ref(&mut descriptor, 2, 20);
+    put_ref(&mut descriptor, 6, 1);
+    put_ref(&mut descriptor, 8, 1);
+    put_ref(&mut descriptor, 12, 2);
+    put_ref(&mut descriptor, 16, 2);
+    descriptor[18] = 5;
+    descriptor[19] = 5;
+    descriptor[20..24].copy_from_slice(&2u32.to_be_bytes());
+    descriptor[24..28].copy_from_slice(&2u32.to_be_bytes());
+    let mut at = 34;
+    for reference in [9, 30, 31, 32, 33] {
+        put_ref(&mut descriptor, at, reference);
+        at += 2;
+        descriptor[at] = 0;
+        at += 1;
+    }
+    stream.extend(descriptor);
+
+    let surfaces = crate::nurbs::surfaces(&stream);
+    assert_eq!(surfaces.len(), 1);
+    let SurfaceGeometry::Nurbs(surface) = &surfaces[0].geometry else {
+        panic!("expected NURBS surface");
+    };
+    assert_eq!(surface.control_points.len(), 4);
+}
+
+#[test]
+fn nurbs_coalesces_equivalent_curve_descriptor_representations() {
+    let mut stream = bspline_partition_stream();
+    let mut descriptor = record(136, 30);
+    put_ref(&mut descriptor, 2, 40);
+    put_ref(&mut descriptor, 4, 1);
+    put_ref(&mut descriptor, 8, 2);
+    put_ref(&mut descriptor, 10, 3);
+    put_ref(&mut descriptor, 14, 2);
+    descriptor[16] = 5;
+    descriptor[20] = 1;
+    let mut at = 21;
+    for reference in [41, 42, 43] {
+        put_ref(&mut descriptor, at, reference);
+        at += 2;
+        descriptor[at] = 0;
+        at += 1;
+    }
+    stream.extend(descriptor);
+
+    let curves = crate::nurbs::curves(&stream);
+    assert_eq!(curves.len(), 1);
+    let CurveGeometry::Nurbs(curve) = &curves[0].geometry else {
+        panic!("expected NURBS curve");
+    };
+    assert_eq!(curve.control_points.len(), 2);
+}
+
+#[test]
 fn nurbs_decodes_escaped_curve_descriptor_and_payload_count() {
     let mut stream = bspline_partition_stream();
     let descriptor = stream
@@ -8309,6 +12988,52 @@ fn nurbs_decodes_escaped_curve_descriptor_and_payload_count() {
         panic!("expected NURBS curve");
     };
     assert_eq!(curve.control_points.len(), 2);
+    assert_eq!(curve.control_points[1].x, 20.0);
+}
+
+#[test]
+fn nurbs_compact_curve_descriptor_survives_a_status_prefix_collision() {
+    let mut stream = bspline_partition_stream();
+    let descriptor = stream
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .expect("curve descriptor");
+    stream[descriptor + 17..descriptor + 21].copy_from_slice(&[0, 0, 0, 1]);
+
+    assert_eq!(crate::nurbs::curves(&stream).len(), 1);
+}
+
+#[test]
+fn nurbs_decodes_dimension_four_rational_curve() {
+    let mut stream = bspline_partition_stream();
+    let descriptor = stream
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .expect("curve descriptor");
+    put_ref(&mut stream, descriptor + 10, 4);
+
+    let payload = stream
+        .windows(4)
+        .position(|window| window == [0, 135, 0, 41])
+        .expect("curve payload");
+    let old_payload_len = 15 + 6 * 8;
+    let mut rational_payload = record(135, 15 + 8 * 8);
+    put_ref(&mut rational_payload, 2, 41);
+    rational_payload[9..13].copy_from_slice(&8u32.to_be_bytes());
+    for (index, value) in [0.0, 0.0, 0.0, 1.0, 0.04, 0.0, 0.0, 2.0]
+        .into_iter()
+        .enumerate()
+    {
+        put_f64(&mut rational_payload, 15 + index * 8, value);
+    }
+    stream.splice(payload..payload + old_payload_len, rational_payload);
+
+    let curves = crate::nurbs::curves(&stream);
+    assert_eq!(curves.len(), 1);
+    let CurveGeometry::Nurbs(curve) = &curves[0].geometry else {
+        panic!("expected NURBS curve");
+    };
+    assert_eq!(curve.weights.as_deref(), Some([1.0, 2.0].as_slice()));
     assert_eq!(curve.control_points[1].x, 20.0);
 }
 
@@ -8464,9 +13189,22 @@ fn decode_tracks_all_extended_topology_reference_shifts() {
 
 #[test]
 fn decode_tracks_fully_extended_geometry_header_shift() {
-    let mut cur = Cursor::new(prt_with_partition(
-        &topology_with_fully_extended_geometry_headers(),
+    let stream = topology_with_fully_extended_geometry_headers();
+    let graph = crate::topology::Graph::parse(&stream);
+    assert!(matches!(
+        graph
+            .get(50, 6)
+            .and_then(super::topology::Node::surface_geometry),
+        Some(SurfaceGeometry::Plane { .. })
     ));
+    assert!(matches!(
+        graph
+            .get(30, 9)
+            .and_then(super::topology::Node::curve_geometry),
+        Some(CurveGeometry::Line { .. })
+    ));
+
+    let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert_eq!(result.ir.model.faces.len(), 1);
@@ -8879,11 +13617,104 @@ fn inspect_enumerates_streams_and_names_schema() {
 }
 
 #[test]
+fn inspect_classifies_named_container_streams() {
+    let file = prt_with_named_payloads(&[
+        ("/Root/FastLoad/RMFastLoad", vec![1]),
+        ("/Root/FastLoad/Structure", vec![2]),
+        ("/Root/FastLoad/JT", vec![3]),
+        ("/Root/UG_PART/DisplayJT", vec![4]),
+        ("/Root/UG_PART/ExternalReferences", vec![5]),
+        ("/Root/UG_PART/LastSavedToggleInfoStream", vec![6]),
+        ("/Root/images/preview", vec![7]),
+        ("/Root/materialsTif/Steel", vec![8]),
+        ("/Root/part/arrangements", vec![9]),
+        ("/Root/part/attrs", vec![10]),
+        ("/Root/qafmetadata", vec![11]),
+        ("/Root/vendor/private", vec![12]),
+    ]);
+    let summary = NxCodec
+        .inspect(&mut Cursor::new(file), &InspectOptions::default())
+        .unwrap();
+    let roles = summary
+        .entries
+        .iter()
+        .map(|entry| (entry.name.as_str(), entry.role.as_str()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(roles["/Root/FastLoad/RMFastLoad"], "active-body-index");
+    assert_eq!(roles["/Root/FastLoad/Structure"], "fast-load-structure");
+    assert_eq!(roles["/Root/FastLoad/JT"], "fast-load-jt");
+    assert_eq!(roles["/Root/UG_PART/DisplayJT"], "display-jt");
+    assert_eq!(
+        roles["/Root/UG_PART/ExternalReferences"],
+        "external-references"
+    );
+    assert_eq!(
+        roles["/Root/UG_PART/LastSavedToggleInfoStream"],
+        "save-toggle-info"
+    );
+    assert_eq!(roles["/Root/images/preview"], "preview-image");
+    assert_eq!(roles["/Root/materialsTif/Steel"], "material-texture");
+    assert_eq!(roles["/Root/part/arrangements"], "arrangements");
+    assert_eq!(roles["/Root/part/attrs"], "part-attributes");
+    assert_eq!(roles["/Root/qafmetadata"], "asset-catalog");
+    assert_eq!(roles["/Root/vendor/private"], "named-opaque-stream");
+}
+
+#[test]
+fn decode_retains_unsupported_named_stream_payloads() {
+    let structure = b"opaque fast-load structure".to_vec();
+    let fast_load_jt = b"opaque fast-load JT".to_vec();
+    let toggle = b"opaque save-toggle state".to_vec();
+    let vendor = b"opaque vendor stream".to_vec();
+    let file = prt_with_named_payloads(&[
+        ("/Root/FastLoad/Structure", structure.clone()),
+        ("/Root/FastLoad/JT", fast_load_jt.clone()),
+        ("/Root/UG_PART/LastSavedToggleInfoStream", toggle.clone()),
+        ("/Root/vendor/private", vendor.clone()),
+    ]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let unknowns = result.ir.native_unknowns("nx").unwrap();
+    assert_eq!(unknowns.len(), 4);
+    assert_eq!(
+        result
+            .source_fidelity
+            .retained_records
+            .iter()
+            .map(|record| record.byte_len)
+            .collect::<Vec<_>>(),
+        vec![
+            structure.len() as u64,
+            fast_load_jt.len() as u64,
+            toggle.len() as u64,
+            vendor.len() as u64
+        ]
+    );
+    assert!(unknowns
+        .iter()
+        .all(|unknown| unknown.id.0.starts_with("nx:container-entry:opaque#")));
+    for name in [
+        "/Root/FastLoad/Structure",
+        "/Root/FastLoad/JT",
+        "/Root/UG_PART/LastSavedToggleInfoStream",
+        "/Root/vendor/private",
+    ] {
+        assert!(result
+            .report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(name)));
+    }
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::{
-        ConfigurationBodies, ConfigurationId, DesignConfiguration, Feature, FeatureDefinition,
-        FeatureId,
+        BooleanOp, ConfigurationBodies, ConfigurationId, DesignConfiguration, Feature,
+        FeatureDefinition, FeatureId,
     };
 
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
@@ -8985,6 +13816,38 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         definition: FeatureDefinition::Block {
             dimensions: None,
             placement: None,
+            op: BooleanOp::Unresolved,
+        },
+        native_ref: None,
+    });
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#incomplete-sweep".into()),
+        ordinal: 11,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Sweep {
+            section: cadmpeg_ir::features::SweepSection::Unresolved(None),
+            sections: Vec::new(),
+            path: None,
+            path_extent: None,
+            guide_rail: None,
+            taper: None,
+            mode: cadmpeg_ir::features::SweepMode::Unresolved,
+            orientation: None,
+            transition: None,
+            transformation: None,
+            path_tangent: false,
+            linearize: false,
+            twist: None,
+            scale: None,
+            allow_multi_profile_faces: None,
         },
         native_ref: None,
     });
@@ -9025,22 +13888,25 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
     assert_eq!(losses.len(), 6);
-    assert_eq!(losses[0].category, LossCategory::DesignIntent);
-    assert!(losses[0].message.contains("9 NX feature history operation"));
-    assert_eq!(losses[1].category, LossCategory::DesignIntent);
-    assert!(losses[1].message.contains("1 NX design configuration"));
-    assert_eq!(losses[2].category, LossCategory::DesignIntent);
+    assert_eq!(losses[0].code.category(), LossCategory::DesignIntent);
+    assert!(losses[0]
+        .message
+        .contains("10 NX feature history operation"));
+    assert_eq!(losses[1].code.category(), LossCategory::DesignIntent);
+    assert!(losses[1].message.contains("2 NX design configuration"));
+    assert_eq!(losses[2].code.category(), LossCategory::DesignIntent);
     assert!(losses[2].message.contains("DELETE (2)"));
-    assert_eq!(losses[3].category, LossCategory::DesignIntent);
+    assert_eq!(losses[3].code.category(), LossCategory::DesignIntent);
     assert!(losses[3].message.contains("datum coordinate system (1)"));
     assert!(losses[3].message.contains("datum plane (1)"));
     assert!(losses[3].message.contains("freeform surface (1)"));
     assert!(losses[3].message.contains("loft (2)"));
-    assert_eq!(losses[4].category, LossCategory::DesignIntent);
+    assert_eq!(losses[4].code.category(), LossCategory::DesignIntent);
     assert!(losses[4].message.contains("block (1)"));
     assert!(losses[4].message.contains("delete body (1)"));
     assert!(losses[4].message.contains("sketch (1)"));
-    assert_eq!(losses[5].category, LossCategory::DesignIntent);
+    assert!(losses[4].message.contains("sweep (1)"));
+    assert_eq!(losses[5].code.category(), LossCategory::DesignIntent);
     assert!(losses[5].message.contains("1 NX sketch history feature"));
     assert!(losses[5].message.contains("1 have no neutral sketch graph"));
 
@@ -9064,10 +13930,12 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     losses.clear();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
-    assert_eq!(losses.len(), 6);
+    assert_eq!(losses.len(), 5);
     assert!(!losses[4].message.contains("sketch"));
-    assert!(losses[5].message.contains("no sketch constraints"));
 }
+
+#[path = "integration_tests.rs"]
+mod integration_tests;
 
 #[test]
 fn extraction_uses_ug_part_bounds_and_all_standard_zlib_headers() {
@@ -9084,30 +13952,70 @@ fn extraction_uses_ug_part_bounds_and_all_standard_zlib_headers() {
     decoy_stream[pos..pos + schema.len()].copy_from_slice(decoy);
     let decoy = zlib_compress(&decoy_stream);
 
-    let mut file = Vec::new();
-    file.extend_from_slice(MAGIC);
-    file.push(0x06);
-    file.extend_from_slice(&[0; 3 + 4 + 1 + 6 + 2]);
-    file.extend_from_slice(b"HEADER");
-    let entries = [
-        (b"/Root/UG_PART/UG_PART".as_slice(), part.len()),
-        (b"/Root/FastLoad/JT".as_slice(), decoy.len()),
-    ];
-    let directory_len: usize = entries.iter().map(|(name, _)| 4 + name.len() + 16).sum();
-    let mut next_offset = file.len() + directory_len;
-    for (name, size) in &entries {
-        file.extend_from_slice(&(name.len() as u32).to_le_bytes());
-        file.extend_from_slice(name);
-        file.extend_from_slice(&(next_offset as u64).to_le_bytes());
-        file.extend_from_slice(&(*size as u64).to_le_bytes());
-        next_offset += size;
-    }
-    file.extend_from_slice(&part);
-    file.extend_from_slice(&decoy);
+    let file = prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", part),
+        ("/Root/FastLoad/JT", decoy),
+    ]);
 
     let streams = extract_streams(&file);
     assert_eq!(streams.len(), 1);
     assert_eq!(streams[0].schema.as_deref(), Some("SCH_TEST_1_9999"));
+}
+
+#[test]
+fn extraction_rejects_zlib_members_with_invalid_integrity_trailers() {
+    let compressed = zlib_compress(&partition_stream());
+    let mut corrupt = compressed.clone();
+    *corrupt.last_mut().expect("zlib integrity trailer") ^= 0x01;
+    let corrupt = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", corrupt)]);
+    assert!(extract_streams(&corrupt).is_empty());
+
+    let truncated = prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        compressed[..compressed.len() - 1].to_vec(),
+    )]);
+    assert!(extract_streams(&truncated).is_empty());
+
+    let mut indexed = segment_stream_payload();
+    *indexed.last_mut().expect("indexed zlib integrity trailer") ^= 0x01;
+    let indexed = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", indexed)]);
+    let arena = cadmpeg_codec_core::decode::DecodeArena::new();
+    let policy = cadmpeg_codec_core::decode::DecodePolicy::default();
+    let (ctx, root) =
+        cadmpeg_codec_core::decode::DecodeContext::from_root_bytes(&indexed, &arena, &policy)
+            .expect("bounded test input");
+    let container = container::scan_bytes(indexed.clone()).expect("test SPLMSSTR container");
+    assert!(parasolid::extract_streams(&ctx, root, &container).is_err());
+}
+
+#[test]
+fn extraction_uses_ordered_segment_wrappers_in_indexed_payloads() {
+    let decoy = zlib_compress(
+        b"PS\0\0 (partition) SCH_DECOY_1_9999 unindexed payload with more than sixty-four inflated bytes........",
+    );
+    let real = zlib_compress(
+        b"PS\0\0 (deltas) SCH_REAL_1_9999 indexed payload with more than sixty-four inflated bytes..........",
+    );
+    let mut payload = Vec::new();
+    for word in [0_u32, 9, 11, 1, 1, 24] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.extend_from_slice(&decoy);
+    let wrapper_offset = payload.len();
+    payload[0..4].copy_from_slice(
+        &u32::try_from(wrapper_offset)
+            .expect("synthetic wrapper offset")
+            .to_le_bytes(),
+    );
+    payload.extend_from_slice(&0x8000_0000_u32.to_le_bytes());
+    payload.extend_from_slice(&0_u32.to_le_bytes());
+    payload.extend_from_slice(&real);
+
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+    let streams = extract_streams(&file);
+    assert_eq!(streams.len(), 1);
+    assert_eq!(streams[0].kind, StreamKind::Deltas);
+    assert_eq!(streams[0].schema.as_deref(), Some("SCH_REAL_1_9999"));
 }
 
 /// Phase 0 golden serialized-output snapshots.
@@ -9147,7 +14055,7 @@ mod golden {
 
     use super::*;
 
-    /// Every arena name production writes via `set_arena` in `decode.rs`, extracted
+    /// Every arena name production writes via the native catalogue, extracted
     /// mechanically. This is the coverage denominator; `arena_coverage_is_a_subset`
     /// fails if production introduces an arena name this list does not know, which
     /// keeps the denominator honest as the code evolves.
@@ -9158,6 +14066,7 @@ mod golden {
         "data_block_abr_reference_lanes",
         "data_block_column_index_tables",
         "data_block_control_class_references",
+        "data_block_control_forms",
         "data_block_control_handle_pairs",
         "data_block_control_index_values",
         "data_block_control_references",
@@ -9204,6 +14113,10 @@ mod golden {
         "external_reference_records",
         "external_reference_tail_reference_pairs",
         "external_references",
+        "fast_load_component_occurrences",
+        "fast_load_component_object_groups",
+        "fast_load_component_prototypes",
+        "fast_load_component_uuids",
         "feature_block_construction_payloads",
         "feature_block_construction_references",
         "feature_block_constructions",
@@ -9215,6 +14128,7 @@ mod golden {
         "feature_block_payload_scalars",
         "feature_body_reference_occurrences",
         "feature_body_references",
+        "feature_body_data_block_uses",
         "feature_body_segment_uses",
         "feature_boolean_operations",
         "feature_datum_csys_block_uses",
@@ -9239,16 +14153,23 @@ mod golden {
         "feature_draft_construction_payloads",
         "feature_draft_construction_references",
         "feature_draft_construction_terminal_lanes",
+        "feature_delete_construction_payloads",
+        "feature_delete_reference_fields",
         "feature_extrude_32_constructions",
         "feature_extrude_construction_profiles",
         "feature_extrude_payload_32_branches",
-        "feature_extrude_payload_footers",
         "feature_extrude_payload_headers",
         "feature_extrude_profile_references",
+        "feature_fset_construction_payloads",
+        "feature_fset_reference_graphs",
         "feature_input_block_identity_groups",
         "feature_input_blocks",
         "feature_input_column_row_uses",
         "feature_input_column_targets",
+        "feature_identical_instance_output_lanes",
+        "feature_hole_package_construction_group_lanes",
+        "feature_hole_package_construction_group_uses",
+        "feature_multi_instance_output_lanes",
         "feature_operation_body_11_continuations",
         "feature_operation_body_members",
         "feature_operation_body_operands",
@@ -9256,6 +14177,9 @@ mod golden {
         "feature_operation_body_scalar_triples",
         "feature_operation_labels",
         "feature_operation_records",
+        "feature_operation_common_frames",
+        "feature_operation_terminal_discriminators",
+        "feature_operation_terminal_frames",
         "feature_parameter_bindings",
         "feature_parameter_uses",
         "feature_pattern_construction_fixed_lanes",
@@ -9280,6 +14204,7 @@ mod golden {
         "feature_sketch_named_point_block_uses",
         "feature_sketch_payload_coordinate_pairs",
         "feature_sketch_payload_fixed_pairs",
+        "feature_sketch_payload_mixed_pairs",
         "feature_sketch_payload_named_records",
         "feature_sketch_payload_names",
         "feature_sketch_payload_scalars",
@@ -9298,20 +14223,45 @@ mod golden {
         "material_texture_assets",
         "material_texture_catalog_entries",
         "object_records",
+        "object_record_handle_pairs",
         "object_references",
+        "object_uuid_values",
         "offset_store_named_points",
         "om_record_areas",
         "parasolid_attribute_class_uses",
+        "parasolid_attribute_field_uses",
+        "parasolid_attribute_field_names",
         "parasolid_attribute_definitions",
         "parasolid_blend_bound_records",
         "parasolid_blend_surface_records",
         "parasolid_chart_records",
+        "parasolid_deltas_body_revisions",
+        "parasolid_deltas_transmit_headers",
+        "parasolid_deltas_terminal_null_references",
+        "parasolid_deltas_records",
+        "parasolid_deltas_residual_spans",
+        "parasolid_deltas_tagged_reference_lanes",
+        "parasolid_deltas_reference_type_maps",
+        "parasolid_deltas_reference_state_packets",
+        "parasolid_deltas_schema_reference_preambles",
+        "parasolid_deltas_reference_marker_packets",
+        "parasolid_deltas_type_150_state_packets",
+        "parasolid_deltas_inline_schema_declarations",
+        "parasolid_deltas_inline_body_states",
+        "parasolid_deltas_term_use_numeric_tails",
+        "parasolid_deltas_tombstones",
         "parasolid_entity_51_numeric_uses",
         "parasolid_entity_51_records",
+        "parasolid_entity_51_structured_uses",
         "parasolid_entity_51_string_uses",
         "parasolid_entity_52_integer_records",
         "parasolid_entity_53_double_records",
         "parasolid_entity_54_string_records",
+        "parasolid_entity_57_axis_records",
+        "parasolid_entity_58_tag_records",
+        "parasolid_entity_62_unicode_records",
+        "parasolid_entity_vector_records",
+        "parasolid_field_names_records",
         "parasolid_intersection_records",
         "parasolid_offset_surface_records",
         "parasolid_support_uv_records",
@@ -9324,6 +14274,8 @@ mod golden {
         "persistent_handles",
         "rmfastload_object_id_tables",
         "rmfastload_object_ids",
+        "saved_toggle_entries",
+        "saved_toggle_streams",
         "segment_body_bindings",
         "segment_body_lineage_statuses",
         "segment_index_rows",
@@ -10030,16 +14982,34 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (179), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (223), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
     /// arenas, all of them catalogue-driven, so no non-catalogued arena exists.
     #[test]
     fn catalogue_arenas_match_known_arenas() {
+        use cadmpeg_ir::native::catalogue::Phase;
+
         use crate::native::catalogue::CATALOGUE;
 
-        assert_eq!(CATALOGUE.len(), 179, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 223, "one catalogue row per model field");
+        assert_eq!(
+            CATALOGUE
+                .iter()
+                .filter(|row| row.phase == Phase::GroupA)
+                .count(),
+            106,
+            "group A family count"
+        );
+        assert_eq!(
+            CATALOGUE
+                .iter()
+                .filter(|row| row.phase == Phase::GroupB)
+                .count(),
+            9,
+            "group B family count"
+        );
 
         let mut catalogue_arenas = BTreeSet::new();
         for row in CATALOGUE {

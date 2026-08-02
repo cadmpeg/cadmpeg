@@ -22,41 +22,70 @@ use crate::design::decode::operands::{
     parse_body_recipe_operand, parse_construction_operand_group,
     parse_construction_operand_identity, parse_edge_operand, parse_entity_selection_operand,
     parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
-    parse_sketch_profile, FaceRecipeProgramKind,
+    parse_sketch_profile, ConstructionOperandGroupParse, FaceRecipeProgramKind,
 };
 use crate::design::decode::parameters::{
-    bind_parameter_companion_payloads, design_parameter_prefix, parse_design_parameter,
+    bind_parameter_companion_payloads, design_parameter_discriminator, parse_design_parameter,
     parse_parameter_companion, parse_parameter_owner,
 };
 use crate::design::decode::scopes::{
-    exact_base_feature_construction, exact_direct_face_operation, exact_fixed_chamfer_parameters,
-    exact_fixed_extrude_parameters, exact_fixed_fillet_parameters, exact_path_feature_construction,
-    exact_scale_operation, exact_solid_primitive, exact_surface_stitch_operation,
-    exact_work_plane_frame, exact_work_point_position, parse_parameter_scope,
+    exact_assembly_alignment, exact_base_feature_construction,
+    exact_circular_pattern_construction_with_owners, exact_combine_operation,
+    exact_component_insert_construction, exact_direct_face_operation, exact_draft_operation,
+    exact_fixed_chamfer_parameters, exact_fixed_extrude_parameters, exact_fixed_fillet_parameters,
+    exact_joint_origin_frame, exact_path_feature_construction,
+    exact_rectangular_pattern_construction, exact_scale_operation, exact_solid_primitive,
+    exact_surface_extend_operation, exact_surface_offset_operation, exact_surface_stitch_operation,
+    exact_work_axis_construction, exact_work_plane_frame, exact_work_point_position,
+    parse_parameter_scope,
 };
 use crate::design::decode::sketch::{
     bind_sketch_graph, decode_constraint_kinds, decode_pattern_definition, identity_matrix,
-    next_indexed_record_offset, next_indexed_record_offset_with_index, parse_genesis_entity_header,
-    parse_settled_entity_header, parse_sketch_placement_candidates, parse_sketch_relation,
-    parse_sketch_surface,
+    next_indexed_record_offset, next_indexed_record_offset_with_index,
+    parse_classed_sketch_relation, parse_genesis_entity_header, parse_settled_entity_header,
+    parse_sketch_placement_candidates, parse_sketch_surface, IndexedRecordOffsets,
+    SketchRelationClass,
 };
 use crate::design::dimensions::{
-    bind_dimension_loci, directional_point_dimension, exact_atomic_constraint,
-    exact_counted_dimension_relation, exact_counted_offset, exact_offset_constraint,
-    expression_identifiers, indirect_angular_lines, null_locus_dimension_definition,
-    offset_parameter_factor, point_lies_on_sketch_geometry, project_dimension_constraints,
-    project_spatial_dimension_constraints, radial_dimension_definition,
+    bind_dimension_loci, counted_role_relation, directional_point_dimension,
+    exact_atomic_constraint, exact_counted_dimension_relation, exact_counted_offset,
+    exact_offset_constraint, expression_identifiers, indirect_angular_lines,
+    null_locus_dimension_definition, offset_parameter_factor,
+    owner_scoped_line_length_dimension_definition, owner_scoped_radial_dimension_definition,
+    point_lies_on_sketch_geometry, radial_dimension_definition, radial_locus_dimension_definition,
     remove_dimension_frame_relations, repeated_linear_dimension,
-    spatial_parallel_line_distance_matches, two_locus_distance_dimension,
+    spatial_parallel_line_distance_matches, spatial_point_distance_matches,
+    two_locus_distance_dimension, unique_point_class_dimension_definition,
     unresolved_parameter_expression_dependency_count,
 };
+
+fn project_dimension_constraints(
+    inputs: &crate::design::dimensions::DimensionConstraintInputs<'_>,
+    spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
+) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
+    crate::design::dimensions::project_dimension_constraints(inputs, spatial_sketches, 1.0e-6)
+}
+
+fn project_spatial_dimension_constraints(
+    inputs: &crate::design::dimensions::DimensionConstraintInputs<'_>,
+    spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
+    spatial_entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
+) -> Vec<cadmpeg_ir::sketches::SpatialSketchConstraint> {
+    crate::design::dimensions::project_spatial_dimension_constraints(
+        inputs,
+        spatial_sketches,
+        spatial_entities,
+        1.0e-6,
+    )
+}
 use crate::design::edge_resolve::{
     feature_input_topology_id, partial_historical_edge_selection,
-    resolved_edge_candidate_intersection,
+    resolved_edge_candidate_intersection, resolved_edge_candidate_intersection_with_deleted_proofs,
 };
 use crate::design::face_resolve::resolved_face_group;
 use crate::design::feature_project::{
-    project_extrude, project_parameter_design, untyped_parameter_unit_count,
+    project_combine, project_extrude, project_parameter_design, project_split,
+    untyped_parameter_unit_count,
 };
 use crate::design::geometry::{
     closed_sketch_profiles, point_on_sketch_entity, region_containing_points,
@@ -77,20 +106,24 @@ use crate::ids::{
 use crate::ids::{neutral_feature_id_parts, neutral_parameter_id_parts};
 
 use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, DesignCoilExtent, DesignCoilSection,
-    DesignCoilSectionPlacement, DesignConfiguration, DesignConfigurationKind,
-    DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
-    DesignConstructionPersistentIdentity, DesignDimensionLocus, DesignDimensionLocusGroup,
-    DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignDirectFaceOperation,
-    DesignEdgeIdentityOperand, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole,
-    DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeSelectionGroup,
-    DesignExtrudeStart, DesignFixedChamferParameters, DesignFixedExtrudeParameters,
-    DesignFixedFilletParameters, DesignObjectKind, DesignParameter, DesignParameterCompanion,
-    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
+    ConstructionRecipe, ConstructionRecipeKind, DesignCircularPatternConstruction,
+    DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignCombineOperation,
+    DesignConfiguration, DesignConfigurationKind, DesignConstructionOperandGroup,
+    DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity, DesignDimensionLocus,
+    DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionRecipeRecord,
+    DesignDirectFaceOperation, DesignDraftOperation, DesignEdgeIdentityOperand, DesignEntityHeader,
+    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
+    DesignExtrudePrologue, DesignExtrudeSelectionGroup, DesignExtrudeStart, DesignFaceOperand,
+    DesignFaceRecipeNode, DesignFaceRecipeStructure, DesignFixedChamferParameters,
+    DesignFixedExtrudeDistance, DesignFixedExtrudeParameters, DesignFixedExtrudeScalar,
+    DesignFixedFilletParameters, DesignParameter, DesignParameterCompanion, DesignParameterKind,
+    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
     DesignRecipeReference, DesignRecordHeader, DesignScaleOperation, DesignSketchPlacement,
-    DesignSketchProfileOperand, DesignSolidPrimitive, DesignSurfaceStitchOperation,
-    LostEdgeReference, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
-    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand, SketchSurface,
+    DesignSketchProfileOperand, DesignSolidPrimitive, DesignSurfaceExtendMethod,
+    DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation, DesignSurfaceStitchOperation,
+    DesignTopologyRecipeSide, LostEdgeReference, PersistentSubentityTag, SketchConstraintKind,
+    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    SketchSurface, DESIGN_MODULE_SKETCH,
 };
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::features::{
@@ -101,9 +134,80 @@ use cadmpeg_ir::ids::{EdgeId, FaceId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchAxis, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchEntityUse,
-    SketchGeometry, SketchId, SpatialSketch, SpatialSketchConstraintDefinition,
+    SketchGeometry, SketchId, SketchLocus, SpatialSketch, SpatialSketchConstraintDefinition,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+fn set_extrude_operation(scope: &mut DesignParameterScope, operation: DesignExtrudeOperation) {
+    let Some(
+        DesignExtrudePrologue::ReferenceAware {
+            operation: value, ..
+        }
+        | DesignExtrudePrologue::LegacyShifted {
+            operation: value, ..
+        },
+    ) = scope.extrude_prologue.as_mut()
+    else {
+        panic!("test scope must carry an Extrude prologue");
+    };
+    *value = operation;
+}
+
+fn set_extrude_extent(scope: &mut DesignParameterScope, extent: DesignExtrudeExtent) {
+    let discriminators = match extent {
+        DesignExtrudeExtent::OneSidedToFace => [1, 1],
+        DesignExtrudeExtent::OneSidedDistance => [1, 2],
+        DesignExtrudeExtent::TwoSidedDistance => [2, 0],
+        DesignExtrudeExtent::SymmetricDistance => [3, 2],
+    };
+    let Some(prologue) = scope.extrude_prologue.as_mut() else {
+        panic!("test scope must carry an Extrude prologue");
+    };
+    match prologue {
+        DesignExtrudePrologue::ReferenceAware {
+            extent: value,
+            extent_discriminators,
+            ..
+        } => {
+            *value = extent;
+            *extent_discriminators = discriminators;
+        }
+        DesignExtrudePrologue::LegacyShifted {
+            extent: value,
+            extent_discriminators,
+            ..
+        } => {
+            *value = Some(extent);
+            *extent_discriminators = discriminators;
+        }
+    }
+}
+
+fn set_extrude_direction_reversed(scope: &mut DesignParameterScope, reversed: bool) {
+    let Some(
+        DesignExtrudePrologue::ReferenceAware {
+            direction_reversed, ..
+        }
+        | DesignExtrudePrologue::LegacyShifted {
+            direction_reversed, ..
+        },
+    ) = scope.extrude_prologue.as_mut()
+    else {
+        panic!("test scope must carry an Extrude prologue");
+    };
+    *direction_reversed = reversed;
+}
+
+fn set_extrude_start(scope: &mut DesignParameterScope, start: DesignExtrudeStart) {
+    let Some(
+        DesignExtrudePrologue::ReferenceAware { start: value, .. }
+        | DesignExtrudePrologue::LegacyShifted { start: value, .. },
+    ) = scope.extrude_prologue.as_mut()
+    else {
+        panic!("test scope must carry an Extrude prologue");
+    };
+    *value = start;
+}
 
 #[test]
 fn spatial_line_distance_requires_parallel_geometry_and_exact_value() {
@@ -129,6 +233,26 @@ fn spatial_line_distance_requires_parallel_geometry_and_exact_value() {
     assert!(!spatial_parallel_line_distance_matches(
         &first, &crossing, 0.0
     ));
+}
+
+#[test]
+fn spatial_point_distance_requires_point_geometry_and_exact_value() {
+    use cadmpeg_ir::sketches::SpatialSketchGeometry::{Line, Point};
+
+    let first = Point {
+        position: Point3::new(1.0, 2.0, 3.0),
+    };
+    let second = Point {
+        position: Point3::new(4.0, 6.0, 3.0),
+    };
+    let line = Line {
+        start: Point3::new(1.0, 2.0, 3.0),
+        end: Point3::new(4.0, 6.0, 3.0),
+    };
+
+    assert!(spatial_point_distance_matches(&first, &second, 5.0));
+    assert!(!spatial_point_distance_matches(&first, &second, 4.0));
+    assert!(!spatial_point_distance_matches(&first, &line, 5.0));
 }
 
 #[test]
@@ -218,10 +342,12 @@ fn feature_family_tokens_are_localized() {
         design_feature_family("Chanfrein"),
         Some(DesignFeatureFamily::Chamfer)
     );
-    assert_eq!(
-        design_feature_family("Réseau C"),
-        Some(DesignFeatureFamily::CircularPattern)
-    );
+    for token in ["C-Pattern", "Réseau C"] {
+        assert_eq!(
+            design_feature_family(token),
+            Some(DesignFeatureFamily::CircularPattern)
+        );
+    }
     assert_eq!(
         design_feature_family("Symétrie miroir"),
         Some(DesignFeatureFamily::Mirror)
@@ -247,6 +373,10 @@ fn feature_family_tokens_are_localized() {
         Some(DesignFeatureFamily::BoundaryFill)
     );
     assert_eq!(
+        design_feature_family("Hole"),
+        Some(DesignFeatureFamily::Hole)
+    );
+    assert_eq!(
         design_feature_family("Split"),
         Some(DesignFeatureFamily::Split)
     );
@@ -257,6 +387,10 @@ fn feature_family_tokens_are_localized() {
     assert_eq!(
         design_feature_family("Sweep"),
         Some(DesignFeatureFamily::Sweep)
+    );
+    assert_eq!(
+        design_feature_family("Pipe"),
+        Some(DesignFeatureFamily::Pipe)
     );
 }
 
@@ -358,6 +492,25 @@ fn configuration_unknown_members_are_counted_at_each_semantic_level() {
         },
     ];
     assert_eq!(unresolved_configuration_member_count(&native), 3);
+}
+
+#[test]
+fn configuration_rule_without_the_typed_pair_is_retained_not_rejected() {
+    let native = [DesignConfiguration {
+        id: "f3d:configuration:entry#partial.dsgcfgrule".into(),
+        entry_name: "partial.dsgcfgrule".into(),
+        kind: DesignConfigurationKind::Rule,
+        payload: serde_json::json!({"when": "width > 20 mm", "vendorExtension": 7}),
+    }];
+    assert!(validate_configuration_payload(
+        "partial.dsgcfgrule",
+        DesignConfigurationKind::Rule,
+        &native[0].payload,
+    )
+    .is_ok());
+    let projected = project_configurations(&native);
+    assert!(projected.is_empty());
+    assert_eq!(unresolved_configuration_rule_count(&native, &projected), 1);
 }
 
 #[test]
@@ -2021,7 +2174,7 @@ fn parameter_record(
     out.extend_from_slice(b"305");
     out.extend_from_slice(&71u32.to_le_bytes());
     out.extend_from_slice(&[0; 11]);
-    out.extend_from_slice(&design_parameter_prefix(source_kind).to_le_bytes());
+    out.extend_from_slice(&design_parameter_discriminator(source_kind).to_le_bytes());
     out.push(0);
     out.extend_from_slice(&9u32.to_le_bytes());
     match owner {
@@ -2047,6 +2200,55 @@ fn parameter_record(
     out.extend_from_slice(&evaluated_value.to_le_bytes());
     out.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     out
+}
+
+fn compact_owned_parameter_record(
+    owner_record_index: u32,
+    source_ordinal: u32,
+    expression: &str,
+    source_kind: &str,
+    unit: Option<&str>,
+    name: &str,
+    evaluated_value: f64,
+) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&3u32.to_le_bytes());
+    out.extend_from_slice(b"328");
+    out.extend_from_slice(&(owner_record_index + 1).to_le_bytes());
+    out.extend_from_slice(&[0; 15]);
+    out.extend_from_slice(&source_ordinal.to_le_bytes());
+    out.push(1);
+    out.extend_from_slice(&owner_record_index.to_le_bytes());
+    out.extend_from_slice(&[0; 6]);
+    lp_utf16(&mut out, expression);
+    out.extend_from_slice(&[0; 5]);
+    lp_utf16(&mut out, source_kind);
+    if let Some(unit) = unit {
+        lp_utf16(&mut out, unit);
+    } else {
+        out.extend_from_slice(&0u32.to_le_bytes());
+    }
+    lp_utf16(&mut out, name);
+    out.extend_from_slice(&evaluated_value.to_le_bytes());
+    out.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    out
+}
+
+#[test]
+fn compact_owned_design_parameter_has_no_family_discriminator() {
+    let bytes =
+        compact_owned_parameter_record(6653, 99, "82.00 mm", "Diameter", Some("mm"), "d99", 8.2);
+    let parameter = parse_design_parameter(&bytes).expect("compact owned parameter");
+    assert_eq!(parameter.record_index, 6654);
+    assert_eq!(parameter.owner_record_index, Some(6653));
+    assert_eq!(parameter.source_ordinal, 99);
+    assert_eq!(parameter.family_discriminator, None);
+    assert_eq!(parameter.family_discriminator_offset, None);
+    assert_eq!(parameter.expression, "82.00 mm");
+    assert_eq!(parameter.source_kind, "Diameter");
+    assert_eq!(parameter.unit.as_deref(), Some("mm"));
+    assert_eq!(parameter.name, "d99");
+    assert_eq!(parameter.evaluated_value, 8.2);
 }
 
 #[test]
@@ -2109,14 +2311,41 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     let mut tangency = parameter_record(Some(24409), "1", "TangencyWeight", Some(""), "d81", 1.0);
     tangency[22..30].copy_from_slice(&6u64.to_le_bytes());
     let tangency = parse_design_parameter(&tangency).expect("prefixed unitless parameter");
-    assert_eq!(tangency.prefix_value, 6);
+    assert_eq!(tangency.family_discriminator, Some(6));
     assert_eq!(tangency.unit, None);
     assert_eq!(tangency.name, "d81");
     assert_eq!(tangency.evaluated_value, 1.0);
 
-    let mut invalid_tangency =
+    let mut earlier_tangency =
         parameter_record(Some(24409), "1", "TangencyWeight", Some(""), "d81", 1.0);
-    invalid_tangency[22..30].copy_from_slice(&0u64.to_le_bytes());
+    earlier_tangency[22..30].copy_from_slice(&0u64.to_le_bytes());
+    assert_eq!(
+        parse_design_parameter(&earlier_tangency)
+            .expect("earlier tangency parameter")
+            .family_discriminator,
+        Some(0)
+    );
+
+    for discriminator in [3u64, 4] {
+        let mut earlier_distance = parameter_record(
+            Some(44),
+            "Width / 2",
+            "AlongDistance",
+            Some("mm"),
+            "d12",
+            3.0,
+        );
+        earlier_distance[22..30].copy_from_slice(&discriminator.to_le_bytes());
+        assert_eq!(
+            parse_design_parameter(&earlier_distance)
+                .expect("earlier feature parameter")
+                .family_discriminator,
+            Some(discriminator)
+        );
+    }
+
+    let mut invalid_tangency = earlier_tangency;
+    invalid_tangency[22..30].copy_from_slice(&5u64.to_le_bytes());
     assert!(parse_design_parameter(&invalid_tangency).is_none());
 
     let mut revised_distance = parameter_record(
@@ -2133,8 +2362,8 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     assert_eq!(
         parse_design_parameter(&revised_distance)
             .expect("revision-six feature parameter")
-            .prefix_value,
-        6
+            .family_discriminator,
+        Some(6)
     );
 
     let mut invalid_distance = revised_distance.clone();
@@ -2198,6 +2427,29 @@ fn parameter_owner_frame() -> Vec<u8> {
     frame
 }
 
+fn compact_parameter_owner_frame() -> Vec<u8> {
+    let mut frame = vec![0; 103];
+    frame[0..4].copy_from_slice(&3u32.to_le_bytes());
+    frame[4..7].copy_from_slice(b"406");
+    frame[7..11].copy_from_slice(&6653u32.to_le_bytes());
+    frame[19] = 1;
+    frame[20..24].copy_from_slice(&1u32.to_le_bytes());
+    frame[24] = 1;
+    frame[25..29].copy_from_slice(&6644u32.to_le_bytes());
+    frame[35..39].copy_from_slice(&0u32.to_le_bytes());
+    frame[40..48].copy_from_slice(&8.2f64.to_le_bytes());
+    frame[48] = 1;
+    frame[49..53].copy_from_slice(&6654u32.to_le_bytes());
+    frame[59..63].copy_from_slice(&4u32.to_le_bytes());
+    frame[67] = 1;
+    frame[68..72].copy_from_slice(&6644u32.to_le_bytes());
+    frame[80] = 1;
+    frame[81..85].copy_from_slice(&6655u32.to_le_bytes());
+    frame[92] = 1;
+    frame[93..97].copy_from_slice(&6644u32.to_le_bytes());
+    frame
+}
+
 fn counted_parameter_owner_frame() -> Vec<u8> {
     let mut frame = vec![0; 101];
     frame[0..4].copy_from_slice(&3u32.to_le_bytes());
@@ -2224,6 +2476,78 @@ fn counted_parameter_owner_frame() -> Vec<u8> {
     frame
 }
 
+fn compact_counted_parameter_owner_frame() -> Vec<u8> {
+    let mut frame = vec![0; 99];
+    frame[0..4].copy_from_slice(&3u32.to_le_bytes());
+    frame[4..7].copy_from_slice(b"457");
+    frame[7..11].copy_from_slice(&44u32.to_le_bytes());
+    frame[19] = 1;
+    frame[20..24].copy_from_slice(&1u32.to_le_bytes());
+    frame[24] = 1;
+    frame[25..29].copy_from_slice(&12u32.to_le_bytes());
+    frame[35..39].copy_from_slice(&2u32.to_le_bytes());
+    frame[40..44].copy_from_slice(&6u32.to_le_bytes());
+    frame[44] = 1;
+    frame[45..49].copy_from_slice(&45u32.to_le_bytes());
+    frame[55..59].copy_from_slice(&9u32.to_le_bytes());
+    frame[63] = 1;
+    frame[64..68].copy_from_slice(&12u32.to_le_bytes());
+    frame[76] = 1;
+    frame[77..81].copy_from_slice(&46u32.to_le_bytes());
+    frame[88] = 1;
+    frame[89..93].copy_from_slice(&12u32.to_le_bytes());
+    frame
+}
+
+fn tagged_scalar_parameter_owner_frame() -> Vec<u8> {
+    let mut frame = vec![0; 107];
+    frame[0..4].copy_from_slice(&3u32.to_le_bytes());
+    frame[4..7].copy_from_slice(b"406");
+    frame[7..11].copy_from_slice(&44u32.to_le_bytes());
+    frame[19] = 1;
+    frame[20..24].copy_from_slice(&1u32.to_le_bytes());
+    frame[24] = 1;
+    frame[25..29].copy_from_slice(&12u32.to_le_bytes());
+    frame[35..39].copy_from_slice(&2u32.to_le_bytes());
+    frame[39] = 1;
+    frame[44..52].copy_from_slice(&6.0f64.to_le_bytes());
+    frame[52] = 1;
+    frame[53..57].copy_from_slice(&45u32.to_le_bytes());
+    frame[63..67].copy_from_slice(&9u32.to_le_bytes());
+    frame[71] = 1;
+    frame[72..76].copy_from_slice(&12u32.to_le_bytes());
+    frame[84] = 1;
+    frame[85..89].copy_from_slice(&46u32.to_le_bytes());
+    frame[96] = 1;
+    frame[97..101].copy_from_slice(&12u32.to_le_bytes());
+    frame
+}
+
+fn tagged_scalar_variant_parameter_owner_frame() -> Vec<u8> {
+    let mut frame = vec![0; 108];
+    frame[0..4].copy_from_slice(&3u32.to_le_bytes());
+    frame[4..7].copy_from_slice(b"299");
+    frame[7..11].copy_from_slice(&44u32.to_le_bytes());
+    frame[19] = 1;
+    frame[20..24].copy_from_slice(&1u32.to_le_bytes());
+    frame[24] = 1;
+    frame[25..29].copy_from_slice(&12u32.to_le_bytes());
+    frame[35..39].copy_from_slice(&1u32.to_le_bytes());
+    frame[39] = 1;
+    frame[44..52].copy_from_slice(&0.8f64.to_le_bytes());
+    frame[52] = 1;
+    frame[53..57].copy_from_slice(&45u32.to_le_bytes());
+    frame[63..67].copy_from_slice(&73u32.to_le_bytes());
+    frame[71] = 1;
+    frame[72..76].copy_from_slice(&12u32.to_le_bytes());
+    frame[82] = 1;
+    frame[85] = 1;
+    frame[86..90].copy_from_slice(&46u32.to_le_bytes());
+    frame[97] = 1;
+    frame[98..102].copy_from_slice(&12u32.to_le_bytes());
+    frame
+}
+
 #[test]
 fn parameter_owner_frame_has_repeated_scope_and_both_record_orders() {
     let parsed = parse_parameter_owner(&parameter_owner_frame()).unwrap();
@@ -2233,7 +2557,7 @@ fn parameter_owner_frame_has_repeated_scope_and_both_record_orders() {
     assert_eq!(parsed.evaluated_value, 6.0);
     assert_eq!(parsed.parameter_record_index, 45);
     assert_eq!(parsed.owned_ordinal, 9);
-    assert_eq!(parsed.variant, 1);
+    assert_eq!(parsed.variant, Some(1));
     assert_eq!(parsed.companion_record_index, 46);
 
     let mut parameter_first = parameter_owner_frame();
@@ -2249,6 +2573,54 @@ fn parameter_owner_frame_has_repeated_scope_and_both_record_orders() {
     assert!(parse_parameter_owner(&malformed).is_none());
 }
 
+/// A parameter-owner frame length outside the six layouts carries no known
+/// field positions, so it declines. The evaluated-value offset therefore never
+/// reaches a length the layout match did not accept, and the three lengths that
+/// take its default all hold the value at 40.
+#[test]
+fn a_parameter_owner_frame_of_an_unlisted_length_declines() {
+    for build in [
+        parameter_owner_frame as fn() -> Vec<u8>,
+        compact_parameter_owner_frame,
+        counted_parameter_owner_frame,
+        compact_counted_parameter_owner_frame,
+        tagged_scalar_parameter_owner_frame,
+    ] {
+        let frame = build();
+        assert!(parse_parameter_owner(&frame).is_some());
+        let mut longer = frame.clone();
+        longer.push(0);
+        assert!(parse_parameter_owner(&longer).is_none());
+        assert!(parse_parameter_owner(&frame[..frame.len() - 1]).is_none());
+    }
+
+    assert_eq!(
+        parse_parameter_owner(&parameter_owner_frame())
+            .expect("owner frame")
+            .evaluated_value_offset,
+        40
+    );
+    assert_eq!(
+        parse_parameter_owner(&compact_parameter_owner_frame())
+            .expect("compact owner frame")
+            .evaluated_value_offset,
+        40
+    );
+}
+
+#[test]
+fn compact_parameter_owner_omits_the_variant_slot() {
+    let parsed =
+        parse_parameter_owner(&compact_parameter_owner_frame()).expect("compact parameter owner");
+    assert_eq!(parsed.record_index, 6653);
+    assert_eq!(parsed.scope_record_index, 6644);
+    assert_eq!(parsed.parameter_record_index, 6654);
+    assert_eq!(parsed.companion_record_index, 6655);
+    assert_eq!(parsed.owned_ordinal, 4);
+    assert_eq!(parsed.variant, None);
+    assert_eq!(parsed.evaluated_value, 8.2);
+}
+
 #[test]
 fn counted_parameter_owner_uses_typed_u32_scalar() {
     let parsed =
@@ -2256,6 +2628,42 @@ fn counted_parameter_owner_uses_typed_u32_scalar() {
     assert_eq!(parsed.evaluated_value, 6.0);
     assert_eq!(parsed.evaluated_value_offset, 41);
     assert_eq!(parsed.parameter_record_index, 45);
+    assert_eq!(parsed.companion_record_index, 46);
+}
+
+#[test]
+fn compact_counted_parameter_owner_omits_type_and_variant_markers() {
+    let mut frame = compact_counted_parameter_owner_frame();
+    frame[45..49].copy_from_slice(&46u32.to_le_bytes());
+    frame[77..81].copy_from_slice(&45u32.to_le_bytes());
+    let parsed = parse_parameter_owner(&frame).expect("compact counted parameter owner");
+    assert_eq!(parsed.evaluated_value, 6.0);
+    assert_eq!(parsed.evaluated_value_offset, 40);
+    assert_eq!(parsed.parameter_record_index, 46);
+    assert_eq!(parsed.variant, None);
+    assert_eq!(parsed.companion_record_index, 45);
+}
+
+#[test]
+fn tagged_scalar_parameter_owner_carries_a_scalar_type_prefix() {
+    let parsed = parse_parameter_owner(&tagged_scalar_parameter_owner_frame())
+        .expect("tagged scalar parameter owner");
+    assert_eq!(parsed.evaluated_value, 6.0);
+    assert_eq!(parsed.evaluated_value_offset, 44);
+    assert_eq!(parsed.parameter_record_index, 45);
+    assert_eq!(parsed.variant, None);
+    assert_eq!(parsed.companion_record_index, 46);
+}
+
+#[test]
+fn tagged_scalar_parameter_owner_can_carry_a_variant_slot() {
+    let parsed = parse_parameter_owner(&tagged_scalar_variant_parameter_owner_frame())
+        .expect("tagged scalar variant parameter owner");
+    assert_eq!(parsed.evaluated_value, 0.8);
+    assert_eq!(parsed.evaluated_value_offset, 44);
+    assert_eq!(parsed.parameter_record_index, 45);
+    assert_eq!(parsed.owned_ordinal, 73);
+    assert_eq!(parsed.variant, Some(0));
     assert_eq!(parsed.companion_record_index, 46);
 }
 
@@ -2405,88 +2813,80 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000),
         references
     );
-    assert_eq!(
-        crate::design::decode::dimension_frames::recipe_reference_candidate_faces(
-            &references[0],
-            &[
-                PersistentSubentityTag {
-                    id: "matching".into(),
-                    target: AttributeTarget::Face(FaceId("face-b".into())),
-                    selector: 1,
-                    token: "13".into(),
-                    design_references: vec![331],
-                    ordinal: 0,
-                },
-                PersistentSubentityTag {
-                    id: "other".into(),
-                    target: AttributeTarget::Face(FaceId("face-a".into())),
-                    selector: 1,
-                    token: "13".into(),
-                    design_references: vec![999],
-                    ordinal: 0,
-                },
-                PersistentSubentityTag {
-                    id: "wrong-selector".into(),
-                    target: AttributeTarget::Face(FaceId("face-c".into())),
-                    selector: 2,
-                    token: "13".into(),
-                    design_references: vec![331],
-                    ordinal: 0,
-                },
-                PersistentSubentityTag {
-                    id: "matching-edge".into(),
-                    target: AttributeTarget::Edge(EdgeId("edge-b".into())),
-                    selector: 1,
-                    token: "13".into(),
-                    design_references: vec![331],
-                    ordinal: 0,
-                },
-            ],
-        ),
-        [FaceId("face-b".into())]
+    let tags = [
+        PersistentSubentityTag {
+            id: "matching".into(),
+            target: AttributeTarget::Face(FaceId("face-b".into())),
+            selector: 1,
+            token: "13".into(),
+            design_references: vec![331],
+            ordinal: 0,
+        },
+        PersistentSubentityTag {
+            id: "other".into(),
+            target: AttributeTarget::Face(FaceId("face-a".into())),
+            selector: 1,
+            token: "13".into(),
+            design_references: vec![999],
+            ordinal: 0,
+        },
+        PersistentSubentityTag {
+            id: "alternate-face".into(),
+            target: AttributeTarget::Face(FaceId("face-c".into())),
+            selector: 2,
+            token: "13".into(),
+            design_references: vec![331],
+            ordinal: 0,
+        },
+        PersistentSubentityTag {
+            id: "matching-edge".into(),
+            target: AttributeTarget::Edge(EdgeId("edge-b".into())),
+            selector: 1,
+            token: "13".into(),
+            design_references: vec![331],
+            ordinal: 0,
+        },
+        PersistentSubentityTag {
+            id: "alternate-edge".into(),
+            target: AttributeTarget::Edge(EdgeId("edge-c".into())),
+            selector: 2,
+            token: "13".into(),
+            design_references: vec![331],
+            ordinal: 0,
+        },
+    ];
+    let mut bound = references[0].clone();
+    crate::design::decode::dimension_frames::bind_recipe_reference_candidates(
+        &mut bound, &tags, None,
     );
-    assert_eq!(
-        crate::design::decode::dimension_frames::recipe_reference_candidate_edges(
-            &references[0],
-            &[PersistentSubentityTag {
-                id: "matching-edge".into(),
-                target: AttributeTarget::Edge(EdgeId("edge-b".into())),
-                selector: 1,
-                token: "13".into(),
-                design_references: vec![331],
-                ordinal: 0,
-            }],
-        ),
-        [EdgeId("edge-b".into())]
+    assert_eq!(bound.candidate_faces, [FaceId("face-b".into())]);
+    assert_eq!(bound.candidate_edges, [EdgeId("edge-b".into())]);
+    assert_eq!(bound.alternate_selector_faces, [FaceId("face-c".into())]);
+    assert_eq!(bound.alternate_selector_edges, [EdgeId("edge-c".into())]);
+    let stream_tags = [
+        PersistentSubentityTag {
+            id: "f3d:xref/A/occurrence-0/design:persistent-subentity-tag#1".into(),
+            target: AttributeTarget::Face(FaceId("face-a".into())),
+            selector: 1,
+            token: "13".into(),
+            design_references: vec![331],
+            ordinal: 0,
+        },
+        PersistentSubentityTag {
+            id: "f3d:xref/B/occurrence-0/design:persistent-subentity-tag#1".into(),
+            target: AttributeTarget::Face(FaceId("face-b".into())),
+            selector: 1,
+            token: "13".into(),
+            design_references: vec![331],
+            ordinal: 0,
+        },
+    ];
+    crate::design::decode::dimension_frames::bind_recipe_reference_candidates(
+        &mut bound,
+        &stream_tags,
+        Some("f3d:xref/A/occurrence-0/Asset/Design1/BulkStream.dat:dimension-recipe#1"),
     );
-    assert_eq!(
-        crate::design::decode::dimension_frames::recipe_reference_alternate_selector_faces(
-            &references[0],
-            &[PersistentSubentityTag {
-                id: "alternate-face".into(),
-                target: AttributeTarget::Face(FaceId("face-c".into())),
-                selector: 2,
-                token: "13".into(),
-                design_references: vec![331],
-                ordinal: 0,
-            }],
-        ),
-        [FaceId("face-c".into())]
-    );
-    assert_eq!(
-        crate::design::decode::dimension_frames::recipe_reference_alternate_selector_edges(
-            &references[0],
-            &[PersistentSubentityTag {
-                id: "alternate-edge".into(),
-                target: AttributeTarget::Edge(EdgeId("edge-c".into())),
-                selector: 2,
-                token: "13".into(),
-                design_references: vec![331],
-                ordinal: 0,
-            }],
-        ),
-        [EdgeId("edge-c".into())]
-    );
+    assert_eq!(bound.candidate_faces, [FaceId("face-a".into())]);
 }
 
 #[test]
@@ -2542,7 +2942,7 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
         evaluated_value_offset: pair.paired_byte_offset + 99,
         parameter_record_index: 301,
         owned_ordinal: 3,
-        variant: 0,
+        variant: Some(0),
         companion_record_index: 302,
     };
     assert_eq!(
@@ -2679,7 +3079,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
 }
 
 #[test]
-fn radial_dimensions_require_one_exact_circular_measurement() {
+fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     let mut entity = SketchEntity {
         id: SketchEntityId("f3d:model:sketch-entity#circle".into()),
         sketch: SketchId("f3d:model:sketch#radial".into()),
@@ -2703,6 +3103,16 @@ fn radial_dimensions_require_one_exact_circular_measurement() {
         Some(SketchConstraintDefinition::Radius { entity: ref actual, parameter: ref p })
             if actual == &entity.id && p == &radius_parameter
     ));
+    assert!(matches!(
+        radial_dimension_definition(
+            &entity,
+            "Radial Dimension-3",
+            0.5,
+            radius_parameter.clone(),
+        ),
+        Some(SketchConstraintDefinition::Radius { entity: ref actual, .. })
+            if actual == &entity.id
+    ));
     let diameter_parameter = cadmpeg_ir::features::ParameterId("parameter#diameter".into());
     assert!(matches!(
         radial_dimension_definition(
@@ -2721,6 +3131,72 @@ fn radial_dimensions_require_one_exact_circular_measurement() {
         diameter_parameter.clone(),
     )
     .is_none());
+    let parameter = parse_design_parameter(&parameter_record(
+        Some(1),
+        "10 mm",
+        "Diameter Dimension-2",
+        Some("mm"),
+        "d1",
+        1.0,
+    ))
+    .expect("diameter parameter");
+    assert!(matches!(
+        owner_scoped_radial_dimension_definition(
+            std::slice::from_ref(&entity),
+            &entity.sketch,
+            &parameter,
+            &diameter_parameter,
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::Diameter {
+            entity: ref actual,
+            ..
+        }) if actual == &entity.id
+    ));
+    let mut duplicate = entity.clone();
+    duplicate.id = SketchEntityId("f3d:model:sketch-entity#duplicate-circle".into());
+    let SketchGeometry::Circle { radius, .. } = &mut duplicate.geometry else {
+        unreachable!("test entity is circular")
+    };
+    radius.0 += 5.0e-7;
+    assert!(matches!(
+        owner_scoped_radial_dimension_definition(
+            &[entity.clone(), duplicate.clone()],
+            &entity.sketch,
+            &parameter,
+            &diameter_parameter,
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::RepeatedDiameter {
+            entities,
+            parameter,
+        }) if entities == vec![entity.id.clone(), duplicate.id.clone()]
+            && parameter == diameter_parameter
+    ));
+
+    let radial_parameter = parse_design_parameter(&parameter_record(
+        Some(1),
+        "5 mm",
+        "Radial Dimension-2",
+        Some("mm"),
+        "d2",
+        0.5,
+    ))
+    .expect("radial parameter");
+    assert!(matches!(
+        owner_scoped_radial_dimension_definition(
+            &[entity.clone(), duplicate.clone()],
+            &entity.sketch,
+            &radial_parameter,
+            &radius_parameter,
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::RepeatedRadius {
+            entities,
+            parameter,
+        }) if entities == vec![entity.id.clone(), duplicate.id]
+            && parameter == radius_parameter
+    ));
 
     entity.geometry = SketchGeometry::Arc {
         center: Point2::new(2.0, 3.0),
@@ -2744,6 +3220,180 @@ fn radial_dimensions_require_one_exact_circular_measurement() {
         radial_dimension_definition(&entity, "Radius Dimension-2", 0.5, radius_parameter,)
             .is_none()
     );
+}
+
+#[test]
+fn owner_scoped_line_lengths_preserve_repeated_entities() {
+    let sketch = SketchId("f3d:model:sketch#line-length".into());
+    let line = |name: &str, v: f64, length: f64| SketchEntity {
+        id: SketchEntityId(format!("f3d:model:sketch-entity#{name}")),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line {
+            start: Point2::new(0.0, v),
+            end: Point2::new(length, v),
+        },
+    };
+    let first = line("first", 0.0, 4.0);
+    let second = line("second", 2.0, 4.0 + 5.0e-7);
+    let parameter = parse_design_parameter(&parameter_record(
+        Some(1),
+        "4 mm",
+        "Linear Dimension-2",
+        Some("mm"),
+        "d1",
+        0.4,
+    ))
+    .expect("linear parameter");
+    let parameter_id = cadmpeg_ir::features::ParameterId("parameter#line-length".into());
+
+    assert!(matches!(
+        owner_scoped_line_length_dimension_definition(
+            std::slice::from_ref(&first),
+            &sketch,
+            &parameter,
+            &parameter_id,
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::DistanceLoci {
+            first: SketchLocus::Start(ref entity),
+            second: SketchLocus::End(ref other),
+            parameter: ref actual_parameter,
+        }) if entity == &first.id && other == &first.id && actual_parameter == &parameter_id
+    ));
+    assert!(matches!(
+        owner_scoped_line_length_dimension_definition(
+            &[first.clone(), second.clone()],
+            &sketch,
+            &parameter,
+            &parameter_id,
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::RepeatedLength {
+            entities,
+            parameter,
+        }) if entities == vec![first.id, second.id]
+            && parameter == parameter_id
+    ));
+}
+
+#[test]
+fn owner_scoped_point_dimensions_quotient_coincident_identities() {
+    let sketch = SketchId("f3d:model:sketch#point-classes".into());
+    let point = |name: &str, u: f64, v: f64| SketchEntity {
+        id: SketchEntityId(format!("f3d:model:sketch-entity#{name}")),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(u, v),
+        },
+    };
+    let lower = point("lower", -53.0, -20.875);
+    let lower_duplicate = point("lower-duplicate", -53.0, -20.875 + 5.0e-7);
+    let upper = point("upper", -53.0, -7.875);
+    let parameter = parse_design_parameter(&parameter_record(
+        Some(1),
+        "13 mm",
+        "Linear Dimension-2",
+        Some("mm"),
+        "d19",
+        1.3,
+    ))
+    .expect("linear parameter");
+    let parameter_id = cadmpeg_ir::features::ParameterId("parameter#point-classes".into());
+
+    assert!(matches!(
+        unique_point_class_dimension_definition(
+            &[lower.clone(), lower_duplicate, upper.clone()],
+            &sketch,
+            &parameter,
+            &parameter_id,
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::VerticalDistance {
+            first: SketchLocus::Entity(first),
+            second: SketchLocus::Entity(second),
+            parameter,
+        }) if first == lower.id && second == upper.id && parameter == parameter_id
+    ));
+
+    let another_upper = point("another-upper", -40.0, -7.875);
+    assert!(unique_point_class_dimension_definition(
+        &[lower, upper, another_upper],
+        &sketch,
+        &parameter,
+        &parameter_id,
+        1.0e-6,
+    )
+    .is_none());
+}
+
+#[test]
+fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
+    let sketch = SketchId("f3d:model:sketch#radial-loci".into());
+    let point = |id: &str, u, v| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(u, v),
+        },
+    };
+    let circle = |id: &str, u, v, radius| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Circle {
+            center: Point2::new(u, v),
+            radius: Length(radius),
+        },
+    };
+    let center = point("center", 2.0, 3.0);
+    let annotation = point("annotation", 7.0, 3.0);
+    let measured = circle("measured", 2.0, 3.0, 5.0);
+    let other_center = circle("other-center", 20.0, 30.0, 5.0);
+    let other_radius = circle("other-radius", 2.0, 3.0, 7.0);
+    let all = [
+        center.clone(),
+        annotation.clone(),
+        measured.clone(),
+        other_center,
+        other_radius,
+    ];
+    let parameter = cadmpeg_ir::features::ParameterId("parameter#radial-loci".into());
+
+    assert!(matches!(
+        radial_locus_dimension_definition(
+            &[&measured, &annotation],
+            &all,
+            "Radial Dimension-2",
+            0.5,
+            &parameter,
+        ),
+        Some(SketchConstraintDefinition::Radius { entity, .. }) if entity == measured.id
+    ));
+    assert!(matches!(
+        radial_locus_dimension_definition(
+            &[&center],
+            &all,
+            "Diameter Dimension-2",
+            1.0,
+            &parameter,
+        ),
+        Some(SketchConstraintDefinition::Diameter { entity, .. }) if entity == measured.id
+    ));
 }
 
 #[test]
@@ -2811,7 +3461,7 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
         state: 0,
         constraint_kinds: vec![SketchConstraintKind::Coincident],
         unknown_constraint_bits: 0,
-        member_roles: Vec::new(),
+        member_relation_ordinals: Vec::new(),
         entity_genesis: None,
         pattern: None,
         return_members: vec![217, 175],
@@ -2952,6 +3602,11 @@ fn work_point_direct_record_carries_model_space_position() {
         bytes.extend_from_slice(&f64::to_le_bytes(-1.0));
     }
     bytes.extend_from_slice(&2u32.to_le_bytes());
+    for target in [56u32, 57] {
+        bytes.push(1);
+        bytes.extend_from_slice(&u64::from(target).to_le_bytes());
+        bytes.extend_from_slice(&[0, 0]);
+    }
     bytes.resize(point_at + 208, 0);
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"259");
@@ -2963,24 +3618,118 @@ fn work_point_direct_record_carries_model_space_position() {
         class_tag: "427".into(),
         byte_offset: 0,
     };
-    let scope = parse_parameter_scope(&bytes, &header).expect("WorkPoint scope");
-    assert_eq!(
-        exact_work_point_position(&bytes, &scope),
-        Some(([1.25, -2.5, 3.75], position_at as u64))
-    );
+    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+        .expect("WorkPoint scope");
+    let frame = exact_work_point_position(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &HashMap::new(),
+    )
+    .expect("work point frame");
+    assert_eq!(frame.position, [1.25, -2.5, 3.75]);
+    assert_eq!(frame.position_offset, position_at as u64);
+    assert_eq!(frame.reference_type, 7);
+    assert_eq!(frame.input_record_indices, [56, 57]);
     bytes[point_at + 66..point_at + 70].copy_from_slice(&1u32.to_le_bytes());
     bytes[point_at + 94..point_at + 98].copy_from_slice(&1u32.to_le_bytes());
     bytes.drain(point_at + 197..point_at + 208);
-    assert_eq!(
-        exact_work_point_position(&bytes, &scope),
-        Some(([1.25, -2.5, 3.75], position_at as u64))
-    );
+    let frame = exact_work_point_position(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &HashMap::new(),
+    )
+    .expect("work point frame");
+    assert_eq!(frame.position, [1.25, -2.5, 3.75]);
+    assert_eq!(frame.position_offset, position_at as u64);
+    assert_eq!(frame.reference_type, 1);
+    assert_eq!(frame.input_record_indices, [56]);
+}
+
+#[test]
+fn work_point_reference_type_fixes_the_counted_input_arity() {
+    // A `refType` of `18` takes two inputs; every other rule takes one. A count
+    // that contradicts the rule means the version being read has desynchronized
+    // the members, so no coordinate is named.
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"427");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&55u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&7u32.to_le_bytes());
+    lp_utf16(&mut bytes, "WorkPoint");
+    let mut tail = [0; 78];
+    tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+    tail[31..35].copy_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&tail);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"259");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 11]);
+
+    let point_at = bytes.len();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"282");
+    bytes.extend_from_slice(&55u32.to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 27]);
+    let position_at = bytes.len();
+    for value in [4.0, 5.0, 6.0] {
+        bytes.extend_from_slice(&f64::to_le_bytes(value));
+    }
+    bytes.extend_from_slice(&18u32.to_le_bytes());
+    for _ in 0..3 {
+        bytes.extend_from_slice(&f64::to_le_bytes(-1.0));
+    }
+    let count_at = bytes.len();
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    for target in [56u32, 57] {
+        bytes.push(1);
+        bytes.extend_from_slice(&u64::from(target).to_le_bytes());
+        bytes.extend_from_slice(&[0, 0]);
+    }
+    bytes.resize(point_at + 208, 0);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"259");
+    bytes.extend_from_slice(&55u32.to_le_bytes());
+
+    let header = DesignRecordHeader {
+        id: "generated:scope-header#0".into(),
+        record_index: 12,
+        class_tag: "427".into(),
+        byte_offset: 0,
+    };
+    let records = IndexedRecordOffsets::build(&bytes);
+    let scope = parse_parameter_scope(&bytes, &records, &header).expect("WorkPoint scope");
+    let frame = exact_work_point_position(&bytes, &records, &scope, &HashMap::new())
+        .expect("work point frame");
+    assert_eq!(frame.reference_type, 18);
+    assert_eq!(frame.input_record_indices, [56, 57]);
+
+    bytes[count_at..count_at + 4].copy_from_slice(&1u32.to_le_bytes());
+    let records = IndexedRecordOffsets::build(&bytes);
+    assert!(exact_work_point_position(&bytes, &records, &scope, &HashMap::new()).is_none());
+
+    // A rule above the values the shipped range check admitted still names a
+    // coordinate when its input arity agrees.
+    bytes[position_at + 24..position_at + 28].copy_from_slice(&64u32.to_le_bytes());
+    let records = IndexedRecordOffsets::build(&bytes);
+    let frame = exact_work_point_position(&bytes, &records, &scope, &HashMap::new())
+        .expect("work point frame");
+    assert_eq!(frame.position, [4.0, 5.0, 6.0]);
+    assert_eq!(frame.reference_type, 64);
+    assert_eq!(frame.input_record_indices, [56]);
 }
 
 #[test]
 fn move_matrix_decomposes_to_translation_and_axis_angle() {
     let angle = std::f64::consts::PI / 3.0;
-    let transform = [
+    let transform: [[f64; 4]; 4] = [
         [angle.cos(), 0.0, angle.sin(), -14.0],
         [0.0, 1.0, 0.0, 2.0],
         [-angle.sin(), 0.0, angle.cos(), 9.0],
@@ -3031,7 +3780,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         byte_offset: 0,
     };
 
-    let mut scope = parse_parameter_scope(&bytes, &header).unwrap();
+    let mut scope =
+        parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header).unwrap();
     assert_eq!(scope.kind, "Sketch");
     assert_eq!(scope.feature_ordinal, 1);
     assert_eq!(scope.feature_ordinal_offset, feature_ordinal_at as u64);
@@ -3043,12 +3793,72 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(scope.frame_length, paired_at as u64);
     assert_eq!(scope.paired_class_tag, "261");
     assert_eq!(scope.paired_byte_offset, paired_at as u64);
-    let discovered = crate::design::decode::scopes::parameter_scope_candidate_headers(&bytes)
-        .into_iter()
-        .filter_map(|header| parse_parameter_scope(&bytes, &header))
-        .collect::<Vec<_>>();
+    let discovered = crate::design::decode::scopes::parameter_scope_candidate_headers(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+    )
+    .into_iter()
+    .filter_map(|header| {
+        parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+    })
+    .collect::<Vec<_>>();
     assert_eq!(discovered.len(), 1);
     assert_eq!(discovered[0].record_index, 12);
+
+    let mut compact_tail = bytes.clone();
+    compact_tail.remove(paired_at - 1);
+    let compact = parse_parameter_scope(
+        &compact_tail,
+        &IndexedRecordOffsets::build(&compact_tail),
+        &header,
+    )
+    .expect("scope with compact fixed tail");
+    assert_eq!(compact.kind, "Sketch");
+    assert_eq!(compact.frame_length, paired_at as u64 - 1);
+    assert_eq!(compact.previous_history_state_id, Some(2));
+    assert!(
+        !crate::design::decode::scopes::parameter_scope_tail_length_is_valid("CopyPasteBodies", 78,)
+    );
+
+    for tail_length in [72, 76] {
+        let mut legacy = bytes[..feature_ordinal_at].to_vec();
+        let mut tail = vec![0; tail_length];
+        tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+        tail[30..34].copy_from_slice(&2u32.to_le_bytes());
+        legacy.extend_from_slice(&tail);
+        legacy.extend_from_slice(&3u32.to_le_bytes());
+        legacy.extend_from_slice(b"261");
+        legacy.extend_from_slice(&12u32.to_le_bytes());
+        let decoded =
+            parse_parameter_scope(&legacy, &IndexedRecordOffsets::build(&legacy), &header)
+                .expect("scope with legacy fixed tail");
+        assert_eq!(decoded.kind, "Sketch");
+        assert_eq!(decoded.previous_history_state_id, Some(2));
+        assert_eq!(
+            decoded.previous_history_state_id_offset,
+            (feature_ordinal_at + 30) as u64
+        );
+    }
+
+    let mut extended_tail = bytes[..feature_ordinal_at].to_vec();
+    let mut tail = [0; 87];
+    tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+    tail[41..45].copy_from_slice(&3u32.to_le_bytes());
+    extended_tail.extend_from_slice(&tail);
+    extended_tail.extend_from_slice(&3u32.to_le_bytes());
+    extended_tail.extend_from_slice(b"261");
+    extended_tail.extend_from_slice(&12u32.to_le_bytes());
+    let extended = parse_parameter_scope(
+        &extended_tail,
+        &IndexedRecordOffsets::build(&extended_tail),
+        &header,
+    )
+    .expect("scope with extended fixed tail");
+    assert_eq!(extended.previous_history_state_id, Some(3));
+    assert_eq!(
+        extended.previous_history_state_id_offset,
+        (feature_ordinal_at + 41) as u64
+    );
 
     let mut copy_scope = Vec::new();
     copy_scope.extend_from_slice(&3u32.to_le_bytes());
@@ -3070,8 +3880,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     copy_scope.extend_from_slice(&3u32.to_le_bytes());
     copy_scope.extend_from_slice(b"259");
     copy_scope.extend_from_slice(&12u32.to_le_bytes());
-    let copy = parse_parameter_scope(&copy_scope, &header)
-        .expect("CopyPasteBodies scope with extended tail");
+    let copy = parse_parameter_scope(
+        &copy_scope,
+        &IndexedRecordOffsets::build(&copy_scope),
+        &header,
+    )
+    .expect("CopyPasteBodies scope with extended tail");
     assert_eq!(copy.kind, "CopyPasteBodies");
     assert_eq!(copy.feature_ordinal, 2);
     assert_eq!(copy.feature_ordinal_offset, copy_feature_ordinal_at as u64);
@@ -3117,6 +3931,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     operation_scope.reference_members = vec![55, 66];
     let operation = crate::design::decode::scopes::exact_copy_paste_bodies_operation(
         &operation_bytes,
+        &IndexedRecordOffsets::build(&operation_bytes),
         &operation_scope,
     )
     .expect("single-body CopyPasteBodies relation");
@@ -3138,8 +3953,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     generic_references[reference_count_at..reference_count_at + 4]
         .copy_from_slice(&2u32.to_le_bytes());
     generic_references.splice(reference_at + 10..reference_at + 10, generic_reference);
-    let generic_scope =
-        parse_parameter_scope(&generic_references, &header).expect("generic-table Sketch scope");
+    let generic_scope = parse_parameter_scope(
+        &generic_references,
+        &IndexedRecordOffsets::build(&generic_references),
+        &header,
+    )
+    .expect("generic-table Sketch scope");
     assert_eq!(generic_scope.kind, "Sketch");
     assert_eq!(generic_scope.reference_members, [55, 56]);
 
@@ -3165,7 +3984,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     work_plane.extend_from_slice(b"261");
     work_plane.extend_from_slice(&55u32.to_le_bytes());
     bytes.extend_from_slice(&work_plane);
-    let decoded = exact_work_plane_frame(&bytes, &scope).expect("exact WorkPlane frame");
+    let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        .expect("exact WorkPlane frame");
     assert_eq!(decoded.transform, transform);
     assert_eq!(decoded.transform_offset, (work_plane_at + 76) as u64);
     assert_eq!(decoded.reference, Some((99, (work_plane_at + 58) as u64)));
@@ -3187,8 +4007,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&extended);
     let mut extended_scope = scope.clone();
     extended_scope.reference_members = vec![57];
-    let decoded = exact_work_plane_frame(&bytes, &extended_scope)
-        .expect("extended referenced WorkPlane frame");
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &extended_scope,
+    )
+    .expect("extended referenced WorkPlane frame");
     assert_eq!(decoded.transform, transform);
     assert_eq!(decoded.transform_offset, (extended_at + 76) as u64);
     assert_eq!(decoded.reference, Some((100, (extended_at + 58) as u64)));
@@ -3209,10 +4033,181 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&direct);
     let mut direct_scope = scope.clone();
     direct_scope.reference_members = vec![56];
-    let decoded = exact_work_plane_frame(&bytes, &direct_scope).expect("direct WorkPlane frame");
+    let decoded =
+        exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &direct_scope)
+            .expect("direct WorkPlane frame");
     assert_eq!(decoded.transform, transform);
     assert_eq!(decoded.transform_offset, (direct_at + 66) as u64);
     assert_eq!(decoded.reference, None);
+
+    let extended_direct_at = bytes.len();
+    let mut extended_direct = vec![0; 363];
+    extended_direct[0..4].copy_from_slice(&3u32.to_le_bytes());
+    extended_direct[4..7].copy_from_slice(b"289");
+    extended_direct[7..11].copy_from_slice(&61u32.to_le_bytes());
+    extended_direct[55] = 1;
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = 66 + ordinal * 8;
+        extended_direct[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    extended_direct.extend_from_slice(&3u32.to_le_bytes());
+    extended_direct.extend_from_slice(b"258");
+    extended_direct.extend_from_slice(&61u32.to_le_bytes());
+    bytes.extend_from_slice(&extended_direct);
+    let mut extended_direct_scope = scope.clone();
+    extended_direct_scope.reference_members = vec![61];
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &extended_direct_scope,
+    )
+    .expect("extended direct WorkPlane frame");
+    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform_offset, (extended_direct_at + 66) as u64);
+    assert_eq!(decoded.reference, None);
+
+    let mut axis_bytes = vec![0; 232];
+    axis_bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+    axis_bytes[4..7].copy_from_slice(b"701");
+    axis_bytes[7..11].copy_from_slice(&100u32.to_le_bytes());
+    axis_bytes[21..25].copy_from_slice(&8u32.to_le_bytes());
+    let axis_values = [1.0_f64, 2.0, 3.0, 0.0, -3.0, 4.0, 0.0, 0.0];
+    for (ordinal, value) in axis_values.into_iter().enumerate() {
+        let at = 25 + ordinal * 8;
+        axis_bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    axis_bytes[118..122].copy_from_slice(&2u32.to_le_bytes());
+    for (ordinal, record_index) in [102_u32, 104].into_iter().enumerate() {
+        let at = 122 + ordinal * 11;
+        axis_bytes[at] = 1;
+        axis_bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+    }
+    axis_bytes.extend_from_slice(&3u32.to_le_bytes());
+    axis_bytes.extend_from_slice(b"258");
+    axis_bytes.extend_from_slice(&100u32.to_le_bytes());
+    for (record_index, point) in [(102_u32, [1.0_f64, 2.0, 3.0]), (104, [1.0, -1.0, 7.0])] {
+        let start = axis_bytes.len();
+        axis_bytes.resize(start + 197, 0);
+        axis_bytes[start..start + 4].copy_from_slice(&3u32.to_le_bytes());
+        axis_bytes[start + 4..start + 7].copy_from_slice(b"702");
+        axis_bytes[start + 7..start + 11].copy_from_slice(&record_index.to_le_bytes());
+        for (ordinal, value) in point.into_iter().enumerate() {
+            let at = start + 42 + ordinal * 8;
+            axis_bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        axis_bytes.extend_from_slice(&3u32.to_le_bytes());
+        axis_bytes.extend_from_slice(b"258");
+        axis_bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+    let mut axis_scope = scope.clone();
+    axis_scope.id = "f3d:native:parameter-scope#55".into();
+    axis_scope.kind = "WorkAxis".into();
+    axis_scope.reference_members = vec![100, 101, 102, 103, 104];
+    let construction = exact_work_axis_construction(
+        &axis_bytes,
+        &IndexedRecordOffsets::build(&axis_bytes),
+        &axis_scope,
+    )
+    .expect("exact two-point WorkAxis construction");
+    assert_eq!(construction.origin, [1.0, 2.0, 3.0]);
+    assert_eq!(construction.displacement, [0.0, -3.0, 4.0]);
+    assert_eq!(construction.origin_offset, 25);
+    assert_eq!(construction.displacement_offset, 49);
+    assert_eq!(construction.point_record_indices, [102, 104]);
+    axis_scope.work_axis_construction = Some(construction);
+    let (axis_features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&axis_scope),
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        axis_features.as_slice(),
+        [Feature {
+            definition: FeatureDefinition::DatumAxis { origin, direction },
+            ..
+        }] if *origin == Point3::new(10.0, 20.0, 30.0)
+            && *direction == Vector3::new(0.0, -0.6, 0.8)
+    ));
+
+    let compact_at = bytes.len();
+    let mut compact = vec![0; 321];
+    compact[0..4].copy_from_slice(&3u32.to_le_bytes());
+    compact[4..7].copy_from_slice(b"293");
+    compact[7..11].copy_from_slice(&58u32.to_le_bytes());
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = 49 + ordinal * 8;
+        compact[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    compact.extend_from_slice(&3u32.to_le_bytes());
+    compact.extend_from_slice(b"261");
+    compact.extend_from_slice(&58u32.to_le_bytes());
+    bytes.extend_from_slice(&compact);
+    let mut compact_scope = scope.clone();
+    compact_scope.reference_members = vec![58];
+    let decoded =
+        exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &compact_scope)
+            .expect("compact direct WorkPlane frame");
+    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform_offset, (compact_at + 49) as u64);
+    assert_eq!(decoded.reference, None);
+
+    let compact_450_at = bytes.len();
+    let mut compact_450 = vec![0; 326];
+    compact_450[0..4].copy_from_slice(&3u32.to_le_bytes());
+    compact_450[4..7].copy_from_slice(b"450");
+    compact_450[7..11].copy_from_slice(&59u32.to_le_bytes());
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = 50 + ordinal * 8;
+        compact_450[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    compact_450.extend_from_slice(&3u32.to_le_bytes());
+    compact_450.extend_from_slice(b"259");
+    compact_450.extend_from_slice(&59u32.to_le_bytes());
+    bytes.extend_from_slice(&compact_450);
+    let mut compact_450_scope = scope.clone();
+    compact_450_scope.reference_members = vec![59];
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &compact_450_scope,
+    )
+    .expect("class-450 compact direct WorkPlane frame");
+    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform_offset, (compact_450_at + 50) as u64);
+    assert_eq!(decoded.reference, None);
+
+    let joint_origin_at = bytes.len();
+    let mut joint_origin = vec![0; 336];
+    joint_origin[0..4].copy_from_slice(&3u32.to_le_bytes());
+    joint_origin[4..7].copy_from_slice(b"450");
+    joint_origin[7..11].copy_from_slice(&60u32.to_le_bytes());
+    joint_origin[45] = 1;
+    joint_origin[46..50].copy_from_slice(&61u32.to_le_bytes());
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = 60 + ordinal * 8;
+        joint_origin[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    joint_origin.extend_from_slice(&3u32.to_le_bytes());
+    joint_origin.extend_from_slice(b"259");
+    joint_origin.extend_from_slice(&60u32.to_le_bytes());
+    bytes.extend_from_slice(&joint_origin);
+    let mut joint_origin_scope = scope.clone();
+    joint_origin_scope.kind = "JointOrigin".into();
+    joint_origin_scope.reference_members = vec![60];
+    let decoded = exact_joint_origin_frame(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &joint_origin_scope,
+    )
+    .expect("exact JointOrigin frame");
+    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform_offset, (joint_origin_at + 60) as u64);
+    assert_eq!(decoded.reference, Some((61, (joint_origin_at + 46) as u64)));
 
     let move_at = bytes.len();
     let mut move_frame = vec![0; 254];
@@ -3233,10 +4228,53 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let mut move_scope = scope.clone();
     move_scope.kind = "Move".into();
     move_scope.reference_members = vec![90];
-    let decoded = crate::design::decode::scopes::exact_move_operation(&bytes, &move_scope)
-        .expect("class-368 Move frame");
+    let decoded = crate::design::decode::scopes::exact_move_operation(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &move_scope,
+    )
+    .expect("class-368 Move frame");
     assert_eq!(decoded.transform, move_transform);
     assert_eq!(decoded.transform_offset, (move_at + 48) as u64);
+    assert_eq!(decoded.form, 5);
+
+    let compact_move_at = bytes.len();
+    let mut compact_move = vec![0; 253];
+    compact_move[0..4].copy_from_slice(&3u32.to_le_bytes());
+    compact_move[4..7].copy_from_slice(b"296");
+    compact_move[7..11].copy_from_slice(&91u32.to_le_bytes());
+    compact_move[43..47].copy_from_slice(&1u32.to_le_bytes());
+    for (ordinal, value) in move_transform.into_iter().flatten().enumerate() {
+        let at = 48 + ordinal * 8;
+        compact_move[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    compact_move.extend_from_slice(&3u32.to_le_bytes());
+    compact_move.extend_from_slice(b"265");
+    compact_move.extend_from_slice(&91u32.to_le_bytes());
+    bytes.extend_from_slice(&compact_move);
+    let mut compact_move_scope = scope.clone();
+    compact_move_scope.kind = "Move".into();
+    compact_move_scope.reference_members = vec![91];
+    let decoded = crate::design::decode::scopes::exact_move_operation(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &compact_move_scope,
+    )
+    .expect("class-296 Move frame");
+    assert_eq!(decoded.transform, move_transform);
+    assert_eq!(decoded.transform_offset, (compact_move_at + 48) as u64);
+    assert_eq!(decoded.transform_record_index, 91);
+    assert_eq!(decoded.form, 1);
+    assert_eq!(decoded.form_offset, (compact_move_at + 43) as u64);
+    bytes[compact_move_at + 4..compact_move_at + 7].copy_from_slice(b"362");
+    bytes[compact_move_at + 43..compact_move_at + 47].copy_from_slice(&5u32.to_le_bytes());
+    let decoded = crate::design::decode::scopes::exact_move_operation(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &compact_move_scope,
+    )
+    .expect("class-362 Move frame");
+    assert_eq!(decoded.transform, move_transform);
     assert_eq!(decoded.form, 5);
 
     let scale_at = bytes.len();
@@ -3296,7 +4334,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     sphere_scope.kind = "SpherePrimitive".into();
     sphere_scope.frame_length = 462;
     assert!(matches!(
-        exact_solid_primitive(&bytes, &sphere_scope),
+        exact_solid_primitive(&bytes, &IndexedRecordOffsets::build(&bytes), &sphere_scope),
         Some(DesignSolidPrimitive::Sphere {
             diameter: 8.0,
             diameter_record_index: 70,
@@ -3339,7 +4377,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     torus_scope.kind = "TorusPrimitive".into();
     torus_scope.frame_length = 486;
     assert!(matches!(
-        exact_solid_primitive(&bytes, &torus_scope),
+        exact_solid_primitive(&bytes, &IndexedRecordOffsets::build(&bytes), &torus_scope),
         Some(DesignSolidPrimitive::Torus {
             major_diameter: 15.0,
             minor_diameter: 4.0,
@@ -3368,7 +4406,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     offset_scope.frame_length = 286;
     offset_scope.reference_members = vec![1, 2, 3, 73];
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &offset_scope),
+        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &offset_scope),
         Some(DesignDirectFaceOperation::OffsetFaces {
             distance: -0.5,
             distance_record_index: 73,
@@ -3396,7 +4434,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     offset_scope.frame_length = 275;
     offset_scope.reference_members = vec![1, 2, 1_777];
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &offset_scope),
+        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &offset_scope),
         Some(DesignDirectFaceOperation::OffsetFaces {
             distance: 0.254,
             distance_record_index: 1_777,
@@ -3424,14 +4462,60 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     thicken_scope.frame_length = 301;
     thicken_scope.reference_members = vec![1, 2, 74];
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &thicken_scope),
+        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
         Some(DesignDirectFaceOperation::Thicken {
             signed_thickness: -1.0,
             thickness_record_index: 74,
             ..
         })
     ));
-    thicken_scope.direct_face_operation = exact_direct_face_operation(&bytes, &thicken_scope);
+    thicken_scope.frame_length = 295;
+    assert_eq!(
+        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
+        None
+    );
+    let compact_thicken_at = bytes.len();
+    let mut compact_thicken = vec![0; 295];
+    compact_thicken[45] = 1;
+    compact_thicken[46] = 1;
+    compact_thicken[47..51].copy_from_slice(&74u32.to_le_bytes());
+    bytes.extend_from_slice(&compact_thicken);
+    thicken_scope.byte_offset = compact_thicken_at as u64;
+    assert!(matches!(
+        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
+        Some(DesignDirectFaceOperation::Thicken {
+            signed_thickness: -1.0,
+            thickness_record_index: 74,
+            ..
+        })
+    ));
+    let shifted_thicken_at = bytes.len();
+    let mut shifted_thicken = vec![0; 312];
+    shifted_thicken[34] = 1;
+    shifted_thicken[35..39].copy_from_slice(&200u32.to_le_bytes());
+    shifted_thicken[46..48].copy_from_slice(&[1, 1]);
+    shifted_thicken[48..52].copy_from_slice(&74u32.to_le_bytes());
+    bytes.extend_from_slice(&shifted_thicken);
+    let shifted_thicken_scope = DesignParameterScope {
+        byte_offset: shifted_thicken_at as u64,
+        frame_length: 312,
+        reference_members: vec![74, 200, 201, 202],
+        ..thicken_scope.clone()
+    };
+    assert!(matches!(
+        exact_direct_face_operation(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &shifted_thicken_scope,
+        ),
+        Some(DesignDirectFaceOperation::Thicken {
+            signed_thickness: -1.0,
+            thickness_record_index: 74,
+            ..
+        })
+    ));
+    thicken_scope.direct_face_operation =
+        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope);
     let thicken_group = DesignConstructionOperandGroup {
         id: "thicken-group".into(),
         scope_record_index: thicken_scope.record_index,
@@ -3439,21 +4523,26 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         record_index: 200,
         byte_offset: 0,
         class_tag: "264".into(),
-        member_count_offset: 0,
         members: vec![201],
         lost_edge_references: Vec::new(),
         member_offsets: vec![0],
-        identity_record_index: 202,
-        identity_record_offset: 0,
+        frame: crate::records::DesignConstructionOperandGroupFrame {
+            member_count_offset: 0,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            identity_record_indices: vec![202],
+            identity_record_offsets: vec![0],
+            opaque_index: 1,
+            opaque_index_offset: 0,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 0,
+            variant: false,
+        },
         role: 0x0000_0005_0000_0000,
         extrude_role: None,
         extrude_face_role: None,
         role_offset: 0,
-        opaque_index: 1,
-        opaque_index_offset: 0,
-        opaque_scalar: 0.0,
-        opaque_scalar_offset: 0,
-        variant: false,
+
         paired_class_tag: "264".into(),
         paired_byte_offset: 0,
     };
@@ -3463,6 +4552,19 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             faces: cadmpeg_ir::features::FaceSelection::Native(native),
             thickness: Some(cadmpeg_ir::features::Length(10.0)),
             side: Some(cadmpeg_ir::features::ThickenSide::Reverse),
+        }) if native == "thicken-group"
+    ));
+    let mut bounded_face_thicken_group = thicken_group.clone();
+    bounded_face_thicken_group.role = 0x0000_0012_0000_0000;
+    assert!(matches!(
+        crate::design::feature_project::project_thicken(
+            &thicken_scope,
+            &[],
+            std::slice::from_ref(&bounded_face_thicken_group)
+        ),
+        Some(cadmpeg_ir::features::FeatureDefinition::Thicken {
+            faces: cadmpeg_ir::features::FaceSelection::Native(native),
+            ..
         }) if native == "thicken-group"
     ));
     let shell_at = bytes.len();
@@ -3490,7 +4592,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     shell_scope.kind = "Shell".into();
     shell_scope.frame_length = 278;
     shell_scope.reference_members = vec![200, 201, 1_778];
-    shell_scope.direct_face_operation = exact_direct_face_operation(&bytes, &shell_scope);
+    shell_scope.direct_face_operation =
+        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &shell_scope);
     assert!(matches!(
         shell_scope.direct_face_operation,
         Some(DesignDirectFaceOperation::Shell {
@@ -3513,7 +4616,104 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             ..
         }) if native == "shell-group"
     ));
-    offset_scope.direct_face_operation = exact_direct_face_operation(&bytes, &offset_scope);
+    let compact_shell_at = bytes.len();
+    let mut compact_shell = vec![0; 268];
+    compact_shell[21] = 1;
+    compact_shell[22] = 1;
+    compact_shell[23..27].copy_from_slice(&9_000u32.to_le_bytes());
+    compact_shell[42..46].copy_from_slice(&1u32.to_le_bytes());
+    compact_shell[46] = 1;
+    compact_shell[47..51].copy_from_slice(&200u32.to_le_bytes());
+    bytes.extend_from_slice(&compact_shell);
+    let mut compact_shell_thickness = vec![0; 103];
+    compact_shell_thickness[0..4].copy_from_slice(&3u32.to_le_bytes());
+    compact_shell_thickness[4..7].copy_from_slice(b"354");
+    compact_shell_thickness[7..11].copy_from_slice(&9_000u32.to_le_bytes());
+    compact_shell_thickness[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
+    compact_shell_thickness[24] = 1;
+    compact_shell_thickness[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+    compact_shell_thickness[40..48].copy_from_slice(&0.25f64.to_le_bytes());
+    compact_shell_thickness[48] = 1;
+    compact_shell_thickness[49..53].copy_from_slice(&9_001u32.to_le_bytes());
+    compact_shell_thickness[59..63].copy_from_slice(&10u32.to_le_bytes());
+    compact_shell_thickness[67] = 1;
+    compact_shell_thickness[68..72].copy_from_slice(&scope.record_index.to_le_bytes());
+    compact_shell_thickness[80] = 1;
+    compact_shell_thickness[81..85].copy_from_slice(&9_002u32.to_le_bytes());
+    compact_shell_thickness[92] = 1;
+    compact_shell_thickness[93..97].copy_from_slice(&scope.record_index.to_le_bytes());
+    compact_shell_thickness.extend_from_slice(&3u32.to_le_bytes());
+    compact_shell_thickness.extend_from_slice(b"258");
+    compact_shell_thickness.extend_from_slice(&9_000u32.to_le_bytes());
+    bytes.extend_from_slice(&compact_shell_thickness);
+    let mut compact_shell_scope = DesignParameterScope {
+        byte_offset: compact_shell_at as u64,
+        frame_length: 268,
+        reference_members: vec![200, 201, 9_000],
+        ..shell_scope.clone()
+    };
+    assert!(matches!(
+        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &compact_shell_scope),
+        Some(DesignDirectFaceOperation::Shell {
+            thickness: 0.25,
+            thickness_record_index: 9_000,
+            outward: true,
+            outward_offset,
+            ..
+        }) if outward_offset == (compact_shell_at + 21) as u64
+    ));
+    let shifted_shell_at = bytes.len();
+    let mut shifted_shell = vec![0; 278];
+    shifted_shell[20] = 1;
+    shifted_shell[25] = 1;
+    shifted_shell[27] = 1;
+    shifted_shell[28..32].copy_from_slice(&9_000u32.to_le_bytes());
+    shifted_shell[51..55].copy_from_slice(&1u32.to_le_bytes());
+    shifted_shell[55] = 1;
+    shifted_shell[56..60].copy_from_slice(&200u32.to_le_bytes());
+    bytes.extend_from_slice(&shifted_shell);
+    let shifted_shell_scope = DesignParameterScope {
+        byte_offset: shifted_shell_at as u64,
+        frame_length: 278,
+        reference_members: vec![9_000, 200, 201],
+        ..shell_scope.clone()
+    };
+    assert!(matches!(
+        exact_direct_face_operation(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &shifted_shell_scope,
+        ),
+        Some(DesignDirectFaceOperation::Shell {
+            thickness: 0.25,
+            thickness_record_index: 9_000,
+            outward: false,
+            outward_offset,
+            ..
+        }) if outward_offset == (shifted_shell_at + 21) as u64
+    ));
+    compact_shell_scope.direct_face_operation = exact_direct_face_operation(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &compact_shell_scope,
+    );
+    shell_group.role = 0x0000_0004_0000_0000;
+    assert!(matches!(
+        crate::design::feature_project::project_shell(
+            &compact_shell_scope,
+            &[],
+            std::slice::from_ref(&shell_group)
+        ),
+        Some(cadmpeg_ir::features::FeatureDefinition::Shell {
+            bodies: Some(cadmpeg_ir::features::BodySelection::Native(body)),
+            removed_faces: cadmpeg_ir::features::FaceSelection::Faces(removed),
+            thickness: Some(cadmpeg_ir::features::Length(2.5)),
+            outward: Some(true),
+            ..
+        }) if body == "shell-group" && removed.is_empty()
+    ));
+    offset_scope.direct_face_operation =
+        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &offset_scope);
     let mut offset_group = thicken_group.clone();
     offset_group.id = "offset-group".into();
     offset_group.scope_record_index = offset_scope.record_index;
@@ -3532,8 +4732,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             },
         }) if native == "offset-group"
     ));
-    bytes[thicken_at + 47] = 0;
-    assert_eq!(exact_direct_face_operation(&bytes, &thicken_scope), None);
+    bytes[compact_thicken_at + 46] = 0;
+    assert_eq!(
+        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
+        None
+    );
 
     for (record_index, ordinal, value) in [(75u32, 0u8, -2.0f64), (76, 1, 0.0)] {
         let mut scalar = vec![0; 104];
@@ -3551,21 +4754,351 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     }
     let mut extrude_scope = scope.clone();
     extrude_scope.kind = "Extrude".into();
-    extrude_scope.extrude_extent = Some(DesignExtrudeExtent::OneSidedDistance);
+    extrude_scope.extrude_prologue = Some(DesignExtrudePrologue::ReferenceAware {
+        reference: None,
+        operation: DesignExtrudeOperation::NewBody,
+        operation_offset: 28,
+        extent_discriminators: [1, 2],
+        extent: DesignExtrudeExtent::OneSidedDistance,
+        extent_discriminator_offsets: [32, 36],
+        direction_reversed: false,
+        direction_reversed_offset: 40,
+        solid_operation: true,
+        solid_operation_offset: 41,
+        start: DesignExtrudeStart::ProfilePlane,
+        start_offset: 42,
+    });
     extrude_scope.reference_members = vec![50, 75, 76, 51];
     assert_eq!(
-        exact_fixed_extrude_parameters(&bytes, &extrude_scope),
+        exact_fixed_extrude_parameters(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &extrude_scope
+        ),
         Some(DesignFixedExtrudeParameters {
-            along_distance: -2.0,
-            along_distance_record_index: 75,
-            along_distance_offset: (bytes.len() - 2 * 115 + 40) as u64,
-            taper_angle: 0.0,
-            taper_angle_record_index: 76,
-            taper_angle_offset: (bytes.len() - 115 + 40) as u64,
+            along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(
+                DesignFixedExtrudeScalar {
+                    value: -2.0,
+                    record_index: 75,
+                    value_offset: (bytes.len() - 2 * 115 + 40) as u64,
+                },
+            )),
+            taper_angle: Some(DesignFixedExtrudeScalar {
+                value: 0.0,
+                record_index: 76,
+                value_offset: (bytes.len() - 115 + 40) as u64,
+            }),
         })
     );
+    extrude_scope.reference_members = vec![50, 75, 51];
+    assert_eq!(
+        exact_fixed_extrude_parameters(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &extrude_scope
+        ),
+        Some(DesignFixedExtrudeParameters {
+            along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(
+                DesignFixedExtrudeScalar {
+                    value: -2.0,
+                    record_index: 75,
+                    value_offset: (bytes.len() - 2 * 115 + 40) as u64,
+                },
+            )),
+            taper_angle: None,
+        })
+    );
+    extrude_scope.reference_members = vec![50, 75, 76, 51];
     extrude_scope.reference_members.push(75);
-    assert_eq!(exact_fixed_extrude_parameters(&bytes, &extrude_scope), None);
+    assert_eq!(
+        exact_fixed_extrude_parameters(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &extrude_scope
+        ),
+        None
+    );
+
+    let extend_distance_at = bytes.len();
+    let extend_distance_record_index = 400u32;
+    let extend_boundary_record_index = 500u32;
+    let extend_edge_record_indices = [503u32, 507u32];
+    let mut extend_distance = vec![0; 104];
+    extend_distance[0..4].copy_from_slice(&3u32.to_le_bytes());
+    extend_distance[4..7].copy_from_slice(b"299");
+    extend_distance[7..11].copy_from_slice(&extend_distance_record_index.to_le_bytes());
+    extend_distance[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
+    extend_distance[24] = 1;
+    extend_distance[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+    extend_distance[35] = 0;
+    extend_distance[40..48].copy_from_slice(&0.04f64.to_le_bytes());
+    extend_distance[48] = 1;
+    extend_distance[49..53].copy_from_slice(&(extend_distance_record_index - 1).to_le_bytes());
+    extend_distance[59..63].copy_from_slice(&1016u32.to_le_bytes());
+    extend_distance[67] = 1;
+    extend_distance[68..72].copy_from_slice(&scope.record_index.to_le_bytes());
+    extend_distance[78..81].copy_from_slice(&[1, 0, 0]);
+    extend_distance[81] = 1;
+    extend_distance[82..86].copy_from_slice(&(extend_distance_record_index + 1).to_le_bytes());
+    extend_distance[93] = 1;
+    extend_distance[94..98].copy_from_slice(&scope.record_index.to_le_bytes());
+    extend_distance.extend_from_slice(&3u32.to_le_bytes());
+    extend_distance.extend_from_slice(b"258");
+    extend_distance.extend_from_slice(&extend_distance_record_index.to_le_bytes());
+    bytes.extend_from_slice(&extend_distance);
+
+    let extend_boundary_at = bytes.len();
+    let extend_boundary_tail = 25 + extend_edge_record_indices.len() * 11;
+    let mut extend_boundary = vec![0; 113 + extend_edge_record_indices.len() * 11];
+    extend_boundary[0..4].copy_from_slice(&3u32.to_le_bytes());
+    extend_boundary[4..7].copy_from_slice(b"290");
+    extend_boundary[7..11].copy_from_slice(&extend_boundary_record_index.to_le_bytes());
+    extend_boundary[21..25]
+        .copy_from_slice(&(extend_edge_record_indices.len() as u32).to_le_bytes());
+    for (ordinal, record_index) in extend_edge_record_indices.iter().enumerate() {
+        let at = 25 + ordinal * 11;
+        extend_boundary[at] = 1;
+        extend_boundary[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+    }
+    extend_boundary[extend_boundary_tail + 2..extend_boundary_tail + 6]
+        .copy_from_slice(&1u32.to_le_bytes());
+    extend_boundary[extend_boundary_tail + 6] = 1;
+    extend_boundary[extend_boundary_tail + 7..extend_boundary_tail + 11]
+        .copy_from_slice(&900u32.to_le_bytes());
+    extend_boundary[extend_boundary_tail + 21..extend_boundary_tail + 25]
+        .copy_from_slice(&8u32.to_le_bytes());
+    extend_boundary[extend_boundary_tail + 35..extend_boundary_tail + 39]
+        .copy_from_slice(&210u32.to_le_bytes());
+    extend_boundary[extend_boundary_tail + 39..extend_boundary_tail + 47]
+        .copy_from_slice(&1.0e-6f64.to_le_bytes());
+    extend_boundary[extend_boundary_tail + 47..extend_boundary_tail + 51]
+        .copy_from_slice(&210u32.to_le_bytes());
+    extend_boundary[extend_boundary_tail + 51] = 1;
+    extend_boundary[extend_boundary_tail + 52..extend_boundary_tail + 56]
+        .copy_from_slice(&(extend_boundary_record_index + 2).to_le_bytes());
+    extend_boundary[extend_boundary_tail + 62..extend_boundary_tail + 65]
+        .copy_from_slice(&[1, 0, 0]);
+    extend_boundary[extend_boundary_tail + 65] = 1;
+    extend_boundary[extend_boundary_tail + 66..extend_boundary_tail + 70]
+        .copy_from_slice(&(extend_boundary_record_index + 1).to_le_bytes());
+    extend_boundary[extend_boundary_tail + 77] = 1;
+    extend_boundary[extend_boundary_tail + 78..extend_boundary_tail + 82]
+        .copy_from_slice(&scope.record_index.to_le_bytes());
+    extend_boundary.extend_from_slice(&3u32.to_le_bytes());
+    extend_boundary.extend_from_slice(b"258");
+    extend_boundary.extend_from_slice(&extend_boundary_record_index.to_le_bytes());
+    bytes.extend_from_slice(&extend_boundary);
+
+    let mut extend_scope = scope.clone();
+    extend_scope.id = "f3d:native:parameter-scope#12".into();
+    extend_scope.kind = "SurfaceExtend".into();
+    extend_scope.reference_members = vec![
+        extend_distance_record_index,
+        extend_boundary_record_index,
+        extend_edge_record_indices[0],
+        extend_edge_record_indices[1],
+    ];
+    let operation =
+        exact_surface_extend_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &extend_scope)
+            .expect("exact SurfaceExtend construction");
+    assert_eq!(
+        operation,
+        DesignSurfaceExtendOperation {
+            distance: 0.04,
+            distance_offset: (extend_distance_at + 40) as u64,
+            distance_record_index: extend_distance_record_index,
+            method: DesignSurfaceExtendMethod::Tangent,
+            method_offset: (extend_boundary_at + extend_boundary_tail + 2) as u64,
+            boundary_record_index: extend_boundary_record_index,
+            boundary_reference_record_index: 900,
+            boundary_reference_offset: (extend_boundary_at + extend_boundary_tail + 6) as u64,
+            edge_record_indices: extend_edge_record_indices.to_vec(),
+            tolerance: 1.0e-6,
+            tolerance_offset: (extend_boundary_at + extend_boundary_tail + 39) as u64,
+        }
+    );
+    extend_scope.surface_extend_operation = Some(operation);
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&extend_scope),
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        features.as_slice(),
+        [Feature {
+            definition: FeatureDefinition::ExtendSurface {
+                faces: FaceSelection::Native(native),
+                distance: Some(Length(distance)),
+                method: cadmpeg_ir::features::SurfaceExtension::Linear,
+            },
+            ..
+        }] if native.ends_with(":design-record#500") && *distance == 0.4
+    ));
+
+    bytes[extend_distance_at + 40..extend_distance_at + 48]
+        .copy_from_slice(&(-0.4f64).to_le_bytes());
+    bytes[extend_boundary_at + extend_boundary_tail + 21
+        ..extend_boundary_at + extend_boundary_tail + 25]
+        .copy_from_slice(&65u32.to_le_bytes());
+    extend_scope.kind = "SurfaceOffset".into();
+    extend_scope.surface_extend_operation = None;
+    let operation =
+        exact_surface_offset_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &extend_scope)
+            .expect("exact SurfaceOffset construction");
+    assert_eq!(
+        operation,
+        DesignSurfaceOffsetOperation {
+            distance: -0.4,
+            distance_offset: (extend_distance_at + 40) as u64,
+            distance_record_index: extend_distance_record_index,
+            boundary_mode: 1,
+            boundary_mode_offset: (extend_boundary_at + extend_boundary_tail + 2) as u64,
+            boundary_record_index: extend_boundary_record_index,
+            boundary_reference_record_index: 900,
+            boundary_reference_offset: (extend_boundary_at + extend_boundary_tail + 6) as u64,
+            edge_record_indices: extend_edge_record_indices.to_vec(),
+            tolerance: 1.0e-6,
+            tolerance_offset: (extend_boundary_at + extend_boundary_tail + 39) as u64,
+        }
+    );
+    extend_scope.surface_offset_operation = Some(operation);
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&extend_scope),
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        features.as_slice(),
+        [Feature {
+            definition: FeatureDefinition::OffsetSurface {
+                faces: FaceSelection::Native(native),
+                distance: Some(Length(distance)),
+            },
+            ..
+        }] if native.ends_with(":design-record#500") && *distance == -4.0
+    ));
+    bytes[extend_boundary_at + 21..extend_boundary_at + 25]
+        .copy_from_slice(&u32::MAX.to_le_bytes());
+    assert_eq!(
+        exact_surface_offset_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &extend_scope,),
+        None
+    );
+
+    let embedded_default_at = bytes.len();
+    for (record_index, ordinal) in [(273u32, 0u8), (274, 1)] {
+        let mut scalar = vec![0; 104];
+        scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
+        scalar[4..7].copy_from_slice(b"277");
+        scalar[7..11].copy_from_slice(&record_index.to_le_bytes());
+        scalar[24] = 1;
+        scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+        scalar[35] = ordinal;
+        scalar.extend_from_slice(&3u32.to_le_bytes());
+        scalar.extend_from_slice(b"261");
+        scalar.extend_from_slice(&record_index.to_le_bytes());
+        bytes.extend_from_slice(&scalar);
+    }
+    let embedded_distance_at = bytes.len();
+    let embedded_distance_record_index = 275u32;
+    let mut embedded_distance = vec![0; 100];
+    embedded_distance[0..4].copy_from_slice(&3u32.to_le_bytes());
+    embedded_distance[4..7].copy_from_slice(b"314");
+    embedded_distance[7..11].copy_from_slice(&embedded_distance_record_index.to_le_bytes());
+    embedded_distance[21] = 1;
+    embedded_distance[22..26].copy_from_slice(&scope.record_index.to_le_bytes());
+    embedded_distance[32..36].copy_from_slice(&1u32.to_le_bytes());
+    embedded_distance[36] = 1;
+    embedded_distance[37..41].copy_from_slice(&999u32.to_le_bytes());
+    embedded_distance[47..51].copy_from_slice(&210u32.to_le_bytes());
+    embedded_distance[51..59].copy_from_slice(&0.25f64.to_le_bytes());
+    embedded_distance[59..63].copy_from_slice(&210u32.to_le_bytes());
+    embedded_distance[63] = 1;
+    embedded_distance[64..68].copy_from_slice(&(embedded_distance_record_index + 2).to_le_bytes());
+    embedded_distance[74] = 1;
+    embedded_distance[77] = 1;
+    embedded_distance[78..82].copy_from_slice(&(embedded_distance_record_index + 1).to_le_bytes());
+    embedded_distance[89] = 1;
+    embedded_distance[90..94].copy_from_slice(&scope.record_index.to_le_bytes());
+    embedded_distance.extend_from_slice(&3u32.to_le_bytes());
+    embedded_distance.extend_from_slice(b"258");
+    embedded_distance.extend_from_slice(&embedded_distance_record_index.to_le_bytes());
+    bytes.extend_from_slice(&embedded_distance);
+    extrude_scope.reference_members = vec![50, 273, 274, embedded_distance_record_index, 51];
+    assert_eq!(
+        exact_fixed_extrude_parameters(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &extrude_scope
+        ),
+        Some(DesignFixedExtrudeParameters {
+            along_distance: Some(DesignFixedExtrudeDistance::DistanceConstruction(
+                DesignFixedExtrudeScalar {
+                    value: 0.25,
+                    record_index: embedded_distance_record_index,
+                    value_offset: (embedded_distance_at + 51) as u64,
+                },
+            )),
+            taper_angle: Some(DesignFixedExtrudeScalar {
+                value: 0.0,
+                record_index: 274,
+                value_offset: (embedded_default_at + 115 + 40) as u64,
+            }),
+        })
+    );
+    extrude_scope.reference_members.insert(2, 273);
+    assert_eq!(
+        exact_fixed_extrude_parameters(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &extrude_scope
+        ),
+        None
+    );
+
+    let draft_start = bytes.len();
+    for (record_index, ordinal, value) in [(175u32, 0u8, 0.4f64), (176, 1, 0.0)] {
+        let mut scalar = vec![0; 104];
+        scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
+        scalar[4..7].copy_from_slice(b"277");
+        scalar[7..11].copy_from_slice(&record_index.to_le_bytes());
+        scalar[24] = 1;
+        scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+        scalar[35] = ordinal;
+        scalar[40..48].copy_from_slice(&value.to_le_bytes());
+        scalar.extend_from_slice(&3u32.to_le_bytes());
+        scalar.extend_from_slice(b"261");
+        scalar.extend_from_slice(&record_index.to_le_bytes());
+        bytes.extend_from_slice(&scalar);
+    }
+    let mut draft_scope = scope.clone();
+    draft_scope.kind = "Draft".into();
+    draft_scope.frame_length = 361;
+    draft_scope.reference_members = vec![175, 176, 181, 182, 186, 190, 193];
+    assert_eq!(
+        exact_draft_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &draft_scope),
+        Some(DesignDraftOperation {
+            angle: 0.4,
+            angle_record_index: 175,
+            angle_offset: (draft_start + 40) as u64,
+            opposite_angle_record_index: 176,
+            opposite_angle_offset: (draft_start + 155) as u64,
+        })
+    );
+    draft_scope.reference_members.swap(0, 1);
+    assert_eq!(
+        exact_draft_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &draft_scope),
+        None
+    );
 
     let fillet_start = bytes.len();
     for (record_index, ordinal, value) in [
@@ -3592,22 +5125,113 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     fillet_scope.kind = "Fillet".into();
     fillet_scope.reference_members = vec![77, 50, 78, 79, 87, 88];
     assert_eq!(
-        exact_fixed_fillet_parameters(&bytes, &fillet_scope),
+        exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
-            tangency_weight: 1.0,
-            tangency_weight_record_index: 77,
-            tangency_weight_offset: (fillet_start + 40) as u64,
-            radii: vec![0.0, 0.65, 0.4],
-            radius_record_indexes: vec![78, 79, 87],
-            radius_offsets: vec![
-                (fillet_start + 115 + 40) as u64,
-                (fillet_start + 230 + 40) as u64,
-                (fillet_start + 345 + 40) as u64,
-            ],
-            intermediate_parameters: vec![0.2],
-            intermediate_parameter_record_indexes: vec![88],
-            intermediate_parameter_offsets: vec![(fillet_start + 460 + 40) as u64],
+            groups: vec![crate::records::DesignFixedFilletGroup {
+                tangency_weight: Some(crate::records::DesignFixedFilletTangencyWeight {
+                    value: 1.0,
+                    record_index: 77,
+                    value_offset: (fillet_start + 40) as u64,
+                }),
+                radii: vec![0.0, 0.65, 0.4],
+                radius_record_indexes: vec![78, 79, 87],
+                radius_offsets: vec![
+                    (fillet_start + 115 + 40) as u64,
+                    (fillet_start + 230 + 40) as u64,
+                    (fillet_start + 345 + 40) as u64,
+                ],
+                intermediate_parameters: vec![0.2],
+                intermediate_parameter_record_indexes: vec![88],
+                intermediate_parameter_offsets: vec![(fillet_start + 460 + 40) as u64],
+            }],
         })
+    );
+    fillet_scope.reference_members = vec![50, 77];
+    assert_eq!(
+        exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
+        Some(DesignFixedFilletParameters {
+            groups: vec![crate::records::DesignFixedFilletGroup {
+                tangency_weight: None,
+                radii: vec![1.0],
+                radius_record_indexes: vec![77],
+                radius_offsets: vec![(fillet_start + 40) as u64],
+                intermediate_parameters: Vec::new(),
+                intermediate_parameter_record_indexes: Vec::new(),
+                intermediate_parameter_offsets: Vec::new(),
+            }],
+        })
+    );
+
+    let dynamic_scalar_at = bytes.len();
+    let mut dynamic_scalar = vec![0; 103];
+    dynamic_scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
+    dynamic_scalar[4..7].copy_from_slice(b"406");
+    dynamic_scalar[7..11].copy_from_slice(&89u32.to_le_bytes());
+    dynamic_scalar[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
+    dynamic_scalar[24] = 1;
+    dynamic_scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+    dynamic_scalar[40..48].copy_from_slice(&0.5f64.to_le_bytes());
+    dynamic_scalar[48] = 1;
+    dynamic_scalar[49..53].copy_from_slice(&90u32.to_le_bytes());
+    dynamic_scalar[67] = 1;
+    dynamic_scalar[68..72].copy_from_slice(&scope.record_index.to_le_bytes());
+    dynamic_scalar[80] = 1;
+    dynamic_scalar[81..85].copy_from_slice(&91u32.to_le_bytes());
+    dynamic_scalar[92] = 1;
+    dynamic_scalar[93..97].copy_from_slice(&scope.record_index.to_le_bytes());
+    bytes.extend_from_slice(&dynamic_scalar);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"259");
+    bytes.extend_from_slice(&89u32.to_le_bytes());
+    fillet_scope.reference_members = vec![89];
+    assert_eq!(
+        exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
+        Some(DesignFixedFilletParameters {
+            groups: vec![crate::records::DesignFixedFilletGroup {
+                tangency_weight: None,
+                radii: vec![0.5],
+                radius_record_indexes: vec![89],
+                radius_offsets: vec![(dynamic_scalar_at + 40) as u64],
+                intermediate_parameters: Vec::new(),
+                intermediate_parameter_record_indexes: Vec::new(),
+                intermediate_parameter_offsets: Vec::new(),
+            }],
+        })
+    );
+
+    let second_group_at = bytes.len();
+    for (record_index, ordinal, value) in [
+        (92u32, 0u8, 1.0f64),
+        (93, 1, 0.5),
+        (94, 2, 0.75),
+        (95, 3, 0.25),
+    ] {
+        let mut scalar = vec![0; 104];
+        scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
+        scalar[4..7].copy_from_slice(b"406");
+        scalar[7..11].copy_from_slice(&record_index.to_le_bytes());
+        scalar[24] = 1;
+        scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+        scalar[35] = ordinal;
+        scalar[40..48].copy_from_slice(&value.to_le_bytes());
+        scalar.extend_from_slice(&3u32.to_le_bytes());
+        scalar.extend_from_slice(b"259");
+        scalar.extend_from_slice(&record_index.to_le_bytes());
+        bytes.extend_from_slice(&scalar);
+    }
+    fillet_scope.reference_members = vec![92, 93, 94, 95];
+    let fixed =
+        exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope)
+            .expect("two constant-radius Fillet scalar groups");
+    assert_eq!(fixed.groups.len(), 2);
+    assert_eq!(fixed.groups[0].radii, [0.5]);
+    assert_eq!(fixed.groups[1].radii, [0.25]);
+    assert_eq!(
+        fixed.groups[1]
+            .tangency_weight
+            .as_ref()
+            .map(|weight| (weight.value, weight.value_offset)),
+        Some((0.75, (second_group_at + 2 * 115 + 40) as u64))
     );
 
     let chamfer_scalar_start = bytes.len();
@@ -3627,12 +5251,73 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     chamfer_scope.kind = "Chamfer".into();
     chamfer_scope.reference_members = vec![86];
     assert_eq!(
-        exact_fixed_chamfer_parameters(&bytes, &chamfer_scope),
-        Some(DesignFixedChamferParameters {
-            distance: 0.04,
-            distance_record_index: 86,
-            distance_offset: (chamfer_scalar_start + 40) as u64,
+        exact_fixed_chamfer_parameters(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &chamfer_scope,
+            &[],
+        ),
+        Some(DesignFixedChamferParameters::EqualDistance {
+            distance: crate::records::DesignFixedChamferDistance {
+                value: 0.04,
+                record_index: 86,
+                value_offset: (chamfer_scalar_start + 40) as u64,
+            },
         })
+    );
+    let second_chamfer_scalar_start = bytes.len();
+    let mut second_chamfer_scalar = chamfer_scalar[..104].to_vec();
+    second_chamfer_scalar[7..11].copy_from_slice(&96u32.to_le_bytes());
+    second_chamfer_scalar[35] = 1;
+    second_chamfer_scalar[40..48].copy_from_slice(&0.08f64.to_le_bytes());
+    second_chamfer_scalar.extend_from_slice(&3u32.to_le_bytes());
+    second_chamfer_scalar.extend_from_slice(b"261");
+    second_chamfer_scalar.extend_from_slice(&96u32.to_le_bytes());
+    bytes.extend_from_slice(&second_chamfer_scalar);
+    chamfer_scope.reference_members = vec![86, 96];
+    assert_eq!(
+        exact_fixed_chamfer_parameters(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &chamfer_scope,
+            &[],
+        ),
+        Some(DesignFixedChamferParameters::TwoDistances {
+            first: crate::records::DesignFixedChamferDistance {
+                value: 0.04,
+                record_index: 86,
+                value_offset: (chamfer_scalar_start + 40) as u64,
+            },
+            second: crate::records::DesignFixedChamferDistance {
+                value: 0.08,
+                record_index: 96,
+                value_offset: (second_chamfer_scalar_start + 40) as u64,
+            },
+        })
+    );
+    chamfer_scope.id = "f3d:Design/BulkStream.dat:scope#12".into();
+    let indexed_owner = DesignParameterOwner {
+        id: "f3d:Design/BulkStream.dat:parameter-owner#97".into(),
+        byte_offset: 0,
+        class_tag: "292".into(),
+        record_index: 97,
+        scope_record_index: chamfer_scope.record_index,
+        local_ordinal: 0,
+        evaluated_value: 0.04,
+        evaluated_value_offset: 0,
+        parameter_record_index: 98,
+        owned_ordinal: 0,
+        variant: Some(0),
+        companion_record_index: 99,
+    };
+    assert_eq!(
+        exact_fixed_chamfer_parameters(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &chamfer_scope,
+            std::slice::from_ref(&indexed_owner),
+        ),
+        None
     );
 
     let revolve_start = bytes.len();
@@ -3661,7 +5346,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     revolve_scope.kind = "Revolve".into();
     revolve_scope.frame_length = 386;
     revolve_scope.reference_members = vec![200, 201, 202, 203, 1_779, 1_780, 204];
-    let revolve_construction = exact_path_feature_construction(&bytes, &revolve_scope);
+    let revolve_construction = exact_path_feature_construction(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &revolve_scope,
+    );
     assert_eq!(
         revolve_construction,
         Some(DesignPathFeatureConstruction::Revolve {
@@ -3701,7 +5390,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     loft_scope.kind = "Loft".into();
     loft_scope.frame_length = 376;
     assert_eq!(
-        exact_path_feature_construction(&bytes, &loft_scope),
+        exact_path_feature_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &loft_scope),
         Some(DesignPathFeatureConstruction::Loft {
             operation: DesignExtrudeOperation::Join,
             operation_offset: (loft_start + 29) as u64,
@@ -3726,6 +5415,44 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         Some(cadmpeg_ir::features::FeatureDefinition::Loft { sections, guides, .. })
             if sections.len() == 2 && guides.is_empty()
     ));
+    let guided_role_41 = [
+        loft_group(0, 0x41_0000_0000),
+        loft_group(1, 0x41_0000_0000),
+        loft_group(2, 0x41_0000_0000),
+        loft_group(3, 0x5_0000_0000),
+    ];
+    assert!(matches!(
+        crate::design::feature_project::project_fixed_loft(
+            &loft_scope,
+            &guided_role_41,
+            &[],
+            &[],
+            &[],
+        ),
+        Some(cadmpeg_ir::features::FeatureDefinition::Loft { sections, guides, .. })
+            if sections.len() == 3 && guides.len() == 1
+    ));
+    loft_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Loft {
+        operation: DesignExtrudeOperation::Cut,
+        operation_offset: (loft_start + 29) as u64,
+    });
+    let cut = [
+        loft_group(0, 0x4_0000_0000),
+        loft_group(1, 0x41_0000_0000),
+        loft_group(2, 0x43_0000_0000),
+    ];
+    assert!(matches!(
+        crate::design::feature_project::project_fixed_loft(&loft_scope, &cut, &[], &[], &[]),
+        Some(cadmpeg_ir::features::FeatureDefinition::Loft {
+            sections,
+            op: cadmpeg_ir::features::BooleanOp::Cut,
+            ..
+        }) if sections.len() == 2
+    ));
+    loft_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Loft {
+        operation: DesignExtrudeOperation::NewBody,
+        operation_offset: (loft_start + 29) as u64,
+    });
     let role_5 = [
         loft_group(0, 0x5_0000_0000),
         loft_group(1, 0x5_0000_0000),
@@ -3791,7 +5518,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let mut sweep = vec![0; 499];
     sweep[25..29].copy_from_slice(&4u32.to_le_bytes());
     bytes.extend_from_slice(&sweep);
-    let sweep_values: [f64; 6] = [0.8, 0.0, 1.0, 1.0, 6.632251157578453, 0.0];
+    let sweep_values: [f64; 6] = [0.8, 0.0, 1.0, 1.0, 6.632_251_157_578_453, 0.0];
     let sweep_scalar_start = bytes.len();
     for (ordinal, value) in sweep_values.into_iter().enumerate() {
         let record_index = 80 + ordinal as u32;
@@ -3815,7 +5542,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     sweep_scope.frame_length = 499;
     sweep_scope.reference_members = (80..86).collect();
     assert_eq!(
-        exact_path_feature_construction(&bytes, &sweep_scope),
+        exact_path_feature_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &sweep_scope),
         Some(DesignPathFeatureConstruction::Sweep {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: (sweep_start + 25) as u64,
@@ -3823,6 +5550,170 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             record_indexes: [80, 81, 82, 83, 84, 85],
             value_offsets: std::array::from_fn(|ordinal| {
                 (sweep_scalar_start + ordinal * 111 + 40) as u64
+            }),
+        })
+    );
+    sweep_scope.id = "stream:sweep-scope".into();
+    sweep_scope.path_feature_construction =
+        exact_path_feature_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &sweep_scope);
+    let sweep_group = |ordinal: u32, role: u64| {
+        let mut group = thicken_group.clone();
+        group.id = format!("stream:sweep-group-{ordinal}");
+        group.scope_record_index = sweep_scope.record_index;
+        group.scope_reference_ordinal = ordinal;
+        group.role = role;
+        group
+    };
+    let profile = sweep_group(0, 0x41_0000_0000);
+    let path = sweep_group(1, 0x5_0000_0000);
+    let body = sweep_group(2, 0x4_0000_0000);
+    assert!(matches!(
+        crate::design::feature_project::project_fixed_sweep(
+            &sweep_scope,
+            &[profile.clone(), path.clone()],
+            &[],
+            &[],
+        ),
+        Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
+            path_extent: Some(cadmpeg_ir::features::SweepPathExtent {
+                along_fraction: 0.8,
+                against_fraction: 0.0,
+            }),
+            twist: Some(cadmpeg_ir::features::Angle(6.632_251_157_578_453)),
+            taper: None,
+            ..
+        })
+    ));
+    let rail = sweep_group(2, 0x5_0000_0000);
+    sweep_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Sweep {
+        operation: DesignExtrudeOperation::NewBody,
+        operation_offset: (sweep_start + 25) as u64,
+        values: [0.0, 1.0, 0.0, 1.0, 0.0, 0.0],
+        record_indexes: [80, 81, 82, 83, 84, 85],
+        value_offsets: std::array::from_fn(|ordinal| {
+            (sweep_scalar_start + ordinal * 111 + 40) as u64
+        }),
+    });
+    assert!(matches!(
+        crate::design::feature_project::project_fixed_sweep(
+            &sweep_scope,
+            &[profile.clone(), path.clone(), rail],
+            &[],
+            &[],
+        ),
+        Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
+            path: Some(cadmpeg_ir::features::PathRef::Native(path)),
+            path_extent: Some(cadmpeg_ir::features::SweepPathExtent {
+                along_fraction: 0.0,
+                against_fraction: 1.0,
+            }),
+            guide_rail: Some(cadmpeg_ir::features::SweepGuideRail {
+                path: cadmpeg_ir::features::PathRef::Native(rail),
+                extent: cadmpeg_ir::features::SweepPathExtent {
+                    along_fraction: 0.0,
+                    against_fraction: 1.0,
+                },
+            }),
+            ..
+        }) if path == "stream:sweep-group-1" && rail == "stream:sweep-group-2"
+    ));
+    let complete_sweep_values = [1.0, 1.0, 1.0, 1.0, sweep_values[4], 0.0];
+    sweep_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Sweep {
+        operation: DesignExtrudeOperation::NewBody,
+        operation_offset: (sweep_start + 25) as u64,
+        values: complete_sweep_values,
+        record_indexes: [80, 81, 82, 83, 84, 85],
+        value_offsets: std::array::from_fn(|ordinal| {
+            (sweep_scalar_start + ordinal * 111 + 40) as u64
+        }),
+    });
+    assert!(matches!(
+        crate::design::feature_project::project_fixed_sweep(
+            &sweep_scope,
+            &[profile.clone(), path.clone()],
+            &[],
+            &[],
+        ),
+        Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
+            mode: cadmpeg_ir::features::SweepMode::Unresolved,
+            ..
+        })
+    ));
+    assert_eq!(
+        crate::design::feature_project::project_fixed_sweep(
+            &sweep_scope,
+            &[profile.clone(), path.clone(), body.clone()],
+            &[],
+            &[],
+        ),
+        None
+    );
+    sweep_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Sweep {
+        operation: DesignExtrudeOperation::Cut,
+        operation_offset: (sweep_start + 25) as u64,
+        values: complete_sweep_values,
+        record_indexes: [80, 81, 82, 83, 84, 85],
+        value_offsets: std::array::from_fn(|ordinal| {
+            (sweep_scalar_start + ordinal * 111 + 40) as u64
+        }),
+    });
+    assert!(matches!(
+        crate::design::feature_project::project_fixed_sweep(
+            &sweep_scope,
+            &[profile, path, body],
+            &[],
+            &[],
+        ),
+        Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
+            mode: cadmpeg_ir::features::SweepMode::Solid {
+                op: cadmpeg_ir::features::BooleanOp::Cut
+            },
+            ..
+        })
+    ));
+
+    let pipe_start = bytes.len();
+    let mut pipe = vec![0; 464];
+    pipe[25..29].copy_from_slice(&4u32.to_le_bytes());
+    pipe[29] = 1;
+    pipe[30] = 1;
+    bytes.extend_from_slice(&pipe);
+    let pipe_values: [f64; 4] = [1.0, 1.0, 0.6, 0.15];
+    let pipe_scalar_start = bytes.len();
+    for (ordinal, value) in pipe_values.into_iter().enumerate() {
+        let record_index = 170 + ordinal as u32;
+        let mut scalar = vec![0; 100];
+        scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
+        scalar[4..7].copy_from_slice(b"277");
+        scalar[7..11].copy_from_slice(&record_index.to_le_bytes());
+        scalar[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
+        scalar[24] = 1;
+        scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+        scalar[35] = ordinal as u8;
+        scalar[40..48].copy_from_slice(&value.to_le_bytes());
+        scalar.extend_from_slice(&3u32.to_le_bytes());
+        scalar.extend_from_slice(b"261");
+        scalar.extend_from_slice(&record_index.to_le_bytes());
+        bytes.extend_from_slice(&scalar);
+    }
+    let mut pipe_scope = scope.clone();
+    pipe_scope.byte_offset = pipe_start as u64;
+    pipe_scope.kind = "Pipe".into();
+    pipe_scope.frame_length = 464;
+    pipe_scope.reference_members = (170..174).collect();
+    assert_eq!(
+        exact_path_feature_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &pipe_scope),
+        Some(DesignPathFeatureConstruction::Pipe {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: (pipe_start + 25) as u64,
+            section_shape: 1,
+            section_shape_offset: (pipe_start + 29) as u64,
+            filled: true,
+            filled_offset: (pipe_start + 30) as u64,
+            values: pipe_values,
+            record_indexes: [170, 171, 172, 173],
+            value_offsets: std::array::from_fn(|ordinal| {
+                (pipe_scalar_start + ordinal * 111 + 40) as u64
             }),
         })
     );
@@ -3905,6 +5796,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         kind: ConstructionRecipeKind::Edge,
         design_id: None,
         design_id_offset: None,
+        design_selector: None,
         recipe_index: 0,
         record_index: 303,
     };
@@ -3920,6 +5812,120 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(companion.payload_byte_offset, 58);
     assert_eq!(companion.payload_byte_length, 7);
     assert_eq!(companion.owned_recipe_ids, [recipe.id]);
+}
+
+#[test]
+fn combine_scope_projects_ordered_target_tools_and_retention() {
+    fn indexed_header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+    fn operation_record(bytes: &mut Vec<u8>, record_index: u32, selection_record_index: u32) {
+        indexed_header(bytes, b"283", record_index);
+        bytes.extend_from_slice(&[0; 9]);
+        bytes.push(1);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&24u32.to_le_bytes());
+        bytes.extend_from_slice(b"DcFeatureOperationIdFlag");
+        bytes.extend_from_slice(&23u32.to_le_bytes());
+        bytes.extend_from_slice(b"IntrinsicMetaTypeuint64");
+        bytes.extend_from_slice(&7u64.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&selection_record_index.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        indexed_header(bytes, b"259", record_index);
+    }
+    fn target_record(bytes: &mut Vec<u8>, record_index: u32, selection_record_index: u32) {
+        indexed_header(bytes, b"283", record_index);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&selection_record_index.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        indexed_header(bytes, b"259", record_index);
+    }
+    fn selection_record(bytes: &mut Vec<u8>, record_index: u32, suffix: u8) {
+        indexed_header(bytes, b"389", record_index);
+        lp_utf16(
+            bytes,
+            &format!("00000000-0000-0000-0000-0000000000{suffix:02x}"),
+        );
+        lp_utf16(
+            bytes,
+            &format!("10000000-0000-0000-0000-0000000000{suffix:02x}"),
+        );
+        indexed_header(bytes, b"306", record_index);
+    }
+
+    let scope_record_index = 90;
+    let references = [91u32, 92, 93, 94, 95, 96];
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, b"382", scope_record_index);
+    bytes.extend_from_slice(&[0; 9]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.push(0);
+    bytes.push(1);
+    bytes.extend_from_slice(&[0; 7]);
+    bytes.resize(64, 0);
+    bytes.extend_from_slice(&(references.len() as u32).to_le_bytes());
+    for reference in references {
+        bytes.push(1);
+        bytes.extend_from_slice(&reference.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend_from_slice(&17u32.to_le_bytes());
+    lp_utf16(&mut bytes, "Combine");
+    let mut tail = [0; 78];
+    tail[0..4].copy_from_slice(&2u32.to_le_bytes());
+    tail[31..35].copy_from_slice(&16u32.to_le_bytes());
+    bytes.extend_from_slice(&tail);
+    indexed_header(&mut bytes, b"259", scope_record_index);
+    for (ordinal, pair) in references.chunks_exact(2).enumerate() {
+        if ordinal == 2 {
+            target_record(&mut bytes, pair[0], pair[1]);
+        } else {
+            operation_record(&mut bytes, pair[0], pair[1]);
+        }
+        selection_record(&mut bytes, pair[1], u8::try_from(pair[1]).unwrap());
+    }
+
+    let header = DesignRecordHeader {
+        id: "generated:scope-header#0".into(),
+        record_index: scope_record_index,
+        class_tag: "382".into(),
+        byte_offset: 0,
+    };
+    let mut scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+        .expect("Combine scope");
+    let operation = exact_combine_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        .expect("Combine construction");
+    assert_eq!(
+        operation,
+        DesignCombineOperation {
+            operation: DesignExtrudeOperation::Join,
+            operation_offset: 20,
+            keep_tools: true,
+            keep_tools_offset: 25,
+            body_selection_record_indexes: vec![96, 92, 94],
+        }
+    );
+    scope.combine_operation = Some(operation);
+    assert_eq!(
+        project_combine(&scope, "Design1/BulkStream.dat"),
+        Some(cadmpeg_ir::features::FeatureDefinition::Combine {
+            target: cadmpeg_ir::features::BodySelection::Native(
+                "Design1/BulkStream.dat:design-record#96".into(),
+            ),
+            tools: cadmpeg_ir::features::BodySelection::NativeSet(vec![
+                "Design1/BulkStream.dat:design-record#92".into(),
+                "Design1/BulkStream.dat:design-record#94".into(),
+            ]),
+            op: cadmpeg_ir::features::BooleanOp::Join,
+            keep_tools: true,
+        })
+    );
 }
 
 #[test]
@@ -3951,7 +5957,8 @@ fn localized_sketch_scope_retains_its_generic_reference_table() {
         byte_offset: 0,
     };
 
-    let scope = parse_parameter_scope(&bytes, &header).expect("localized Sketch scope");
+    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+        .expect("localized Sketch scope");
     assert_eq!(scope.kind, "Esquisse");
     assert_eq!(scope.reference_members, [55, 56]);
     assert!(scope.entity_id.is_none());
@@ -3962,31 +5969,35 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     let scope = |kind: &str,
                  operation: u32,
                  extent: (u32, u32),
-                 direction_reversed: bool,
+                 direction_reversed: u8,
+                 structural_constant: u8,
                  start: u8,
-                 conditional_reference: bool| {
+                 reference_padding: Option<usize>,
+                 legacy_shifted: bool| {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(b"301");
         bytes.extend_from_slice(&12u32.to_le_bytes());
         bytes.resize(100, 0);
         bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
-        let operation_offset = if conditional_reference {
+        let operation_offset = if legacy_shifted {
+            27
+        } else if let Some(reference_padding) = reference_padding {
             bytes[25] = 1;
             bytes[26..30].copy_from_slice(&77u32.to_le_bytes());
-            38
+            30 + reference_padding
         } else {
             28
         };
         bytes[operation_offset..operation_offset + 4].copy_from_slice(&operation.to_le_bytes());
         bytes[operation_offset + 4..operation_offset + 8].copy_from_slice(&extent.0.to_le_bytes());
         bytes[operation_offset + 8..operation_offset + 12].copy_from_slice(&extent.1.to_le_bytes());
-        bytes[operation_offset + 12] = u8::from(direction_reversed);
-        bytes[operation_offset + 13] = 1;
+        bytes[operation_offset + 12] = direction_reversed;
+        bytes[operation_offset + 13] = structural_constant;
         bytes[operation_offset + 14] = start;
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.push(1);
-        bytes.extend_from_slice(&55u32.to_le_bytes());
+        bytes.extend_from_slice(&reference_padding.map_or(55, |_| 77_u32).to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);
         bytes.extend_from_slice(&7u32.to_le_bytes());
         lp_utf16(&mut bytes, kind);
@@ -4003,45 +6014,118 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             class_tag: "301".into(),
             byte_offset: 0,
         };
-        parse_parameter_scope(&bytes, &header).unwrap()
+        parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header).unwrap()
     };
 
-    let direct = scope("Extrude", 1, (1, 2), false, 0, false);
-    assert_eq!(direct.extrude_operation, Some(DesignExtrudeOperation::Join));
-    assert_eq!(direct.extrude_operation_offset, Some(28));
+    let direct = scope("Extrude", 1, (1, 2), 0, 1, 0, None, false);
     assert_eq!(
-        direct.extrude_extent,
+        direct.extrude_prologue,
+        Some(DesignExtrudePrologue::ReferenceAware {
+            reference: None,
+            operation: DesignExtrudeOperation::Join,
+            operation_offset: 28,
+            extent_discriminators: [1, 2],
+            extent: DesignExtrudeExtent::OneSidedDistance,
+            extent_discriminator_offsets: [32, 36],
+            direction_reversed: false,
+            direction_reversed_offset: 40,
+            solid_operation: true,
+            solid_operation_offset: 41,
+            start: DesignExtrudeStart::ProfilePlane,
+            start_offset: 42,
+        })
+    );
+    let referenced = scope("Extrude", 3, (2, 0), 0, 1, 1, Some(8), false);
+    assert_eq!(
+        referenced.extrude_prologue,
+        Some(DesignExtrudePrologue::ReferenceAware {
+            reference: Some(crate::records::DesignExtrudePrologueReference {
+                record_index: 77,
+                record_index_offset: 26,
+                trailing_zero_count: 8,
+            }),
+            operation: DesignExtrudeOperation::Intersect,
+            operation_offset: 38,
+            extent_discriminators: [2, 0],
+            extent: DesignExtrudeExtent::TwoSidedDistance,
+            extent_discriminator_offsets: [42, 46],
+            direction_reversed: false,
+            direction_reversed_offset: 50,
+            solid_operation: true,
+            solid_operation_offset: 51,
+            start: DesignExtrudeStart::OffsetProfilePlane,
+            start_offset: 52,
+        })
+    );
+    let compact_reference = scope("Extrude", 2, (1, 2), 0, 1, 2, Some(7), false);
+    let Some(DesignExtrudePrologue::ReferenceAware {
+        reference: Some(reference),
+        operation_offset,
+        ..
+    }) = compact_reference.extrude_prologue
+    else {
+        panic!("compact referenced Extrude prologue");
+    };
+    assert_eq!(reference.trailing_zero_count, 7);
+    assert_eq!(operation_offset, 37);
+
+    let to_face = scope("Extrusion", 2, (1, 1), 1, 1, 2, None, false);
+    assert_eq!(to_face.kind, "Extrusion");
+    let Some(prologue) = to_face.extrude_prologue else {
+        panic!("to-face Extrude prologue");
+    };
+    assert_eq!(prologue.extent(), Some(DesignExtrudeExtent::OneSidedToFace));
+    assert!(prologue.direction_reversed());
+    assert_eq!(prologue.start(), DesignExtrudeStart::FromFace);
+
+    let shifted_distance = scope("Extrude", 4, (1, 2), 0, 1, 0, None, true);
+    assert_eq!(
+        shifted_distance
+            .extrude_prologue
+            .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::OneSidedDistance)
     );
-    assert_eq!(direct.extrude_extent_offsets, Some([32, 36]));
-    assert_eq!(direct.extrude_direction_reversed, Some(false));
-    assert_eq!(direct.extrude_direction_reversed_offset, Some(40));
-    assert_eq!(direct.extrude_start, Some(DesignExtrudeStart::ProfilePlane));
-    assert_eq!(direct.extrude_start_offset, Some(42));
-    let shifted = scope("Extrude", 3, (2, 0), false, 1, true);
+    let shifted_symmetric = scope("Extrude", 4, (3, 2), 0, 1, 0, None, true);
     assert_eq!(
-        shifted.extrude_operation,
-        Some(DesignExtrudeOperation::Intersect)
+        shifted_symmetric
+            .extrude_prologue
+            .and_then(DesignExtrudePrologue::extent),
+        Some(DesignExtrudeExtent::SymmetricDistance)
     );
-    assert_eq!(shifted.extrude_operation_offset, Some(38));
+
+    let legacy = scope("Extrude", 2, (3, 0), 0, 1, 0, None, true);
     assert_eq!(
-        shifted.extrude_extent,
-        Some(DesignExtrudeExtent::TwoSidedDistance)
+        legacy.extrude_prologue,
+        Some(DesignExtrudePrologue::LegacyShifted {
+            operation: DesignExtrudeOperation::Cut,
+            operation_offset: 27,
+            extent_discriminators: [3, 0],
+            extent: None,
+            extent_discriminator_offsets: [31, 35],
+            direction_reversed: false,
+            direction_reversed_offset: 39,
+            solid_operation: true,
+            solid_operation_offset: 40,
+            start: DesignExtrudeStart::ProfilePlane,
+            start_offset: 41,
+        })
     );
-    assert_eq!(shifted.extrude_extent_offsets, Some([42, 46]));
+
+    let unrecognized = scope("Extrude", 2, (3, 0), 0, 1, 0, None, false);
+    assert_eq!(unrecognized.kind, "Extrude");
+    assert_eq!(unrecognized.extrude_prologue, None);
     assert_eq!(
-        shifted.extrude_start,
-        Some(DesignExtrudeStart::OffsetProfilePlane)
+        scope("Extrude", 2, (3, 0), 2, 1, 0, None, true).extrude_prologue,
+        None
     );
-    assert_eq!(shifted.extrude_start_offset, Some(52));
-    let to_face = scope("Extrusion", 2, (1, 1), true, 2, false);
-    assert_eq!(to_face.kind, "Extrusion");
+    let sheet = scope("Extrude", 2, (3, 0), 0, 0, 0, None, true)
+        .extrude_prologue
+        .expect("sheet Extrude prologue");
+    assert!(!sheet.solid_operation());
     assert_eq!(
-        to_face.extrude_extent,
-        Some(DesignExtrudeExtent::OneSidedToFace)
+        scope("Extrude", 2, (3, 0), 0, 1, 3, None, true).extrude_prologue,
+        None
     );
-    assert_eq!(to_face.extrude_direction_reversed, Some(true));
-    assert_eq!(to_face.extrude_start, Some(DesignExtrudeStart::FromFace));
 }
 
 #[test]
@@ -4077,7 +6161,8 @@ fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
         byte_offset: 0,
     };
 
-    let scope = parse_parameter_scope(&bytes, &header).expect("Coil scope");
+    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+        .expect("Coil scope");
     assert_eq!(scope.coil_operation, Some(DesignExtrudeOperation::Cut));
     assert_eq!(scope.coil_operation_offset, Some(20));
     assert_eq!(scope.coil_extent, Some(DesignCoilExtent::HeightPitch));
@@ -4094,6 +6179,60 @@ fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
     assert_eq!(scope.coil_section_placement_offset, Some(107));
     assert_eq!(scope.coil_clockwise, Some(true));
     assert_eq!(scope.coil_clockwise_offset, Some(24));
+}
+
+#[test]
+fn compact_coil_scope_uses_its_own_closed_discriminators() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"353");
+    bytes.extend_from_slice(&6644u32.to_le_bytes());
+    bytes.resize(120, 0);
+    bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
+    bytes[24] = 0;
+    bytes[26..30].copy_from_slice(&4u32.to_le_bytes());
+    bytes[30..34].copy_from_slice(&1u32.to_le_bytes());
+    bytes[92..96].copy_from_slice(&1u32.to_le_bytes());
+    bytes[107..111].copy_from_slice(&3u32.to_le_bytes());
+    let references: [u32; 8] = [6645, 6650, 6653, 6656, 6659, 6662, 6665, 6668];
+    bytes.extend_from_slice(&(references.len() as u32).to_le_bytes());
+    for reference in references {
+        bytes.push(1);
+        bytes.extend_from_slice(&reference.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend_from_slice(&310u32.to_le_bytes());
+    lp_utf16(&mut bytes, "CoilPrimitive");
+    let mut tail = [0; 78];
+    tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+    tail[31..35].copy_from_slice(&309u32.to_le_bytes());
+    bytes.extend_from_slice(&tail);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"259");
+    bytes.extend_from_slice(&6644u32.to_le_bytes());
+    let header = DesignRecordHeader {
+        id: "generated:scope-header#0".into(),
+        record_index: 6644,
+        class_tag: "353".into(),
+        byte_offset: 0,
+    };
+
+    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+        .expect("compact Coil scope");
+    assert_eq!(scope.coil_operation, Some(DesignExtrudeOperation::NewBody));
+    assert_eq!(scope.coil_extent, Some(DesignCoilExtent::RevolutionsHeight));
+    assert_eq!(
+        scope.coil_section,
+        Some(DesignCoilSection::ExternalTriangle)
+    );
+    assert_eq!(
+        scope.coil_section_placement,
+        Some(DesignCoilSectionPlacement::Inside)
+    );
+    assert_eq!(scope.coil_clockwise, Some(false));
+
+    bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
+    assert!(parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header).is_none());
 }
 
 #[test]
@@ -4127,7 +6266,7 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
         entity_id: "0_172".into(),
         class_tag: "269".into(),
         optional_slot_present: false,
-        object_kind: Some(DesignObjectKind::Sketch),
+        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: Some(200),
         record_reference_offset: Some(1010),
         declared_reference_count: Some(0),
@@ -4137,12 +6276,53 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
         member_offsets: Vec::new(),
     };
 
-    let profile = parse_sketch_profile(&bytes, "f3d:Design/BulkStream.dat", 4, &header, &[entity])
-        .expect("sketch-profile operand");
+    let profile = parse_sketch_profile(
+        &bytes,
+        "f3d:Design/BulkStream.dat",
+        4,
+        &header,
+        std::slice::from_ref(&entity),
+    )
+    .expect("sketch-profile operand");
     assert_eq!(profile.scope_reference_ordinal, 4);
     assert_eq!(profile.entity_suffix, 172);
     assert_eq!(profile.entity_id, "0_172");
     assert_eq!(profile.paired_byte_offset, paired_at as u64);
+
+    bytes.truncate(paired_at - 94);
+    bytes[4..7].copy_from_slice(b"319");
+    let mut compact_tail = vec![0; 93];
+    compact_tail[0] = 1;
+    compact_tail[8..12].copy_from_slice(&1u32.to_le_bytes());
+    compact_tail[12] = 1;
+    compact_tail[13..17].copy_from_slice(&500u32.to_le_bytes());
+    compact_tail[41..45].copy_from_slice(&99u32.to_le_bytes());
+    compact_tail[53..57].copy_from_slice(&99u32.to_le_bytes());
+    compact_tail[57] = 1;
+    compact_tail[58..62].copy_from_slice(&102u32.to_le_bytes());
+    compact_tail[70] = 1;
+    compact_tail[71..75].copy_from_slice(&101u32.to_le_bytes());
+    compact_tail[82] = 1;
+    compact_tail[83..87].copy_from_slice(&777u32.to_le_bytes());
+    bytes.extend_from_slice(&compact_tail);
+    let compact_paired_at = bytes.len();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"258");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    let compact_header = DesignRecordHeader {
+        class_tag: "319".into(),
+        ..header
+    };
+    let compact = parse_sketch_profile(
+        &bytes,
+        "f3d:Design/BulkStream.dat",
+        2,
+        &compact_header,
+        std::slice::from_ref(&entity),
+    )
+    .expect("compact sketch-profile operand");
+    assert_eq!(compact.scope_reference_ordinal, 2);
+    assert_eq!(compact.paired_byte_offset, compact_paired_at as u64);
 }
 
 #[test]
@@ -4260,7 +6440,7 @@ fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
 }
 
 #[test]
-fn extrude_operand_group_has_an_exact_counted_frame() {
+fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(&class_tag);
@@ -4275,14 +6455,7 @@ fn extrude_operand_group_has_an_exact_counted_frame() {
         frame_length: 200,
         kind: "Extrude".into(),
         kind_offset: 1100,
-        extrude_operation: None,
-        extrude_operation_offset: None,
-        extrude_extent: None,
-        extrude_extent_offsets: None,
-        extrude_direction_reversed: None,
-        extrude_direction_reversed_offset: None,
-        extrude_start: None,
-        extrude_start_offset: None,
+        extrude_prologue: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -4307,6 +6480,9 @@ fn extrude_operand_group_has_an_exact_counted_frame() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
+        surface_offset_operation: None,
+        surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
         hem_operation: None,
@@ -4314,15 +6490,32 @@ fn extrude_operand_group_has_an_exact_counted_frame() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
+        sweep_profile: None,
+        circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
+        assembly_alignment: None,
+        component_insert_construction: None,
+        copy_paste_component_operation: None,
+        mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -4368,24 +6561,371 @@ fn extrude_operand_group_has_an_exact_counted_frame() {
     header(&mut bytes, *b"259", 100);
 
     let group = parse_construction_operand_group(&bytes, &scope, 0, &record)
+        .complete()
         .expect("counted Extrude operand group");
-    assert_eq!(group.member_count_offset, 21);
     assert_eq!(group.members, [200, 201]);
     assert_eq!(group.member_offsets, [26, 37]);
-    assert_eq!(group.identity_record_index, 300);
     assert_eq!(group.role, 0x0000_0008_0000_0000);
     assert_eq!(group.extrude_role, Some(DesignExtrudeOperandRole::Bodies));
-    assert_eq!(group.opaque_index, 180);
-    assert_eq!(group.opaque_scalar, 0.125);
-    assert!(group.variant);
+    assert_eq!(group.frame.member_count_offset, 21);
+    assert!(group.frame.auxiliary_record_indices.is_empty());
+    assert_eq!(group.frame.identity_record_indices, [300]);
+    assert_eq!(group.frame.opaque_index, 180);
+    assert_eq!(group.frame.opaque_scalar, 0.125);
+    assert!(group.frame.variant);
     assert_eq!(group.paired_byte_offset, paired_at as u64);
 
-    bytes.drain(paired_at - 3..paired_at);
-    let compact = parse_construction_operand_group(&bytes, &scope, 0, &record)
-        .expect("compact counted operand group");
-    assert_eq!(compact.members, [200, 201]);
-    assert_eq!(compact.role, 0x0000_0008_0000_0000);
-    assert_eq!(compact.paired_byte_offset, (paired_at - 3) as u64);
+    let mut flagged = bytes[..11].to_vec();
+    flagged.extend_from_slice(&[0; 9]);
+    flagged.push(1);
+    flagged.extend_from_slice(&1u32.to_le_bytes());
+    for value in [
+        b"DcFeatureOperationIdFlag".as_slice(),
+        b"IntrinsicMetaTypeuint64".as_slice(),
+    ] {
+        flagged.extend_from_slice(&u32::try_from(value.len()).unwrap().to_le_bytes());
+        flagged.extend_from_slice(value);
+    }
+    flagged.extend_from_slice(&445u64.to_le_bytes());
+    let flagged_count_at = flagged.len();
+    flagged.extend_from_slice(&bytes[21..]);
+    let flagged = parse_construction_operand_group(&flagged, &scope, 0, &record)
+        .complete()
+        .expect("operation-flagged counted operand group");
+    assert_eq!(flagged.frame.member_count_offset, flagged_count_at as u64);
+    assert_eq!(flagged.members, [200, 201]);
+    assert_eq!(flagged.role, 0x0000_0008_0000_0000);
+
+    let mut unclassified_bytes = bytes.clone();
+    unclassified_bytes[group.role_offset as usize..group.role_offset as usize + 8]
+        .copy_from_slice(&0x0000_0005_0000_0000u64.to_le_bytes());
+    let unclassified = parse_construction_operand_group(&unclassified_bytes, &scope, 0, &record)
+        .complete()
+        .expect("counted Extrude group with an unclassified role");
+    assert_eq!(unclassified.role, 0x0000_0005_0000_0000);
+    assert_eq!(unclassified.extrude_role, None);
+
+    let tail_at = 11 + 10 + 4 + 2 * 11;
+    let mut flagless = bytes[..tail_at + 62].to_vec();
+    flagless.extend_from_slice(&[0; 2]);
+    flagless.push(1);
+    flagless.extend_from_slice(&101u32.to_le_bytes());
+    flagless.extend_from_slice(&[0; 7]);
+    flagless.push(1);
+    flagless.extend_from_slice(&12u32.to_le_bytes());
+    flagless.extend_from_slice(&[0; 6]);
+    let flagless_paired_at = flagless.len();
+    header(&mut flagless, *b"259", 100);
+    let flagless = parse_construction_operand_group(&flagless, &scope, 0, &record)
+        .complete()
+        .expect("flagless counted operand group");
+    assert_eq!(flagless.members, [200, 201]);
+    assert_eq!(flagless.role, 0x0000_0008_0000_0000);
+    assert!(!flagless.frame.variant);
+    assert_eq!(
+        flagless.paired_byte_offset,
+        u64::try_from(flagless_paired_at).unwrap()
+    );
+
+    // A corrupt member count larger than the remaining bytes can supply must
+    // fail the parse without reaching the allocator.
+    let mut bombed = bytes.clone();
+    bombed[21..25].copy_from_slice(&u32::MAX.to_le_bytes());
+    assert!(matches!(
+        parse_construction_operand_group(&bombed, &scope, 0, &record),
+        ConstructionOperandGroupParse::NotAGroup
+    ));
+
+    // A record that opens the grammar but whose tail names another record is a
+    // group this reader cannot read, not a reference member that is not a group.
+    let mut truncated = bytes.clone();
+    let tail_at = truncated.len() - 40;
+    truncated[tail_at..].fill(0x5a);
+    assert!(matches!(
+        parse_construction_operand_group(&truncated, &scope, 0, &record),
+        ConstructionOperandGroupParse::Unclosed
+    ));
+
+    // Both optional references after the member run are present and the counted
+    // identity run is empty: the shape a fixed-offset reader cannot reach.
+    let mut auxiliary = Vec::new();
+    header(&mut auxiliary, *b"283", 100);
+    auxiliary.extend_from_slice(&[0; 10]);
+    auxiliary.extend_from_slice(&1u32.to_le_bytes());
+    for record_index in [109u32, 103, 106] {
+        auxiliary.push(1);
+        auxiliary.extend_from_slice(&record_index.to_le_bytes());
+        auxiliary.extend_from_slice(&[0; 6]);
+    }
+    auxiliary.extend_from_slice(&0u32.to_le_bytes());
+    auxiliary.extend_from_slice(&0x0000_0011_0000_0000u64.to_le_bytes());
+    auxiliary.extend_from_slice(&[0; 10]);
+    auxiliary.extend_from_slice(&31_003u32.to_le_bytes());
+    auxiliary.extend_from_slice(&0.25f64.to_le_bytes());
+    auxiliary.extend_from_slice(&31_003u32.to_le_bytes());
+    auxiliary.push(1);
+    auxiliary.extend_from_slice(&102u32.to_le_bytes());
+    auxiliary.extend_from_slice(&[0; 6]);
+    auxiliary.extend_from_slice(&[0; 2]);
+    auxiliary.push(1);
+    auxiliary.extend_from_slice(&101u32.to_le_bytes());
+    auxiliary.extend_from_slice(&[0; 7]);
+    auxiliary.push(1);
+    auxiliary.extend_from_slice(&scope.record_index.to_le_bytes());
+    auxiliary.extend_from_slice(&[0; 6]);
+    let auxiliary_paired_at = auxiliary.len();
+    header(&mut auxiliary, *b"259", 100);
+    let auxiliary_record = DesignRecordHeader {
+        class_tag: "283".into(),
+        ..record.clone()
+    };
+    let auxiliary = parse_construction_operand_group(&auxiliary, &scope, 0, &auxiliary_record)
+        .complete()
+        .expect("Extrude face group carrying both optional references");
+    assert_eq!(auxiliary.members, [109]);
+    assert_eq!(auxiliary.member_offsets, [26]);
+    assert_eq!(auxiliary.frame.auxiliary_record_indices, [103, 106]);
+    assert_eq!(auxiliary.frame.auxiliary_record_offsets, [37, 48]);
+    assert!(auxiliary.frame.identity_record_indices.is_empty());
+    assert_eq!(auxiliary.role, 0x0000_0011_0000_0000);
+    assert_eq!(
+        auxiliary.extrude_role,
+        Some(DesignExtrudeOperandRole::Faces)
+    );
+    assert_eq!(auxiliary.paired_byte_offset, auxiliary_paired_at as u64);
+
+    let mut split_scope = scope.clone();
+    split_scope.kind = "SplitFace".into();
+    split_scope.frame_length = 334;
+    split_scope.reference_members = vec![100, 200, 201, 400, 500];
+    split_scope.reference_member_offsets = vec![1085, 1096, 1107, 1118, 1129];
+    let mut tool_group = group.clone();
+    tool_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
+    tool_group.role = 0x0000_0021_0000_0000;
+    let mut target_group = group.clone();
+    target_group.id = "f3d:Design/BulkStream.dat:operand-group#400".into();
+    target_group.record_index = 400;
+    target_group.scope_reference_ordinal = 3;
+    target_group.members = vec![500];
+    target_group.member_offsets = vec![1129];
+    target_group.role = 0x0000_0010_0000_0000;
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&split_scope),
+        &[tool_group, target_group],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::SplitFace {
+            targets: cadmpeg_ir::features::FaceSelection::Native(targets),
+            tool: cadmpeg_ir::features::PathRef::Native(tool),
+        } if targets.ends_with("#400") && tool.ends_with("#100")
+    ));
+
+    let mut split_body_scope = scope.clone();
+    split_body_scope.kind = "Split".into();
+    split_body_scope.frame_length = 325;
+    split_body_scope.reference_members = vec![100, 200, 400, 500];
+    split_body_scope.reference_member_offsets = vec![1085, 1096, 1107, 1118];
+    let mut split_tool_group = group.clone();
+    split_tool_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
+    split_tool_group.record_index = 100;
+    split_tool_group.scope_reference_ordinal = 0;
+    split_tool_group.members = vec![200];
+    split_tool_group.member_offsets = vec![1096];
+    split_tool_group.role = 0x0000_0009_0000_0000;
+    let mut split_target_group = group.clone();
+    split_target_group.id = "f3d:Design/BulkStream.dat:operand-group#400".into();
+    split_target_group.record_index = 400;
+    split_target_group.scope_reference_ordinal = 2;
+    split_target_group.members = vec![500];
+    split_target_group.member_offsets = vec![1118];
+    split_target_group.role = 0x0000_0004_0000_0000;
+    let split_tool = DesignFaceOperand {
+        id: "f3d:Design/BulkStream.dat:face-operand#200".into(),
+        scope_record_index: split_body_scope.record_index,
+        scope_reference_ordinal: 1,
+        group_record_index: Some(100),
+        group_member_ordinal: Some(0),
+        record_index: 200,
+        byte_offset: 1200,
+        class_tag: "297".into(),
+        paired_byte_offset: 1400,
+        paired_class_tag: "259".into(),
+        recipe_record_index: 203,
+        recipe_record_byte_offset: 1300,
+        recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#1300".into(),
+        recipe_prefix_offset: 1311,
+        recipe_prefix_bytes: Vec::new(),
+        recipe_references: Vec::new(),
+        recipe_kind: ConstructionRecipeKind::Face,
+        recipe_program_offset: 1350,
+        recipe_program: vec![0, -1],
+        recipe_node_offsets: Vec::new(),
+        recipe_nodes: Vec::new(),
+        candidate_faces: Vec::new(),
+        unreferenced_candidate_faces: Vec::new(),
+        alternate_selector_candidate_faces: Vec::new(),
+        preceding_candidate_faces: Vec::new(),
+        changed_candidate_faces: Vec::new(),
+        historical_support_contexts: Vec::new(),
+        resolved_face_slots: Vec::new(),
+        next_record_index: 204,
+        next_byte_offset: 1411,
+    };
+    let split_groups = [split_target_group.clone(), split_tool_group.clone()];
+    assert!(matches!(
+        project_split(
+            &split_body_scope,
+            &split_groups,
+            std::slice::from_ref(&split_tool)
+        ),
+        Some(FeatureDefinition::SplitBody {
+            targets: cadmpeg_ir::features::BodySelection::Native(ref targets),
+            tools: cadmpeg_ir::features::FaceSelection::Native(ref tool),
+        }) if targets.ends_with("#400") && tool.ends_with("#200")
+    ));
+
+    let mut multiple_targets_scope = split_body_scope.clone();
+    multiple_targets_scope.frame_length = 358;
+    multiple_targets_scope.reference_members = vec![100, 200, 400, 500, 501];
+    let mut multiple_targets = split_target_group.clone();
+    multiple_targets.members = vec![500, 501];
+    assert!(matches!(
+        project_split(
+            &multiple_targets_scope,
+            &[split_tool_group.clone(), multiple_targets],
+            std::slice::from_ref(&split_tool)
+        ),
+        Some(FeatureDefinition::SplitBody { .. })
+    ));
+
+    let mut construction_tool_scope = split_body_scope.clone();
+    construction_tool_scope.frame_length = 347;
+    construction_tool_scope.reference_members = vec![100, 200, 201, 400, 500];
+    let mut construction_tool = split_tool_group.clone();
+    construction_tool.role = 0x0000_0021_0000_0000;
+    construction_tool.members = vec![200, 201];
+    split_target_group.scope_reference_ordinal = 3;
+    assert!(matches!(
+        project_split(
+            &construction_tool_scope,
+            &[split_target_group.clone(), construction_tool],
+            &[]
+        ),
+        Some(FeatureDefinition::SplitBody {
+            tools: cadmpeg_ir::features::FaceSelection::Native(ref tool),
+            ..
+        }) if tool.ends_with("#100")
+    ));
+    split_target_group.scope_reference_ordinal = 2;
+
+    let mut invalid_groups = Vec::new();
+    invalid_groups.push(vec![split_target_group.clone()]);
+    let mut oversized_tool = split_tool_group.clone();
+    oversized_tool.members = vec![200, 201, 202, 203];
+    invalid_groups.push(vec![oversized_tool, split_target_group.clone()]);
+    for mutate in 0..4 {
+        let mut tool = split_tool_group.clone();
+        match mutate {
+            0 => tool.scope_reference_ordinal = 1,
+            1 => tool.record_index = 101,
+            2 => tool.role = 0x0000_0008_0000_0000,
+            3 => tool.members = vec![201],
+            _ => unreachable!(),
+        }
+        invalid_groups.push(vec![tool, split_target_group.clone()]);
+    }
+    for mutate in 0..4 {
+        let mut target = split_target_group.clone();
+        match mutate {
+            0 => target.scope_reference_ordinal = 3,
+            1 => target.record_index = 401,
+            2 => target.role = 0x0000_0005_0000_0000,
+            3 => target.members = vec![501],
+            _ => unreachable!(),
+        }
+        invalid_groups.push(vec![split_tool_group.clone(), target]);
+    }
+    assert!(invalid_groups.iter().all(|groups| project_split(
+        &split_body_scope,
+        groups,
+        std::slice::from_ref(&split_tool)
+    )
+    .is_none()));
+    let mut nonterminal_tool = split_tool;
+    nonterminal_tool.recipe_program = vec![0, -1, 2];
+    assert!(project_split(
+        &split_body_scope,
+        &split_groups,
+        std::slice::from_ref(&nonterminal_tool)
+    )
+    .is_none());
+
+    let mut delete_scope = scope.clone();
+    delete_scope.kind = "DeleteFace".into();
+    delete_scope.frame_length = 258;
+    delete_scope.kind_offset = 1161;
+    delete_scope.reference_members = vec![100, 200];
+    delete_scope.reference_member_offsets = vec![1085, 1096];
+    let mut delete_group = group.clone();
+    delete_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
+    delete_group.members = vec![200];
+    delete_group.member_offsets = vec![1096];
+    delete_group.role = 0x0000_0010_0000_0000;
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&delete_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert_eq!(
+        features[0].definition,
+        FeatureDefinition::DeleteFace {
+            faces: cadmpeg_ir::features::FaceSelection::Native(delete_group.id.clone()),
+            heal: true,
+        }
+    );
+    delete_scope.frame_length = 263;
+    delete_scope.kind_offset = 1165;
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&delete_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        features[0].definition,
+        FeatureDefinition::DeleteFace { heal: true, .. }
+    ));
+    delete_scope.frame_length += 1;
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&delete_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        features[0].definition,
+        FeatureDefinition::Native { ref kind, .. } if kind == "DeleteFace"
+    ));
 
     let mut remove_scope = scope.clone();
     remove_scope.kind = "RemoveBody".into();
@@ -4453,7 +6993,12 @@ fn surface_stitch_tolerance_uses_its_fixed_scope_owned_frame() {
     header(&mut bytes, *b"258", 301);
 
     assert_eq!(
-        exact_surface_stitch_operation(&bytes, 12, &[100, 200, 300, 301]),
+        exact_surface_stitch_operation(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            12,
+            &[100, 200, 300, 301]
+        ),
         Some(DesignSurfaceStitchOperation {
             gap_tolerance: 0.01,
             gap_tolerance_offset: 40,
@@ -4478,21 +7023,26 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
         record_index: 100,
         byte_offset: 1000,
         class_tag: "332".into(),
-        member_count_offset: 1021,
         members: vec![200],
         lost_edge_references: Vec::new(),
         member_offsets: vec![1026],
-        identity_record_index: 300,
-        identity_record_offset: 1043,
+        frame: crate::records::DesignConstructionOperandGroupFrame {
+            member_count_offset: 1021,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            identity_record_indices: vec![300],
+            identity_record_offsets: vec![1043],
+            opaque_index: 180,
+            opaque_index_offset: 1071,
+            opaque_scalar: 0.125,
+            opaque_scalar_offset: 1075,
+            variant: false,
+        },
         role: 0x0000_0008_0000_0000,
         extrude_role: Some(DesignExtrudeOperandRole::Bodies),
         extrude_face_role: None,
         role_offset: 1053,
-        opaque_index: 180,
-        opaque_index_offset: 1071,
-        opaque_scalar: 0.125,
-        opaque_scalar_offset: 1075,
-        variant: false,
+
         paired_class_tag: "259".into(),
         paired_byte_offset: 1124,
     };
@@ -4575,21 +7125,26 @@ fn nested_entity_selection_member_retains_both_identity_values() {
         record_index: 90,
         byte_offset: 900,
         class_tag: "269".into(),
-        member_count_offset: 921,
         members: vec![100],
         lost_edge_references: Vec::new(),
         member_offsets: vec![926],
-        identity_record_index: 200,
-        identity_record_offset: 943,
+        frame: crate::records::DesignConstructionOperandGroupFrame {
+            member_count_offset: 921,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            identity_record_indices: vec![200],
+            identity_record_offsets: vec![943],
+            opaque_index: 1,
+            opaque_index_offset: 971,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 975,
+            variant: false,
+        },
         role: 0x0000_0005_0000_0000,
         extrude_role: None,
         extrude_face_role: None,
         role_offset: 953,
-        opaque_index: 1,
-        opaque_index_offset: 971,
-        opaque_scalar: 0.0,
-        opaque_scalar_offset: 975,
-        variant: false,
+
         paired_class_tag: "265".into(),
         paired_byte_offset: 1024,
     };
@@ -4645,21 +7200,26 @@ fn body_recipe_operand_decodes_counted_reference_table() {
         record_index: 90,
         byte_offset: 900,
         class_tag: "269".into(),
-        member_count_offset: 921,
         members: vec![100],
         lost_edge_references: Vec::new(),
         member_offsets: vec![926],
-        identity_record_index: 200,
-        identity_record_offset: 943,
+        frame: crate::records::DesignConstructionOperandGroupFrame {
+            member_count_offset: 921,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            identity_record_indices: vec![200],
+            identity_record_offsets: vec![943],
+            opaque_index: 1,
+            opaque_index_offset: 971,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 975,
+            variant: false,
+        },
         role: 0x0000_0005_0000_0000,
         extrude_role: None,
         extrude_face_role: None,
         role_offset: 953,
-        opaque_index: 1,
-        opaque_index_offset: 971,
-        opaque_scalar: 0.0,
-        opaque_scalar_offset: 975,
-        variant: false,
+
         paired_class_tag: "265".into(),
         paired_byte_offset: 1024,
     };
@@ -4700,20 +7260,74 @@ fn body_recipe_operand_decodes_counted_reference_table() {
         kind: ConstructionRecipeKind::Body,
         design_id: Some("2265".into()),
         design_id_offset: None,
+        design_selector: Some(crate::records::ConstructionRecipeSelector {
+            value: 1,
+            byte_offset: 0,
+        }),
         recipe_index: 0,
         record_index: 0,
     };
 
-    let operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
+    let mut operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
         .expect("body recipe operand");
     assert_eq!(operand.references.len(), 2);
     assert_eq!(operand.references[0].design_reference, 2265);
     assert_eq!(operand.references[0].form, 3);
     assert_eq!(operand.references[1].design_reference, 2266);
     assert_eq!(operand.references[1].form, 32);
+    assert_eq!(
+        operand.owner,
+        crate::records::DesignBodyRecipeOperandOwner::Group {
+            group_record_index: 90,
+            group_member_ordinal: 0,
+        }
+    );
     assert_eq!(operand.nested_record_index, 103);
     assert_eq!(operand.recipe_id, recipe.id);
     assert_eq!(operand.next_byte_offset, next_at as u64);
+    operand.id = "f3d:Design/BulkStream.dat:body-recipe-operand#0".into();
+    crate::design::decode::operands::bind_body_recipe_operand_candidates(
+        std::slice::from_mut(&mut operand),
+        std::slice::from_ref(&recipe),
+        &[
+            PersistentSubentityTag {
+                id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
+                target: AttributeTarget::Face(FaceId("same-stream".into())),
+                selector: 0,
+                token: String::new(),
+                design_references: vec![2265, 2266],
+                ordinal: 0,
+            },
+            PersistentSubentityTag {
+                id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
+                target: AttributeTarget::Face(FaceId("base-only".into())),
+                selector: 0,
+                token: String::new(),
+                design_references: vec![2265],
+                ordinal: 0,
+            },
+            PersistentSubentityTag {
+                id: "f3d:xref/Other/occurrence-0/design:persistent-subentity-tag#1".into(),
+                target: AttributeTarget::Face(FaceId("other-stream".into())),
+                selector: 0,
+                token: String::new(),
+                design_references: vec![2265],
+                ordinal: 0,
+            },
+        ],
+    );
+    assert_eq!(
+        operand.references[0].candidate_faces,
+        [FaceId("same-stream".into())]
+    );
+
+    let mut nested = Vec::new();
+    header(&mut nested, *b"302", 1);
+    header(&mut nested, *b"305", 11);
+    bytes.splice(next_at..next_at, nested.iter().copied());
+    let operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
+        .expect("body recipe operand with nested recipe records");
+    assert_eq!(operand.next_byte_offset, (next_at + nested.len()) as u64);
 }
 
 #[test]
@@ -4732,14 +7346,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         frame_length: 200,
         kind: "Extrude".into(),
         kind_offset: 1100,
-        extrude_operation: None,
-        extrude_operation_offset: None,
-        extrude_extent: None,
-        extrude_extent_offsets: None,
-        extrude_direction_reversed: None,
-        extrude_direction_reversed_offset: None,
-        extrude_start: None,
-        extrude_start_offset: None,
+        extrude_prologue: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -4764,6 +7371,9 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
+        surface_offset_operation: None,
+        surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
         hem_operation: None,
@@ -4771,15 +7381,32 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
+        sweep_profile: None,
+        circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
+        assembly_alignment: None,
+        component_insert_construction: None,
+        copy_paste_component_operation: None,
+        mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -5152,14 +7779,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         frame_length: 200,
         kind: "Fillet".into(),
         kind_offset: 1100,
-        extrude_operation: None,
-        extrude_operation_offset: None,
-        extrude_extent: None,
-        extrude_extent_offsets: None,
-        extrude_direction_reversed: None,
-        extrude_direction_reversed_offset: None,
-        extrude_start: None,
-        extrude_start_offset: None,
+        extrude_prologue: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -5184,6 +7804,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
+        surface_offset_operation: None,
+        surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
         hem_operation: None,
@@ -5191,15 +7814,32 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
+        sweep_profile: None,
+        circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
+        assembly_alignment: None,
+        component_insert_construction: None,
+        copy_paste_component_operation: None,
+        mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -5220,6 +7860,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         kind: ConstructionRecipeKind::Edge,
         design_id: None,
         design_id_offset: None,
+        design_selector: None,
         recipe_index: 7,
         record_index: 303,
     };
@@ -5265,6 +7906,30 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(
         crate::design::edge_resolve::edge_operand_reference_edge_sets(&edge_operand),
         vec![&[18, 19][..], &[17][..], &[18, 19][..]]
+    );
+    edge_operand.recipe_reference_contexts = vec![
+        reference_context(0, Vec::new()),
+        reference_context(1, vec![17]),
+    ];
+    let mut second_changed_operand = edge_operand.clone();
+    second_changed_operand.recipe_reference_contexts = vec![
+        reference_context(0, Vec::new()),
+        reference_context(1, vec![18]),
+    ];
+    assert_eq!(
+        crate::design::edge_resolve::changed_reference_edge_group_candidates(&[
+            &edge_operand,
+            &second_changed_operand,
+        ]),
+        Some(vec![17, 18])
+    );
+    second_changed_operand.recipe_reference_contexts[0].changed_reference_edge_slots = vec![17];
+    assert_eq!(
+        crate::design::edge_resolve::changed_reference_edge_group_candidates(&[
+            &edge_operand,
+            &second_changed_operand,
+        ]),
+        None
     );
     edge_operand.recipe_reference_contexts.clear();
     edge_operand.local_topology_references = None;
@@ -5358,21 +8023,26 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         record_index: 90,
         byte_offset: 900,
         class_tag: "288".into(),
-        member_count_offset: 921,
         members: vec![100],
         lost_edge_references: vec!["f3d:Design/BulkStream.dat:lost-edge#1".into()],
         member_offsets: vec![926],
-        identity_record_index: 91,
-        identity_record_offset: 950,
+        frame: crate::records::DesignConstructionOperandGroupFrame {
+            member_count_offset: 921,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            identity_record_indices: vec![91],
+            identity_record_offsets: vec![950],
+            opaque_index: 1,
+            opaque_index_offset: 968,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 972,
+            variant: false,
+        },
         role: 0x0000_0008_0000_0000,
         extrude_role: None,
         extrude_face_role: None,
         role_offset: 960,
-        opaque_index: 1,
-        opaque_index_offset: 968,
-        opaque_scalar: 0.0,
-        opaque_scalar_offset: 972,
-        variant: false,
+
         paired_class_tag: "259".into(),
         paired_byte_offset: 1_000,
     };
@@ -5794,14 +8464,24 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     bind_edge_operand_candidates(
         std::slice::from_mut(&mut edge_operand),
         std::slice::from_ref(&recipe),
-        &[PersistentSubentityTag {
-            id: "f3d:asm:persistent-subentity-tag#1".into(),
-            target: AttributeTarget::Face(FaceId("f3d:brep:entity#50".into())),
-            selector: 1,
-            token: "3".into(),
-            design_references: vec![303],
-            ordinal: 0,
-        }],
+        &[
+            PersistentSubentityTag {
+                id: "f3d:asm:persistent-subentity-tag#1".into(),
+                target: AttributeTarget::Face(FaceId("f3d:brep:entity#50".into())),
+                selector: 1,
+                token: "3".into(),
+                design_references: vec![303],
+                ordinal: 0,
+            },
+            PersistentSubentityTag {
+                id: "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1".into(),
+                target: AttributeTarget::Face(FaceId("f3d:brep:entity#xref".into())),
+                selector: 1,
+                token: "3".into(),
+                design_references: vec![303],
+                ordinal: 0,
+            },
+        ],
     );
     assert_eq!(
         edge_operand.candidate_faces,
@@ -5826,7 +8506,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     embedded_program.extend_from_slice(&edge_operand.recipe_program[7..]);
     embedded_program.push(88);
     let dimension_recipe = DesignDimensionRecipeRecord {
-        id: "dimension-recipe".into(),
+        id: "f3d:Design/BulkStream.dat:dimension-recipe#1".into(),
         companion_record_index: 1,
         recipe_ordinal: 0,
         recipe_id: "recipe".into(),
@@ -5845,6 +8525,15 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         crate::design::decode::dimension_frames::dimension_recipe_matching_edge_operand_ids(
             &dimension_recipe,
             std::slice::from_ref(&edge_operand),
+        ),
+        [edge_operand.id.clone()]
+    );
+    let mut other_stream_operand = edge_operand.clone();
+    other_stream_operand.id = "f3d:Other/BulkStream.dat:edge-operand#100".into();
+    assert_eq!(
+        crate::design::decode::dimension_frames::dimension_recipe_matching_edge_operand_ids(
+            &dimension_recipe,
+            &[edge_operand.clone(), other_stream_operand],
         ),
         [edge_operand.id.clone()]
     );
@@ -6011,7 +8700,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         std::slice::from_ref(&face_recipe),
         &[
             PersistentSubentityTag {
-                id: "f3d:asm:persistent-subentity-tag#1".into(),
+                id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
                 target: AttributeTarget::Face(FaceId("f3d:brep:entity#50".into())),
                 selector: 1,
                 token: "3".into(),
@@ -6019,12 +8708,20 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 ordinal: 0,
             },
             PersistentSubentityTag {
-                id: "f3d:asm:persistent-subentity-tag#2".into(),
+                id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
                 target: AttributeTarget::Face(FaceId("f3d:brep:entity#51".into())),
                 selector: 1,
                 token: "4".into(),
                 design_references: vec![303],
                 ordinal: 1,
+            },
+            PersistentSubentityTag {
+                id: "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1".into(),
+                target: AttributeTarget::Face(FaceId("f3d:brep:entity#xref".into())),
+                selector: 1,
+                token: "3".into(),
+                design_references: vec![303],
+                ordinal: 0,
             },
         ],
     );
@@ -6046,21 +8743,26 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         record_index: 90,
         byte_offset: 900,
         class_tag: "306".into(),
-        member_count_offset: 920,
         members: vec![operand.record_index],
         lost_edge_references: Vec::new(),
         member_offsets: vec![924],
-        identity_record_index: 91,
-        identity_record_offset: 935,
+        frame: crate::records::DesignConstructionOperandGroupFrame {
+            member_count_offset: 920,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            identity_record_indices: vec![91],
+            identity_record_offsets: vec![935],
+            opaque_index: 1,
+            opaque_index_offset: 954,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 958,
+            variant: false,
+        },
         role: 0x0000_0011_0000_0000,
         extrude_role: Some(DesignExtrudeOperandRole::Faces),
         extrude_face_role: Some(DesignExtrudeFaceRole::Termination),
         role_offset: 946,
-        opaque_index: 1,
-        opaque_index_offset: 954,
-        opaque_scalar: 0.0,
-        opaque_scalar_offset: 958,
-        variant: false,
+
         paired_class_tag: "259".into(),
         paired_byte_offset: 980,
     };
@@ -6072,6 +8774,43 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     operand
         .unreferenced_candidate_faces
         .push(FaceId("f3d:brep:entity#50".into()));
+    assert!(resolved_face_group(&group, std::slice::from_ref(&operand)).is_none());
+    operand.recipe_program = vec![0, -1, 1];
+    operand.recipe_kind = ConstructionRecipeKind::BoundedFace;
+    operand.recipe_nodes.clear();
+    operand.recipe_nodes.push(DesignFaceRecipeNode {
+        byte_offset: 1_200,
+        end_byte_offset: 1_300,
+        program: Vec::new(),
+        recipe_structure: Some(DesignFaceRecipeStructure {
+            root: 0,
+            prelude: [0, 2],
+            sides: [
+                DesignTopologyRecipeSide {
+                    field_count: std::num::NonZeroU32::new(3).unwrap(),
+                    header_value: 0,
+                    scalars: vec![0, 1],
+                    payload_prefix: vec![0],
+                    payload_entry_count: 0,
+                    entries: Vec::new(),
+                },
+                DesignTopologyRecipeSide {
+                    field_count: std::num::NonZeroU32::new(3).unwrap(),
+                    header_value: 1,
+                    scalars: vec![1, 0],
+                    payload_prefix: vec![0],
+                    payload_entry_count: 0,
+                    entries: Vec::new(),
+                },
+            ],
+        }),
+    });
+    assert!(matches!(
+        resolved_face_group(&group, std::slice::from_ref(&operand)),
+        Some(FaceSelection::Resolved { faces, native })
+            if faces == operand.unreferenced_candidate_faces && native == group.id
+    ));
+    operand.recipe_nodes[0].recipe_structure = None;
     assert!(resolved_face_group(&group, std::slice::from_ref(&operand)).is_none());
     operand.preceding_candidate_faces = vec![FaceId("f3d:brep:entity#50".into())];
     assert_eq!(
@@ -6157,6 +8896,13 @@ fn bounded_face_record_identity_is_not_a_second_design_id() {
     assert_eq!(recipes.len(), 1);
     assert_eq!(recipes[0].design_id.as_deref(), Some("2265"));
     assert_eq!(recipes[0].design_id_offset, Some(4));
+    assert_eq!(
+        recipes[0].design_selector,
+        Some(crate::records::ConstructionRecipeSelector {
+            value: 3,
+            byte_offset: 8,
+        })
+    );
 }
 
 #[test]
@@ -6240,6 +8986,24 @@ fn selected_face_start_requires_unique_sketch_plane_coincidence() {
 
 #[test]
 fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
+    fn candidates(
+        bytes: &[u8],
+        scope_record_index: u32,
+        entity_id: &str,
+        entity_suffix: u64,
+        record_index: u32,
+    ) -> Vec<DesignSketchPlacement> {
+        let records = IndexedRecordOffsets::build(bytes);
+        parse_sketch_placement_candidates(
+            bytes,
+            scope_record_index,
+            entity_id,
+            entity_suffix,
+            record_index,
+            &records,
+        )
+    }
+
     fn placement_frame(
         record_index: u32,
         length: usize,
@@ -6261,8 +9025,7 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
         bytes
     }
 
-    let compact =
-        parse_sketch_placement_candidates(&placement_frame(185, 201, None), 177, "0_172", 172, 185);
+    let compact = candidates(&placement_frame(185, 201, None), 177, "0_172", 172, 185);
     assert_eq!(compact.len(), 1);
     assert_eq!(compact[0].frame_length, 201);
     assert_eq!(compact[0].transform, identity_matrix());
@@ -6274,7 +9037,7 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
         [0.0, 1.0, 0.0, 56.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let explicit = parse_sketch_placement_candidates(
+    let explicit = candidates(
         &placement_frame(1773, 329, Some(transform)),
         1765,
         "0_1761",
@@ -6289,6 +9052,24 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
 
 #[test]
 fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
+    fn candidates(
+        bytes: &[u8],
+        scope_record_index: u32,
+        entity_id: &str,
+        entity_suffix: u64,
+        record_index: u32,
+    ) -> Vec<DesignSketchPlacement> {
+        let records = IndexedRecordOffsets::build(bytes);
+        parse_sketch_placement_candidates(
+            bytes,
+            scope_record_index,
+            entity_id,
+            entity_suffix,
+            record_index,
+            &records,
+        )
+    }
+
     fn genesis_frame(
         record_index: u32,
         length: usize,
@@ -6313,13 +9094,7 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
         bytes
     }
 
-    let compact = parse_sketch_placement_candidates(
-        &genesis_frame(214, 213, 1, None),
-        206,
-        "0_201",
-        201,
-        214,
-    );
+    let compact = candidates(&genesis_frame(214, 213, 1, None), 206, "0_201", 201, 214);
     assert_eq!(compact.len(), 1);
     assert_eq!(compact[0].frame_length, 213);
     assert_eq!(compact[0].transform, identity_matrix());
@@ -6331,7 +9106,7 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let explicit = parse_sketch_placement_candidates(
+    let explicit = candidates(
         &genesis_frame(3060, 341, 0, Some(transform)),
         3052,
         "0_3048",
@@ -6344,15 +9119,8 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
     assert_eq!(explicit[0].transform_offset, Some(66));
 
     // A mismatched form byte fails both lengths.
-    assert!(parse_sketch_placement_candidates(
-        &genesis_frame(214, 213, 0, None),
-        206,
-        "0_201",
-        201,
-        214
-    )
-    .is_empty());
-    assert!(parse_sketch_placement_candidates(
+    assert!(candidates(&genesis_frame(214, 213, 0, None), 206, "0_201", 201, 214).is_empty());
+    assert!(candidates(
         &genesis_frame(3060, 341, 1, Some(transform)),
         3052,
         "0_3048",
@@ -6366,7 +9134,7 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
     let mut workplane_like = genesis_frame(214, 213, 1, None);
     workplane_like[57] = 1;
     workplane_like[58..62].copy_from_slice(&788u32.to_le_bytes());
-    assert!(parse_sketch_placement_candidates(&workplane_like, 206, "0_201", 201, 214).is_empty());
+    assert!(candidates(&workplane_like, 206, "0_201", 201, 214).is_empty());
 }
 
 #[test]
@@ -6474,7 +9242,7 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
         entity_id: "0_100".into(),
         class_tag: "281".into(),
         optional_slot_present: false,
-        object_kind: Some(DesignObjectKind::Sketch),
+        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: None,
         record_reference_offset: None,
         declared_reference_count: None,
@@ -6483,14 +9251,22 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
         member_indices: Vec::new(),
         member_offsets: Vec::new(),
     };
-    let placement = crate::design::decode::sketch::parse_member_run_head_placement(&bytes, &entity)
-        .expect("feature-owned sketch placement");
+    let records = IndexedRecordOffsets::build(&bytes);
+    let placement =
+        crate::design::decode::sketch::parse_member_run_head_placement(&bytes, &entity, &records)
+            .expect("feature-owned sketch placement");
     assert_eq!(placement.record_index, 200);
     assert_eq!(placement.byte_offset, head_at as u64);
     assert_eq!(placement.paired_byte_offset, paired_at as u64);
     assert_eq!(placement.transform, identity_matrix());
     assert!(placement.member_run_head);
     assert_eq!(placement.scope_record_index, None);
+    assert_eq!(
+        crate::design::decode::sketch::parse_legacy_sketch_container_members(
+            &bytes, 0, 100, &records,
+        ),
+        Some((Vec::new(), Vec::new()))
+    );
 
     bytes.truncate(head_at);
     bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -6503,8 +9279,10 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"284");
     bytes.extend_from_slice(&201u32.to_le_bytes());
-    let compact = crate::design::decode::sketch::parse_member_run_head_placement(&bytes, &entity)
-        .expect("compact identity sketch placement");
+    let records = IndexedRecordOffsets::build(&bytes);
+    let compact =
+        crate::design::decode::sketch::parse_member_run_head_placement(&bytes, &entity, &records)
+            .expect("compact identity sketch placement");
     assert_eq!(compact.frame_length, 34);
     assert_eq!(compact.transform, identity_matrix());
     assert_eq!(compact.transform_offset, None);
@@ -6592,6 +9370,76 @@ fn legacy_line_orthogonalizes_its_auxiliary_normal() {
     };
     assert!((direction.x).abs() <= 1.0e-12);
     assert!((direction.y + 1.0).abs() <= 1.0e-12);
+}
+
+#[test]
+fn compact_planar_line_uses_its_implicit_normal() {
+    let values: [f64; 9] = [0.5, 0.875, 0.0, 0.0, -1.75, 0.0, 0.0, -1.0, 0.0];
+    let mut bytes = vec![0u8; 133];
+    for value in values {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.push(1);
+    bytes.extend_from_slice(&37u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+
+    let SketchCurveGeometry::Line {
+        start,
+        end,
+        direction,
+        normal,
+    } = crate::design::decode::sketch::decode_compact_planar_line(&bytes)
+        .expect("compact planar line")
+    else {
+        panic!("expected line");
+    };
+    assert_eq!(start, Point3::new(5.0, 8.75, 0.0));
+    assert_eq!(end, Point3::new(5.0, -8.75, 0.0));
+    assert_eq!(direction, Vector3::new(0.0, -1.0, 0.0));
+    assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
+
+    let mut referenced = vec![0u8; 133];
+    referenced.push(1);
+    referenced.extend_from_slice(&42u32.to_le_bytes());
+    referenced.extend_from_slice(&[0; 6]);
+    referenced.extend_from_slice(&bytes[133..]);
+    assert_eq!(
+        crate::design::decode::sketch::decode_referenced_analytic(&referenced),
+        Some(SketchCurveGeometry::Line {
+            start,
+            end,
+            direction,
+            normal,
+        })
+    );
+}
+
+#[test]
+fn retained_compact_planar_line_edit_preserves_its_reference_tail() {
+    let values: [f64; 9] = [0.5, 0.875, 0.0, 0.0, -1.75, 0.0, 0.0, -1.0, 0.0];
+    let mut bytes = Vec::new();
+    for value in values {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.push(1);
+    bytes.extend_from_slice(&37u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    let tail = bytes[72..].to_vec();
+    let geometry = SketchCurveGeometry::Line {
+        start: Point3::new(10.0, 20.0, 0.0),
+        end: Point3::new(30.0, 40.0, 0.0),
+        direction: Vector3::new(
+            std::f64::consts::FRAC_1_SQRT_2,
+            std::f64::consts::FRAC_1_SQRT_2,
+            0.0,
+        ),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+    };
+    crate::writer::patch::records::patch_sketch_curves(&mut bytes, &[(0, 0, geometry)])
+        .expect("compact planar line edit");
+    assert_eq!(&bytes[72..], tail);
+    assert_eq!(f64::from_le_bytes(bytes[0..8].try_into().unwrap()), 1.0);
+    assert_eq!(f64::from_le_bytes(bytes[24..32].try_into().unwrap()), 2.0);
 }
 
 #[test]
@@ -6769,7 +9617,7 @@ fn sketch_member_run_backfills_relation_free_owners() {
         entity_id: format!("0_{suffix}"),
         class_tag: "281".into(),
         optional_slot_present: false,
-        object_kind: Some(DesignObjectKind::Sketch),
+        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: None,
         record_reference_offset: None,
         declared_reference_count: None,
@@ -7063,7 +9911,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         state: 0x40,
         constraint_kinds: vec![SketchConstraintKind::Horizontal],
         unknown_constraint_bits: 0,
-        member_roles: Vec::new(),
+        member_relation_ordinals: Vec::new(),
         entity_genesis: None,
         pattern: None,
         return_members: vec![member],
@@ -7144,6 +9992,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         SketchConstraintDefinition::Native {
             ref native_kind,
             native_state: Some(0x8000_0040),
+            native_flags: None,
             ref entities,
             ref operands,
             ..
@@ -7345,7 +10194,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         state: 0x8000_0000,
         constraint_kinds: vec![SketchConstraintKind::SplineGroup],
         unknown_constraint_bits: 0,
-        member_roles: Vec::new(),
+        member_relation_ordinals: Vec::new(),
         entity_genesis: None,
         pattern: None,
         return_members: vec![103, 104],
@@ -7733,7 +10582,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         state: 0x20_0000_0000,
         constraint_kinds: vec![SketchConstraintKind::Offset],
         unknown_constraint_bits: 0,
-        member_roles: vec![3, 5, 1, 1],
+        member_relation_ordinals: vec![3, 5, 1, 1],
         entity_genesis: None,
         pattern: None,
         return_members: vec![1, 3, 2, 4],
@@ -7841,6 +10690,65 @@ fn angular_point_operand_selects_unique_incident_line_by_value() {
 }
 
 #[test]
+fn parallel_group_binds_one_common_axis_angle() {
+    let line = |id: &str, end: Point2| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: SketchId("generated:sketch#0".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end,
+        },
+    };
+    let first = line("generated:line#first", Point2::new(1.0, 1.0));
+    let second = line("generated:line#second", Point2::new(-2.0, -2.0));
+    let mismatch = line("generated:line#mismatch", Point2::new(1.0, 0.0));
+    let crossed = line("generated:line#crossed", Point2::new(1.0, -1.0));
+    let parameter = parse_design_parameter(&parameter_record(
+        Some(44),
+        "45 deg",
+        "Angular Dimension-2",
+        Some("deg"),
+        "d1",
+        std::f64::consts::FRAC_PI_4,
+    ))
+    .expect("generated angular dimension is canonical");
+    let parameter_id = ParameterId("generated:parameter#axis-angle".into());
+
+    assert!(matches!(
+        crate::design::dimensions::parallel_group_axis_angle_definition(
+            &[&first, &second],
+            &parameter,
+            &parameter_id,
+        ),
+        Some(SketchConstraintDefinition::AngleToAxis {
+            entity,
+            axis: SketchAxis::Horizontal,
+            parameter,
+        }) if entity == first.id && parameter == parameter_id
+    ));
+    assert!(
+        crate::design::dimensions::parallel_group_axis_angle_definition(
+            &[&first, &mismatch],
+            &parameter,
+            &parameter_id,
+        )
+        .is_none()
+    );
+    assert!(
+        crate::design::dimensions::parallel_group_axis_angle_definition(
+            &[&first, &crossed],
+            &parameter,
+            &parameter_id,
+        )
+        .is_none()
+    );
+}
+
+#[test]
 fn dimension_proofs_require_the_evaluated_measurement() {
     let dimension = |source_kind: &str, unit: &str| {
         parse_design_parameter(&parameter_record(
@@ -7855,6 +10763,9 @@ fn dimension_proofs_require_the_evaluated_measurement() {
     };
     assert!(crate::design::feature_project::design_dimension_unit(
         &dimension("Linear Dimension-2", "mm")
+    ));
+    assert!(crate::design::feature_project::design_dimension_unit(
+        &dimension("Radial Dimension-3", "mm")
     ));
     assert!(!crate::design::feature_project::design_dimension_unit(
         &dimension("Linear Dimension-2", "deg")
@@ -8070,7 +10981,7 @@ fn rectangular_pattern_derives_spacing_from_internal_span_scalars() {
         state: 0x2000_0000,
         constraint_kinds: vec![SketchConstraintKind::RectangularPattern],
         unknown_constraint_bits: 0,
-        member_roles: vec![1, 0, 0],
+        member_relation_ordinals: vec![1, 0, 0],
         entity_genesis: None,
         pattern: Some(crate::records::SketchPatternDefinition::Rectangular {
             directions: [
@@ -8166,7 +11077,7 @@ fn circular_pattern_resolves_full_and_partial_instance_distributions() {
         state: 0x1000_0000,
         constraint_kinds: vec![SketchConstraintKind::CircularPattern],
         unknown_constraint_bits: 0,
-        member_roles: vec![1, 1, 0, 0],
+        member_relation_ordinals: vec![1, 1, 0, 0],
         entity_genesis: None,
         pattern: Some(crate::records::SketchPatternDefinition::Circular {
             angle_parameter: 20,
@@ -8226,6 +11137,87 @@ fn circular_pattern_resolves_full_and_partial_instance_distributions() {
         Some(SketchConstraintDefinition::CircularPattern { ref instances, .. })
             if crate::design::constraints::scalar_close(instances[1].angle.0, std::f64::consts::TAU / 3.0)
     ));
+}
+
+#[test]
+fn circular_pattern_resolves_independently_of_member_role_values() {
+    let entity = |id: &str, geometry| cadmpeg_ir::sketches::SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: SketchId("generated:sketch#0".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry,
+    };
+    let center = entity(
+        "generated:point#center",
+        SketchGeometry::Point {
+            position: Point2::new(2.0, -3.0),
+        },
+    );
+    let circle = |id: &str, angle: f64| {
+        entity(
+            id,
+            SketchGeometry::Circle {
+                center: Point2::new(2.0 + 5.0 * angle.cos(), -3.0 + 5.0 * angle.sin()),
+                radius: cadmpeg_ir::features::Length(0.75),
+            },
+        )
+    };
+    let seed = circle("generated:circle#seed", 0.0);
+    let middle = circle("generated:circle#middle", std::f64::consts::TAU / 3.0);
+    let last = circle("generated:circle#last", 2.0 * std::f64::consts::TAU / 3.0);
+    // Role codes are deliberately uninformative here: all zero. The geometry
+    // must still resolve the center/seed/generated partition.
+    let relation = SketchRelation {
+        id: "f3d:native:sketch-relation#circular".into(),
+        record_index: 10,
+        class_tag: "300".into(),
+        byte_offset: 0,
+        state_offset: 0,
+        owner_reference: 1,
+        owner_entity_id: "0_1".into(),
+        auxiliary_references: vec![20, 21],
+        auxiliary_reference_offsets: Vec::new(),
+        members: vec![1, 2, 3, 4],
+        resolved_members: Vec::new(),
+        member_offsets: Vec::new(),
+        owner_reference_offset: 0,
+        state: 0x1000_0000,
+        constraint_kinds: vec![SketchConstraintKind::CircularPattern],
+        unknown_constraint_bits: 0,
+        member_relation_ordinals: vec![0, 0, 0, 0],
+        entity_genesis: None,
+        pattern: Some(crate::records::SketchPatternDefinition::Circular {
+            angle_parameter: 20,
+            count_parameter: 21,
+            evaluated_angle: std::f64::consts::TAU,
+            evaluated_count: 3,
+        }),
+        return_members: vec![2, 3, 4, 1],
+        resolved_return_members: Vec::new(),
+        return_member_offsets: Vec::new(),
+        raw_bytes: Vec::new(),
+    };
+    let members = [&center, &seed, &middle, &last];
+    let returned = [&seed, &middle, &last, &center];
+    let Some(SketchConstraintDefinition::CircularPattern {
+        center: actual_center,
+        count,
+        ..
+    }) = crate::design::constraints::exact_circular_pattern(
+        &relation,
+        "native",
+        &[],
+        &members,
+        &returned,
+    )
+    else {
+        panic!("role-agnostic circular pattern did not resolve");
+    };
+    assert_eq!(actual_center, center.id);
+    assert_eq!(count, 3);
 }
 
 #[test]
@@ -8421,8 +11413,8 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         byte_offset: 0,
         class_tag: "305".into(),
         record_index: 20,
-        prefix_value: 0,
-        prefix_value_offset: 0,
+        family_discriminator: Some(0),
+        family_discriminator_offset: Some(0),
         source_ordinal: 4,
         owner_record_index: Some(21),
         expression: "2 mm".into(),
@@ -8448,7 +11440,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         evaluated_value_offset: 0,
         parameter_record_index: 20,
         owned_ordinal: 0,
-        variant: 0,
+        variant: Some(0),
         companion_record_index: 22,
     };
     let companion = DesignParameterCompanion {
@@ -8572,6 +11564,23 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         profiles: Vec::new(),
         native_ref: Some(placement.id.clone()),
     };
+    let spatial_entities = points
+        .iter()
+        .map(|point| cadmpeg_ir::sketches::SpatialSketchEntity {
+            id: cadmpeg_ir::sketches::SpatialSketchEntityId(format!(
+                "spatial-point-{}",
+                point.record_index
+            )),
+            sketch: spatial_sketch.id.clone(),
+            construction: false,
+            native_ref: Some(point.id.clone()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: cadmpeg_ir::sketches::SpatialSketchGeometry::Point {
+                position: Point3::new(0.0, point.coordinates.v, 0.0),
+            },
+        })
+        .collect::<Vec<_>>();
     assert!(project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
@@ -8606,25 +11615,134 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             entities: &[],
         },
         std::slice::from_ref(&spatial_sketch),
-        &[],
+        &spatial_entities,
     );
     assert_eq!(spatial_constraints.len(), 1, "{spatial_constraints:#?}");
     assert!(matches!(
         &spatial_constraints[0],
         cadmpeg_ir::sketches::SpatialSketchConstraint {
             sketch: actual_sketch,
-            definition: SpatialSketchConstraintDefinition::Native {
-                parameter: Some(actual_parameter),
-                ..
+            definition: SpatialSketchConstraintDefinition::PointDistance {
+                first,
+                second,
+                parameter: actual_parameter,
             },
             ..
         } if actual_sketch == &spatial_sketch.id
             && actual_parameter == &neutral_parameter_id_parts(stream, 4)
+            && first == &spatial_entities[0].id
+            && second == &spatial_entities[1].id
     ));
+
+    let axis_record = SketchCurveIdentity {
+        id: format!("{stream}:sketch-curve#42"),
+        record_index: 42,
+        owner_reference: Some(100),
+        class_tag: "300".into(),
+        byte_offset: 0,
+        geometry_offset: 0,
+        entity_genesis: None,
+        primary_id: 42,
+        secondary_id: 0,
+        geometry: None,
+    };
+    let axis_entity = cadmpeg_ir::sketches::SpatialSketchEntity {
+        id: cadmpeg_ir::sketches::SpatialSketchEntityId("spatial-axis".into()),
+        sketch: spatial_sketch.id.clone(),
+        construction: true,
+        native_ref: Some(axis_record.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: cadmpeg_ir::sketches::SpatialSketchGeometry::Line {
+            start: Point3::new(-1.0, 1.0, 0.0),
+            end: Point3::new(1.0, 1.0, 0.0),
+        },
+    };
+    let symmetry_group = DesignDimensionLocusGroup {
+        id: format!("{stream}:design-dimension-locus-group#31"),
+        companion_record_index: 22,
+        byte_offset: 0,
+        class_tag: "277".into(),
+        record_index: 31,
+        frame_length: 100,
+        loci: vec![
+            DesignDimensionLocus {
+                geometry_record_index: 42,
+                geometry_reference_offset: 0,
+                role: 5,
+                role_offset: 0,
+            },
+            DesignDimensionLocus {
+                geometry_record_index: 40,
+                geometry_reference_offset: 0,
+                role: 0,
+                role_offset: 0,
+            },
+            DesignDimensionLocus {
+                geometry_record_index: 41,
+                geometry_reference_offset: 0,
+                role: 0,
+                role_offset: 0,
+            },
+        ],
+        owner_reference: 100,
+        owner_reference_offset: 0,
+        owner_role: 0x400,
+        owner_role_offset: 0,
+        state: 0,
+        state_offset: 0,
+        constraint_kinds: Vec::new(),
+        unknown_constraint_bits: 0,
+        return_members: vec![40, 41, 42],
+        return_member_offsets: vec![0, 0, 0],
+        next_class_tag: "273".into(),
+        next_record_index: 32,
+        next_byte_offset: 0,
+    };
+    let mut symmetry_parameter = parameter.clone();
+    symmetry_parameter.source_kind = "Linear Dimension-6".into();
+    let mut symmetry_entities = spatial_entities.clone();
+    symmetry_entities.push(axis_entity.clone());
+    let symmetry_constraints = project_spatial_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&symmetry_parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: std::slice::from_ref(&symmetry_group),
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[],
+            points: &points,
+            curves: std::slice::from_ref(&axis_record),
+            entities: &[],
+        },
+        std::slice::from_ref(&spatial_sketch),
+        &symmetry_entities,
+    );
+    assert_eq!(symmetry_constraints.len(), 2, "{symmetry_constraints:#?}");
+    assert!(symmetry_constraints.iter().any(|constraint| matches!(
+        &constraint.definition,
+        SpatialSketchConstraintDefinition::Symmetric {
+            first,
+            second,
+            axis,
+        } if first == &spatial_entities[0].id
+            && second == &spatial_entities[1].id
+            && axis == &axis_entity.id
+    )));
+    assert!(symmetry_constraints.iter().any(|constraint| matches!(
+        constraint.definition,
+        SpatialSketchConstraintDefinition::Native {
+            parameter: Some(_),
+            ..
+        }
+    )));
 
     let mut zero_parameter = parameter;
     zero_parameter.evaluated_value = 0.0;
-    let mut duplicate_pair = pair;
+    let mut duplicate_pair = pair.clone();
     duplicate_pair.second_geometry_record_index = duplicate_pair.first_geometry_record_index;
     let duplicate = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
@@ -8654,8 +11772,27 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
                 ]
     ));
 
-    let mut group_owner = owner;
+    let mut group_owner = owner.clone();
     group_owner.companion_record_index = group.companion_record_index;
+    let combined = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&zero_parameter),
+            owners: &[owner, group_owner.clone()],
+            pairs: std::slice::from_ref(&pair),
+            groups: std::slice::from_ref(&group),
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: &[],
+            recipe_records: &[],
+            points: &points,
+            curves: &[],
+            entities: &entities,
+        },
+        &[],
+    );
+    assert_eq!(combined.len(), 2);
+
     let grouped = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
@@ -8678,6 +11815,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         [cadmpeg_ir::sketches::SketchConstraint {
             definition: SketchConstraintDefinition::Native {
                 native_state: Some(0),
+                native_flags: None,
                 operands,
                 ..
             },
@@ -8689,6 +11827,28 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
                 (Some("return"), None, 40),
             ]
     ));
+
+    let mut indirect_group = group;
+    indirect_group.owner_reference = 999;
+    let indirect = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&zero_parameter),
+            owners: std::slice::from_ref(&group_owner),
+            pairs: &[],
+            groups: std::slice::from_ref(&indirect_group),
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: &[],
+            recipe_records: &[],
+            points: &points,
+            curves: &[],
+            entities: &entities,
+        },
+        &[],
+    );
+    assert_eq!(indirect.len(), 1);
+    assert_eq!(indirect[0].sketch, sketch);
 }
 
 #[test]
@@ -8747,6 +11907,120 @@ fn counted_offset_return_run_pairs_sources_and_results() {
 }
 
 #[test]
+fn counted_offset_accepts_concentric_arcs_with_the_same_sweep() {
+    let arc = |id: &str, radius| cadmpeg_ir::sketches::SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: SketchId("generated:sketch#0".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Arc {
+            center: Point2::new(3.0, -4.0),
+            radius: Length(radius),
+            start_angle: Angle(0.0),
+            end_angle: Angle(std::f64::consts::FRAC_PI_2),
+        },
+    };
+    let source = arc("generated:arc#source", 2.0);
+    let result = arc("generated:arc#result", 5.0);
+    let entities = HashMap::from([(1, &source), (2, &result)]);
+
+    let definition =
+        exact_counted_offset(&[(1, 7), (2, 0)], &[1, 2], &entities).expect("concentric arc offset");
+    assert!(matches!(
+        definition,
+        SketchConstraintDefinition::Offset {
+            pairs,
+            distance: Length(distance),
+            ..
+        } if pairs.len() == 1
+            && pairs[0].source == source.id
+            && pairs[0].result == result.id
+            && pairs[0].source_reversed
+            && (distance - 3.0).abs() <= 1.0e-9
+    ));
+
+    let mut mismatched = result;
+    mismatched.geometry = SketchGeometry::Arc {
+        center: Point2::new(3.0, -4.0),
+        radius: Length(5.0),
+        start_angle: Angle(0.0),
+        end_angle: Angle(std::f64::consts::PI),
+    };
+    let entities = HashMap::from([(1, &source), (2, &mismatched)]);
+    assert!(exact_counted_offset(&[(1, 7), (2, 0)], &[1, 2], &entities).is_none());
+}
+
+#[test]
+fn counted_roles_require_matching_solved_geometry() {
+    let line = |id: &str, start, end| cadmpeg_ir::sketches::SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: SketchId("generated:sketch#0".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line { start, end },
+    };
+    let horizontal = line(
+        "generated:line#horizontal",
+        Point2::new(-2.0, 3.0),
+        Point2::new(5.0, 3.0),
+    );
+    let vertical = line(
+        "generated:line#vertical",
+        Point2::new(4.0, -1.0),
+        Point2::new(4.0, 8.0),
+    );
+
+    assert!(matches!(
+        counted_role_relation(&[&horizontal], 0x40),
+        Some(SketchConstraintDefinition::Horizontal { entity })
+            if entity == horizontal.id
+    ));
+    assert!(matches!(
+        counted_role_relation(&[&vertical], 0x80),
+        Some(SketchConstraintDefinition::Vertical { entity })
+            if entity == vertical.id
+    ));
+    assert!(counted_role_relation(&[&horizontal], 0x80).is_none());
+    assert!(counted_role_relation(&[&horizontal, &vertical], 0x40).is_none());
+
+    let arc = cadmpeg_ir::sketches::SketchEntity {
+        id: SketchEntityId("generated:arc#tangent".into()),
+        sketch: horizontal.sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Arc {
+            center: Point2::new(-2.0, 2.0),
+            radius: Length(1.0),
+            start_angle: Angle(std::f64::consts::FRAC_PI_2),
+            end_angle: Angle(std::f64::consts::PI),
+        },
+    };
+    assert!(matches!(
+        counted_role_relation(&[&arc, &horizontal], 0x100),
+        Some(SketchConstraintDefinition::Tangent { first, second })
+            if first == arc.id && second == horizontal.id
+    ));
+
+    let mut equal_arc = arc.clone();
+    equal_arc.id = SketchEntityId("generated:arc#equal".into());
+    assert!(matches!(
+        counted_role_relation(&[&arc, &equal_arc], 0x800),
+        Some(SketchConstraintDefinition::Equal { first, second })
+            if first == arc.id && second == equal_arc.id
+    ));
+    if let SketchGeometry::Arc { radius, .. } = &mut equal_arc.geometry {
+        *radius = Length(2.0);
+    }
+    assert!(counted_role_relation(&[&arc, &equal_arc], 0x800).is_none());
+}
+
+#[test]
 fn offset_parameter_factor_preserves_curve_direction() {
     assert_eq!(offset_parameter_factor(2.0, 2.0), Some(1.0));
     assert_eq!(offset_parameter_factor(2.0, -2.0), Some(-1.0));
@@ -8783,7 +12057,7 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
         evaluated_value_offset: 40,
         parameter_record_index: 11,
         owned_ordinal: 0,
-        variant: 0,
+        variant: Some(0),
         companion_record_index: 12,
     };
     let pair = |stream: &str| DesignDimensionLocusPair {
@@ -8870,8 +12144,8 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
         byte_offset: 0,
         class_tag: "305".into(),
         record_index: 20,
-        prefix_value: 0,
-        prefix_value_offset: 0,
+        family_discriminator: Some(0),
+        family_discriminator_offset: Some(0),
         source_ordinal: 4,
         owner_record_index: Some(21),
         expression: "thickness".into(),
@@ -8897,7 +12171,7 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
         evaluated_value_offset: 0,
         parameter_record_index: 20,
         owned_ordinal: 0,
-        variant: 0,
+        variant: Some(0),
         companion_record_index: 22,
     };
     let companion = DesignParameterCompanion {
@@ -8982,6 +12256,189 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
         cadmpeg_ir::sketches::SketchDistanceMeasurement::Distance { .. }
     )));
 
+    let mut radial_parameter = parameter.clone();
+    radial_parameter.source_kind = "Radial Dimension-4".into();
+    let circle = SketchEntity {
+        id: SketchEntityId("radial-circle".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Circle {
+            center: Point2::new(20.0, 20.0),
+            radius: Length(2.0),
+        },
+    };
+    let mut radial_entities = entities.to_vec();
+    radial_entities.push(circle.clone());
+    let radial_constraints = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&radial_parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: &[],
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[recipe(0, 30)],
+            points: &[],
+            curves: &[],
+            entities: &radial_entities,
+        },
+        &[],
+    );
+    assert!(matches!(
+        radial_constraints.as_slice(),
+        [cadmpeg_ir::sketches::SketchConstraint {
+            definition: SketchConstraintDefinition::Radius {
+                entity,
+                parameter: actual_parameter,
+            },
+            ..
+        }] if entity == &circle.id
+            && actual_parameter == &neutral_parameter_id_parts(stream, 4)
+    ));
+
+    let curves = [40, 41].map(|record_index| SketchCurveIdentity {
+        id: format!("{stream}:sketch-curve#{record_index}"),
+        record_index,
+        owner_reference: Some(100),
+        class_tag: "300".into(),
+        byte_offset: 0,
+        geometry_offset: 0,
+        entity_genesis: None,
+        primary_id: u64::from(record_index),
+        secondary_id: 0,
+        geometry: None,
+    });
+    let mut entities_with_refs = entities.clone();
+    for (entity, curve) in entities_with_refs.iter_mut().zip(&curves) {
+        entity.native_ref = Some(curve.id.clone());
+    }
+    let relation_group = DesignDimensionLocusGroup {
+        id: format!("{stream}:design-dimension-locus-group#40"),
+        companion_record_index: 22,
+        byte_offset: 0,
+        class_tag: "292".into(),
+        record_index: 40,
+        frame_length: 100,
+        loci: vec![
+            DesignDimensionLocus {
+                geometry_record_index: 40,
+                geometry_reference_offset: 0,
+                role: 0,
+                role_offset: 0,
+            },
+            DesignDimensionLocus {
+                geometry_record_index: 41,
+                geometry_reference_offset: 0,
+                role: 0,
+                role_offset: 0,
+            },
+        ],
+        owner_reference: 100,
+        owner_reference_offset: 0,
+        owner_role: 0,
+        owner_role_offset: 0,
+        state: 0,
+        state_offset: 0,
+        constraint_kinds: vec![SketchConstraintKind::Parallel],
+        unknown_constraint_bits: 0,
+        return_members: vec![40, 41],
+        return_member_offsets: vec![0, 0],
+        next_class_tag: "300".into(),
+        next_record_index: 42,
+        next_byte_offset: 100,
+    };
+    let with_independent_relation = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: std::slice::from_ref(&relation_group),
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[recipe(1, 31), recipe(0, 30)],
+            points: &[],
+            curves: &curves,
+            entities: &entities_with_refs,
+        },
+        &[],
+    );
+    assert_eq!(with_independent_relation.len(), 2);
+    assert!(with_independent_relation.iter().any(|constraint| matches!(
+        constraint.definition,
+        SketchConstraintDefinition::RepeatedDistance { .. }
+    )));
+    assert!(with_independent_relation.iter().any(|constraint| matches!(
+        constraint.definition,
+        SketchConstraintDefinition::Parallel { .. }
+    )));
+    let mut radial_parameter = parameter.clone();
+    radial_parameter.source_kind = "Radial Dimension-2".into();
+    let radial_with_independent_relation = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&radial_parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: std::slice::from_ref(&relation_group),
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[],
+            points: &[],
+            curves: &curves,
+            entities: &entities_with_refs,
+        },
+        &[],
+    );
+    assert_eq!(radial_with_independent_relation.len(), 2);
+    assert!(radial_with_independent_relation
+        .iter()
+        .any(|constraint| matches!(
+            constraint.definition,
+            SketchConstraintDefinition::Parallel { .. }
+        )));
+    assert!(radial_with_independent_relation
+        .iter()
+        .any(|constraint| matches!(
+            constraint.definition,
+            SketchConstraintDefinition::Native {
+                parameter: Some(_),
+                ..
+            }
+        )));
+    let without_dimension_frame = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: std::slice::from_ref(&relation_group),
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[],
+            points: &[],
+            curves: &curves,
+            entities: &entities_with_refs,
+        },
+        &[],
+    );
+    assert_eq!(without_dimension_frame.len(), 2);
+    assert!(without_dimension_frame.iter().any(|constraint| matches!(
+        constraint.definition,
+        SketchConstraintDefinition::Native {
+            parameter: Some(_),
+            ..
+        }
+    )));
+
     let mut incompatible_unit = parameter.clone();
     incompatible_unit.unit = Some("deg".into());
     let constraints = project_dimension_constraints(
@@ -9032,9 +12489,11 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
             definition: SketchConstraintDefinition::Native {
                 native_kind,
                 native_state: None,
+                native_flags: None,
                 entities,
                 parameter: Some(actual_parameter),
                 operands,
+                ..
             },
             native_ref: Some(native_ref),
             ..
@@ -9053,7 +12512,52 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
                 && operand_ref == &companion.id)
     ));
 
-    let mut empty_companion = companion;
+    let mut radial_parameter = parameter.clone();
+    radial_parameter.source_kind = "Radial Dimension-2".into();
+    let radial_entity = SketchEntity {
+        id: SketchEntityId("circle".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: Length(2.0),
+        },
+    };
+    let retained = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&radial_parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: &[],
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[],
+            points: &[],
+            curves: &[],
+            entities: std::slice::from_ref(&radial_entity),
+        },
+        &[],
+    );
+    assert!(matches!(
+        retained.as_slice(),
+        [cadmpeg_ir::sketches::SketchConstraint {
+            definition: SketchConstraintDefinition::Radius {
+                entity,
+                parameter: actual_parameter,
+            },
+            native_ref: Some(native_ref),
+            ..
+        }] if entity == &radial_entity.id
+            && actual_parameter.0 == format!("f3d:model:parameter#{}:{stream}4", stream.len())
+            && native_ref == &companion.id
+    ));
+
+    let mut empty_companion = companion.clone();
     empty_companion.payload_byte_length = 0;
     let retained = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
@@ -9081,6 +12585,80 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
             native_field: Some(field),
             ..
         }] if field == "companion")
+    ));
+
+    let line = SketchEntity {
+        id: SketchEntityId("measured-line".into()),
+        sketch,
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line {
+            start: Point2::new(3.0, 4.0),
+            end: Point2::new(3.0, 6.0),
+        },
+    };
+    let retained = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: &[],
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[],
+            points: &[],
+            curves: &[],
+            entities: std::slice::from_ref(&line),
+        },
+        &[],
+    );
+    assert!(matches!(
+        retained.as_slice(),
+        [cadmpeg_ir::sketches::SketchConstraint {
+            definition: SketchConstraintDefinition::DistanceLoci {
+                first: cadmpeg_ir::sketches::SketchLocus::Start(first),
+                second: cadmpeg_ir::sketches::SketchLocus::End(second),
+                parameter: actual_parameter,
+            },
+            ..
+        }] if first == &line.id
+            && second == &line.id
+            && actual_parameter == &neutral_parameter_id_parts(stream, 4)
+    ));
+
+    let mut second_line = line.clone();
+    second_line.id = SketchEntityId("second-measured-line".into());
+    let retained = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: &[],
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&empty_companion),
+            recipe_records: &[],
+            points: &[],
+            curves: &[],
+            entities: &[line, second_line],
+        },
+        &[],
+    );
+    assert!(matches!(
+        retained.as_slice(),
+        [cadmpeg_ir::sketches::SketchConstraint {
+            definition: SketchConstraintDefinition::RepeatedLength {
+                entities,
+                parameter,
+            },
+            ..
+        }] if entities.len() == 2
+            && parameter == &neutral_parameter_id_parts(stream, 4)
     ));
 }
 
@@ -9144,7 +12722,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
         endpoint_refs: Vec::new(),
         geometry: SketchGeometry::Line { start, end },
     };
-    let entities = vec![
+    let mut entities = vec![
         line("first", Point2::new(0.0, 0.0), Point2::new(4.0, 0.0)),
         line("second", Point2::new(1.0, 2.0), Point2::new(5.0, 2.0)),
         line("unrelated", Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)),
@@ -9159,6 +12737,211 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
         [SketchConstraintDefinition::Distance { entities, .. }]
             if entities.as_slice() == [SketchEntityId("first".into()), SketchEntityId("second".into())]
     ));
+
+    let parameter = DesignParameter {
+        id: "f3d:A:design-parameter#1".into(),
+        byte_offset: 0,
+        class_tag: "305".into(),
+        record_index: 1,
+        family_discriminator: Some(0),
+        family_discriminator_offset: Some(0),
+        source_ordinal: 1,
+        owner_record_index: Some(2),
+        expression: "2 mm".into(),
+        expression_offset: 0,
+        source_kind: "Linear Dimension-2".into(),
+        source_kind_offset: 0,
+        kind: DesignParameterKind::Dimension,
+        unit: Some("mm".into()),
+        unit_offset: Some(0),
+        name: "d1".into(),
+        name_offset: 0,
+        evaluated_value: 0.2,
+        evaluated_value_offset: 0,
+    };
+    assert!(matches!(
+        crate::design::dimensions::unique_parallel_line_dimension_definition(
+            &entities,
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId("parameter".into()),
+        ),
+        Some(SketchConstraintDefinition::Distance {
+            entities,
+            ..
+        }) if entities.as_slice()
+            == [SketchEntityId("first".into()), SketchEntityId("second".into())]
+    ));
+
+    let fragment = line(
+        "second-fragment",
+        Point2::new(7.0, 2.0),
+        Point2::new(9.0, 2.0),
+    );
+    let mut fragmented_entities = entities.clone();
+    fragmented_entities.push(fragment);
+    fragmented_entities.push(line(
+        "disjoint-first",
+        Point2::new(20.0, 0.0),
+        Point2::new(20.0, 1.0),
+    ));
+    fragmented_entities.push(line(
+        "disjoint-second",
+        Point2::new(22.0, 3.0),
+        Point2::new(22.0, 4.0),
+    ));
+    assert!(matches!(
+        crate::design::dimensions::owner_scoped_parallel_line_set_dimension_definition(
+            &fragmented_entities,
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId("parameter".into()),
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::ParallelLineSetDistance {
+            first,
+            second,
+            ..
+        }) if first == vec![SketchEntityId("first".into())]
+            && second == vec![
+                SketchEntityId("second".into()),
+                SketchEntityId("second-fragment".into()),
+            ]
+    ));
+
+    let point = SketchEntity {
+        id: SketchEntityId("point".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(0.0, 2.0),
+        },
+    };
+    let mut point_entities = entities.clone();
+    point_entities.push(point);
+    assert!(matches!(
+        crate::design::dimensions::unique_point_line_dimension_definition(
+            &point_entities,
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId("parameter".into()),
+        ),
+        Some(SketchConstraintDefinition::Distance {
+            entities,
+            ..
+        }) if entities.as_slice()
+            == [SketchEntityId("point".into()), SketchEntityId("first".into())]
+    ));
+
+    entities.push(line("third", Point2::new(-1.0, 4.0), Point2::new(3.0, 4.0)));
+    assert!(
+        crate::design::dimensions::unique_parallel_line_dimension_definition(
+            &entities,
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId("parameter".into()),
+        )
+        .is_none()
+    );
+    point_entities.push(entities.last().expect("third line").clone());
+    assert!(
+        crate::design::dimensions::unique_point_line_dimension_definition(
+            &point_entities,
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId("parameter".into()),
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
+    let sketch = SketchId("sketch".into());
+    let parameter = DesignParameter {
+        id: "f3d:A:design-parameter#1".into(),
+        byte_offset: 0,
+        class_tag: "305".into(),
+        record_index: 1,
+        family_discriminator: Some(0),
+        family_discriminator_offset: Some(0),
+        source_ordinal: 1,
+        owner_record_index: Some(2),
+        expression: "2 mm".into(),
+        expression_offset: 0,
+        source_kind: "Linear Dimension-2".into(),
+        source_kind_offset: 0,
+        kind: DesignParameterKind::Dimension,
+        unit: Some("mm".into()),
+        unit_offset: Some(0),
+        name: "d1".into(),
+        name_offset: 0,
+        evaluated_value: 0.2,
+        evaluated_value_offset: 0,
+    };
+    let circle = |name: &str, center, radius| SketchEntity {
+        id: SketchEntityId(name.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Circle {
+            center,
+            radius: Length(radius),
+        },
+    };
+    let mut circles = vec![
+        circle("outer-a", Point2::new(0.0, 0.0), 5.0),
+        circle("inner-a", Point2::new(0.0, 0.0), 3.0),
+        circle("outer-b", Point2::new(20.0, 0.0), 8.0),
+        circle("inner-b", Point2::new(20.0, 0.0), 6.0),
+    ];
+    let definition = crate::design::dimensions::concentric_circle_dimension_definition(
+        &circles,
+        &sketch,
+        &parameter,
+        &cadmpeg_ir::features::ParameterId("parameter".into()),
+    )
+    .expect("two disjoint concentric pairs");
+    assert!(matches!(
+        definition,
+        SketchConstraintDefinition::RepeatedDistance {
+            measurements,
+            ..
+        } if measurements == vec![
+            cadmpeg_ir::sketches::SketchDistanceMeasurement::Distance {
+                first: cadmpeg_ir::sketches::SketchLocus::Entity(
+                    SketchEntityId("outer-a".into())
+                ),
+                second: cadmpeg_ir::sketches::SketchLocus::Entity(
+                    SketchEntityId("inner-a".into())
+                ),
+            },
+            cadmpeg_ir::sketches::SketchDistanceMeasurement::Distance {
+                first: cadmpeg_ir::sketches::SketchLocus::Entity(
+                    SketchEntityId("outer-b".into())
+                ),
+                second: cadmpeg_ir::sketches::SketchLocus::Entity(
+                    SketchEntityId("inner-b".into())
+                ),
+            },
+        ]
+    ));
+
+    circles.push(circle("overlap", Point2::new(0.0, 0.0), 1.0));
+    assert!(
+        crate::design::dimensions::concentric_circle_dimension_definition(
+            &circles,
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId("parameter".into()),
+        )
+        .is_none()
+    );
 }
 
 #[test]
@@ -9185,7 +12968,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         entity_id: format!("{stream}_100"),
         class_tag: "300".into(),
         optional_slot_present: true,
-        object_kind: Some(DesignObjectKind::Sketch),
+        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: None,
         record_reference_offset: None,
         declared_reference_count: Some(1),
@@ -9224,7 +13007,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         state: 0,
         constraint_kinds: vec![SketchConstraintKind::Coincident],
         unknown_constraint_bits: 0,
-        member_roles: Vec::new(),
+        member_relation_ordinals: Vec::new(),
         entity_genesis: None,
         pattern: None,
         return_members: vec![20],
@@ -9598,14 +13381,20 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         frame_length: 200,
         kind: "Extrude".into(),
         kind_offset: 210,
-        extrude_operation: Some(DesignExtrudeOperation::NewBody),
-        extrude_operation_offset: Some(128),
-        extrude_extent: Some(DesignExtrudeExtent::OneSidedDistance),
-        extrude_extent_offsets: Some([132, 136]),
-        extrude_direction_reversed: Some(false),
-        extrude_direction_reversed_offset: Some(140),
-        extrude_start: Some(DesignExtrudeStart::ProfilePlane),
-        extrude_start_offset: Some(142),
+        extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
+            reference: None,
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: 128,
+            extent_discriminators: [1, 2],
+            extent: DesignExtrudeExtent::OneSidedDistance,
+            extent_discriminator_offsets: [132, 136],
+            direction_reversed: false,
+            direction_reversed_offset: 140,
+            solid_operation: true,
+            solid_operation_offset: 141,
+            start: DesignExtrudeStart::ProfilePlane,
+            start_offset: 142,
+        }),
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -9630,6 +13419,9 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
+        surface_offset_operation: None,
+        surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
         hem_operation: None,
@@ -9637,15 +13429,32 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
+        sweep_profile: None,
+        circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
+        assembly_alignment: None,
+        component_insert_construction: None,
+        copy_paste_component_operation: None,
+        mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -9676,6 +13485,28 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
             .map(String::as_str),
         Some("AlongDistance")
     );
+}
+
+#[test]
+fn owned_parameter_without_a_projected_scope_stays_native_only() {
+    let mut parameter = parse_design_parameter(&parameter_record(
+        Some(44),
+        "60 mm",
+        "AlongDistance",
+        Some("mm"),
+        "d12",
+        6.0,
+    ))
+    .unwrap();
+    parameter.id = "f3d:native:parameter#45".into();
+    parameter.record_index = 45;
+    let mut owner = parse_parameter_owner(&parameter_owner_frame()).unwrap();
+    owner.id = "f3d:native:parameter-owner#44".into();
+
+    let (features, parameters) =
+        project_parameter_design(&[parameter], &[owner], &[], &[], &[], &[], &[], &[]);
+    assert!(features.is_empty());
+    assert!(parameters.is_empty());
 }
 
 #[test]
@@ -9710,7 +13541,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         evaluated_value_offset: 0,
         parameter_record_index,
         owned_ordinal: parameter_record_index,
-        variant: 0,
+        variant: Some(0),
         companion_record_index: record_index + 1,
     };
     let scope = |record_index| DesignParameterScope {
@@ -9721,14 +13552,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         frame_length: 100,
         kind: "CustomFeature".into(),
         kind_offset: 0,
-        extrude_operation: None,
-        extrude_operation_offset: None,
-        extrude_extent: None,
-        extrude_extent_offsets: None,
-        extrude_direction_reversed: None,
-        extrude_direction_reversed_offset: None,
-        extrude_start: None,
-        extrude_start_offset: None,
+        extrude_prologue: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -9753,6 +13577,9 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
+        surface_offset_operation: None,
+        surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
         hem_operation: None,
@@ -9760,15 +13587,32 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
+        sweep_profile: None,
+        circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
+        assembly_alignment: None,
+        component_insert_construction: None,
+        copy_paste_component_operation: None,
+        mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -9890,14 +13734,20 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         frame_length: 200,
         kind: "Extrude".into(),
         kind_offset: 210,
-        extrude_operation: Some(DesignExtrudeOperation::NewBody),
-        extrude_operation_offset: Some(128),
-        extrude_extent: Some(DesignExtrudeExtent::OneSidedDistance),
-        extrude_extent_offsets: Some([132, 136]),
-        extrude_direction_reversed: Some(false),
-        extrude_direction_reversed_offset: Some(140),
-        extrude_start: Some(DesignExtrudeStart::ProfilePlane),
-        extrude_start_offset: Some(142),
+        extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
+            reference: None,
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: 128,
+            extent_discriminators: [1, 2],
+            extent: DesignExtrudeExtent::OneSidedDistance,
+            extent_discriminator_offsets: [132, 136],
+            direction_reversed: false,
+            direction_reversed_offset: 140,
+            solid_operation: true,
+            solid_operation_offset: 141,
+            start: DesignExtrudeStart::ProfilePlane,
+            start_offset: 142,
+        }),
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -9922,6 +13772,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
+        surface_offset_operation: None,
+        surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
         hem_operation: None,
@@ -9929,14 +13782,24 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: Some(DesignSketchProfileOperand {
             scope_reference_ordinal: 0,
             record_index: 100,
@@ -9950,6 +13813,13 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             paired_class_tag: "259".into(),
             paired_byte_offset: 520,
         }),
+        sweep_profile: None,
+        circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
+        assembly_alignment: None,
+        component_insert_construction: None,
+        copy_paste_component_operation: None,
+        mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -10000,9 +13870,69 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 },
             },
             op: BooleanOp::NewBody,
+            solid: Some(true),
             ..
         } if profile == &neutral_sketch_id(&placement)
     ));
+    let Some(DesignExtrudePrologue::ReferenceAware {
+        solid_operation, ..
+    }) = scope.extrude_prologue.as_mut()
+    else {
+        panic!("reference-aware Extrude prologue");
+    };
+    *solid_operation = false;
+    let sheet = project_extrude(
+        &scope,
+        &[(0, &along), (1, &taper)],
+        &[],
+        &[],
+        std::slice::from_ref(&placement),
+    )
+    .expect("typed sheet Extrude");
+    assert!(matches!(
+        sheet,
+        FeatureDefinition::Extrude {
+            solid: Some(false),
+            ..
+        }
+    ));
+    scope.extrude_prologue = Some(DesignExtrudePrologue::LegacyShifted {
+        operation: DesignExtrudeOperation::NewBody,
+        operation_offset: 127,
+        extent_discriminators: [3, 2],
+        extent: Some(DesignExtrudeExtent::SymmetricDistance),
+        extent_discriminator_offsets: [131, 135],
+        direction_reversed: false,
+        direction_reversed_offset: 139,
+        solid_operation: true,
+        solid_operation_offset: 140,
+        start: DesignExtrudeStart::ProfilePlane,
+        start_offset: 141,
+    });
+    let symmetric = project_extrude(
+        &scope,
+        &[(0, &along), (1, &taper)],
+        &[],
+        &[],
+        std::slice::from_ref(&placement),
+    )
+    .expect("typed symmetric Extrude");
+    assert!(matches!(
+        symmetric,
+        FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::Symmetric {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(5.5)
+                    },
+                    draft: Some(Angle(0.2)),
+                    offset: None,
+                },
+            },
+            ..
+        }
+    ));
+    set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedDistance);
     let selection = DesignExtrudeSelectionGroup {
         id: "f3d:Design/BulkStream.dat:selection#300".into(),
         scope_record_index: scope.record_index,
@@ -10057,7 +13987,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             ..
         } if native == &selection.id
     ));
-    scope.extrude_direction_reversed = Some(true);
+    set_extrude_direction_reversed(&mut scope, true);
     assert!(project_extrude(
         &scope,
         &[(0, &along), (1, &taper)],
@@ -10066,7 +13996,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
     )
     .is_none());
-    scope.extrude_direction_reversed = Some(false);
+    set_extrude_direction_reversed(&mut scope, false);
     let unsupported = parameter("UnclassifiedControl", "mm", 1.0);
     assert!(project_extrude(
         &scope,
@@ -10110,14 +14040,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         .scope_record_index
         .expect("test placement carries a scope record index");
     sketch_scope.kind = "Sketch".into();
-    sketch_scope.extrude_operation = None;
-    sketch_scope.extrude_extent = None;
-    sketch_scope.extrude_start = None;
+    sketch_scope.extrude_prologue = None;
     sketch_scope.extrude_profile = None;
     let scopes = [sketch_scope, scope.clone()];
     let (mut features, _) = project_parameter_design(
-        &[owned_along],
-        &[owner],
+        std::slice::from_ref(&owned_along),
+        std::slice::from_ref(&owner),
         &scopes,
         &[],
         &[],
@@ -10154,6 +14082,55 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         .expect("neutral Extrude feature");
     assert_eq!(extrude_feature.dependencies, [sketch_feature.id.clone()]);
 
+    let (mut spatial_features, _) = project_parameter_design(
+        std::slice::from_ref(&owned_along),
+        std::slice::from_ref(&owner),
+        &scopes,
+        &[],
+        &[],
+        &[],
+        &[],
+        std::slice::from_ref(&placement),
+    );
+    let spatial_sketch = cadmpeg_ir::sketches::SpatialSketch {
+        id: neutral_spatial_sketch_id(&placement),
+        name: None,
+        configuration: None,
+        profiles: vec![cadmpeg_ir::sketches::SpatialSketchProfile {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            boundary: Vec::new(),
+        }],
+        native_ref: Some(placement.id.clone()),
+    };
+    crate::design::feature_project::bind_sketch_feature_geometry(
+        &mut spatial_features,
+        &scopes,
+        std::slice::from_ref(&placement),
+        &[],
+        std::slice::from_ref(&spatial_sketch),
+    );
+    let spatial_feature = spatial_features
+        .iter()
+        .find(|feature| matches!(feature.definition, FeatureDefinition::SpatialSketch { .. }))
+        .expect("neutral spatial Sketch feature");
+    let spatial_extrude = spatial_features
+        .iter()
+        .find(|feature| matches!(feature.definition, FeatureDefinition::Extrude { .. }))
+        .expect("spatial-profile Extrude feature");
+    assert!(matches!(
+        spatial_extrude.definition,
+        FeatureDefinition::Extrude {
+            profile: ProfileRef::SpatialSketchProfiles {
+                ref sketch,
+                ref profiles
+            },
+            ..
+        } if sketch == &spatial_sketch.id && profiles == &[0]
+    ));
+    assert_eq!(spatial_extrude.dependencies, [spatial_feature.id.clone()]);
+
     let body_group = DesignConstructionOperandGroup {
         id: "f3d:Design/BulkStream.dat:operand-group#101".into(),
         scope_record_index: 12,
@@ -10161,25 +14138,30 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         record_index: 101,
         byte_offset: 1000,
         class_tag: "332".into(),
-        member_count_offset: 1021,
         members: vec![200],
         lost_edge_references: Vec::new(),
         member_offsets: vec![1026],
-        identity_record_index: 300,
-        identity_record_offset: 1044,
+        frame: crate::records::DesignConstructionOperandGroupFrame {
+            member_count_offset: 1021,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            identity_record_indices: vec![300],
+            identity_record_offsets: vec![1044],
+            opaque_index: 180,
+            opaque_index_offset: 1072,
+            opaque_scalar: 0.125,
+            opaque_scalar_offset: 1076,
+            variant: false,
+        },
         role: 0x0000_0008_0000_0000,
         extrude_role: Some(DesignExtrudeOperandRole::Bodies),
         extrude_face_role: None,
         role_offset: 1054,
-        opaque_index: 180,
-        opaque_index_offset: 1072,
-        opaque_scalar: 0.125,
-        opaque_scalar_offset: 1076,
-        variant: false,
+
         paired_class_tag: "259".into(),
         paired_byte_offset: 1125,
     };
-    scope.extrude_operation = Some(DesignExtrudeOperation::Join);
+    set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
     let target_body = project_extrude(
         &scope,
         &[(0, &along), (1, &taper)],
@@ -10196,28 +14178,126 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         }
     ));
 
+    set_extrude_operation(&mut scope, DesignExtrudeOperation::NewBody);
+    let sketch_profile = scope.extrude_profile.clone();
+    scope.extrude_profile = None;
+    let mut first_profile_group = body_group.clone();
+    first_profile_group.id = "f3d:Design/BulkStream.dat:operand-group#102".into();
+    first_profile_group.record_index = 102;
+    first_profile_group.scope_reference_ordinal = 0;
+    first_profile_group.extrude_role = Some(DesignExtrudeOperandRole::Profile);
+    let mut second_profile_group = first_profile_group.clone();
+    second_profile_group.id = "f3d:Design/BulkStream.dat:operand-group#103".into();
+    second_profile_group.record_index = 103;
+    second_profile_group.scope_reference_ordinal = 1;
+    let multiple_profiles = project_extrude(
+        &scope,
+        &[(0, &along), (1, &taper)],
+        &[first_profile_group.clone(), second_profile_group.clone()],
+        &[],
+        std::slice::from_ref(&placement),
+    )
+    .expect("typed multi-profile Extrude");
+    assert!(matches!(
+        multiple_profiles,
+        FeatureDefinition::Extrude {
+            profile: ProfileRef::Native(ref native),
+            op: BooleanOp::NewBody,
+            ..
+        } if native == &scope.id
+    ));
+    second_profile_group.scope_reference_ordinal = 0;
+    assert!(project_extrude(
+        &scope,
+        &[(0, &along), (1, &taper)],
+        &[first_profile_group, second_profile_group],
+        &[],
+        std::slice::from_ref(&placement),
+    )
+    .is_none());
+    scope.extrude_profile = sketch_profile;
+    set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
+
     let mut profile_group = body_group.clone();
     profile_group.id = "f3d:Design/BulkStream.dat:operand-group#104".into();
     profile_group.record_index = 104;
     profile_group.extrude_role = Some(DesignExtrudeOperandRole::Profile);
     profile_group.role = 0x0000_0041_0000_0000;
-    assert!(project_extrude(
+    let direct_profile_with_selection_group = project_extrude(
         &scope,
         &[(0, &along), (1, &taper)],
         &[body_group.clone(), profile_group.clone()],
         &[],
         std::slice::from_ref(&placement),
     )
-    .is_none());
-    profile_group.members = vec![100];
-    assert!(project_extrude(
+    .expect("direct sketch profile with a scoped selection group");
+    assert!(matches!(
+        direct_profile_with_selection_group,
+        FeatureDefinition::Extrude {
+            profile: ProfileRef::Sketch(ref profile),
+            ..
+        } if profile == &neutral_sketch_id(&placement)
+    ));
+    scope.fixed_extrude_parameters = Some(DesignFixedExtrudeParameters {
+        along_distance: Some(DesignFixedExtrudeDistance::DistanceConstruction(
+            DesignFixedExtrudeScalar {
+                value: 0.55,
+                record_index: 105,
+                value_offset: 600,
+            },
+        )),
+        taper_angle: None,
+    });
+    let zero_side_offset = parameter("Side1Offset", "mm", 0.0);
+    let hybrid = project_extrude(
         &scope,
-        &[(0, &along), (1, &taper)],
+        &[(0, &zero_side_offset), (1, &taper)],
         &[body_group.clone(), profile_group.clone()],
         &[],
         std::slice::from_ref(&placement),
     )
-    .is_some());
+    .expect("typed hybrid fixed-distance Extrude");
+    assert!(matches!(
+        hybrid,
+        FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(5.5)
+                    },
+                    offset: None,
+                    ..
+                },
+            },
+            ..
+        }
+    ));
+    set_extrude_direction_reversed(&mut scope, true);
+    let reversed_hybrid = project_extrude(
+        &scope,
+        &[(0, &zero_side_offset), (1, &taper)],
+        &[body_group.clone(), profile_group.clone()],
+        &[],
+        std::slice::from_ref(&placement),
+    )
+    .expect("typed reversed hybrid fixed-distance Extrude");
+    assert!(matches!(
+        reversed_hybrid,
+        FeatureDefinition::Extrude {
+            direction: ExtrudeDirection::ReversedProfileNormal,
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(5.5)
+                    },
+                    ..
+                },
+            },
+            ..
+        }
+    ));
+    set_extrude_direction_reversed(&mut scope, false);
+    scope.fixed_extrude_parameters = None;
     let mut native_profile_scope = scope.clone();
     native_profile_scope.extrude_profile = None;
     let reversed_native_profile = project_extrude(
@@ -10251,7 +14331,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     face_group.extrude_role = Some(DesignExtrudeOperandRole::Faces);
     face_group.role = 0x0000_0011_0000_0000;
     let mut ordered_faces = [face_group.clone(), face_group.clone()];
-    scope.extrude_start = Some(DesignExtrudeStart::FromFace);
+    set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);
     assign_extrude_face_roles(&scope, &mut ordered_faces);
     assert_eq!(
         ordered_faces.map(|group| group.extrude_face_role),
@@ -10260,7 +14340,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             Some(DesignExtrudeFaceRole::Termination)
         ]
     );
-    scope.extrude_start = Some(DesignExtrudeStart::ProfilePlane);
+    set_extrude_start(&mut scope, DesignExtrudeStart::ProfilePlane);
     assert!(project_extrude(
         &scope,
         &[(0, &along), (1, &taper)],
@@ -10279,7 +14359,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
     )
     .is_none());
-    scope.extrude_start = Some(DesignExtrudeStart::OffsetProfilePlane);
+    set_extrude_start(&mut scope, DesignExtrudeStart::OffsetProfilePlane);
     let offset_start = project_extrude(
         &scope,
         &[(0, &along), (1, &profile_offset)],
@@ -10297,9 +14377,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             ..
         }
     ));
-    scope.extrude_start = Some(DesignExtrudeStart::ProfilePlane);
+    set_extrude_start(&mut scope, DesignExtrudeStart::ProfilePlane);
 
-    scope.extrude_operation = Some(DesignExtrudeOperation::NewBody);
+    set_extrude_operation(&mut scope, DesignExtrudeOperation::NewBody);
     let against = parameter("AgainstDistance", "mm", -0.05);
     assert!(project_extrude(
         &scope,
@@ -10309,7 +14389,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
     )
     .is_none());
-    scope.extrude_extent = Some(DesignExtrudeExtent::TwoSidedDistance);
+    set_extrude_extent(&mut scope, DesignExtrudeExtent::TwoSidedDistance);
     let two_sided = project_extrude(
         &scope,
         &[(0, &along), (1, &against), (2, &side_two_taper)],
@@ -10339,7 +14419,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             ..
         }
     ));
-    scope.extrude_direction_reversed = Some(true);
+    set_extrude_direction_reversed(&mut scope, true);
     assert!(project_extrude(
         &scope,
         &[(0, &along), (1, &against), (2, &side_two_taper)],
@@ -10348,9 +14428,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
     )
     .is_none());
-    scope.extrude_direction_reversed = Some(false);
+    set_extrude_direction_reversed(&mut scope, false);
 
-    scope.extrude_extent = Some(DesignExtrudeExtent::OneSidedDistance);
+    set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedDistance);
     let reversed_along = parameter("AlongDistance", "mm", -0.6);
     let reversed = project_extrude(
         &scope,
@@ -10376,9 +14456,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         }
     ));
 
-    scope.extrude_operation = Some(DesignExtrudeOperation::Join);
-    scope.extrude_extent = Some(DesignExtrudeExtent::OneSidedToFace);
-    scope.extrude_direction_reversed = Some(true);
+    set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
+    set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedToFace);
+    set_extrude_direction_reversed(&mut scope, true);
     face_group.extrude_face_role = Some(DesignExtrudeFaceRole::Termination);
     let side_offset = parameter("Side1Offset", "mm", 0.025);
     let to_face = project_extrude(
@@ -10406,7 +14486,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         } if id == &face_group.id
     ));
 
-    scope.extrude_start = Some(DesignExtrudeStart::FromFace);
+    set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);
     let mut start_group = face_group.clone();
     start_group.id = "f3d:Design/BulkStream.dat:operand-group#103".into();
     start_group.extrude_face_role = Some(DesignExtrudeFaceRole::Start);
@@ -10433,9 +14513,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         } if id == &start_group.id
     ));
 
-    scope.extrude_operation = Some(DesignExtrudeOperation::NewBody);
-    scope.extrude_extent = Some(DesignExtrudeExtent::TwoSidedDistance);
-    scope.extrude_direction_reversed = Some(false);
+    set_extrude_operation(&mut scope, DesignExtrudeOperation::NewBody);
+    set_extrude_extent(&mut scope, DesignExtrudeExtent::TwoSidedDistance);
+    set_extrude_direction_reversed(&mut scope, false);
     let from_face_two_sided = project_extrude(
         &scope,
         &[
@@ -10471,7 +14551,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
 }
 
 #[test]
-fn edge_treatments_project_typed_dimensions_and_native_selections() {
+fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     use cadmpeg_ir::features::{ChamferGroup, ChamferSpec, EdgeSelection, RadiusSpec};
 
     let parameter = |owner_record_index,
@@ -10513,14 +14593,7 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
         frame_length: 200,
         kind: kind.into(),
         kind_offset: byte_offset + 100,
-        extrude_operation: None,
-        extrude_operation_offset: None,
-        extrude_extent: None,
-        extrude_extent_offsets: None,
-        extrude_direction_reversed: None,
-        extrude_direction_reversed_offset: None,
-        extrude_start: None,
-        extrude_start_offset: None,
+        extrude_prologue: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -10545,6 +14618,9 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
+        surface_offset_operation: None,
+        surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
         hem_operation: None,
@@ -10552,15 +14628,32 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
+        sweep_profile: None,
+        circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
+        assembly_alignment: None,
+        component_insert_construction: None,
+        copy_paste_component_operation: None,
+        mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -10568,7 +14661,11 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
         paired_class_tag: "261".into(),
         paired_byte_offset: byte_offset + 200,
     };
-    let scopes = [scope(12, 100, "Fillet"), scope(22, 400, "Chamfer")];
+    let scopes = [
+        scope(12, 100, "Fillet"),
+        scope(22, 400, "Chamfer"),
+        scope(32, 700, "Hole"),
+    ];
     let (features, _) = project_parameter_design(
         &[
             parameter(44, 45, "Radius", "d1", "5 mm", 0.5),
@@ -10614,6 +14711,134 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
                 edges: EdgeSelection::Native(selection),
                 spec: ChamferSpec::TwoDistances { first, second },
             }] if selection == &scopes[1].id && first.0 == 1.0 && second.0 == 2.0)
+    ));
+
+    let mut distance_angle_parameters = [
+        parameter(54, 55, "Distance", "d2", "1.6 mm", 0.16),
+        parameter(
+            64,
+            65,
+            "Rotate Angle",
+            "d3",
+            "25 deg",
+            25.0_f64.to_radians(),
+        ),
+    ];
+    distance_angle_parameters[1].unit = Some("deg".into());
+    let (features, _) = project_parameter_design(
+        &distance_angle_parameters,
+        &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
+        std::slice::from_ref(&scopes[1]),
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::Chamfer { groups, .. }
+            if matches!(groups.as_slice(), [ChamferGroup {
+                spec: ChamferSpec::DistanceAngle { distance, angle },
+                ..
+            }] if distance.0 == 1.6 && angle.0 == 25.0_f64.to_radians())
+    ));
+
+    let mut hole_parameters = [
+        parameter(94, 95, "HoleDepth", "d4", "10 mm", 1.0),
+        parameter(104, 105, "HoleDiameter", "d5", "4 mm", 0.4),
+        parameter(114, 115, "TipAngle", "d6", "180 deg", std::f64::consts::PI),
+    ];
+    hole_parameters[2].unit = Some("deg".into());
+    let (features, _) = project_parameter_design(
+        &hole_parameters,
+        &[
+            owner(94, 32, 95, 0),
+            owner(104, 32, 105, 1),
+            owner(114, 32, 115, 2),
+        ],
+        std::slice::from_ref(&scopes[2]),
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::Hole {
+            face: Some(FaceSelection::Native(selection)),
+            kind: cadmpeg_ir::features::HoleKind::Simple,
+            diameter: Some(Length(4.0)),
+            extent: Some(cadmpeg_ir::features::Termination::Blind { length: Length(10.0) }),
+            bottom: Some(cadmpeg_ir::features::HoleBottom::Flat),
+            ..
+        } if selection == &scopes[2].id
+    ));
+
+    hole_parameters[2].evaluated_value = 118.0_f64.to_radians();
+    let (features, _) = project_parameter_design(
+        &hole_parameters,
+        &[
+            owner(94, 32, 95, 0),
+            owner(104, 32, 105, 1),
+            owner(114, 32, 115, 2),
+        ],
+        std::slice::from_ref(&scopes[2]),
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::Hole {
+            kind: cadmpeg_ir::features::HoleKind::SimpleDrilled { drill_point_angle },
+            bottom: None,
+            ..
+        } if drill_point_angle.0 == 118.0_f64.to_radians()
+    ));
+
+    let (features, _) = project_parameter_design(
+        &[
+            parameter(54, 55, "leftDistance", "d2", "1 mm", 0.1),
+            parameter(64, 65, "rightDistance", "d3", "2 mm", 0.2),
+        ],
+        &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
+        std::slice::from_ref(&scopes[1]),
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::Chamfer { groups, .. }
+            if matches!(groups.as_slice(), [ChamferGroup {
+                spec: ChamferSpec::TwoDistances { first, second },
+                ..
+            }] if first.0 == 1.0 && second.0 == 2.0)
+    ));
+
+    let (features, _) = project_parameter_design(
+        &[parameter(54, 55, "leftDistance", "d2", "1 mm", 0.1)],
+        &[owner(54, 22, 55, 0)],
+        std::slice::from_ref(&scopes[1]),
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::Chamfer { groups, .. }
+            if matches!(groups.as_slice(), [ChamferGroup {
+                spec: ChamferSpec::Distance { distance },
+                ..
+            }] if distance.0 == 1.0)
     ));
 
     let (features, _) = project_parameter_design(
@@ -10702,21 +14927,25 @@ fn edge_treatments_project_typed_dimensions_and_native_selections() {
             record_index,
             byte_offset: 1_000 + u64::from(scope_reference_ordinal),
             class_tag: "288".into(),
-            member_count_offset: 1_021 + u64::from(scope_reference_ordinal),
             members: vec![record_index + 100],
             lost_edge_references: Vec::new(),
             member_offsets: vec![1_026 + u64::from(scope_reference_ordinal)],
-            identity_record_index: record_index + 1,
-            identity_record_offset: 1_050 + u64::from(scope_reference_ordinal),
+            frame: crate::records::DesignConstructionOperandGroupFrame {
+                member_count_offset: 1_021 + u64::from(scope_reference_ordinal),
+                auxiliary_record_indices: Vec::new(),
+                auxiliary_record_offsets: Vec::new(),
+                identity_record_indices: vec![record_index + 1],
+                identity_record_offsets: vec![1_050 + u64::from(scope_reference_ordinal)],
+                opaque_index: 100,
+                opaque_index_offset: 1_068 + u64::from(scope_reference_ordinal),
+                opaque_scalar: 0.5,
+                opaque_scalar_offset: 1_072 + u64::from(scope_reference_ordinal),
+                variant: false,
+            },
             role: 0x0000_0008_0000_0000,
             extrude_role: None,
             extrude_face_role: None,
             role_offset: 1_060 + u64::from(scope_reference_ordinal),
-            opaque_index: 100,
-            opaque_index_offset: 1_068 + u64::from(scope_reference_ordinal),
-            opaque_scalar: 0.5,
-            opaque_scalar_offset: 1_072 + u64::from(scope_reference_ordinal),
-            variant: false,
             paired_class_tag: "259".into(),
             paired_byte_offset: 1_100 + u64::from(scope_reference_ordinal),
         };
@@ -10805,6 +15034,27 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         None
     );
     assert_eq!(resolved_edge_candidate_intersection(&[], [&[17][..]]), None);
+    // Two reference sets that share no edge name no edge of this operand, so a
+    // proof drawn from outside those references cannot select one either.
+    assert_eq!(
+        resolved_edge_candidate_intersection_with_deleted_proofs(
+            &[selector(0, &[17])],
+            [&[17][..], &[18][..]],
+            &[],
+            Some(17),
+        ),
+        None
+    );
+    // The same proof stands where the references do share the edge.
+    assert_eq!(
+        resolved_edge_candidate_intersection_with_deleted_proofs(
+            &[selector(0, &[17])],
+            [&[17, 20][..], &[17, 21][..]],
+            &[],
+            Some(17),
+        ),
+        Some(17)
+    );
     assert_eq!(
         resolved_edge_candidate_intersection(
             &[
@@ -11173,7 +15423,7 @@ fn edge_group_resolves_only_one_perfect_candidate_assignment() {
     );
     assert_eq!(
         crate::design::edge_resolve::edge_group_assignment_candidates(&[], [&[][..], &[18][..]]),
-        None
+        Some(crate::design::edge_resolve::EdgeAssignmentCandidates::Context)
     );
     assert_eq!(
         crate::design::edge_resolve::edge_group_assignment_candidates(&[], [&[17][..], &[18][..]]),
@@ -11220,6 +15470,24 @@ fn edge_group_resolves_only_one_perfect_candidate_assignment() {
             crate::design::edge_resolve::EdgeAssignmentCandidates::Context,
             crate::design::edge_resolve::EdgeAssignmentCandidates::Context,
         ]),
+        None
+    );
+    assert_eq!(
+        crate::design::edge_resolve::unique_deleted_reference_assignment(
+            &[vec![16, 17, 18], vec![19, 20, 21]],
+            &[vec![17, 20, 22], vec![17, 20, 22]],
+        ),
+        Some(vec![17, 20])
+    );
+    assert_eq!(
+        crate::design::edge_resolve::unique_deleted_reference_assignment(
+            &[vec![16, 17, 18], vec![16, 17, 18]],
+            &[vec![17, 18], vec![17, 18]],
+        ),
+        None
+    );
+    assert_eq!(
+        crate::design::edge_resolve::unique_deleted_reference_assignment(&[vec![17]], &[vec![]],),
         None
     );
 }
@@ -11284,14 +15552,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         frame_length: 200,
         kind: "Congé".into(),
         kind_offset: 210,
-        extrude_operation: None,
-        extrude_operation_offset: None,
-        extrude_extent: None,
-        extrude_extent_offsets: None,
-        extrude_direction_reversed: None,
-        extrude_direction_reversed_offset: None,
-        extrude_start: None,
-        extrude_start_offset: None,
+        extrude_prologue: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -11316,6 +15577,9 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
+        surface_offset_operation: None,
+        surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
         hem_operation: None,
@@ -11323,15 +15587,32 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
+        sweep_profile: None,
+        circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
+        assembly_alignment: None,
+        component_insert_construction: None,
+        copy_paste_component_operation: None,
+        mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -11346,23 +15627,28 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         record_index,
         byte_offset: 1000 + u64::from(ordinal) * 200,
         class_tag: "288".into(),
-        member_count_offset: 1021 + u64::from(ordinal) * 200,
         member_offsets: (0..members.len())
             .map(|index| 1026 + u64::from(ordinal) * 200 + index as u64 * 11)
             .collect(),
         members,
         lost_edge_references: Vec::new(),
-        identity_record_index: 300 + ordinal,
-        identity_record_offset: 1100 + u64::from(ordinal) * 200,
+        frame: crate::records::DesignConstructionOperandGroupFrame {
+            member_count_offset: 1021 + u64::from(ordinal) * 200,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            identity_record_indices: vec![300 + ordinal],
+            identity_record_offsets: vec![1100 + u64::from(ordinal) * 200],
+            opaque_index: 100,
+            opaque_index_offset: 1128 + u64::from(ordinal) * 200,
+            opaque_scalar: 0.5,
+            opaque_scalar_offset: 1132 + u64::from(ordinal) * 200,
+            variant: false,
+        },
         role: 0x0000_0008_0000_0000,
         extrude_role: None,
         extrude_face_role: None,
         role_offset: 1110 + u64::from(ordinal) * 200,
-        opaque_index: 100,
-        opaque_index_offset: 1128 + u64::from(ordinal) * 200,
-        opaque_scalar: 0.5,
-        opaque_scalar_offset: 1132 + u64::from(ordinal) * 200,
-        variant: false,
+
         paired_class_tag: "259".into(),
         paired_byte_offset: 1200 + u64::from(ordinal) * 200,
     };
@@ -11404,15 +15690,19 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ];
     let mut indexed_scope = scope.clone();
     indexed_scope.fixed_fillet_parameters = Some(crate::records::DesignFixedFilletParameters {
-        tangency_weight: 1.0,
-        tangency_weight_record_index: 10,
-        tangency_weight_offset: 100,
-        radii: vec![0.5],
-        radius_record_indexes: vec![20],
-        radius_offsets: vec![200],
-        intermediate_parameters: Vec::new(),
-        intermediate_parameter_record_indexes: Vec::new(),
-        intermediate_parameter_offsets: Vec::new(),
+        groups: vec![crate::records::DesignFixedFilletGroup {
+            tangency_weight: Some(crate::records::DesignFixedFilletTangencyWeight {
+                value: 1.0,
+                record_index: 10,
+                value_offset: 100,
+            }),
+            radii: vec![0.5],
+            radius_record_indexes: vec![20],
+            radius_offsets: vec![200],
+            intermediate_parameters: Vec::new(),
+            intermediate_parameter_record_indexes: Vec::new(),
+            intermediate_parameter_offsets: Vec::new(),
+        }],
     });
     crate::design::decode::operands::disambiguate_fixed_fillet_parameters(
         std::slice::from_mut(&mut indexed_scope),
@@ -11623,6 +15913,33 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         }) if native == &patch_group.id
     ));
 
+    // The earlier scope-envelope generation is fourteen bytes shorter in both
+    // forms and projects the same feature from the same reference shape.
+    patch_scope.frame_length = 325;
+    assert!(matches!(
+        crate::design::feature_project::project_surface_patch(
+            &patch_scope,
+            std::slice::from_ref(&patch_group)
+        ),
+        Some(FeatureDefinition::FilledSurface { .. })
+    ));
+    patch_scope.frame_length = 340;
+    patch_scope.reference_members = vec![100, 200, 300, 301];
+    patch_group.role = 0x0000_0004_0000_0000;
+    assert!(matches!(
+        crate::design::feature_project::project_surface_patch(
+            &patch_scope,
+            std::slice::from_ref(&patch_group)
+        ),
+        Some(FeatureDefinition::FilledSurface { .. })
+    ));
+    patch_scope.reference_members = vec![100, 200, 300, 301, 302];
+    assert!(crate::design::feature_project::project_surface_patch(
+        &patch_scope,
+        std::slice::from_ref(&patch_group)
+    )
+    .is_none());
+
     let mut fill_scope = scope.clone();
     fill_scope.kind = "BoundaryFill".into();
     fill_scope.reference_members = vec![100, 200, 201, 300, 301, 400];
@@ -11675,14 +15992,7 @@ fn parameter_expressions_project_feature_dependencies() {
         frame_length: 200,
         kind: kind.into(),
         kind_offset: byte_offset + 100,
-        extrude_operation: None,
-        extrude_operation_offset: None,
-        extrude_extent: None,
-        extrude_extent_offsets: None,
-        extrude_direction_reversed: None,
-        extrude_direction_reversed_offset: None,
-        extrude_start: None,
-        extrude_start_offset: None,
+        extrude_prologue: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -11707,6 +16017,9 @@ fn parameter_expressions_project_feature_dependencies() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
+        surface_offset_operation: None,
+        surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
         hem_operation: None,
@@ -11714,15 +16027,32 @@ fn parameter_expressions_project_feature_dependencies() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
+        sweep_profile: None,
+        circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
+        assembly_alignment: None,
+        component_insert_construction: None,
+        copy_paste_component_operation: None,
+        mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -11789,14 +16119,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         frame_length: 200,
         kind: kind.into(),
         kind_offset: byte_offset + 100,
-        extrude_operation: None,
-        extrude_operation_offset: None,
-        extrude_extent: None,
-        extrude_extent_offsets: None,
-        extrude_direction_reversed: None,
-        extrude_direction_reversed_offset: None,
-        extrude_start: None,
-        extrude_start_offset: None,
+        extrude_prologue: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -11821,6 +16144,9 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
+        surface_offset_operation: None,
+        surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
         hem_operation: None,
@@ -11828,15 +16154,32 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
+        sweep_profile: None,
+        circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
+        assembly_alignment: None,
+        component_insert_construction: None,
+        copy_paste_component_operation: None,
+        mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -11872,7 +16215,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         evaluated_value_offset: 0,
         parameter_record_index,
         owned_ordinal: parameter_record_index,
-        variant: 0,
+        variant: Some(0),
         companion_record_index: record_index + 1,
     };
     let (features, parameters) = project_parameter_design(
@@ -11911,23 +16254,29 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
 
 #[test]
 fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
+    // The eleven-byte reference form puts each pair at fifteen bytes: the
+    // reference at `marker`, its relation ordinal four bytes later.
     let mut record = vec![0u8; 127];
     record[0..4].copy_from_slice(&3u32.to_le_bytes());
     record[4..7].copy_from_slice(b"286");
     record[7..11].copy_from_slice(&1239u32.to_le_bytes());
     record[19] = 1;
     record[20..24].copy_from_slice(&3u32.to_le_bytes());
-    for (marker, reference) in [(24, 1224u32), (39, 1228), (54, 1236), (69, 0), (74, 1041)] {
+    for (marker, reference) in [(24, 1224u32), (39, 1228), (54, 1236)] {
         record[marker] = 1;
-        record[marker + 1..marker + 5].copy_from_slice(&reference.to_le_bytes());
+        record[marker + 1..marker + 9].copy_from_slice(&u64::from(reference).to_le_bytes());
     }
     record[35..39].copy_from_slice(&3u32.to_le_bytes());
     record[50..54].copy_from_slice(&1u32.to_le_bytes());
-    record[85..93].copy_from_slice(&4u64.to_le_bytes());
-    record[93..97].copy_from_slice(&3u32.to_le_bytes());
-    for (marker, reference) in [(97, 1224u32), (108, 1228), (119, 1236)] {
+    // Offset 69 is the base level's property-block presence byte; the
+    // `ParentNode` reference follows it.
+    record[70] = 1;
+    record[71..79].copy_from_slice(&1041u64.to_le_bytes());
+    record[81..89].copy_from_slice(&4u64.to_le_bytes());
+    record[89..93].copy_from_slice(&3u32.to_le_bytes());
+    for (marker, reference) in [(93, 1224u32), (104, 1228), (115, 1236)] {
         record[marker] = 1;
-        record[marker + 1..marker + 5].copy_from_slice(&reference.to_le_bytes());
+        record[marker + 1..marker + 9].copy_from_slice(&u64::from(reference).to_le_bytes());
     }
     let mut bytes = record.clone();
     bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -11935,16 +16284,16 @@ fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
     bytes.extend_from_slice(&1240u32.to_le_bytes());
 
     assert_eq!(next_indexed_record_offset(&bytes, 11), Some(127));
-    let parsed = parse_sketch_relation(&record, &HashSet::from([1041])).unwrap();
+    let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::Plain).unwrap();
     assert_eq!(parsed.members, [1224, 1228, 1236]);
-    assert_eq!(parsed.member_roles, [3, 1, 0]);
-    assert_eq!(parsed.auxiliary_references, [0]);
+    assert_eq!(parsed.member_relation_ordinals, [3, 1, 0]);
+    assert_eq!(parsed.auxiliary_references, [] as [u32; 0]);
     assert_eq!(parsed.owner_reference, 1041);
     assert_eq!(parsed.state, 4);
-    assert_eq!(parsed.state_offset, 85);
+    assert_eq!(parsed.state_offset, 81);
     assert_eq!(parsed.entity_genesis, None);
     assert_eq!(parsed.return_members, [1224, 1228, 1236]);
-    assert_eq!(parsed.parsed_end, 124);
+    assert_eq!(parsed.parsed_end, 127);
 }
 
 #[test]
@@ -12021,6 +16370,8 @@ fn genesis_relation_parses_u64_text_frame_mask_and_member_roles() {
     let mut auxiliary = Vec::new();
     push_reference(&mut auxiliary, 2394);
     auxiliary.extend_from_slice(&[0u8; 6]);
+    // The second text-frame reference is absent.
+    auxiliary.push(0);
     let record = genesis_relation_record(
         &[(2394, 0), (2403, 0), (2404, 0)],
         2,
@@ -12029,9 +16380,9 @@ fn genesis_relation_parses_u64_text_frame_mask_and_member_roles() {
         0x100_0000_0000,
         &[2403, 2404],
     );
-    let parsed = parse_sketch_relation(&record, &HashSet::from([1425])).unwrap();
+    let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame).unwrap();
     assert_eq!(parsed.members, [2394, 2403, 2404]);
-    assert_eq!(parsed.member_roles, [0, 0, 0]);
+    assert_eq!(parsed.member_relation_ordinals, [0, 0, 0]);
     assert_eq!(parsed.entity_genesis, Some(2));
     assert_eq!(parsed.auxiliary_references, [2394]);
     assert_eq!(parsed.owner_reference, 1425);
@@ -12083,9 +16434,13 @@ fn genesis_relation_parses_text_path_glyph_run() {
         0x200_0000_0000,
         &[237],
     );
-    let parsed = parse_sketch_relation(&record, &HashSet::from([201])).unwrap();
+    let parsed = parse_classed_sketch_relation(
+        &record,
+        SketchRelationClass::TextPath { leading_flag: true },
+    )
+    .unwrap();
     assert_eq!(parsed.members, [237, 304]);
-    assert_eq!(parsed.member_roles, [1, 0]);
+    assert_eq!(parsed.member_relation_ordinals, [1, 0]);
     assert_eq!(parsed.entity_genesis, Some(2));
     assert_eq!(parsed.auxiliary_references, [304]);
     assert_eq!(parsed.owner_reference, 201);
@@ -12105,8 +16460,16 @@ fn genesis_relation_parses_text_path_glyph_run() {
     );
 }
 
-#[test]
-fn sketch_text_record_decodes_typed_content_and_metrics() {
+/// Build one sketch-text record: `properties` are the property-block keys in
+/// stream order, `slots` says whether each parameter-reference member is
+/// written, and `frame` gives the anchor in centimetres and the rotation in
+/// radians of a frame text's placement transform, or `None` for path text,
+/// which stores no transform.
+fn sketch_text_record(
+    properties: &[(&str, u64)],
+    slots: [Option<u32>; 2],
+    frame: Option<(f64, f64, f64)>,
+) -> Vec<u8> {
     let mut bytes = Vec::new();
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
         bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
@@ -12121,54 +16484,434 @@ fn sketch_text_record_decodes_typed_content_and_metrics() {
     bytes.extend_from_slice(&304u64.to_le_bytes());
     bytes.extend_from_slice(&[0; 5]);
     bytes.push(1);
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    push_ascii(&mut bytes, "EntityGenesis");
-    push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
-    bytes.extend_from_slice(&4u64.to_le_bytes());
-    push_ascii(&mut bytes, "textex_tag");
-    push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
-    bytes.extend_from_slice(&109u64.to_le_bytes());
-    push_ascii(&mut bytes, "txt_tag_base");
-    push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
-    bytes.extend_from_slice(&305u64.to_le_bytes());
+    bytes.extend_from_slice(&(properties.len() as u32).to_le_bytes());
+    for (key, value) in properties {
+        push_ascii(&mut bytes, key);
+        push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
     bytes.push(1);
-    bytes.extend_from_slice(&1.0f64.to_le_bytes());
-    bytes.extend_from_slice(&0.0f64.to_le_bytes());
-    bytes.extend_from_slice(&0.0f32.to_le_bytes());
-    bytes.extend_from_slice(&1.0f32.to_le_bytes());
+    bytes.extend_from_slice(&0.8f64.to_le_bytes());
+    for component in [0.25f32, 0.5, 0.75, 1.0] {
+        bytes.extend_from_slice(&component.to_le_bytes());
+    }
     push_utf16(&mut bytes, "Arial");
     bytes.push(0);
-    bytes.extend_from_slice(&0.8f64.to_le_bytes());
-    push_reference(&mut bytes, 307);
-    bytes.extend_from_slice(&[0; 6]);
-    bytes.push(1);
-    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&1.0f64.to_le_bytes());
+    if let Some(reference) = slots[0] {
+        push_reference(&mut bytes, reference);
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 3]);
     push_utf16(&mut bytes, "path text");
-    push_reference(&mut bytes, 310);
-    bytes.extend_from_slice(&[0; 6]);
-    bytes.extend_from_slice(&[0; 16]);
+    if let Some(reference) = slots[1] {
+        push_reference(&mut bytes, reference);
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.push(0);
+    bytes.extend_from_slice(&400i32.to_le_bytes());
+    bytes.extend_from_slice(&u32::from(frame.is_none()).to_le_bytes());
+    bytes.push(u8::from(frame.is_none()));
+    if let Some((anchor_u, anchor_v, rotation)) = frame {
+        // A planar rigid placement: the 2x2 rotation basis, the anchor in the
+        // last column, and the identity's third row and column.
+        let (sin, cos) = rotation.sin_cos();
+        for element in [
+            cos, -sin, 0.0, anchor_u, sin, cos, 0.0, anchor_v, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+            1.0,
+        ] {
+            bytes.extend_from_slice(&element.to_le_bytes());
+        }
+    }
+    bytes.extend_from_slice(&[0; 30]);
     push_reference(&mut bytes, 201);
     bytes.extend_from_slice(&[0; 6]);
+    bytes
+}
 
-    let text = crate::design::decode::sketch::decode_sketch_text_record(
-        &bytes,
+/// Decode one sketch-text record at `class_version`, the version its Design
+/// `MetaStream` type table gives its class.
+fn decode_sketch_text_at(bytes: &[u8], class_version: u32) -> Option<crate::records::SketchText> {
+    crate::design::decode::sketch::decode_sketch_text_record(
+        bytes,
         "Design/BulkStream.dat",
         "329".into(),
+        class_version,
         304,
         7,
     )
+}
+
+/// Decode one sketch-text record at the class version that writes an identity
+/// key and the wider anchor run.
+fn decode_sketch_text(bytes: &[u8]) -> Option<crate::records::SketchText> {
+    decode_sketch_text_at(bytes, 4)
+}
+
+#[test]
+fn sketch_text_record_decodes_typed_content_and_metrics() {
+    let bytes = sketch_text_record(
+        &[
+            ("EntityGenesis", 4),
+            ("textex_tag", 109),
+            ("txt_tag_base", 305),
+        ],
+        [Some(307), Some(310)],
+        None,
+    );
+    let text = decode_sketch_text(&bytes).expect("sketch text record");
+    assert_eq!(text.record_index, 304);
+    assert_eq!(text.owner_reference, 201);
+    assert_eq!(text.entity_genesis, Some(4));
+    assert_eq!(text.persistent_id, Some(109));
+    assert_eq!(text.base_id, Some(305));
+    assert_eq!(text.text, "path text");
+    assert_eq!(text.font_family, "Arial");
+    assert_eq!(text.font_weight, 400);
+    // The height is the field after the font family, in centimetres; the width
+    // factor is the field before it.
+    assert_eq!(text.height, 10.0);
+    assert_eq!(text.width_factor, Some(0.8));
+    // The four f32 after the width factor are red, green, blue, and alpha in
+    // that order.
+    assert_eq!(
+        text.color,
+        cadmpeg_ir::topology::Color {
+            r: 0.25,
+            g: 0.5,
+            b: 0.75,
+            a: 1.0,
+        }
+    );
+    assert_eq!(text.first_reference, Some(307));
+    assert_eq!(text.second_reference, Some(310));
+}
+
+#[test]
+fn sketch_text_record_refuses_a_colour_component_outside_the_unit_range() {
+    let bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], None);
+    let mut over = bytes.clone();
+    let at = bytes
+        .windows(4)
+        .position(|window| window == 0.5f32.to_le_bytes())
+        .expect("green component");
+    over[at..at + 4].copy_from_slice(&1.5f32.to_le_bytes());
+    assert!(decode_sketch_text(&over).is_none());
+    let mut under = bytes;
+    under[at..at + 4].copy_from_slice(&(-0.5f32).to_le_bytes());
+    assert!(decode_sketch_text(&under).is_none());
+}
+
+#[test]
+fn sketch_text_record_decodes_without_the_optional_property_keys() {
+    let text = decode_sketch_text(&sketch_text_record(
+        &[("textex_tag", 109)],
+        [None, None],
+        None,
+    ))
+    .expect("sketch text record");
+    assert_eq!(text.entity_genesis, None);
+    assert_eq!(text.base_id, None);
+    assert_eq!(text.persistent_id, Some(109));
+    assert_eq!(text.first_reference, None);
+    assert_eq!(text.second_reference, None);
+    assert_eq!(text.height, 10.0);
+    assert_eq!(text.width_factor, Some(0.8));
+}
+
+#[test]
+fn frame_sketch_text_record_takes_its_anchor_and_rotation_from_the_transform() {
+    let rotation = std::f64::consts::FRAC_PI_2;
+    let text = decode_sketch_text(&sketch_text_record(
+        &[("textex_tag", 109), ("txt_tag_base", 305)],
+        [None, None],
+        Some((2.175, -0.5, rotation)),
+    ))
+    .expect("sketch text record");
+    assert_eq!(text.base_id, Some(305));
+    assert_eq!(text.owner_reference, 201);
+    // The anchor is the transform's last column in centimetres and the
+    // rotation is the angle of its first basis column.
+    assert_eq!(
+        text.anchor,
+        Some(cadmpeg_ir::math::Point2::new(21.75, -5.0))
+    );
+    assert!((text.rotation.expect("rotation") - rotation).abs() < 1e-12);
+    // Frame text stores 128 more bytes than path text.
+    assert_eq!(
+        text.raw_bytes.len(),
+        sketch_text_record(
+            &[("textex_tag", 109), ("txt_tag_base", 305)],
+            [None, None],
+            None
+        )
+        .len()
+            + 128
+    );
+}
+
+#[test]
+fn path_sketch_text_record_stores_neither_anchor_nor_rotation() {
+    let text = decode_sketch_text(&sketch_text_record(
+        &[("textex_tag", 109)],
+        [None, None],
+        None,
+    ))
+    .expect("sketch text record");
+    assert_eq!(text.anchor, None);
+    assert_eq!(text.rotation, None);
+}
+
+#[test]
+fn frame_sketch_text_record_refuses_a_transform_that_is_not_a_planar_rotation() {
+    let bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], Some((1.0, 2.0, 0.25)));
+    let at = bytes.len() - 128 - 30 - 11;
+    // A scaled basis, a third row that is not the identity's, and a bottom row
+    // that is not `(0, 0, 0, 1)` each leave the placement.
+    for (element, value) in [(0usize, 2.0f64), (10, 0.5), (15, 2.0)] {
+        let mut broken = bytes.clone();
+        broken[at + element * 8..at + element * 8 + 8].copy_from_slice(&value.to_le_bytes());
+        assert!(decode_sketch_text(&broken).is_none());
+    }
+}
+
+#[test]
+fn sketch_text_record_refuses_a_flag_byte_that_does_not_repeat_the_text_type() {
+    let bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], None);
+    // The flag byte sits between the text-type enum and the transform slot,
+    // ahead of the trailing run and the owning-sketch reference.
+    let at = bytes.len() - 30 - 11 - 1;
+    assert_eq!(bytes[at], 1);
+    let mut broken = bytes;
+    broken[at] = 0;
+    assert!(decode_sketch_text(&broken).is_none());
+}
+
+#[test]
+fn sketch_text_record_refuses_a_payload_that_does_not_end_on_its_owner() {
+    let mut bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], None);
+    bytes.push(0);
+    assert!(decode_sketch_text(&bytes).is_none());
+}
+
+/// Build one sketch-text record in the `txt_tag` identity form: `properties`
+/// are the property-block keys in stream order, `frame` is the leading block's
+/// reference run, `run` is the counted reference run after the text, `anchor`
+/// is the text anchor point in centimetres, and `class_version` selects the
+/// width of the run between the anchor and the text string.
+fn txt_tag_sketch_text_record_at(
+    properties: &[(&str, u64)],
+    frame: &[u32],
+    run: &[u32],
+    anchor: (f64, f64),
+    class_version: u32,
+) -> Vec<u8> {
+    txt_tag_sketch_text_record_at_with_rotation(properties, frame, run, anchor, class_version, 0.0)
+}
+
+fn txt_tag_sketch_text_record_at_with_rotation(
+    properties: &[(&str, u64)],
+    frame: &[u32],
+    run: &[u32],
+    anchor: (f64, f64),
+    class_version: u32,
+    rotation: f64,
+) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
+        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(value.as_bytes());
+    };
+    let push_utf16 = |bytes: &mut Vec<u8>, value: &str| {
+        let encoded = value.encode_utf16().collect::<Vec<_>>();
+        bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+        bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
+    };
+    let push_padded_reference = |bytes: &mut Vec<u8>, reference: u32| {
+        push_reference(bytes, reference);
+        bytes.extend_from_slice(&[0; 6]);
+    };
+    push_ascii(&mut bytes, "329");
+    bytes.extend_from_slice(&304u64.to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    // The leading block: a reference and a u32 per entry.
+    bytes.push(1);
+    bytes.extend_from_slice(&(frame.len() as u32).to_le_bytes());
+    for reference in frame {
+        push_padded_reference(&mut bytes, *reference);
+        bytes.extend_from_slice(&[0; 4]);
+    }
+    bytes.push(1);
+    bytes.extend_from_slice(&(properties.len() as u32).to_le_bytes());
+    for (key, value) in properties {
+        push_ascii(&mut bytes, key);
+        push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&rotation.to_le_bytes());
+    // Five bytes separate the rotation from the four f32 RGBA components.
+    bytes.extend_from_slice(&[0; 5]);
+    for component in [0.0f32, 0.3, 1.0, 1.0] {
+        bytes.extend_from_slice(&component.to_le_bytes());
+    }
+    push_utf16(&mut bytes, "Arial");
+    bytes.extend_from_slice(&0.5f64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&anchor.0.to_le_bytes());
+    bytes.extend_from_slice(&anchor.1.to_le_bytes());
+    bytes.extend_from_slice(&vec![0u8; if class_version < 4 { 10 } else { 11 }]);
+    push_utf16(&mut bytes, "sketch text");
+    bytes.extend_from_slice(&(run.len() as u32).to_le_bytes());
+    for reference in run {
+        push_padded_reference(&mut bytes, *reference);
+    }
+    let mut member_run = [0; 15];
+    member_run[3..7].copy_from_slice(&400i32.to_le_bytes());
+    bytes.extend_from_slice(&member_run);
+    bytes.extend_from_slice(&[0; 30]);
+    push_padded_reference(&mut bytes, 201);
+    bytes
+}
+
+/// Build one `txt_tag` sketch-text record at the class version that writes an
+/// identity key and the wider anchor run.
+fn txt_tag_sketch_text_record(
+    properties: &[(&str, u64)],
+    frame: &[u32],
+    run: &[u32],
+    anchor: (f64, f64),
+) -> Vec<u8> {
+    txt_tag_sketch_text_record_at(properties, frame, run, anchor, 4)
+}
+
+#[test]
+fn txt_tag_sketch_text_record_decodes_its_anchor_and_metrics() {
+    let text = decode_sketch_text(&txt_tag_sketch_text_record(
+        &[("EntityGenesis", 4), ("txt_tag", 115)],
+        &[261, 262, 263, 264],
+        &[261, 262, 263, 264, 261, 262, 263, 264],
+        (0.25, -1.5),
+    ))
     .expect("sketch text record");
     assert_eq!(text.record_index, 304);
     assert_eq!(text.owner_reference, 201);
-    assert_eq!(text.entity_genesis, 4);
-    assert_eq!(text.persistent_id, 109);
-    assert_eq!(text.base_id, 305);
-    assert_eq!(text.text, "path text");
+    assert_eq!(text.entity_genesis, Some(4));
+    assert_eq!(text.persistent_id, Some(115));
+    assert_eq!(text.base_id, None);
+    assert_eq!(text.text, "sketch text");
     assert_eq!(text.font_family, "Arial");
-    assert_eq!(text.height, 10.0);
-    assert_eq!(text.width_factor, 0.8);
-    assert_eq!(text.first_reference, 307);
-    assert_eq!(text.second_reference, 310);
+    assert_eq!(text.font_weight, 400);
+    assert_eq!(text.rotation, Some(0.0));
+    assert_eq!(text.height, 5.0);
+    // The form stores no width factor, and the anchor is the field pair the
+    // other form omits.
+    assert_eq!(text.width_factor, None);
+    assert_eq!(text.anchor, Some(cadmpeg_ir::math::Point2::new(2.5, -15.0)));
+    // The colour closes the twenty-nine-byte run in the same component order
+    // as the other form.
+    assert_eq!(
+        text.color,
+        cadmpeg_ir::topology::Color {
+            r: 0.0,
+            g: 0.3,
+            b: 1.0,
+            a: 1.0,
+        }
+    );
+    assert_eq!(text.first_reference, None);
+    assert_eq!(text.second_reference, None);
+}
+
+#[test]
+fn txt_tag_sketch_text_record_decodes_stored_rotation() {
+    let stored_rotation = std::f64::consts::TAU - std::f64::consts::FRAC_PI_6;
+    let text = decode_sketch_text(&txt_tag_sketch_text_record_at_with_rotation(
+        &[("txt_tag", 115)],
+        &[261],
+        &[261],
+        (0.811_473_722_624_350_2, -1.434_008_059_576_836_5),
+        4,
+        stored_rotation,
+    ))
+    .expect("rotated txt_tag");
+    assert_eq!(text.rotation, Some(stored_rotation));
+    assert_eq!(
+        text.anchor,
+        Some(Point2::new(8.114_737_226_243_502, -14.340_080_595_768_365,))
+    );
+}
+
+#[test]
+fn txt_tag_sketch_text_record_decodes_an_empty_reference_run() {
+    let text = decode_sketch_text(&txt_tag_sketch_text_record(
+        &[("txt_tag", 115), ("txt_tag_base", 305)],
+        &[],
+        &[],
+        (0.0, 0.0),
+    ))
+    .expect("sketch text record");
+    assert_eq!(text.base_id, Some(305));
+    assert_eq!(text.anchor, Some(cadmpeg_ir::math::Point2::new(0.0, 0.0)));
+}
+
+#[test]
+fn txt_tag_sketch_text_record_refuses_a_payload_that_does_not_end_on_its_owner() {
+    let mut bytes = txt_tag_sketch_text_record(&[("txt_tag", 115)], &[261], &[261], (0.0, 0.0));
+    bytes.push(0);
+    assert!(decode_sketch_text(&bytes).is_none());
+}
+
+#[test]
+fn sketch_text_record_refuses_a_property_block_without_an_identity_key() {
+    assert!(decode_sketch_text(&txt_tag_sketch_text_record(
+        &[("txt_tag_base", 305)],
+        &[261],
+        &[261],
+        (0.0, 0.0),
+    ))
+    .is_none());
+    assert!(decode_sketch_text(&sketch_text_record(
+        &[("txt_tag_base", 305)],
+        [None, None],
+        None
+    ))
+    .is_none());
+}
+
+#[test]
+fn a_txt_tag_sketch_text_record_below_the_identity_key_version_stores_no_identity() {
+    let text = decode_sketch_text_at(
+        &txt_tag_sketch_text_record_at(&[("txt_tag_base", 300)], &[261], &[261], (0.25, -1.5), 3),
+        3,
+    )
+    .expect("sketch text record");
+    assert_eq!(text.class_version, 3);
+    assert_eq!(text.persistent_id, None);
+    assert_eq!(text.base_id, Some(300));
+    assert_eq!(text.text, "sketch text");
+    assert_eq!(text.anchor, Some(cadmpeg_ir::math::Point2::new(2.5, -15.0)));
+}
+
+#[test]
+fn the_txt_tag_anchor_run_widens_with_the_class_version() {
+    // The run between the anchor and the text string is ten bytes below class
+    // version 4 and eleven from it, so a record read at the other version's
+    // width does not end on its owning-sketch reference.
+    for (written, read) in [(3u32, 4u32), (4, 3)] {
+        assert!(decode_sketch_text_at(
+            &txt_tag_sketch_text_record_at(
+                &[("txt_tag", 115)],
+                &[261],
+                &[261],
+                (0.0, 0.0),
+                written
+            ),
+            read,
+        )
+        .is_none());
+    }
 }
 
 #[test]
@@ -12202,8 +16945,11 @@ fn text_path_relation_projects_typed_entities_and_scaled_glyph_placements() {
         geometry: SketchGeometry::Text {
             text: "A".into(),
             font_family: "Arial".into(),
+            font_weight: 400,
             height: Length(10.0),
-            width_factor: 0.8,
+            width_factor: Some(0.8),
+            anchor: None,
+            rotation: None,
         },
     };
     let mut glyph = [[0.0; 4]; 4];
@@ -12228,7 +16974,7 @@ fn text_path_relation_projects_typed_entities_and_scaled_glyph_placements() {
         state: 0x200_0000_0000,
         constraint_kinds: vec![SketchConstraintKind::TextPath],
         unknown_constraint_bits: 0,
-        member_roles: vec![1, 0],
+        member_relation_ordinals: vec![1, 0],
         entity_genesis: Some(2),
         pattern: Some(crate::records::SketchPatternDefinition::TextPath {
             text_reference: 2,
@@ -12273,8 +17019,9 @@ fn genesis_relation_parses_circular_pattern_auxiliary_run() {
         0x1000_0000,
         &[291, 327, 330, 280],
     );
-    let parsed = parse_sketch_relation(&record, &HashSet::from([201])).unwrap();
-    assert_eq!(parsed.member_roles, [1, 1, 0, 0]);
+    let parsed =
+        parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern).unwrap();
+    assert_eq!(parsed.member_relation_ordinals, [1, 1, 0, 0]);
     assert_eq!(parsed.auxiliary_references, [336, 333]);
     assert_eq!(parsed.state, 0x1000_0000);
     assert_eq!(
@@ -12317,9 +17064,10 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
         0x2000_0000,
         &[353, 352, 442, 445],
     );
-    let parsed = parse_sketch_relation(&record, &HashSet::from([201])).unwrap();
-    assert_eq!(parsed.member_roles, [3, 1, 0, 0]);
-    assert_eq!(parsed.auxiliary_references, [0, 464, 470, 467, 473]);
+    let parsed =
+        parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern).unwrap();
+    assert_eq!(parsed.member_relation_ordinals, [3, 1, 0, 0]);
+    assert_eq!(parsed.auxiliary_references, [464, 470, 467, 473]);
     assert_eq!(parsed.state, 0x2000_0000);
     let Some(crate::records::SketchPatternDefinition::Rectangular { directions }) =
         decode_pattern_definition(&record, &parsed)
@@ -12336,38 +17084,6 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
     assert_eq!(directions[1].direction, [0.0, 1.0, 0.0]);
     assert_eq!(directions[1].evaluated_distance, 0.5);
     assert_eq!(directions[1].distance_parameter, 473);
-
-    let mut compact_auxiliary = Vec::new();
-    compact_auxiliary.extend_from_slice(&3u32.to_le_bytes());
-    push_reference(&mut compact_auxiliary, 464);
-    compact_auxiliary.extend_from_slice(&[0u8; 6]);
-    for value in [1.0f64, 0.0, 0.0, 3.0] {
-        compact_auxiliary.extend_from_slice(&value.to_le_bytes());
-    }
-    push_reference(&mut compact_auxiliary, 470);
-    compact_auxiliary.extend_from_slice(&[0u8; 6]);
-    compact_auxiliary.extend_from_slice(&1u32.to_le_bytes());
-    push_reference(&mut compact_auxiliary, 467);
-    compact_auxiliary.extend_from_slice(&[0u8; 6]);
-    for value in [0.0f64, 1.0, 0.0, 0.5] {
-        compact_auxiliary.extend_from_slice(&value.to_le_bytes());
-    }
-    push_reference(&mut compact_auxiliary, 473);
-    compact_auxiliary.extend_from_slice(&[0u8; 6]);
-    let compact_record = genesis_relation_record(
-        &[(352, 3), (353, 1), (442, 0), (445, 0)],
-        2,
-        &compact_auxiliary,
-        201,
-        0x2000_0000,
-        &[353, 352, 442, 445],
-    );
-    let compact = parse_sketch_relation(&compact_record, &HashSet::from([201])).unwrap();
-    assert_eq!(compact.auxiliary_references, [464, 470, 467, 473]);
-    assert_eq!(
-        decode_pattern_definition(&compact_record, &compact),
-        decode_pattern_definition(&record, &parsed),
-    );
 }
 
 #[test]
@@ -12438,14 +17154,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         frame_length: 375,
         kind: "Base Feature".into(),
         kind_offset: 273,
-        extrude_operation: None,
-        extrude_operation_offset: None,
-        extrude_extent: None,
-        extrude_extent_offsets: None,
-        extrude_direction_reversed: None,
-        extrude_direction_reversed_offset: None,
-        extrude_start: None,
-        extrude_start_offset: None,
+        extrude_prologue: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -12470,6 +17179,9 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         move_operation: None,
         scale_operation: None,
         surface_stitch_operation: None,
+        surface_extend_operation: None,
+        surface_offset_operation: None,
+        surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
         hem_operation: None,
@@ -12477,15 +17189,32 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        combine_operation: None,
+        draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_axis_construction: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
         work_point_position: None,
         work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
         extrude_profile: None,
+        sweep_profile: None,
+        circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
+        assembly_alignment: None,
+        component_insert_construction: None,
+        copy_paste_component_operation: None,
+        mirror_construction: None,
         base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -12500,6 +17229,694 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     assert_eq!(construction.metadata_record, 401);
     assert_eq!(construction.result_records, [501, 502]);
     assert_eq!(construction.body_entity_fields[0], [0, 0, 1, 0, 0, 0]);
+}
+
+#[test]
+fn pattern_constructions_require_exact_scalar_and_operand_frames() {
+    fn append_header(bytes: &mut Vec<u8>, record_index: u32) {
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(b"999");
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn append_transform_record(bytes: &mut Vec<u8>, record_index: u32, translation: [f64; 3]) {
+        append_header(bytes, record_index);
+        for value in [
+            1.0,
+            0.0,
+            0.0,
+            translation[0],
+            0.0,
+            1.0,
+            0.0,
+            translation[1],
+            0.0,
+            0.0,
+            1.0,
+            translation[2],
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+
+    let scope_record_index = 10_u32;
+    let count_record_index = 20_u32;
+    let angle_record_index = 30_u32;
+    let axis_record_index = 40_u32;
+    let selection_record_index = 43_u32;
+    let mut bytes = Vec::new();
+
+    let count_start = bytes.len();
+    let mut count = vec![0; 99];
+    count[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    count[4..7].copy_from_slice(b"357");
+    count[7..11].copy_from_slice(&count_record_index.to_le_bytes());
+    count[19] = 1;
+    count[20..24].copy_from_slice(&1_u32.to_le_bytes());
+    count[24] = 1;
+    count[25..29].copy_from_slice(&scope_record_index.to_le_bytes());
+    count[40..44].copy_from_slice(&25_u32.to_le_bytes());
+    count[44] = 1;
+    count[45..49].copy_from_slice(&(count_record_index + 2).to_le_bytes());
+    count[55..59].copy_from_slice(&99_u32.to_le_bytes());
+    count[63] = 1;
+    count[64..68].copy_from_slice(&scope_record_index.to_le_bytes());
+    count[76] = 1;
+    count[77..81].copy_from_slice(&(count_record_index + 1).to_le_bytes());
+    count[88] = 1;
+    count[89..93].copy_from_slice(&scope_record_index.to_le_bytes());
+    count.extend_from_slice(&3_u32.to_le_bytes());
+    count.extend_from_slice(b"258");
+    count.extend_from_slice(&count_record_index.to_le_bytes());
+    bytes.extend_from_slice(&count);
+
+    let angle_start = bytes.len();
+    let mut angle = vec![0; 103];
+    angle[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    angle[4..7].copy_from_slice(b"354");
+    angle[7..11].copy_from_slice(&angle_record_index.to_le_bytes());
+    angle[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
+    angle[24] = 1;
+    angle[25..29].copy_from_slice(&scope_record_index.to_le_bytes());
+    angle[35] = 1;
+    angle[40..48].copy_from_slice(&std::f64::consts::TAU.to_le_bytes());
+    angle[48] = 1;
+    angle[49..53].copy_from_slice(&77_u32.to_le_bytes());
+    angle[67] = 1;
+    angle[68..72].copy_from_slice(&scope_record_index.to_le_bytes());
+    angle[80] = 1;
+    angle[81..85].copy_from_slice(&78_u32.to_le_bytes());
+    angle[92] = 1;
+    angle[93..97].copy_from_slice(&scope_record_index.to_le_bytes());
+    angle.extend_from_slice(&3_u32.to_le_bytes());
+    angle.extend_from_slice(b"258");
+    angle.extend_from_slice(&angle_record_index.to_le_bytes());
+    bytes.extend_from_slice(&angle);
+
+    let axis_start = bytes.len();
+    let mut axis = vec![0; 195];
+    axis[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    axis[4..7].copy_from_slice(b"379");
+    axis[7..11].copy_from_slice(&axis_record_index.to_le_bytes());
+    axis[21..25].copy_from_slice(&8_u32.to_le_bytes());
+    for (offset, value) in [1.0_f64, 2.0, 3.0].into_iter().enumerate() {
+        axis[25 + offset * 8..33 + offset * 8].copy_from_slice(&value.to_le_bytes());
+    }
+    axis[49..57].copy_from_slice(&(-1.0_f64).to_le_bytes());
+    axis[89..93].copy_from_slice(&9_u32.to_le_bytes());
+    axis[93..97].copy_from_slice(&1_u32.to_le_bytes());
+    axis[97] = 1;
+    axis[98..102].copy_from_slice(&selection_record_index.to_le_bytes());
+    axis[110..114].copy_from_slice(&1_u32.to_le_bytes());
+    axis[114] = 1;
+    axis[115..119].copy_from_slice(&79_u32.to_le_bytes());
+    axis[125..133].copy_from_slice(&0x0000_0004_0000_0000_u64.to_le_bytes());
+    axis[143..147].copy_from_slice(&99_u32.to_le_bytes());
+    axis[147..155].copy_from_slice(&0.5_f64.to_le_bytes());
+    axis[155..159].copy_from_slice(&99_u32.to_le_bytes());
+    axis[159] = 1;
+    axis[160..164].copy_from_slice(&(axis_record_index + 2).to_le_bytes());
+    axis[172] = 1;
+    axis[173..177].copy_from_slice(&(axis_record_index + 1).to_le_bytes());
+    axis[184] = 1;
+    axis[185..189].copy_from_slice(&scope_record_index.to_le_bytes());
+    axis.extend_from_slice(&3_u32.to_le_bytes());
+    axis.extend_from_slice(b"258");
+    axis.extend_from_slice(&axis_record_index.to_le_bytes());
+    bytes.extend_from_slice(&axis);
+
+    let mut scope = DesignParameterScope {
+        id: "f3d:Design/BulkStream.dat:design-parameter-scope#0".into(),
+        byte_offset: 0,
+        class_tag: "291".into(),
+        record_index: scope_record_index,
+        frame_length: 329,
+        kind: "C-Pattern".into(),
+        kind_offset: 0,
+        extrude_prologue: None,
+        coil_operation: None,
+        coil_operation_offset: None,
+        coil_extent: None,
+        coil_extent_offset: None,
+        coil_section: None,
+        coil_section_offset: None,
+        coil_section_placement: None,
+        coil_section_placement_offset: None,
+        coil_clockwise: None,
+        coil_clockwise_offset: None,
+        feature_ordinal: 1,
+        feature_ordinal_offset: 0,
+        history_state_id: Some(2),
+        history_state_id_offset: 0,
+        previous_history_state_id: Some(1),
+        previous_history_state_id_offset: 0,
+        reference_count_offset: 0,
+        reference_members: vec![
+            count_record_index,
+            angle_record_index,
+            axis_record_index,
+            selection_record_index,
+        ],
+        reference_member_offsets: vec![0; 4],
+        solid_primitive: None,
+        direct_face_operation: None,
+        move_operation: None,
+        scale_operation: None,
+        surface_stitch_operation: None,
+        surface_extend_operation: None,
+        surface_offset_operation: None,
+        surface_patch_boundaries: Vec::new(),
+        base_flange_operation: None,
+        edge_flange_operation: None,
+        hem_operation: None,
+        fixed_extrude_parameters: None,
+        fixed_fillet_parameters: None,
+        fixed_chamfer_parameters: None,
+        path_feature_construction: None,
+        combine_operation: None,
+        draft_operation: None,
+        copy_paste_bodies_operation: None,
+        base_feature_construction: None,
+        work_plane_transform: None,
+        work_plane_transform_offset: None,
+        work_plane_reference: None,
+        work_plane_reference_offset: None,
+        work_axis_construction: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
+        work_point_position: None,
+        work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
+        extrude_profile: None,
+        sweep_profile: None,
+        circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
+        assembly_alignment: None,
+        component_insert_construction: None,
+        copy_paste_component_operation: None,
+        mirror_construction: None,
+        base_flange_profile: None,
+        entity_id: None,
+        entity_suffix: None,
+        entity_reference_offset: None,
+        paired_class_tag: "258".into(),
+        paired_byte_offset: 329,
+    };
+    assert_eq!(
+        exact_circular_pattern_construction_with_owners(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &[]
+        ),
+        Some(DesignCircularPatternConstruction {
+            count: 25,
+            count_record_index,
+            count_offset: (count_start + 40) as u64,
+            angle: std::f64::consts::TAU,
+            angle_record_index,
+            angle_offset: (angle_start + 40) as u64,
+            origin: [1.0, 2.0, 3.0],
+            origin_offset: (axis_start + 25) as u64,
+            direction: [-1.0, 0.0, 0.0],
+            direction_offset: (axis_start + 49) as u64,
+            axis_record_index,
+            selection_record_index,
+        })
+    );
+
+    bytes[count_start + 4] = b'x';
+    bytes[angle_start + 4] = b'x';
+    let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
+        DesignParameterOwner {
+            id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
+            byte_offset: 0,
+            class_tag: "457".into(),
+            record_index,
+            scope_record_index,
+            local_ordinal,
+            evaluated_value,
+            evaluated_value_offset,
+            parameter_record_index: record_index + 1,
+            owned_ordinal: local_ordinal,
+            variant: None,
+            companion_record_index: record_index + 2,
+        }
+    };
+    let owners = [
+        owner(count_record_index, 0, 25.0, 101),
+        owner(angle_record_index, 1, std::f64::consts::TAU, 202),
+    ];
+    let owner_backed = exact_circular_pattern_construction_with_owners(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &owners,
+    )
+    .unwrap();
+    assert_eq!(owner_backed.count, 25);
+    assert_eq!(owner_backed.count_offset, 101);
+    assert_eq!(owner_backed.angle, std::f64::consts::TAU);
+    assert_eq!(owner_backed.angle_offset, 202);
+    bytes[count_start + 4] = b'3';
+    bytes[angle_start + 4] = b'3';
+
+    bytes[axis_start + 89..axis_start + 93].copy_from_slice(&6_u32.to_le_bytes());
+    assert!(exact_circular_pattern_construction_with_owners(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &[]
+    )
+    .is_some());
+    bytes[axis_start + 89..axis_start + 93].fill(0);
+    assert_eq!(
+        exact_circular_pattern_construction_with_owners(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &[]
+        ),
+        None
+    );
+    bytes[axis_start + 89..axis_start + 93].copy_from_slice(&9_u32.to_le_bytes());
+
+    bytes[axis_start + 57..axis_start + 65].copy_from_slice(&1.0_f64.to_le_bytes());
+    assert_eq!(
+        exact_circular_pattern_construction_with_owners(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &[]
+        ),
+        None
+    );
+    bytes[axis_start + 57..axis_start + 65].fill(0);
+    scope
+        .reference_members
+        .extend([axis_record_index, selection_record_index]);
+    assert_eq!(
+        exact_circular_pattern_construction_with_owners(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &[]
+        ),
+        None
+    );
+
+    scope.kind = "R-Pattern".into();
+    let rectangular_owners = [
+        owner(50, 0, 3.0, 501),
+        owner(51, 1, 1.0, 502),
+        owner(52, 2, 10.0, 503),
+        owner(53, 3, 0.0, 504),
+    ];
+    let rectangular = exact_rectangular_pattern_construction(
+        &[],
+        &IndexedRecordOffsets::build(&[]),
+        &scope,
+        &rectangular_owners,
+    )
+    .expect("exact rectangular-pattern scalar lanes");
+    assert_eq!(rectangular.u_count, 3);
+    assert_eq!(rectangular.v_count, 1);
+    assert_eq!(rectangular.u_extent, 10.0);
+    assert_eq!(rectangular.v_extent, 0.0);
+    assert_eq!(rectangular.owner_record_indices, [50, 51, 52, 53]);
+    assert_eq!(rectangular.value_offsets, [501, 502, 503, 504]);
+    assert_eq!(rectangular.instances, None);
+
+    append_transform_record(&mut bytes, 100, [2.0, 3.0, 4.0]);
+    for record_index in 50..=53 {
+        append_header(&mut bytes, record_index);
+    }
+    append_header(&mut bytes, 110);
+    append_transform_record(&mut bytes, 120, [2.0, 3.0, 9.0]);
+    append_transform_record(&mut bytes, 130, [2.0, 3.0, 14.0]);
+    append_header(&mut bytes, 140);
+    scope.reference_members = vec![100, 50, 51, 52, 53, 110, 120, 130, 140];
+    let rectangular = exact_rectangular_pattern_construction(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &rectangular_owners,
+    )
+    .expect("rectangular-pattern placement run");
+    let instances = rectangular.instances.expect("exact placement run");
+    assert_eq!(instances.record_indices, [100, 120, 130]);
+    assert_eq!(
+        instances
+            .transforms
+            .iter()
+            .map(|transform| transform[2][3])
+            .collect::<Vec<_>>(),
+        [4.0, 9.0, 14.0]
+    );
+
+    let mut invalid_inactive_spacing = rectangular_owners.clone();
+    invalid_inactive_spacing[3].evaluated_value = 1.0;
+    assert_eq!(
+        exact_rectangular_pattern_construction(
+            &[],
+            &IndexedRecordOffsets::build(&[]),
+            &scope,
+            &invalid_inactive_spacing
+        ),
+        None
+    );
+    let mut duplicate_lane = rectangular_owners.clone();
+    duplicate_lane[3].local_ordinal = 2;
+    assert_eq!(
+        exact_rectangular_pattern_construction(
+            &[],
+            &IndexedRecordOffsets::build(&[]),
+            &scope,
+            &duplicate_lane
+        ),
+        None
+    );
+    let mut excess_lane = rectangular_owners.to_vec();
+    excess_lane.push(owner(54, 4, 1.0, 505));
+    assert_eq!(
+        exact_rectangular_pattern_construction(
+            &[],
+            &IndexedRecordOffsets::build(&[]),
+            &scope,
+            &excess_lane
+        ),
+        None
+    );
+
+    scope.kind = "Assemble".into();
+    scope.reference_members = vec![50, 51, 52, 53];
+    let alignment = exact_assembly_alignment(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &rectangular_owners,
+    )
+    .expect("exact assembly scalar lanes");
+    assert_eq!(alignment.angle, 3.0);
+    assert_eq!(alignment.offset, [1.0, 10.0, 0.0]);
+    assert_eq!(alignment.owner_record_indices, [50, 51, 52, 53]);
+    assert_eq!(alignment.value_offsets, [501, 502, 503, 504]);
+    assert_eq!(alignment.operand_frames, None);
+
+    let mut assembly_bytes = vec![0_u8; 648];
+    assembly_bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    assembly_bytes[4..7].copy_from_slice(b"273");
+    assembly_bytes[7..11].copy_from_slice(&scope_record_index.to_le_bytes());
+    assembly_bytes[20] = 1;
+    assembly_bytes[25] = 1;
+    for (reference_at, transform_at, reference, translation) in [
+        (28, 40, 70_u32, [1.0_f64, 2.0, 3.0]),
+        (168, 180, 80_u32, [4.0, 5.0, 6.0]),
+    ] {
+        assembly_bytes[reference_at] = 1;
+        assembly_bytes[reference_at + 1..reference_at + 5]
+            .copy_from_slice(&reference.to_le_bytes());
+        for (ordinal, value) in [
+            1.0,
+            0.0,
+            0.0,
+            translation[0],
+            0.0,
+            1.0,
+            0.0,
+            translation[1],
+            0.0,
+            0.0,
+            1.0,
+            translation[2],
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assembly_bytes[transform_at + ordinal * 8..transform_at + ordinal * 8 + 8]
+                .copy_from_slice(&value.to_le_bytes());
+        }
+    }
+    assembly_bytes[637..641].copy_from_slice(&3_u32.to_le_bytes());
+    assembly_bytes[641..644].copy_from_slice(b"259");
+    assembly_bytes[644..648].copy_from_slice(&scope_record_index.to_le_bytes());
+    scope.frame_length = 637;
+    scope.paired_byte_offset = 637;
+    scope.paired_class_tag = "259".into();
+    let frames = exact_assembly_alignment(
+        &assembly_bytes,
+        &IndexedRecordOffsets::build(&assembly_bytes),
+        &scope,
+        &rectangular_owners,
+    )
+    .and_then(|alignment| alignment.operand_frames)
+    .expect("exact assembly operand frames");
+    assert_eq!(
+        frames.map(|frame| (
+            frame.reference_record_index,
+            frame.reference_offset,
+            frame.transform_offset,
+            [
+                frame.transform[0][3],
+                frame.transform[1][3],
+                frame.transform[2][3]
+            ]
+        )),
+        [
+            (70, 29, 40, [1.0, 2.0, 3.0]),
+            (80, 169, 180, [4.0, 5.0, 6.0]),
+        ]
+    );
+    let push_path = |bytes: &mut Vec<u8>, record_index: u32, guids: &[&str]| {
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(b"329");
+        bytes.extend_from_slice(&u64::from(record_index).to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&(guids.len() as u32).to_le_bytes());
+        for guid in guids {
+            let encoded = guid.encode_utf16().collect::<Vec<_>>();
+            bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+            bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
+        }
+    };
+    push_path(
+        &mut assembly_bytes,
+        65,
+        &[
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+        ],
+    );
+    push_path(
+        &mut assembly_bytes,
+        68,
+        &["33333333-3333-3333-3333-333333333333"],
+    );
+    assembly_bytes.extend_from_slice(&3_u32.to_le_bytes());
+    assembly_bytes.extend_from_slice(b"396");
+    assembly_bytes.extend_from_slice(&70_u32.to_le_bytes());
+    let paths = exact_assembly_alignment(
+        &assembly_bytes,
+        &IndexedRecordOffsets::build(&assembly_bytes),
+        &scope,
+        &rectangular_owners,
+    )
+    .and_then(|alignment| alignment.operand_paths)
+    .expect("exact assembly occurrence paths");
+    assert_eq!(
+        paths.map(|path| (path.record_index, path.occurrence_guids)),
+        [
+            (
+                65,
+                vec![
+                    "11111111-1111-1111-1111-111111111111".into(),
+                    "22222222-2222-2222-2222-222222222222".into(),
+                ],
+            ),
+            (68, vec!["33333333-3333-3333-3333-333333333333".into()],),
+        ]
+    );
+    assembly_bytes[25] = 0;
+    assert!(exact_assembly_alignment(
+        &assembly_bytes,
+        &IndexedRecordOffsets::build(&assembly_bytes),
+        &scope,
+        &rectangular_owners
+    )
+    .and_then(|alignment| alignment.operand_frames)
+    .is_some());
+    assembly_bytes[25] = 2;
+    assert!(exact_assembly_alignment(
+        &assembly_bytes,
+        &IndexedRecordOffsets::build(&assembly_bytes),
+        &scope,
+        &rectangular_owners
+    )
+    .is_some_and(|alignment| alignment.operand_frames.is_none()));
+
+    scope.reference_members.push(99);
+    assert_eq!(
+        exact_assembly_alignment(
+            &assembly_bytes,
+            &IndexedRecordOffsets::build(&assembly_bytes),
+            &scope,
+            &rectangular_owners
+        ),
+        None
+    );
+}
+
+#[test]
+fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
+    let header = |bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32| {
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    };
+    let transform: [[f64; 4]; 4] = [
+        [1.0, 0.0, 0.0, -2.1],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let role = "b2231f72-46dc-40fa-b8e8-10cd208d7df8";
+    let mut bytes = Vec::new();
+    header(&mut bytes, b"256", 10);
+    let role_at = bytes.len();
+    bytes.extend_from_slice(&36_u32.to_le_bytes());
+    bytes.extend(role.encode_utf16().flat_map(u16::to_le_bytes));
+    bytes.extend_from_slice(&[0, 0]);
+    let carrier_transform_at = bytes.len();
+    for value in transform.into_iter().flatten() {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    let relation_at = bytes.len();
+    header(&mut bytes, b"325", 20);
+    bytes.extend_from_slice(&[0; 10]);
+    for (ordinal, reference) in [10_u32, 11, 30].into_iter().enumerate() {
+        bytes.push(1);
+        bytes.extend_from_slice(&reference.to_le_bytes());
+        bytes.extend(std::iter::repeat_n(0, [8, 7, 6][ordinal]));
+    }
+    assert_eq!(bytes.len(), relation_at + 57);
+    header(&mut bytes, b"259", 20);
+    let scope_at = bytes.len();
+    bytes.resize(scope_at + 399, 0);
+    bytes[scope_at..scope_at + 4].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[scope_at + 4..scope_at + 7].copy_from_slice(b"451");
+    bytes[scope_at + 7..scope_at + 11].copy_from_slice(&30_u32.to_le_bytes());
+    bytes[scope_at + 20] = 1;
+    bytes[scope_at + 37] = 1;
+    bytes[scope_at + 38..scope_at + 42].copy_from_slice(&20_u32.to_le_bytes());
+    bytes[scope_at + 48] = 1;
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = scope_at + 50 + ordinal * 8;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    header(&mut bytes, b"259", 30);
+    let scope = DesignParameterScope {
+        id: "f3d:Design/BulkStream.dat:design-parameter-scope#30".into(),
+        byte_offset: scope_at as u64,
+        class_tag: "451".into(),
+        record_index: 30,
+        frame_length: 399,
+        kind: "Component Insert".into(),
+        kind_offset: 0,
+        extrude_prologue: None,
+        coil_operation: None,
+        coil_operation_offset: None,
+        coil_extent: None,
+        coil_extent_offset: None,
+        coil_section: None,
+        coil_section_offset: None,
+        coil_section_placement: None,
+        coil_section_placement_offset: None,
+        coil_clockwise: None,
+        coil_clockwise_offset: None,
+        feature_ordinal: 1,
+        feature_ordinal_offset: 0,
+        history_state_id: None,
+        history_state_id_offset: 0,
+        previous_history_state_id: None,
+        previous_history_state_id_offset: 0,
+        reference_count_offset: 0,
+        reference_members: vec![20],
+        reference_member_offsets: vec![scope_at as u64 + 38],
+        solid_primitive: None,
+        direct_face_operation: None,
+        move_operation: None,
+        scale_operation: None,
+        surface_stitch_operation: None,
+        surface_extend_operation: None,
+        surface_offset_operation: None,
+        surface_patch_boundaries: Vec::new(),
+        base_flange_operation: None,
+        edge_flange_operation: None,
+        hem_operation: None,
+        fixed_extrude_parameters: None,
+        fixed_fillet_parameters: None,
+        fixed_chamfer_parameters: None,
+        path_feature_construction: None,
+        combine_operation: None,
+        draft_operation: None,
+        circular_pattern_construction: None,
+        rectangular_pattern_construction: None,
+        assembly_alignment: None,
+        component_insert_construction: None,
+        copy_paste_component_operation: None,
+        mirror_construction: None,
+        copy_paste_bodies_operation: None,
+        base_feature_construction: None,
+        work_plane_transform: None,
+        work_plane_transform_offset: None,
+        work_plane_reference: None,
+        work_plane_reference_offset: None,
+        work_axis_construction: None,
+        joint_origin_transform: None,
+        joint_origin_transform_offset: None,
+        joint_origin_reference: None,
+        joint_origin_reference_offset: None,
+        work_point_position: None,
+        work_point_position_offset: None,
+        unclosed_construction_operand_groups: Vec::new(),
+        work_point_reference_type: None,
+        work_point_input_record_indices: Vec::new(),
+        extrude_profile: None,
+        sweep_profile: None,
+        base_flange_profile: None,
+        entity_id: None,
+        entity_suffix: None,
+        entity_reference_offset: None,
+        paired_class_tag: "259".into(),
+        paired_byte_offset: (scope_at + 399) as u64,
+    };
+
+    let construction =
+        exact_component_insert_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+            .expect("component insert construction");
+
+    assert_eq!(construction.relation_record_index, 20);
+    assert_eq!(construction.carrier_record_index, 10);
+    assert_eq!(construction.neutron_role, role);
+    assert_eq!(construction.neutron_role_offset, (role_at + 4) as u64);
+    assert_eq!(construction.transform, transform);
+    assert_eq!(construction.transform_offset, (scope_at + 50) as u64);
+    assert_eq!(
+        construction.carrier_transform_offset,
+        carrier_transform_at as u64
+    );
 }
 
 #[test]
@@ -12536,4 +17953,41 @@ fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
 
     let ambiguous = vec![horizontal("a", "b"), horizontal("a", "c")];
     assert!(repeated_linear_dimension(&ambiguous, parameter).is_none());
+}
+
+#[test]
+fn sweep_recipe_edge_requires_incidence_and_two_reference_faces() {
+    use crate::design::edge_resolve::unique_incidence_edge_shared_by_reference_faces;
+
+    let selector = |edges| crate::records::DesignEdgeRecipeSelectorContext {
+        selector: 0,
+        clause_entries: Vec::new(),
+        clause_triplet_edge_slots: Vec::new(),
+        incidence_matching_edge_slots: edges,
+        unique_incidence_edge_slot: None,
+        boundary_count_matching_edge_slots: Vec::new(),
+    };
+    let selectors = [selector(vec![11, 12]), selector(vec![13])];
+    assert_eq!(
+        unique_incidence_edge_shared_by_reference_faces(
+            &selectors,
+            [&[10, 11][..], &[11, 12][..], &[13, 14][..]],
+        ),
+        Some(11)
+    );
+    assert_eq!(
+        unique_incidence_edge_shared_by_reference_faces(&selectors, [&[11, 13][..], &[11, 13][..]],),
+        None
+    );
+    assert_eq!(
+        unique_incidence_edge_shared_by_reference_faces(&[selector(vec![11])], [&[10, 11][..]],),
+        None
+    );
+    assert_eq!(
+        unique_incidence_edge_shared_by_reference_faces(
+            &[selector(vec![11])],
+            [&[10, 11][..], &[10, 11][..]],
+        ),
+        None
+    );
 }

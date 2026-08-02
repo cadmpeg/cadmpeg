@@ -6,10 +6,12 @@
 //! ND/DEPDB layout signals, and the `srf_array`/`crv_array` count headers.
 #![allow(clippy::unwrap_used)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+
+use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId};
 use cadmpeg_ir::Exactness;
 
 use crate::container::{self, role, Layout};
@@ -165,6 +167,17 @@ fn assert_annotation(
     }
 }
 
+fn assert_unknown_visible_surface(surfaces: &[cadmpeg_ir::geometry::Surface], id: u32) {
+    let surface = surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == format!("creo:visibgeom:surface#{id}"))
+        .expect("retained unresolved visible surface");
+    assert!(matches!(
+        surface.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Unknown { record: Some(_) }
+    ));
+}
+
 #[test]
 fn detect_matches_ugc_magic_only() {
     let codec = CreoCodec;
@@ -199,20 +212,24 @@ fn scan_decodes_length_prefixed_native_model_name() {
             .map(String::as_str),
         Some("widget.prt ")
     );
-    let [product] = result.ir.model.products.as_slice() else {
+    let [product] = result.ir.model.product_definitions.as_slice() else {
         panic!("one part product");
     };
-    assert_eq!(product.id.as_str(), "creo:model:product#root");
-    assert_eq!(product.product_id, "widget.prt ");
-    assert_eq!(product.name.as_deref(), Some("widget.prt "));
+    assert_eq!(product.id.as_str(), "creo:model:product_definition#root");
+    assert_eq!(product.part_number.as_deref(), Some("widget.prt "));
+    assert_eq!(product.label.as_deref(), Some("widget.prt "));
     assert!(product.bodies.is_empty());
-    let [occurrence] = result.ir.model.product_occurrences.as_slice() else {
+    let [occurrence] = result.ir.model.occurrences.as_slice() else {
         panic!("one root occurrence");
     };
-    assert_eq!(occurrence.product, product.id);
+    assert!(matches!(
+        &occurrence.prototype,
+        cadmpeg_ir::products::PrototypeReference::Local { definition }
+            if definition == &product.id
+    ));
     assert!(matches!(
         occurrence.parent,
-        cadmpeg_ir::product::OccurrenceParent::Root
+        cadmpeg_ir::products::OccurrenceParent::Root
     ));
     assert_eq!(
         occurrence.transform,
@@ -442,6 +459,64 @@ fn scan_discovers_typed_surface_rows() {
 }
 
 #[test]
+fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.0 == "creo:model:feature#4")
+        .expect("geometry generator feature");
+
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::StoredGeometry
+    ));
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_GEOMETRY_GENERATOR_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_FEATURE_COUNT),
+        0
+    );
+    let surface = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
+        .expect("retained unresolved surface carrier");
+    assert!(matches!(
+        surface.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Unknown { record: Some(_) }
+    ));
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::RETAINED_UNKNOWN_VISIBLE_SURFACE_ROW_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::UNTRANSFERRED_VISIBLE_SURFACE_ROW_COUNT),
+        1
+    );
+}
+
+#[test]
 fn scan_preserves_linear_extrusion_type_variants() {
     let mut payload = visibgeom_payload(2, 0);
     payload.extend_from_slice(&[7, 0x2a, 4, 0x01, 0, 8]);
@@ -464,8 +539,8 @@ fn scan_preserves_linear_extrusion_type_variants() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let rows = &result.ir.native.namespace("creo").unwrap().arenas["surface_rows"];
-    assert_eq!(rows[0].fields["surface_variant"], "ruled_surface");
-    assert_eq!(rows[1].fields["surface_variant"], "tabulated_cylinder");
+    assert_eq!(rows[0].fields()["surface_variant"], "ruled_surface");
+    assert_eq!(rows[1].fields()["surface_variant"], "tabulated_cylinder");
 }
 
 #[test]
@@ -508,22 +583,17 @@ fn scan_bounds_tabulated_cylinder_cubic_curve_replay() {
         .expect("decode");
     let native =
         &result.ir.native.namespace("creo").unwrap().arenas["tabulated_cylinder_curve_replays"][0];
-    assert_eq!(native.fields["surface_id"], 7);
-    assert_eq!(native.fields["control_point_ids"][2], 34);
-    assert_eq!(native.fields["control_point_bodies"][3][8], 0x46);
-    assert_eq!(native.fields["control_points"][2][0], -3.0);
+    assert_eq!(native.fields()["surface_id"], 7);
+    assert_eq!(native.fields()["control_point_ids"][2], 34);
+    assert_eq!(native.fields()["control_point_bodies"][3][8], 0x46);
+    assert_eq!(native.fields()["control_points"][2][0], -3.0);
     assert_eq!(
-        result.source_fidelity.annotations.provenance[&native.id]
+        result.source_fidelity.annotations.provenance[native.id()]
             .tag
             .as_deref(),
         Some("tabulated_cylinder_curve_replay")
     );
-    assert!(result
-        .ir
-        .model
-        .surfaces
-        .iter()
-        .all(|surface| surface.id.0 != "creo:visibgeom:surface#7"));
+    assert_unknown_visible_surface(&result.ir.model.surfaces, 7);
 }
 
 #[test]
@@ -627,10 +697,10 @@ fn decode_transfers_positional_line_extrusion_plane() {
         }
     ));
     let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
-    assert_eq!(record.fields["surface_type_byte"], 0x2c);
-    assert_eq!(record.fields["extrusion_direction"][0], 0.0);
-    assert_eq!(record.fields["extrusion_direction"][1], 0.0);
-    assert_eq!(record.fields["extrusion_direction"][2], 1.0);
+    assert_eq!(record.fields()["surface_type_byte"], 0x2c);
+    assert_eq!(record.fields()["extrusion_direction"][0], 0.0);
+    assert_eq!(record.fields()["extrusion_direction"][1], 0.0);
+    assert_eq!(record.fields()["extrusion_direction"][2], 1.0);
     assert_eq!(
         result
             .report
@@ -702,11 +772,11 @@ fn decode_preserves_type_2c_direction_before_named_record() {
         .expect("decode");
 
     let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
-    assert_eq!(record.fields["boundary"], "named_record");
-    assert_eq!(record.fields["extrusion_direction"][0], 0.0);
-    assert_eq!(record.fields["extrusion_direction"][1], 1.0);
-    assert_eq!(record.fields["extrusion_direction"][2], 0.0);
-    assert!(result.ir.model.surfaces.is_empty());
+    assert_eq!(record.fields()["boundary"], "named_record");
+    assert_eq!(record.fields()["extrusion_direction"][0], 0.0);
+    assert_eq!(record.fields()["extrusion_direction"][1], 1.0);
+    assert_eq!(record.fields()["extrusion_direction"][2], 0.0);
+    assert_unknown_visible_surface(&result.ir.model.surfaces, 7);
 }
 
 #[test]
@@ -756,8 +826,8 @@ fn torus_parameter_trailer_retains_typed_outline_frame() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
-    assert_eq!(native.fields["torus_outline_frame"]["selector"], 80);
-    assert_eq!(native.fields["torus_outline_frame"]["values"][5], 52.5);
+    assert_eq!(native.fields()["torus_outline_frame"]["selector"], 80);
+    assert_eq!(native.fields()["torus_outline_frame"]["values"][5], 52.5);
 }
 
 #[test]
@@ -808,15 +878,15 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
             .expect("decode");
         let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
         assert_eq!(
-            native.fields["torus_radius_overrides"]["radius1"],
+            native.fields()["torus_radius_overrides"]["radius1"],
             0.499_999_999_999_999_94
         );
         assert_eq!(
-            native.fields["torus_radius_overrides"]["radius2"],
+            native.fields()["torus_radius_overrides"]["radius2"],
             expected_radius2
         );
         assert_eq!(
-            native.fields["torus_radius_overrides"]["radius2_encoding"],
+            native.fields()["torus_radius_overrides"]["radius2_encoding"],
             match expected_encoding {
                 TorusRadius2Encoding::Direct => "direct",
                 TorusRadius2Encoding::OuterRingDifference => "outer_ring_difference",
@@ -885,10 +955,10 @@ fn cone_terminal_half_angle_bounds_the_parameter_body() {
         .expect("decode");
     let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
     assert_eq!(
-        native.fields["cone_half_angle_override"]["radians"],
+        native.fields()["cone_half_angle_override"]["radians"],
         expected
     );
-    assert_eq!(native.fields["cone_half_angle_override"]["offset"], 3);
+    assert_eq!(native.fields()["cone_half_angle_override"]["offset"], 3);
 }
 
 #[test]
@@ -904,41 +974,44 @@ fn decode_preserves_surface_parameter_slots_in_native_ir() {
 
     let records = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"];
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].fields["surface_id"], 7);
-    assert_eq!(records[0].fields["surface_family"], "torus_or_sphere");
-    assert_eq!(records[0].fields["boundary"], "compound_close");
+    assert_eq!(records[0].fields()["surface_id"], 7);
+    assert_eq!(records[0].fields()["surface_family"], "torus_or_sphere");
+    assert_eq!(records[0].fields()["boundary"], "compound_close");
     assert_eq!(
-        records[0].fields["slots"][0]["value"],
+        records[0].fields()["slots"][0]["value"],
         f64::from_be_bytes([0x3f, 0xe8, 0xe4, 0x2f, 0x43, 0, 0xe3, 0xe0])
     );
     for (index, expected) in [0x73, 0xe4, 0x2f, 0x43, 0, 0xe3, 0xe0]
         .into_iter()
         .enumerate()
     {
-        assert_eq!(records[0].fields["slots"][0]["raw"][index], expected);
+        assert_eq!(records[0].fields()["slots"][0]["raw"][index], expected);
     }
-    assert_eq!(records[0].fields["slots"][0]["length"], 7);
+    assert_eq!(records[0].fields()["slots"][0]["length"], 7);
     assert_eq!(
-        records[0].fields["opaque_spans"].as_array().unwrap().len(),
+        records[0].fields()["opaque_spans"]
+            .as_array()
+            .unwrap()
+            .len(),
         0
     );
-    assert_eq!(records[0].fields["terminal_scalar_frame"]["offset"], 0);
-    assert_eq!(records[0].fields["scalar_frames"][0]["offset"], 0);
+    assert_eq!(records[0].fields()["terminal_scalar_frame"]["offset"], 0);
+    assert_eq!(records[0].fields()["scalar_frames"][0]["offset"], 0);
     assert_eq!(
-        records[0].fields["terminal_scalar_frame"]["slots"]
+        records[0].fields()["terminal_scalar_frame"]["slots"]
             .as_array()
             .unwrap()
             .len(),
         1
     );
     let row = &result.ir.native.namespace("creo").unwrap().arenas["surface_rows"][0];
-    assert_eq!(row.fields["surface_id"], 7);
-    assert_eq!(row.fields["type_byte"], 0x26);
-    assert_eq!(row.fields["surface_family"], "torus_or_sphere");
-    assert_eq!(row.fields["feature_id"], 4);
-    assert_eq!(row.fields["reversed"], false);
-    assert_eq!(row.fields["boundary_type"], 0);
-    assert_eq!(row.fields["next_surface"], 0);
+    assert_eq!(row.fields()["surface_id"], 7);
+    assert_eq!(row.fields()["type_byte"], 0x26);
+    assert_eq!(row.fields()["surface_family"], "torus_or_sphere");
+    assert_eq!(row.fields()["feature_id"], 4);
+    assert_eq!(row.fields()["reversed"], false);
+    assert_eq!(row.fields()["boundary_type"], 0);
+    assert_eq!(row.fields()["next_surface"], 0);
     assert_eq!(
         result.source_fidelity.annotations.provenance["creo:visibgeom:surface_row#7"]
             .tag
@@ -964,15 +1037,17 @@ fn decode_retains_type26_coordinate_envelope_in_native_ir() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode type-26 envelope");
     let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
-    let envelope = &record.fields["type26_five_coordinate_envelope"];
+    let envelope = &record.fields()["type26_five_coordinate_envelope"];
     assert_eq!(envelope["offset"], 7);
     let values = envelope["values"].as_array().expect("coordinate values");
     for (actual, expected) in values.iter().zip([-2.65, -15.0, -2.65, 2.65, -17.65]) {
         assert!((actual.as_f64().expect("finite coordinate") - expected).abs() < 1.0e-12);
     }
-    assert!(record.fields["type26_split_coordinate_envelope"].is_null());
+    assert!(record.fields()["type26_split_coordinate_envelope"].is_null());
     assert_eq!(
-        result.report.coverage["decoded_type26_five_coordinate_envelope_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_TYPE26_FIVE_COORDINATE_ENVELOPE_COUNT),
         1
     );
     assert!(result
@@ -1031,7 +1106,7 @@ fn decode_places_complete_positional_torus() {
     ));
     let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
     assert!(
-        (record.fields["positional_torus_frame"]["major_radius"]
+        (record.fields()["positional_torus_frame"]["major_radius"]
             .as_f64()
             .expect("major radius")
             - 4.45)
@@ -1039,7 +1114,9 @@ fn decode_places_complete_positional_torus() {
             < 1e-12
     );
     assert_eq!(
-        result.report.coverage["transferred_positional_torus_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_POSITIONAL_TORUS_COUNT),
         1
     );
     assert!(result
@@ -1067,7 +1144,9 @@ fn decode_reports_transferred_positional_cylinders() {
         .expect("decode positional cylinder");
 
     assert_eq!(
-        result.report.coverage["transferred_positional_cylinder_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_POSITIONAL_CYLINDER_COUNT),
         1
     );
     assert!(result
@@ -1131,7 +1210,9 @@ fn decode_places_paired_five_coordinate_sphere_envelopes() {
         ));
     }
     assert_eq!(
-        result.report.coverage["transferred_paired_envelope_sphere_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_PAIRED_ENVELOPE_SPHERE_COUNT),
         2
     );
     assert!(result.report.losses.iter().any(|loss| {
@@ -1162,15 +1243,17 @@ fn decode_retains_split_type26_coordinate_envelope_in_native_ir() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode split type-26 envelope");
     let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
-    let envelope = &record.fields["type26_split_coordinate_envelope"];
+    let envelope = &record.fields()["type26_split_coordinate_envelope"];
     assert_eq!(envelope["offset"], 19);
     let values = envelope["values"].as_array().expect("coordinate values");
     for (actual, expected) in values.iter().zip([-4.95, 17.24, 16.74, 4.95]) {
         assert!((actual.as_f64().expect("finite coordinate") - expected).abs() < 1.0e-12);
     }
-    assert!(record.fields["type26_five_coordinate_envelope"].is_null());
+    assert!(record.fields()["type26_five_coordinate_envelope"].is_null());
     assert_eq!(
-        result.report.coverage["decoded_type26_split_coordinate_envelope_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_TYPE26_SPLIT_COORDINATE_ENVELOPE_COUNT),
         1
     );
     assert!(result
@@ -1191,19 +1274,20 @@ fn decode_preserves_unframed_surface_parameter_spans() {
         .expect("decode surface parameter spans");
 
     let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
-    assert_eq!(record.fields["slots"][0]["offset"], 1);
-    assert_eq!(record.fields["slots"][1]["offset"], 4);
-    assert_eq!(record.fields["opaque_spans"][0]["offset"], 0);
-    assert_eq!(record.fields["opaque_spans"][0]["raw"][0], 0x11);
-    assert_eq!(record.fields["opaque_spans"][1]["offset"], 2);
-    assert_eq!(record.fields["opaque_spans"][1]["length"], 2);
-    assert_eq!(record.fields["terminal_scalar_frame"]["offset"], 4);
-    let frames = record.fields["scalar_frames"].as_array().unwrap();
+    assert_eq!(record.fields()["slots"][0]["offset"], 1);
+    assert_eq!(record.fields()["slots"][1]["offset"], 4);
+    assert_eq!(record.fields()["opaque_spans"][0]["offset"], 0);
+    assert_eq!(record.fields()["opaque_spans"][0]["raw"][0], 0x11);
+    assert_eq!(record.fields()["opaque_spans"][1]["offset"], 2);
+    assert_eq!(record.fields()["opaque_spans"][1]["length"], 2);
+    assert_eq!(record.fields()["terminal_scalar_frame"]["offset"], 4);
+    let record_fields = record.fields();
+    let frames = record_fields["scalar_frames"].as_array().unwrap();
     assert_eq!(frames.len(), 2);
     assert_eq!(frames[0]["offset"], 1);
     assert_eq!(frames[1]["offset"], 4);
     assert_eq!(
-        record.fields["terminal_scalar_frame"]["slots"]
+        record.fields()["terminal_scalar_frame"]["slots"]
             .as_array()
             .unwrap()
             .len(),
@@ -1347,19 +1431,19 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
         .expect("decode");
     let namespace = result.ir.native.namespace("creo").unwrap();
     assert_eq!(
-        namespace.arenas["plane_local_systems"][0].fields["surface_id"],
+        namespace.arenas["plane_local_systems"][0].fields()["surface_id"],
         7
     );
     assert_eq!(
-        namespace.arenas["plane_envelopes"][0].fields["surface_id"],
+        namespace.arenas["plane_envelopes"][0].fields()["surface_id"],
         7
     );
     assert_eq!(
-        namespace.arenas["plane_envelopes"][0].fields["envelope"]["kind"],
+        namespace.arenas["plane_envelopes"][0].fields()["envelope"]["kind"],
         "standard"
     );
     assert_eq!(
-        namespace.arenas["outline_planes"][0].fields["normal"][2],
+        namespace.arenas["outline_planes"][0].fields()["normal"][2],
         -1.0
     );
 
@@ -1411,14 +1495,23 @@ fn decode_transfers_plane_from_shared_rank_two_local_system_image() {
             u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
         }
     );
-    let coverage = &result.report.coverage;
-    assert_eq!(coverage["visible_plane_surface_row_count"], 1);
-    assert_eq!(coverage["transferred_visible_plane_surface_row_count"], 1);
-    assert_eq!(coverage["untransferred_visible_surface_row_count"], 0);
+    let coverage = &result.report;
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::VISIBLE_PLANE_SURFACE_ROW_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::TRANSFERRED_VISIBLE_PLANE_SURFACE_ROW_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::UNTRANSFERRED_VISIBLE_SURFACE_ROW_COUNT),
+        0
+    );
 }
 
 #[test]
-fn decode_withholds_axis_aligned_surface_without_parameter_chart() {
+fn decode_uses_support_frame_to_chart_line_shaped_plane_outline() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     payload.extend_from_slice(&[0x0f; 10]);
@@ -1434,7 +1527,15 @@ fn decode_withholds_axis_aligned_surface_without_parameter_chart() {
         )
         .expect("decode");
 
-    assert!(result.ir.model.surfaces.is_empty());
+    assert_eq!(result.ir.model.surfaces.len(), 1);
+    assert_eq!(
+        result.ir.model.surfaces[0].geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+            origin: cadmpeg_ir::math::Point3::new(3.0, 0.0, 0.0),
+            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
+            u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+        }
+    );
 }
 
 #[test]
@@ -1566,6 +1667,9 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     payload.extend_from_slice(b"\xe0\x02params\0\xf8\x04\x00\x00\x01\x01");
     payload.extend_from_slice(b"\xe0\x01flip\0\xf1\x01");
     payload.extend_from_slice(b"\xe0\x02dum_array\0\xf8\x03\x01\x02\x03\x04");
+    payload.extend_from_slice(b"\xe0\x00frst_cntr_crv_hdr_ptr\0\x2f");
+    payload.extend_from_slice(b"\xe0\x01trv\0\x00");
+    payload.extend_from_slice(b"\xe0\x01tan_spline\0");
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes(data.clone());
 
@@ -1622,7 +1726,7 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     );
     assert_eq!(
         prototype.field("flip").map(|field| &field.value),
-        Some(&crate::surface::SurfaceNamedValue::Opaque(vec![0xf1, 0x01]))
+        Some(&crate::surface::SurfaceNamedValue::CompactInt(1))
     );
     assert_eq!(
         prototype.field("dum_array").map(|field| &field.value),
@@ -1630,35 +1734,72 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
             0xf8, 0x03, 0x01, 0x02, 0x03, 0x04
         ]))
     );
+    assert_eq!(
+        prototype.field("tan_spline").map(|field| &field.value),
+        Some(&crate::surface::SurfaceNamedValue::Empty)
+    );
+    assert_eq!(
+        prototype
+            .field("frst_cntr_crv_hdr_ptr")
+            .map(|field| &field.value),
+        Some(&crate::surface::SurfaceNamedValue::CompactInt(47))
+    );
+    assert_eq!(
+        prototype.field("trv").map(|field| &field.value),
+        Some(&crate::surface::SurfaceNamedValue::CompactInt(0))
+    );
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_prototypes"][0];
-    assert_eq!(native.fields["declared_family"], "cylinder");
-    assert_eq!(native.fields["family"], "cylinder");
-    assert_eq!(native.fields["parameters"][0]["name"], "local_sys");
-    assert_eq!(native.fields["parameters"][0]["value_kind"], "scalar_array");
-    assert_eq!(native.fields["parameters"][0]["scalar_dimensions"], 4);
-    assert_eq!(native.fields["parameters"][0]["scalar_values"][0], 1.0);
-    assert_eq!(native.fields["parameters"][1]["name"], "radius");
-    assert_eq!(native.fields["parameters"][1]["body"][0], 0xe4);
-    assert_eq!(native.fields["parameters"][2]["compact_values"][0], 7);
-    assert_eq!(native.fields["parameters"][2]["compact_values"][1], 8);
-    assert_eq!(native.fields["parameters"][3]["compact_values"][0], 128);
-    assert_eq!(native.fields["parameters"][3]["compact_values"][1], 129);
-    assert_eq!(native.fields["parameters"][3]["compact_values"][2], 130);
-    assert_eq!(native.fields["parameters"][4]["name"], "id");
-    assert_eq!(native.fields["parameters"][4]["compact_values"][0], 15);
-    assert_eq!(native.fields["parameters"][5]["name"], "degree");
-    assert_eq!(native.fields["parameters"][5]["compact_values"][0], 3);
-    assert_eq!(native.fields["parameters"][6]["name"], "params");
-    assert_eq!(native.fields["parameters"][6]["compact_values"][2], 1);
-    assert_eq!(native.fields["parameters"][7]["name"], "flip");
-    assert_eq!(native.fields["parameters"][7]["opaque"][0], 0xf1);
-    assert_eq!(native.fields["parameters"][8]["name"], "dum_array");
-    assert_eq!(native.fields["parameters"][8]["value_kind"], "opaque");
+    assert_eq!(native.fields()["declared_family"], "cylinder");
+    assert_eq!(native.fields()["family"], "cylinder");
+    assert_eq!(native.fields()["parameters"][0]["name"], "local_sys");
     assert_eq!(
-        result.source_fidelity.annotations.provenance[&native.id]
+        native.fields()["parameters"][0]["value_kind"],
+        "scalar_array"
+    );
+    assert_eq!(native.fields()["parameters"][0]["scalar_dimensions"], 4);
+    assert_eq!(native.fields()["parameters"][0]["scalar_values"][0], 1.0);
+    assert_eq!(native.fields()["parameters"][1]["name"], "radius");
+    assert_eq!(native.fields()["parameters"][1]["body"][0], 0xe4);
+    assert_eq!(native.fields()["parameters"][2]["compact_values"][0], 7);
+    assert_eq!(native.fields()["parameters"][2]["compact_values"][1], 8);
+    assert_eq!(native.fields()["parameters"][3]["compact_values"][0], 128);
+    assert_eq!(native.fields()["parameters"][3]["compact_values"][1], 129);
+    assert_eq!(native.fields()["parameters"][3]["compact_values"][2], 130);
+    assert_eq!(native.fields()["parameters"][4]["name"], "id");
+    assert_eq!(native.fields()["parameters"][4]["compact_values"][0], 15);
+    assert_eq!(native.fields()["parameters"][5]["name"], "degree");
+    assert_eq!(native.fields()["parameters"][5]["compact_values"][0], 3);
+    assert_eq!(native.fields()["parameters"][6]["name"], "params");
+    assert_eq!(native.fields()["parameters"][6]["compact_values"][2], 1);
+    assert_eq!(native.fields()["parameters"][7]["name"], "flip");
+    assert_eq!(
+        native.fields()["parameters"][7]["value_kind"],
+        "compact_int"
+    );
+    assert_eq!(native.fields()["parameters"][7]["compact_values"][0], 1);
+    assert_eq!(native.fields()["parameters"][7]["body"][0], 0xf1);
+    assert_eq!(native.fields()["parameters"][8]["name"], "dum_array");
+    assert_eq!(native.fields()["parameters"][8]["value_kind"], "opaque");
+    assert_eq!(
+        native.fields()["parameters"][9]["name"],
+        "frst_cntr_crv_hdr_ptr"
+    );
+    assert_eq!(native.fields()["parameters"][9]["compact_values"][0], 47);
+    assert_eq!(native.fields()["parameters"][10]["name"], "trv");
+    assert_eq!(native.fields()["parameters"][10]["compact_values"][0], 0);
+    assert_eq!(native.fields()["parameters"][11]["name"], "tan_spline");
+    assert_eq!(native.fields()["parameters"][11]["value_kind"], "empty");
+    assert_eq!(
+        native.fields()["parameters"][11]["body"]
+            .as_array()
+            .map(Vec::len),
+        Some(0)
+    );
+    assert_eq!(
+        result.source_fidelity.annotations.provenance[native.id()]
             .tag
             .as_deref(),
         Some("surface_prototype_record")
@@ -1785,16 +1926,16 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
     );
     let tables = &result.ir.native.namespace("creo").unwrap().arenas["feature_entity_tables"];
     assert_eq!(tables.len(), 1);
-    assert_eq!(tables[0].fields["owner_feature_id"], 4);
-    assert_eq!(tables[0].fields["table_class_id"], 29);
-    assert_eq!(tables[0].fields["entry_ids"][0], 7);
-    assert_eq!(tables[0].fields["entry_ids"][1], 9);
-    assert_eq!(tables[0].fields["entries"][0]["class_id"], 200);
-    assert_eq!(tables[0].fields["entries"][0]["source_entity_id"], 1);
-    assert_eq!(tables[0].fields["entries"][1]["prefixed"], true);
+    assert_eq!(tables[0].fields()["owner_feature_id"], 4);
+    assert_eq!(tables[0].fields()["table_class_id"], 29);
+    assert_eq!(tables[0].fields()["entry_ids"][0], 7);
+    assert_eq!(tables[0].fields()["entry_ids"][1], 9);
+    assert_eq!(tables[0].fields()["entries"][0]["class_id"], 200);
+    assert_eq!(tables[0].fields()["entries"][0]["source_entity_id"], 1);
+    assert_eq!(tables[0].fields()["entries"][1]["prefixed"], true);
     assert_annotation(
         &result.source_fidelity.annotations,
-        &tables[0].id,
+        tables[0].id(),
         "creo:AllFeatur",
         table.offset as u64,
         "feature_entity_table",
@@ -1849,13 +1990,15 @@ fn decode_binds_ordered_visible_surfaces_to_matching_replay_runs() {
         (&associations[2], 7, 12, 1),
         (&associations[3], 8, 13, 1),
     ] {
-        assert_eq!(association.fields["owner_feature_id"], 4);
-        assert_eq!(association.fields["visible_surface_id"], visible_id);
-        assert_eq!(association.fields["replay_surface_id"], replay_id);
-        assert_eq!(association.fields["replay_ordinal"], ordinal);
+        assert_eq!(association.fields()["owner_feature_id"], 4);
+        assert_eq!(association.fields()["visible_surface_id"], visible_id);
+        assert_eq!(association.fields()["replay_surface_id"], replay_id);
+        assert_eq!(association.fields()["replay_ordinal"], ordinal);
     }
     assert_eq!(
-        result.report.coverage["decoded_feature_surface_replay_association_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_FEATURE_SURFACE_REPLAY_ASSOCIATION_COUNT),
         4
     );
 }
@@ -2035,6 +2178,73 @@ fn decode_types_class_911_as_unresolved_hole() {
             ..
         }
     ));
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_TYPED_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_FEATURE_COUNT),
+        0
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_HOLE_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_HOLE_FEATURE_COUNT),
+        1
+    );
+    for key in [
+        "transferred_unresolved_hole_location_feature_count",
+        "transferred_unresolved_hole_direction_feature_count",
+        "transferred_unresolved_hole_kind_feature_count",
+        "transferred_unresolved_hole_diameter_feature_count",
+        "transferred_incomplete_hole_termination_feature_count",
+    ] {
+        assert_eq!(
+            result.report.coverage.get(key).copied().unwrap_or(0),
+            1,
+            "{key}"
+        );
+    }
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_HOLE_PROFILE_FEATURE_COUNT),
+        0
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_HOLE_PROFILE_FEATURE_COUNT),
+        0
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_UNRESOLVED_HOLE_FACE_SELECTION_FEATURE_COUNT
+        ),
+        0
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_HOLE_FACE_SELECTION_FEATURE_COUNT),
+        0
+    );
 }
 
 #[test]
@@ -2073,6 +2283,169 @@ fn decode_types_class_914_as_unresolved_chamfer() {
             spec: cadmpeg_ir::features::ChamferSpec::Unresolved { form: None },
         }])
     ));
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CHAMFER_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_CHAMFER_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_UNRESOLVED_CHAMFER_EDGE_SELECTION_FEATURE_COUNT
+        ),
+        1
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_NATIVE_CHAMFER_EDGE_SELECTION_FEATURE_COUNT
+        ),
+        0
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_CHAMFER_SPEC_FEATURE_COUNT),
+        1
+    );
+}
+
+#[test]
+fn decode_uses_stored_family_when_row_schema_is_not_registered() {
+    let allfeatur = vec![
+        4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x84, 0x50, 0xe1,
+    ];
+    let data = build_prt(
+        "c",
+        &[
+            ("AllFeatur", allfeatur),
+            ("MdlStatus", b"Round id 4\0".to_vec()),
+        ],
+    );
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
+        .expect("round feature");
+
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Fillet { .. }
+    ));
+    assert_eq!(feature.source_properties["featdefs_schema_class"], "1104");
+}
+
+#[test]
+fn decode_uses_reference_name_family_when_operation_name_is_generic() {
+    let mut geometry = visibgeom_payload(1, 0);
+    geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    let allfeatur = vec![
+        4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0xae, 0xe1,
+    ];
+    let reference_name = b"\xf7\x71\x09\x01\x04Extrude 7\0\x09\x09".to_vec();
+    let data = build_prt(
+        "c",
+        &[
+            ("VisibGeom", geometry),
+            ("AllFeatur", allfeatur),
+            ("MdlRefInfo", reference_name),
+            ("MdlStatus", b"Surface id 4\0".to_vec()),
+        ],
+    );
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
+        .expect("surface feature");
+
+    assert_eq!(feature.name.as_deref(), Some("Surface id 4"));
+    assert!(
+        matches!(
+            feature.definition,
+            cadmpeg_ir::features::FeatureDefinition::Extrude {
+                op: cadmpeg_ir::features::BooleanOp::NewBody,
+                solid: Some(false),
+                ..
+            }
+        ),
+        "{:#?}\n{:#?}",
+        feature.definition,
+        feature.source_properties
+    );
+}
+
+#[test]
+fn decode_types_default_part_coordinate_system() {
+    let allfeatur = vec![
+        7, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0xd3, 0xe1,
+    ];
+    let reference_name = b"\xf7\x71\x09\x01\x07PRT_CSYS_DEF\0\x09\x09".to_vec();
+    let data = build_prt(
+        "c",
+        &[("AllFeatur", allfeatur), ("MdlRefInfo", reference_name)],
+    );
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#7")
+        .expect("coordinate-system feature");
+
+    assert_eq!(feature.name.as_deref(), Some("PRT_CSYS_DEF"));
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystemUnresolved
+    ));
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_EXPLICITLY_UNRESOLVED_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_UNRESOLVED_DATUM_COORDINATE_SYSTEM_FEATURE_COUNT
+        ),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_DATUM_PLANE_FEATURE_COUNT),
+        0
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_BOUNDARY_SURFACE_FEATURE_COUNT),
+        0
+    );
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("1 typed history feature definition(s)")
+    }));
 }
 
 #[test]
@@ -2098,12 +2471,51 @@ fn decode_types_class_946_as_unresolved_surface_merge() {
         feature.definition,
         cadmpeg_ir::features::FeatureDefinition::KnitSurface {
             faces: cadmpeg_ir::features::FaceSelection::Unresolved,
-            merge_entities: None,
-            create_solid: None,
+            merge_entities: Some(true),
+            create_solid: Some(false),
             gap_tolerance: None,
         }
     ));
     assert_eq!(feature.name.as_deref(), Some("Surface Merge id 4"));
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_KNIT_SURFACE_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_KNIT_SURFACE_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_UNRESOLVED_KNIT_SURFACE_FACES_FEATURE_COUNT
+        ),
+        1
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_UNRESOLVED_KNIT_SURFACE_MERGE_FEATURE_COUNT
+        ),
+        0
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_UNRESOLVED_KNIT_SURFACE_SOLID_FEATURE_COUNT
+        ),
+        0
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_INCOMPLETE_SURFACE_OPERATION_FEATURE_COUNT
+        ),
+        1
+    );
+    assert!(result.report.losses.iter().any(|loss| loss
+        .message
+        .contains("surface construction history feature")));
 }
 
 #[test]
@@ -2136,6 +2548,43 @@ fn decode_types_row_only_class_927_as_unresolved_draft() {
             outward: None,
         }
     ));
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_DRAFT_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_DRAFT_FEATURE_COUNT),
+        1
+    );
+    for key in [
+        "transferred_unresolved_draft_face_selection_feature_count",
+        "transferred_unresolved_draft_neutral_plane_feature_count",
+        "transferred_unresolved_draft_direction_feature_count",
+        "transferred_unresolved_draft_angle_feature_count",
+        "transferred_unresolved_draft_outward_feature_count",
+    ] {
+        assert_eq!(
+            result.report.coverage.get(key).copied().unwrap_or(0),
+            1,
+            "{key}"
+        );
+    }
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_DRAFT_FACE_SELECTION_FEATURE_COUNT),
+        0
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_DRAFT_NEUTRAL_PLANE_FEATURE_COUNT),
+        0
+    );
 }
 
 #[test]
@@ -2189,6 +2638,30 @@ fn decode_types_named_mirror_with_unresolved_operands() {
                 form: Some(cadmpeg_ir::features::PatternForm::Mirror),
             },
         }
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_PATTERN_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_PATTERN_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_PATTERN_SEED_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_UNRESOLVED_PATTERN_TRANSFORM_FEATURE_COUNT
+        ),
+        1
     );
     assert_eq!(
         feature
@@ -2314,6 +2787,59 @@ fn decode_types_row_only_class_916_as_subtractive_extrusion() {
             ..
         }
     ));
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_EXTRUDE_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_EXTRUDE_PROFILE_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_EXTRUDE_PROFILE_FEATURE_COUNT),
+        0
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_START_FEATURE_COUNT),
+        0
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_TERMINATION_FEATURE_COUNT
+        ),
+        1
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_UNRESOLVED_EXTRUDE_BOOLEAN_OPERATION_FEATURE_COUNT
+        ),
+        0
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_SWEEP_FEATURE_COUNT),
+        1
+    );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("profile sweep history feature")));
 }
 
 #[test]
@@ -2411,6 +2937,48 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
             ..
         }
     ));
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_REVOLVE_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_REVOLVE_PROFILE_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_REVOLVE_PROFILE_FEATURE_COUNT),
+        0
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_REVOLVE_AXIS_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_REVOLVE_EXTENT_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_UNRESOLVED_REVOLVE_BOOLEAN_OPERATION_FEATURE_COUNT
+        ),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_REVOLVE_FEATURE_COUNT),
+        1
+    );
 }
 
 #[test]
@@ -2467,20 +3035,20 @@ fn scan_resolves_allfeatur_walker_order_entity_references() {
     let namespace = result.ir.native.namespace("creo").expect("creo namespace");
     let entities = &namespace.arenas["feature_entities"];
     assert_eq!(entities.len(), 3);
-    assert_eq!(entities[0].id, "creo:allfeatur:entity#0");
-    assert_eq!(entities[0].fields["type_byte"], 0);
-    assert_eq!(entities[0].fields["name"], "Sld_Features");
+    assert_eq!(entities[0].id(), "creo:allfeatur:entity#0");
+    assert_eq!(entities[0].fields()["type_byte"], 0);
+    assert_eq!(entities[0].fields()["name"], "Sld_Features");
     let references = &namespace.arenas["feature_entity_references"];
     assert_eq!(references.len(), 2);
     let forward = references
         .iter()
-        .find(|reference| reference.fields["target_entity_id"] == 2)
+        .find(|reference| reference.fields()["target_entity_id"] == 2)
         .expect("forward reference");
-    assert_eq!(forward.fields["source_entity_id"], 1);
-    assert_eq!(forward.fields["target_resolved"], true);
+    assert_eq!(forward.fields()["source_entity_id"], 1);
+    assert_eq!(forward.fields()["target_resolved"], true);
     assert_annotation(
         &result.source_fidelity.annotations,
-        &entities[0].id,
+        entities[0].id(),
         "creo:AllFeatur",
         scan.features.entities[0].offset as u64,
         "feature_entity",
@@ -2589,10 +3157,66 @@ fn decode_types_class_913_without_an_edge_array() {
             ..
         }])
     ));
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FILLET_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_INCOMPLETE_FILLET_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_EDGE_SELECTION_FEATURE_COUNT
+        ),
+        1
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_NATIVE_FILLET_EDGE_SELECTION_FEATURE_COUNT
+        ),
+        0
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result.report.coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITHOUT_GENERATED_SURFACE_FEATURE_COUNT),
+        0
+    );
+    assert_eq!(
+        result.report.coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITH_GENERATED_SURFACE_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::UNTRANSFERRED_VISIBLE_PLANE_SURFACE_ROW_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::UNTRANSFERRED_VISIBLE_CYLINDER_SURFACE_ROW_COUNT),
+        0
+    );
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.message.contains(
+            "1 unique VisibGeom surface row(s) were not transferred as carriers and remain \
+             structural namespace records (plane=1).",
+        )
+    }));
 }
 
 #[test]
-fn torus_only_round_uses_agreeing_tagged_minor_radii() {
+fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
     let direct_quarter = [
         0x18, 0x0d, 0x41, 0xcf, 0xff, 0xff, 0xff, 0xe5, 0x79, 0x7b, 0x0e, 0x29, 0xdf, 0xff, 0xe3,
     ];
@@ -2630,6 +3254,82 @@ fn torus_only_round_uses_agreeing_tagged_minor_radii() {
         }] if (radius - 0.249_999_999_951_747_04).abs() < 1e-12)
     ));
 
+    let cylinder_panel = [
+        0x15, 0x2d, 0x2b, 0x4d, 0xd8, 0x2f, 0xd7, 0x5e, 0x1f, 0x18, 0x2d, 0x2c, 0x1a, 0xa4, 0xfc,
+        0xa4, 0x2a, 0xec, 0x2f, 0x00, 0x00, 0x2d, 0x36, 0x59, 0x99, 0x99, 0x99, 0x99, 0x9a, 0x42,
+        0xf7, 0x33, 0x2e, 0x03, 0x33, 0x2e, 0x37, 0xcc, 0x29, 0xf7, 0x33,
+    ];
+    let mut mixed_geometry = visibgeom_payload(2, 0);
+    mixed_geometry.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 8]);
+    mixed_geometry.extend_from_slice(&cylinder_panel);
+    mixed_geometry.extend_from_slice(&[0xe3, 8, 0x26, 4, 0x01, 0, 0]);
+    mixed_geometry.extend_from_slice(&direct_quarter);
+    let mixed = build_prt(
+        "c",
+        &[
+            ("VisibGeom", mixed_geometry),
+            (
+                "AllFeatur",
+                vec![
+                    4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0x91, 0xe1,
+                ],
+            ),
+            ("MdlStatus", b"Round id 4\0".to_vec()),
+        ],
+    );
+    let result = CreoCodec
+        .decode(&mut Cursor::new(mixed), &DecodeOptions::default())
+        .expect("decode");
+    assert!(matches!(
+        result.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Fillet {
+            ref groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::RadiusForm::Variable),
+            }, ..
+        }])
+    ));
+
+    let mut partial_geometry = visibgeom_payload(3, 0);
+    partial_geometry.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 8]);
+    partial_geometry.extend_from_slice(&cylinder_panel);
+    partial_geometry.extend_from_slice(&[0xe3, 8, 0x26, 4, 0x01, 0, 9]);
+    partial_geometry.extend_from_slice(&direct_quarter);
+    partial_geometry.extend_from_slice(&[9, 0x29, 4, 0x01, 0, 0, 0xe3]);
+    let partial = build_prt(
+        "c",
+        &[
+            ("VisibGeom", partial_geometry),
+            (
+                "AllFeatur",
+                vec![
+                    4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0x91, 0xe1,
+                ],
+            ),
+            ("MdlStatus", b"Round id 4\0".to_vec()),
+        ],
+    );
+    let result = CreoCodec
+        .decode(&mut Cursor::new(partial), &DecodeOptions::default())
+        .expect("decode");
+    assert!(matches!(
+        result.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Fillet {
+            ref groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::RadiusForm::Variable),
+            }, ..
+        }])
+    ));
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_VARIABLE_RADIUS_FILLET_FEATURE_COUNT),
+        1
+    );
+
     let conflicting = round(&[
         0x18, 0x0d, 0x29, 0xdf, 0xff, 0x7b, 0x0e, 0x29, 0xdf, 0xff, 0xe3,
     ]);
@@ -2643,6 +3343,58 @@ fn torus_only_round_uses_agreeing_tagged_minor_radii() {
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
             radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. }, ..
         }])
+    ));
+}
+
+#[test]
+fn prototype_minor_radius_replays_define_a_constant_round_radius() {
+    let replay = [0x18, 0x0c, 0x29, 0xc9, 0x99];
+    let mut geometry = visibgeom_payload(2, 0);
+    geometry.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 8]);
+    geometry.extend_from_slice(&replay);
+    geometry.push(0xe3);
+    geometry.extend_from_slice(&[8, 0x26, 4, 0x01, 0, 0]);
+    geometry.extend_from_slice(&replay);
+    geometry.push(0xe3);
+    geometry.extend_from_slice(b"srf_prim_ptr(torus)\0\xe0\x02local_sys\0\xf9\x04\x03");
+    for value in [1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, -2.0] {
+        push_generated_scalar(&mut geometry, value);
+    }
+    geometry.extend_from_slice(b"\xe0\x01radius1\0\xe4\xe0\x01radius2\0\x29\xc9\x99");
+    geometry.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+    let data = build_prt(
+        "c",
+        &[
+            ("ND:0:VisibGeom:0", geometry),
+            (
+                "AllFeatur",
+                vec![
+                    4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0x91, 0xe1,
+                ],
+            ),
+            ("MdlStatus", b"Round id 4\0".to_vec()),
+        ],
+    );
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_TYPE26_REPLAYED_MINOR_RADIUS_COUNT),
+        2
+    );
+    assert!(matches!(
+        result.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Fillet {
+            ref groups,
+        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+            radius: cadmpeg_ir::features::RadiusSpec::Constant {
+                radius: cadmpeg_ir::features::Length(radius),
+            }, ..
+        }] if radius.to_bits() == 0.199_999_999_999_999_98_f64.to_bits())
     ));
 }
 
@@ -2666,6 +3418,14 @@ fn decode_types_named_german_round_without_a_schema_row() {
             radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. }, ..
         }])
     ));
+    assert_eq!(
+        result.report.coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITHOUT_GENERATED_SURFACE_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result.report.coverage_count(crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITH_GENERATED_SURFACE_FEATURE_COUNT),
+        0
+    );
 }
 
 #[test]
@@ -2708,6 +3468,43 @@ fn decode_types_localized_cross_section_nodes() {
 }
 
 #[test]
+fn decode_types_body_and_surface_tree_nodes() {
+    let data = build_prt(
+        "c",
+        &[(
+            "MdlStatus",
+            b"Body id 4\0K\xc3\xb6rper ID 5\0Surface id 6\0".to_vec(),
+        )],
+    );
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+
+    assert_eq!(result.ir.model.features.len(), 3);
+    assert!(matches!(
+        result.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::TreeNode {
+            role: cadmpeg_ir::features::FeatureTreeNodeRole::SolidBodies,
+            ..
+        }
+    ));
+    assert!(matches!(
+        result.ir.model.features[1].definition,
+        cadmpeg_ir::features::FeatureDefinition::TreeNode {
+            role: cadmpeg_ir::features::FeatureTreeNodeRole::SolidBodies,
+            ..
+        }
+    ));
+    assert!(matches!(
+        result.ir.model.features[2].definition,
+        cadmpeg_ir::features::FeatureDefinition::TreeNode {
+            role: cadmpeg_ir::features::FeatureTreeNodeRole::SurfaceBodies,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
@@ -2731,19 +3528,19 @@ fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
         .expect("decode");
     let namespace = result.ir.native.namespace("creo").unwrap();
     let rows = &namespace.arenas["feature_rows"];
-    assert_eq!(rows[0].fields["owner_feature_id"], 4);
-    assert_eq!(rows[0].fields["header"][0], 0xeb);
-    assert_eq!(rows[0].fields["header"][1], 0x04);
-    assert_eq!(rows[0].fields["body"][0], 0xeb);
-    assert_eq!(rows[0].fields["body"][2], 0xe0);
+    assert_eq!(rows[0].fields()["owner_feature_id"], 4);
+    assert_eq!(rows[0].fields()["header"][0], 0xeb);
+    assert_eq!(rows[0].fields()["header"][1], 0x04);
+    assert_eq!(rows[0].fields()["body"][0], 0xeb);
+    assert_eq!(rows[0].fields()["body"][2], 0xe0);
     let choices = &namespace.arenas["feature_choices"];
-    assert_eq!(choices[0].fields["owner_feature_id"], 4);
-    assert_eq!(choices[0].fields["label"], "blend_choice");
+    assert_eq!(choices[0].fields()["owner_feature_id"], 4);
+    assert_eq!(choices[0].fields()["label"], "blend_choice");
     let fields = &namespace.arenas["feature_choice_fields"];
-    assert_eq!(fields[0].fields["choice_label"], "blend_choice");
-    assert_eq!(fields[0].fields["name"], "values");
-    assert_eq!(fields[0].fields["value"]["kind"], "scalar_array");
-    assert_eq!(fields[0].fields["value"]["decoded_values"][2], 3.0);
+    assert_eq!(fields[0].fields()["choice_label"], "blend_choice");
+    assert_eq!(fields[0].fields()["name"], "values");
+    assert_eq!(fields[0].fields()["value"]["kind"], "scalar_array");
+    assert_eq!(fields[0].fields()["value"]["decoded_values"][2], 3.0);
 }
 
 #[test]
@@ -2780,19 +3577,72 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
         .expect("decode");
     let tables = &result.ir.native.namespace("creo").unwrap().arenas["feature_geometry_tables"];
     assert_eq!(tables.len(), 3);
-    assert_eq!(tables[0].fields["owner_feature_id"], 4);
-    assert_eq!(tables[0].fields["kind"], "edge_ids");
-    assert_eq!(tables[0].fields["declared_count"], 3);
-    assert_eq!(tables[0].fields["entity_class_id"], 0x53);
-    assert_eq!(tables[2].fields["entry_ids"][0], 42);
-    assert_eq!(tables[2].fields["entry_ids"][1], 43);
+    assert_eq!(tables[0].fields()["owner_feature_id"], 4);
+    assert_eq!(tables[0].fields()["kind"], "edge_ids");
+    assert_eq!(tables[0].fields()["declared_count"], 3);
+    assert_eq!(tables[0].fields()["entity_class_id"], 0x53);
+    assert_eq!(tables[2].fields()["entry_ids"][0], 42);
+    assert_eq!(tables[2].fields()["entry_ids"][1], 43);
     assert_annotation(
         &result.source_fidelity.annotations,
-        &tables[0].id,
+        tables[0].id(),
         "creo:AllFeatur",
         scan.features.geometry_tables[0].offset as u64,
         "feature_geometry_table",
         Exactness::ByteExact,
+    );
+}
+
+#[test]
+fn scan_decodes_complete_allfeatur_loop_history_rosters() {
+    let mut geometry = visibgeom_payload(1, 0);
+    geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    let allfeatur = b"\x04\xeb\x04\xe0\x00lo_id_tab_ptr\0\xf8\x02\xf7\x60\xfb\xe3\
+        \xe0\x01lo_hist\0\xf8\x06\x2a\x01\xf6\xe5\x02\xf1\xf7\x60\xe3\
+        \x2b\x03\x04\xe4\xf6\x05\xe0\x00next\0"
+        .to_vec();
+    let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
+    let scan = container::scan_bytes(data.clone());
+
+    assert_eq!(scan.features.loop_history_entries.len(), 2);
+    assert_eq!(scan.features.loop_history_entries[0].feature_id, 4);
+    assert_eq!(scan.features.loop_history_entries[0].ordinal, 0);
+    assert_eq!(scan.features.loop_history_entries[0].loop_id, 42);
+    assert_eq!(scan.features.loop_history_entries[1].ordinal, 1);
+    assert_eq!(scan.features.loop_history_entries[1].loop_id, 43);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let records =
+        &result.ir.native.namespace("creo").unwrap().arenas["feature_loop_history_entries"];
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].fields()["owner_feature_id"], 4);
+    assert_eq!(records[0].fields()["ordinal"], 0);
+    assert_eq!(records[0].fields()["loop_id"], 42);
+    assert_eq!(records[0].fields()["field_bytes"][0][0], 1);
+    assert_eq!(records[0].fields()["boundary"], "reference_continue");
+    assert_eq!(records[0].fields()["boundary_reference"], 96);
+    assert_eq!(records[1].fields()["ordinal"], 1);
+    assert_eq!(records[1].fields()["loop_id"], 43);
+    assert_eq!(
+        records[1].fields()["field_bytes"].as_array().unwrap().len(),
+        5
+    );
+    assert_eq!(records[1].fields()["boundary"], "named_record");
+    assert_annotation(
+        &result.source_fidelity.annotations,
+        records[0].id(),
+        "creo:AllFeatur",
+        scan.features.loop_history_entries[0].offset as u64,
+        "feature_loop_history_entry",
+        Exactness::ByteExact,
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_FEATURE_LOOP_HISTORY_ENTRY_COUNT),
+        2
     );
 }
 
@@ -2828,9 +3678,9 @@ fn scan_decodes_allfeatur_affected_id_arrays() {
         .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["feature_affected_ids"];
     assert_eq!(records.len(), 3);
-    assert_eq!(records[0].fields["owner_feature_id"], 4);
-    assert_eq!(records[0].fields["kind"], "geometry");
-    assert_eq!(records[0].fields["ids"][1], 128);
+    assert_eq!(records[0].fields()["owner_feature_id"], 4);
+    assert_eq!(records[0].fields()["kind"], "geometry");
+    assert_eq!(records[0].fields()["ids"][1], 128);
 }
 
 #[test]
@@ -3084,8 +3934,8 @@ fn scan_partitions_allfeatur_positional_round_operands() {
     ));
     let records =
         &result.ir.native.namespace("creo").unwrap().arenas["feature_replay_affected_ids"];
-    assert_eq!(records[0].fields["geometry_extent"], "explicit");
-    assert_eq!(records[0].fields["edge_ids"][0], 9);
+    assert_eq!(records[0].fields()["geometry_extent"], "explicit");
+    assert_eq!(records[0].fields()["edge_ids"][0], 9);
 }
 
 #[test]
@@ -3107,9 +3957,9 @@ fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
         .expect("decode");
     let records =
         &result.ir.native.namespace("creo").unwrap().arenas["feature_loop_restore_directions"];
-    assert_eq!(records[0].fields["value"], 0);
-    assert_eq!(records[1].fields["value"], 167);
-    assert_eq!(records[2].fields["value"], 1);
+    assert_eq!(records[0].fields()["value"], 0);
+    assert_eq!(records[1].fields()["value"], 167);
+    assert_eq!(records[2].fields()["value"], 1);
     let feature = result
         .ir
         .model
@@ -3124,6 +3974,29 @@ fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
     assert_eq!(parameters["loop_restore.direction"], "0");
     assert_eq!(parameters["loop_restore.direction#2"], "1");
     assert_eq!(parameters["loop_restore.direction2"], "167");
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_TYPED_FEATURE_COUNT),
+        0
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_FEATURE_COUNT),
+        1
+    );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("retain only source-native semantics")));
 }
 
 #[test]
@@ -3174,7 +4047,7 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
         } if (*angle - std::f64::consts::TAU).abs() < 1e-12
     ));
     let records = &result.ir.native.namespace("creo").unwrap().arenas["feature_revolution_extents"];
-    assert_eq!(records[0].fields["kind"], "full_turn");
+    assert_eq!(records[0].fields()["kind"], "full_turn");
 }
 
 #[test]
@@ -3309,7 +4182,8 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let definitions = &result.ir.native.namespace("creo").unwrap().arenas["feature_definitions"];
-    let frames = definitions[0].fields["parameter_frames"]
+    let definition_fields = definitions[0].fields();
+    let frames = definition_fields["parameter_frames"]
         .as_array()
         .expect("parameter frames");
     assert_eq!(frames.len(), 2);
@@ -3342,7 +4216,8 @@ fn scan_decodes_rank_two_featdefs_local_system() {
 #[test]
 fn scan_decodes_featdefs_feature_local_outlines() {
     let mut payload = b"feat_defs_40\0\xe0\x00feat_outl_info\0outline\0\xf9\x02\x03".to_vec();
-    payload.extend([0x0f; 6]);
+    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend([0x0f; 5]);
     payload.extend_from_slice(b"\xe0\x00post_roll_back\0\xe3\xf7\x01\xf5\x96\x92\x02");
     payload.extend([0xe4; 6]);
     let data = build_prt("c", &[("FeatDefs", payload)]);
@@ -3351,27 +4226,89 @@ fn scan_decodes_featdefs_feature_local_outlines() {
     let outlines = &scan.features.definitions[0].outlines;
     assert_eq!(outlines.len(), 2);
     assert_eq!(outlines[0].phase, crate::feature::OutlinePhase::PreRollback);
-    assert_eq!(outlines[0].local_values, vec![Some(0.0); 6]);
+    assert_eq!(
+        outlines[0].local_values,
+        vec![
+            Some(3.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0)
+        ]
+    );
+    assert_eq!(
+        outlines[0].local_value_bodies[0],
+        [0x46, 0x08, 0, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(outlines[0].local_value_bodies[1..], vec![vec![0x0f]; 5]);
     assert_eq!(
         outlines[1].phase,
         crate::feature::OutlinePhase::PostRollback
     );
     assert_eq!(outlines[1].local_values, vec![Some(1.0); 6]);
+    assert_eq!(outlines[1].local_value_bodies, vec![vec![0xe4]; 6]);
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let definitions = &result.ir.native.namespace("creo").unwrap().arenas["feature_definitions"];
-    let outlines = definitions[0].fields["outlines"]
-        .as_array()
-        .expect("outlines");
+    let definition_fields = definitions[0].fields();
+    let outlines = definition_fields["outlines"].as_array().expect("outlines");
     assert_eq!(outlines.len(), 2);
     assert_eq!(outlines[0]["phase"], "pre_rollback");
     assert_eq!(outlines[0]["local_values"].as_array().unwrap().len(), 6);
-    assert_eq!(outlines[0]["local_values"][0], 0.0);
+    assert_eq!(outlines[0]["local_values"][0], 3.0);
+    assert_eq!(
+        outlines[0]["local_value_bodies"][0]
+            .as_array()
+            .unwrap()
+            .len(),
+        8
+    );
+    assert_eq!(outlines[0]["local_value_bodies"][0][0], 0x46);
     assert_eq!(outlines[1]["phase"], "post_rollback");
     assert_eq!(outlines[1]["local_values"].as_array().unwrap().len(), 6);
     assert_eq!(outlines[1]["local_values"][0], 1.0);
+    assert_eq!(outlines[1]["local_value_bodies"][0][0], 0xe4);
+}
+
+#[test]
+fn scan_stops_feature_local_outlines_at_named_records() {
+    let mut payload = b"feat_defs_40\0\xe0\x00feat_outl_info\0outline\0\xf9\x02\x03".to_vec();
+    payload.extend_from_slice(&[0x0f, 0xe4]);
+    payload.extend_from_slice(b"\xe0\x00post_roll_back\0\xe3\xf7\x01\xf5\x96\x92\x02");
+    payload.extend_from_slice(&[0xe4, 0x0f]);
+    payload.extend_from_slice(b"\xe0\x00post_regen\0\xe3\xf7\x01\xf5\x96\x92\x02");
+    payload.extend([0x0f; 6]);
+    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+
+    let outlines = &scan.features.definitions[0].outlines;
+    assert_eq!(outlines.len(), 3);
+    assert_eq!(outlines[0].phase, crate::feature::OutlinePhase::PreRollback);
+    assert_eq!(
+        outlines[0].local_values,
+        vec![Some(0.0), Some(1.0), None, None, None, None]
+    );
+    assert_eq!(
+        outlines[0].local_value_bodies,
+        vec![vec![0x0f], vec![0xe4], vec![], vec![], vec![], vec![]]
+    );
+    assert_eq!(
+        outlines[1].phase,
+        crate::feature::OutlinePhase::PostRollback
+    );
+    assert_eq!(
+        outlines[1].local_values,
+        vec![Some(1.0), Some(0.0), None, None, None, None]
+    );
+    assert_eq!(
+        outlines[1].local_value_bodies,
+        vec![vec![0xe4], vec![0x0f], vec![], vec![], vec![], vec![]]
+    );
+    assert_eq!(outlines[2].phase, crate::feature::OutlinePhase::PostRegen);
+    assert_eq!(outlines[2].local_values, vec![Some(0.0); 6]);
+    assert_eq!(outlines[2].local_value_bodies, vec![vec![0x0f]; 6]);
 }
 
 #[test]
@@ -3391,10 +4328,14 @@ fn scan_decodes_featdefs_var_arr_section_points() {
     assert_eq!(variables.entity_ref, Some(1));
     assert_eq!(variables.rows.len(), 2);
     assert_eq!(variables.rows[0].value, Some(1.0));
+    assert_eq!(variables.rows[0].value_body, [0xe4]);
+    assert_eq!(variables.rows[0].guess_body, [0x0f]);
     assert_eq!(variables.rows[0].known, Some(1));
     assert_eq!(variables.rows[0].homogeneity, Some(0));
     assert_eq!(variables.rows[0].uvar_id, Some(3));
     assert_eq!(variables.rows[1].value, Some(3.0));
+    assert_eq!(variables.rows[1].value_body, [0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(variables.rows[1].guess_body, [0x0f]);
     assert_eq!(variables.rows[1].known, Some(1));
     assert_eq!(variables.rows[1].homogeneity, Some(0));
     assert_eq!(variables.rows[1].uvar_id, Some(4));
@@ -3421,10 +4362,36 @@ fn scan_decodes_featdefs_var_arr_named_prototype_row() {
     assert_eq!(variables.rows[0].variable_type, 1);
     assert_eq!(variables.rows[0].key, 7);
     assert_eq!(variables.rows[0].value, Some(1.0));
+    assert_eq!(variables.rows[0].value_body, [0xe4]);
     assert_eq!(variables.rows[0].guess, Some(0.0));
+    assert_eq!(variables.rows[0].guess_body, [0x0f]);
     assert_eq!(variables.rows[0].known, Some(1));
     assert_eq!(variables.rows[0].homogeneity, Some(2));
     assert_eq!(variables.rows[0].uvar_id, Some(3));
+}
+
+#[test]
+fn scan_classifies_named_var_arr_guess_sentinel() {
+    let payload = b"feat_defs_40\0var_arr\0\xf8\x01\xf7\x01\xfb\xe2\
+        \xe0\x05type\0\x01\xe0\x08key\0\x07\xe0\x02value\0\xe4\
+        \xe0\x02guess\0\xed\x11\x12\x13\x14\x15\x16\x17\x18\
+        \xe0\x06known\0\x01\xe0\x0chomogeneity\0\x02\
+        \xe0\x08uvar_id\0\x03\xf1\xf7\x01\xe2"
+        .to_vec();
+    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+
+    let variables = scan.features.definitions[0]
+        .variables
+        .as_ref()
+        .expect("var_arr");
+    let [row] = variables.rows.as_slice() else {
+        panic!("one named variable row");
+    };
+    assert_eq!(
+        row.guess_body,
+        [0xed, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18]
+    );
+    assert!(row.guess_dimension_driven);
 }
 
 #[test]
@@ -3451,18 +4418,19 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     assert_eq!(namespace.version, 1);
     let definitions = &namespace.arenas["feature_definitions"];
     assert_eq!(definitions.len(), 1);
-    assert_eq!(definitions[0].id, "creo:featdefs:feature_definition#40");
-    assert_eq!(definitions[0].fields["definition_id"], 40);
+    assert_eq!(definitions[0].id(), "creo:featdefs:feature_definition#40");
+    assert_eq!(definitions[0].fields()["definition_id"], 40);
     assert_eq!(
-        definitions[0].fields["body"].as_array().unwrap().len(),
+        definitions[0].fields()["body"].as_array().unwrap().len(),
         definition_length
     );
     let sketches = &namespace.arenas["sketches"];
     assert_eq!(sketches.len(), 1);
-    assert_eq!(sketches[0].id, "creo:featdefs:sketch#40");
-    assert_eq!(sketches[0].fields["definition_id"], 40);
-    assert!(sketches[0].fields["owner_feature_id"].is_null());
-    let headers = sketches[0].fields["table_headers"]
+    assert_eq!(sketches[0].id(), "creo:featdefs:sketch#40");
+    assert_eq!(sketches[0].fields()["definition_id"], 40);
+    assert!(sketches[0].fields()["owner_feature_id"].is_null());
+    let sketch_fields = sketches[0].fields();
+    let headers = sketch_fields["table_headers"]
         .as_array()
         .expect("table headers");
     assert_eq!(headers.len(), 1);
@@ -3470,7 +4438,7 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     assert_eq!(headers[0]["declared_count"], 2);
     assert_eq!(headers[0]["entity_ref"], 1);
     assert_eq!(headers[0]["row_count"], 2);
-    let points = sketches[0].fields["section_points"]
+    let points = sketch_fields["section_points"]
         .as_array()
         .expect("section points");
     assert_eq!(points.len(), 1);
@@ -3478,17 +4446,36 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     assert_eq!(points[0]["u"], 1.0);
     assert_eq!(points[0]["v"], 3.0);
     assert_eq!(points[0]["state"], "resolved");
-    let variables = sketches[0].fields["variables"]
+    let variables = sketch_fields["variables"]
         .as_array()
         .expect("variables array");
     assert_eq!(variables.len(), 2);
     assert_eq!(variables[0]["key"], 7);
     assert_eq!(variables[0]["value"], 1.0);
+    assert_eq!(
+        variables[0]["value_body"].as_array().expect("value body"),
+        &[228]
+    );
+    assert_eq!(
+        variables[0]["guess_body"].as_array().expect("guess body"),
+        &[15]
+    );
+    assert_eq!(variables[0]["guess_dimension_driven"], false);
+    assert_eq!(variables[0]["resolved_value"], 1.0);
     assert_eq!(variables[0]["known"], 1);
     assert_eq!(variables[0]["homogeneity"], 0);
     assert_eq!(variables[0]["uvar_id"], 3);
     assert_eq!(variables[0]["offset"], variable_offset);
     assert_eq!(variables[1]["value"], 3.0);
+    assert_eq!(
+        variables[1]["value_body"].as_array().expect("value body"),
+        &[70, 8, 0, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(
+        variables[1]["guess_body"].as_array().expect("guess body"),
+        &[15]
+    );
+    assert_eq!(variables[1]["resolved_value"], 3.0);
     assert_eq!(variables[1]["known"], 1);
     assert_eq!(variables[1]["homogeneity"], 0);
     assert_eq!(variables[1]["uvar_id"], 4);
@@ -3532,6 +4519,10 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     assert_eq!(segments.rows[0].center_id, None);
     assert_eq!(segments.rows[0].external_id, 42);
     assert_eq!(
+        segments.rows[0].body,
+        [2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2]
+    );
+    assert_eq!(
         segments.rows[1].kind,
         crate::feature::FeatureSegmentKind::Arc
     );
@@ -3549,6 +4540,16 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
+    let native_sketch = &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0];
+    assert_eq!(
+        native_sketch.fields()["segments"][0]["body"]
+            .as_array()
+            .expect("segment body")
+            .iter()
+            .map(|byte| byte.as_u64().expect("byte"))
+            .collect::<Vec<_>>(),
+        [2, 0, 0, 0, 7, 8, 246, 0, 0, 246, 246, 42, 226]
+    );
     let sketch = result
         .ir
         .model
@@ -3570,6 +4571,179 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
             .count(),
         5
     );
+    let constraints = result
+        .ir
+        .model
+        .sketch_constraints
+        .iter()
+        .filter(|constraint| constraint.sketch == sketch.id)
+        .collect::<Vec<_>>();
+    assert_eq!(constraints.len(), 7);
+    for (field, ordinal) in [("radius", 11), ("radius2", 12)] {
+        let constraint = constraints
+            .iter()
+            .find(|constraint| {
+                constraint.id.0 == format!("creo:featdefs:sketch_constraint#40:segtab-{field}:43")
+            })
+            .expect("segment radius binding");
+        let SketchConstraintDefinition::Native {
+            native_kind,
+            native_properties,
+            entities,
+            operands,
+            ..
+        } = &constraint.definition
+        else {
+            panic!("untyped segment radius binding must remain native");
+        };
+        assert_eq!(native_kind, &format!("creo:segtab:{field}"));
+        assert_eq!(native_properties["dimension_ordinal"], ordinal.to_string());
+        assert_eq!(
+            entities,
+            &[SketchEntityId("creo:featdefs:sketch_entity#40:43".into())]
+        );
+        assert_eq!(operands[1].native_field.as_deref(), Some(field));
+        assert_eq!(operands[1].object_index, ordinal);
+    }
+    let point_verhor = constraints
+        .iter()
+        .find(|constraint| constraint.id.0 == "creo:featdefs:sketch_constraint#40:verhor:4")
+        .expect("point verhor constraint");
+    let SketchConstraintDefinition::Native {
+        native_kind,
+        native_properties,
+        entities,
+        operands,
+        ..
+    } = &point_verhor.definition
+    else {
+        panic!("point verhor must remain native");
+    };
+    assert_eq!(native_kind, "creo:segtab:verhor");
+    assert_eq!(native_properties["verhor"], "2");
+    assert_eq!(
+        entities,
+        &[SketchEntityId("creo:featdefs:sketch_entity#40:4".into())]
+    );
+    assert_eq!(operands[0].native_field.as_deref(), Some("ext_id"));
+    assert_eq!(operands[0].object_index, 4);
+}
+
+#[test]
+fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
+    let mut payload =
+        b"feat_defs_40\0segtab_ptr\0\xf8\x06\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
+    payload.extend_from_slice(&[10, 0, 0, 0, 0xf6, 1, 2, 0, 0, 1, 0xf6, 20, 0xe2, 0xe3]);
+    payload.extend_from_slice(&[1, 0, 0, 0, 0xf6, 1, 3, 0, 0, 0xf6, 0xf6, 21, 0xe2, 0xe3]);
+    payload.extend_from_slice(&[47, 0, 0, 0, 0xf6, 1, 2, 0, 0, 1, 0xf6, 22, 0xe2, 0xe3]);
+    payload.extend_from_slice(&[25, 0, 1, 0, 10, 11, 0xf6, 0, 0, 0xf6, 0xf6, 24, 0xe2, 0xe3]);
+    payload.extend_from_slice(&[12, 0, 0, 0, 2, 3, 0xf6, 1, 0, 2, 0xf6, 25, 0xe2, 0xe3]);
+    payload.extend_from_slice(&[47, 0, 0, 0, 0xf6, 1, 0, 0, 0, 1, 0xf6, 23, 0xe2]);
+    payload.extend_from_slice(b"dimtab_ptr\0");
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(data.clone());
+    let segments = scan.features.definitions[0]
+        .segments
+        .as_ref()
+        .expect("segtab");
+
+    assert!(segments.is_complete());
+    assert_eq!(segments.circle_rows.len(), 1);
+    assert_eq!(segments.point_rows.len(), 1);
+    assert_eq!(
+        segments
+            .centered_line_rows
+            .iter()
+            .map(|row| (row.external_id, row.center_id))
+            .collect::<Vec<_>>(),
+        vec![(22, 2), (23, 0)]
+    );
+    assert_eq!(segments.reference_line_rows.len(), 1);
+    assert_eq!(segments.bounded_curve_rows.len(), 1);
+    assert!(segments.opaque_rows.is_empty());
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let sketch = &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0];
+    assert_eq!(sketch.fields()["circle_segments"][0]["external_id"], 20);
+    assert_eq!(sketch.fields()["circle_segments"][0]["center_id"], 2);
+    assert_eq!(
+        sketch.fields()["circle_segments"][0]["radius_dimension_id"],
+        1
+    );
+    assert_eq!(sketch.fields()["point_segments"][0]["external_id"], 21);
+    assert_eq!(sketch.fields()["point_segments"][0]["point_id"], 3);
+    assert_eq!(
+        sketch.fields()["centered_line_segments"][0]["external_id"],
+        22
+    );
+    assert_eq!(sketch.fields()["centered_line_segments"][0]["center_id"], 2);
+    assert_eq!(
+        sketch.fields()["centered_line_segments"][1]["external_id"],
+        23
+    );
+    assert_eq!(sketch.fields()["centered_line_segments"][1]["center_id"], 0);
+    assert_eq!(
+        sketch.fields()["reference_line_segments"][0]["external_id"],
+        24
+    );
+    assert_eq!(
+        sketch.fields()["reference_line_segments"][0]["point_ids"][0],
+        10
+    );
+    assert_eq!(
+        sketch.fields()["reference_line_segments"][0]["point_ids"][1],
+        11
+    );
+    assert_eq!(
+        sketch.fields()["bounded_curve_segments"][0]["external_id"],
+        25
+    );
+    assert_eq!(
+        sketch.fields()["bounded_curve_segments"][0]["point_ids"][0],
+        2
+    );
+    assert_eq!(
+        sketch.fields()["bounded_curve_segments"][0]["point_ids"][1],
+        3
+    );
+    assert!(sketch.fields()["opaque_segments"]
+        .as_array()
+        .is_some_and(Vec::is_empty));
+    let coverage = &result.report;
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT),
+        6
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_CIRCLE_SEGMENT_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_POINT_SEGMENT_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_CENTERED_LINE_SEGMENT_COUNT),
+        2
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_REFERENCE_LINE_SEGMENT_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_BOUNDED_CURVE_SEGMENT_COUNT),
+        1
+    );
+    assert!(!coverage
+        .coverage
+        .contains_key("decoded_feature_segment_count"));
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT)
+            + coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT),
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT)
+    );
 }
 
 #[test]
@@ -3577,7 +4751,7 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
     let mut definition =
         b"feat_defs_40\0segtab_ptr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
     definition.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
-    definition.extend_from_slice(&[25, 0, 0, 0, 8, 9, 0xf6, 0, 0, 0xf6, 0xf6, 43, 0xe2, 0xe3]);
+    definition.extend_from_slice(&[25, 0, 0, 0, 8, 9, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
     definition.extend_from_slice(
         b"dimtab_ptr\0\xf8\x01\xf7\x58\xfb\xe2\
           \xe0\x01type\0\x02\xe0\x01value\0\xe4\
@@ -3646,6 +4820,40 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
             )))
         );
         assert!(parameters[0].id.0.contains(&format!("#{identity_scope}:")));
+        let constraints = result
+            .ir
+            .model
+            .sketch_constraints
+            .iter()
+            .filter(|constraint| constraint.sketch == sketch.id)
+            .collect::<Vec<_>>();
+        assert_eq!(constraints.len(), 2);
+        let reference_verhor = constraints
+            .iter()
+            .find(|constraint| {
+                matches!(
+                    &constraint.definition,
+                    SketchConstraintDefinition::Native { .. }
+                )
+            })
+            .expect("reference-line verhor");
+        assert!(reference_verhor.id.0.starts_with(&format!(
+            "creo:featdefs:sketch_constraint#{identity_scope}:verhor:reference_line:offset:"
+        )));
+        let SketchConstraintDefinition::Native {
+            native_properties,
+            operands,
+            ..
+        } = &reference_verhor.definition
+        else {
+            panic!("reference-line verhor must remain native");
+        };
+        assert_eq!(native_properties["verhor"], "0");
+        assert_eq!(operands[0].object_index, 42);
+        assert_eq!(
+            operands[0].native_ref.as_deref(),
+            sketch.native_ref.as_deref()
+        );
     }
     assert_eq!(
         result
@@ -3658,12 +4866,175 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
             .len(),
         4
     );
+    let coverage = &result.report;
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT),
+        4
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT),
+        4
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_SEGMENT_ROW_COUNT),
+        0
+    );
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::report::LossKind::GeometryNotTransferred
+            && loss.code.category() == cadmpeg_ir::LossCategory::Geometry
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains(
+                "4 decoded section segment(s) retain source-native geometry because their exact \
+                 neutral construction remains unresolved",
+            )
+    }));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
 #[test]
-fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
+fn decode_reports_missing_declared_section_segment_rows() {
+    let mut payload =
+        b"feat_defs_40\0segtab_ptr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
+    payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
+    payload.extend_from_slice(b"dimtab_ptr\0");
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode incomplete segment table");
+    let coverage = &result.report;
+
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_LINE_SEGMENT_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_LINE_SEGMENT_GEOMETRY_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_LINE_SEGMENT_GEOMETRY_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_SEGMENT_ROW_COUNT),
+        1
+    );
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::report::LossKind::FeatureHistoryRetained
+            && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains(
+                "1 declared section segment row(s) did not decode and remain unavailable to the \
+                 defining sketch",
+            )
+    }));
+}
+
+#[test]
+fn decode_counts_resolved_section_segment_geometry() {
+    let mut payload =
+        b"feat_defs_40\0var_arr\0\xf8\x04\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
+    payload.extend_from_slice(&[1, 7, 0xe4, 0x0f, 1, 0, 3, 0xe2]);
+    payload.extend_from_slice(&[2, 7, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);
+    payload.extend_from_slice(&[1, 8, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 5, 0xe2]);
+    payload.extend_from_slice(&[2, 8, 0xe4, 0x0f, 1, 0, 6, 0xe2]);
+    payload.extend_from_slice(b"segtab_ptr\0\xf8\x01\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2");
+    payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
+    payload.extend_from_slice(b"dimtab_ptr\0");
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode resolved segment");
+    let coverage = &result.report;
+
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_LINE_SEGMENT_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_LINE_SEGMENT_GEOMETRY_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_LINE_SEGMENT_GEOMETRY_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_SEGMENT_ROW_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT),
+        4
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_SOLVER_VARIABLE_COUNT),
+        0
+    );
+    assert!(!result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("decoded section segment(s) retain source-native geometry")
+    }));
+}
+
+#[test]
+fn decode_reports_missing_declared_solver_variable_rows() {
+    let payload = b"feat_defs_40\0var_arr\0\xf8\x02\xf7\x01\xfb\xe2\
+        \xe0\x05type\0\x01\xe0\x08key\0\x07\xe0\x02value\0\xe4\
+        \xe0\x02guess\0\x0f\xe0\x06known\0\x01\
+        \xe0\x0chomogeneity\0\x02\xe0\x08uvar_id\0\x03\xf1\xf7\x01\xe2"
+        .to_vec();
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode incomplete variable table");
+    let coverage = &result.report;
+
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_SOLVER_VARIABLE_COUNT),
+        1
+    );
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::report::LossKind::FeatureHistoryRetained
+            && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains(
+                "1 declared section solver variable row(s) did not decode; stored and \
+                 equation-derived coordinates are withheld",
+            )
+    }));
+}
+
+#[test]
+fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions() {
     let definition = crate::feature::FeatureDefinition {
         id: 40,
         owner_feature_id: None,
@@ -3677,7 +5048,10 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
                 variable_type: 3,
                 key: 6,
                 value: None,
+                value_body: Vec::new(),
                 guess: None,
+                guess_body: Vec::new(),
+                guess_dimension_driven: false,
                 known: None,
                 homogeneity: None,
                 uvar_id: None,
@@ -3735,6 +5109,7 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
             declared_count: 5,
+            has_elided_prototype: false,
             entity_ref: None,
             rows: vec![
                 crate::feature::FeatureSegment {
@@ -3747,6 +5122,7 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
                     radius_ref: None,
                     radius2_ref: None,
                     external_id: 1,
+                    body: Vec::new(),
                     offset: 0,
                 },
                 crate::feature::FeatureSegment {
@@ -3759,6 +5135,7 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
                     radius_ref: None,
                     radius2_ref: None,
                     external_id: 4,
+                    body: Vec::new(),
                     offset: 0,
                 },
                 crate::feature::FeatureSegment {
@@ -3771,6 +5148,7 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
                     radius_ref: None,
                     radius2_ref: None,
                     external_id: 5,
+                    body: Vec::new(),
                     offset: 0,
                 },
                 crate::feature::FeatureSegment {
@@ -3783,6 +5161,7 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
                     radius_ref: None,
                     radius2_ref: None,
                     external_id: 3,
+                    body: Vec::new(),
                     offset: 0,
                 },
                 crate::feature::FeatureSegment {
@@ -3795,9 +5174,16 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
                     radius_ref: None,
                     radius2_ref: None,
                     external_id: 2,
+                    body: Vec::new(),
                     offset: 0,
                 },
             ],
+            circle_rows: Vec::new(),
+            point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
+            reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
             opaque_rows: Vec::new(),
             offset: 0,
         }),
@@ -3812,20 +5198,24 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
                 crate::feature::FeatureDimension {
                     dimension_type: 2,
                     value: Some(12.0),
+                    value_body: Vec::new(),
                     unresolved_value_token: None,
                     value_unit: crate::feature::DimensionUnit::Millimeters,
                     direction_byte: 0,
                     auxiliary_value: Some(0.0),
+                    auxiliary_body: Vec::new(),
                     external_id: 1,
                     offset: 0,
                 },
                 crate::feature::FeatureDimension {
                     dimension_type: 3,
                     value: Some(4.0),
+                    value_body: Vec::new(),
                     unresolved_value_token: None,
                     value_unit: crate::feature::DimensionUnit::Millimeters,
                     direction_byte: 0,
                     auxiliary_value: Some(0.0),
+                    auxiliary_body: Vec::new(),
                     external_id: 2,
                     offset: 0,
                 },
@@ -3860,7 +5250,7 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
                         [Some(1), Some(1), Some(0), Some(1)],
                         [Some(15), Some(16), Some(15), Some(1)],
                     ]),
-                    sign: 0,
+                    sign: 0xf6,
                     dimension_id: 0,
                     relation_type: 0,
                     body: Vec::new(),
@@ -3924,8 +5314,8 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
         Some(&[8.0, 30.0])
     );
     assert_eq!(
-        crate::decode::resolved_section_points(&definition).get(&8),
-        Some(&[8.0, 40.0])
+        crate::decode::resolved_section_coordinates(&definition).get(&8),
+        Some(&[None, Some(40.0)])
     );
     let mut incomplete_variables = definition.clone();
     incomplete_variables
@@ -3934,6 +5324,17 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
         .expect("variables")
         .declared_count = 2;
     assert!(crate::decode::resolved_section_points(&incomplete_variables).is_empty());
+
+    let mut incomplete_dimensions = definition.clone();
+    incomplete_dimensions
+        .dimensions
+        .as_mut()
+        .expect("dimensions")
+        .declared_count = 3;
+    assert_eq!(
+        crate::decode::resolved_section_coordinates(&incomplete_dimensions).get(&5),
+        Some(&[None, Some(20.0)])
+    );
 
     let mut incomplete_segments = definition;
     incomplete_segments
@@ -3989,8 +5390,8 @@ fn scan_decodes_featdefs_ent_tab_trimmed_entities() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let trim_entities =
-        &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields["trim_entities"];
+    let trim_entities = &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields()
+        ["trim_entities"];
     assert_eq!(
         trim_entities.as_array().expect("trim entity array").len(),
         3
@@ -4022,8 +5423,8 @@ fn scan_decodes_featdefs_vert_tab_entity_pairs() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let trim_vertices =
-        &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields["trim_vertices"];
+    let trim_vertices = &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields()
+        ["trim_vertices"];
     assert_eq!(
         trim_vertices.as_array().expect("trim vertex array").len(),
         1
@@ -4099,7 +5500,7 @@ fn scan_decodes_featdefs_generated_entity_order_table() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let order_rows =
-        &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields["order_rows"];
+        &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields()["order_rows"];
     assert_eq!(order_rows.as_array().expect("order row array").len(), 2);
     assert_eq!(order_rows[0]["external_id"], 283);
     assert_eq!(order_rows[1]["internal_id"], 12);
@@ -4146,8 +5547,8 @@ fn scan_decodes_featdefs_gsec3d_placement_references() {
         .expect("decode");
     let sketches = &result.ir.native.namespace("creo").unwrap().arenas["sketches"];
     assert_eq!(sketches.len(), 1);
-    assert_eq!(sketches[0].fields["source_section"], "FeatDefs");
-    let placement = &sketches[0].fields["section_3d"];
+    assert_eq!(sketches[0].fields()["source_section"], "FeatDefs");
+    let placement = &sketches[0].fields()["section_3d"];
     assert_eq!(placement["sketch_plane_entity_id"], 769);
     assert_eq!(placement["sketch_plane_flip"], true);
     assert_eq!(placement["reference_plane_entity_ids"][0], 5);
@@ -4197,8 +5598,15 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     );
     assert_eq!(dimensions.rows[0].direction_byte, 1);
     assert_eq!(dimensions.rows[0].auxiliary_value, Some(0.0));
+    assert_eq!(dimensions.rows[0].value_body, [0xe4]);
+    assert_eq!(dimensions.rows[0].auxiliary_body, [0x0f]);
     assert_eq!(dimensions.rows[0].external_id, 42);
     assert_eq!(dimensions.rows[1].value, Some(3.0));
+    assert_eq!(
+        dimensions.rows[1].value_body,
+        [0x46, 0x08, 0, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(dimensions.rows[1].auxiliary_body, [0x18]);
     assert_eq!(
         dimensions.rows[1].value_unit,
         crate::feature::DimensionUnit::Millimeters
@@ -4308,7 +5716,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     assert!(matches!(
         &model_feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Unresolved(_),
+            profile: cadmpeg_ir::features::ProfileRef::Native(profile),
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::Termination::Unresolved,
@@ -4317,7 +5725,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
             },
             op: cadmpeg_ir::features::BooleanOp::Unresolved,
             ..
-        }
+        } if profile == "creo:featdefs:sketch#917"
     ));
     assert_eq!(
         model_feature.source_properties["native_parameter.dimension_count"],
@@ -4375,10 +5783,145 @@ fn decode_transfers_decoded_dimensions_from_an_incomplete_table() {
         .unwrap()
         .as_str()
         == "creo:model:sketch_feature#917"));
-    let coverage = &result.report.coverage;
-    assert_eq!(coverage["decoded_feature_dimension_count"], 2);
-    assert_eq!(coverage["transferred_feature_dimension_parameter_count"], 2);
-    assert_eq!(coverage["resolved_feature_dimension_value_count"], 2);
+    let coverage = &result.report;
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_COUNT),
+        2
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT),
+        2
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT),
+        2
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT
+        ),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT
+        ),
+        0
+    );
+    assert_eq!(
+        coverage
+            .coverage_count(crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
+        0
+    );
+}
+
+#[test]
+fn decode_reports_unresolved_dimension_driven_solver_variables() {
+    let mut payload =
+        b"feat_defs_40\0var_arr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
+    payload.extend_from_slice(&[
+        1, 7, 0xed, 0, 0, 0, 0, 0, 0, 0, 0, 0xed, 1, 2, 3, 4, 5, 6, 7, 8, 0, 1, 3, 0xe2,
+    ]);
+    payload.extend_from_slice(&[7, 8, 0xed, 0, 0, 0, 0, 0, 0, 0, 0, 0x0f, 0, 1, 4, 0xe2]);
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode dimension-driven variable");
+    let coverage = &result.report;
+
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
+        2
+    );
+    assert_eq!(
+        coverage.coverage_count(
+            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT
+        ),
+        1
+    );
+    assert_eq!(
+        coverage
+            .coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT
+        ),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT
+        ),
+        0
+    );
+    assert_eq!(
+        coverage
+            .coverage_count(crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
+        2
+    );
+    assert_eq!(
+        coverage.coverage_count(
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT
+        ),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT
+        ),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT),
+        1
+    );
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains(
+                "2 dimension-driven section solver variable(s) retain unresolved exact values: 1 \
+                 coordinate variable(s) lack a complete dimension equation and 1 variable(s) \
+                 have a non-coordinate family",
+            )
+    }));
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains(
+                "1 section solver variable pre-solve estimate(s) use a dimension-driven sentinel",
+            )
+    }));
 }
 
 #[test]
@@ -4417,16 +5960,47 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
     assert_eq!(parameters[2].properties["value_token"], "0104fef2");
 
     let sketches = &result.ir.native.namespace("creo").unwrap().arenas["sketches"];
-    let dimensions = sketches[0].fields["dimensions"]
+    let sketch_fields = sketches[0].fields();
+    let dimensions = sketch_fields["dimensions"]
         .as_array()
         .expect("native dimensions");
     assert_eq!(dimensions[1]["unresolved_value_token"][0], 0);
     assert_eq!(dimensions[1]["unresolved_value_token"][1], 4);
     assert_eq!(dimensions[1]["unresolved_value_token"][2], 166);
+    assert_eq!(dimensions[1]["value_body"][0], 0);
+    assert_eq!(dimensions[1]["value_body"][1], 4);
+    assert_eq!(dimensions[1]["value_body"][2], 166);
+    assert_eq!(dimensions[1]["auxiliary_body"][0], 24);
     assert_eq!(dimensions[2]["unresolved_value_token"][0], 1);
     assert_eq!(dimensions[2]["unresolved_value_token"][1], 4);
     assert_eq!(dimensions[2]["unresolved_value_token"][2], 254);
     assert_eq!(dimensions[2]["unresolved_value_token"][3], 242);
+    let coverage = &result.report;
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_COUNT),
+        3
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT),
+        3
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT),
+        2
+    );
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::report::LossKind::FeatureHistoryRetained
+            && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains(
+                "2 section dimension(s) retain source-native value tokens because their exact \
+                 scalar encodings remain unresolved",
+            )
+    }));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
@@ -4461,11 +6035,11 @@ fn decode_retains_dimensions_from_repeated_feature_definition_ids() {
     let namespace = result.ir.native.namespace("creo").expect("creo namespace");
     let definition_ids = namespace.arenas["feature_definitions"]
         .iter()
-        .map(|record| record.id.as_str())
+        .map(cadmpeg_ir::NativeRecord::id)
         .collect::<BTreeSet<_>>();
     let sketch_ids = namespace.arenas["sketches"]
         .iter()
-        .map(|record| record.id.as_str())
+        .map(cadmpeg_ir::NativeRecord::id)
         .collect::<BTreeSet<_>>();
     assert_eq!(definition_ids.len(), 2);
     assert_eq!(sketch_ids.len(), 2);
@@ -4551,6 +6125,8 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
     let skamp_header = relations.skamp_header.as_ref().expect("skamp header");
     assert_eq!(skamp_header.declared_count, 1);
     assert_eq!(skamp_header.entity_ref, 107);
+    assert!(relations.offset < skamp_header.offset);
+    assert!(skamp_header.offset <= relations.skamps[0].offset);
     assert_eq!(relations.triples.len(), 2);
     assert_eq!(relations.triples[0].relation_id, Some(7));
     assert_eq!(relations.triples[0].equation_id, Some(8));
@@ -4560,12 +6136,14 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
     let triples_header = relations.triples_header.as_ref().expect("triples header");
     assert_eq!(triples_header.declared_count, 2);
     assert_eq!(triples_header.entity_ref, 109);
+    assert!(skamp_header.offset < triples_header.offset);
+    assert!(triples_header.offset <= relations.triples[0].offset);
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let headers = result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields
-        ["table_headers"]
+    let sketch_fields = result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields();
+    let headers = sketch_fields["table_headers"]
         .as_array()
         .expect("table headers");
     let solver = headers
@@ -4582,6 +6160,158 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
     assert_eq!(triples["declared_count"], 2);
     assert_eq!(triples["entity_ref"], 109);
     assert_eq!(triples["row_count"], 2);
+    let coverage = &result.report;
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_RELATION_COUNT),
+        2
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SKAMP_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_SKAMP_ROW_COUNT),
+        0
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_RELATION_TRIPLE_COUNT),
+        2
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_RELATION_TRIPLE_ROW_COUNT),
+        0
+    );
+}
+
+#[test]
+fn decode_reports_missing_declared_constraint_table_rows() {
+    let mut payload = b"feat_defs_40\0relat_ptr\0\xf4\x04\xf8\x05\xf7\x6a\xfb\xe2\
+        \xe0\x01id\0\xe0\x01used\0\xe0\x01type\0\xf1\xf7\x6a\xe2\
+        \x34\x00\x05\x01\xf6\xe4\x00\xe6\x0f\x10\x0f\xe4\x00\x00\x00\xe2\
+        \x35\x01\x07\x29\x32\xf6\x00\xe6\x0f\x10\x0f\xe4\x01\x2a\x03\xe2"
+        .to_vec();
+    payload.extend_from_slice(
+        b"skamp_ptr\0\xf3\xf8\x02\xf7\x6b\xfb\xe2\
+          \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\
+          \xe0\x01status\0\x04\xe0\x00items\0\xf8\x01\xf7\x6c\xfb\xe2\
+          \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\xf1\xf7\x6c\xe2\
+          \xf3\xf7\x6b\xe2\
+          triples_ptr\0\xf4\x04\xf8\x03\xf7\x6d\xfb\xe2\
+          \xe0\x01rel_id\0\x07\xe0\x01eqn_id\0\x08\xe0\x01skamp_id\0\x05\
+          \xf1\xf7\x6d\xe2\xf6\x09\x05\xe2",
+    );
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode incomplete constraint tables");
+    let coverage = &result.report;
+
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_RELATION_COUNT),
+        2
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SKAMP_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_SKAMP_ROW_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::DECODED_FEATURE_RELATION_TRIPLE_COUNT),
+        2
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::MISSING_FEATURE_RELATION_TRIPLE_ROW_COUNT),
+        1
+    );
+    for message in [
+        "1 declared section relation row(s) did not decode",
+        "1 declared section incidence row(s) did not decode",
+        "1 declared section relation-incidence join row(s) did not decode",
+    ] {
+        assert!(result.report.losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::report::LossKind::FeatureHistoryRetained
+                && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
+                && loss.severity == cadmpeg_ir::Severity::Warning
+                && loss.message.contains(message)
+        }));
+    }
+}
+
+#[test]
+fn decode_reports_malformed_relation_table_allocation_count() {
+    let payload =
+        b"feat_defs_40\0relat_ptr\0\xf4\x04\xf8\x00\xf7\x6a\xfb\xe2schema\xf1\xf7\x6a\xe2".to_vec();
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode malformed relation table");
+
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT),
+        1
+    );
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::report::LossKind::FeatureHistoryRetained
+            && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss
+                .message
+                .contains("use the invalid zero allocation count")
+    }));
+}
+
+#[test]
+fn decode_accepts_the_count_one_empty_relation_table() {
+    let payload =
+        b"feat_defs_40\0relat_ptr\0\xf4\x04\xf8\x01\xf7\x6a\xfb\xe2schema\xf1\xf7\x6a\xe2".to_vec();
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode empty relation table");
+
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_FEATURE_RELATION_COUNT),
+        0
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT),
+        0
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT),
+        0
+    );
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("section relation table")));
 }
 
 #[test]
@@ -4631,7 +6361,8 @@ fn scan_decodes_featdefs_saved_line_prototype_and_replay() {
     payload.extend_from_slice(&[0xe4, 0xe4, 0x0f, 0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0x0f, 0xe4, 0xe3]);
     payload.extend_from_slice(b"\xe0\x02local_sys\0");
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(data.clone());
 
     let saved = scan.features.definitions[0]
         .saved_section
@@ -4656,6 +6387,26 @@ fn scan_decodes_featdefs_saved_line_prototype_and_replay() {
     assert_eq!(second.entity_id, 43);
     assert_eq!(second.references, vec![4]);
     assert_eq!(second.attributes, vec![[1, 2, 3, 4, 5]]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let native_saved = &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields()
+        ["saved_entities"];
+    for (native, expected) in native_saved
+        .as_array()
+        .expect("saved entity array")
+        .iter()
+        .zip([&first.body, &second.body])
+    {
+        let body = native["body"]
+            .as_array()
+            .expect("saved line body")
+            .iter()
+            .map(|byte| byte.as_u64().expect("byte") as u8)
+            .collect::<Vec<_>>();
+        assert_eq!(&body, expected);
+    }
 }
 
 #[test]
@@ -4706,12 +6457,25 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let saved =
-        &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields["saved_entities"];
+    let saved = &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields()
+        ["saved_entities"];
     assert_eq!(saved.as_array().expect("saved entity array").len(), 3);
     assert_eq!(saved[0]["kind"], "arc");
     assert_eq!(saved[1]["kind"], "circle");
     assert_eq!(saved[2]["kind"], "dummy");
+    for (native, expected) in saved.as_array().expect("saved entity array").iter().zip([
+        &arc.body,
+        &circle.body,
+        &dummy.body,
+    ]) {
+        let body = native["body"]
+            .as_array()
+            .expect("saved entity body")
+            .iter()
+            .map(|byte| byte.as_u64().expect("byte") as u8)
+            .collect::<Vec<_>>();
+        assert_eq!(&body, expected);
+    }
 }
 
 #[test]
@@ -4744,11 +6508,11 @@ fn decode_transfers_equation_verified_model_reference_circles() {
         "MdlRefInfo:arc_z:45"
     );
     let record = &result.ir.native.namespace("creo").unwrap().arenas["reference_circles"][0];
-    assert_eq!(record.fields["entity_id"], 45);
-    assert_eq!(record.fields["center_source"], "endpoint_midpoint");
+    assert_eq!(record.fields()["entity_id"], 45);
+    assert_eq!(record.fields()["center_source"], "endpoint_midpoint");
     assert_annotation(
         &result.source_fidelity.annotations,
-        &record.id,
+        record.id(),
         "creo:MdlRefInfo",
         scan.references.circles[0].offset as u64,
         "reference_circle_record",
@@ -4778,9 +6542,9 @@ fn decode_retains_line3d_original_length() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let record = &result.ir.native.namespace("creo").unwrap().arenas["reference_lines"][0];
-    assert_eq!(record.fields["family"], "line3d");
-    assert_eq!(record.fields["entity_id"], 35);
-    assert_eq!(record.fields["original_length"], 1.0);
+    assert_eq!(record.fields()["family"], "line3d");
+    assert_eq!(record.fields()["entity_id"], 35);
+    assert_eq!(record.fields()["original_length"], 1.0);
     let curve = result
         .ir
         .model
@@ -4847,11 +6611,13 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
         }
     )));
     let record = &result.ir.native.namespace("creo").unwrap().arenas["reference_ellipses"][0];
-    assert_eq!(record.fields["source_entity_id"], 43);
-    assert_eq!(record.fields["major_radius"], 1.0);
-    assert_eq!(record.fields["minor_radius"], 1.0);
+    assert_eq!(record.fields()["source_entity_id"], 43);
+    assert_eq!(record.fields()["major_radius"], 1.0);
+    assert_eq!(record.fields()["minor_radius"], 1.0);
     assert_eq!(
-        result.report.coverage["transferred_reference_ellipse_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_REFERENCE_ELLIPSE_COUNT),
         1
     );
     let ellipse = result
@@ -4871,7 +6637,7 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
     }));
     assert_annotation(
         &result.source_fidelity.annotations,
-        &record.id,
+        record.id(),
         "creo:MdlRefInfo",
         scan.references.ellipses[0].offset as u64,
         "reference_ellipse_carrier",
@@ -4914,9 +6680,9 @@ fn scan_discovers_labeled_curve_prototypes() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["curve_prototypes"];
-    assert_eq!(records[0].fields["curve_id"], 7);
-    assert_eq!(records[0].fields["type_byte"], 8);
-    assert_eq!(records[0].fields["generating_feature_id"], 4);
+    assert_eq!(records[0].fields()["curve_id"], 7);
+    assert_eq!(records[0].fields()["type_byte"], 8);
+    assert_eq!(records[0].fields()["generating_feature_id"], 4);
 }
 
 #[test]
@@ -4945,12 +6711,18 @@ fn decode_preserves_counted_curve_expression_programs() {
         .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"];
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].fields["entity_id"], 0x094c);
-    assert_eq!(records[0].fields["lines"][2]["text"], "theta=w*t*360");
-    assert_eq!(records[0].fields["assignments"][2]["name"], "theta");
-    assert_eq!(records[0].fields["assignments"][2]["dependencies"][0], "w");
-    assert_eq!(records[0].fields["assignments"][0]["value"], 5.0);
-    assert_eq!(records[0].fields["local_system"]["dimensions"], 4);
+    assert_eq!(records[0].fields()["entity_id"], 0x094c);
+    assert_eq!(records[0].fields()["lines"][2]["text"], "theta=w*t*360");
+    assert_eq!(
+        records[0].fields()["assignments"][2]["target"]["name"],
+        "theta"
+    );
+    assert_eq!(
+        records[0].fields()["assignments"][2]["dependencies"][0],
+        "w"
+    );
+    assert_eq!(records[0].fields()["assignments"][0]["value"], 5.0);
+    assert_eq!(records[0].fields()["local_system"]["dimensions"], 4);
     assert_eq!(result.ir.model.features.len(), 1);
     assert!(matches!(
         &result.ir.model.features[0].definition,
@@ -4963,6 +6735,23 @@ fn decode_preserves_counted_curve_expression_programs() {
             ..
         }
     ));
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_AXIS_HELIX_FEATURE_COUNT),
+        1
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::TRANSFERRED_INCOMPLETE_OTHER_CONSTRUCTION_FEATURE_COUNT
+        ),
+        1
+    );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("native-axis helix=1")));
     assert_eq!(result.ir.model.parameters.len(), 4);
     assert_eq!(result.ir.model.parameters[0].name, "r");
     assert_eq!(
@@ -4997,7 +6786,7 @@ fn decode_preserves_counted_curve_expression_programs() {
     );
     assert_annotation(
         &result.source_fidelity.annotations,
-        &records[0].id,
+        records[0].id(),
         "creo:DEPDB_DATA",
         scan.curves.expressions[0].expression_offset as u64,
         "curve_expression_program",
@@ -5063,15 +6852,529 @@ fn decode_retains_complete_scoped_curve_expression_dependencies() {
         "d1:2,PARAM:FID_20"
     );
     assert!(!parameter.properties.contains_key("ambiguous_dependencies"));
-    let coverage = &result.report.coverage;
+    let coverage = &result.report;
     assert_eq!(
-        coverage["decoded_active_curve_expression_assignment_count"],
+        coverage.coverage_count(crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
         1
     );
-    assert_eq!(coverage["transferred_curve_expression_parameter_count"], 1);
     assert_eq!(
-        coverage["evaluated_active_curve_expression_assignment_count"],
+        coverage.coverage_count(crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage
+            .coverage_count(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
         0
+    );
+}
+
+#[test]
+fn decode_retains_simultaneous_curve_expression_blocks() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x09area=100\0base=10\0SOLVE\0width=height+1\0\
+        offset=base+1\0width*height=area\0FOR width, height\0\
+        present=exists('width')\0result=area+1\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    assert_eq!(
+        result
+            .ir
+            .model
+            .parameters
+            .iter()
+            .map(|parameter| parameter.name.as_str())
+            .collect::<Vec<_>>(),
+        ["area", "base", "offset", "present", "result"]
+    );
+    assert_eq!(
+        result
+            .ir
+            .model
+            .parameters
+            .iter()
+            .map(|parameter| parameter.value.as_ref())
+            .collect::<Vec<_>>(),
+        [
+            Some(&cadmpeg_ir::features::ParameterValue::Real(100.0)),
+            Some(&cadmpeg_ir::features::ParameterValue::Real(10.0)),
+            Some(&cadmpeg_ir::features::ParameterValue::Real(11.0)),
+            Some(&cadmpeg_ir::features::ParameterValue::Real(1.0)),
+            Some(&cadmpeg_ir::features::ParameterValue::Real(101.0)),
+        ]
+    );
+
+    let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    assert_eq!(native.fields()["solve_blocks"][0]["variables"][0], "width");
+    assert_eq!(native.fields()["solve_blocks"][0]["variables"][1], "height");
+    assert_eq!(
+        native.fields()["solve_blocks"][0]["equations"][0]["left"],
+        "width"
+    );
+    assert_eq!(
+        native.fields()["solve_blocks"][0]["equations"][0]["right"],
+        "height+1"
+    );
+    assert_eq!(
+        native.fields()["solve_blocks"][0]["equations"][1]["dependencies"][2],
+        "area"
+    );
+    assert_eq!(
+        native.fields()["solve_blocks"][0]["assignments"][0]["target"]["name"],
+        "offset"
+    );
+    assert_eq!(
+        native.fields()["solve_blocks"][0]["assignments"][0]["dependencies"][0],
+        "base"
+    );
+    assert_eq!(
+        native.fields()["solve_blocks"][0]["assignments"][0]["value"],
+        11.0
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        5
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        5
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT),
+        1
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SIMULTANEOUS_EQUATION_COUNT
+        ),
+        2
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_ASSIGNMENT_COUNT
+        ),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT),
+        2
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::UNRESOLVED_ACTIVE_CURVE_EXPRESSION_SOLVE_CONTROL_COUNT
+        ),
+        0
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT),
+        0
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT
+        ),
+        0
+    );
+    assert!(native.fields()["solve_blocks"][0]["solutions"][0].is_null());
+    assert!(native.fields()["solve_blocks"][0]["solutions"][1].is_null());
+}
+
+#[test]
+fn decode_evaluates_affine_simultaneous_curve_expression_blocks() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x08x=0\0y=0\0sum=10\0SOLVE\0\
+        x+y=sum\0x-y=2\0FOR x,y\0product=x*y\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode affine solve block");
+
+    let values = result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (parameter.name.as_str(), parameter.value.as_ref()))
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(
+        values["x"],
+        Some(&cadmpeg_ir::features::ParameterValue::Real(6.0))
+    );
+    assert_eq!(
+        values["y"],
+        Some(&cadmpeg_ir::features::ParameterValue::Real(4.0))
+    );
+    assert_eq!(
+        values["sum"],
+        Some(&cadmpeg_ir::features::ParameterValue::Real(10.0))
+    );
+    assert_eq!(
+        values["product"],
+        Some(&cadmpeg_ir::features::ParameterValue::Real(24.0))
+    );
+
+    let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    assert_eq!(native.fields()["solve_blocks"][0]["solutions"][0], 6.0);
+    assert_eq!(native.fields()["solve_blocks"][0]["solutions"][1], 4.0);
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT),
+        1
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT
+        ),
+        2
+    );
+    assert!(!result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("ordered equations and unknowns without solved values")
+    }));
+}
+
+#[test]
+fn decode_evaluates_dimensioned_affine_simultaneous_curve_expression_blocks() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x06x=0[mm]\0y=0[mm]\0SOLVE\0\
+        x+y=10[mm]\0x-y=2[mm]\0FOR x,y\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode dimensioned affine solve block");
+
+    let values = result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (parameter.name.as_str(), parameter.value.as_ref()))
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(
+        values["x"],
+        Some(&cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(6.0)
+        ))
+    );
+    assert_eq!(
+        values["y"],
+        Some(&cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(4.0)
+        ))
+    );
+
+    let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    assert_eq!(native.fields()["solve_blocks"][0]["solutions"][0], 6.0);
+    assert_eq!(native.fields()["solve_blocks"][0]["solutions"][1], 4.0);
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT
+        ),
+        2
+    );
+}
+
+#[test]
+fn decode_evaluates_dimensioned_relation_string_conversion() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x03length_text=rtos(1[in],1)\0\
+        angle_text=rtos(0.5[rad],3)\0force_text=rtos(2[N],0)\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let values = result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (parameter.name.as_str(), parameter.value.as_ref()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+
+    assert_eq!(
+        values["length_text"],
+        Some(&cadmpeg_ir::features::ParameterValue::String(
+            "25.4".to_owned()
+        ))
+    );
+    assert_eq!(
+        values["angle_text"],
+        Some(&cadmpeg_ir::features::ParameterValue::String(
+            "28.648".to_owned()
+        ))
+    );
+    assert_eq!(
+        values["force_text"],
+        Some(&cadmpeg_ir::features::ParameterValue::String(
+            "2000".to_owned()
+        ))
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        3
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
+fn decode_retains_scoped_model_name_call_as_model_context() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x01component_name=rel_model_name:27()\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let [parameter] = result.ir.model.parameters.as_slice() else {
+        panic!("one curve-expression parameter");
+    };
+
+    assert_eq!(parameter.name, "component_name");
+    assert_eq!(parameter.expression, "rel_model_name:27()");
+    assert_eq!(parameter.value, None);
+    assert!(parameter.dependencies.is_empty());
+    assert!(!parameter.properties.contains_key("external_dependencies"));
+    let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    assert!(native.fields()["assignments"][0]["dependencies"]
+        .as_array()
+        .is_some_and(Vec::is_empty));
+}
+
+#[test]
+fn decode_retains_scoped_assignment_targets_without_emitting_local_parameters() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x04\
+        d7:0=3\0\
+        width:fid_25:cid_12=5\0\
+        copy=d7:0*2\0\
+        present=exists('width:fid_25:cid_12')\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let [copy, present] = result.ir.model.parameters.as_slice() else {
+        panic!("two local curve-expression parameters");
+    };
+
+    assert_eq!(copy.name, "copy");
+    assert_eq!(
+        copy.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(6.0))
+    );
+    assert_eq!(present.name, "present");
+    assert_eq!(
+        present.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(1.0))
+    );
+    let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    assert_eq!(
+        native.fields()["assignments"][0]["target"]["kind"],
+        "scoped_symbol"
+    );
+    assert_eq!(native.fields()["assignments"][0]["target"]["name"], "d7:0");
+    assert_eq!(
+        native.fields()["assignments"][1]["target"]["name"],
+        "width:fid_25:cid_12"
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SCOPED_SYMBOL_ASSIGNMENT_COUNT
+        ),
+        2
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT),
+        2
+    );
+}
+
+#[test]
+fn decode_retains_system_symbol_targets_without_emitting_user_parameters() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x02d42=5\0result=d42+1\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let [parameter] = result.ir.model.parameters.as_slice() else {
+        panic!("one local curve-expression parameter");
+    };
+
+    assert_eq!(parameter.name, "result");
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(6.0))
+    );
+    assert_eq!(parameter.properties["external_dependencies"], "d42");
+    let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    assert_eq!(
+        native.fields()["assignments"][0]["target"]["kind"],
+        "system_symbol"
+    );
+    assert_eq!(native.fields()["assignments"][0]["target"]["name"], "d42");
+    assert_eq!(
+        native.fields()["assignments"][0]["target"]["family"],
+        "dimension"
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SYSTEM_SYMBOL_ASSIGNMENT_COUNT
+        ),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT),
+        1
+    );
+}
+
+#[test]
+fn decode_retains_registered_function_write_targets_without_emitting_parameters() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x02\
+        store_value(component,row,column)=driver\0\
+        result=1\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let [parameter] = result.ir.model.parameters.as_slice() else {
+        panic!("one local curve-expression parameter");
+    };
+
+    assert_eq!(parameter.name, "result");
+    let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    assert_eq!(
+        native.fields()["assignments"][0]["target"]["kind"],
+        "function_write"
+    );
+    assert_eq!(
+        native.fields()["assignments"][0]["target"]["name"],
+        "store_value"
+    );
+    let fields = native.fields();
+    let arguments = fields["assignments"][0]["target"]["arguments"]
+        .as_array()
+        .expect("function arguments");
+    assert_eq!(arguments.len(), 3);
+    assert_eq!(arguments[0], "component");
+    assert_eq!(arguments[1], "row");
+    assert_eq!(arguments[2], "column");
+    let dependencies = fields["assignments"][0]["dependencies"]
+        .as_array()
+        .expect("function dependencies");
+    assert_eq!(dependencies.len(), 4);
+    assert_eq!(dependencies[0], "component");
+    assert_eq!(dependencies[1], "row");
+    assert_eq!(dependencies[2], "column");
+    assert_eq!(dependencies[3], "driver");
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_FUNCTION_WRITE_ASSIGNMENT_COUNT
+        ),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT),
+        1
+    );
+}
+
+#[test]
+fn decode_retains_table_cell_assignments_without_emitting_scalar_parameters() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x03\
+        value(samples,row_index,column_index)=driver*2\0\
+        VALUE(series,2)=5\0\
+        after=value(samples,row_index,column_index)\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let [parameter] = result.ir.model.parameters.as_slice() else {
+        panic!("one scalar curve-expression parameter");
+    };
+    assert_eq!(parameter.name, "after");
+    assert_eq!(
+        parameter.properties["external_dependencies"],
+        "samples,row_index,column_index"
+    );
+    let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
+    let first = &native.fields()["assignments"][0];
+    assert_eq!(first["target"]["kind"], "table_cell");
+    assert_eq!(first["target"]["parameter"], "samples");
+    assert_eq!(first["target"]["row"], "row_index");
+    assert_eq!(first["target"]["column"], "column_index");
+    assert_eq!(first["dependencies"][0], "samples");
+    assert_eq!(first["dependencies"][1], "row_index");
+    assert_eq!(first["dependencies"][2], "column_index");
+    assert_eq!(first["dependencies"][3], "driver");
+    let second = &native.fields()["assignments"][1];
+    assert_eq!(second["target"]["kind"], "table_cell");
+    assert_eq!(second["target"]["parameter"], "series");
+    assert_eq!(second["target"]["row"], "2");
+    assert!(second["target"]["column"].is_null());
+    assert_eq!(
+        result.ir.model.features[0].source_content,
+        [cadmpeg_ir::features::FeatureSourceContent::Parameter(
+            parameter.id.clone()
+        )]
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        3
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT),
+        1
+    );
+    assert_eq!(
+        result.report.coverage_count(
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_TABLE_CELL_ASSIGNMENT_COUNT
+        ),
+        2
     );
 }
 
@@ -5146,15 +7449,18 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
         .namespace("creo")
         .expect("Creo native data")
         .arenas["curve_expressions"][0];
-    assert_eq!(native.fields["prohibited_constructs"][0], "itos");
-    let coverage = &result.report.coverage;
+    assert_eq!(native.fields()["prohibited_constructs"][0], "itos");
+    let coverage = &result.report;
     assert_eq!(
-        coverage["prohibited_active_curve_expression_record_count"],
+        coverage.coverage_count(crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_RECORD_COUNT),
         1
     );
-    assert_eq!(coverage["prohibited_active_curve_expression_kind_count"], 1);
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_KIND_COUNT),
+        1
+    );
     assert!(result.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Attribute
+        loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(
                 "1 active curve-equation record(s) containing prohibited datum-curve constructs \
@@ -5162,7 +7468,7 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
             )
     }));
     assert!(result.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::LossCategory::Attribute
+        loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss.message.contains(
                 "1 prohibited datum-curve construct(s) across active curve-equation records were \
@@ -5177,10 +7483,10 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
             "1 active curve-equation record(s) containing prohibited datum-curve constructs"
         )));
     assert_eq!(
-        native.fields["assignments"][4]["expression"],
+        native.fields()["assignments"][4]["expression"],
         "rtos(123.456,2)"
     );
-    assert!(native.fields["assignments"][5]["value"].is_null());
+    assert!(native.fields()["assignments"][5]["value"].is_null());
     assert_eq!(parameters[4].expression, "rtos(123.456,2)");
     assert_eq!(parameters[5].expression, "rel_model_type()");
     assert_eq!(parameters[5].value, None);
@@ -5243,8 +7549,11 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
     };
     assert!((copy.0 - 76.2).abs() < 1e-12);
     let native = &result.ir.native.namespace("creo").unwrap().arenas["curve_expressions"][0];
-    assert_eq!(native.fields["assignments"][0]["name"], "span");
-    assert_eq!(native.fields["assignments"][0]["declared_unit"], "inch");
+    assert_eq!(native.fields()["assignments"][0]["target"]["name"], "span");
+    assert_eq!(
+        native.fields()["assignments"][0]["target"]["declared_unit"],
+        "inch"
+    );
     assert_eq!(parameters[2].properties["declared_unit"], "N/mm^2");
     assert_eq!(
         parameters[2].properties["evaluated_canonical_value"],
@@ -5255,8 +7564,11 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
         "length:-1,mass:1,time:-2,angle:0,temperature:0"
     );
     assert_eq!(parameters[2].value, None);
-    assert_eq!(native.fields["assignments"][2]["value"]["value"], 2_000.0);
-    assert_eq!(native.fields["assignments"][2]["value"]["length_power"], -1);
+    assert_eq!(native.fields()["assignments"][2]["value"]["value"], 2_000.0);
+    assert_eq!(
+        native.fields()["assignments"][2]["value"]["length_power"],
+        -1
+    );
     let Some(cadmpeg_ir::features::ParameterValue::Angle(angle)) = &parameters[3].value else {
         panic!("angle parameter");
     };
@@ -5294,33 +7606,37 @@ fn decode_transfers_curve_expression_conditional_activation() {
     assert!(!parameters[3]
         .properties
         .contains_key("ambiguous_dependencies"));
-    let native_assignments = result
+    let curve_expression_fields = result
         .ir
         .native
         .namespace("creo")
         .expect("Creo native data")
         .arenas["curve_expressions"][0]
-        .fields["assignments"]
+        .fields();
+    let native_assignments = curve_expression_fields["assignments"]
         .as_array()
         .expect("assignments");
     assert_eq!(native_assignments[2]["activation"], "inactive");
-    let prohibited = result
-        .ir
-        .native
-        .namespace("creo")
-        .expect("Creo native data")
-        .arenas["curve_expressions"][0]
-        .fields["prohibited_constructs"]
+    let prohibited = curve_expression_fields["prohibited_constructs"]
         .as_array()
         .expect("prohibited constructs");
     assert_eq!(prohibited.len(), 3);
     assert_eq!(prohibited[0], "else");
     assert_eq!(prohibited[1], "endif");
     assert_eq!(prohibited[2], "if");
-    let coverage = &result.report.coverage;
-    assert_eq!(coverage["active_curve_expression_assignment_count"], 3);
-    assert_eq!(coverage["inactive_curve_expression_assignment_count"], 1);
-    assert_eq!(coverage["conditional_curve_expression_assignment_count"], 0);
+    let coverage = &result.report;
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        3
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::INACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        1
+    );
+    assert_eq!(
+        coverage.coverage_count(crate::coverage::CONDITIONAL_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        0
+    );
 }
 
 #[test]
@@ -5411,7 +7727,7 @@ fn decode_transfers_reassigned_curve_expression_names_without_identity_collision
             .namespace("creo")
             .expect("Creo native data")
             .arenas["curve_expressions"][0]
-            .fields["assignments"]
+            .fields()["assignments"]
             .as_array()
             .expect("assignments")
             .len(),
@@ -5499,20 +7815,43 @@ fn scan_discovers_curve_halfedge_topology() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let row = &result.ir.native.namespace("creo").unwrap().arenas["curve_topology_rows"][0];
-    assert_eq!(row.fields["curve_id"], 7);
-    assert_eq!(row.fields["type_byte"], 8);
-    assert_eq!(row.fields["feature_id"], 4);
-    assert_eq!(row.fields["directions"][0], 1);
-    assert_eq!(row.fields["directions"][1], 0xf6);
-    assert_eq!(row.fields["faces"][0], 10);
-    assert_eq!(row.fields["faces"][1], 11);
-    assert_eq!(row.fields["next_edges"][0], 7);
-    assert_eq!(row.fields["next_edges"][1], 7);
+    assert_eq!(row.fields()["curve_id"], 7);
+    assert_eq!(row.fields()["type_byte"], 8);
+    assert_eq!(row.fields()["feature_id"], 4);
+    assert_eq!(row.fields()["directions"][0], 1);
+    assert_eq!(row.fields()["directions"][1], 0xf6);
+    assert_eq!(row.fields()["faces"][0], 10);
+    assert_eq!(row.fields()["faces"][1], 11);
+    assert_eq!(row.fields()["next_edges"][0], 7);
+    assert_eq!(row.fields()["next_edges"][1], 7);
     assert_eq!(
         result.source_fidelity.annotations.provenance["creo:visibgeom:curve_topology#7"]
             .tag
             .as_deref(),
         Some("curve_topology_row")
+    );
+    let curve = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "creo:visibgeom:curve#7")
+        .expect("retained unresolved curve carrier");
+    assert!(matches!(
+        curve.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Unknown { record: Some(_) }
+    ));
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::RETAINED_UNKNOWN_VISIBLE_CURVE_ROW_COUNT),
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::UNTRANSFERRED_VISIBLE_CURVE_ROW_COUNT),
+        1
     );
 }
 
@@ -5564,22 +7903,22 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let record = &result.ir.native.namespace("creo").unwrap().arenas["curve_parameters"][0];
-    assert_eq!(record.fields["curve_id"], 7);
-    assert_eq!(record.fields["type_byte"], 8);
+    assert_eq!(record.fields()["curve_id"], 7);
+    assert_eq!(record.fields()["type_byte"], 8);
     assert_eq!(
-        record.fields["body"].as_array().unwrap().len(),
+        record.fields()["body"].as_array().unwrap().len(),
         parameters.body.len()
     );
-    assert_eq!(record.fields["scalar_values"][2], 3.0);
-    assert_eq!(record.fields["scalar_tokens"][2]["offset"], 5);
-    assert_eq!(record.fields["scalar_tokens"][2]["raw"][0], 0x46);
-    assert_eq!(record.fields["skipped_references"][0], 256);
-    assert_eq!(record.fields["references"][0]["entity_id"], 256);
-    assert_eq!(record.fields["references"][0]["offset"], 2);
-    assert_eq!(record.fields["opaque_spans"][0]["offset"], 13);
-    assert_eq!(record.fields["opaque_spans"][0]["raw"][0], 0xff);
-    assert_eq!(record.fields["suffix"], "unique");
-    assert!(record.fields["suffix_candidate_count"].is_null());
+    assert_eq!(record.fields()["scalar_values"][2], 3.0);
+    assert_eq!(record.fields()["scalar_tokens"][2]["offset"], 5);
+    assert_eq!(record.fields()["scalar_tokens"][2]["raw"][0], 0x46);
+    assert_eq!(record.fields()["skipped_references"][0], 256);
+    assert_eq!(record.fields()["references"][0]["entity_id"], 256);
+    assert_eq!(record.fields()["references"][0]["offset"], 2);
+    assert_eq!(record.fields()["opaque_spans"][0]["offset"], 13);
+    assert_eq!(record.fields()["opaque_spans"][0]["raw"][0], 0xff);
+    assert_eq!(record.fields()["suffix"], "unique");
+    assert!(record.fields()["suffix_candidate_count"].is_null());
     assert_eq!(
         result.source_fidelity.annotations.provenance["creo:visibgeom:curve_parameter#7"]
             .tag
@@ -5626,10 +7965,10 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
         .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["pcurve_endpoints"];
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].id, "creo:visibgeom:pcurve_endpoints#7");
-    assert_eq!(records[0].fields["faces"][0], 10);
-    assert_eq!(records[0].fields["faces"][1], 11);
-    assert_eq!(records[0].fields["source_form"], "positional");
+    assert_eq!(records[0].id(), "creo:visibgeom:pcurve_endpoints#7");
+    assert_eq!(records[0].fields()["faces"][0], 10);
+    assert_eq!(records[0].fields()["faces"][1], 11);
+    assert_eq!(records[0].fields()["source_form"], "positional");
 
     let mut mismatched_topology = scan.curves.topology_rows.clone();
     mismatched_topology[0].type_byte = 1;
@@ -5727,11 +8066,11 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["fc_curve_coordinates"];
-    assert_eq!(records[0].fields["curve_id"], 7);
-    assert_eq!(records[0].fields["values_mm"][1], -3.0);
-    assert_eq!(records[0].fields["tokens"][1]["offset"], 10);
-    assert_eq!(records[0].fields["tokens"][1]["length"], 8);
-    assert_eq!(records[0].fields["opaque_spans"][1]["raw"][0], 0xff);
+    assert_eq!(records[0].fields()["curve_id"], 7);
+    assert_eq!(records[0].fields()["values_mm"][1], -3.0);
+    assert_eq!(records[0].fields()["tokens"][1]["offset"], 10);
+    assert_eq!(records[0].fields()["tokens"][1]["length"], 8);
+    assert_eq!(records[0].fields()["opaque_spans"][1]["raw"][0], 0xff);
 }
 
 #[test]
@@ -5748,12 +8087,7 @@ fn decode_withholds_unplaced_cylinder_prototype_frame() {
             &DecodeOptions::default(),
         )
         .expect("decode");
-    assert!(result
-        .ir
-        .model
-        .surfaces
-        .iter()
-        .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#7"));
+    assert_unknown_visible_surface(&result.ir.model.surfaces, 7);
 }
 
 #[test]
@@ -5807,12 +8141,7 @@ fn decode_withholds_complete_cylinder_prototype_without_positive_radius() {
                 &DecodeOptions::default(),
             )
             .expect("decode");
-        assert!(result
-            .ir
-            .model
-            .surfaces
-            .iter()
-            .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#7"));
+        assert_unknown_visible_surface(&result.ir.model.surfaces, 7);
     }
 }
 
@@ -5894,6 +8223,38 @@ fn decode_does_not_promote_untyped_terminal_torus_scalars() {
 }
 
 #[test]
+fn decode_replays_a_unique_section_prototype_minor_radius_at_type26_row_end() {
+    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0, 0x18, 0x0c]);
+    payload.extend_from_slice(&[0x29, 0xc9, 0x99]);
+    payload.push(0xe3);
+    payload.extend_from_slice(b"srf_prim_ptr(torus)\0\xe0\x02local_sys\0\xf9\x04\x03");
+    for value in [1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, -2.0] {
+        push_generated_scalar(&mut payload, value);
+    }
+    payload.extend_from_slice(b"\xe0\x01radius1\0\xe4\xe0\x01radius2\0\x29\xc9\x99");
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
+    let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
+    assert_eq!(
+        native.fields()["replayed_torus_minor_radius"],
+        0.199_999_999_999_999_98
+    );
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::DECODED_TYPE26_REPLAYED_MINOR_RADIUS_COUNT),
+        1
+    );
+}
+
+#[test]
 fn decode_places_first_plane_instance_from_named_prototype() {
     let mut payload = b"srf_array\0\xf8\x01".to_vec();
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
@@ -5923,7 +8284,9 @@ fn decode_places_first_plane_instance_from_named_prototype() {
         }
     );
     assert_eq!(
-        result.report.coverage["transferred_first_instance_prototype_surface_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT),
         1
     );
 }
@@ -5978,14 +8341,11 @@ fn decode_binds_prototype_between_same_family_rows_to_the_preceding_instance() {
         .surfaces
         .iter()
         .any(|surface| surface.id.as_str() == "creo:visibgeom:surface#7"));
-    assert!(result
-        .ir
-        .model
-        .surfaces
-        .iter()
-        .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#8"));
+    assert_unknown_visible_surface(&result.ir.model.surfaces, 8);
     assert_eq!(
-        result.report.coverage["transferred_first_instance_prototype_surface_count"],
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT),
         1
     );
 }
@@ -6005,12 +8365,7 @@ fn decode_withholds_competing_named_prototypes_for_one_surface_row() {
         )
         .expect("decode");
 
-    assert!(result
-        .ir
-        .model
-        .surfaces
-        .iter()
-        .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#7"));
+    assert_unknown_visible_surface(&result.ir.model.surfaces, 7);
 }
 
 #[test]
@@ -6197,10 +8552,10 @@ fn scan_validates_fc05_circle_from_record_points() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["fc05_circles"];
-    assert_eq!(records[0].fields["curve_id"], 7);
-    assert_eq!(records[0].fields["radius_mm"], 1.0);
-    assert_eq!(records[0].fields["sample_direction_row_frame"][0], 1.0);
-    assert_eq!(records[0].fields["parameter_sign"], 1);
+    assert_eq!(records[0].fields()["curve_id"], 7);
+    assert_eq!(records[0].fields()["radius_mm"], 1.0);
+    assert_eq!(records[0].fields()["sample_direction_row_frame"][0], 1.0);
+    assert_eq!(records[0].fields()["parameter_sign"], 1);
 }
 
 #[test]
@@ -6338,10 +8693,10 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         .expect("decode");
     let cap_pairs = &result.ir.native.namespace("creo").unwrap().arenas["fc05_cylinder_cap_pairs"];
     assert_eq!(cap_pairs.len(), 1);
-    assert_eq!(cap_pairs[0].fields["surface_id"], 10);
-    assert_eq!(cap_pairs[0].fields["curve_ids"][0], 20);
-    assert_eq!(cap_pairs[0].fields["curve_ids"][1], 21);
-    assert_eq!(cap_pairs[0].fields["radius_mm"], 1.0);
+    assert_eq!(cap_pairs[0].fields()["surface_id"], 10);
+    assert_eq!(cap_pairs[0].fields()["curve_ids"][0], 20);
+    assert_eq!(cap_pairs[0].fields()["curve_ids"][1], 21);
+    assert_eq!(cap_pairs[0].fields()["radius_mm"], 1.0);
     let cylinder = result
         .ir
         .model
@@ -6472,11 +8827,11 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
         .expect("decode");
     let namespace = result.ir.native.namespace("creo").unwrap();
     assert_eq!(
-        namespace.arenas["prototype_pcurves"][0].fields["curve_id"],
+        namespace.arenas["prototype_pcurves"][0].fields()["curve_id"],
         44
     );
     assert_eq!(
-        namespace.arenas["curve_prototype_topology"][0].fields["faces"][1],
+        namespace.arenas["curve_prototype_topology"][0].fields()["faces"][1],
         11
     );
 }
@@ -6657,8 +9012,8 @@ fn decode_transfers_closed_plane_intersection_brep() {
     assert_eq!(namespace.arenas["topological_vertices"].len(), 4);
     assert_eq!(namespace.arenas["half_edge_vertex_incidence"].len(), 12);
     assert_eq!(namespace.arenas["face_components"].len(), 1);
-    assert_eq!(namespace.arenas["half_edges"][0].fields["curve_id"], 10);
-    assert_eq!(namespace.arenas["half_edges"][0].fields["side"], 0);
+    assert_eq!(namespace.arenas["half_edges"][0].fields()["curve_id"], 10);
+    assert_eq!(namespace.arenas["half_edges"][0].fields()["side"], 0);
 
     assert_eq!(model.points.len(), 4);
     assert_eq!(model.vertices.len(), 4);
@@ -6815,10 +9170,10 @@ fn decode_transfers_exact_datum_plane_carrier() {
         .unwrap();
     assert!(result.report.geometry_transferred);
     let records = &result.ir.native.namespace("creo").unwrap().arenas["datum_planes"];
-    assert_eq!(records[0].fields["datum_id"], 4);
-    assert_eq!(records[0].fields["owner_feature_id"], 1);
-    assert_eq!(records[0].fields["normal"][1], 1.0);
-    assert_eq!(records[0].fields["plane_offset"], 0.0);
+    assert_eq!(records[0].fields()["datum_id"], 4);
+    assert_eq!(records[0].fields()["owner_feature_id"], 1);
+    assert_eq!(records[0].fields()["normal"][1], 1.0);
+    assert_eq!(records[0].fields()["plane_offset"], 0.0);
     assert_eq!(result.ir.model.surfaces.len(), 1);
     assert_eq!(result.ir.model.features.len(), 1);
     let feature = &result.ir.model.features[0];
@@ -7107,14 +9462,14 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
     assert_eq!(states.len(), 7);
     let feature_40 = states
         .iter()
-        .filter(|state| state.fields["feature_id"] == 40)
+        .filter(|state| state.fields()["feature_id"] == 40)
         .collect::<Vec<_>>();
     assert_eq!(feature_40.len(), 2);
-    assert_eq!(feature_40[0].fields["state_ordinal"], 0);
-    assert_eq!(feature_40[0].fields["current"], false);
-    assert_eq!(feature_40[0].fields["stored_name"], "xProtrusion id 40");
+    assert_eq!(feature_40[0].fields()["state_ordinal"], 0);
+    assert_eq!(feature_40[0].fields()["current"], false);
+    assert_eq!(feature_40[0].fields()["stored_name"], "xProtrusion id 40");
     assert_eq!(
-        feature_40[0].fields["stored_name_bytes"]
+        feature_40[0].fields()["stored_name_bytes"]
             .as_array()
             .unwrap()
             .iter()
@@ -7122,9 +9477,9 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
             .collect::<Vec<_>>(),
         b"xProtrusion id 40"
     );
-    assert_eq!(feature_40[0].fields["identifier_keyword"], "id");
-    assert_eq!(feature_40[1].fields["state_ordinal"], 1);
-    assert_eq!(feature_40[1].fields["current"], true);
+    assert_eq!(feature_40[0].fields()["identifier_keyword"], "id");
+    assert_eq!(feature_40[1].fields()["state_ordinal"], 1);
+    assert_eq!(feature_40[1].fields()["current"], true);
     assert_eq!(result.ir.model.features.len(), 6);
     assert_eq!(
         result.ir.model.features[0].id.as_str(),
@@ -7289,28 +9644,31 @@ fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
         .expect("decode");
     let rows = &result.ir.native.namespace("creo").unwrap().arenas["nonvisible_surface_rows"];
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].id, "creo:novisgeom:surface_row#8");
-    assert_eq!(rows[0].fields["source_section"], "NovisGeom");
+    assert_eq!(rows[0].id(), "creo:novisgeom:surface_row#8");
+    assert_eq!(rows[0].fields()["source_section"], "NovisGeom");
     let namespace = result.ir.native.namespace("creo").unwrap();
     let surface_parameters = &namespace.arenas["nonvisible_surface_parameters"];
     assert_eq!(
-        surface_parameters[0].id,
+        surface_parameters[0].id(),
         "creo:novisgeom:surface_parameter#8"
     );
-    assert_eq!(surface_parameters[0].fields["slots"][0]["value"], 1.0);
+    assert_eq!(surface_parameters[0].fields()["slots"][0]["value"], 1.0);
     let surface_prototypes = &namespace.arenas["nonvisible_surface_prototypes"];
     assert!(surface_prototypes[0]
-        .id
+        .id()
         .starts_with("creo:novisgeom:surface_prototype#"));
-    assert_eq!(surface_prototypes[0].fields["source_section"], "NovisGeom");
+    assert_eq!(
+        surface_prototypes[0].fields()["source_section"],
+        "NovisGeom"
+    );
     let prototypes = &namespace.arenas["nonvisible_curve_prototypes"];
-    assert_eq!(prototypes[0].fields["curve_id"], 7);
-    assert_eq!(prototypes[0].fields["source_section"], "NovisGeom");
+    assert_eq!(prototypes[0].fields()["curve_id"], 7);
+    assert_eq!(prototypes[0].fields()["source_section"], "NovisGeom");
     let parameters = &namespace.arenas["nonvisible_curve_parameters"];
-    assert_eq!(parameters[0].id, "creo:novisgeom:curve_parameter#7");
+    assert_eq!(parameters[0].id(), "creo:novisgeom:curve_parameter#7");
     let topology = &namespace.arenas["nonvisible_curve_topology_rows"];
-    assert_eq!(topology[0].id, "creo:novisgeom:curve_topology#7");
-    assert_eq!(topology[0].fields["faces"][0], 12);
+    assert_eq!(topology[0].id(), "creo:novisgeom:curve_topology#7");
+    assert_eq!(topology[0].fields()["faces"][0], 12);
 }
 
 #[test]
@@ -7366,10 +9724,10 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         .expect("recipe feature");
     let rows = &result.ir.native.namespace("creo").unwrap().arenas["depdb_recipe_rows"];
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].fields["owner_feature_id"], 8053);
-    assert_eq!(rows[0].fields["header"][0], 0);
+    assert_eq!(rows[0].fields()["owner_feature_id"], 8053);
+    assert_eq!(rows[0].fields()["header"][0], 0);
     assert_eq!(
-        rows[0].fields["body"].as_array().map(Vec::len),
+        rows[0].fields()["body"].as_array().map(Vec::len),
         Some(scan.features.depdb_recipe_rows[0].body.len())
     );
     assert_eq!(feature.name, None);
@@ -7521,7 +9879,7 @@ fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let records = &result.ir.native.namespace("creo").unwrap().arenas["feature_definitions"];
-    assert_eq!(records[0].fields["source_section"], "DEPDB_DATA");
+    assert_eq!(records[0].fields()["source_section"], "DEPDB_DATA");
     assert_annotation(
         &result.source_fidelity.annotations,
         "creo:featdefs:feature_definition#2",
@@ -7564,8 +9922,8 @@ fn decode_preserves_unowned_depdb_section_instances_with_unique_native_ids() {
     let records = &result.ir.native.namespace("creo").unwrap().arenas["feature_definitions"];
     let positional_ids = records
         .iter()
-        .filter(|record| expected_positional_ids.contains(record.id.as_str()))
-        .map(|record| record.id.clone())
+        .filter(|record| expected_positional_ids.contains(record.id()))
+        .map(|record| record.id().to_string())
         .collect::<BTreeSet<_>>();
 
     assert_eq!(positional_ids, expected_positional_ids);
@@ -7622,12 +9980,24 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         .expect("decode null family table");
     let configuration = &decoded.ir.native.namespace("creo").unwrap().arenas["configuration"];
     assert_eq!(configuration.len(), 1);
-    assert_eq!(configuration[0].id, "creo:family_info:driver_table#root");
-    assert_eq!(configuration[0].fields["pointer_kind"], "null");
-    assert!(configuration[0].fields["table_entity_id"].is_null());
+    assert_eq!(configuration[0].id(), "creo:family_info:driver_table#root");
+    assert_eq!(configuration[0].fields()["pointer_kind"], "null");
+    assert!(configuration[0].fields()["table_entity_id"].is_null());
     assert_eq!(
         decoded.ir.source.as_ref().unwrap().attributes["configuration_state"],
         "none"
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONFIGURATION_DRIVER_TABLE_REFERENCE_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CONFIGURATION_DRIVER_TABLE_COUNT),
+        0
     );
     assert!(!decoded
         .report
@@ -7650,12 +10020,34 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         .decode(&mut Cursor::new(referenced_data), &DecodeOptions::default())
         .expect("decode referenced family table");
     let configuration = &decoded.ir.native.namespace("creo").unwrap().arenas["configuration"];
-    assert_eq!(configuration[0].fields["pointer_kind"], "entity_reference");
-    assert_eq!(configuration[0].fields["table_entity_id"], 0x0123);
+    assert_eq!(
+        configuration[0].fields()["pointer_kind"],
+        "entity_reference"
+    );
+    assert_eq!(configuration[0].fields()["table_entity_id"], 0x0123);
     assert_eq!(
         decoded.ir.source.as_ref().unwrap().attributes["configuration_state"],
         "driver_table_unresolved"
     );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONFIGURATION_DRIVER_TABLE_REFERENCE_COUNT),
+        1
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CONFIGURATION_DRIVER_TABLE_COUNT),
+        0
+    );
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss
+                .message
+                .contains("1 referenced configuration driver table(s) retain unresolved")
+    }));
 }
 
 #[test]
@@ -7771,10 +10163,16 @@ fn inspect_summary_has_layout_and_census_notes() {
     let data = build_prt("c", &[("ND:0:VisibGeom:1", visibgeom_payload(7, 9))]);
     let mut reader = Cursor::new(data);
     let summary = CreoCodec
-        .inspect(&mut reader, &cadmpeg_ir::decode::InspectOptions::default())
+        .inspect(
+            &mut reader,
+            &cadmpeg_codec_core::decode::InspectOptions::default(),
+        )
         .expect("inspect");
     assert_eq!(summary.format, "creo");
     assert_eq!(summary.container_kind, "psb");
     assert!(summary.notes.iter().any(|n| n.contains("layout: ND")));
     assert!(summary.notes.iter().any(|n| n.contains("srf_array=7")));
 }
+
+#[path = "integration_tests.rs"]
+mod integration_tests;

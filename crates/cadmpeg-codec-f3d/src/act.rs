@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use crate::bytes::{is_guid_hyphenated, lp_ascii_strict, lp_utf16_bounded};
 use crate::records::{ActEntity, ActGuid, ActRootComponent};
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 
 use crate::container::{role, ContainerScan};
 
@@ -117,20 +117,20 @@ fn decode_root_components(bytes: &[u8], stream: &str) -> Vec<ActRootComponent> {
             position += 1;
             continue;
         };
-        let Some((flag, cursor)) = marker_ref(bytes, cursor, 5) else {
+        let Some((_tracked_entity, cursor)) = marker_ref(bytes, cursor, 5) else {
             position += 1;
             continue;
         };
-        if flag != 3 {
-            position += 1;
-            continue;
-        }
         let registry_flag_offset = cursor + 1;
         let Some((selector, cursor)) = marker_ref(bytes, cursor, 0) else {
             position += 1;
             continue;
         };
-        if selector > 1 {
+        // The entity key is `<segment id>_<entity id>` of the entity the link
+        // tracks, and the reference before it names that entity. There is one
+        // link per component; the root component's is the one keyed on
+        // entity 3 and carries no field that distinguishes it.
+        if !is_entity_key(&entity_id) {
             position += 1;
             continue;
         }
@@ -173,6 +173,17 @@ fn decode_root_components(bytes: &[u8], stream: &str) -> Vec<ActRootComponent> {
         position = end;
     }
     out
+}
+
+/// Whether `key` has the ACT entity-key form `<segment id>_<entity id>`.
+fn is_entity_key(key: &str) -> bool {
+    let Some((segment, entity)) = key.split_once('_') else {
+        return false;
+    };
+    !segment.is_empty()
+        && !entity.is_empty()
+        && segment.bytes().all(|byte| byte.is_ascii_digit())
+        && entity.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 fn marker_ref(bytes: &[u8], position: usize, zero_count: usize) -> Option<(u32, usize)> {

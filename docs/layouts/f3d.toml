@@ -1,0 +1,1037 @@
+# SPDX-License-Identifier: Apache-2.0
+# Machine-readable record layouts for Fusion `.f3d` / `.f3z`.
+# Every row cites a section of docs/formats/f3d.md and a phrase inside it.
+schema = 1
+format = "f3d"
+spec = "docs/formats/f3d.md"
+endianness = "little"
+note = """
+Covers the two ASM stream headers (§3), the SAB tag inventory (§4.1), the
+fixed-size Fusion-ASM topology records (§6.2, §6.3), the analytic geometry
+carriers (§7.2, §7.3) as ordered token slots, and the two fixed Design-segment
+headers (§8.1). Procedural spline carriers are variable-length token graphs and
+are listed under "Not tabulated".
+"""
+
+# --- Composite units -------------------------------------------------------
+
+[[type]]
+name = "sab_ref8"
+bytes = 9
+endianness = "little"
+note = "`BinaryFile8` reference/integer chunk: one tag byte plus an eight-byte value."
+section = "6.2"
+anchor = "ref/int chunks are 9 bytes"
+
+[[type]]
+name = "sab_f64"
+bytes = 9
+endianness = "little"
+note = "`0x06` DOUBLE tag byte plus an eight-byte IEEE float64 payload."
+section = "4.1"
+anchor = "`0x06` | DOUBLE | 8 B | IEEE float64"
+
+[[type]]
+name = "sab_position"
+bytes = 25
+endianness = "little"
+note = "`0x13` POSITION tag byte plus three little-endian f64 coordinates."
+section = "4.1"
+anchor = "`0x13` | POSITION | 24 B | 3D point (3×f64)"
+
+[[type]]
+name = "sab_vector3d"
+bytes = 25
+endianness = "little"
+note = "`0x14` VECTOR_3D tag byte plus three little-endian f64 components."
+section = "4.1"
+anchor = "`0x14` | VECTOR_3D | 24 B | 3D vector (3×f64)"
+
+[[type]]
+name = "sab_logical"
+bytes = 1
+endianness = "n/a"
+note = "A bare `0x0A` TRUE or `0x0B` FALSE tag; the tag is the whole value."
+section = "4.1"
+anchor = "`0x0B` | FALSE | 0 B | logical false / sentinel"
+
+# --- Tag inventory (§4.1) --------------------------------------------------
+
+[[token]]
+tag = "0x02"
+name = "CHAR"
+payload_bytes = 1
+note = "unsigned 8-bit"
+section = "4.1"
+anchor = "`0x02` | CHAR | 1 B | unsigned 8-bit"
+
+[[token]]
+tag = "0x03"
+name = "SHORT"
+payload_bytes = 2
+note = "signed 16-bit"
+section = "4.1"
+anchor = "`0x03` | SHORT | 2 B | signed 16-bit"
+
+[[token]]
+tag = "0x04"
+name = "LONG"
+note = "signed int, 32 or 64-bit per the header width"
+section = "4.1"
+anchor = "`0x04` | LONG | ref_size | signed int (32 or 64-bit per header)"
+
+[[token]]
+tag = "0x05"
+name = "FLOAT"
+payload_bytes = 4
+note = "IEEE float32"
+section = "4.1"
+anchor = "`0x05` | FLOAT | 4 B | IEEE float32"
+
+[[token]]
+tag = "0x06"
+name = "DOUBLE"
+payload_bytes = 8
+note = "IEEE float64"
+section = "4.1"
+anchor = "`0x06` | DOUBLE | 8 B | IEEE float64"
+
+[[token]]
+tag = "0x0A"
+name = "TRUE"
+payload_bytes = 0
+note = "logical true; a data token, not a terminator"
+section = "4.1"
+anchor = "`0x0A` | TRUE | 0 B | logical true"
+
+[[token]]
+tag = "0x0B"
+name = "FALSE"
+payload_bytes = 0
+note = "logical false / sentinel"
+section = "4.1"
+anchor = "`0x0B` | FALSE | 0 B | logical false / sentinel"
+
+[[token]]
+tag = "0x0C"
+name = "ENTITY_REF"
+note = "RecordTable index; `ref_size` wide"
+section = "4.1"
+anchor = "`0x0C` | ENTITY_REF | ref_size | RecordTable index"
+
+[[token]]
+tag = "0x0D"
+name = "IDENT"
+note = "record/class name token (leaf); one length byte plus N name bytes"
+section = "4.1"
+anchor = "`0x0D` | IDENT | 1 + N | record/class name token (leaf)"
+
+[[token]]
+tag = "0x0E"
+name = "SUBIDENT"
+note = "base-class name token; one length byte plus N name bytes"
+section = "4.1"
+anchor = "`0x0E` | SUBIDENT | 1 + N | base-class name token"
+
+[[token]]
+tag = "0x11"
+name = "TERMINATOR"
+payload_bytes = 0
+note = "end of the current top-level record"
+section = "4.1"
+anchor = "`0x11` | TERMINATOR | 0 B | end of current record"
+
+[[token]]
+tag = "0x13"
+name = "POSITION"
+payload_bytes = 24
+note = "3D point, three f64; centimetres"
+section = "4.1"
+anchor = "`0x13` | POSITION | 24 B | 3D point (3×f64)"
+
+[[token]]
+tag = "0x14"
+name = "VECTOR_3D"
+payload_bytes = 24
+note = "3D vector, three f64"
+section = "4.1"
+anchor = "`0x14` | VECTOR_3D | 24 B | 3D vector (3×f64)"
+
+[[token]]
+tag = "0x15"
+name = "ENUM_VALUE"
+note = "enumeration or secondary integer; `ref_size` wide"
+section = "4.1"
+anchor = "`0x15` | ENUM_VALUE | ref_size | enumeration / secondary integer"
+
+[[token]]
+tag = "0x16"
+name = "VECTOR_2D"
+payload_bytes = 16
+note = "2D (u,v)"
+section = "4.1"
+anchor = "`0x16` | VECTOR_2D | 16 B | 2D `(u,v)`"
+
+[[token]]
+tag = "0x17"
+name = "INT64"
+payload_bytes = 8
+note = "AutoCAD int64 attribute value; eight bytes in either header width"
+section = "4.1"
+anchor = "`0x17` | INT64 | 8 B | AutoCAD int64 attribute value"
+
+# --- §3 Stream headers -----------------------------------------------------
+
+[[record]]
+name = "asmheader_binaryfile8"
+kind = "byte"
+section = "3"
+anchor = "`BinaryFile8` header layout (little-endian, mirroring `BinaryFile4` with wider words)"
+size = 47
+note = "Fixed prefix only. The string region and the six trailing tagged metadata fields begin at byte 47 and are a sequence, not a fixed-offset structure."
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "bytes[15]"
+source = "spec"
+anchor = "`0..15` | magic `ASM BinaryFile8`"
+note = "ASCII `ASM BinaryFile8`."
+
+[[record.field]]
+name = "save_format_version"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "`15..19` | little-endian u32 ACIS save-format version (`major * 100 + minor`)"
+
+[[record.field]]
+name = "zero_pad"
+offset = 19
+type = "bytes[12]"
+source = "spec"
+anchor = "`19..31` | zero"
+
+[[record.field]]
+name = "entity_count"
+offset = 31
+type = "u64"
+source = "spec"
+anchor = "`31..39` | little-endian u64 entity-count word"
+
+[[record.field]]
+name = "flags"
+offset = 39
+type = "u64"
+source = "spec"
+anchor = "`39..47` | little-endian u64 flags; bit 0 is set iff the stream carries a history partition"
+
+[[record.code]]
+path = "docs/formats/f3d.md"
+contains = "The string region begins at byte 47."
+note = "The declared 47-byte size is the spec's own stated start of the string region."
+
+[[record]]
+name = "asmheader_binaryfile4"
+kind = "byte"
+section = "3"
+anchor = "`BinaryFile4` header layout (the classic ACIS save header, little-endian)"
+size = 31
+note = "Fixed prefix only; the string region begins at byte 31."
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "bytes[15]"
+source = "spec"
+anchor = "`0..15` | magic `ASM BinaryFile4`"
+
+[[record.field]]
+name = "save_format_version"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "`15..19` | little-endian u32 ACIS save-format version (`major * 100 + minor`)"
+
+[[record.field]]
+name = "record_count"
+offset = 19
+type = "u32"
+source = "spec"
+anchor = "`19..23` | little-endian u32 record count (`0` when unwritten)"
+
+[[record.field]]
+name = "entity_count"
+offset = 23
+type = "u32"
+source = "spec"
+anchor = "`23..27` | little-endian u32 entity count"
+
+[[record.field]]
+name = "flags"
+offset = 27
+type = "u32"
+source = "spec"
+anchor = "`27..31` | little-endian u32 flags; bit 0 is set iff the stream carries a history partition"
+
+[[record.code]]
+path = "docs/formats/f3d.md"
+contains = "The string region begins at byte 31."
+note = "The declared 31-byte size is the spec's own stated start of the string region."
+
+# --- §6.2 Fusion-ASM topology records (BinaryFile8) ------------------------
+
+[[record]]
+name = "body"
+kind = "byte"
+section = "6.2"
+anchor = "**Body (61 B):**"
+size = 61
+note = "Offsets are record-relative from the leading `0x11`. On `BinaryFile4` streams ref/int chunks are 5 bytes and the offsets scale accordingly."
+
+[[record.field]]
+name = "chunk1_history_body_flags"
+offset = 16
+type = "sab_ref8"
+source = "spec"
+anchor = "`chunk[1]` (@+16, i64) is `history / body flags`"
+
+[[record.field]]
+name = "chunk3_first_lump"
+offset = 34
+type = "sab_ref8"
+source = "spec"
+anchor = "`chunk[3]` @+34 = first_lump"
+
+[[record.field]]
+name = "chunk4_first_wire"
+offset = 43
+type = "sab_ref8"
+source = "spec"
+anchor = "`chunk[4]` @+43 = first_wire or `-1`"
+
+[[record.field]]
+name = "chunk5_transform"
+offset = 52
+type = "sab_ref8"
+source = "spec"
+anchor = "`chunk[5]` @+52 = transform or `-1`"
+
+[[record.gap]]
+offset = 0
+size = 16
+note = "Record head plus `chunk[0]`. The spec states no offset or meaning for this region; its extent follows from the stated `chunk[1]` offset."
+
+[[record.gap]]
+offset = 25
+size = 9
+note = "`chunk[2]`. Unnamed in the spec; the extent follows from the 9-byte chunk stride between the stated `chunk[1]` and `chunk[3]` offsets."
+
+[[record]]
+name = "lump"
+kind = "byte"
+section = "6.2"
+anchor = "**Lump (61 B):**"
+size = 61
+note = "`chunk[0]` is the attribute-chain head and `chunk[3]` is the next sibling lump; the spec states no offset for either."
+
+[[record.field]]
+name = "reserved_slot"
+offset = 27
+type = "sab_ref8"
+source = "spec"
+anchor = "The @+27 slot is reserved `-1`, not the first shell"
+
+[[record.field]]
+name = "chunk4_first_shell"
+offset = 43
+type = "sab_ref8"
+source = "spec"
+anchor = "`chunk[4]` @+43 = first_shell"
+
+[[record.field]]
+name = "chunk5_owner_body"
+offset = 52
+type = "sab_ref8"
+source = "spec"
+anchor = "`chunk[5]` @+52 = owner_body"
+
+[[record.gap]]
+offset = 0
+size = 27
+note = "Record head, `chunk[0]` attribute-chain head, and further unnamed slots."
+
+[[record.gap]]
+offset = 36
+size = 7
+note = "Seven bytes between the stated `@+27` reserved slot and the stated `@+43` first_shell. This is not a multiple of the 9-byte chunk stride, so one of the two stated offsets is inconsistent with the other; the spec does not say which."
+
+[[record]]
+name = "shell"
+kind = "byte"
+section = "6.2"
+anchor = "**Shell (80 B):**"
+size = 80
+
+[[record.field]]
+name = "chunk5_first_face"
+offset = 53
+type = "sab_ref8"
+source = "spec"
+anchor = "`chunk[5]` @+53 = first_face"
+
+[[record.field]]
+name = "chunk6_wire"
+offset = 62
+type = "sab_ref8"
+source = "derived"
+anchor = "`chunk[6]` = wire"
+note = "Offset derived from the stated `chunk[5]` @+53 plus the 9-byte chunk stride."
+
+[[record.field]]
+name = "chunk7_owner"
+offset = 71
+type = "sab_ref8"
+source = "derived"
+anchor = "`chunk[7]` = owner"
+note = "Offset derived from the stated `chunk[5]` @+53 plus two 9-byte chunk strides; it closes the declared 80-byte record exactly."
+
+[[record.gap]]
+offset = 0
+size = 53
+note = "Record head, `chunk[0]` attribute-chain head, and `chunk[1..=4]`. The spec names `chunk[0]` and `chunk[3]` but states no offsets."
+
+[[record]]
+name = "face"
+kind = "byte"
+section = "6.2"
+anchor = "**Face (81 B; +1 chunk if double-sided):**"
+size = 81
+note = "Single-sided faces end after `sides`. A double-sided face carries one further chunk, `+81 chunk[10] containment`, which is outside this fixed 81-byte extent."
+
+[[record.field]]
+name = "chunk3_next_face"
+offset = 34
+type = "sab_ref8"
+source = "spec"
+anchor = "+34 chunk[3] next_face"
+
+[[record.field]]
+name = "chunk4_first_loop"
+offset = 43
+type = "sab_ref8"
+source = "spec"
+anchor = "+43 chunk[4] first_loop"
+
+[[record.field]]
+name = "chunk5_owner_shell"
+offset = 52
+type = "sab_ref8"
+source = "spec"
+anchor = "+52 chunk[5] owner_shell"
+
+[[record.field]]
+name = "chunk7_surface"
+offset = 70
+type = "sab_ref8"
+source = "spec"
+anchor = "+70 chunk[7] surface REF"
+
+[[record.field]]
+name = "chunk8_sense"
+offset = 79
+type = "enum8"
+source = "spec"
+anchor = "+79 chunk[8] sense (0x0a=reversed, 0x0b=forward)"
+
+[[record.field]]
+name = "chunk9_sides"
+offset = 80
+type = "enum8"
+source = "spec"
+anchor = "+80 chunk[9] sides (0x0b=single)"
+
+[[record.gap]]
+offset = 0
+size = 34
+note = "Record head and `chunk[0..=2]`; the spec states no offsets for them."
+
+[[record.gap]]
+offset = 61
+size = 9
+note = "`chunk[6]`. Unnamed in the spec; the extent follows from the stated `chunk[5]` @+52 and `chunk[7]` @+70 offsets."
+
+[[record]]
+name = "coedge"
+kind = "byte"
+section = "6.2"
+anchor = "**CoEdge (100 B):**"
+size = 100
+note = "`tcoedge` inherits this complete base field sequence and appends extension chunks that do not change these offsets."
+
+[[record.field]]
+name = "chunk3_next_coedge"
+offset = 35
+type = "sab_ref8"
+source = "spec"
+anchor = "+35 chunk[3] next_coedge"
+
+[[record.field]]
+name = "chunk4_prev_coedge"
+offset = 44
+type = "sab_ref8"
+source = "spec"
+anchor = "+44 chunk[4] prev_coedge"
+
+[[record.field]]
+name = "chunk5_partner_coedge"
+offset = 53
+type = "sab_ref8"
+source = "spec"
+anchor = "+53 chunk[5] partner_coedge"
+
+[[record.field]]
+name = "chunk6_edge"
+offset = 62
+type = "sab_ref8"
+source = "spec"
+anchor = "+62 chunk[6] edge"
+
+[[record.field]]
+name = "chunk7_sense"
+offset = 71
+type = "enum8"
+source = "spec"
+anchor = "+71 chunk[7] sense byte"
+
+[[record.field]]
+name = "chunk8_owner_loop"
+offset = 72
+type = "sab_ref8"
+source = "spec"
+anchor = "+72 chunk[8] owner_loop"
+
+[[record.field]]
+name = "chunk9_reserved"
+offset = 81
+type = "sab_ref8"
+source = "spec"
+anchor = "+81 chunk[9] reserved int (const 0)"
+
+[[record.field]]
+name = "chunk10_pcurve"
+offset = 90
+type = "sab_ref8"
+source = "spec"
+anchor = "+90 chunk[10] pcurve ref (or -1)"
+
+[[record.gap]]
+offset = 0
+size = 35
+note = "Record head and `chunk[0..=2]`; the spec states no offsets for them."
+
+[[record.discrepancy]]
+kind = "size_mismatch"
+computed = 99
+declared = 100
+note = "The stated offsets end `chunk[10]` at +99 but the heading declares 100 B. Shifting every stated offset by +1 (head 9 bytes rather than 8, matching the `coedge` name-token length) closes the record at 100; so does leaving the offsets alone and declaring 99 B. The spec does not say which side is wrong."
+
+[[record]]
+name = "edge"
+kind = "byte"
+section = "6.2"
+anchor = "**Edge (98 B):**"
+size = 98
+note = "`tedge` carries this complete base field sequence followed by extension chunks that do not change these offsets."
+
+[[record.field]]
+name = "chunk3_start_vertex"
+offset = 34
+type = "sab_ref8"
+source = "spec"
+anchor = "+34 chunk[3] start_vertex"
+
+[[record.field]]
+name = "chunk4_t_start"
+offset = 43
+type = "sab_f64"
+source = "spec"
+anchor = "+43 chunk[4] t_start (f64)"
+
+[[record.field]]
+name = "chunk5_end_vertex"
+offset = 52
+type = "sab_ref8"
+source = "spec"
+anchor = "+52 chunk[5] end_vertex"
+
+[[record.field]]
+name = "chunk6_t_end"
+offset = 61
+type = "sab_f64"
+source = "spec"
+anchor = "+61 chunk[6] t_end (f64)"
+
+[[record.field]]
+name = "chunk7_owner_coedge"
+offset = 70
+type = "sab_ref8"
+source = "spec"
+anchor = "+70 chunk[7] owner_coedge"
+
+[[record.field]]
+name = "chunk8_curve"
+offset = 79
+type = "sab_ref8"
+source = "spec"
+anchor = "+79 chunk[8] curve ref"
+
+[[record.field]]
+name = "chunk9_sense"
+offset = 89
+type = "enum8"
+source = "spec"
+anchor = "+89 chunk[9] sense byte"
+
+[[record.field]]
+name = "chunk10_continuity"
+offset = 90
+type = "bytes[9]"
+source = "derived"
+anchor = "+90 0x07 'tangent'|'unknown' continuity text"
+note = "Width derived from the `0x07` tag encoding (tag byte, one length byte, N text bytes) and the two stated seven-character literals."
+
+[[record.gap]]
+offset = 0
+size = 34
+note = "Record head and `chunk[0..=2]`; the spec states no offsets for them."
+
+[[record.gap]]
+offset = 88
+size = 1
+note = "One byte between the end of the stated `chunk[8]` curve ref at +88 and the stated `chunk[9]` sense byte at +89. Every other chunk in this record abuts its neighbour, so one of the two stated offsets is off by one."
+
+[[record.discrepancy]]
+kind = "size_mismatch"
+computed = 99
+declared = 98
+note = "The stated offsets end the continuity text at +99 but the heading declares 98 B. Removing the one-byte gap at +88 (placing the sense byte at +88 and the text at +89) closes the record at 98 exactly, which suggests both trailing offsets are one too high. The spec does not state which."
+
+[[record]]
+name = "vertex"
+kind = "byte"
+section = "6.2"
+anchor = "**Vertex (63 B):**"
+size = 63
+
+[[record.field]]
+name = "chunk3_owning_edge"
+offset = 36
+type = "sab_ref8"
+source = "spec"
+anchor = "`chunk[3]` @+36 = owning_edge"
+
+[[record.field]]
+name = "chunk4_index_flag"
+offset = 45
+type = "sab_ref8"
+source = "spec"
+anchor = "`chunk[4]` @+45 = index_flag (`0` = this is the owning edge's START vertex, `1` = its END vertex)"
+
+[[record.field]]
+name = "chunk5_point"
+offset = 54
+type = "sab_ref8"
+source = "spec"
+anchor = "`chunk[5]` @+54 = point ref"
+
+[[record.gap]]
+offset = 0
+size = 36
+note = "Record head and `chunk[0..=2]`; the spec states no offsets for them."
+
+[[record]]
+name = "point"
+kind = "byte"
+section = "6.3"
+anchor = "A BinaryFile8 `point` record is 60 bytes"
+size = 60
+note = "The record terminates immediately after the position and carries no trailing reference-count integer."
+
+[[record.field]]
+name = "record_head"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "the 8-byte record head"
+
+[[record.field]]
+name = "entity_base_0"
+offset = 8
+type = "sab_ref8"
+source = "derived"
+anchor = "three 9-byte entity-base fields"
+note = "First of the three stated 9-byte entity-base fields, placed after the stated 8-byte head."
+
+[[record.field]]
+name = "entity_base_1"
+offset = 17
+type = "sab_ref8"
+source = "derived"
+anchor = "three 9-byte entity-base fields"
+note = "Second of the three stated 9-byte entity-base fields."
+
+[[record.field]]
+name = "entity_base_2"
+offset = 26
+type = "sab_ref8"
+source = "derived"
+anchor = "three 9-byte entity-base fields"
+note = "Third of the three stated 9-byte entity-base fields."
+
+[[record.field]]
+name = "position"
+offset = 35
+type = "sab_position"
+source = "spec"
+anchor = "one 25-byte model-space `POSITION`"
+
+# --- §7.2 / §7.3 Analytic carriers (ordered token slots) -------------------
+
+[[record]]
+name = "plane_surface"
+kind = "slot"
+section = "7.2"
+anchor = "**`plane`**: origin (`0x13`) + unit normal (`0x14`) + unit UV-reference direction (`0x14`)"
+note = "Total record size is not stated. Evaluation `S(u,v) = origin + u·u_dir + v·v_dir`, `v_dir = normal × u_dir`."
+
+[[record.field]]
+name = "origin"
+type = "sab_position"
+source = "spec"
+anchor = "**`plane`**: origin (`0x13`)"
+
+[[record.field]]
+name = "normal"
+type = "sab_vector3d"
+source = "spec"
+anchor = "unit normal (`0x14`)"
+
+[[record.field]]
+name = "u_dir"
+type = "sab_vector3d"
+source = "spec"
+anchor = "unit UV-reference direction (`0x14`)"
+
+[[record]]
+name = "cone_surface"
+kind = "slot"
+section = "7.2"
+anchor = "**`cone` (161 B, covers cylinders)**"
+size = 161
+note = "Covers circular and elliptical cylinders when the stored sine is zero. The spec gives the token order but no offsets, and no field is stated before `origin`, so the 161-byte total cannot be tiled from the listed slots alone."
+
+[[record.field]]
+name = "origin"
+type = "sab_position"
+source = "spec"
+anchor = "order: origin (`0x13`)"
+
+[[record.field]]
+name = "axis"
+type = "sab_vector3d"
+source = "spec"
+anchor = "axis (`0x14`)"
+
+[[record.field]]
+name = "ref_times_r_major"
+type = "sab_vector3d"
+source = "spec"
+anchor = "`ref × r_major` (`0x14`, magnitude = base major radius)"
+
+[[record.field]]
+name = "ratio"
+type = "sab_f64"
+source = "spec"
+anchor = "`ratio = r_minor/r_major` (f64, 1.0 = circular)"
+
+[[record.field]]
+name = "flag_pair"
+type = "bytes[2]"
+source = "spec"
+anchor = "`0x0b 0x0b`"
+note = "Two FALSE tokens."
+
+[[record.field]]
+name = "sine_half_angle"
+type = "sab_f64"
+source = "spec"
+anchor = "`sin(half_angle)` (f64, 0 ⇒ cylinder)"
+
+[[record.field]]
+name = "cosine_half_angle"
+type = "sab_f64"
+source = "spec"
+anchor = "`cos(half_angle)` (f64)"
+
+[[record.field]]
+name = "u_scale"
+type = "sab_f64"
+source = "spec"
+anchor = "`u_scale` u-parameter scale (f64)"
+
+[[record.field]]
+name = "trailing_flags"
+type = "bytes[5]"
+source = "spec"
+anchor = "5×`0x0b`"
+
+[[record]]
+name = "sphere_surface"
+kind = "slot"
+section = "7.2"
+anchor = "**`sphere` (134 B)**: center (`0x13`), **signed** radius (f64), dir1 (equator), dir2 (polar axis)"
+size = 134
+note = "A negative radius identifies an inward-facing, concave feature; the sign is part of the carrier. The spec states no token tag for `dir1` and `dir2`, so their widths are unknown and the 134-byte total cannot be tiled."
+
+[[record.field]]
+name = "center"
+type = "sab_position"
+source = "spec"
+anchor = "center (`0x13`)"
+
+[[record.field]]
+name = "radius"
+type = "sab_f64"
+source = "spec"
+anchor = "**signed** radius (f64)"
+
+[[record.field]]
+name = "dir1_equator"
+type = "subrecord"
+source = "spec"
+anchor = "dir1 (equator)"
+note = "Token tag not stated."
+
+[[record.field]]
+name = "dir2_polar_axis"
+type = "subrecord"
+source = "spec"
+anchor = "dir2 (polar axis)"
+note = "Token tag not stated."
+
+[[record]]
+name = "torus_surface"
+kind = "slot"
+section = "7.2"
+anchor = "**`torus` (142 B basic / 160 B ranged)**"
+size = 142
+note = "The 142-byte form ends at the range flag `0x0b`. A `0x0a` range flag selects the 160-byte variant, which appends start and end angles. `minor < 0` with `|minor| ≤ |major|` describes an apple/lemon torus."
+
+[[record.field]]
+name = "origin"
+type = "sab_position"
+source = "spec"
+anchor = "origin, axis, `major_radius` (f64)"
+
+[[record.field]]
+name = "axis"
+type = "sab_vector3d"
+source = "spec"
+anchor = "origin, axis, `major_radius` (f64)"
+
+[[record.field]]
+name = "major_radius"
+type = "sab_f64"
+source = "spec"
+anchor = "`major_radius` (f64)"
+
+[[record.field]]
+name = "minor_radius"
+type = "sab_f64"
+source = "spec"
+anchor = "**signed** `minor_radius` (f64)"
+
+[[record.field]]
+name = "ref_direction"
+type = "sab_vector3d"
+source = "spec"
+anchor = "`ref_direction`"
+note = "Token tag not stated; typed here as the vector token used by the other frame directions."
+
+[[record.field]]
+name = "range_flag"
+type = "sab_logical"
+source = "spec"
+anchor = "then a range flag (`0x0b` = full 142-B variant; `0x0a` = 160-B variant with start/end angles)"
+
+[[record]]
+name = "straight_curve"
+kind = "slot"
+section = "7.3"
+anchor = "**`straight` (115 B)**: base point + direction vector"
+size = 115
+note = "Curve range is unbounded; the owning edge's `t_start`/`t_end` clip it. The direction's magnitude is the line's parameter scale and is not necessarily 1."
+
+[[record.field]]
+name = "base_point"
+type = "sab_position"
+source = "spec"
+anchor = "base point + direction vector"
+
+[[record.field]]
+name = "direction"
+type = "sab_vector3d"
+source = "spec"
+anchor = "base point + direction vector"
+
+[[record]]
+name = "ellipse_curve"
+kind = "slot"
+section = "7.3"
+anchor = "**`ellipse` (148 B with angles / 130 B without, covers circles)**"
+size = 130
+note = "The 130-byte form omits the trailing start and end angles the 148-byte form carries. Circle when `ratio == 1`. The spec states no token tags for these slots."
+
+[[record.field]]
+name = "center"
+type = "sab_position"
+source = "spec"
+anchor = "center, axis normal, `ref × r_major` (magnitude = major radius)"
+
+[[record.field]]
+name = "axis_normal"
+type = "sab_vector3d"
+source = "spec"
+anchor = "center, axis normal, `ref × r_major` (magnitude = major radius)"
+
+[[record.field]]
+name = "ref_times_r_major"
+type = "sab_vector3d"
+source = "spec"
+anchor = "`ref × r_major` (magnitude = major radius)"
+
+[[record.field]]
+name = "ratio"
+type = "sab_f64"
+source = "spec"
+anchor = "`ratio = r_minor/r_major`"
+
+# --- §8.1 Design-segment fixed headers -------------------------------------
+
+[[record]]
+name = "indexed_design_record_header"
+kind = "byte"
+section = "8.1"
+anchor = "An indexed Design record header is `u32 class_tag_length`, a three-digit ASCII dynamic-class tag, then `u32 record_index`"
+size = 11
+note = "The 11-byte size is the spec's own \"eleven-byte indexed header\". §8.1 states the segment's integers are little-endian (\"a nonempty contiguous sequence of little-endian i32 values\")."
+
+[[record.field]]
+name = "class_tag_length"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "class_tag"
+offset = 4
+type = "bytes[3]"
+source = "spec"
+anchor = "a three-digit ASCII dynamic-class tag"
+
+[[record.field]]
+name = "record_index"
+offset = 7
+type = "u32"
+source = "spec"
+anchor = "then `u32 record_index`"
+
+[[record.code]]
+path = "docs/formats/f3d.md"
+contains = "Its eleven-byte indexed header"
+note = "The 11-byte total is stated independently in the companion-record paragraph of the same section."
+
+[[record]]
+name = "indexed_companion_record_prefix"
+kind = "byte"
+section = "8.1"
+anchor = "The indexed companion record begins with a 58-byte common prefix."
+size = 58
+note = "The stated field list tiles the stated 58-byte total exactly. The timestamp is a wall-clock value recorded at a parameter authoring event."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its eleven-byte indexed header"
+
+[[record.field]]
+name = "zero_run_20"
+offset = 11
+type = "bytes[20]"
+source = "spec"
+anchor = "is followed by 20 zero bytes"
+
+[[record.field]]
+name = "owner_marker"
+offset = 31
+type = "u8"
+source = "spec"
+anchor = "`01 + u32 owner_record_index`"
+
+[[record.field]]
+name = "owner_record_index"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "`01 + u32 owner_record_index`"
+
+[[record.field]]
+name = "zero_run_6"
+offset = 36
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes"
+
+[[record.field]]
+name = "timestamp_micros"
+offset = 42
+type = "u64"
+source = "spec"
+anchor = "a nonzero u64 Unix-epoch timestamp in microseconds"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 50
+type = "bytes[8]"
+source = "spec"
+anchor = "and eight zero bytes"
+
+# --- Not tabulated ---------------------------------------------------------
+
+[[not_applicable]]
+area = "Procedural intcurves and spline surfaces (§7.3-§7.6)"
+reason = "Variable-length token graphs with recursive subtypes, revision gates, and conditional members. The spec states slot order in prose but no widths, offsets, or totals, so no arithmetic can close."
+section = "7.3"
+anchor = "**Cache-first subtype selection**"
+
+[[not_applicable]]
+area = "ASM header trailing metadata sequence (§3)"
+reason = "The spec states outright that the remaining header is a sequence rather than a fixed-offset structure."
+section = "3"
+anchor = "In both widths the remaining header is a sequence rather than a fixed-offset structure"
+
+[[not_applicable]]
+area = "Transform record (§6.2)"
+reason = "The spec writes the matrix extent as `13×f64 (@+18..117)`, which reads either as thirteen 9-byte DOUBLE chunks starting at +18 or as a byte range +18..117. Neither reading plus the three trailing enum bytes reaches the declared 142 B, so no offset row can be stated without choosing between them."
+section = "6.2"
+anchor = "**Transform (142 B):** 13×f64 (@+18..117)"
+
+[[not_applicable]]
+area = "Container, manifest, and history-partition layers (§1, §2)"
+reason = "ZIP entries, `Manifest.dat` text grammar, and length-delimited delta records; no fixed byte-offset structure is stated."
+section = "1.3"
+anchor = "`Manifest.dat` grammar"

@@ -1,0 +1,206 @@
+{
+  "ir": {
+    "ir_version": "4",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [],
+      "coedges": [],
+      "components": [],
+      "configurations": [],
+      "curves": [
+        {
+          "geometry": {
+            "control_points": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 1.0,
+                "y": 2.0,
+                "z": 0.0
+              },
+              {
+                "x": 4.0,
+                "y": 2.0,
+                "z": 0.0
+              }
+            ],
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              2.0,
+              2.0,
+              3.5,
+              9.0,
+              9.0
+            ],
+            "periodic": false
+          },
+          "id": "rhino:object:curve#record-000000-offset-177",
+          "source_object": {
+            "format": "rhino",
+            "object_id": "00000000-0000-0000-0000-000000000000",
+            "visible": true
+          }
+        }
+      ],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_occurrences": [],
+      "products": [],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {
+      "rhino": {
+        "arenas": {
+          "annotation_settings": [],
+          "annotations": [],
+          "applications": [],
+          "construction_planes": [],
+          "dimension_styles": [],
+          "document_notes": [],
+          "document_settings": [
+            {
+              "archive_file_name": null,
+              "current_color": null,
+              "current_color_source": null,
+              "current_dimension_style_index": null,
+              "current_font_index": null,
+              "current_layer_index": null,
+              "current_material_index": null,
+              "current_material_source": null,
+              "current_wire_density": null,
+              "id": "rhino:document:settings#current",
+              "model_url": null,
+              "writer_version": null
+            }
+          ],
+          "embedded_images": [],
+          "external_references": [],
+          "grid_defaults": [],
+          "groups": [],
+          "hatch_patterns": [],
+          "history_records": [],
+          "layers": [],
+          "lights": [],
+          "linetypes": [],
+          "materials": [],
+          "object_presentation": [],
+          "previews": [],
+          "product_definitions": [],
+          "product_occurrences": [],
+          "render_settings": [],
+          "revisions": [],
+          "setting_records": [],
+          "text_dots": [],
+          "text_styles": [],
+          "texture_mappings": [],
+          "unknowns": [
+            {
+              "id": "rhino:object:record#000000",
+              "links": [
+                "rhino:object:curve#record-000000-offset-177"
+              ]
+            }
+          ],
+          "views": [],
+          "windows_bitmaps": []
+        },
+        "version": 2
+      }
+    },
+    "source": {
+      "attributes": {
+        "absolute_tolerance_millimeters": "0.01",
+        "absolute_tolerance_native": "0.01",
+        "angular_tolerance": "0.1",
+        "archive_version": "50",
+        "container_kind": "3dm-chunks",
+        "millimeters_per_unit": "1",
+        "relative_tolerance": "0.001",
+        "unit_system": "standard:2",
+        "unit_value": "2"
+      },
+      "format": "rhino"
+    },
+    "tolerances": {
+      "angular": 0.1,
+      "linear": 0.01
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "container_only": false,
+    "format": "rhino",
+    "geometry_transferred": true,
+    "losses": [
+      {
+        "category": "geometry",
+        "code": "object_records_untransferred",
+        "message": "decoded 1/1 Rhino object records",
+        "severity": "info"
+      },
+      {
+        "category": "other",
+        "code": "decode_diagnostic",
+        "message": "object at 177 has nil object UUID",
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "decoded 1/1 Rhino object records; retained metadata/digests for 1 records and complete bytes for 1; document cap 268435456 bytes, per-record cap 16777216 bytes"
+    ]
+  },
+  "source_fidelity": {
+    "annotations": {
+      "exactness": {
+        "rhino:object:curve#record-000000-offset-177": {
+          "entity": "derived"
+        }
+      }
+    },
+    "retained_records": [
+      {
+        "byte_len": 221,
+        "data": "cIAAINEAAAAAAAAAcQAAggQAAAAAAAAA+n8CAKkAAAAAAAAA+/8CABQAAAAAAAAA5tTXTkfp0xG/5QAQgwEi8E6cu9v8/wIAcQAAAAAAAAAQAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAEAAAAAAAAAAAAAAAAAAABBAAAAAAAAAAEAAAAAAAAAAAAMAAAAAAAAAAAAAQAAAAAAAAAxAAAAAAAAAIkADAAAAU8XYlP9/AoAAAAAAAAAAAH8AAIIAAAAAAAAAAEMFXMI=",
+        "id": "rhino:object:record#000000",
+        "offset": 177,
+        "sha256": "fb20012e3fdd57627ce142519cde6568ac4e6b4682f9a01c651de8aca817a116",
+        "stream": "source"
+      }
+    ],
+    "version": "3"
+  }
+}

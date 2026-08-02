@@ -5,7 +5,7 @@
 //! boundary, and namespace links. A [`SurfacePrototype`] contains named template
 //! parameters. A named prototype locates its adjacent first positional instance.
 
-use cadmpeg_ir::cursor::bounded_len;
+use cadmpeg_codec_core::cursor::bounded_len;
 
 use crate::psb::{self, compact_int};
 use crate::scalar;
@@ -162,6 +162,8 @@ impl SurfacePrototypeFamily {
 /// Typed wrapper carried by a named surface-prototype parameter.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SurfaceNamedValue {
+    /// Present named field with an empty body.
+    Empty,
     /// One compact integer.
     CompactInt(u32),
     /// Count-bounded compact-integer array.
@@ -479,6 +481,9 @@ pub struct LineExtrusionFrame {
 /// cylinder surface row.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TabulatedCylinderCurveReplay {
+    /// Exact bytes from the replay curve identifier through the terminal
+    /// `f6 e3` trailer.
+    pub body: Vec<u8>,
     /// Owning `geom_type = 2c` surface identifier.
     pub surface_id: u32,
     /// Replayed curve identifier.
@@ -531,6 +536,27 @@ impl SurfaceParameterRecord {
             return None;
         }
         torus_radius_override_layout(&self.body).map(|layout| layout.overrides)
+    }
+
+    /// Decode a type-26 row's terminal replay of its section prototype's
+    /// minor radius.
+    #[must_use]
+    pub fn type26_replayed_minor_radius(
+        &self,
+        type_byte: u8,
+        prototype_minor_radius: f64,
+    ) -> Option<f64> {
+        (type_byte == 0x26
+            && self.torus_radius_overrides(type_byte).is_none()
+            && prototype_minor_radius.is_finite()
+            && prototype_minor_radius > 0.0)
+            .then_some(())?;
+        let frame = self.terminal_scalar_frame.as_ref()?;
+        let slot = frame.slots.last()?;
+        let value = slot.value?;
+        (slot.offset.checked_add(slot.length) == Some(self.body.len())
+            && value.to_bits() == prototype_minor_radius.to_bits())
+        .then_some(value)
     }
 
     /// Decode the terminal outline frame of a positional torus-or-sphere body.
@@ -764,13 +790,85 @@ impl SurfaceParameterRecord {
         (type_byte == 0x24).then_some(())?;
         self.repeated_diameter_type24_round_frame(cache)
             .or_else(|| self.type24_held_coordinate_round_frame())
+            .or_else(|| self.type24_single_diameter_round_frame())
             .or_else(|| self.type24_square_radial_round_frame())
+    }
+
+    fn terminal_scalar_frame_has_owned_end(
+        &self,
+        terminal: &SurfaceParameterScalarFrame,
+    ) -> Option<()> {
+        let terminal_end = terminal
+            .slots
+            .iter()
+            .try_fold(terminal.offset, |cursor, slot| {
+                (slot.offset == cursor).then(|| cursor + slot.length)
+            })?;
+        if terminal_end == self.body.len() {
+            return Some(());
+        }
+        let suffix = self.body.get(terminal_end..)?;
+        if matches!(suffix, [0x00 | 0x10 | 0x18]) {
+            return Some(());
+        }
+        (suffix.first() == Some(&psb::token::ENTITY_REF)).then_some(())?;
+        let (_, reference_end) = psb::reference_id(&self.body, terminal_end + 1).ok()?;
+        (reference_end == self.body.len()).then_some(())
+    }
+
+    fn type24_single_diameter_round_frame(&self) -> Option<PositionalCylinderFrame> {
+        (self.boundary == SurfaceBodyBoundary::CompoundClose).then_some(())?;
+        let terminal = self.scalar_frames.last()?;
+        (terminal.slots.len() == 8).then_some(())?;
+        self.terminal_scalar_frame_has_owned_end(terminal)?;
+        let diameter = terminal.slots[1].value?;
+        let corners = &terminal.slots[2..];
+        let values = corners
+            .iter()
+            .map(|slot| slot.value)
+            .collect::<Option<Vec<_>>>()?;
+        values.iter().all(|value| value.is_finite()).then_some(())?;
+        let first: [f64; 3] = values[..3].try_into().ok()?;
+        let second: [f64; 3] = values[3..].try_into().ok()?;
+        let spans = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
+        let scale = values
+            .iter()
+            .chain([&diameter])
+            .map(|value| value.abs())
+            .fold(1.0, f64::max);
+        (diameter.is_finite() && diameter > 1e-12 * scale).then_some(())?;
+        let radial_axes = (0..3)
+            .filter(|axis| (spans[*axis].abs() - diameter).abs() <= 1e-9 * scale)
+            .collect::<Vec<_>>();
+        let [radial_axis] = radial_axes.as_slice() else {
+            return None;
+        };
+        let mut axis_delta = spans;
+        axis_delta[*radial_axis] = 0.0;
+        let length = axis_delta
+            .iter()
+            .map(|value| value * value)
+            .sum::<f64>()
+            .sqrt();
+        (length > 1e-12 * scale).then_some(())?;
+        let mut origin = first;
+        origin[*radial_axis] = f64::midpoint(first[*radial_axis], second[*radial_axis]);
+        let axis = axis_delta.map(|value| value / length);
+        let mut ref_direction = [0.0; 3];
+        ref_direction[*radial_axis] = spans[*radial_axis].signum();
+        Some(PositionalCylinderFrame {
+            origin,
+            axis,
+            ref_direction,
+            radius: 0.5 * diameter,
+            length: Some(length),
+        })
     }
 
     fn type24_square_radial_round_frame(&self) -> Option<PositionalCylinderFrame> {
         (self.boundary == SurfaceBodyBoundary::CompoundClose).then_some(())?;
         let terminal = self.scalar_frames.last()?;
-        ((6..=8).contains(&terminal.slots.len())).then_some(())?;
+        ((6..=9).contains(&terminal.slots.len())).then_some(())?;
         let repeated_diameter_shell = if terminal.slots.len() == 7 {
             if let [leading, _] = self.scalar_frames.as_slice() {
                 let leading_end = leading
@@ -790,20 +888,7 @@ impl SurfaceParameterRecord {
         } else {
             false
         };
-        let terminal_end = terminal
-            .slots
-            .iter()
-            .try_fold(terminal.offset, |cursor, slot| {
-                (slot.offset == cursor).then(|| cursor + slot.length)
-            })?;
-        if terminal_end != self.body.len() {
-            let suffix = self.body.get(terminal_end..)?;
-            if !matches!(suffix, [0x00 | 0x10 | 0x18]) {
-                (suffix.first() == Some(&psb::token::ENTITY_REF)).then_some(())?;
-                let (_, reference_end) = psb::reference_id(&self.body, terminal_end + 1).ok()?;
-                (reference_end == self.body.len()).then_some(())?;
-            }
-        }
+        self.terminal_scalar_frame_has_owned_end(terminal)?;
         let corners = &terminal.slots[terminal.slots.len() - 6..];
         let values = corners
             .iter()
@@ -1504,7 +1589,7 @@ pub fn positional_frame_planes(
         let suffixed_auxiliary_frame = (|| {
             let frame_end = record.body.len().checked_sub(2)?;
             let mut frames = record.scalar_frames.iter().filter(|frame| {
-                frame.slots.len() == 7
+                (7..=10).contains(&frame.slots.len())
                     && frame
                         .slots
                         .last()
@@ -1512,11 +1597,9 @@ pub fn positional_frame_planes(
             });
             let terminal = frames.next()?;
             frames.next().is_none().then_some(())?;
-            let [_, corners @ ..] = terminal.slots.as_slice() else {
-                unreachable!("seven slots were checked above");
-            };
-            (record.body.ends_with(&[0xf7, 0x0c]) && corners.len() == 6)
-                .then(|| (corners[0].offset, corners))
+            record.body.ends_with(&[0xf7, 0x0c]).then_some(())?;
+            let corners = &terminal.slots[terminal.slots.len() - 6..];
+            Some((corners[0].offset, corners))
         })();
         let terminal_corner_frame = (|| {
             let frame_end = record.body.len().checked_sub(2)?;
@@ -1939,6 +2022,7 @@ const PROTOTYPE_PARAMETER_NAMES: &[&str] = &[
     "offset_type",
     "parent_feats",
     "frst_cntr_crv_hdr_ptr",
+    "trv",
     "id",
     "type",
     "flip",
@@ -1956,14 +2040,51 @@ fn prototype_parameter_allowed(family: &SurfacePrototypeFamily, name: &str) -> b
             && matches!(name, "i_pnts" | "i_points" | "c_pnts"))
 }
 
-fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> SurfaceNamedValue {
-    let scalar_field = matches!(name, "radius" | "radius1" | "radius2" | "half_angle");
+fn named_surface_value(
+    family: &SurfacePrototypeFamily,
+    name: &str,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> SurfaceNamedValue {
+    if body.is_empty() {
+        return SurfaceNamedValue::Empty;
+    }
+    let radius_field = matches!(name, "radius" | "radius1" | "radius2");
+    let parameter_bound_field = matches!(name, "par_v_0" | "par_v_1");
+    let scalar_field = radius_field || parameter_bound_field || name == "half_angle";
     let compact_integer_field = matches!(
         name,
-        "id" | "type" | "tan_cond" | "degree" | "frst_cntr_crv_hdr_ptr" | "data_type"
+        "id" | "type" | "tan_cond" | "degree" | "frst_cntr_crv_hdr_ptr" | "trv" | "data_type"
     );
     if scalar_field && body == [0x18] {
         return SurfaceNamedValue::ScalarSequence(vec![0.0]);
+    }
+    if name == "flip" {
+        if body.first() == Some(&0xf1) {
+            let (value, end) = compact_int(body, 1);
+            if end > 1 && end == body.len() {
+                return SurfaceNamedValue::CompactInt(value);
+            }
+        }
+        return SurfaceNamedValue::Opaque(body.to_vec());
+    }
+    if name == "offset_type" {
+        let (value, separator) = compact_int(body, 0);
+        if let Some(reference_start) = separator.checked_add(2) {
+            if separator > 0
+                && body
+                    .get(separator..)
+                    .is_some_and(|rest| rest.starts_with(&[0xf1, psb::token::ENTITY_REF]))
+            {
+                let Ok((reference, end)) = psb::reference_id(body, reference_start) else {
+                    return SurfaceNamedValue::Opaque(body.to_vec());
+                };
+                if reference != 0 && end == body.len() {
+                    return SurfaceNamedValue::CompactInt(value);
+                }
+            }
+        }
+        return SurfaceNamedValue::Opaque(body.to_vec());
     }
     if body.first() == Some(&psb::token::ARRAY_OPEN) {
         let (count, mut cursor) = compact_int(body, 1);
@@ -1989,8 +2110,13 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
                 else {
                     return SurfaceNamedValue::Opaque(body.to_vec());
                 };
-                let slots =
-                    named_spline_scalar_slots(name, &body[values_start..], slot_count, cache);
+                let slots = named_spline_scalar_slots(
+                    family,
+                    name,
+                    &body[values_start..],
+                    slot_count,
+                    cache,
+                );
                 return SurfaceNamedValue::CountedScalarArray {
                     count,
                     values: slots.iter().map(|slot| slot.0).collect(),
@@ -2010,16 +2136,25 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
             {
                 return SurfaceNamedValue::CompactIntArray(values);
             }
+            if name == "parent_feats"
+                && values.len() == usize::try_from(count).unwrap_or(usize::MAX)
+                && parent_feature_array_trailer(&body[cursor..])
+            {
+                return SurfaceNamedValue::CompactIntArray(values);
+            }
             if name == "params" {
-                // Each declared slot is at least a one-byte scalar token in the
-                // value bytes, so the count cannot exceed the remaining bytes.
-                let Some(slot_count) =
-                    bounded_len(u64::from(count), 1, body.len().saturating_sub(values_start))
+                let remaining = body.len().saturating_sub(values_start);
+                let Some(slot_count) = usize::try_from(count)
+                    .ok()
+                    .filter(|count| *count <= remaining.saturating_mul(3))
                 else {
                     return SurfaceNamedValue::Opaque(body.to_vec());
                 };
-                let slots =
-                    named_spline_scalar_slots(name, &body[values_start..], slot_count, cache);
+                let Some(slots) =
+                    counted_parameter_scalar_slots(&body[values_start..], slot_count, cache)
+                else {
+                    return SurfaceNamedValue::Opaque(body.to_vec());
+                };
                 return SurfaceNamedValue::CountedScalarArray {
                     count,
                     values: slots.iter().map(|slot| slot.0).collect(),
@@ -2058,7 +2193,7 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
                 | "tangts"
                 | "end_tangts"
         )
-        .then(|| named_spline_scalar_slots(name, &body[values_start..], slot_count, cache));
+        .then(|| named_spline_scalar_slots(family, name, &body[values_start..], slot_count, cache));
         let values = if let Some(slots) = &spline_slots {
             slots.iter().map(|slot| slot.0).collect()
         } else if name == "local_sys" {
@@ -2101,6 +2236,10 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
             Some((if body[cursor] == 0x0d { 0.25 } else { 0.5 }, cursor + 1))
         } else if name == "half_angle" {
             scalar::decode_positive_dict(body, cursor).filter(|(value, _)| valid_half_angle(*value))
+        } else if radius_field {
+            scalar::decode_named_surface_radius(body, cursor, cache)
+        } else if parameter_bound_field {
+            scalar::decode_named_positive_dict_scalar(body, cursor, cache)
         } else {
             scalar::decode_in_lane(body, cursor, cache)
         };
@@ -2169,6 +2308,27 @@ pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
         }
         named.sort_unstable();
         named.dedup();
+        let mut owned_scalar_end = close + 2;
+        named.retain(|(token_offset, token_length)| {
+            if *token_offset < owned_scalar_end {
+                return false;
+            }
+            let name_start = *token_offset + 2;
+            let name_end = *token_offset + *token_length - 1;
+            let name = String::from_utf8_lossy(&payload[name_start..name_end]);
+            if prototype_parameter_allowed(&family, &name) {
+                let value_offset = *token_offset + *token_length;
+                if let Some(length) = named_vector_scalar_body_len(
+                    &family,
+                    &name,
+                    &payload[value_offset..record_end],
+                    &cache,
+                ) {
+                    owned_scalar_end = value_offset + length;
+                }
+            }
+            true
+        });
         let mut parameters = Vec::new();
         for (position, (token_offset, token_length)) in named.iter().copied().enumerate() {
             let name_start = token_offset + 2;
@@ -2181,14 +2341,21 @@ pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
             let mut value_end = named
                 .get(position + 1)
                 .map_or(record_end, |(next, _)| *next);
-            if let Some(compound_close) = psb::tokens(&payload[value_offset..value_end])
+            if let Some(length) = named_vector_scalar_body_len(
+                &family,
+                &name,
+                &payload[value_offset..record_end],
+                &cache,
+            ) {
+                value_end = value_offset + length;
+            } else if let Some(compound_close) = psb::tokens(&payload[value_offset..value_end])
                 .into_iter()
                 .find(|token| token.kind == psb::TokenKind::CompoundClose)
             {
                 value_end = value_offset + compound_close.offset;
             }
             let body = payload[value_offset..value_end].to_vec();
-            let value = named_surface_value(&name, &body, &cache);
+            let value = named_surface_value(&family, &name, &body, &cache);
             parameters.push(SurfaceNamedParameter {
                 name: name.into_owned(),
                 value,
@@ -2207,6 +2374,22 @@ pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
     }
     records.sort_by_key(|record| record.offset);
     records
+}
+
+fn parent_feature_array_trailer(body: &[u8]) -> bool {
+    let Some(rest) = body.strip_prefix(&[psb::token::ENTITY_REF]) else {
+        return false;
+    };
+    let Ok((class_id, cursor)) = psb::reference_id(rest, 0) else {
+        return false;
+    };
+    let Ok((entity_id, cursor)) = psb::reference_id(rest, cursor) else {
+        return false;
+    };
+    if class_id == 0 || entity_id == 0 {
+        return false;
+    }
+    matches!(&rest[cursor..], [] | [0xe1] | [0xe1, 0xf6, 0xf6])
 }
 
 fn positional_body_start(payload: &[u8], row: &SurfaceRow) -> Option<usize> {
@@ -2603,24 +2786,21 @@ fn named_record_boundary(
 
 /// Decode bounded parameter bodies for positional `srf_array` rows.
 pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
-    parameter_records_for_rows(payload, rows(payload))
+    parameter_records_for_rows(payload, &rows(payload))
 }
 
 /// Decode bounded positional parameter bodies from a DEPDB cross-section
 /// surface namespace.
 #[must_use]
 pub fn cross_section_parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
-    parameter_records_for_rows(payload, cross_section_rows(payload))
+    parameter_records_for_rows(payload, &cross_section_rows(payload))
 }
 
-fn parameter_records_for_rows(
-    payload: &[u8],
-    rows: Vec<SurfaceRow>,
-) -> Vec<SurfaceParameterRecord> {
+fn parameter_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<SurfaceParameterRecord> {
     let cache = scalar::ScalarCache::from_section(payload);
     let mut headers = Vec::<(SurfaceRow, usize)>::new();
     for row in rows {
-        let Some(body_start) = positional_body_start(payload, &row) else {
+        let Some(body_start) = positional_body_start(payload, row) else {
             continue;
         };
         if headers
@@ -2629,7 +2809,7 @@ fn parameter_records_for_rows(
         {
             continue;
         }
-        headers.push((row, body_start));
+        headers.push((row.clone(), body_start));
     }
     let mut records = Vec::new();
     for (index, (row, body_start)) in headers.iter().enumerate() {
@@ -2802,6 +2982,7 @@ fn decode_positional_cylinder_frame(
         .or_else(|| decode_axial_endpoint_radial_sample_cylinder_frame(body, cache))
         .or_else(|| decode_precise_center_edge_cylinder_frame(body, cache))
         .or_else(|| decode_precise_held_center_cylinder_frame(body, cache))
+        .or_else(|| decode_compound_local_system_cylinder_frame(body, cache))
         .or_else(|| decode_local_system_suffix_cylinder_frame(body, cache))
         .or_else(|| decode_referenced_planar_envelope_cylinder_frame(body, cache))
         .or_else(|| decode_held_axis_cylinder_frame(body, cache))
@@ -4069,26 +4250,68 @@ fn decode_local_system_suffix_cylinder_frame(
     let [slots] = frames.as_slice() else {
         return None;
     };
+    cylinder_frame_from_local_system(slots, *radius)
+}
+
+fn decode_compound_local_system_cylinder_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalCylinderFrame> {
+    let radius_frames = (1..body.len())
+        .filter_map(|radius_start| {
+            let (radius, radius_end) =
+                scalar::decode_tabulated_cylinder_first_coordinate(body, radius_start, cache)
+                    .or_else(|| scalar::decode(body, radius_start))?;
+            (radius.is_finite()
+                && radius > 0.0
+                && body.get(radius_end) == Some(&psb::token::COMPOUND_CLOSE))
+            .then_some((radius_start, radius))
+        })
+        .collect::<Vec<_>>();
+    let candidates = (1..body.len())
+        .filter(|start| body[start - 1] == psb::token::COMPOUND_CLOSE)
+        .flat_map(|start| {
+            radius_frames
+                .iter()
+                .filter(move |(radius_start, _)| *radius_start > start)
+                .filter_map(move |(radius_start, radius)| {
+                    let slots = scalar::decode_positional_cylinder_local_system_slots(
+                        body.get(start..*radius_start)?,
+                        cache,
+                    )?;
+                    Some((slots, *radius))
+                })
+        })
+        .collect::<Vec<_>>();
+    let [(slots, radius)] = candidates.as_slice() else {
+        return None;
+    };
+    cylinder_frame_from_local_system(slots, *radius)
+}
+
+fn cylinder_frame_from_local_system(
+    slots: &[f64; 12],
+    radius: f64,
+) -> Option<PositionalCylinderFrame> {
+    (radius.is_finite() && radius > 0.0).then_some(())?;
     let normalize = |vector: [f64; 3]| {
         let magnitude = vector.iter().map(|value| value * value).sum::<f64>().sqrt();
-        (magnitude.is_finite() && magnitude > 0.0).then(|| vector.map(|value| value / magnitude))
+        (magnitude.is_finite() && magnitude > 0.0)
+            .then(|| (vector.map(|value| value / magnitude), magnitude))
     };
-    let first = normalize(slots[0..3].try_into().ok()?)?;
-    let second = normalize(slots[3..6].try_into().ok()?)?;
-    let scale = slots
-        .iter()
-        .chain(std::iter::once(radius))
-        .map(|value| value.abs())
-        .fold(1.0, f64::max);
+    let (first, first_magnitude) = normalize(slots[0..3].try_into().ok()?)?;
+    let (second, second_magnitude) = normalize(slots[3..6].try_into().ok()?)?;
+    let scale = first_magnitude.max(second_magnitude).max(1.0);
+    ((first_magnitude - second_magnitude).abs() <= 1e-9 * scale).then_some(())?;
     (first
         .iter()
         .zip(second)
         .map(|(left, right)| left * right)
         .sum::<f64>()
         .abs()
-        <= 1e-9 * scale)
+        <= 1e-9)
         .then_some(())?;
-    let axis = normalize([
+    let (axis, _) = normalize([
         first[1] * second[2] - first[2] * second[1],
         first[2] * second[0] - first[0] * second[2],
         first[0] * second[1] - first[1] * second[0],
@@ -4097,7 +4320,7 @@ fn decode_local_system_suffix_cylinder_frame(
         origin: slots[9..12].try_into().ok()?,
         axis,
         ref_direction: first,
-        radius: *radius,
+        radius,
         length: None,
     })
 }
@@ -4373,7 +4596,7 @@ pub fn tabulated_cylinder_curve_replays(payload: &[u8]) -> Vec<TabulatedCylinder
                     .flatten()
             })
             .collect::<Vec<_>>();
-        let [(terminal, _terminal_end, terminal_reference)] = terminals.as_slice() else {
+        let [(terminal, terminal_end, terminal_reference)] = terminals.as_slice() else {
             continue;
         };
         let middle_separators = (*first_body_start..*terminal)
@@ -4414,6 +4637,7 @@ pub fn tabulated_cylinder_curve_replays(payload: &[u8]) -> Vec<TabulatedCylinder
             continue;
         };
         replays.push(TabulatedCylinderCurveReplay {
+            body: payload[replay_offset..*terminal_end].to_vec(),
             surface_id: owner.id,
             curve_id,
             curve_type: 0x13,
@@ -4503,6 +4727,7 @@ fn first_compound_close(payload: &[u8], start: usize, end: usize) -> Option<usiz
 }
 
 fn named_spline_scalar_slots(
+    family: &SurfacePrototypeFamily,
     name: &str,
     body: &[u8],
     count: usize,
@@ -4520,7 +4745,7 @@ fn named_spline_scalar_slots(
         }
         let start = cursor.pos();
         let Some(value) =
-            cursor.take_with(|data, pos| named_spline_scalar_slot(name, data, pos, cache))
+            cursor.take_with(|data, pos| named_spline_scalar_slot(family, name, data, pos, cache))
         else {
             break;
         };
@@ -4537,7 +4762,159 @@ fn named_spline_scalar_slots(
     slots
 }
 
+fn named_vector_scalar_body_len(
+    family: &SurfacePrototypeFamily,
+    name: &str,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<usize> {
+    matches!(
+        name,
+        "i_pnts"
+            | "i_points"
+            | "end_u_tangts"
+            | "end_v_tangts"
+            | "end_uv_deriv"
+            | "tangts"
+            | "end_tangts"
+    )
+    .then_some(())?;
+    (body.first() == Some(&psb::token::SCALAR_BODY)).then_some(())?;
+    let (dimensions, dimensions_end) = compact_int(body, 1);
+    let (count, values_start) = compact_int(body, dimensions_end);
+    (dimensions_end > 1 && values_start > dimensions_end).then_some(())?;
+    let slot_count = usize::try_from(dimensions)
+        .ok()?
+        .checked_mul(usize::try_from(count).ok()?)?;
+    let mut cursor = psb::Cursor::at(body, values_start);
+    let mut slots = 0;
+    while slots < slot_count {
+        if matches!(name, "i_pnts" | "i_points")
+            && cursor.take_slice_if(&[psb::token::SCALAR_BODY, 0x00])
+        {
+            continue;
+        }
+        cursor.take_with(|data, pos| named_spline_scalar_slot(family, name, data, pos, cache))?;
+        slots += 1;
+    }
+    Some(cursor.pos())
+}
+
+fn counted_parameter_scalar_slots(
+    body: &[u8],
+    count: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<Vec<ScalarTokenSlot>> {
+    let mut states = vec![BTreeMap::new(); body.len() + 1];
+    states[0].insert(0, CountedParameterParse::Unique(Vec::new()));
+    for cursor in 0..body.len() {
+        let current = std::mem::take(&mut states[cursor]);
+        for (slots_used, parse) in current {
+            if slots_used >= count {
+                continue;
+            }
+            let run = match body[cursor] {
+                0xe5 => 2,
+                0xe6 => 3,
+                _ => 0,
+            };
+            if run > 0 {
+                if slots_used
+                    .checked_add(run)
+                    .is_some_and(|next| next <= count)
+                {
+                    let mut slots = vec![(Some(0.0), vec![body[cursor]])];
+                    slots.extend(std::iter::repeat_n((Some(0.0), Vec::new()), run - 1));
+                    add_counted_parameter_state(
+                        &mut states[cursor + 1],
+                        slots_used + run,
+                        advance_counted_parameter_parse(parse, slots),
+                    );
+                }
+                continue;
+            }
+
+            if body[cursor] == 0x18 {
+                add_counted_parameter_state(
+                    &mut states[cursor + 1],
+                    slots_used + 1,
+                    advance_counted_parameter_parse(parse.clone(), vec![(Some(0.0), vec![0x18])]),
+                );
+                if let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache)
+                    .filter(|(_, next)| *next > cursor + 1)
+                {
+                    add_counted_parameter_state(
+                        &mut states[next],
+                        slots_used + 1,
+                        advance_counted_parameter_parse(
+                            parse,
+                            vec![(Some(value), body[cursor..next].to_vec())],
+                        ),
+                    );
+                }
+                continue;
+            }
+
+            if let Some((value, next)) = named_spline_scalar_slot(
+                &SurfacePrototypeFamily::Spline,
+                "params",
+                body,
+                cursor,
+                cache,
+            ) {
+                add_counted_parameter_state(
+                    &mut states[next],
+                    slots_used + 1,
+                    advance_counted_parameter_parse(
+                        parse,
+                        vec![(value, body[cursor..next].to_vec())],
+                    ),
+                );
+            }
+        }
+    }
+    match states[body.len()].remove(&count) {
+        Some(CountedParameterParse::Unique(slots)) => Some(slots),
+        Some(CountedParameterParse::Ambiguous) | None => None,
+    }
+}
+
+#[derive(Clone)]
+enum CountedParameterParse {
+    Unique(Vec<ScalarTokenSlot>),
+    Ambiguous,
+}
+
+fn advance_counted_parameter_parse(
+    parse: CountedParameterParse,
+    mut suffix: Vec<ScalarTokenSlot>,
+) -> CountedParameterParse {
+    match parse {
+        CountedParameterParse::Unique(mut slots) => {
+            slots.append(&mut suffix);
+            CountedParameterParse::Unique(slots)
+        }
+        CountedParameterParse::Ambiguous => CountedParameterParse::Ambiguous,
+    }
+}
+
+fn add_counted_parameter_state(
+    states: &mut BTreeMap<usize, CountedParameterParse>,
+    slots_used: usize,
+    candidate: CountedParameterParse,
+) {
+    match states.entry(slots_used) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(candidate);
+        }
+        std::collections::btree_map::Entry::Occupied(mut entry) => {
+            entry.insert(CountedParameterParse::Ambiguous);
+        }
+    }
+}
+
 fn named_spline_scalar_slot(
+    family: &SurfacePrototypeFamily,
     name: &str,
     body: &[u8],
     offset: usize,
@@ -4561,7 +4938,7 @@ fn named_spline_scalar_slot(
     if name == "params" && head == 0x2d {
         return named_ieee8(body, offset, 0x40).map(|(value, next)| (Some(value), next));
     }
-    if matches!(head, 0x2d | 0x46 | 0x71) {
+    if matches!(head, 0x2d | 0x46) {
         return scalar::decode_in_lane(body, offset, cache)
             .map(|(value, next)| (Some(value), next));
     }
@@ -4569,8 +4946,26 @@ fn named_spline_scalar_slot(
         return scalar::decode_tabulated_cylinder_second_coordinate(body, offset, cache)
             .map(|(value, next)| (Some(value), next));
     }
-    if matches!(name, "i_pnts" | "i_points") && matches!(head, 0x63 | 0x68 | 0x6e | 0x70) {
+    if matches!(family, SurfacePrototypeFamily::Fillet)
+        && name == "tangts"
+        && scalar::is_tabulated_cylinder_second_coordinate_opener(head)
+    {
+        return scalar::decode_tabulated_cylinder_second_coordinate(body, offset, cache)
+            .map(|(value, next)| (Some(value), next));
+    }
+    if matches!(family, SurfacePrototypeFamily::Fillet)
+        && matches!(name, "i_pnts" | "i_points")
+        && matches!(head, 0xa4..=0xdf)
+    {
+        return scalar::decode_tabulated_cylinder_second_coordinate(body, offset, cache)
+            .map(|(value, next)| (Some(value), next));
+    }
+    if matches!(name, "i_pnts" | "i_points") && matches!(head, 0x5b..=0xa3) {
         return named_positive_dict(body, offset).map(|(value, next)| (Some(value), next));
+    }
+    if head == 0x71 {
+        return scalar::decode_in_lane(body, offset, cache)
+            .map(|(value, next)| (Some(value), next));
     }
     if matches!(name, "i_pnts" | "i_points") && matches!(head, 0xb3 | 0xb9) {
         return scalar::decode_in_lane(body, offset, cache)
@@ -4715,6 +5110,17 @@ fn sequential_named_local_system_slots(
     let mut slots = Vec::with_capacity(count);
     let mut cursor = 0;
     while cursor < body.len() && slots.len() < count {
+        if body.get(cursor) == Some(&0xe7) {
+            let (inherited_count, next) = compact_int(body, cursor + 1);
+            let inherited_count = usize::try_from(inherited_count).ok()?;
+            (next > cursor + 1
+                && inherited_count > 0
+                && slots.len().checked_add(inherited_count)? <= count)
+                .then_some(())?;
+            slots.extend(std::iter::repeat_n(None, inherited_count));
+            cursor = next;
+            continue;
+        }
         if body[cursor] == 0x18 && cursor + 1 == body.len() {
             slots.push(Some(0.0));
             cursor += 1;
@@ -4729,7 +5135,7 @@ fn sequential_named_local_system_slots(
         if body.get(cursor) == Some(&0x18)
             && (body
                 .get(cursor + 1)
-                .is_some_and(|byte| matches!(byte, 0x10 | 0xe4 | 0xe6))
+                .is_some_and(|byte| matches!(byte, 0x10 | 0xe4 | 0xe6 | 0xe7))
                 || (body
                     .get(cursor + 1)
                     .is_some_and(|byte| scalar::is_named_local_system_coordinate_opener(*byte))
@@ -4796,18 +5202,6 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
             .sum::<f64>()
             .sqrt()
     });
-    let nonzero = supports
-        .into_iter()
-        .zip(magnitudes)
-        .filter(|(_, magnitude)| *magnitude > 1e-6)
-        .collect::<Vec<_>>();
-    let [(first, first_magnitude), (second, second_magnitude)] = nonzero.as_slice() else {
-        return PlaneFrame {
-            origin,
-            u_axis: None,
-            normal: None,
-        };
-    };
     if magnitudes
         .into_iter()
         .filter(|magnitude| *magnitude <= 1e-6)
@@ -4819,28 +5213,38 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
             normal: None,
         };
     }
-    let scale = first_magnitude.max(*second_magnitude);
-    let support_dot = first
-        .iter()
-        .zip(second)
-        .map(|(first, second)| first * second)
-        .sum::<f64>();
-    if (first_magnitude - second_magnitude).abs() > 1e-9 * scale.max(1.0)
-        || support_dot.abs() > 1e-9 * first_magnitude * second_magnitude
-    {
+    let pairs = [(0, 1), (0, 2), (1, 2)]
+        .into_iter()
+        .filter(|(first, second)| {
+            let first_magnitude = magnitudes[*first];
+            let second_magnitude = magnitudes[*second];
+            let scale = first_magnitude.max(second_magnitude);
+            let support_dot = supports[*first]
+                .iter()
+                .zip(supports[*second])
+                .map(|(first, second)| first * second)
+                .sum::<f64>();
+            first_magnitude > 1e-6
+                && second_magnitude > 1e-6
+                && (first_magnitude - second_magnitude).abs() <= 1e-9 * scale.max(1.0)
+                && support_dot.abs() <= 1e-9 * first_magnitude * second_magnitude
+        })
+        .collect::<Vec<_>>();
+    let [(first_index, second_index)] = pairs.as_slice() else {
         return PlaneFrame {
             origin,
             u_axis: None,
             normal: None,
         };
-    }
-    let u_axis = (*first_magnitude > 1e-6).then(|| {
-        [
-            first[0] / first_magnitude,
-            first[1] / first_magnitude,
-            first[2] / first_magnitude,
-        ]
-    });
+    };
+    let first = supports[*first_index];
+    let second = supports[*second_index];
+    let first_magnitude = magnitudes[*first_index];
+    let u_axis = Some([
+        first[0] / first_magnitude,
+        first[1] / first_magnitude,
+        first[2] / first_magnitude,
+    ]);
     let cross = [
         first[1].mul_add(second[2], -(first[2] * second[1])),
         first[2].mul_add(second[0], -(first[0] * second[2])),
@@ -4877,28 +5281,42 @@ fn complete_plane_local_system_slots(
 
 /// Decode the e3-bounded local-system chunk following each plane envelope.
 pub fn plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
-    plane_local_systems_for_rows(payload, rows(payload))
+    plane_local_systems_for_rows(payload, &rows(payload))
 }
 
 /// Decode plane local-system chunks from a DEPDB cross-section namespace.
 #[must_use]
 pub fn cross_section_plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
-    plane_local_systems_for_rows(payload, cross_section_rows(payload))
+    plane_local_systems_for_rows(payload, &cross_section_rows(payload))
 }
 
-fn plane_local_systems_for_rows(payload: &[u8], rows: Vec<SurfaceRow>) -> Vec<PlaneLocalSystem> {
+fn plane_local_systems_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<PlaneLocalSystem> {
     let cache = scalar::ScalarCache::from_section(payload);
+    let parameters = parameter_records_for_rows(payload, rows);
     let headers = rows
-        .into_iter()
-        .filter(|row| row.kind == SurfaceKind::Plane)
-        .filter_map(|row| positional_body_start(payload, &row).map(|body_start| (row, body_start)))
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| row.kind == SurfaceKind::Plane)
+        .map(|(index, row)| {
+            let row_end = rows
+                .get(index + 1)
+                .map_or(payload.len(), |next| next.offset);
+            (row, row_end)
+        })
         .collect::<Vec<_>>();
     let mut systems = Vec::new();
-    for (index, (row, envelope_start)) in headers.iter().enumerate() {
-        let row_end = headers
-            .get(index + 1)
-            .map_or(payload.len(), |(next, _)| next.offset);
-        let Some(envelope_close) = first_compound_close(payload, *envelope_start, row_end) else {
+    for (row, row_end) in headers {
+        let Some(envelope_start) = positional_body_start(payload, row) else {
+            continue;
+        };
+        let parameter = unique_surface_parameter(&parameters, row.id)
+            .filter(|parameter| parameter.offset == row.offset);
+        let envelope_close = first_compound_close(payload, envelope_start, row_end).or_else(|| {
+            parameter
+                .filter(|parameter| parameter.boundary == SurfaceBodyBoundary::CompoundClose)
+                .map(|parameter| parameter.body_offset + parameter.body.len())
+        });
+        let Some(envelope_close) = envelope_close else {
             continue;
         };
         let chunk_start = envelope_close + 1;
@@ -4912,9 +5330,10 @@ fn plane_local_systems_for_rows(payload: &[u8], rows: Vec<SurfaceRow>) -> Vec<Pl
         let slots = complete_plane_local_system_slots(&body, &cache)
             .map_or([None; 12], |slots| slots.map(Some));
         let frame = plane_frame(&slots);
-        let simple = matches!(body.first(), Some(0x0f | 0x10 | 0x18))
-            && body.len() <= 24
-            && !body
+        let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(&body);
+        let simple = matches!(frame_body.first(), Some(0x0f | 0x10 | 0x18))
+            && frame_body.len() <= 24
+            && !frame_body
                 .iter()
                 .any(|byte| matches!(byte, 0xe0..=0xe2 | 0xf1 | 0xf2 | 0xf7 | 0xf8));
         systems.push(PlaneLocalSystem {
@@ -4952,19 +5371,28 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
     let cache = scalar::ScalarCache::from_section(payload);
     let headers = all_rows
         .iter()
-        .filter(|row| row.kind == SurfaceKind::Plane)
-        .cloned()
-        .filter_map(|row| positional_body_start(payload, &row).map(|body_start| (row, body_start)))
+        .enumerate()
+        .filter(|(_, row)| row.kind == SurfaceKind::Plane)
+        .filter_map(|(index, row)| {
+            positional_body_start(payload, row).map(|body_start| {
+                let row_end = all_rows
+                    .get(index + 1)
+                    .map_or(payload.len(), |next| next.offset);
+                (row, body_start, row_end)
+            })
+        })
         .collect::<Vec<_>>();
     let mut envelopes = Vec::new();
-    for (index, (row, body_start)) in headers.iter().enumerate() {
-        let row_end = headers
-            .get(index + 1)
-            .map_or(payload.len(), |(next, _)| next.offset);
-        let Some(body_end) = first_compound_close(payload, *body_start, row_end) else {
+    for (row, body_start, row_end) in headers {
+        let Some(body) = payload.get(body_start..row_end) else {
             continue;
         };
-        let body = payload[*body_start..body_end].to_vec();
+        let Some(body_end) = surface_body_compound_close(SurfaceKind::Plane, body, &cache)
+            .map(|relative| body_start + relative)
+        else {
+            continue;
+        };
+        let body = payload[body_start..body_end].to_vec();
         let scalar_tokens;
         let (envelope, corner_coordinate_equal) = if body.first() == Some(&0x0e) {
             let Some(slots) = complete_plane_envelope_slots(&body[1..], 9, &cache) else {
@@ -5031,7 +5459,7 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
             corner_coordinate_equal,
             scalar_tokens,
             row_offset: row.offset,
-            offset: *body_start,
+            offset: body_start,
         });
     }
     for (index, row) in all_rows
@@ -5292,6 +5720,99 @@ mod tests {
         assert_eq!(planes[0].surface_id, 7);
         assert_eq!(planes[0].origin, [0.0, 0.0, 0.0]);
         assert_eq!(planes[0].normal, [0.0, 1.0, 0.0]);
+    }
+
+    #[test]
+    fn plane_records_end_at_the_next_surface_family() {
+        let payload = [
+            7, 0x22, 4, 0x01, 0, 0, // plane row
+            0xe4, 0xe4, 0xe4, 0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0xe4, 0xe3, // envelope
+            8, 0x24, 4, 0x01, 0, 0, // cylinder row
+            0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6, 0xe3,
+        ];
+        let rows = rows(&payload);
+
+        assert!(matches!(
+            rows.as_slice(),
+            [
+                SurfaceRow {
+                    kind: SurfaceKind::Plane,
+                    ..
+                },
+                SurfaceRow {
+                    kind: SurfaceKind::Cylinder,
+                    ..
+                }
+            ]
+        ));
+        assert_eq!(plane_envelopes_for_rows(&payload, &rows).len(), 1);
+        assert!(plane_local_systems_for_rows(&payload, &rows).is_empty());
+    }
+
+    #[test]
+    fn plane_local_system_follows_a_parameter_scalar_containing_a_named_record_header() {
+        let payload = [
+            7, 0x22, 4, 0x01, 0, 0, // plane row
+            0x5b, 0xc1, 0xab, 0x04, 0x64, 0x8d, 0x4f, 0x32, 0xe0, 0x1a, 0x1d, 0xa7, 0x0d, 0x5c,
+            0x0c, 0x2d, 0x1b, 0xb6, 0xbb, 0xc4, 0x23, 0x5c, 0xc5, 0xa3, 0x0c, 0xb3, 0xbb, 0x89,
+            0xf1, 0x2c, 0xc8, 0x5c, 0x28, 0xf5, 0xc2, 0x8f, 0xd4, 0x2f, 0x31, 0x80, 0xdc, 0xaa,
+            0xa1, 0x13, 0xdd, 0x13, 0xf1, 0xb6, 0x45, 0xd0, 0x67, 0x81, 0xe7, 0x8a, 0x2d, 0x37,
+            0x77, 0xb3, 0xe6, 0xb6, 0xcc, 0xe5, 0x95, 0xaa, 0xa1, 0x13, 0xdd, 0x13, 0xef,
+            0xe3, // parameter body
+            0x18, 0x28, 0xbf, 0x32, 0xd4, 0x4c, 0x4f, 0x62, 0xd3, 0xc2, 0xc2, 0xf0, 0x25, 0xa2,
+            0x3e, 0x8b, 0x18, 0x7a, 0xc2, 0xf0, 0x25, 0xa2, 0x3e, 0x8b, 0x28, 0xbf, 0x32, 0xd4,
+            0x4c, 0x4f, 0x62, 0xd3, 0x0f, 0x18, 0xe4, 0xc8, 0x5c, 0x28, 0xf5, 0xc2, 0x8f, 0xd3,
+            0x2f, 0x31, 0x80, 0xdd, 0xc2, 0xd6, 0x74, 0x69, 0xa5, 0x9b, 0xe3, // local system
+            8, 0x24, 4, 0x01, 0, 0, // next surface row
+            0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6, 0xe3,
+        ];
+        let rows = rows(&payload);
+
+        let systems = plane_local_systems_for_rows(&payload, &rows);
+        assert_eq!(systems.len(), 1);
+        assert_eq!(systems[0].surface_id, 7);
+        assert_eq!(
+            systems[0].origin,
+            Some([-1.335_000_000_000_026_4, 17.5, -3.595_135_602_449_500_5])
+        );
+        assert_eq!(
+            systems[0].u_axis,
+            Some([0.0, 0.121_869_343_405_147_49, -0.992_546_151_641_322_1])
+        );
+        assert_eq!(systems[0].normal, Some([1.0, 0.0, 0.0]));
+        assert_eq!(systems[0].body.len(), 52);
+    }
+
+    #[test]
+    fn compound_bounded_cylinder_local_system_retains_its_terminal_radius() {
+        let body = [
+            0xe3, // preceding envelope close
+            0xc2, 0xc2, 0xf0, 0x25, 0xa2, 0x3e, 0x8e, 0x41, 0xbf, 0x32, 0xd4, 0x4c, 0x4f, 0x62,
+            0x28, 0x18, 0x28, 0xbf, 0x32, 0xd4, 0x4c, 0x4f, 0x62, 0x28, 0xc2, 0xc2, 0xf0, 0x25,
+            0xa2, 0x3e, 0x8e, 0x18, 0xe5, 0x0f, 0x45, 0x40, 0x15, 0xaa, 0x6c, 0xe9, 0x90, 0x2d,
+            0x37, 0x64, 0xc9, 0x7b, 0x47, 0x11, 0xb1, 0x46, 0x30, 0x0d, 0x52, 0x7e, 0x52, 0x15,
+            0x76, 0x6e, 0x66, 0xd0, 0x97, 0x1d, 0xc9, 0xe3, 0xe3, // radius and close
+            0x82, 0x52, 0x01, // following row-local control payload
+        ];
+
+        let frame =
+            decode_compound_local_system_cylinder_frame(&body, &scalar::ScalarCache::default())
+                .expect("complete compound-bounded frame");
+        assert_eq!(
+            frame.origin,
+            [
+                -0.000_490_864_005_609_825_7,
+                23.393_699_364_519_936,
+                -16.052_039_999_999_998
+            ]
+        );
+        assert_eq!(frame.axis, [0.0, 0.0, -1.0]);
+        assert_eq!(
+            frame.ref_direction,
+            [-0.992_546_151_641_322_3, 0.121_869_343_405_145_1, 0.0]
+        );
+        assert_eq!(frame.radius, 0.606_300_635_480_064_5);
+        assert_eq!(frame.length, None);
     }
 
     #[test]
@@ -5564,7 +6085,13 @@ mod tests {
     #[test]
     fn spline_slots_consume_unresolved_tokens_without_scanning_their_payloads() {
         let body = [0xaa, 0xe4, 1, 2, 3, 4, 5, 0xe4];
-        let slots = named_spline_scalar_slots("tangts", &body, 2, &scalar::ScalarCache::default());
+        let slots = named_spline_scalar_slots(
+            &SurfacePrototypeFamily::Spline,
+            "tangts",
+            &body,
+            2,
+            &scalar::ScalarCache::default(),
+        );
 
         assert_eq!(
             slots,
@@ -5579,7 +6106,13 @@ mod tests {
     fn interpolation_point_aliases_expand_continuation_and_terminal_zero() {
         let body = [0xe4, 0x0f, 0xe4, 0xf9, 0x00, 0x2f, 0x14, 0x00, 0x18];
         for name in ["i_pnts", "i_points"] {
-            let slots = named_spline_scalar_slots(name, &body, 6, &scalar::ScalarCache::default());
+            let slots = named_spline_scalar_slots(
+                &SurfacePrototypeFamily::Spline,
+                name,
+                &body,
+                6,
+                &scalar::ScalarCache::default(),
+            );
             assert_eq!(
                 slots.iter().map(|slot| slot.0).collect::<Vec<_>>(),
                 [
@@ -5602,7 +6135,13 @@ mod tests {
             0xce, 1, 2, 3, 4, 5, 6, 0x2d, 1, 2, 3, 4, 5, 6, 7, 0x46, 1, 2, 3, 4, 5, 6, 7,
         ];
         for name in ["end_v_tangts", "end_tangts"] {
-            let slots = named_spline_scalar_slots(name, &body, 3, &scalar::ScalarCache::default());
+            let slots = named_spline_scalar_slots(
+                &SurfacePrototypeFamily::Spline,
+                name,
+                &body,
+                3,
+                &scalar::ScalarCache::default(),
+            );
 
             assert_eq!(
                 slots[0].0,
@@ -5647,6 +6186,66 @@ mod tests {
                     vec![0x2d, 8, 0, 0, 0, 0, 0, 0],
                 ],
             })
+        );
+    }
+
+    #[test]
+    fn counted_parameters_expand_compact_zero_runs() {
+        let body = [0xe4, 0xe5, 0x0f, 0xe6];
+
+        assert_eq!(
+            counted_parameter_scalar_slots(&body, 7, &scalar::ScalarCache::default()),
+            Some(vec![
+                (Some(1.0), vec![0xe4]),
+                (Some(0.0), vec![0xe5]),
+                (Some(0.0), vec![]),
+                (Some(0.0), vec![0x0f]),
+                (Some(0.0), vec![0xe6]),
+                (Some(0.0), vec![]),
+                (Some(0.0), vec![]),
+            ])
+        );
+    }
+
+    #[test]
+    fn counted_parameters_use_the_exact_extent_to_select_cache_or_zero() {
+        let cache = scalar::ScalarCache::from_section(&[0x46, 0, 0, 0, 0, 0, 0, 0]);
+
+        assert_eq!(
+            counted_parameter_scalar_slots(&[0x18, 0x00], 1, &cache),
+            Some(vec![(Some(2.0), vec![0x18, 0x00])])
+        );
+        assert_eq!(
+            counted_parameter_scalar_slots(&[0x18, 0, 1, 2, 3, 4, 5, 6], 2, &cache),
+            Some(vec![
+                (Some(0.0), vec![0x18]),
+                (
+                    Some(f64::from_be_bytes([0x40, 0x75, 1, 2, 3, 4, 5, 6])),
+                    vec![0, 1, 2, 3, 4, 5, 6],
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn counted_parameters_reject_multiple_complete_tokenizations() {
+        let cache = scalar::ScalarCache::from_section(&[0x46, 0, 0, 0, 0, 0, 0, 0]);
+        let body = [0x18, 0, 0xe5, 0x29, 0x18, 4, 0x29, 5, 0xe6];
+
+        assert_eq!(counted_parameter_scalar_slots(&body, 5, &cache), None);
+    }
+
+    #[test]
+    fn counted_parameters_require_exact_zero_run_cardinality() {
+        let body = [0xe4, 0xe5, 0x0f, 0xe6];
+
+        assert_eq!(
+            counted_parameter_scalar_slots(&body, 6, &scalar::ScalarCache::default()),
+            None
+        );
+        assert_eq!(
+            counted_parameter_scalar_slots(&body, 8, &scalar::ScalarCache::default()),
+            None
         );
     }
 
@@ -6425,6 +7024,33 @@ mod tests {
     }
 
     #[test]
+    fn tabulated_cylinder_replay_retains_its_complete_body() {
+        let mut payload = b"srf_array\0\xf8\x01".to_vec();
+        payload.extend_from_slice(&[7, 0x2c, 4, 0x01, 0, 8]);
+        let replay_offset = payload.len();
+        payload.extend_from_slice(&[
+            9, 0x13, 0xe2, 0x01, 0x00, 0x03, 0x18, 0xe6, 0x0f, 0xe6, 0xf8, 0x04, 0xf7, 32, 0xfb,
+            0xe2, 0xf7, 36,
+        ]);
+        for separator in [
+            [0x18, 0xf1, 0xf7, 32, 0xe2].as_slice(),
+            [0x18, 0xe2].as_slice(),
+            [0x18, 0xe2].as_slice(),
+            [0x18, 0xf2, 0xf7, 37, 0xf6, 0xe3].as_slice(),
+        ] {
+            payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+            payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+            payload.extend_from_slice(separator);
+        }
+
+        let replays = tabulated_cylinder_curve_replays(&payload);
+        let [replay] = replays.as_slice() else {
+            panic!("one complete replay");
+        };
+        assert_eq!(replay.body, payload[replay_offset..]);
+    }
+
+    #[test]
     fn positional_surface_parameter_lookup_rejects_repeated_identity() {
         let payload = [7, 0x2c, 4, 0x01, 0, 0, 0x0f, 0xe4, 0xe3];
         let records = parameter_records(&payload);
@@ -6462,6 +7088,41 @@ mod tests {
         payload[6] = 0x17;
         assert!(parameter_records(&payload)[0]
             .type26_five_coordinate_envelope(0x26)
+            .is_none());
+    }
+
+    #[test]
+    fn decodes_only_an_exact_terminal_type26_minor_radius_replay() {
+        let record = |body: &[u8]| {
+            let mut payload = vec![7, 0x26, 4, 0x01, 0, 0];
+            payload.extend_from_slice(body);
+            payload.push(0xe3);
+            parameter_records(&payload).remove(0)
+        };
+        let replay = record(&[0x18, 0x0c, 0x29, 0xc9, 0x99]);
+        assert_eq!(
+            replay.type26_replayed_minor_radius(0x26, 0.199_999_999_999_999_98),
+            Some(0.199_999_999_999_999_98)
+        );
+        assert!(replay.type26_replayed_minor_radius(0x26, 0.2).is_none());
+        assert!(replay
+            .type26_replayed_minor_radius(0x25, 0.199_999_999_999_999_98)
+            .is_none());
+
+        let two_slot_terminal = record(&[0xe4, 0x29, 0xc9, 0x99]);
+        assert_eq!(
+            two_slot_terminal.type26_replayed_minor_radius(0x26, 0.199_999_999_999_999_98),
+            Some(0.199_999_999_999_999_98)
+        );
+        let nonterminal_match = record(&[0x29, 0xc9, 0x99, 0xe4]);
+        assert!(nonterminal_match
+            .type26_replayed_minor_radius(0x26, 0.199_999_999_999_999_98)
+            .is_none());
+        let tagged_override = record(&[
+            0x18, 0x0d, 0x29, 0xc9, 0x99, 0x00, 0x0e, 0x01, 0x29, 0xdf, 0xff,
+        ]);
+        assert!(tagged_override
+            .type26_replayed_minor_radius(0x26, 0.199_999_999_999_999_98)
             .is_none());
     }
 
@@ -6958,6 +7619,47 @@ mod tests {
         assert!((frame.radius - 0.1).abs() < 1.0e-12);
         assert!((frame.length.expect("required invariant") - 6.4).abs() < 1.0e-12);
 
+        let nine_slot_body = [
+            0x18, 0x18, 0x18, 0x48, 0x24, 0x00, 0x2e, 0x1f, 0xff, 0x2f, 0x14, 0x00, 0x48, 0x22,
+            0x00, 0x2f, 0x48, 0x00, 0x2f, 0x18, 0x00, 0xf7, 0x18,
+        ];
+        let mut nine_slot_payload = vec![7, 0x24, 4, 0x01, 0, 0];
+        nine_slot_payload.extend_from_slice(&nine_slot_body);
+        nine_slot_payload.push(0xe3);
+        let nine_slot = parameter_records(&nine_slot_payload).remove(0);
+        let frame = nine_slot
+            .positional_cylinder_frame
+            .expect("complete nine-slot square-radial carrier");
+        assert!(frame
+            .origin
+            .into_iter()
+            .zip([-9.5, 8.0, 5.5])
+            .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
+        assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
+        assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+        assert_eq!(frame.radius, 0.5);
+        assert_eq!(frame.length, Some(40.0));
+
+        let single_diameter_body = [
+            0x18, 0x2f, 0x00, 0x00, 0x48, 0x68, 0x10, 0x48, 0x14, 0x00, 0x2f, 0x3b, 0x80, 0x48,
+            0x64, 0xf0, 0x48, 0x08, 0x00, 0x2f, 0x44, 0x00, 0xf7, 0x16,
+        ];
+        let mut single_diameter_payload = vec![7, 0x24, 4, 0x01, 0, 0];
+        single_diameter_payload.extend_from_slice(&single_diameter_body);
+        single_diameter_payload.push(0xe3);
+        let single_diameter = parameter_records(&single_diameter_payload).remove(0);
+        let frame = single_diameter
+            .positional_cylinder_frame
+            .expect("complete single-diameter carrier");
+        assert_eq!(frame.origin, [-192.5, -4.0, 27.5]);
+        assert_eq!(
+            frame.axis,
+            [2.0 / 5.0_f64.sqrt(), 0.0, 1.0 / 5.0_f64.sqrt()]
+        );
+        assert_eq!(frame.ref_direction, [0.0, 1.0, 0.0]);
+        assert_eq!(frame.radius, 1.0);
+        assert!((frame.length.expect("bounded carrier") - 31.25_f64.sqrt() * 5.0).abs() < 1e-12);
+
         let unbounded_body = [
             0x18, 0x2d, 0x5f, 0x25, 0xa4, 0x69, 0xd7, 0x34, 0x2d, 0x00, 0x12, 0x00, 0x2d, 0x67,
             0x06, 0x05, 0x68, 0x1e, 0xcd, 0x4a, 0x46, 0x3d, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xd0,
@@ -7398,8 +8100,25 @@ mod tests {
                 ],
             },
         ];
+        let mut domain_prefixed = trailed.clone();
+        domain_prefixed.scalar_frames.remove(1);
+        domain_prefixed.scalar_frames[1].offset = 15;
+        domain_prefixed.scalar_frames[1].slots.splice(
+            0..0,
+            [slot(-2.0, 15, 1), slot(2.0, 16, 1), slot(0.0, 17, 1)],
+        );
         assert_eq!(
             positional_frame_planes(&[trailed], std::slice::from_ref(&row)),
+            vec![OutlinePlane {
+                surface_id: 41,
+                origin: [0.0, 0.0, 7.5],
+                normal: [0.0, 0.0, 1.0],
+                u_axis: [1.0, 0.0, 0.0],
+                offset: 37,
+            }]
+        );
+        assert_eq!(
+            positional_frame_planes(&[domain_prefixed], std::slice::from_ref(&row)),
             vec![OutlinePlane {
                 surface_id: 41,
                 origin: [0.0, 0.0, 7.5],
@@ -7799,6 +8518,26 @@ mod tests {
     }
 
     #[test]
+    fn plane_envelope_scalar_tokens_take_precedence_over_compound_close_bytes() {
+        let body = [
+            70, 32, 107, 133, 30, 184, 81, 235, 70, 47, 201, 160, 13, 107, 10, 126, 47, 32, 0, 24,
+            70, 32, 107, 133, 30, 184, 81, 235, 70, 47, 201, 160, 13, 107, 10, 126, 142, 71, 174,
+            20, 122, 225, 72, 47, 32, 0, 24, 142, 71, 174, 20, 122, 225, 72,
+        ];
+        let mut payload = vec![7, 0x22, 4, 0x01, 0, 0];
+        payload.extend_from_slice(&body);
+        payload.push(psb::token::COMPOUND_CLOSE);
+
+        let envelopes = plane_envelopes(&payload);
+        assert_eq!(envelopes.len(), 1);
+        assert_eq!(envelopes[0].body, body);
+        assert_eq!(
+            envelopes[0].corner_coordinate_equal,
+            [Some(false), Some(false), Some(true)]
+        );
+    }
+
+    #[test]
     fn plane_envelope_coordinates_decode_compact_positive_half() {
         let body = [
             0x0f, 0xe4, 0x0d, 0x0f, 0x43, 0xe0, 0x00, 0xe4, 0x0f, 0x0e, 0xe4, 0x0f,
@@ -8024,6 +8763,20 @@ mod tests {
     }
 
     #[test]
+    fn positional_plane_frame_classifies_rank_two_image_before_null_tail() {
+        let payload = [
+            7, 0x22, 4, 0x01, 0, 0, // plane row
+            0xe4, 0xe4, 0xe4, 0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0xe4, 0xe3, // envelope
+            0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6, 0xe1, 0xe3, // local system
+        ];
+
+        let systems = plane_local_systems(&payload);
+        assert_eq!(systems.len(), 1);
+        assert_eq!(systems[0].classification, LocalSystemClassification::Simple);
+        assert_eq!(systems[0].normal, Some([0.0, 0.0, -1.0]));
+    }
+
+    #[test]
     fn positional_plane_frame_rejects_unconsumed_row_bytes() {
         let body = [
             0x18, 0xe4, 0x0f, 0x10, 0x18, 0xe5, 0x10, 0x18, 0x2f, 0x18, 0x00, 0x2d, 0x29, 0x3d,
@@ -8037,7 +8790,7 @@ mod tests {
     }
 
     #[test]
-    fn positional_plane_frame_requires_exactly_one_zero_support_triple() {
+    fn positional_plane_frame_requires_one_unique_orthogonal_support_pair() {
         let options = |slots: [f64; 12]| slots.map(Some);
         assert_eq!(
             plane_frame(&options([
@@ -8103,7 +8856,12 @@ mod tests {
         ];
 
         assert_eq!(
-            named_surface_value("local_sys", &body, &scalar::ScalarCache::default()),
+            named_surface_value(
+                &SurfacePrototypeFamily::Plane,
+                "local_sys",
+                &body,
+                &scalar::ScalarCache::default(),
+            ),
             SurfaceNamedValue::ScalarArray {
                 dimensions: 4,
                 count: 3,
@@ -8173,6 +8931,46 @@ mod tests {
     }
 
     #[test]
+    fn named_local_system_advances_across_inherited_slots() {
+        let body = [
+            0xe4, 0x0f, 0xe7, 0x03, 0xe4, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
+        ];
+
+        assert_eq!(
+            sequential_named_local_system_slots(&body, 12, &scalar::ScalarCache::default()),
+            Some(vec![
+                Some(1.0),
+                Some(0.0),
+                None,
+                None,
+                None,
+                Some(1.0),
+                Some(0.0),
+                Some(0.0),
+                Some(0.0),
+                Some(0.0),
+                Some(0.0),
+                Some(0.0),
+            ])
+        );
+    }
+
+    #[test]
+    fn named_local_system_rejects_invalid_inherited_slot_transitions() {
+        for body in [
+            &[0xe7][..],
+            &[0xe7, 0x00],
+            &[0xe7, 0x0d],
+            &[0xe4, 0xe7, 0x0c],
+        ] {
+            assert_eq!(
+                sequential_named_local_system_slots(body, 12, &scalar::ScalarCache::default()),
+                None
+            );
+        }
+    }
+
+    #[test]
     fn named_local_system_rejects_an_unknown_byte_before_complete_slots() {
         let payload = b"srf_prim_ptr(cylinder)\0\
             \xe0\x02local_sys\0\xf9\x04\x03\xfb\x18\xe5\x0f\x0f\x0f\xe4\x0f\x0f\x0f\x2f\x2e\0\x18\
@@ -8214,9 +9012,12 @@ mod tests {
     #[test]
     fn named_local_system_decodes_positive_compact_half_coordinate() {
         let body = [0xf9, 0x04, 0x03, 0x0e];
-        let SurfaceNamedValue::ScalarArray { values, .. } =
-            named_surface_value("local_sys", &body, &scalar::ScalarCache::default())
-        else {
+        let SurfaceNamedValue::ScalarArray { values, .. } = named_surface_value(
+            &SurfacePrototypeFamily::Plane,
+            "local_sys",
+            &body,
+            &scalar::ScalarCache::default(),
+        ) else {
             panic!("scalar local system");
         };
 
@@ -8232,7 +9033,12 @@ mod tests {
             count,
             values,
             ..
-        } = named_surface_value("i_points", &body, &scalar::ScalarCache::default())
+        } = named_surface_value(
+            &SurfacePrototypeFamily::Spline,
+            "i_points",
+            &body,
+            &scalar::ScalarCache::default(),
+        )
         else {
             panic!("dimensioned scalar array");
         };
@@ -8241,6 +9047,107 @@ mod tests {
         assert_eq!(count, 3);
         assert_eq!(values.len(), 408);
         assert!(values.iter().all(|value| *value == Some(0.0)));
+    }
+
+    #[test]
+    fn fillet_vectors_use_the_signed_coordinate_dict_lane() {
+        let negative = [0xc2, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc];
+        let mut payload = b"srf_prim_ptr(fillet_srf)\0\xe0\x02i_pnts\0\xf9\x01\x03".to_vec();
+        payload.extend_from_slice(&negative);
+        payload.extend_from_slice(&[0xe4, 0x0f]);
+
+        let records = named_prototype_records(&payload);
+
+        assert_eq!(
+            records[0].field("i_pnts").map(|field| &field.value),
+            Some(&SurfaceNamedValue::ScalarArray {
+                dimensions: 1,
+                count: 3,
+                values: vec![
+                    Some(f64::from_be_bytes([
+                        0xbf, 0xef, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc,
+                    ])),
+                    Some(1.0),
+                    Some(0.0),
+                ],
+                tokens: vec![negative.to_vec(), vec![0xe4], vec![0x0f]],
+            })
+        );
+    }
+
+    #[test]
+    fn fillet_vectors_dispatch_positive_coordinate_lanes_by_field() {
+        let payload = b"srf_prim_ptr(fillet_srf)\0\
+            \xe0\x02i_pnts\0\xf9\x01\x03\x98\x01\x02\x03\x04\x05\x06\xe4\xe4\
+            \xe0\x02tangts\0\xf9\x01\x03\x4c\x01\x02\x03\x04\x05\x06\xe4\xe4";
+
+        let records = named_prototype_records(payload);
+        let prototype = &records[0];
+
+        assert!(matches!(
+            prototype.field("i_pnts").map(|field| &field.value),
+            Some(SurfaceNamedValue::ScalarArray { values, .. })
+                if values == &[
+                    Some(f64::from_be_bytes([0x40, 0x0d, 1, 2, 3, 4, 5, 6])),
+                    Some(1.0),
+                    Some(1.0),
+                ]
+        ));
+        assert!(matches!(
+            prototype.field("tangts").map(|field| &field.value),
+            Some(SurfaceNamedValue::ScalarArray { values, .. })
+                if values == &[
+                    Some(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 0])),
+                    Some(1.0),
+                    Some(1.0),
+                ]
+        ));
+    }
+
+    #[test]
+    fn interpolation_point_dict_token_does_not_consume_following_world_coordinate() {
+        let payload = b"srf_prim_ptr(fillet_srf)\0\
+            \xe0\x02i_pnts\0\xf9\x01\x03\
+            \x71\x01\x02\x03\x04\x05\x06\
+            \x46\x40\x01\x02\x03\x04\x05\x06\xe4";
+
+        let records = named_prototype_records(payload);
+
+        assert!(matches!(
+            records[0].field("i_pnts").map(|field| &field.value),
+            Some(SurfaceNamedValue::ScalarArray { values, .. })
+                if values == &[
+                    Some(f64::from_be_bytes([0x3f, 0xe6, 1, 2, 3, 4, 5, 6])),
+                    Some(f64::from_be_bytes([0x40, 0x40, 1, 2, 3, 4, 5, 6])),
+                    Some(1.0),
+                ]
+        ));
+    }
+
+    #[test]
+    fn dimensioned_vectors_own_header_shaped_scalar_payloads() {
+        let payload = b"srf_prim_ptr(fillet_srf)\0\
+            \xe0\x02i_pnts\0\xf9\x01\x03\
+            \xaa\xe0\x01id\0\xe3\xe4\x0f\
+            \xe0\x01tangts\0\xf9\x01\x03\xe4\xe4\xe4";
+
+        let records = named_prototype_records(payload);
+        let prototype = &records[0];
+
+        assert_eq!(
+            prototype.field("i_pnts").map(|field| field.body.as_slice()),
+            Some(&[0xf9, 0x01, 0x03, 0xaa, 0xe0, 0x01, b'i', b'd', 0x00, 0xe3, 0xe4, 0x0f,][..])
+        );
+        assert!(prototype.field("id").is_none());
+        assert!(matches!(
+            prototype.field("tangts").map(|field| &field.value),
+            Some(SurfaceNamedValue::ScalarArray {
+                dimensions: 1,
+                count: 3,
+                values,
+                ..
+            }) if values == &[Some(1.0), Some(1.0), Some(1.0)]
+        ));
     }
 
     #[test]
@@ -8258,6 +9165,171 @@ mod tests {
             records[0].field("radius2").map(|field| &field.value),
             Some(&SurfaceNamedValue::ScalarSequence(vec![0.25]))
         );
+    }
+
+    #[test]
+    fn named_prototype_radius_decodes_positive_eight_byte_form() {
+        let value = 0.125_f64;
+        let raw = value.to_be_bytes();
+        assert_eq!(raw[0], 0x3f);
+        let mut payload = b"srf_prim_ptr(cylinder)\0\xe0\x01radius\0".to_vec();
+        payload.push(0x28);
+        payload.extend_from_slice(&raw[1..]);
+
+        let records = named_prototype_records(&payload);
+
+        assert_eq!(
+            records[0].field("radius").map(|field| &field.value),
+            Some(&SurfaceNamedValue::ScalarSequence(vec![value]))
+        );
+    }
+
+    #[test]
+    fn named_prototype_radius_decodes_positive_dict_form() {
+        let value = 4.5_f64;
+        let raw = value.to_be_bytes();
+        let prefix = u8::try_from(u16::from_be_bytes([raw[0], raw[1]]) - 0x3f75)
+            .expect("synthetic value lies in the named-radius DICT lattice");
+        let mut payload = b"srf_prim_ptr(cylinder)\0\xe0\x01radius\0".to_vec();
+        payload.push(prefix);
+        payload.extend_from_slice(&raw[2..]);
+
+        let records = named_prototype_records(&payload);
+
+        assert_eq!(
+            records[0].field("radius").map(|field| &field.value),
+            Some(&SurfaceNamedValue::ScalarSequence(vec![value]))
+        );
+    }
+
+    #[test]
+    fn fillet_parameter_bounds_use_the_named_positive_dict_lane() {
+        let upper = 4.5_f64;
+        let raw = upper.to_be_bytes();
+        let prefix = u8::try_from(u16::from_be_bytes([raw[0], raw[1]]) - 0x3f75)
+            .expect("synthetic value lies in the named positive DICT lattice");
+        let mut payload = b"srf_prim_ptr(fillet_srf)\0\
+            \xe0\x01par_v_0\0\x18\
+            \xe0\x01par_v_1\0"
+            .to_vec();
+        payload.push(prefix);
+        payload.extend_from_slice(&raw[2..]);
+
+        let records = named_prototype_records(&payload);
+
+        assert_eq!(
+            records[0].field("par_v_0").map(|field| &field.value),
+            Some(&SurfaceNamedValue::ScalarSequence(vec![0.0]))
+        );
+        assert_eq!(
+            records[0].field("par_v_1").map(|field| &field.value),
+            Some(&SurfaceNamedValue::ScalarSequence(vec![upper]))
+        );
+    }
+
+    #[test]
+    fn fillet_parameter_bounds_do_not_use_the_radius_only_28_form() {
+        let payload = b"srf_prim_ptr(fillet_srf)\0\
+            \xe0\x01par_v_1\0\x28\x01\x02\x03\x04\x05\x06\x07";
+        let records = named_prototype_records(payload);
+
+        assert_eq!(
+            records[0].field("par_v_1").map(|field| &field.value),
+            Some(&SurfaceNamedValue::Opaque(vec![0x28, 1, 2, 3, 4, 5, 6, 7]))
+        );
+    }
+
+    #[test]
+    fn spline_metadata_decodes_wrapped_compact_values() {
+        let payload = b"srf_prim_ptr(fillet_srf)\0\
+            \xe0\x01flip\0\xf1\x01\
+            \xe0\x01offset_type\0\x00\xf1\xf7\x0e\
+            \xe0\x00frst_cntr_crv_hdr_ptr\0\x2f\
+            \xe0\x01trv\0\x01\
+            \xe0\x01tan_spline\0";
+        let records = named_prototype_records(payload);
+
+        assert_eq!(
+            records[0].field("flip").map(|field| &field.value),
+            Some(&SurfaceNamedValue::CompactInt(1))
+        );
+        assert_eq!(
+            records[0].field("offset_type").map(|field| &field.value),
+            Some(&SurfaceNamedValue::CompactInt(0))
+        );
+        assert_eq!(
+            records[0].field("tan_spline").map(|field| &field.value),
+            Some(&SurfaceNamedValue::Empty)
+        );
+        assert_eq!(
+            records[0]
+                .field("frst_cntr_crv_hdr_ptr")
+                .map(|field| &field.value),
+            Some(&SurfaceNamedValue::CompactInt(47))
+        );
+        assert_eq!(
+            records[0].field("trv").map(|field| &field.value),
+            Some(&SurfaceNamedValue::CompactInt(1))
+        );
+    }
+
+    #[test]
+    fn spline_metadata_rejects_malformed_compact_wrappers() {
+        for (name, body) in [
+            ("flip", &[0xf1][..]),
+            ("flip", &[0xf1, 0x01, 0x00]),
+            ("flip", &[0xf8, 0x01, 0x01]),
+            ("offset_type", &[0x00, 0xf1, 0xf7]),
+            ("offset_type", &[0x00, 0xf1, 0xf7, 0x00]),
+            ("offset_type", &[0x00, 0xf1, 0xf7, 0x0e, 0x00]),
+            ("offset_type", &[0xf8, 0x01, 0x00]),
+        ] {
+            assert_eq!(
+                named_surface_value(
+                    &SurfacePrototypeFamily::Spline,
+                    name,
+                    body,
+                    &scalar::ScalarCache::default(),
+                ),
+                SurfaceNamedValue::Opaque(body.to_vec())
+            );
+        }
+    }
+
+    #[test]
+    fn parent_feature_array_accepts_its_exact_reference_trailer() {
+        let payload = b"srf_prim_ptr(plane)\0\xe0\0parent_feats\0\
+            \xf8\x02\x07\x08\xf7\x03\x09\xe1\xf6\xf6";
+        let records = named_prototype_records(payload);
+
+        assert_eq!(
+            records[0].field("parent_feats").map(|field| &field.value),
+            Some(&SurfaceNamedValue::CompactIntArray(vec![7, 8]))
+        );
+    }
+
+    #[test]
+    fn parent_feature_array_rejects_malformed_reference_trailers() {
+        for trailer in [
+            &[0xf7][..],
+            &[0xf7, 0x00, 0x09],
+            &[0xf7, 0x03, 0x00],
+            &[0xf7, 0x03, 0x09, 0xf6],
+            &[0xf7, 0x03, 0x09, 0xe1, 0xf6],
+            &[0xf7, 0x03, 0x09, 0xe1, 0xf6, 0xf6, 0x00],
+        ] {
+            let mut body = vec![0xf8, 0x01, 0x07];
+            body.extend_from_slice(trailer);
+            assert_eq!(
+                named_surface_value(
+                    &SurfacePrototypeFamily::Spline,
+                    "parent_feats",
+                    &body,
+                    &scalar::ScalarCache::default(),
+                ),
+                SurfaceNamedValue::Opaque(body)
+            );
+        }
     }
 
     #[test]

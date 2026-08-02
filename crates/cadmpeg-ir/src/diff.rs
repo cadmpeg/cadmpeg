@@ -69,29 +69,35 @@ fn differing_fields<T: Serialize>(left: &T, right: &T) -> Vec<String> {
         .collect()
 }
 
-fn arena<T, F>(kind: impl Into<String>, left: &[T], right: &[T], id: F) -> ArenaDiff
+fn arena<T, F>(kind: impl Into<String>, left: &[T], right: &[T], identity: F) -> ArenaDiff
 where
     T: PartialEq + Serialize,
-    F: Fn(&T) -> String,
+    F: for<'a> Fn(&'a T) -> &'a str,
 {
-    let left: BTreeMap<_, _> = left.iter().map(|entity| (id(entity), entity)).collect();
-    let right: BTreeMap<_, _> = right.iter().map(|entity| (id(entity), entity)).collect();
+    let left: BTreeMap<_, _> = left
+        .iter()
+        .map(|entity| (identity(entity), entity))
+        .collect();
+    let right: BTreeMap<_, _> = right
+        .iter()
+        .map(|entity| (identity(entity), entity))
+        .collect();
     let removed = left
         .keys()
         .filter(|id| !right.contains_key(*id))
-        .cloned()
+        .map(|id| (*id).to_owned())
         .collect();
     let added = right
         .keys()
         .filter(|id| !left.contains_key(*id))
-        .cloned()
+        .map(|id| (*id).to_owned())
         .collect();
     let modified = left
         .iter()
         .filter_map(|(id, before)| {
             let after = right.get(id)?;
             (*before != *after).then(|| ModifiedEntity {
-                id: id.clone(),
+                id: (*id).to_owned(),
                 fields: differing_fields(*before, *after),
             })
         })
@@ -105,13 +111,13 @@ where
 }
 
 macro_rules! define_diff_arenas {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] => $key:expr; )*) => {
+    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
         fn diff_arenas(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
             vec![$(arena(
                 stringify!($field),
                 &left.model.$field,
                 &right.model.$field,
-                $key,
+                crate::schema::EntitySchema::identity,
             )),*]
         }
     };
@@ -146,7 +152,7 @@ fn diff_native_namespaces(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
                         .and_then(|value| value.arenas.get(name))
                         .map(Vec::as_slice)
                         .unwrap_or_default(),
-                    |record| record.id.clone(),
+                    |record| record.id(),
                 )
             })
         })

@@ -680,7 +680,10 @@ mod sldprt {
         b.extend(f64_array(0x80, knot_attr, &[0.0, 1.0]));
         body.extend(b);
 
-        let edge = body.windows(2).position(|w| w == [0x00, 0x10]).expect("required invariant");
+        let edge = body
+            .windows(2)
+            .position(|w| w == [0x00, 0x10])
+            .expect("required invariant");
         body[edge + 24..edge + 26].copy_from_slice(&170u16.to_be_bytes());
 
         body
@@ -730,7 +733,10 @@ mod sldprt {
         b.extend(f64_array(0x80, v_knot_attr, &[0.0, 1.0]));
         body.extend(b);
 
-        let bridge = body.windows(2).position(|w| w == [0x00, 0x0e]).expect("required invariant");
+        let bridge = body
+            .windows(2)
+            .position(|w| w == [0x00, 0x0e])
+            .expect("required invariant");
         body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
 
         body
@@ -758,7 +764,10 @@ mod sldprt {
     pub fn triangle_with_line_curve() -> Vec<u8> {
         let mut body = triangle_body();
         body.extend(line_carrier(70, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
-        let edge = body.windows(2).position(|w| w == [0x00, 0x10]).expect("required invariant");
+        let edge = body
+            .windows(2)
+            .position(|w| w == [0x00, 0x10])
+            .expect("required invariant");
         body[edge + 24..edge + 26].copy_from_slice(&70u16.to_be_bytes());
         body
     }

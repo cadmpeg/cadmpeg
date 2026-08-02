@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Reads and writes [`cadmpeg_ir::CadIr`] documents as ISO 10303-21 STEP Part
 //! 21 exchange structures for AP203, AP214, and AP242.
 //!
@@ -21,7 +22,7 @@
 //! let report = write_step(&ir, &mut bytes, &StepWriteOptions::default())?;
 //!
 //! assert!(bytes.starts_with(b"ISO-10303-21;"));
-//! assert!(report.total_entities > 0);
+//! assert!(report.census.total() > 0);
 //! # Ok::<(), cadmpeg_step::StepError>(())
 //! ```
 //!
@@ -51,22 +52,23 @@ mod writer;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
 
+use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::appearance::Appearance;
 use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeOptions, DecodeResult,
-    Encoder,
+    Codec, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{OccurrenceId, ProductId};
-use cadmpeg_ir::product::OccurrenceParent;
-use cadmpeg_ir::report::{ExportReport, LossCategory, LossCode, LossNote, Severity};
+use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
+use cadmpeg_ir::products::{AssemblyGraph, OccurrenceParent, PrototypeReference};
+use cadmpeg_ir::report::{ExportReport, LossKind, LossNote, Severity};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::CadIr;
+use cadmpeg_ir::FidelityResolution;
 
 use writer::{real, refs, string, Emitter, Ref};
 
@@ -497,32 +499,18 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn loss(
-        &mut self,
-        code: LossCode,
-        category: LossCategory,
-        severity: Severity,
-        message: String,
-    ) {
+    fn loss(&mut self, code: LossKind, severity: Severity, message: String) {
         self.losses.push(LossNote {
             code,
-            category,
             severity,
             message,
             provenance: None,
         });
     }
 
-    fn omit(
-        &mut self,
-        code: LossCode,
-        category: LossCategory,
-        severity: Severity,
-        message: String,
-    ) {
+    fn omit(&mut self, code: LossKind, severity: Severity, message: String) {
         self.losses.push(LossNote {
             code,
-            category,
             severity,
             message,
             provenance: None,
@@ -539,8 +527,7 @@ impl<'a> Builder<'a> {
         emitted_items.extend(standalone_items.iter().copied());
         if emitted_items.is_empty() && !self.ir.model.bodies.is_empty() {
             self.losses.push(LossNote {
-                code: LossCode::NoExportableSolids,
-                category: LossCategory::Topology,
+                code: LossKind::NoExportableSolids,
                 severity: Severity::Warning,
                 message: "no exportable solids: the IR document contains no body/region/shell \
                           geometry, so the STEP representation is empty"
@@ -558,7 +545,7 @@ impl<'a> Builder<'a> {
         );
         items.push(origin);
 
-        if self.ir.model.products.is_empty() {
+        if self.ir.model.product_definitions.is_empty() {
             let product_def_shape = self.emit_product_structure();
             self.default_product_definition_shape = Some(product_def_shape);
             let representation_kind = if !has_standalone_geometry
@@ -949,8 +936,7 @@ impl<'a> Builder<'a> {
             }
             if unsupported > 0 {
                 self.loss(
-                    LossCode::AttributesNotTransferred,
-                    LossCategory::Attribute,
+                    LossKind::AttributesNotTransferred,
                     Severity::Warning,
                     format!(
                         "layer '{}' has {unsupported} item(s) without a writable STEP carrier",
@@ -1047,13 +1033,26 @@ impl<'a> Builder<'a> {
         );
 
         let ir = self.ir;
-        let products = &ir.model.products;
-        let occurrences = &ir.model.product_occurrences;
+        let products = &ir.model.product_definitions;
+        let occurrences = &ir.model.occurrences;
+        let Ok(graph) = AssemblyGraph::new(occurrences) else {
+            self.loss(
+                LossKind::TopologyNotTransferred,
+                Severity::Warning,
+                "assembly occurrence graph is invalid".into(),
+            );
+            return;
+        };
         let occurrence_products = occurrences
             .iter()
-            .map(|occurrence| (occurrence.id.clone(), occurrence.product.clone()))
-            .collect::<HashMap<OccurrenceId, ProductId>>();
-        let mut product_origins = HashMap::<ProductId, Ref>::new();
+            .filter_map(|occurrence| match &occurrence.prototype {
+                PrototypeReference::Local { definition } => {
+                    Some((occurrence.id.clone(), definition.clone()))
+                }
+                PrototypeReference::External { .. } | PrototypeReference::Unresolved => None,
+            })
+            .collect::<HashMap<OccurrenceId, ProductDefinitionId>>();
+        let mut product_origins = HashMap::<ProductDefinitionId, Ref>::new();
         for product in products {
             product_origins.insert(
                 product.id.clone(),
@@ -1065,7 +1064,7 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let mut representation_placements = HashMap::<ProductId, Vec<Ref>>::new();
+        let mut representation_placements = HashMap::<ProductDefinitionId, Vec<Ref>>::new();
         let mut occurrence_placements = HashMap::<OccurrenceId, (Ref, Ref)>::new();
         for occurrence in occurrences {
             let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
@@ -1074,13 +1073,21 @@ impl<'a> Builder<'a> {
             let Some(parent_product) = occurrence_products.get(parent) else {
                 continue;
             };
-            let Some(&from) = product_origins.get(&occurrence.product) else {
+            let Some(child_product) = occurrence_products.get(&occurrence.id) else {
                 continue;
             };
-            if !is_rigid_transform(&occurrence.transform.rows) {
+            let Some(&from) = product_origins.get(child_product) else {
+                continue;
+            };
+            let transform = if occurrence.link_transform.unwrap_or(false) {
+                occurrence.transform.compose(occurrence.prototype_transform)
+            } else {
+                occurrence.transform
+            };
+            if !transform.is_proper_rigid() || occurrence.scale != [1.0; 3] {
                 continue;
             }
-            let rows = occurrence.transform.rows;
+            let rows = transform.rows;
             let to = geometry::placement(
                 &mut self.emitter,
                 cadmpeg_ir::math::Point3::new(rows[0][3], rows[1][3], rows[2][3]),
@@ -1093,15 +1100,24 @@ impl<'a> Builder<'a> {
                 .push(to);
             occurrence_placements.insert(occurrence.id.clone(), (from, to));
         }
-        let mut definitions = HashMap::<ProductId, Ref>::new();
-        let mut representations = HashMap::<ProductId, Ref>::new();
+        let mut definitions = HashMap::<ProductDefinitionId, Ref>::new();
+        let mut representations = HashMap::<ProductDefinitionId, Ref>::new();
         for product in products {
-            let name = product.name.as_deref().unwrap_or(&product.product_id);
+            let product_id = product
+                .part_number
+                .as_deref()
+                .or(product.source_name.as_deref())
+                .unwrap_or(product.id.as_str());
+            let name = product
+                .label
+                .as_deref()
+                .or(product.source_name.as_deref())
+                .unwrap_or(product_id);
             let product_ref = self.emitter.emit(
                 "PRODUCT",
                 &format!(
                     "{},{},'',({product_context})",
-                    string(&product.product_id),
+                    string(product_id),
                     string(name)
                 ),
             );
@@ -1111,10 +1127,7 @@ impl<'a> Builder<'a> {
             );
             let definition = self.emitter.emit(
                 "PRODUCT_DEFINITION",
-                &format!(
-                    "{},'',{formation},{definition_context}",
-                    string(&product.product_id)
-                ),
+                &format!("{},'',{formation},{definition_context}", string(product_id)),
             );
             let shape = self
                 .emitter
@@ -1153,8 +1166,7 @@ impl<'a> Builder<'a> {
             let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
                 if !is_identity(&occurrence.transform.rows) {
                     self.loss(
-                        LossCode::BodyTransformNotApplied,
-                        LossCategory::Topology,
+                        LossKind::BodyTransformNotApplied,
                         Severity::Warning,
                         format!(
                             "root occurrence '{}' has a non-identity placement",
@@ -1164,12 +1176,25 @@ impl<'a> Builder<'a> {
                 }
                 continue;
             };
-            let Some(parent_product) = occurrence_products.get(parent) else {
+            let Some(parent_occurrence) = graph.occurrence(parent) else {
                 self.loss(
-                    LossCode::TopologyNotTransferred,
-                    LossCategory::Topology,
+                    LossKind::TopologyNotTransferred,
                     Severity::Warning,
                     format!("occurrence '{}' has an unresolved parent", occurrence.id),
+                );
+                continue;
+            };
+            let Some(parent_product) = occurrence_products.get(&parent_occurrence.id) else {
+                continue;
+            };
+            let Some(child_product) = occurrence_products.get(&occurrence.id) else {
+                self.loss(
+                    LossKind::TopologyNotTransferred,
+                    Severity::Warning,
+                    format!(
+                        "occurrence '{}' has no local product definition",
+                        occurrence.id
+                    ),
                 );
                 continue;
             };
@@ -1180,17 +1205,21 @@ impl<'a> Builder<'a> {
                 &child_representation,
             )) = definitions
                 .get(parent_product)
-                .zip(definitions.get(&occurrence.product))
+                .zip(definitions.get(child_product))
                 .zip(representations.get(parent_product))
-                .zip(representations.get(&occurrence.product))
+                .zip(representations.get(child_product))
                 .map(|(((a, b), c), d)| (a, b, c, d))
             else {
                 continue;
             };
-            if !is_rigid_transform(&occurrence.transform.rows) {
+            let transform = if occurrence.link_transform.unwrap_or(false) {
+                occurrence.transform.compose(occurrence.prototype_transform)
+            } else {
+                occurrence.transform
+            };
+            if !transform.is_proper_rigid() || occurrence.scale != [1.0; 3] {
                 self.loss(
-                    LossCode::BodyTransformNotApplied,
-                    LossCategory::Topology,
+                    LossKind::BodyTransformNotApplied,
                     Severity::Warning,
                     format!("occurrence '{}' placement is not rigid", occurrence.id),
                 );
@@ -1322,8 +1351,7 @@ impl<'a> Builder<'a> {
             };
             let Some(outer) = self.emit_shell(outer_id.as_str(), closed) else {
                 self.loss(
-                    LossCode::TopologyNotTransferred,
-                    LossCategory::Topology,
+                    LossKind::TopologyNotTransferred,
                     Severity::Error,
                     format!("region {} has no writable outer shell", region.id),
                 );
@@ -1388,8 +1416,7 @@ impl<'a> Builder<'a> {
         };
         if !is_rigid_transform(&transform.rows) {
             self.loss(
-                LossCode::BodyTransformNotApplied,
-                LossCategory::Geometry,
+                LossKind::BodyTransformNotApplied,
                 Severity::Warning,
                 format!("body '{body_id}' carries a non-rigid transform"),
             );
@@ -1432,8 +1459,7 @@ impl<'a> Builder<'a> {
                 .count();
             if hidden != 0 {
                 self.loss(
-                    LossCode::AttributesNotTransferred,
-                    LossCategory::Metadata,
+                    LossKind::AttributesNotTransferred,
                     Severity::Warning,
                     format!(
                         "{hidden} hidden body visibility assignment(s) are unsupported by {}",
@@ -1466,8 +1492,7 @@ impl<'a> Builder<'a> {
         for shell in shells {
             if !shell.free_vertices.is_empty() {
                 self.loss(
-                    LossCode::TopologyNotTransferred,
-                    LossCategory::Topology,
+                    LossKind::TopologyNotTransferred,
                     Severity::Warning,
                     format!(
                         "wire shell '{}' has {} free vertex/vertices without an edge-based STEP carrier",
@@ -1571,8 +1596,7 @@ impl<'a> Builder<'a> {
         }
         if !self.schema.supports_tessellation() {
             self.loss(
-                LossCode::TessellationOmitted,
-                LossCategory::Geometry,
+                LossKind::TessellationOmitted,
                 Severity::Warning,
                 format!(
                     "{} tessellation(s) require an AP242 target",
@@ -1595,8 +1619,7 @@ impl<'a> Builder<'a> {
                 || (!mesh.normals.is_empty() && mesh.normals.len() != mesh.vertices.len())
             {
                 self.loss(
-                    LossCode::TessellationOmitted,
-                    LossCategory::Geometry,
+                    LossKind::TessellationOmitted,
                     Severity::Warning,
                     format!(
                         "tessellation '{}' has invalid vertex/index/normal cardinality",
@@ -2548,8 +2571,7 @@ impl<'a> Builder<'a> {
             .count();
         if nonstandard_analytic_surfaces > 0 {
             self.loss(
-                LossCode::AnalyticSurfaceNormalized,
-                LossCategory::Geometry,
+                LossKind::AnalyticSurfaceNormalized,
                 Severity::Warning,
                 format!(
                     "{nonstandard_analytic_surfaces} signed or self-intersecting analytic \
@@ -2571,8 +2593,7 @@ impl<'a> Builder<'a> {
             .count();
         if elliptical_cones > 0 {
             self.loss(
-                LossCode::EllipticalConeReduced,
-                LossCategory::Geometry,
+                LossKind::EllipticalConeReduced,
                 Severity::Warning,
                 format!(
                     "{elliptical_cones} elliptical cone surface(s) were reduced to circular STEP CONICAL_SURFACE carriers"
@@ -2581,8 +2602,7 @@ impl<'a> Builder<'a> {
         }
         if !self.curveless_edges.is_empty() {
             self.omit(
-                LossCode::CurvelessEdgeOmitted,
-                LossCategory::Geometry,
+                LossKind::CurvelessEdgeOmitted,
                 Severity::Warning,
                 format!(
                     "{} edge(s) have no typed 3D curve or carry a STEP-unsupported transform and were omitted from \
@@ -2593,8 +2613,7 @@ impl<'a> Builder<'a> {
         }
         if !self.unknown_surface_faces.is_empty() {
             self.omit(
-                LossCode::UnknownSurfaceFaceOmitted,
-                LossCategory::Geometry,
+                LossKind::UnknownSurfaceFaceOmitted,
                 Severity::Warning,
                 format!(
                     "{} face(s) rest on an unknown or STEP-unsupported surface and were omitted \
@@ -2606,8 +2625,7 @@ impl<'a> Builder<'a> {
         }
         if self.unsupported_standalone_geometry > 0 {
             self.loss(
-                LossCode::GeometryNotTransferred,
-                LossCategory::Geometry,
+                LossKind::GeometryNotTransferred,
                 Severity::Warning,
                 format!(
                     "{} standalone unknown geometry carrier(s) were not written",
@@ -2625,8 +2643,7 @@ impl<'a> Builder<'a> {
             .count();
         if missing_pcurve_count > 0 {
             self.omit(
-                LossCode::PcurveOmitted,
-                LossCategory::Geometry,
+                LossKind::PcurveOmitted,
                 Severity::Warning,
                 format!(
                     "{missing_pcurve_count} coedge pcurve reference(s) have no geometry and were not written"
@@ -2649,8 +2666,7 @@ impl<'a> Builder<'a> {
             .count();
         if reduced_pcurve_count > 0 {
             self.omit(
-                LossCode::PcurveOmitted,
-                LossCategory::Geometry,
+                LossKind::PcurveOmitted,
                 Severity::Info,
                 format!(
                     "{reduced_pcurve_count} emitted coedge pcurve(s) carry native-only metadata not represented in STEP"
@@ -2659,8 +2675,7 @@ impl<'a> Builder<'a> {
         }
         if !self.ir.model.subds.is_empty() {
             self.omit(
-                LossCode::SubdOmitted,
-                LossCategory::Geometry,
+                LossKind::SubdOmitted,
                 Severity::Warning,
                 format!(
                     "{} subdivision surface(s) were omitted because this STEP writer \
@@ -2672,8 +2687,7 @@ impl<'a> Builder<'a> {
         let unwritten_pmi = self.ir.model.pmi.len().saturating_sub(self.written_pmi);
         if unwritten_pmi > 0 {
             self.omit(
-                LossCode::PmiOmitted,
-                LossCategory::Attribute,
+                LossKind::PmiOmitted,
                 Severity::Warning,
                 format!("{unwritten_pmi} PMI annotation(s) were not written to STEP"),
             );
@@ -2708,8 +2722,7 @@ impl<'a> Builder<'a> {
                 .count();
         if source_object_count > 0 {
             self.loss(
-                LossCode::SourceAssociationOmitted,
-                LossCategory::Metadata,
+                LossKind::SourceAssociationOmitted,
                 Severity::Info,
                 format!(
                     "{source_object_count} source-object association(s) were not represented in STEP"
@@ -2726,16 +2739,14 @@ impl<'a> Builder<'a> {
             .sum::<usize>();
         if unknown_count > 0 {
             self.loss(
-                LossCode::PassthroughRecordOmitted,
-                LossCategory::Metadata,
+                LossKind::PassthroughRecordOmitted,
                 Severity::Info,
                 format!("{unknown_count} uninterpreted passthrough record(s) were not represented in STEP"),
             );
         }
         if self.unstyled_colors > 0 {
             self.loss(
-                LossCode::AttributesNotTransferred,
-                LossCategory::Attribute,
+                LossKind::AttributesNotTransferred,
                 Severity::Info,
                 format!(
                     "{} display color(s) had no emitted STEP item and were not written \
@@ -2775,8 +2786,7 @@ impl<'a> Builder<'a> {
             .count();
         if lossy_appearances > 0 {
             self.loss(
-                LossCode::AppearanceReduced,
-                LossCategory::Material,
+                LossKind::AppearanceReduced,
                 Severity::Info,
                 format!(
                     "{lossy_appearances} appearance asset(s) were reduced to STYLED_ITEM base colors; \
@@ -2793,8 +2803,7 @@ impl<'a> Builder<'a> {
             .count();
         if lossy_binding_metadata > 0 {
             self.loss(
-                LossCode::AppearanceReduced,
-                LossCategory::Metadata,
+                LossKind::AppearanceReduced,
                 Severity::Info,
                 format!(
                     "{lossy_binding_metadata} appearance binding(s) carry source object or channel metadata not represented in STEP"
@@ -2803,8 +2812,7 @@ impl<'a> Builder<'a> {
         }
         if !self.ir.model.attributes.is_empty() {
             self.loss(
-                LossCode::AttributesNotTransferred,
-                LossCategory::Attribute,
+                LossKind::AttributesNotTransferred,
                 Severity::Info,
                 format!(
                     "{} source attribute record(s) were not written to STEP",
@@ -2828,8 +2836,7 @@ impl<'a> Builder<'a> {
             .count();
         if procedural_surface_count > 0 || procedural_curve_count > 0 {
             self.loss(
-                LossCode::ProceduralReduced,
-                LossCategory::Geometry,
+                LossKind::ProceduralReduced,
                 Severity::Info,
                 format!(
                     "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their solved STEP carriers"
@@ -2846,8 +2853,7 @@ impl<'a> Builder<'a> {
             .sum();
         if source_native_records > 0 {
             self.loss(
-                LossCode::ParametricRecordOmitted,
-                LossCategory::Metadata,
+                LossKind::ParametricRecordOmitted,
                 Severity::Info,
                 format!(
                     "{source_native_records} source-native record(s) were not represented in STEP"
@@ -2859,8 +2865,11 @@ impl<'a> Builder<'a> {
     fn finish_report(&self) -> ExportReport {
         ExportReport {
             format: "step".into(),
-            entity_counts: self.emitter.counts(),
-            total_entities: self.emitter.total(),
+            census: cadmpeg_ir::EntityCensus {
+                basis: cadmpeg_ir::CensusBasis::TargetRecords,
+                counts: self.emitter.counts(),
+            },
+            fidelity: FidelityResolution::NotProvided,
             losses: self.losses.clone(),
             notes: self.notes.clone(),
         }
@@ -2879,8 +2888,15 @@ impl Encoder for StepCodec {
         "step"
     }
 
-    fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
-        write_step(ir, writer, &self.options).map_err(CodecError::from)
+    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
+        let mut bytes = Vec::new();
+        let report = write_step(input.ir, &mut bytes, &self.options).map_err(CodecError::from)?;
+        let fidelity = if input.fidelity.is_some() {
+            FidelityResolution::NotConsumed
+        } else {
+            FidelityResolution::NotProvided
+        };
+        Ok(ExportPlan::buffered(report, fidelity, bytes))
     }
 }
 
@@ -2901,8 +2917,8 @@ impl Codec for StepCodec {
 
     fn inspect_impl(
         &self,
-        _ctx: &cadmpeg_ir::decode::DecodeContext<'_>,
-        root: cadmpeg_ir::decode::View<'_>,
+        _ctx: &cadmpeg_codec_core::decode::DecodeContext<'_>,
+        root: cadmpeg_codec_core::decode::View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let bytes = root.window();
         refuse_alternate_encoding(bytes)?;
@@ -3068,8 +3084,8 @@ impl Codec for StepCodec {
 
     fn decode_impl(
         &self,
-        ctx: &cadmpeg_ir::decode::DecodeContext<'_>,
-        root: cadmpeg_ir::decode::View<'_>,
+        ctx: &cadmpeg_codec_core::decode::DecodeContext<'_>,
+        root: cadmpeg_codec_core::decode::View<'_>,
     ) -> Result<DecodeResult, CodecError> {
         let bytes = root.window();
         refuse_alternate_encoding(bytes)?;
@@ -3155,34 +3171,7 @@ fn is_identity(rows: &[[f64; 4]; 4]) -> bool {
 }
 
 fn is_rigid_transform(rows: &[[f64; 4]; 4]) -> bool {
-    const EPSILON: f64 = 1.0e-9;
-    if rows.iter().flatten().any(|value| !value.is_finite())
-        || rows[3]
-            .iter()
-            .zip([0.0, 0.0, 0.0, 1.0])
-            .any(|(actual, expected)| (*actual - expected).abs() > EPSILON)
-    {
-        return false;
-    }
-    let columns = (0..3)
-        .map(|column| [rows[0][column], rows[1][column], rows[2][column]])
-        .collect::<Vec<_>>();
-    for left in 0..3 {
-        for right in 0..3 {
-            let dot = (0..3)
-                .map(|row| columns[left][row] * columns[right][row])
-                .sum::<f64>();
-            let expected = if left == right { 1.0 } else { 0.0 };
-            if (dot - expected).abs() > EPSILON {
-                return false;
-            }
-        }
-    }
-    let determinant = columns[0][0]
-        * (columns[1][1] * columns[2][2] - columns[1][2] * columns[2][1])
-        - columns[1][0] * (columns[0][1] * columns[2][2] - columns[0][2] * columns[2][1])
-        + columns[2][0] * (columns[0][1] * columns[1][2] - columns[0][2] * columns[1][1]);
-    (determinant - 1.0).abs() <= EPSILON
+    cadmpeg_ir::transform::Transform { rows: *rows }.is_proper_rigid()
 }
 
 #[cfg(test)]

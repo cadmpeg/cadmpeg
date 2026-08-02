@@ -69,9 +69,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.103"
+version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
+checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "assert_cmd"
@@ -96,9 +96,9 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
 name = "base64"
-version = "0.22.1"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+checksum = "b25655df2c3cdd83c5e5b293b88acd880332b2ddadd7c30ac43144fdc0033da9"
 
 [[package]]
 name = "bitflags"
@@ -127,10 +127,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "bumpalo"
-version = "3.20.3"
+name = "byteorder"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
+checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "cadmpeg"
@@ -139,6 +139,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "cadmpeg-codec-catia",
+ "cadmpeg-codec-core",
  "cadmpeg-codec-creo",
  "cadmpeg-codec-f3d",
  "cadmpeg-codec-freecad",
@@ -146,13 +147,18 @@ dependencies = [
  "cadmpeg-codec-nx",
  "cadmpeg-codec-rhino",
  "cadmpeg-codec-sldprt",
+ "cadmpeg-container",
  "cadmpeg-ir",
  "cadmpeg-step",
  "clap",
  "crc32fast",
+ "memchr",
  "predicates",
+ "serde",
  "serde_json",
  "tempfile",
+ "thiserror",
+ "toml",
  "zip",
 ]
 
@@ -160,20 +166,34 @@ dependencies = [
 name = "cadmpeg-codec-catia"
 version = "0.3.0"
 dependencies = [
+ "cadmpeg-codec-core",
  "cadmpeg-ir",
  "memchr",
  "schemars",
  "serde",
+ "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "cadmpeg-codec-core"
+version = "0.3.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
 name = "cadmpeg-codec-creo"
 version = "0.3.0"
 dependencies = [
+ "cadmpeg-codec-core",
  "cadmpeg-ir",
  "regex",
  "serde",
+ "serde_json",
  "sha2",
 ]
 
@@ -181,13 +201,18 @@ dependencies = [
 name = "cadmpeg-codec-f3d"
 version = "0.3.0"
 dependencies = [
+ "cadmpeg-codec-core",
+ "cadmpeg-container",
  "cadmpeg-ir",
+ "lzma-rs",
+ "memchr",
  "roxmltree",
  "schemars",
  "serde",
  "serde-value",
  "serde_json",
  "sha2",
+ "tempfile",
  "thiserror",
  "zip",
 ]
@@ -196,6 +221,8 @@ dependencies = [
 name = "cadmpeg-codec-freecad"
 version = "0.3.0"
 dependencies = [
+ "cadmpeg-codec-core",
+ "cadmpeg-container",
  "cadmpeg-ir",
  "flate2",
  "roxmltree",
@@ -209,6 +236,7 @@ dependencies = [
 name = "cadmpeg-codec-iges"
 version = "0.3.0"
 dependencies = [
+ "cadmpeg-codec-core",
  "cadmpeg-ir",
  "serde",
  "serde_json",
@@ -220,6 +248,7 @@ dependencies = [
 name = "cadmpeg-codec-nx"
 version = "0.3.0"
 dependencies = [
+ "cadmpeg-codec-core",
  "cadmpeg-ir",
  "flate2",
  "roxmltree",
@@ -232,18 +261,22 @@ dependencies = [
 name = "cadmpeg-codec-rhino"
 version = "0.3.0"
 dependencies = [
+ "cadmpeg-codec-core",
  "cadmpeg-ir",
  "crc32fast",
  "flate2",
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
 ]
 
 [[package]]
 name = "cadmpeg-codec-sldprt"
 version = "0.3.0"
 dependencies = [
+ "cadmpeg-codec-core",
+ "cadmpeg-container",
  "cadmpeg-ir",
  "crc32fast",
  "flate2",
@@ -256,11 +289,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-container"
+version = "0.3.0"
+dependencies = [
+ "cadmpeg-codec-core",
+ "crc32fast",
+ "flate2",
+ "zip",
+ "zstd",
+]
+
+[[package]]
 name = "cadmpeg-ir"
 version = "0.3.0"
 dependencies = [
  "base64",
- "flate2",
+ "cadmpeg-codec-core",
  "schemars",
  "serde",
  "serde_json",
@@ -272,6 +316,7 @@ dependencies = [
 name = "cadmpeg-step"
 version = "0.3.0"
 dependencies = [
+ "cadmpeg-codec-core",
  "cadmpeg-ir",
  "encoding_rs",
  "thiserror",
@@ -355,6 +400,21 @@ checksum = "8b2a41393f66f16b0823bb79094d54ac5fbd34ab292ddafb9a0456ac9f87d201"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "crc"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5eb8a2a1cd12ab0d987a5d5e825195d372001a4094a0376319d5a0ad71c1ba0d"
+dependencies = [
+ "crc-catalog",
+]
+
+[[package]]
+name = "crc-catalog"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "217698eaf96b4a3f0bc4f3662aaa55bdf913cd54d7204591faa790070c6d0853"
 
 [[package]]
 name = "crc32fast"
@@ -442,7 +502,6 @@ checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
- "zlib-rs",
 ]
 
 [[package]]
@@ -531,10 +590,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
-name = "log"
-version = "0.4.33"
+name = "lzma-rs"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
+checksum = "297e814c836ae64db86b36cf2a557ba54368d03f6afcd7d947c266692f71115e"
+dependencies = [
+ "byteorder",
+ "crc",
+]
 
 [[package]]
 name = "memchr"
@@ -670,9 +733,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.13.0"
+version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a0e75113e14dc5acb068cd0786884f214f1312650a3d36d269f5c4f3cdee8a2"
+checksum = "f020237b6c8eed93db2e2cb53c00c60a8e1bc73da7d073199a1180401450218d"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -682,9 +745,9 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.4.15"
+version = "0.4.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f388202e4b80542a0921078cc23b6333bcf1409c1e3f86404cae4766a6131db"
+checksum = "8fcfdb36bda0c880c5931cdc7a2bcdc8ba4556847b9d912bca70bc94708711ad"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -721,9 +784,9 @@ dependencies = [
 
 [[package]]
 name = "schemars"
-version = "1.2.1"
+version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2b42f36aa1cd011945615b92222f6bf73c599a102a300334cd7f8dbeec726cc"
+checksum = "687274d293b6cdc6e73e0fee520bf2049650090d7164f87672d212a3c530cf4a"
 dependencies = [
  "dyn-clone",
  "ref-cast",
@@ -734,14 +797,14 @@ dependencies = [
 
 [[package]]
 name = "schemars_derive"
-version = "1.2.1"
+version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d115b50f4aaeea07e79c1912f645c7513d81715d0420f8bc77a18c6260b307f"
+checksum = "d98c67716b46af2f0b8cf752abc930f6f9aecfbf671ecfb531db8a31dbe4e2ba"
 dependencies = [
  "proc-macro2",
  "quote",
  "serde_derive_internals",
- "syn 2.0.118",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -786,20 +849,20 @@ dependencies = [
 
 [[package]]
 name = "serde_derive_internals"
-version = "0.29.1"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18d26a20a969b9e3fdf2fc2d9f21eda6c40e2de84c9408bb5d3b05d499aae711"
+checksum = "f852137cce035d6a4df67ccce505ff6b3e9fd3a10e3e52b24dc71e650bb1a9bd"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.118",
+ "syn 3.0.3",
 ]
 
 [[package]]
 name = "serde_json"
-version = "1.0.150"
+version = "1.0.151"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8014e44b4736ed0538adeecded0fce2a272f22dc9578a7eb6b2d9993c74cfb9"
+checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
 dependencies = [
  "itoa",
  "memchr",
@@ -889,29 +952,29 @@ checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
 
 [[package]]
 name = "thiserror"
-version = "2.0.18"
+version = "2.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4288b5bcbc7920c07a1149a35cf9590a2aa808e0bc1eafaade0b80947865fbc4"
+checksum = "09a43598840e33d5b0331f38c5e30d13bb11c11210a4b58f0d9b18a5a5eefcd9"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.18"
+version = "2.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebc4ee7f67670e9b64d05fa4253e753e016c6c95ff35b89b7941d6b856dec1d5"
+checksum = "43cbfe0cf76104d42a574802844187e84a305e531ed54455f11fbde0f10541cd"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.118",
+ "syn 3.0.3",
 ]
 
 [[package]]
 name = "toml"
-version = "0.9.12+spec-1.1.0"
+version = "1.1.3+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf92845e79fc2e2def6a5d828f0801e29a2f8acc037becc5ab08595c7d5e9863"
+checksum = "53c96ecdfa941c8fc4fcaed14f99ada8ebed502eef533015095a07e3301d4c3c"
 dependencies = [
  "indexmap",
  "serde_core",
@@ -919,14 +982,14 @@ dependencies = [
  "toml_datetime",
  "toml_parser",
  "toml_writer",
- "winnow 0.7.15",
+ "winnow",
 ]
 
 [[package]]
 name = "toml_datetime"
-version = "0.7.5+spec-1.1.0"
+version = "1.1.1+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92e1cfed4a3038bc5a127e35a2d360f145e1f4b971b551a2ba5fd7aedf7e1347"
+checksum = "3165f65f62e28e0115a00b2ebdd37eb6f3b641855f9d636d3cd4103767159ad7"
 dependencies = [
  "serde_core",
 ]
@@ -937,7 +1000,7 @@ version = "1.1.2+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2abe9b86193656635d2411dc43050282ca48aa31c2451210f4202550afb7526"
 dependencies = [
- "winnow 1.0.4",
+ "winnow",
 ]
 
 [[package]]
@@ -996,12 +1059,6 @@ dependencies = [
 
 [[package]]
 name = "winnow"
-version = "0.7.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df79d97927682d2fd8adb29682d1140b343be4ac0f08fd68b7765d9c059d3945"
-
-[[package]]
-name = "winnow"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
@@ -1017,33 +1074,14 @@ dependencies = [
  "indexmap",
  "memchr",
  "typed-path",
- "zopfli",
  "zstd",
 ]
-
-[[package]]
-name = "zlib-rs"
-version = "0.6.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b142a20ec14a91d5bc708c1dc21b080c550113d8aa77afa29635673a65dd02c5"
 
 [[package]]
 name = "zmij"
 version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
-
-[[package]]
-name = "zopfli"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f05cd8797d63865425ff89b5c4a48804f35ba0ce8d125800027ad6017d2b5249"
-dependencies = [
- "bumpalo",
- "crc32fast",
- "log",
- "simd-adler32",
-]
 
 [[package]]
 name = "zstd"

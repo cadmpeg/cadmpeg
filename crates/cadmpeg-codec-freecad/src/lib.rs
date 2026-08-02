@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(
+    test,
+    allow(
+        clippy::default_trait_access,
+        clippy::doc_markdown,
+        clippy::unwrap_used
+    )
+)]
 //! Read and write ZIP-packaged `FreeCAD` `.FCStd` documents.
 //!
 //! [`FcstdCodec`] implements [`Codec`] and [`Encoder`]. Retained writes preserve
@@ -31,12 +39,12 @@ mod writer;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
-use std::io::Cursor;
 
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, Encoder,
+    Codec, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
 };
-use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
@@ -45,9 +53,10 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::FidelityResolution;
 use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity, SourceObjectAssociation};
 
 /// `FCStd` document codec.
@@ -1119,10 +1128,10 @@ impl Codec for FcstdCodec {
 
     fn inspect_impl(
         &self,
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        container::scan(&mut Cursor::new(root.window())).map(|scan| container::summarize(&scan))
+        container::scan(ctx, root).map(|scan| container::summarize(&scan))
     }
 
     fn decode_impl(
@@ -1134,7 +1143,7 @@ impl Codec for FcstdCodec {
             container_only: ctx.container_only(),
             policy: *ctx.policy(),
         };
-        let scan = container::scan(&mut Cursor::new(root.window()))?;
+        let scan = container::scan(ctx, root)?;
         if !options.container_only
             && (scan.document.schema_version != "4" || scan.document.file_version != "1")
         {
@@ -1190,15 +1199,16 @@ impl Codec for FcstdCodec {
             attributes,
         });
         if let Some((name, bytes)) = thumbnail {
+            ctx.charge_retained(bytes.len() as u64, "retain FCStd thumbnail", None)?;
             source_fidelity.attach_native_unknown_records(
                 &mut ir,
                 "fcstd",
-                &[UnknownRecord {
+                [UnknownRecord {
                     id: UnknownId(native::native_id("thumbnail", name)),
                     offset: 0,
                     byte_len: bytes.len() as u64,
                     sha256: sha256_hex(bytes),
-                    data: Some(bytes.clone()),
+                    data: Some(bytes.to_vec()),
                     links: vec![native::native_id("document", "0")],
                 }],
             )?;
@@ -1239,6 +1249,7 @@ impl Codec for FcstdCodec {
                         .filter(|property| property.side_entries.contains(&entry.name))
                         .map(|property| property.id.clone())
                         .collect();
+                    ctx.charge_retained(bytes.len() as u64, "retain FCStd entry", None)?;
                     Ok(native::EntryRecord {
                         id: native::native_id("entry", &entry.name),
                         name: entry.name.clone(),
@@ -1246,7 +1257,7 @@ impl Codec for FcstdCodec {
                         byte_len: bytes.len() as u64,
                         sha256: sha256_hex(bytes),
                         referenced_by,
-                        data: bytes.clone(),
+                        data: bytes.to_vec(),
                     })
                 })
                 .collect::<Result<Vec<_>, CodecError>>()?;
@@ -1291,7 +1302,7 @@ impl Codec for FcstdCodec {
                 .extend(surface_transfer.procedural);
             geometry_transferred |=
                 application_geometry::transfer(&mut ir, &graph.properties, &entry_records)?;
-            topology_transfer::transfer(&mut ir, &shape_payloads, &graph.properties)?;
+            topology_transfer::transfer(ctx, &mut ir, &shape_payloads, &graph.properties)?;
             design::transfer(
                 &mut ir,
                 &graph.objects,
@@ -1299,19 +1310,19 @@ impl Codec for FcstdCodec {
                 &shape_payloads,
                 &entry_records,
             )?;
-            let (components, occurrences) = product::transfer_neutral(
+            let (product_definitions, occurrences) = product::transfer_neutral(
+                ctx,
                 &product_nodes,
                 &joint_records,
                 &graph.objects,
                 &graph.properties,
+                &shape_payloads,
+                &ir.model.bodies,
             )?;
-            ir.model.components = components;
+            ir.model.product_definitions = product_definitions;
             ir.model.occurrences = occurrences;
-            ir.model.assembly_joints = joint::transfer_neutral(
-                &joint_records,
-                &ir.model.components,
-                &ir.model.occurrences,
-            );
+            ir.model.assembly_joints =
+                joint::transfer_neutral(&joint_records, &ir.model.occurrences);
             let design_census = design::census(&graph.objects, &ir.model.features)?;
             ir.native
                 .namespace_mut("fcstd")
@@ -1407,13 +1418,14 @@ impl Codec for FcstdCodec {
         } else {
             semantic_losses(&ir)
         };
-        Ok(DecodeResult::with_source_fidelity(
+        Ok(DecodeResult::new(
             ir,
             DecodeReport {
                 format: "fcstd".into(),
                 container_only: options.container_only,
                 geometry_transferred,
                 coverage: std::collections::BTreeMap::new(),
+                transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
                 losses,
                 notes: container::summarize(&scan).notes,
             },
@@ -1427,12 +1439,16 @@ impl Encoder for FcstdCodec {
         "fcstd"
     }
 
-    fn encode(
-        &self,
-        ir: &CadIr,
-        output: &mut dyn std::io::Write,
-    ) -> Result<ExportReport, CodecError> {
-        self.encode_with_options(ir, output, FcstdWriteOptions::default())
+    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
+        let mut bytes = Vec::new();
+        let report =
+            self.encode_with_options(input.ir, &mut bytes, FcstdWriteOptions::default())?;
+        let fidelity = if input.fidelity.is_some() {
+            FidelityResolution::NotConsumed
+        } else {
+            FidelityResolution::NotProvided
+        };
+        Ok(ExportPlan::buffered(report, fidelity, bytes))
     }
 }
 
@@ -1453,8 +1469,7 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
                 return None;
             };
             Some(LossNote {
-                code: cadmpeg_ir::LossCode::FeatureHistoryRetained,
-                category: LossCategory::Other,
+                code: cadmpeg_ir::LossKind::FeatureHistoryRetained,
                 severity: Severity::Blocking,
                 message: format!(
                     "FCStd design operation {kind} is retained natively but has no neutral semantics"
@@ -1486,8 +1501,7 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
             return None;
         };
         Some(LossNote {
-            code: cadmpeg_ir::LossCode::ParametricRecordOmitted,
-            category: LossCategory::Other,
+            code: cadmpeg_ir::LossKind::ParametricRecordOmitted,
             severity: Severity::Blocking,
             message: "FCStd linear-pattern direction is retained as a native reference but is not geometrically resolved".into(),
             provenance: Some(cadmpeg_ir::LossProvenance {
@@ -1503,8 +1517,7 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
             return None;
         };
         Some(LossNote {
-            code: cadmpeg_ir::LossCode::RecordNotTyped,
-            category: LossCategory::Geometry,
+            code: cadmpeg_ir::LossKind::RecordNotTyped,
             severity: Severity::Blocking,
             message: format!(
                 "FCStd sketch geometry {native_kind} is retained natively but is not neutralized"
@@ -1524,8 +1537,7 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
             return None;
         };
         Some(LossNote {
-            code: cadmpeg_ir::LossCode::RecordNotTyped,
-            category: LossCategory::Other,
+            code: cadmpeg_ir::LossKind::RecordNotTyped,
             severity: Severity::Blocking,
             message: format!(
                 "FCStd sketch constraint {native_kind} is retained natively but is not neutralized"
@@ -1833,6 +1845,7 @@ fn append_text_surface(
                     parameter_interval: None,
                     direction: *direction,
                     native_position: None,
+                    revision_form: None,
                 },
                 record_bounds: None,
                 cache_fit_tolerance: None,

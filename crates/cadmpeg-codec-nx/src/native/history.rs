@@ -1,0 +1,156 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Neutral feature-history state derived from NX body lineage.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::ids::BodyId;
+
+/// Ordered feature writers indexed by both native history identity and the
+/// neutral body identity established by projection.
+#[derive(Default)]
+pub(crate) struct BodyWriterHistory {
+    native: BTreeMap<u32, FeatureId>,
+    outputs: BTreeMap<BodyId, FeatureId>,
+}
+
+impl BodyWriterHistory {
+    pub(crate) fn native_writer(&self, body: u32) -> Option<&FeatureId> {
+        self.native.get(&body)
+    }
+
+    pub(crate) fn has_primary_writer(&self, native_body: Option<u32>, outputs: &[BodyId]) -> bool {
+        outputs
+            .iter()
+            .any(|output| self.outputs.contains_key(output))
+            || native_body.is_some_and(|body| self.native.contains_key(&body))
+    }
+
+    pub(crate) fn extend_primary_dependencies(
+        &self,
+        native_body: Option<u32>,
+        outputs: &[BodyId],
+        dependencies: &mut Vec<FeatureId>,
+    ) {
+        let mut has_output_writer = false;
+        for output in outputs {
+            if let Some(writer) = self.outputs.get(output) {
+                has_output_writer = true;
+                if !dependencies.contains(writer) {
+                    dependencies.push(writer.clone());
+                }
+            }
+        }
+        if !has_output_writer {
+            if let Some(writer) = native_body.and_then(|body| self.native.get(&body)) {
+                if !dependencies.contains(writer) {
+                    dependencies.push(writer.clone());
+                }
+            }
+        }
+    }
+
+    pub(crate) fn record_writer(
+        &mut self,
+        native_body: Option<u32>,
+        outputs: &[BodyId],
+        feature: &FeatureId,
+    ) {
+        if let Some(body) = native_body {
+            self.native.insert(body, feature.clone());
+        }
+        for output in outputs {
+            self.outputs.insert(output.clone(), feature.clone());
+        }
+    }
+}
+
+/// Return the exact dependency closure of the features writing `bodies`.
+///
+/// The closure exists only when feature identities are unique, every
+/// dependency names an earlier feature, at least one feature writes a selected
+/// body, and no member is explicitly suppressed.
+pub(crate) fn active_feature_closure(ir: &CadIr, bodies: &[BodyId]) -> Option<BTreeSet<FeatureId>> {
+    let features = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (feature.id.clone(), feature))
+        .collect::<BTreeMap<_, _>>();
+    if features.len() != ir.model.features.len() {
+        return None;
+    }
+
+    let active_bodies = bodies.iter().collect::<BTreeSet<_>>();
+    let mut active_features = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            feature
+                .outputs
+                .iter()
+                .any(|output| active_bodies.contains(output))
+        })
+        .map(|feature| feature.id.clone())
+        .collect::<BTreeSet<_>>();
+    if active_features.is_empty() {
+        return None;
+    }
+
+    let mut pending = active_features.iter().cloned().collect::<Vec<_>>();
+    while let Some(feature_id) = pending.pop() {
+        let feature = features.get(&feature_id)?;
+        for dependency in &feature.dependencies {
+            let dependency_feature = features.get(dependency)?;
+            (dependency_feature.ordinal < feature.ordinal).then_some(())?;
+            if active_features.insert(dependency.clone()) {
+                pending.push(dependency.clone());
+            }
+        }
+    }
+    if active_features
+        .iter()
+        .any(|id| features[id].suppressed == Some(true))
+    {
+        return None;
+    }
+    Some(active_features)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn neutral_output_identity_closes_lineage_across_native_identities() {
+        let body = BodyId("body".into());
+        let first = FeatureId("first".into());
+        let second = FeatureId("second".into());
+        let mut history = BodyWriterHistory::default();
+        history.record_writer(Some(7), std::slice::from_ref(&body), &first);
+
+        let mut dependencies = Vec::new();
+        history.extend_primary_dependencies(
+            Some(8),
+            std::slice::from_ref(&body),
+            &mut dependencies,
+        );
+
+        assert_eq!(dependencies, [first]);
+        assert!(history.native_writer(8).is_none());
+        assert!(history.has_primary_writer(Some(7), &[]));
+        assert!(history.has_primary_writer(None, std::slice::from_ref(&body)));
+        assert!(!history.has_primary_writer(Some(8), &[]));
+        history.record_writer(Some(8), std::slice::from_ref(&body), &second);
+        assert_eq!(history.native_writer(8), Some(&second));
+        dependencies.clear();
+        history.extend_primary_dependencies(Some(7), &[body], &mut dependencies);
+        assert_eq!(dependencies, [second]);
+
+        dependencies.clear();
+        history.extend_primary_dependencies(Some(7), &[], &mut dependencies);
+        assert_eq!(dependencies, [FeatureId("first".into())]);
+    }
+}

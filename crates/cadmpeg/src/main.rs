@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(test, allow(clippy::default_trait_access, clippy::unwrap_used))]
 //! The `cadmpeg` command-line interface.
 //!
 //! The CLI detects supported native CAD containers, decodes model data through
@@ -7,6 +8,7 @@
 //! limits, loss reporting, and exit-status semantics.
 
 mod commands;
+mod inspect;
 mod loader;
 mod registry;
 
@@ -182,6 +184,8 @@ enum InputFormat {
     /// IGES `.igs` or `.iges`.
     #[value(alias = "igs")]
     Iges,
+    /// ISO 10303 STEP.
+    Step,
     /// Canonical CADIR JSON.
     Cadir,
 }
@@ -203,6 +207,7 @@ impl InputFormat {
             Self::Creo => ForcedInput::Codec("creo"),
             Self::Rhino => ForcedInput::Codec("rhino"),
             Self::Iges => ForcedInput::Codec("iges"),
+            Self::Step => ForcedInput::Codec("step"),
             Self::Cadir => ForcedInput::Cadir,
         }
     }
@@ -246,33 +251,53 @@ enum LimitProfile {
 
 impl DecodeArgs {
     fn options(&self) -> cadmpeg_ir::DecodeOptions {
-        let limits = match self.limits {
-            LimitProfile::Desktop => cadmpeg_ir::decode::ResourceLimits::desktop(),
-            LimitProfile::Service => cadmpeg_ir::decode::ResourceLimits::service(),
-        };
+        let limits = self.limits.limits();
         let mode = if self.strict {
-            cadmpeg_ir::decode::DecodeMode::Strict
+            cadmpeg_codec_core::decode::DecodeMode::Strict
         } else {
-            cadmpeg_ir::decode::DecodeMode::Salvage
+            cadmpeg_codec_core::decode::DecodeMode::Salvage
         };
         cadmpeg_ir::DecodeOptions {
             container_only: self.container_only,
-            policy: cadmpeg_ir::decode::DecodePolicy { mode, limits },
+            policy: cadmpeg_codec_core::decode::DecodePolicy { mode, limits },
+        }
+    }
+}
+
+impl LimitProfile {
+    const fn limits(self) -> cadmpeg_codec_core::decode::ResourceLimits {
+        match self {
+            LimitProfile::Desktop => cadmpeg_codec_core::decode::ResourceLimits::desktop(),
+            LimitProfile::Service => cadmpeg_codec_core::decode::ResourceLimits::service(),
         }
     }
 }
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// List a native container's entries without decoding its model.
+    /// List a native container's entries, or run a byte-level subcommand.
+    ///
+    /// With a file argument this prints the codec-aware container summary. With
+    /// a subcommand it runs a format-agnostic byte tool over any file.
+    #[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
     Inspect {
-        /// Native CAD file to inspect.
-        input: PathBuf,
+        /// Native CAD file to inspect. Omit it when using a byte subcommand.
+        #[arg(required = true)]
+        input: Option<PathBuf>,
         /// Write a versioned JSON summary to standard output.
         #[arg(long)]
         json: bool,
+        /// Write a versioned JSON command report to this file.
+        #[arg(long)]
+        report: Option<PathBuf>,
+        /// Resource-limit profile applied during inspection.
+        #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
+        limits: LimitProfile,
         #[command(flatten)]
         input_args: InputArgs,
+        /// Byte-level tool to run instead of the container summary.
+        #[command(subcommand)]
+        bytes: Option<inspect::ByteCommand>,
     },
     /// Decode a native CAD file to canonical CADIR JSON.
     Decode {
@@ -299,6 +324,9 @@ enum Command {
         /// Write a versioned JSON result to standard output.
         #[arg(long)]
         json: bool,
+        /// Write a versioned JSON command report to this file.
+        #[arg(long)]
+        report: Option<PathBuf>,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
@@ -342,9 +370,18 @@ enum Command {
         a: PathBuf,
         /// Second model.
         b: PathBuf,
+        /// Bypass content detection and read the first model as this format.
+        #[arg(long, value_enum)]
+        input_format_a: Option<InputFormat>,
+        /// Bypass content detection and read the second model as this format.
+        #[arg(long, value_enum)]
+        input_format_b: Option<InputFormat>,
         /// Write a versioned JSON result to standard output.
         #[arg(long)]
         json: bool,
+        /// Write a versioned JSON command report to this file.
+        #[arg(long)]
+        report: Option<PathBuf>,
         #[command(flatten)]
         decode: DecodeArgs,
     },
@@ -387,20 +424,30 @@ enum Command {
 
 fn main() -> ExitCode {
     let command = Cli::parse().command;
-    let mut registry = Registry::with_builtins();
-    match &command {
-        Command::Export { step, .. } | Command::Convert { step, .. } => {
-            registry.set_step_options(step.options());
-        }
-        _ => {}
-    }
+    let registry = Registry::with_builtins();
     let result = match command {
         Command::Inspect {
             input,
             json,
+            report,
+            limits,
             input_args,
-        } => commands::inspect(&registry, &input, input_args.forced(), json)
-            .map(|()| ExitCode::SUCCESS),
+            bytes,
+        } => match bytes {
+            Some(byte_command) => inspect::run(byte_command).map(|()| ExitCode::SUCCESS),
+            None => {
+                let input = input.expect("clap requires an input without a subcommand");
+                commands::inspect(
+                    &registry,
+                    &input,
+                    input_args.forced(),
+                    json,
+                    report.as_deref(),
+                    limits.limits(),
+                )
+                .map(|()| ExitCode::SUCCESS)
+            }
+        },
         Command::Decode {
             input,
             output,
@@ -421,10 +468,18 @@ fn main() -> ExitCode {
         Command::Validate {
             input,
             json,
+            report,
             input_args,
             decode,
-        } => commands::validate_cmd(&registry, &input, input_args.forced(), &decode, json)
-            .map(|()| ExitCode::SUCCESS),
+        } => commands::validate_cmd(
+            &registry,
+            &input,
+            input_args.forced(),
+            &decode,
+            json,
+            report.as_deref(),
+        )
+        .map(|()| ExitCode::SUCCESS),
         Command::Export {
             input,
             format,
@@ -436,24 +491,47 @@ fn main() -> ExitCode {
             rhino_version,
             input_args,
             decode,
-            step: _,
+            step,
         } => commands::export(
             &registry,
             &input,
             format,
             output.as_deref(),
-            commands::ExportSettings {
+            commands::ConversionPlan {
                 force,
                 report,
+                validation: commands::ValidationMode::Skipped,
                 allow_empty,
                 reject_lossy,
                 rhino_version: rhino_version.map(RhinoVersion::codec),
+                step_options: step.options(),
                 forced_input: input_args.forced(),
             },
             &decode,
         )
         .map(|()| ExitCode::SUCCESS),
-        Command::Diff { a, b, json, decode } => commands::diff(&registry, &a, &b, &decode, json),
+        Command::Diff {
+            a,
+            b,
+            input_format_a,
+            input_format_b,
+            json,
+            report,
+            decode,
+        } => commands::diff(
+            &registry,
+            commands::DiffInput {
+                path: &a,
+                forced: input_format_a.map(InputFormat::resolution),
+            },
+            commands::DiffInput {
+                path: &b,
+                forced: input_format_b.map(InputFormat::resolution),
+            },
+            &decode,
+            json,
+            report.as_deref(),
+        ),
         Command::Convert {
             input,
             format,
@@ -466,19 +544,20 @@ fn main() -> ExitCode {
             rhino_version,
             input_args,
             decode,
-            step: _,
+            step,
         } => commands::convert(
             &registry,
             &input,
             format,
             output.as_deref(),
-            &commands::ConvertSettings {
+            commands::ConversionPlan {
                 force,
                 report,
-                allow_invalid,
+                validation: commands::ValidationMode::Required { allow_invalid },
                 allow_empty,
                 reject_lossy,
                 rhino_version: rhino_version.map(RhinoVersion::codec),
+                step_options: step.options(),
                 forced_input: input_args.forced(),
             },
             &decode,

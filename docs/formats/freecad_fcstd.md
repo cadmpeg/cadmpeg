@@ -1,6 +1,8 @@
 # FreeCAD `.FCStd`
 
-## Support envelope
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/freecad.md`](../layouts/freecad.md), generated from `docs/layouts/freecad.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+
+## 1. Support envelope
 
 The primary envelope is a ZIP archive containing `Document.xml` with document `SchemaVersion=4`
 and `FileVersion=1`. The application graph may contain core App, Part, PartDesign, Sketcher,
@@ -28,7 +30,7 @@ not support.
 Recovery directories, unpacked project trees, backups, and unrelated ZIP archives are not FCStd
 documents.
 
-## Container identity
+## 2. Container identity
 
 An FCStd document is identified by ZIP framing plus a root `Document.xml` entry whose XML document
 element and version attributes identify the persistence document. A ZIP signature alone is not an
@@ -43,13 +45,13 @@ decompression.
 presentation graph. Other entries acquire meaning only from typed references in either graph;
 unreferenced entries remain named archive records.
 
-## Version dispatch
+## 3. Version dispatch
 
 `ProgramVersion` is metadata. Parsing dispatch is selected by container layout, document schema and
 file version, object type, property type, value tag, and side-entry form. Unsupported combinations
 are reported using those structural attributes.
 
-## Identity and retention
+## 4. Identity and retention
 
 Every document object has a stable identity composed from the document identity and its persisted
 object identity. Every property identity includes its owner and persisted property name. Source
@@ -62,14 +64,14 @@ application records remain named records rather than being merged into one docum
 Serialized Python and extension payloads are inert bytes. Reading, inspecting, validating,
 diffing, and exporting never executes or imports them.
 
-## Measurement semantics
+## 5. Measurement semantics
 
 Native scalar text and native quantity values are retained exactly. Neutral model-space lengths
 are millimetres. Angles retain whether the native value is radians or degrees. Parameter domains,
 placements, orientation, tolerance values, and display-unit settings are distinct fields; display
 units do not rescale model geometry.
 
-## Byte accounting
+## 6. Byte accounting
 
 The physical archive and every decompressed logical entry each have an independent byte ledger.
 Ledger spans are ordered, non-overlapping, and cover the complete stream.
@@ -82,7 +84,7 @@ Logical XML spans classify declarations, delimiters, comments, whitespace, and e
 structural bytes. Typed values own their exact lexical spans. A retained record owns one named
 opaque span with its declared length and digest. No byte may be both typed and opaque.
 
-## Exact shapes
+## 7. Exact shapes
 
 Part shape properties reference text or binary B-rep entries. Shape records retain native table
 indices, locations, geometry carriers, topology, tolerances, flags, parameter ranges, and pcurves.
@@ -129,7 +131,7 @@ property ownership, and neutral topology links are validated without synthesizin
 The native location chain is applied exactly once at the owning topology level. Display
 tessellation is presentation data and does not replace an available exact shape.
 
-## Design-history transfer
+## 8. Design-history transfer
 
 Construction objects retain source order and native identity independently of their cached shape.
 Planar sketch geometry is transferred in persisted entity order. Non-construction line segments
@@ -168,7 +170,7 @@ feature and retains ordered non-default column widths, row heights, and inclusiv
 Dimension counts must match their records; names, addresses, ownership, merged anchors, duplicate
 cells, and overlapping merged ranges are validated.
 
-## Product structure
+## 9. Product structure
 
 The native `product_nodes` arena retains groups, parts, link groups, and placed link objects exactly
 as application records. CADIR components separate reusable definitions from occurrences. Ordered
@@ -223,7 +225,7 @@ independent fields.
 Persisted degree values convert to radians for neutral angles and angular limits. Validation checks
 operand/frame cardinality, component references, finite values, and ordered intervals.
 
-## Drawing graph
+## 10. Drawing graph
 
 Native namespace version 7 adds a `drawings` arena for every TechDraw page, template, view,
 dimension, and annotation subtype. Pages retain ordered view membership and template identity.
@@ -258,7 +260,7 @@ sketch geometry family that remains only in the native lane produces its own blo
 the object or property identity and `Document.xml` provenance. Successfully neutralized geometry
 does not inherit a format-wide placeholder loss.
 
-## Presentation and application records
+## 11. Presentation and application records
 
 Format-neutral document and view presentation arenas represent GUI state. A GUI archive produces
 one document presentation record; a headless archive produces none. The neutral document record
@@ -280,12 +282,15 @@ to an unrelated application object.
 For shape-bearing objects, the view provider's shape color, transparency, visibility, and material
 scalars produce an object appearance and explicit body bindings. Packed colors decode as red,
 green, blue, and reserved low byte; the independent transparency percentage determines opacity.
-The effective body display fields mirror this object-level assignment. Per-face diffuse-color lists
-are a higher-precedence presentation layer and are not inferred from the object color. Their
-little-endian count and packed-color records bind only when the count equals the owning element
-map's ordered Face group. Each persistent face name supplies the neutral face occurrences receiving
-the override, and the resulting bindings explicitly record face-over-object precedence. Missing
-identity or a count mismatch leaves the side entry retained without guessing transient face labels.
+The effective body display fields mirror this object-level assignment. Per-face `DiffuseColor`,
+per-edge `LineColorArray`, and per-vertex `PointColorArray` lists are higher-precedence presentation
+layers. They are not inferred from the corresponding object color. Each list contains a
+little-endian count followed by packed-color records. A count of one applies its color to every
+member of the corresponding Face, Edge, or Vertex element-map group. Otherwise, the count must
+equal the number of names in that ordered group. Each persistent element name supplies the neutral
+topology occurrences that receive the override. The resulting bindings explicitly record
+face-over-object, edge-array-over-line, or vertex-array-over-point precedence. Missing identity or
+a count mismatch leaves the side entry retained without guessing transient topology labels.
 
 Application data without a neutral representation retains its owning object and property,
 declared application type, links, source order, XML bytes, referenced side-entry bytes, byte spans,

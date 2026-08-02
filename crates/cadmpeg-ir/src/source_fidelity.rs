@@ -3,14 +3,99 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 use crate::annotations::Annotations;
 use crate::document::CadIr;
 use crate::native::NativeConvertError;
+use crate::report::DecodeReport;
 use crate::unknown::UnknownRecord;
 
 /// Current serialized sidecar version.
 pub const SOURCE_FIDELITY_VERSION: &str = "3";
+
+/// Current serialized decode-sidecar version.
+pub const DECODE_SIDECAR_VERSION: &str = "1";
+
+/// A decode report and source fidelity bound to exact CADIR bytes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DecodeSidecar {
+    /// Serialized sidecar format version.
+    pub version: String,
+    /// SHA-256 of the exact CADIR bytes this sidecar describes.
+    pub ir_sha256: String,
+    /// Native decode transfer report.
+    pub report: DecodeReport,
+    /// Decode-time annotations and retained source records.
+    pub fidelity: SourceFidelity,
+}
+
+impl DecodeSidecar {
+    /// Binds decode metadata to exact serialized CADIR bytes.
+    pub fn bind(ir_bytes: &[u8], report: DecodeReport, mut fidelity: SourceFidelity) -> Self {
+        fidelity.finalize();
+        Self {
+            version: DECODE_SIDECAR_VERSION.into(),
+            ir_sha256: crate::hash::sha256_hex(ir_bytes),
+            report,
+            fidelity,
+        }
+    }
+
+    /// Returns whether this sidecar is bound to the supplied CADIR bytes.
+    pub fn matches(&self, ir_bytes: &[u8]) -> bool {
+        self.ir_sha256 == crate::hash::sha256_hex(ir_bytes)
+    }
+
+    /// Serializes this sidecar as canonical compact JSON.
+    pub fn to_canonical_json(&self) -> Result<String, serde_json::Error> {
+        let mut canonical = self.clone();
+        canonical.fidelity.finalize();
+        serde_json::to_string(&canonical)
+    }
+
+    /// Parses and validates a decode sidecar.
+    pub fn from_json(text: &str) -> Result<Self, DecodeSidecarParseError> {
+        let sidecar: Self = serde_json::from_str(text).map_err(DecodeSidecarParseError::Json)?;
+        if sidecar.version != DECODE_SIDECAR_VERSION {
+            return Err(DecodeSidecarParseError::Version {
+                found: sidecar.version,
+            });
+        }
+        sidecar
+            .fidelity
+            .validate()
+            .map_err(DecodeSidecarParseError::Fidelity)?;
+        Ok(sidecar)
+    }
+}
+
+/// Returns the sidecar path for a CADIR path.
+pub fn decode_sidecar_path(path: &Path) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    let stem = file_name.strip_suffix(".json").unwrap_or(file_name);
+    path.with_file_name(format!("{stem}.fidelity.json"))
+}
+
+/// Failure parsing a decode sidecar.
+#[derive(Debug, thiserror::Error)]
+pub enum DecodeSidecarParseError {
+    /// Invalid JSON.
+    #[error("invalid decode-sidecar JSON: {0}")]
+    Json(serde_json::Error),
+    /// Unsupported sidecar version.
+    #[error("unsupported decode-sidecar version: {found}")]
+    Version {
+        /// Version found in the sidecar.
+        found: String,
+    },
+    /// Invalid source fidelity.
+    #[error(transparent)]
+    Fidelity(FidelityError),
+}
 
 /// Source bytes retained for native recovery or replay.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -105,71 +190,67 @@ impl SourceFidelity {
     }
 
     /// Retains source records without adding them to the product model.
-    pub fn retain_unknown_records(&mut self, stream: &str, records: &[UnknownRecord]) {
+    ///
+    /// The records are consumed: their retained bytes move into the sidecar
+    /// rather than being copied into it.
+    pub fn retain_unknown_records(
+        &mut self,
+        stream: &str,
+        records: impl IntoIterator<Item = UnknownRecord>,
+    ) {
         self.retained_records
-            .extend(records.iter().map(|record| RetainedSourceRecord {
-                id: record.id.to_string(),
+            .extend(records.into_iter().map(|record| RetainedSourceRecord {
+                id: record.id.0,
                 stream: stream.into(),
                 offset: record.offset,
                 byte_len: record.byte_len,
-                sha256: record.sha256.clone(),
-                data: record.data.clone(),
+                sha256: record.sha256,
+                data: record.data,
             }));
     }
 
     /// Stores source bytes in the sidecar and references in the product model.
+    ///
+    /// The records are consumed and split as they arrive: the retained bytes
+    /// move into the sidecar and the identity and links move into the product
+    /// arena, so neither the retained source image nor the derived product
+    /// references are ever duplicated. A caller that still needs a record
+    /// afterwards clones that record itself.
     pub fn attach_native_unknown_records(
         &mut self,
         ir: &mut CadIr,
         format: &str,
-        records: &[UnknownRecord],
+        records: impl IntoIterator<Item = UnknownRecord>,
     ) -> Result<(), NativeConvertError> {
-        self.retained_records.extend(records.iter().map(|record| {
-            let stream = self
-                .annotations
-                .provenance
-                .get(&record.id.0)
-                .and_then(|provenance| self.annotations.streams.get(provenance.stream as usize))
-                .cloned()
-                .unwrap_or_else(|| "source".into());
-            RetainedSourceRecord {
-                id: record.id.to_string(),
-                stream,
-                offset: record.offset,
-                byte_len: record.byte_len,
-                sha256: record.sha256.clone(),
-                data: record.data.clone(),
-            }
-        }));
-        let product_records = records
-            .iter()
-            .map(crate::NativeUnknownRecord::from)
-            .collect::<Vec<_>>();
-        ir.set_native_unknowns(format, &product_records)
-    }
-
-    /// Joins product references with retained source records.
-    pub fn native_unknown_records(
-        &self,
-        ir: &CadIr,
-        format: &str,
-    ) -> Result<Vec<UnknownRecord>, NativeConvertError> {
-        ir.native_unknowns(format)?
-            .into_iter()
-            .map(|reference| {
-                let retained = self.retained_record(&reference.id.0).ok_or_else(|| {
-                    NativeConvertError::MissingRetainedSourceRecord(reference.id.0.clone())
-                })?;
-                Ok(UnknownRecord {
-                    id: reference.id,
-                    offset: retained.offset,
-                    byte_len: retained.byte_len,
-                    sha256: retained.sha256.clone(),
-                    data: retained.data.clone(),
-                    links: reference.links,
-                })
-            })
-            .collect()
+        let Self {
+            annotations,
+            retained_records,
+            ..
+        } = self;
+        ir.set_native_unknowns_from(
+            format,
+            records.into_iter().map(|record| {
+                let stream = annotations
+                    .provenance
+                    .get(&record.id.0)
+                    .and_then(|provenance| annotations.streams.get(provenance.stream as usize))
+                    .cloned()
+                    .unwrap_or_else(|| "source".into());
+                let product = crate::NativeUnknownRecord {
+                    id: record.id.clone(),
+                    links: record.links,
+                };
+                retained_records.push(RetainedSourceRecord {
+                    id: record.id.0,
+                    stream,
+                    offset: record.offset,
+                    byte_len: record.byte_len,
+                    sha256: record.sha256,
+                    data: record.data,
+                });
+                product
+            }),
+        )
     }
 
     /// Validates retained record identity and payload integrity.
@@ -203,13 +284,6 @@ impl SourceFidelity {
             }
         }
         Ok(())
-    }
-
-    /// Serializes the canonical sidecar as compact JSON.
-    pub fn to_canonical_json(&self) -> Result<String, serde_json::Error> {
-        let mut canonical = self.clone();
-        canonical.finalize();
-        serde_json::to_string(&canonical)
     }
 
     /// Parses and validates a sidecar.
@@ -249,14 +323,13 @@ mod tests {
     }
 
     #[test]
-    fn canonical_json_orders_retained_records() {
-        let sidecar = SourceFidelity {
+    fn finalize_orders_retained_records() {
+        let mut sidecar = SourceFidelity {
             retained_records: vec![record("b", &[2]), record("a", &[1])],
             ..SourceFidelity::default()
         };
-        let json = sidecar.to_canonical_json().expect("serialize sidecar");
-        let parsed = SourceFidelity::from_json(&json).expect("parse sidecar");
-        assert_eq!(parsed.retained_records[0].id, "a");
+        sidecar.finalize();
+        assert_eq!(sidecar.retained_records[0].id, "a");
     }
 
     #[test]
@@ -268,5 +341,41 @@ mod tests {
             sidecar.validate(),
             Err(FidelityError::Digest { .. })
         ));
+    }
+
+    #[test]
+    fn decode_sidecar_binds_exact_ir_bytes_and_validates_versions() {
+        let report = DecodeReport {
+            format: "test".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: std::collections::BTreeMap::default(),
+            transfer_ledger: crate::report::TransferLedger::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+        let sidecar = DecodeSidecar::bind(b"cad-ir", report, SourceFidelity::default());
+        assert!(sidecar.matches(b"cad-ir"));
+        assert!(!sidecar.matches(b"changed"));
+
+        let json = sidecar.to_canonical_json().expect("serialize sidecar");
+        assert_eq!(DecodeSidecar::from_json(&json).unwrap(), sidecar);
+        let wrong_version = json.replacen("\"version\":\"1\"", "\"version\":\"2\"", 1);
+        assert!(matches!(
+            DecodeSidecar::from_json(&wrong_version),
+            Err(DecodeSidecarParseError::Version { .. })
+        ));
+    }
+
+    #[test]
+    fn decode_sidecar_path_replaces_only_a_trailing_json_suffix() {
+        assert_eq!(
+            decode_sidecar_path(Path::new("part.cadir.json")),
+            PathBuf::from("part.cadir.fidelity.json")
+        );
+        assert_eq!(
+            decode_sidecar_path(Path::new("part.cadir")),
+            PathBuf::from("part.cadir.fidelity.json")
+        );
     }
 }

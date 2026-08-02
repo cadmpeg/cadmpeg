@@ -3,32 +3,20 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
-use crate::drawings::Drawing;
-use crate::features::{DesignConfiguration, DesignParameter, FeatureInputTopology};
-use crate::presentation::{PresentationDocument, ViewPresentation};
-use crate::products::{AssemblyJoint, Component, Occurrence};
-use crate::semantic_annotations::SemanticAnnotation;
-use crate::sketches::{
-    Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
-    SpatialSketchEntity,
-};
-use crate::spreadsheets::Spreadsheet;
-use crate::subd::SubdSurface;
 
 macro_rules! define_model_entity_json {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] => $key:expr; )*) => {
+    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
         fn model_entity_json(
             ir: &CadIr,
             wanted: &HashSet<&str>,
         ) -> HashMap<String, serde_json::Value> {
             let mut entities = HashMap::new();
             $(
-                let key: fn(&$element) -> String = $key;
                 for entity in &ir.model.$field {
-                    let id = key(entity);
-                    if wanted.contains(id.as_str()) {
+                    let id = crate::schema::EntitySchema::identity(entity);
+                    if wanted.contains(id) {
                         if let Ok(value) = serde_json::to_value(entity) {
-                            entities.insert(id, value);
+                            entities.insert(id.to_owned(), value);
                         }
                     }
                 }
@@ -51,9 +39,9 @@ fn annotated_entity_json(ir: &CadIr, wanted: &HashSet<&str>) -> HashMap<String, 
         .flat_map(|namespace| namespace.arenas.values())
         .flatten()
     {
-        if wanted.contains(record.id.as_str()) {
+        if wanted.contains(record.id()) {
             if let Ok(value) = serde_json::to_value(record) {
-                entities.entry(record.id.clone()).or_insert(value);
+                entities.entry(record.id().to_string()).or_insert(value);
             }
         }
     }
@@ -160,7 +148,7 @@ fn field_path_resolves(mut value: &serde_json::Value, path: &str) -> bool {
 
 pub(super) fn check_native_links(
     ir: &CadIr,
-    all_ids: &HashSet<String>,
+    all_ids: &crate::index::ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) {
     let native_ids = collect_native_ids(ir)
@@ -308,23 +296,12 @@ pub(super) fn check_native_links(
         }
     }
 
-    let native_unknowns = ir.all_native_unknowns().unwrap_or_default();
-    for record in &native_unknowns {
-        for target in &record.links {
-            if !all_ids.contains(target) {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: format!("unknown-record link `{target}` does not resolve"),
-                    entity: Some(record.id.0.clone()),
-                });
-            }
-        }
-    }
+    // The `unknowns` arena is one of the namespace arenas below, so the generic
+    // record loop already covers every unknown-record link.
     for namespace in ir.native.0.values() {
         for records in namespace.arenas.values() {
             for record in records {
-                let Some(serde_json::Value::Array(links)) = record.fields.get("links") else {
+                let Some(serde_json::Value::Array(links)) = record.field("links") else {
                     continue;
                 };
                 for target in links.iter().filter_map(serde_json::Value::as_str) {
@@ -333,7 +310,7 @@ pub(super) fn check_native_links(
                             check: Check::NativeLinks,
                             severity: Severity::Error,
                             message: format!("native-record link `{target}` does not resolve"),
-                            entity: Some(record.id.clone()),
+                            entity: Some(record.id().to_string()),
                         });
                     }
                 }
@@ -359,10 +336,10 @@ mod tests {
                 version: 1,
                 arenas: [(
                     "records".into(),
-                    vec![NativeRecord {
-                        id: id.clone(),
-                        fields: Map::from_iter([("native_only".into(), Value::Bool(true))]),
-                    }],
+                    vec![NativeRecord::new(
+                        id.clone(),
+                        Map::from_iter([("native_only".into(), Value::Bool(true))]),
+                    )],
                 )]
                 .into(),
             },

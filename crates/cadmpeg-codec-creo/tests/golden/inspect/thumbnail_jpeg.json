@@ -1,0 +1,23 @@
+{
+  "container_kind": "psb",
+  "entries": [
+    {
+      "attributes": {
+        "offset": "76"
+      },
+      "compressed_size": 21,
+      "compression": "none",
+      "name": "THMB_IMG_MAIN",
+      "role": "thumbnail",
+      "uncompressed_size": 21
+    }
+  ],
+  "format": "creo",
+  "notes": [
+    "PSB container: #UGC:2 P c",
+    "layout: unknown; 1 section(s) enumerated",
+    "no VisibGeom srf_array/crv_array count header was located",
+    "THMB_IMG_MAIN carries a JPEG preview (excluded from geometry)",
+    "container-level enumeration; `decode` preserves PSB geometry sections as unknown records and transfers only carriers whose model-space placement is complete"
+  ]
+}

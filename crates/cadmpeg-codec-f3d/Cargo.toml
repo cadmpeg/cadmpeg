@@ -14,15 +14,20 @@ keywords = ["cad", "fusion-360", "f3d", "brep", "geometry"]
 categories = ["encoding", "parser-implementations", "graphics"]
 
 [dependencies]
+cadmpeg-container.workspace = true
+cadmpeg-codec-core.workspace = true
 cadmpeg-ir.workspace = true
 zip.workspace = true
+lzma-rs.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 serde-value.workspace = true
 schemars.workspace = true
 roxmltree.workspace = true
+memchr.workspace = true
 
 [lints]
 workspace = true

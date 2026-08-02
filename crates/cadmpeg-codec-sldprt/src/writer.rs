@@ -5,22 +5,23 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 
 use crate::native::SldprtNative;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
-use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::topology::{BodyKind, Color, Sense};
-use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Annotations;
+
+use crate::SourceRecord;
 
 use crate::container::MARKER;
 
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
-pub fn write_semantic_with_records(
+pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
     annotations: &Annotations,
-    retained_records: &[UnknownRecord],
+    retained_records: &[SourceRecord<'_>],
     writer: &mut dyn Write,
 ) -> Result<(), CodecError> {
     let mut native = ir
@@ -38,6 +39,7 @@ pub fn write_semantic_with_records(
         .transpose()?;
     let retained_partition = retained_partition(ir, retained_records);
     let mut normalized = ir.clone();
+    drop_synthesized_configuration_snapshot(&mut normalized);
     sort_arenas(&mut normalized);
     let validation = cadmpeg_ir::validate::validate(&normalized, Vec::new());
     if !validation.is_ok() {
@@ -264,6 +266,34 @@ fn push_xml_attribute_value(output: &mut String, value: &str) {
     }
 }
 
+/// Drop the design-state snapshot the decoder fabricates on the active
+/// configuration when the native records carry none.
+///
+/// That snapshot mirrors model-level features and parameters so a reader sees a
+/// populated configuration, but nothing in the file encodes it: with no
+/// feature-input lane there is no way to write it back. Leaving it in place
+/// makes the write path reason about configuration-local design state that does
+/// not exist, which surfaces as dangling feature-state references once a caller
+/// edits the model, and as phantom native-edit conflicts once a caller edits a
+/// parameter. The decoder re-fabricates it on read-back, so dropping it here
+/// costs nothing observable.
+fn drop_synthesized_configuration_snapshot(ir: &mut CadIr) {
+    let Some(id) = ir.source.as_ref().and_then(|source| {
+        source
+            .attributes
+            .get("sldprt_configuration_snapshot_synthesized")
+            .cloned()
+    }) else {
+        return;
+    };
+    for configuration in &mut ir.model.configurations {
+        if configuration.id.0 == id {
+            configuration.feature_states.clear();
+            configuration.parameter_values.clear();
+        }
+    }
+}
+
 fn sort_arenas(ir: &mut CadIr) {
     ir.model.bodies.sort_by(|a, b| a.id.cmp(&b.id));
     ir.model.regions.sort_by(|a, b| a.id.cmp(&b.id));
@@ -289,21 +319,20 @@ fn sort_arenas(ir: &mut CadIr) {
         .sort_by_key(|binding| format!("{:?}:{}", binding.target, binding.appearance.0));
 }
 
-fn source_image(records: &[UnknownRecord]) -> Option<Vec<u8>> {
+fn source_image<'a>(records: &[SourceRecord<'a>]) -> Option<&'a [u8]> {
     records
         .iter()
         .find(|record| record.id.0 == "sldprt:file:source-image#0")?
         .data
-        .clone()
 }
 
 fn section_directory_entries(
-    records: &[UnknownRecord],
+    records: &[SourceRecord<'_>],
     sections: &[(String, Vec<u8>)],
     type_ids: &[u32],
 ) -> Result<Vec<Vec<u8>>, CodecError> {
     let source = source_image(records);
-    let source_scan = source.as_deref().map(crate::container::scan_bytes);
+    let source_scan = source.map(crate::container::scan_bytes);
     sections
         .iter()
         .zip(type_ids)
@@ -314,7 +343,7 @@ fn section_directory_entries(
                 let entry = scan.directory.iter().find(|entry| {
                     entry.name == *section && entry.type_id == *type_id && entry.size == size
                 })?;
-                let source = source.as_deref()?;
+                let source = source?;
                 let end = entry.offset.checked_add(46 + entry.name.len())?;
                 source.get(entry.offset..end).map(<[u8]>::to_vec)
             });
@@ -323,11 +352,14 @@ fn section_directory_entries(
         .collect()
 }
 
-fn retained_cache_cells(records: &[UnknownRecord], sections: &[(String, Vec<u8>)]) -> Vec<Vec<u8>> {
+fn retained_cache_cells(
+    records: &[SourceRecord<'_>],
+    sections: &[(String, Vec<u8>)],
+) -> Vec<Vec<u8>> {
     let Some(source) = source_image(records) else {
         return Vec::new();
     };
-    let scan = crate::container::scan_bytes(&source);
+    let scan = crate::container::scan_bytes(source);
     scan.cache_cells
         .iter()
         .filter(|cell| {
@@ -346,14 +378,14 @@ fn retained_cache_cells(records: &[UnknownRecord], sections: &[(String, Vec<u8>)
         .collect()
 }
 
-fn retained_partition(ir: &CadIr, records: &[UnknownRecord]) -> Option<(String, Vec<u8>)> {
+fn retained_partition(ir: &CadIr, records: &[SourceRecord<'_>]) -> Option<(String, Vec<u8>)> {
     let source = ir.source.as_ref()?;
     let expected = source.attributes.get("brep_semantic_sha256")?;
     if crate::decode::brep_semantic_hash(ir) != *expected {
         return None;
     }
     let source_image = source_image(records)?;
-    let scan = crate::container::scan_bytes(&source_image);
+    let scan = crate::container::scan_bytes(source_image);
     let (block, _) = crate::container::select_active_parasolid(&scan)?;
     let original_section = block
         .section
@@ -382,9 +414,8 @@ fn remapped_partition_section(ir: &CadIr, section: &str) -> Option<String> {
     Some(format!("Contents/Config-{new_index}-Partition"))
 }
 
-fn outer_header(records: &[UnknownRecord]) -> [u8; 8] {
+fn outer_header(records: &[SourceRecord<'_>]) -> [u8; 8] {
     source_image(records)
-        .as_deref()
         .and_then(|source| source.get(..8))
         .and_then(|header| header.try_into().ok())
         .unwrap_or_else(|| {
@@ -396,12 +427,12 @@ fn outer_header(records: &[UnknownRecord]) -> [u8; 8] {
 }
 
 fn section_type_ids(
-    records: &[UnknownRecord],
+    records: &[SourceRecord<'_>],
     sections: &[(String, Vec<u8>)],
 ) -> Result<Vec<u32>, CodecError> {
     let mut source_ids: HashMap<String, VecDeque<u32>> = HashMap::new();
     if let Some(source) = source_image(records) {
-        for block in crate::container::scan_bytes(&source).blocks {
+        for block in crate::container::scan_bytes(source).blocks {
             if let Some(section) = block.section {
                 source_ids
                     .entry(section)
@@ -737,7 +768,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
 
 fn opaque_blocks(
     ir: &CadIr,
-    records: &[UnknownRecord],
+    records: &[SourceRecord<'_>],
     annotations: &Annotations,
     active_partition: &str,
     retain_native_brep: bool,
@@ -776,7 +807,7 @@ fn opaque_blocks(
             {
                 return None;
             }
-            let mut payload = record.data.clone()?;
+            let mut payload = record.data?.to_vec();
             if lower.contains("pmisemanticdatadb") {
                 if let Err(error) = crate::pmi::patch_payload(ir, &record.id.0, &mut payload) {
                     return Some(Err(error));
@@ -789,7 +820,7 @@ fn opaque_blocks(
                     Err(error) => return Some(Err(error)),
                 }
             }
-            seen.insert((section.to_string(), record.sha256.clone()))
+            seen.insert((section.to_string(), record.sha256))
                 .then_some(Ok((section.to_string(), payload)))
         })
         .collect()

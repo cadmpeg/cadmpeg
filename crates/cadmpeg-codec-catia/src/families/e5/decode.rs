@@ -12,7 +12,7 @@ use cadmpeg_ir::ids::{
     RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
@@ -33,7 +33,10 @@ use crate::solve::UnionFind;
 /// Decode direct E5 circle carriers.  Their edge and face references are a
 /// separate record layer, so curves remain unattached until that layer is
 /// decoded rather than being assigned speculatively.
-pub(crate) fn try_decode_e5(scan: &ContainerScan) -> Option<FamilyOutput> {
+pub(crate) fn try_decode_e5(
+    _ctx: &cadmpeg_codec_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Option<FamilyOutput> {
     let stream_range = container::e5_record_stream(&scan.data)?;
     let stream = &scan.data[stream_range];
     let circles = crate::families::e5::records::e5_circles(stream);
@@ -159,16 +162,14 @@ pub(crate) fn try_decode_e5(scan: &ContainerScan) -> Option<FamilyOutput> {
             "The E5 reference graph is closed; face and loop orientation transfer, but body/shell orientation uses an incidence-derived gauge because the root's two trailing orientation signs remain unresolved."
         };
         vec![LossNote {
-            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-            category: LossCategory::Topology,
+            code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
             severity: Severity::Warning,
             message: message.to_string(),
             provenance: None,
         }]
     } else {
         vec![LossNote {
-            code: cadmpeg_ir::report::LossCode::TopologyNotTransferred,
-            category: LossCategory::Topology,
+            code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
             severity: Severity::Blocking,
             message: "E5 analytic carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding."
                 .to_string(),
@@ -185,6 +186,7 @@ pub(crate) fn try_decode_e5(scan: &ContainerScan) -> Option<FamilyOutput> {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses,
             notes: container::summarize(scan).notes,
         },
@@ -411,11 +413,32 @@ pub(crate) fn fit_e5_plane_axes(
     origin: [f64; 3],
     pairs: &[([f64; 2], Point3)],
 ) -> Option<(Vector3, Vector3, f64)> {
-    let suu = pairs.iter().map(|(uv, _)| uv[0] * uv[0]).sum::<f64>();
-    let suv = pairs.iter().map(|(uv, _)| uv[0] * uv[1]).sum::<f64>();
-    let svv = pairs.iter().map(|(uv, _)| uv[1] * uv[1]).sum::<f64>();
+    let uv_scale = pairs
+        .iter()
+        .flat_map(|(uv, _)| uv.iter())
+        .map(|value| value.abs())
+        .fold(0.0_f64, f64::max);
+    if !uv_scale.is_finite() || uv_scale == 0.0 {
+        return None;
+    }
+    let normalized_uv = |uv: [f64; 2]| [uv[0] / uv_scale, uv[1] / uv_scale];
+    let suu = pairs
+        .iter()
+        .map(|(uv, _)| normalized_uv(*uv)[0].powi(2))
+        .sum::<f64>();
+    let suv = pairs
+        .iter()
+        .map(|(uv, _)| {
+            let uv = normalized_uv(*uv);
+            uv[0] * uv[1]
+        })
+        .sum::<f64>();
+    let svv = pairs
+        .iter()
+        .map(|(uv, _)| normalized_uv(*uv)[1].powi(2))
+        .sum::<f64>();
     let determinant = suu * svv - suv * suv;
-    if determinant.abs() <= 1e-18 {
+    if !determinant.is_finite() || determinant == 0.0 {
         return None;
     }
     let mut u = [0.0; 3];
@@ -423,14 +446,21 @@ pub(crate) fn fit_e5_plane_axes(
     for axis in 0..3 {
         let bu = pairs
             .iter()
-            .map(|(uv, point)| uv[0] * ([point.x, point.y, point.z][axis] - origin[axis]))
+            .map(|(uv, point)| {
+                normalized_uv(*uv)[0] * ([point.x, point.y, point.z][axis] - origin[axis])
+            })
             .sum::<f64>();
         let bv = pairs
             .iter()
-            .map(|(uv, point)| uv[1] * ([point.x, point.y, point.z][axis] - origin[axis]))
+            .map(|(uv, point)| {
+                normalized_uv(*uv)[1] * ([point.x, point.y, point.z][axis] - origin[axis])
+            })
             .sum::<f64>();
-        u[axis] = (bu * svv - bv * suv) / determinant;
-        v[axis] = (suu * bv - suv * bu) / determinant;
+        u[axis] = (bu * svv - bv * suv) / determinant / uv_scale;
+        v[axis] = (suu * bv - suv * bu) / determinant / uv_scale;
+    }
+    if u.into_iter().chain(v).any(|value| !value.is_finite()) {
+        return None;
     }
     let mut residual = 0.0f64;
     for (uv, point) in pairs {
@@ -458,7 +488,10 @@ pub(crate) fn fit_rank_one_e5_plane_axes(
     pairs: &[([f64; 2], Point3)],
     normal: Vector3,
 ) -> Option<(Vector3, Vector3, f64)> {
-    let (uv, point) = pairs.iter().find(|(uv, _)| uv[0].hypot(uv[1]) > 1e-9)?;
+    let (uv, point) = pairs.iter().find(|(uv, _)| {
+        let norm = uv[0].hypot(uv[1]);
+        norm.is_finite() && norm != 0.0
+    })?;
     let uv_norm = uv[0].hypot(uv[1]);
     let q = [uv[0] / uv_norm, uv[1] / uv_norm];
     let displacement = Vector3::new(
@@ -466,7 +499,8 @@ pub(crate) fn fit_rank_one_e5_plane_axes(
         point.y - origin[1],
         point.z - origin[2],
     );
-    if (displacement.norm() - uv_norm).abs() > 2e-3 {
+    let displacement_norm = displacement.x.hypot(displacement.y).hypot(displacement.z);
+    if (displacement_norm - uv_norm).abs() > 2e-3 {
         return None;
     }
     let mapped_q = unit_vector(displacement)?;
@@ -744,7 +778,8 @@ fn plan_e5_boundary(
                     return None;
                 }
                 let oriented_pcurve = if reversed {
-                    let Some(reversed) = reverse_e5_pcurve_geometry(&geometry, range) else {
+                    let Some(reversed) = crate::nurbs::reverse_pcurve_geometry(&geometry, range)
+                    else {
                         return None;
                     };
                     reversed
@@ -866,7 +901,7 @@ fn plan_e5_boundary(
                 (curve, curve_range) = reversed_curve;
             }
             let pcurve = if reversed {
-                let Some(reversed) = reverse_e5_pcurve_geometry(&geometry, range) else {
+                let Some(reversed) = crate::nurbs::reverse_pcurve_geometry(&geometry, range) else {
                     continue;
                 };
                 reversed
@@ -901,10 +936,7 @@ fn plan_e5_boundary(
             continue;
         };
         if !equivalent_e5_curve_carriers(&left.curve, &right.curve)
-            || ((left.curve_range[1] - left.curve_range[0])
-                - (right.curve_range[1] - right.curve_range[0]))
-                .abs()
-                > 1e-9
+            || parameter_range_agreement_tolerance(left.curve_range, right.curve_range).is_none()
         {
             continue;
         }
@@ -1311,7 +1343,7 @@ fn emit_e5_faces_loops_coedges(
             tolerance: None,
         });
 
-        for loop_ in &face.loops {
+        for (loop_position, loop_) in face.loops.iter().enumerate() {
             let loop_id = LoopId(format!("catia:e5:loop#{}", loop_.record_id));
             let coedge_ids_by_member: Vec<CoedgeId> = (0..loop_.edge_uses.len())
                 .map(|index| CoedgeId(format!("catia:e5:coedge#{}-{index}", loop_.record_id)))
@@ -1337,7 +1369,11 @@ fn emit_e5_faces_loops_coedges(
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                boundary_role: if loop_position == 0 {
+                    cadmpeg_ir::topology::LoopBoundaryRole::Outer
+                } else {
+                    cadmpeg_ir::topology::LoopBoundaryRole::Inner
+                },
                 coedges: coedge_ids.clone(),
                 vertex_uses: Vec::new(),
             });
@@ -1410,7 +1446,7 @@ pub(crate) fn parameter_ranges_reversed(
 ) -> Option<bool> {
     let bound_span = parameters[1] - parameters[0];
     let native_span = native_range[1] - native_range[0];
-    (bound_span.abs() > f64::EPSILON && native_span.abs() > f64::EPSILON)
+    (bound_span.is_finite() && bound_span != 0.0 && native_span.is_finite() && native_span != 0.0)
         .then_some(bound_span.is_sign_negative() != native_span.is_sign_negative())
 }
 
@@ -1612,9 +1648,9 @@ pub(crate) fn e5_boundary_curve(
     let span = range[1] - range[0];
     let span_direction = Point2::new(span * direction.u, span * direction.v);
 
-    let circle = if direction.v.abs() <= 1e-12 && direction.u.abs() > 1e-12 {
+    let circle = if direction.v == 0.0 && direction.u != 0.0 {
         e5_constant_v_circle(surface, start_uv.v)
-    } else if direction.u.abs() <= 1e-12 && direction.v.abs() > 1e-12 {
+    } else if direction.u == 0.0 && direction.v != 0.0 {
         e5_constant_u_circle(surface, start_uv.u)
     } else {
         None
@@ -1657,7 +1693,7 @@ pub(crate) fn e5_boundary_curve(
     }
 
     if !(matches!(surface, SurfaceGeometry::Plane { .. })
-        || (direction.u.abs() <= 1e-12
+        || (direction.u == 0.0
             && matches!(
                 surface,
                 SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. }
@@ -1666,8 +1702,8 @@ pub(crate) fn e5_boundary_curve(
         return None;
     }
     let delta = endpoints[1].vector_from(endpoints[0]);
-    let length = delta.norm();
-    (length > f64::EPSILON).then_some((
+    let length = delta.x.hypot(delta.y).hypot(delta.z);
+    (length.is_finite() && length > 0.0).then_some((
         CurveGeometry::Line {
             origin: endpoints[0],
             direction: delta.scale(1.0 / length),
@@ -1717,17 +1753,12 @@ pub(crate) fn reverse_e5_boundary_curve(
         CurveGeometry::Nurbs(nurbs) => {
             let first = *nurbs.knots.first()?;
             let last = *nurbs.knots.last()?;
-            let mut knots = nurbs
+            let knots = nurbs
                 .knots
                 .iter()
                 .rev()
-                .map(|knot| first + last - knot)
+                .map(|knot| first + (last - knot))
                 .collect::<Vec<_>>();
-            for knot in &mut knots {
-                if knot.abs() <= 1e-15 {
-                    *knot = 0.0;
-                }
-            }
             Some((
                 CurveGeometry::Nurbs(NurbsCurve {
                     degree: nurbs.degree,
@@ -1746,57 +1777,14 @@ pub(crate) fn reverse_e5_boundary_curve(
     }
 }
 
-pub(crate) fn reverse_e5_pcurve_geometry(
-    geometry: &PcurveGeometry,
-    range: [f64; 2],
-) -> Option<PcurveGeometry> {
-    match geometry {
-        PcurveGeometry::Line { origin, direction } => Some(PcurveGeometry::Line {
-            origin: Point2::new(
-                origin.u + (range[0] + range[1]) * direction.u,
-                origin.v + (range[0] + range[1]) * direction.v,
-            ),
-            direction: Point2::new(-direction.u, -direction.v),
-        }),
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic,
-        } => {
-            let sum = range[0] + range[1];
-            let mut reversed_knots = knots
-                .iter()
-                .rev()
-                .map(|knot| sum - knot)
-                .collect::<Vec<_>>();
-            for knot in &mut reversed_knots {
-                if *knot == -0.0 {
-                    *knot = 0.0;
-                }
-            }
-            Some(PcurveGeometry::Nurbs {
-                degree: *degree,
-                knots: reversed_knots,
-                control_points: control_points.iter().rev().copied().collect(),
-                weights: weights
-                    .as_ref()
-                    .map(|weights| weights.iter().rev().copied().collect()),
-                periodic: *periodic,
-            })
-        }
-        _ => None,
-    }
-}
-
 pub(crate) fn e5_occurrence_intersection_context(
     sides: &[(SurfaceId, PcurveGeometry, [f64; 2])],
 ) -> Option<IntcurveSupportContext> {
     let [left, right] = sides else {
         return None;
     };
-    if (left.2[0] - right.2[0]).abs() > 1e-9 || (left.2[1] - right.2[1]).abs() > 1e-9 {
+    let tolerance = parameter_range_agreement_tolerance(left.2, right.2)?;
+    if (left.2[0] - right.2[0]).abs() > tolerance || (left.2[1] - right.2[1]).abs() > tolerance {
         return None;
     }
     Some(IntcurveSupportContext {
@@ -1808,6 +1796,22 @@ pub(crate) fn e5_occurrence_intersection_context(
         parameter_range: left.2,
         discontinuities: std::array::from_fn(|_| Vec::new()),
     })
+}
+
+fn parameter_range_agreement_tolerance(left: [f64; 2], right: [f64; 2]) -> Option<f64> {
+    if !left.into_iter().chain(right).all(f64::is_finite) {
+        return None;
+    }
+    let left_span = (left[1] - left[0]).abs();
+    let right_span = (right[1] - right[0]).abs();
+    let parameter_scale = left_span.max(right_span);
+    if !parameter_scale.is_finite()
+        || parameter_scale == 0.0
+        || (left_span - right_span).abs() > 1e-9 * parameter_scale
+    {
+        return None;
+    }
+    Some(1e-9 * parameter_scale)
 }
 
 pub(crate) fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> bool {
@@ -2046,8 +2050,8 @@ mod route_tests {
     use crate::assemble::{quintic_jet_pcurve, rational_pcurve_arc};
     use crate::families::e5::decode::{
         e5_boundary_curve, e5_occurrence_intersection_context, e5_ownership_plan,
-        e5_pcurve_on_surface, equivalent_e5_curve_carriers, fit_rank_one_e5_plane_axes,
-        parameter_ranges_reversed,
+        e5_pcurve_on_surface, equivalent_e5_curve_carriers, fit_e5_plane_axes,
+        fit_rank_one_e5_plane_axes, parameter_ranges_reversed, reverse_e5_boundary_curve,
     };
 
     use crate::families::e5::graph::{E5Edge, E5Face, E5Loop, E5Topology};
@@ -2070,7 +2074,15 @@ mod route_tests {
             parameter_ranges_reversed([13.0, 0.0], [0.0, 122.0]),
             Some(true)
         );
+        assert_eq!(
+            parameter_ranges_reversed([0.0, 1e-200], [0.0, 1e-200]),
+            Some(false)
+        );
         assert_eq!(parameter_ranges_reversed([1.0, 1.0], [0.0, 1.0]), None);
+        assert_eq!(
+            parameter_ranges_reversed([0.0, f64::INFINITY], [0.0, 1.0]),
+            None
+        );
     }
 
     #[test]
@@ -2212,6 +2224,67 @@ mod route_tests {
             } if center == Point3::new(0.0, 0.0, 3.0) && radius == 2.0
         ));
         assert!((range[1] - range[0] - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+    }
+
+    #[test]
+    fn e5_boundary_classification_is_scale_independent() {
+        let surface = SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        let direction = 1e-200;
+        let parameter_end = 1e200;
+        let pcurve = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 3.0),
+            direction: Point2::new(direction, 0.0),
+        };
+        let native = crate::families::e5::graph::E5Pcurve::Line {
+            surface: 0,
+            origin: [0.0, 3.0],
+            direction: [direction, 0.0],
+            range: [0.0, parameter_end],
+        };
+        let (curve, _) = e5_boundary_curve(
+            &surface,
+            &native,
+            &pcurve,
+            [0.0, parameter_end],
+            [
+                Point3::new(2.0, 0.0, 3.0),
+                Point3::new(2.0 * 1.0f64.cos(), 2.0 * 1.0f64.sin(), 3.0),
+            ],
+        )
+        .expect("cylinder boundary circle");
+        assert!(matches!(curve, CurveGeometry::Circle { radius: 2.0, .. }));
+
+        let plane = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let plane_pcurve = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 0.0),
+            direction: Point2::new(direction, 0.0),
+        };
+        let plane_native = crate::families::e5::graph::E5Pcurve::Line {
+            surface: 0,
+            origin: [0.0, 0.0],
+            direction: [direction, 0.0],
+            range: [0.0, 1.0],
+        };
+        let tiny_endpoint = Point3::new(direction, 0.0, 0.0);
+        let (curve, range) = e5_boundary_curve(
+            &plane,
+            &plane_native,
+            &plane_pcurve,
+            [0.0, 1.0],
+            [Point3::new(0.0, 0.0, 0.0), tiny_endpoint],
+        )
+        .expect("finite nonzero plane line");
+        assert!(matches!(curve, CurveGeometry::Line { .. }));
+        assert_eq!(range, [0.0, direction]);
     }
 
     #[test]
@@ -2435,6 +2508,14 @@ mod route_tests {
             context.sides[1].surface.as_ref().expect("right surface").0,
             "right"
         );
+
+        let tiny = 1e-200_f64;
+        let mut tiny_sides = sides;
+        tiny_sides[0].2 = [0.0, tiny];
+        tiny_sides[1].2 = [0.0, tiny];
+        assert!(e5_occurrence_intersection_context(&tiny_sides).is_some());
+        tiny_sides[1].2 = [0.0, 2.0 * tiny];
+        assert!(e5_occurrence_intersection_context(&tiny_sides).is_none());
     }
 
     #[test]
@@ -2455,16 +2536,61 @@ mod route_tests {
     }
 
     #[test]
+    fn plane_axis_fit_is_uv_scale_independent() {
+        for scale in [2.0, 1e-200] {
+            let pairs = [
+                ([scale, 0.0], Point3::new(scale, 0.0, 0.0)),
+                ([0.0, scale], Point3::new(0.0, scale, 0.0)),
+                ([scale, scale], Point3::new(scale, scale, 0.0)),
+            ];
+            let (u_axis, v_axis, residual) =
+                fit_e5_plane_axes([0.0; 3], &pairs).expect("full-rank frame");
+            assert!(residual <= scale * 1e-12);
+            assert!((u_axis.x - 1.0).abs() < 1e-12);
+            assert!(u_axis.y.abs() < 1e-12);
+            assert!(u_axis.z.abs() < 1e-12);
+            assert!(v_axis.x.abs() < 1e-12);
+            assert!((v_axis.y - 1.0).abs() < 1e-12);
+            assert!(v_axis.z.abs() < 1e-12);
+        }
+    }
+
+    #[test]
     fn rank_one_plane_endpoints_complete_with_known_normal() {
-        let pairs = [
-            ([0.0, -2.0], Point3::new(-2.0, 0.0, 0.0)),
-            ([0.0, 2.0], Point3::new(2.0, 0.0, 0.0)),
-        ];
-        let (u_axis, v_axis, residual) =
-            fit_rank_one_e5_plane_axes([0.0; 3], &pairs, Vector3::new(0.0, 1.0, 0.0))
-                .expect("rank-one frame");
-        assert!(residual < 1e-12);
-        assert!((v_axis.x - 1.0).abs() < 1e-12);
-        assert!((u_axis.z - 1.0).abs() < 1e-12);
+        for scale in [2.0, 1e-200] {
+            let pairs = [
+                ([0.0, -scale], Point3::new(-scale, 0.0, 0.0)),
+                ([0.0, scale], Point3::new(scale, 0.0, 0.0)),
+            ];
+            let (u_axis, v_axis, residual) =
+                fit_rank_one_e5_plane_axes([0.0; 3], &pairs, Vector3::new(0.0, 1.0, 0.0))
+                    .expect("rank-one frame");
+            assert!(residual <= scale * 1e-12);
+            assert!((v_axis.x - 1.0).abs() < 1e-12);
+            assert!((u_axis.z - 1.0).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn reversing_nurbs_preserves_tiny_knot_domain() {
+        let tiny = 1e-200;
+        let curve = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
+            degree: 1,
+            knots: vec![tiny, tiny, 2.0 * tiny, 2.0 * tiny],
+            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            weights: None,
+            periodic: false,
+        });
+        let (reversed, range) =
+            reverse_e5_boundary_curve(&curve, [tiny, 2.0 * tiny]).expect("reversed NURBS");
+        let CurveGeometry::Nurbs(reversed) = reversed else {
+            panic!("expected NURBS");
+        };
+        assert_eq!(range, [tiny, 2.0 * tiny]);
+        assert_eq!(reversed.knots, [tiny, tiny, 2.0 * tiny, 2.0 * tiny]);
+        assert_eq!(
+            reversed.control_points,
+            [Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)]
+        );
     }
 }

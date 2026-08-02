@@ -2,6 +2,8 @@
 
 > **License:** This document is released under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). Attribute to the cadmpeg project.
 
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/iges.md`](../layouts/iges.md), generated from `docs/layouts/iges.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+
 ## Physical representation
 
 The Fixed ASCII representation is an ordered sequence of physical lines. A canonical line contains an 80-byte card followed by a line ending. Card bytes 1 through 72 are section data. Byte 73 is the section marker. Bytes 74 through 80 are the right-aligned decimal sequence field. Parameter Data cards instead use bytes 65 through 72 for the right-aligned Directory Entry back-pointer, byte 73 for the `P` marker, and bytes 74 through 80 for the Parameter Data sequence.

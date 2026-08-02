@@ -12,11 +12,13 @@
 //! [`crate::variant::Variant`]. [`summarize`] converts the scan into the
 //! container view returned by codec inspection.
 
-use std::collections::BTreeMap;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, HashSet};
 use std::ops::Range;
 
-use cadmpeg_ir::be::u32_at as u32_be;
-use cadmpeg_ir::codec::{ContainerEntry, ContainerSummary};
+use cadmpeg_codec_core::be::u32_at as u32_be;
+use cadmpeg_codec_core::le::u32_at as u32_le;
+use cadmpeg_codec_core::{ContainerEntry, ContainerSummary};
 
 use crate::variant::Variant;
 
@@ -86,6 +88,21 @@ pub struct ExternalReference {
     pub offset: usize,
     /// Referenced CATIA document name or path.
     pub target: String,
+}
+
+/// One model-container declaration from the outer `Data` logical stream.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OuterContainerDeclaration {
+    /// Byte offset within the reconstructed `Data` stream.
+    pub data_offset: usize,
+    /// Source ordinal stored by the declaration.
+    pub ordinal: u32,
+    /// Concrete container class.
+    pub class_name: String,
+    /// Declared base container class.
+    pub base_class: String,
+    /// UUID-derived outer stream name selected by the declaration.
+    pub stream_name: String,
 }
 
 /// Split FINJPL segments within a bounded outer-body range.
@@ -441,7 +458,6 @@ fn count_e5_records(data: &[u8]) -> usize {
 }
 
 /// Standard-nested BREP-spine markers used for variant identification.
-const FBB_MARKER: &[u8; 4] = &[0x30, 0x04, 0x04, 0xff];
 const EDGE_DELIMITER: &[u8; 8] = &[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
 const VERTEX_MARKER: &[u8; 3] = &[0x05, 0x08, 0x01];
 const A9_MARKER: &[u8; 2] = &[0xa9, 0x03];
@@ -468,6 +484,8 @@ pub struct Extent {
     pub phys_off: u32,
     /// Physical byte length of this extent.
     pub phys_len: u32,
+    /// Raw trailing extent flags word.
+    pub flags: u32,
 }
 
 /// One catalogued logical stream.
@@ -496,7 +514,7 @@ pub struct InnerDir {
 /// Census counts used for variant identification and reporting.
 #[derive(Debug, Clone, Default)]
 pub struct Census {
-    /// Contiguous stride-8 `30 04 04 ff` FBB runs in the BREP stream.
+    /// Contiguous stride-8 FBB runs in the BREP stream.
     pub fbb_runs: usize,
     /// `10 24 04 ff ff 00 00 00` standard edge-table delimiters in the BREP stream.
     pub edge_delimiters: usize,
@@ -509,9 +527,9 @@ pub struct Census {
 }
 
 /// Everything read from a `.CATPart`, shared by `inspect` and `decode`.
-pub struct ContainerScan {
+pub struct ContainerScan<'a> {
     /// The whole file image.
-    pub data: Vec<u8>,
+    pub data: Cow<'a, [u8]>,
     /// Outer directory offset (big-endian, from `+8`).
     pub outer_dir_offset: u32,
     /// Outer directory length (big-endian, from `+12`).
@@ -531,6 +549,8 @@ pub struct ContainerScan {
     pub external_references: Vec<ExternalReference>,
     /// Every bounded outer FINJPL block in source order.
     pub finjpl_segments: Vec<FinjplSegment>,
+    /// Exact model-container declarations from the outer `Data` stream.
+    pub outer_container_declarations: Vec<OuterContainerDeclaration>,
     /// Record-family census.
     pub census: Census,
     /// Identified storage variant.
@@ -551,7 +571,7 @@ fn count_stride8_fbb(body: &[u8]) -> usize {
     let mut count = 0;
     let mut i = 0;
     while i + 4 <= body.len() {
-        if &body[i..i + 4] == FBB_MARKER {
+        if is_fbb_row(&body[i..]) {
             count += 1;
             i += 8;
         } else {
@@ -559,6 +579,12 @@ fn count_stride8_fbb(body: &[u8]) -> usize {
         }
     }
     count
+}
+
+/// A standard face-outer-bound row. Bit 7 of the leading `30` byte is a form
+/// flag; the structural `04 04 ff` tail is stable.
+pub(crate) fn is_fbb_row(bytes: &[u8]) -> bool {
+    bytes.len() >= 4 && bytes[0] & 0x7f == 0x30 && bytes[1..4] == [0x04, 0x04, 0xff]
 }
 
 fn count_subslice(haystack: &[u8], needle: &[u8]) -> usize {
@@ -577,17 +603,15 @@ pub fn parse_stream_directory(data: &[u8]) -> Option<InnerDir> {
         return None;
     }
     let inner = find_subslice(data, OUTER_MAGIC, OUTER_MAGIC.len())?;
-    if inner + 16 > data.len() {
-        return None;
-    }
-    let a = u32_be(data, inner + 8)? as usize;
-    let b = u32_be(data, inner + 12)?;
-    let dir_offset = inner + a;
-    if dir_offset + 16 > data.len() || &data[dir_offset..dir_offset + 16] != DIR_MAGIC {
+    let a = u32_be(data, inner.checked_add(8)?)? as usize;
+    let b = u32_be(data, inner.checked_add(12)?)?;
+    let dir_offset = inner.checked_add(a)?;
+    let magic_end = dir_offset.checked_add(DIR_MAGIC.len())?;
+    if data.get(dir_offset..magic_end) != Some(DIR_MAGIC) {
         return None;
     }
     let b_usize = b as usize;
-    if b == 0 || dir_offset + b_usize > data.len() {
+    if b == 0 || dir_offset.checked_add(b_usize)? > data.len() {
         return None;
     }
     parse_directory_region(data, inner, dir_offset, b_usize)
@@ -597,10 +621,22 @@ pub fn parse_stream_directory(data: &[u8]) -> Option<InnerDir> {
 /// in its descriptors are absolute file offsets.
 #[must_use]
 pub fn parse_outer_stream_directory(data: &[u8]) -> Option<InnerDir> {
+    parse_outer_stream_directory_with_range(data).map(|(_, directory)| directory)
+}
+
+/// Parse and return the exact outer stream-directory byte range.
+#[must_use]
+pub fn outer_stream_directory_range(data: &[u8]) -> Option<Range<usize>> {
+    parse_outer_stream_directory_with_range(data).map(|(range, _)| range)
+}
+
+fn parse_outer_stream_directory_with_range(data: &[u8]) -> Option<(Range<usize>, InnerDir)> {
     let dir_offset = usize::try_from(u32_be(data, 8)?).ok()?;
     let dir_length = usize::try_from(u32_be(data, 12)?).ok()?;
-    (dir_offset.checked_add(dir_length)? == data.len()).then_some(())?;
-    parse_directory_region(data, 0, dir_offset, dir_length)
+    let dir_end = dir_offset.checked_add(dir_length)?;
+    (dir_end == data.len()).then_some(())?;
+    let directory = parse_directory_region(data, 0, dir_offset, dir_length)?;
+    Some((dir_offset..dir_end, directory))
 }
 
 fn parse_directory_region(
@@ -673,17 +709,19 @@ fn parse_extents(
         let phys_len = u32_be(dirbuf, base + 4)?;
         let log_len = u32_be(dirbuf, base + 8)?;
         let log_off = u32_be(dirbuf, base + 12)?;
-        // Presence-validate the trailing flags word without retaining it.
-        u32_be(dirbuf, base + 16)?;
-        if phys_len == 0
-            || physical_base + phys_off as usize + phys_len as usize > file_len
-            || log_off as usize != cum
-            || log_len != phys_len
-        {
+        let flags = u32_be(dirbuf, base + 16)?;
+        let phys_end = physical_base
+            .checked_add(phys_off as usize)?
+            .checked_add(phys_len as usize)?;
+        if phys_len == 0 || phys_end > file_len || log_off as usize != cum || log_len != phys_len {
             return None;
         }
-        cum += log_len as usize;
-        extents.push(Extent { phys_off, phys_len });
+        cum = cum.checked_add(log_len as usize)?;
+        extents.push(Extent {
+            phys_off,
+            phys_len,
+            flags,
+        });
     }
     Some((extents, cum))
 }
@@ -717,19 +755,179 @@ fn descriptor_name(dirbuf: &[u8], ds: usize) -> String {
 
 /// Concatenate a logical stream's physical extents in `log_off` order.
 pub fn reconstruct_logical_stream(data: &[u8], descriptor: &Descriptor, inner: usize) -> Vec<u8> {
-    // A logical stream cannot exceed the physical file; clamp the eager
-    // reservation to the available bytes so a forged length cannot amplify it.
-    let capacity = cadmpeg_ir::cursor::bounded_len(descriptor.logical_length as u64, 1, data.len())
-        .unwrap_or(0);
-    let mut out = Vec::with_capacity(capacity);
-    for e in &descriptor.extents {
-        let start = inner + e.phys_off as usize;
-        let end = start + e.phys_len as usize;
-        if end <= data.len() {
-            out.extend_from_slice(&data[start..end]);
-        }
+    let Some(logical_length) =
+        descriptor
+            .extents
+            .iter()
+            .try_fold(0usize, |logical_length, extent| {
+                let start = inner.checked_add(extent.phys_off as usize)?;
+                let end = start.checked_add(extent.phys_len as usize)?;
+                (end <= data.len())
+                    .then(|| logical_length.checked_add(end - start))
+                    .flatten()
+            })
+    else {
+        return Vec::new();
+    };
+    if logical_length != descriptor.logical_length as usize {
+        return Vec::new();
+    }
+    let mut out = Vec::with_capacity(logical_length);
+    for extent in &descriptor.extents {
+        let start = inner + extent.phys_off as usize;
+        let end = start + extent.phys_len as usize;
+        out.extend_from_slice(&data[start..end]);
     }
     out
+}
+
+/// Decode model-container declarations whose UUIDs select named outer streams.
+#[must_use]
+pub fn outer_container_declarations(
+    data: &[u8],
+    outer: &InnerDir,
+) -> Vec<OuterContainerDeclaration> {
+    let mut data_descriptors = outer
+        .descriptors
+        .iter()
+        .filter(|descriptor| descriptor.name == "Data");
+    let Some(data_descriptor) = data_descriptors.next() else {
+        return Vec::new();
+    };
+    if data_descriptors.next().is_some() {
+        return Vec::new();
+    }
+    let stream_names = outer
+        .descriptors
+        .iter()
+        .map(|descriptor| descriptor.name.as_str())
+        .collect::<HashSet<_>>();
+    let logical = reconstruct_logical_stream(data, data_descriptor, outer.inner);
+    parse_outer_container_declarations(&logical, &stream_names)
+}
+
+/// Select the unique declared outer container whose physical extent contains
+/// the complete file range.
+#[must_use]
+pub fn outer_container_for_extent<'a>(
+    outer: &InnerDir,
+    declarations: &'a [OuterContainerDeclaration],
+    byte_offset: u64,
+    byte_len: u64,
+) -> Option<&'a OuterContainerDeclaration> {
+    let byte_end = byte_offset.checked_add(byte_len)?;
+    let physical_base = u64::try_from(outer.inner).ok()?;
+    let mut containing = declarations.iter().filter(|declaration| {
+        outer
+            .descriptors
+            .iter()
+            .filter(|descriptor| descriptor.name == declaration.stream_name)
+            .flat_map(|descriptor| &descriptor.extents)
+            .any(|extent| {
+                let extent_start = u64::from(extent.phys_off).checked_add(physical_base);
+                extent_start.is_some_and(|extent_start| {
+                    extent_start <= byte_offset
+                        && extent_start
+                            .checked_add(u64::from(extent.phys_len))
+                            .is_some_and(|extent_end| byte_end <= extent_end)
+                })
+            })
+    });
+    let declaration = containing.next()?;
+    containing.next().is_none().then_some(declaration)
+}
+
+fn parse_outer_container_declarations(
+    data: &[u8],
+    stream_names: &HashSet<&str>,
+) -> Vec<OuterContainerDeclaration> {
+    const HEADER: &[u8] = b"\x01\x00\x03\x00";
+    const PREFIX: &[u8] = b"\x01\x00\x6c\x00\x02\x00\x00\x00";
+    const CLASS_BLOCK: &[u8] = b"\x02\x00\x81\x20";
+    const TERMINAL: &[u8] = b"\x03\x00\xf7\x00\x03\x00\x00\x00";
+
+    let mut declarations = Vec::new();
+    for start in 0..data.len().saturating_sub(64) {
+        if data.get(start + 8..start + 12) != Some(HEADER)
+            || data.get(start + 16..start + 24) != Some(PREFIX)
+            || data.get(start + 32..start + 36) != Some(CLASS_BLOCK)
+        {
+            continue;
+        }
+        let strings_start = start + 40;
+        let search_end = (strings_start + 192).min(data.len());
+        let Some(relative_terminal) =
+            memchr::memmem::find(&data[strings_start..search_end], TERMINAL)
+        else {
+            continue;
+        };
+        let terminal = strings_start + relative_terminal;
+        let Some((class_name, base_class)) = declaration_class_pair(&data[strings_start..terminal])
+        else {
+            continue;
+        };
+        let Some(uuid) = data.get(terminal + TERMINAL.len()..terminal + TERMINAL.len() + 16) else {
+            continue;
+        };
+        let Some((first, middle, last)) = u32_be(uuid, 4)
+            .zip(u32_be(uuid, 8))
+            .zip(u32_be(uuid, 12))
+            .map(|((first, middle), last)| (first, middle, last))
+        else {
+            continue;
+        };
+        let canonical_stream_name = format!("{first:x}_{middle:08x}_{last:x}");
+        let prefixed_stream_name = format!("_{canonical_stream_name}");
+        let stream_name = match (
+            stream_names.contains(canonical_stream_name.as_str()),
+            stream_names.contains(prefixed_stream_name.as_str()),
+        ) {
+            (true, false) => canonical_stream_name,
+            (false, true) => prefixed_stream_name,
+            (false, false) | (true, true) => continue,
+        };
+        let Some(ordinal) = u32_le(data, start + 12) else {
+            continue;
+        };
+        declarations.push(OuterContainerDeclaration {
+            data_offset: start,
+            ordinal,
+            class_name,
+            base_class,
+            stream_name,
+        });
+    }
+    let mut selected_streams = HashSet::new();
+    if declarations
+        .iter()
+        .any(|declaration| !selected_streams.insert(declaration.stream_name.as_str()))
+    {
+        return Vec::new();
+    }
+    declarations
+}
+
+fn declaration_class_pair(data: &[u8]) -> Option<(String, String)> {
+    let first_end = data.iter().position(|byte| *byte == 0)?;
+    let second_start = first_end.checked_add(1)?;
+    let second_end = second_start.checked_add(
+        data.get(second_start..)?
+            .iter()
+            .position(|byte| *byte == 0)?,
+    )?;
+    let first = data.get(..first_end)?;
+    let second = data.get(second_start..second_end)?;
+    if first.is_empty()
+        || second.is_empty()
+        || data.get(second_end..)?.iter().any(|byte| *byte != 0)
+        || !first.iter().chain(second).all(u8::is_ascii_graphic)
+    {
+        return None;
+    }
+    Some((
+        std::str::from_utf8(first).ok()?.to_owned(),
+        std::str::from_utf8(second).ok()?.to_owned(),
+    ))
 }
 
 /// Reconstruct the logical BREP buffer: the largest `MainDataStream` followed by
@@ -805,7 +1003,8 @@ fn identify_variant(
 
 /// Identify a whole `.CATPart` byte image. Split out so tests drive it from a
 /// synthetic buffer without a reader.
-pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
+pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
+    let data = data.into();
     let outer_dir_offset = u32_be(&data, 8).unwrap_or(0);
     let outer_dir_length = u32_be(&data, 12).unwrap_or(0);
 
@@ -816,6 +1015,9 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let previews = preview_images_in_segments(&data, &finjpl_segments);
     let last_save_version = last_save_version_in_segments(&data, &finjpl_segments);
     let external_references = external_references_in_segments(&data, &finjpl_segments);
+    let outer_container_declarations = outer.as_ref().map_or_else(Vec::new, |directory| {
+        outer_container_declarations(&data, directory)
+    });
 
     let mut census = Census {
         a9_markers: count_subslice(&data, A9_MARKER),
@@ -846,6 +1048,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         last_save_version,
         external_references,
         finjpl_segments,
+        outer_container_declarations,
         census,
         variant,
     }
@@ -866,6 +1069,38 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             attributes.insert("directory".to_string(), directory.to_string());
             attributes.insert("desc_offset".to_string(), d.desc_offset.to_string());
             attributes.insert("extent_count".to_string(), d.extents.len().to_string());
+            attributes.insert(
+                "extent_flags".to_string(),
+                d.extents
+                    .iter()
+                    .map(|extent| format!("0x{:08x}", extent.flags))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+            if directory == "outer" {
+                if let Some(declaration) = scan
+                    .outer_container_declarations
+                    .iter()
+                    .find(|declaration| declaration.stream_name == d.name)
+                {
+                    attributes.insert(
+                        "container_class".to_string(),
+                        declaration.class_name.clone(),
+                    );
+                    attributes.insert(
+                        "container_base_class".to_string(),
+                        declaration.base_class.clone(),
+                    );
+                    attributes.insert(
+                        "container_ordinal".to_string(),
+                        declaration.ordinal.to_string(),
+                    );
+                    attributes.insert(
+                        "container_data_offset".to_string(),
+                        declaration.data_offset.to_string(),
+                    );
+                }
+            }
             let phys: u64 = d.extents.iter().map(|e| e.phys_len as u64).sum();
             entries.push(ContainerEntry {
                 name: if d.name.is_empty() {
@@ -1003,7 +1238,10 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
 
 #[cfg(test)]
 mod tests {
-    use super::{identify_variant, Census, InnerDir};
+    use super::{
+        identify_variant, outer_container_declarations, outer_container_for_extent, parse_extents,
+        reconstruct_logical_stream, summarize, Census, ContainerScan, Descriptor, Extent, InnerDir,
+    };
     use crate::variant::Variant;
 
     #[test]
@@ -1021,5 +1259,224 @@ mod tests {
             identify_variant(Some(&inner), Some(&[]), &census, true),
             Variant::E5Stream
         );
+    }
+
+    #[test]
+    fn extent_parser_retains_the_raw_flags_word() {
+        let mut directory = vec![0; 24];
+        for (offset, value) in [(4, 40u32), (8, 8), (12, 8), (16, 0), (20, 0xa501_0080)] {
+            directory[offset..offset + 4].copy_from_slice(&value.to_be_bytes());
+        }
+        let (extents, logical_length) =
+            parse_extents(&directory, 0, 1, 0, 64).expect("complete extent");
+        assert_eq!(logical_length, 8);
+        assert_eq!(extents[0].flags, 0xa501_0080);
+        assert!(parse_extents(&directory, 0, 1, usize::MAX, usize::MAX).is_none());
+    }
+
+    #[test]
+    fn logical_stream_reconstruction_is_atomic_over_its_extent_roster() {
+        let descriptor = Descriptor {
+            name: "MAIN".to_string(),
+            desc_offset: 0,
+            logical_length: 4,
+            extents: vec![
+                Extent {
+                    phys_off: 1,
+                    phys_len: 2,
+                    flags: 0,
+                },
+                Extent {
+                    phys_off: 7,
+                    phys_len: 2,
+                    flags: 0,
+                },
+            ],
+        };
+        assert_eq!(
+            reconstruct_logical_stream(b"0123456789", &descriptor, 0),
+            b"1278"
+        );
+
+        let mut outside = descriptor.clone();
+        outside.extents[1].phys_off = 9;
+        assert!(reconstruct_logical_stream(b"0123456789", &outside, 0).is_empty());
+
+        let mut wrong_length = descriptor.clone();
+        wrong_length.logical_length = 3;
+        assert!(reconstruct_logical_stream(b"0123456789", &wrong_length, 0).is_empty());
+    }
+
+    #[test]
+    fn logical_stream_reconstruction_rejects_overflowing_physical_offsets() {
+        let descriptor = Descriptor {
+            name: "MAIN".to_string(),
+            desc_offset: 0,
+            logical_length: 1,
+            extents: vec![Extent {
+                phys_off: 1,
+                phys_len: 1,
+                flags: 0,
+            }],
+        };
+        assert!(reconstruct_logical_stream(&[0], &descriptor, usize::MAX).is_empty());
+    }
+
+    #[test]
+    fn container_summary_exposes_extent_flags_in_logical_order() {
+        let scan = ContainerScan {
+            data: Vec::new().into(),
+            outer_dir_offset: 0,
+            outer_dir_length: 0,
+            outer: Some(InnerDir {
+                inner: 0,
+                descriptors: vec![Descriptor {
+                    name: "MAIN".to_string(),
+                    desc_offset: 16,
+                    logical_length: 12,
+                    extents: vec![
+                        Extent {
+                            phys_off: 40,
+                            phys_len: 4,
+                            flags: 0xa501_0080,
+                        },
+                        Extent {
+                            phys_off: 80,
+                            phys_len: 8,
+                            flags: 0,
+                        },
+                    ],
+                }],
+            }),
+            inner: None,
+            brep: None,
+            previews: Vec::new(),
+            last_save_version: None,
+            external_references: Vec::new(),
+            finjpl_segments: Vec::new(),
+            outer_container_declarations: Vec::new(),
+            census: Census::default(),
+            variant: Variant::Unknown,
+        };
+        let summary = summarize(&scan);
+        assert_eq!(
+            summary.entries[0].attributes["extent_flags"],
+            "0xa5010080,0x00000000"
+        );
+    }
+
+    #[test]
+    fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
+        let mut data = vec![0; 40];
+        data[8..12].copy_from_slice(b"\x01\x00\x03\x00");
+        data[12..16].copy_from_slice(&2u32.to_le_bytes());
+        data[16..24].copy_from_slice(b"\x01\x00\x6c\x00\x02\x00\x00\x00");
+        data[32..36].copy_from_slice(b"\x02\x00\x81\x20");
+        data.extend_from_slice(b"CATPrtCont\0CATProdCont\0\0");
+        data.extend_from_slice(b"\x03\x00\xf7\x00\x03\x00\x00\x00");
+        data.extend_from_slice(&0x4bbc_295cu32.to_be_bytes());
+        data.extend_from_slice(&0x0000_1048u32.to_be_bytes());
+        data.extend_from_slice(&0x62eb_7b6fu32.to_be_bytes());
+        data.extend_from_slice(&0x0000_1825u32.to_be_bytes());
+        let data_len = u32::try_from(data.len()).expect("bounded declaration");
+        let outer = InnerDir {
+            inner: 0,
+            descriptors: vec![
+                Descriptor {
+                    name: "Data".to_string(),
+                    desc_offset: 10,
+                    logical_length: data_len,
+                    extents: vec![Extent {
+                        phys_off: 0,
+                        phys_len: data_len,
+                        flags: 0,
+                    }],
+                },
+                Descriptor {
+                    name: "1048_62eb7b6f_1825".to_string(),
+                    desc_offset: 20,
+                    logical_length: 1,
+                    extents: vec![Extent {
+                        phys_off: data_len,
+                        phys_len: 1,
+                        flags: 0,
+                    }],
+                },
+            ],
+        };
+        data.push(0);
+
+        let declarations = outer_container_declarations(&data, &outer);
+
+        assert_eq!(declarations.len(), 1);
+        assert_eq!(declarations[0].data_offset, 0);
+        assert_eq!(declarations[0].ordinal, 2);
+        assert_eq!(declarations[0].class_name, "CATPrtCont");
+        assert_eq!(declarations[0].base_class, "CATProdCont");
+        assert_eq!(declarations[0].stream_name, "1048_62eb7b6f_1825");
+        assert_eq!(
+            outer_container_for_extent(&outer, &declarations, u64::from(data_len), 1)
+                .map(|declaration| declaration.class_name.as_str()),
+            Some("CATPrtCont")
+        );
+        assert!(
+            outer_container_for_extent(&outer, &declarations, u64::from(data_len) - 1, 2).is_none()
+        );
+
+        let mut prefixed_outer = outer.clone();
+        prefixed_outer.descriptors[1].name = "_1048_62eb7b6f_1825".to_string();
+        let prefixed_declarations = outer_container_declarations(&data, &prefixed_outer);
+        assert_eq!(prefixed_declarations.len(), 1);
+        assert_eq!(prefixed_declarations[0].stream_name, "_1048_62eb7b6f_1825");
+        assert_eq!(
+            outer_container_for_extent(
+                &prefixed_outer,
+                &prefixed_declarations,
+                u64::from(data_len),
+                1
+            )
+            .map(|declaration| declaration.class_name.as_str()),
+            Some("CATPrtCont")
+        );
+
+        let mut ambiguous_outer = prefixed_outer;
+        ambiguous_outer.descriptors.push(Descriptor {
+            name: "1048_62eb7b6f_1825".to_string(),
+            desc_offset: 30,
+            logical_length: 1,
+            extents: vec![Extent {
+                phys_off: data_len,
+                phys_len: 1,
+                flags: 0,
+            }],
+        });
+        assert!(outer_container_declarations(&data, &ambiguous_outer).is_empty());
+
+        let scan = ContainerScan {
+            data: data.into(),
+            outer_dir_offset: 0,
+            outer_dir_length: 0,
+            outer: Some(outer),
+            inner: None,
+            brep: None,
+            previews: Vec::new(),
+            last_save_version: None,
+            external_references: Vec::new(),
+            finjpl_segments: Vec::new(),
+            outer_container_declarations: declarations,
+            census: Census::default(),
+            variant: Variant::Unknown,
+        };
+        let summary = summarize(&scan);
+        assert_eq!(
+            summary.entries[1].attributes["container_class"],
+            "CATPrtCont"
+        );
+        assert_eq!(
+            summary.entries[1].attributes["container_base_class"],
+            "CATProdCont"
+        );
+        assert_eq!(summary.entries[1].attributes["container_ordinal"], "2");
+        assert_eq!(summary.entries[1].attributes["container_data_offset"], "0");
     }
 }

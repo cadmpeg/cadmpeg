@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::codec::CodecError;
+use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::geometry::{NurbsCurve, PcurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Color, Sense};
@@ -12,6 +12,7 @@ use cadmpeg_ir::transform::Transform;
 use super::edits::{
     NurbsCurveEdit, NurbsPcurveEdit, NurbsSurfaceEdit, ProceduralCurveEdit, ProceduralSurfaceEdit,
 };
+use crate::asm_header::stream_ref_width;
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::{finite_vector, native_bool, unique_knot_count};
 use crate::{asm_header, sab};
@@ -87,8 +88,8 @@ pub(crate) struct GeometryEdits<'a> {
 pub(crate) fn patch_geometry(bytes: &mut [u8], edits: &GeometryEdits) -> Result<(), CodecError> {
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
-    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
-    let ref_width = asm_header::parse(bytes).map_or(8, |header| usize::from(header.width));
+    let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
+    let ref_width = stream_ref_width(bytes);
     let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
     let header_scale = asm_header::parse(bytes)
@@ -214,7 +215,7 @@ pub(crate) fn patch_framed_geometry(
                 )));
             }
             let offset =
-                required_payload_field(bytes, record, active_ref_width(bytes), family + 2, 0x06)?;
+                required_payload_field(bytes, record, stream_ref_width(bytes), family + 2, 0x06)?;
             bytes[offset + 1..offset + 9].copy_from_slice(&timestamp.to_le_bytes());
             continue;
         }
@@ -225,7 +226,7 @@ pub(crate) fn patch_framed_geometry(
                     record.index
                 )));
             }
-            let ref_width = active_ref_width(bytes);
+            let ref_width = stream_ref_width(bytes);
             patch_sense_field(bytes, record, ref_width, 9, *sense)?;
             patch_ascii_field(bytes, record, ref_width, 10, continuity)?;
         }
@@ -236,7 +237,7 @@ pub(crate) fn patch_framed_geometry(
                     record.index
                 )));
             }
-            let ref_width = active_ref_width(bytes);
+            let ref_width = stream_ref_width(bytes);
             for (index, tag, value) in [
                 (3usize, 0x0c, *owning_edge),
                 (4, 0x04, i64::from(*endpoint_index)),
@@ -255,7 +256,7 @@ pub(crate) fn patch_framed_geometry(
                 crate::records::FaceContainment::In => Sense::Reversed,
                 crate::records::FaceContainment::Out => Sense::Forward,
             };
-            patch_sense_field(bytes, record, active_ref_width(bytes), 10, sense)?;
+            patch_sense_field(bytes, record, stream_ref_width(bytes), 10, sense)?;
         }
         if let Some((tolerance, leading)) = tolerant_vertices.get(&record.index) {
             if record.head != "tvertex" {
@@ -266,7 +267,7 @@ pub(crate) fn patch_framed_geometry(
             }
             // The record's three f64 tolerance slots: the two leading slots
             // verbatim and the evaluated tolerance last.
-            let ref_width = active_ref_width(bytes);
+            let ref_width = stream_ref_width(bytes);
             for (index, value) in [(6usize, leading[0]), (7, leading[1]), (8, *tolerance)] {
                 let offset = required_payload_field(bytes, record, ref_width, index, 0x06)?;
                 bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
@@ -275,18 +276,18 @@ pub(crate) fn patch_framed_geometry(
         if let Some(tolerance) = tolerant_edges.get(&record.index) {
             if record.head != "tedge"
                 || !matches!(record.chunk(12), Some(sab::Token::Long(_)))
-                || !matches!(record.chunk(13), Some(sab::Token::Long(0)))
+                || !matches!(record.chunk(13), Some(sab::Token::Long(_)))
             {
                 return Err(CodecError::Malformed(format!(
                     "F3D tolerant-edge record {} has the wrong layout",
                     record.index
                 )));
             }
-            let offset = required_payload_field(bytes, record, active_ref_width(bytes), 11, 0x06)?;
+            let offset = required_payload_field(bytes, record, stream_ref_width(bytes), 11, 0x06)?;
             bytes[offset + 1..offset + 9].copy_from_slice(&tolerance.to_le_bytes());
         }
         if let Some(color) = color_records.get(&record.index) {
-            let ref_width = active_ref_width(bytes);
+            let ref_width = stream_ref_width(bytes);
             for (index, value) in [
                 (1usize, f64::from(color.r)),
                 (2, f64::from(color.g)),
@@ -433,15 +434,15 @@ pub(crate) fn patch_framed_geometry(
         }
         if record.head == "face" {
             if let Some(sense) = face_senses.get(&id) {
-                patch_sense_field(bytes, record, active_ref_width(bytes), 8, *sense)?;
+                patch_sense_field(bytes, record, stream_ref_width(bytes), 8, *sense)?;
             }
         } else if matches!(record.head.as_str(), "coedge" | "tcoedge") {
             if let Some(sense) = coedge_senses.get(&id) {
-                patch_sense_field(bytes, record, active_ref_width(bytes), 7, *sense)?;
+                patch_sense_field(bytes, record, stream_ref_width(bytes), 7, *sense)?;
             }
         } else if matches!(record.head.as_str(), "edge" | "tedge") {
             if let Some(range) = edge_ranges.get(&id) {
-                let ref_width = active_ref_width(bytes);
+                let ref_width = stream_ref_width(bytes);
                 for (index, value) in [(4usize, range[0]), (6, range[1])] {
                     let offset = required_payload_field(bytes, record, ref_width, index, 0x06)?;
                     bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
@@ -450,7 +451,7 @@ pub(crate) fn patch_framed_geometry(
         } else if record.head == "point" {
             if let Some(position) = positions.get(&id) {
                 let offset =
-                    required_payload_field(bytes, record, active_ref_width(bytes), 3, 0x13)?;
+                    required_payload_field(bytes, record, stream_ref_width(bytes), 3, 0x13)?;
                 for (component, value) in [
                     position.x / LEN_TO_MM,
                     position.y / LEN_TO_MM,
@@ -475,7 +476,7 @@ pub(crate) fn patch_framed_geometry(
                         )))
                     }
                 };
-                let ref_width = active_ref_width(bytes);
+                let ref_width = stream_ref_width(bytes);
                 let fields = [
                     required_payload_field(bytes, record, ref_width, field_indices[0], 0x13)?,
                     required_payload_field(bytes, record, ref_width, field_indices[1], 0x14)?,
@@ -509,7 +510,7 @@ pub(crate) fn patch_framed_geometry(
                 let offset = required_payload_field(
                     bytes,
                     record,
-                    active_ref_width(bytes),
+                    stream_ref_width(bytes),
                     field_index,
                     0x13,
                 )?;
@@ -537,7 +538,7 @@ pub(crate) fn patch_framed_geometry(
                         )))
                     }
                 };
-                let ref_width = active_ref_width(bytes);
+                let ref_width = stream_ref_width(bytes);
                 let fields = [
                     required_payload_field(bytes, record, ref_width, field_indices[0], 0x13)?,
                     required_payload_field(bytes, record, ref_width, field_indices[1], 0x14)?,
@@ -588,7 +589,7 @@ pub(crate) fn patch_framed_geometry(
                         )))
                     }
                 };
-                let ref_width = active_ref_width(bytes);
+                let ref_width = stream_ref_width(bytes);
                 let fields = [
                     required_payload_field(bytes, record, ref_width, field_indices[0], 0x13)?,
                     required_payload_field(bytes, record, ref_width, field_indices[1], 0x14)?,
@@ -621,7 +622,7 @@ pub(crate) fn patch_framed_geometry(
                         )))
                     }
                 };
-                let ref_width = active_ref_width(bytes);
+                let ref_width = stream_ref_width(bytes);
                 let fields = [
                     required_payload_field(bytes, record, ref_width, field_indices[0], 0x13)?,
                     required_payload_field(bytes, record, ref_width, field_indices[1], 0x06)?,
@@ -657,7 +658,7 @@ pub(crate) fn patch_framed_geometry(
                         )))
                     }
                 };
-                let ref_width = active_ref_width(bytes);
+                let ref_width = stream_ref_width(bytes);
                 let fields = [
                     required_payload_field(bytes, record, ref_width, field_indices[0], 0x13)?,
                     required_payload_field(bytes, record, ref_width, field_indices[1], 0x14)?,
@@ -688,7 +689,7 @@ pub(crate) fn patch_framed_geometry(
             }
         } else if record.head == "cone" {
             if let Some((origin, axis, ref_direction, radius, ratio, half_angle)) = cones.get(&id) {
-                let ref_width = active_ref_width(bytes);
+                let ref_width = stream_ref_width(bytes);
                 let field_indices = match record.name.as_str() {
                     "cone" => [0, 1, 2, 3, 4, 5, 6],
                     "cone-surface" => [3, 4, 5, 6, 9, 10, 11],
@@ -829,7 +830,7 @@ fn patch_extrusion_definition(
 ) -> Result<(), CodecError> {
     let record_bytes = record_slice(bytes, record, "extrusion")?;
     let layout =
-        crate::nurbs::proc_curve::extrusion_patch_layout(record_bytes, active_ref_width(bytes))
+        crate::nurbs::proc_curve::extrusion_patch_layout(record_bytes, stream_ref_width(bytes))
             .ok_or_else(|| {
                 CodecError::Malformed(format!(
                     "spline record {} lacks writable extrusion fields",
@@ -919,7 +920,7 @@ fn patch_transform_record(
             record.index
         )));
     }
-    let ref_width = active_ref_width(bytes);
+    let ref_width = stream_ref_width(bytes);
     let vectors = [
         [
             transform.rows[0][0],
@@ -980,10 +981,6 @@ fn patch_sense_field(
     Ok(())
 }
 
-pub(crate) fn active_ref_width(bytes: &[u8]) -> usize {
-    asm_header::parse(bytes).map_or(8, |header| usize::from(header.width))
-}
-
 fn patch_blend_radius_tokens(
     bytes: &mut [u8],
     record: &sab::Record,
@@ -991,7 +988,7 @@ fn patch_blend_radius_tokens(
 ) -> Result<(), CodecError> {
     let record_bytes = record_slice(bytes, record, "rolling-ball")?;
     let layout =
-        crate::nurbs::proc_curve::rolling_ball_patch_layout(record_bytes, active_ref_width(bytes))
+        crate::nurbs::proc_curve::rolling_ball_patch_layout(record_bytes, stream_ref_width(bytes))
             .ok_or_else(|| {
                 CodecError::Malformed(format!(
                     "spline record {} lacks a writable rolling-ball radius pair",
@@ -1233,7 +1230,7 @@ fn patch_helix_definition(
     };
     let record_bytes = record_slice(bytes, record, "helix")?;
     let layout =
-        crate::nurbs::proc_curve::helix_patch_layout(record_bytes, active_ref_width(bytes))
+        crate::nurbs::proc_curve::helix_patch_layout(record_bytes, stream_ref_width(bytes))
             .ok_or_else(|| {
                 CodecError::Malformed(format!(
                     "procedural curve record {} lacks writable helix fields",
@@ -1292,7 +1289,7 @@ fn patch_vector_offset_definition(
     };
     let record_bytes = record_slice(bytes, record, "vector-offset")?;
     let layout =
-        crate::nurbs::proc_curve::vector_offset_patch_layout(record_bytes, active_ref_width(bytes))
+        crate::nurbs::proc_curve::vector_offset_patch_layout(record_bytes, stream_ref_width(bytes))
             .ok_or_else(|| {
                 CodecError::Malformed(format!(
                     "vector-offset record {} lacks writable construction fields",
@@ -1331,7 +1328,7 @@ fn patch_subset_definition(
     };
     let record_bytes = record_slice(bytes, record, "subset")?;
     let layout =
-        crate::nurbs::proc_curve::subset_patch_layout(record_bytes, active_ref_width(bytes))
+        crate::nurbs::proc_curve::subset_patch_layout(record_bytes, stream_ref_width(bytes))
             .ok_or_else(|| {
                 CodecError::Malformed(format!(
                     "subset record {} lacks writable construction fields",
@@ -1363,7 +1360,7 @@ fn patch_compound_definition(
     };
     let record_bytes = record_slice(bytes, record, "compound")?;
     let layout =
-        crate::nurbs::proc_curve::compound_patch_layout(record_bytes, active_ref_width(bytes))
+        crate::nurbs::proc_curve::compound_patch_layout(record_bytes, stream_ref_width(bytes))
             .ok_or_else(|| {
                 CodecError::Malformed(format!(
                     "compound record {} lacks writable parameter arrays",
@@ -1493,7 +1490,7 @@ fn patch_surface_offset_definition(
     let record_bytes = record_slice(bytes, record, "surface-offset")?;
     let layout = crate::nurbs::proc_curve::surface_offset_patch_layout(
         record_bytes,
-        active_ref_width(bytes),
+        stream_ref_width(bytes),
     )
     .ok_or_else(|| CodecError::Malformed("surface-offset construction is malformed".into()))?;
     if layout
@@ -1562,7 +1559,7 @@ fn patch_spring_definition(
         ));
     }
     let record_bytes = record_slice(bytes, record, "spring")?;
-    let int_width = active_ref_width(bytes);
+    let int_width = stream_ref_width(bytes);
     let layout = crate::nurbs::proc_curve::spring_patch_layout(record_bytes, int_width)
         .ok_or_else(|| CodecError::Malformed("spring construction is malformed".into()))?;
     if layout
@@ -1625,7 +1622,7 @@ fn patch_projection_definition(
     }
     let record_bytes = record_slice(bytes, record, "projection")?;
     let layout =
-        crate::nurbs::proc_curve::projection_patch_layout(record_bytes, active_ref_width(bytes))
+        crate::nurbs::proc_curve::projection_patch_layout(record_bytes, stream_ref_width(bytes))
             .ok_or_else(|| CodecError::Malformed("projection construction is malformed".into()))?;
     if layout
         .discontinuities
@@ -1726,7 +1723,7 @@ fn patch_intersection_definition(
     }
     let record_bytes = record_slice(bytes, record, "intersection")?;
     let layout =
-        crate::nurbs::proc_curve::intersection_patch_layout(record_bytes, active_ref_width(bytes))
+        crate::nurbs::proc_curve::intersection_patch_layout(record_bytes, stream_ref_width(bytes))
             .ok_or_else(|| {
                 CodecError::Malformed("intersection construction is malformed".into())
             })?;
@@ -1784,7 +1781,7 @@ fn patch_three_surface_intersection_definition(
         ));
     }
     let record_bytes = record_slice(bytes, record, "three-surface intersection")?;
-    let int_width = active_ref_width(bytes);
+    let int_width = stream_ref_width(bytes);
     let layout = crate::nurbs::proc_curve::three_surface_patch_layout(record_bytes, int_width)
         .ok_or_else(|| CodecError::Malformed("three-surface construction is malformed".into()))?;
     if layout
@@ -1841,7 +1838,7 @@ fn patch_surface_curve_definition(
     let record_bytes = record_slice(bytes, record, "surface-curve")?;
     let layout = crate::nurbs::proc_curve::surface_curve_patch_layout(
         record_bytes,
-        active_ref_width(bytes),
+        stream_ref_width(bytes),
         family,
     )
     .ok_or_else(|| CodecError::Malformed("surface-curve construction is malformed".into()))?;
@@ -1907,7 +1904,7 @@ fn patch_silhouette_definition(
     let record_bytes = record_slice(bytes, record, "silhouette")?;
     let layout = crate::nurbs::proc_curve::silhouette_patch_layout(
         record_bytes,
-        active_ref_width(bytes),
+        stream_ref_width(bytes),
         silhouette,
     )
     .ok_or_else(|| CodecError::Malformed("silhouette construction is malformed".into()))?;
@@ -1944,7 +1941,7 @@ fn patch_nurbs_pcurve_record(
             record.index
         )));
     };
-    let ref_width = asm_header::parse(bytes).map_or(8, |header| usize::from(header.width));
+    let ref_width = stream_ref_width(bytes);
     let scope = if record.head == "pcurve" {
         sab::payload_subtype_range(bytes, record, 5, ref_width, "exp_par_cur").ok_or_else(|| {
             CodecError::Malformed(format!(
@@ -2108,7 +2105,7 @@ fn patch_ref_pcurve_contract(
     let Some(range) = edit.parameter_range else {
         return Ok(());
     };
-    let ref_width = active_ref_width(bytes);
+    let ref_width = stream_ref_width(bytes);
     for (index, value) in [5usize, 6].into_iter().zip(range) {
         let offset =
             sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {

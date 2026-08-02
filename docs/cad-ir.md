@@ -2,7 +2,7 @@
 
 # cadmpeg IR (`.cadir.json`) specification
 
-`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"4"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
+`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"5"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
 ## Document layering
 
@@ -20,9 +20,9 @@ CadIr
 
 `model` is format-neutral. `native` is a map keyed by format ID. Each value contains an integer `version` and an `arenas` map. Each arena is an ID-sorted array of records with a required string `id` and codec-owned fields. The reserved `unknowns` arena stores format-specific product records. Decode-time source locations, exactness, and retained source records belong to the independently versioned `SourceFidelity` sidecar and are not serialized in `CadIr`.
 
-The neutral model arenas, in serialization order, are `bodies`, `regions`, `shells`, `faces`, `loops`, `coedges`, `edges`, `vertices`, `points`, `surfaces`, `curves`, `subds`, `pcurves`, `procedural_surfaces`, `procedural_curves`, `features`, `tessellations`, `appearances`, `appearance_bindings`, and `attributes`. Every arena is a required flat JSON array. References are string IDs, never array indices. `subds` contains subdivision-surface control cages and is a free carrier arena; it is not owned by B-rep topology.
+The neutral model arenas, in serialization order, are `bodies`, `regions`, `shells`, `faces`, `loops`, `coedges`, `edges`, `vertices`, `points`, `surfaces`, `curves`, `subds`, `pcurves`, `procedural_surfaces`, `procedural_curves`, `features`, `feature_input_topologies`, `configurations`, `parameters`, `sketches`, `sketch_entities`, `sketch_constraints`, `spatial_sketches`, `spatial_sketch_entities`, `spatial_sketch_constraints`, `spreadsheets`, `product_definitions`, `occurrences`, `assembly_joints`, `drawings`, `semantic_annotations`, `presentation_documents`, `view_presentations`, `tessellations`, `appearances`, `appearance_bindings`, `attributes`, `pmi`, and `presentation_layers`. References are string IDs, never array indices. `subds` contains subdivision-surface control cages and is a free carrier arena; it is not owned by B-rep topology.
 
-Pcurve geometry is a parameter-space line, angular circle, angular ellipse, polar harmonic, polar NURBS, or NURBS curve. Circle and ellipse carriers store independent `x_axis` and `y_axis` parameter directions; a clockwise parameterization has a negated `y_axis`. A polar harmonic maps first-order radial-plane and axial harmonic coefficients to `(atan2(y, x), v)` without changing the spatial curve parameter. A polar NURBS evaluates radial-plane and axial control channels with one degree, knot vector, weight vector, and parameter, then maps the radial result through `atan2`.
+Pcurve geometry is a parameter-space line, angular circle, angular ellipse, parabola, hyperbola, first-order harmonic, first-order hyperbolic, polar harmonic, polar NURBS, NURBS, trimmed, or signed-offset curve. Circle and ellipse carriers store independent `x_axis` and `y_axis` parameter directions; a clockwise parameterization has a negated `y_axis`. General harmonic carriers evaluate `center + cosine*cos(t) + sine*sin(t)`; general hyperbolic carriers evaluate `center + cosine*cosh(t) + sine*sinh(t)`. A polar harmonic maps first-order radial-plane and axial harmonic coefficients to `(atan2(y, x), v)` without changing the spatial curve parameter. A polar NURBS evaluates radial-plane and axial control channels with one degree, knot vector, weight vector, and parameter, then maps the radial result through `atan2`. A signed offset adds its distance along the regular basis curve's left unit normal. Point evaluation requires a finite nonzero exact basis tangent; a nested signed offset has no point evaluation.
 
 Maps serialize with lexicographically sorted keys. Arena entries are strictly sorted by ID. Canonical serialization therefore does not use discovery order as semantic state.
 
@@ -102,7 +102,7 @@ A wire edge appears in exactly one shell's `wire_edges` and in no coedge. A free
 
 ## Geometry and canonical parameterization
 
-Surface carriers are plane, cylinder, cone, sphere, torus, NURBS, procedural, or unknown. Curve carriers are line, circle, ellipse, parabola, hyperbola, degenerate, NURBS, procedural, or unknown. Pcurves are line or NURBS curves in a surface's `(u, v)` space. A subdivision surface is a Catmull–Clark control cage with vertices, edges, directed face edge uses, endpoint sharpness, edge tags, vertex tags, and sector coefficients.
+Surface carriers are plane, cylinder, cone, sphere, torus, NURBS, procedural, or unknown. Curve carriers are line, circle, ellipse, parabola, hyperbola, degenerate, NURBS, procedural, or unknown. Pcurves are analytic, first-order harmonic, first-order hyperbolic, polar, NURBS, trimmed, or signed-offset curves in a surface's `(u, v)` space. A subdivision surface is a Catmull–Clark control cage with vertices, edges, directed face edge uses, endpoint sharpness, edge tags, vertex tags, and sector coefficients.
 
 Free surface, curve, subdivision-surface, and tessellation carriers may carry a `SourceObjectAssociation`. The association records the source format and native object identifier, effective name, color, visibility, layer, and outermost-to-innermost instance path. These fields preserve source-object identity and display metadata when no topology entity owns the carrier.
 
@@ -136,7 +136,7 @@ NURBS surfaces store degrees, full knot vectors, pole counts, u-major control po
 
 ## Procedural carriers
 
-Procedural entities retain construction semantics either as a surface or curve carrier or beside a solved carrier. `SurfaceGeometry::Procedural.construction` and `CurveGeometry::Procedural.construction` identify the construction that exactly defines the carrier; the referenced construction identifies that carrier in return. This bidirectional relation is required. A procedural construction with an analytic or NURBS carrier retains both the construction and its solved representation. Model-aware evaluation resolves nested offset carriers recursively and rejects reference cycles; the support normal is the normalized cross product of its parameter tangents. Other procedural families require a solved carrier or a family evaluator. `cache_fit_tolerance`, when present, is the maximum millimeter deviation between the procedural definition and solved carrier. A pcurve's `fit_tolerance` likewise bounds the model-space deviation after mapping the pcurve through its coedge's face surface.
+Procedural entities retain construction semantics either as a surface or curve carrier or beside a solved carrier. `SurfaceGeometry::Procedural.construction` and `CurveGeometry::Procedural.construction` identify the construction that exactly defines the carrier; the referenced construction identifies that carrier in return. This bidirectional relation is required. A procedural construction with an analytic or NURBS carrier retains both the construction and its solved representation. Model-aware evaluation resolves nested offset carriers recursively and rejects reference cycles; the support normal is the normalized cross product of exact analytic, rational NURBS, or affine-transformed parameter tangents. A regular parallel offset retains that oriented unit normal for a dependent offset. Other procedural families require a solved carrier or a family evaluator. `cache_fit_tolerance`, when present, is the maximum millimeter deviation between the procedural definition and solved carrier. A pcurve's `fit_tolerance` likewise bounds the model-space deviation after mapping the pcurve through its coedge's face surface.
 
 Procedural surface definitions are:
 
@@ -232,7 +232,9 @@ Validation does not prove that an edge lies on its curve, a pcurve lies on its s
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "4"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, changing its type, units, parameterization, or invariant requires a new IR version.
+Readers accept exactly `ir_version: "5"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, changing its type, units, parameterization, or invariant requires a new IR version.
+
+Version 5 replaces the optional `Sweep.profile` field and profile-only `Sweep.sections` list with the required `Sweep.section` sum type and a same-typed `Sweep.sections` list. A sweep section is unresolved, references a `ProfileRef`, or owns generated section geometry. A generated circular region stores its outer radius and optional inward wall thickness.
 
 Native namespaces use their own integer versions. A native-only semantic change increments that namespace version without changing the neutral IR version. JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`.
 
@@ -254,7 +256,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "4",
+  "ir_version": "5",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
   "model": {

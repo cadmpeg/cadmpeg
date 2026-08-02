@@ -2,8 +2,8 @@
 //! Core cached B-spline surface and curve block decoding and their writer-facing patch layouts.
 
 use crate::nurbs::reader::{
-    is_periodic, marker_at, marker_positions, read_control_points, read_knots, take_tagged_int,
-    KnotLayout, INT_WIDTHS,
+    is_periodic, marker_at, marker_positions, owned_marker_positions, read_control_points,
+    read_knots, take_tagged_int, KnotLayout, INT_WIDTHS,
 };
 use crate::nurbs::subtypes::{decode_cache_resolving_refs, SubtypeTables};
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
@@ -339,25 +339,57 @@ fn decode_surface_cache_at(record_bytes: &[u8], int_width: usize) -> Option<Nurb
     }
 }
 
-/// Decode a surface cache from a carrier record, following the ASM subtype
-/// table when the record stores a nested `ref N` instead of an inline cache.
-/// `active_bytes` is the full active SAB slice; `N` indexes its non-`ref`
-/// subtype openings in byte order.
-pub fn decode_surface_cache_resolving_refs(
+/// Decode the surface cache a subtype scope itself owns: the first surface
+/// block outside every construction the scope nests. A scope whose supports are
+/// nested constructions carries their caches too, and those are not its own.
+pub(crate) fn decode_owned_surface_cache_at(
+    scope: &[u8],
+    int_width: usize,
+) -> Option<NurbsSurface> {
+    owned_marker_positions(scope, int_width)
+        .into_iter()
+        .find_map(|pos| decode_surface_block(scope, pos, int_width).map(|decoded| decoded.surface))
+}
+
+/// [`decode_owned_surface_cache_at`], following subtype-table references at the
+/// stream's integer width. Every caller reaches a scope through a walk that
+/// already read the width, and the subtype table indexes different offsets at
+/// each width, so probing the other one walks the reference graph a second time
+/// against a table built for a stream this is not.
+pub(crate) fn decode_owned_surface_cache_resolving_refs_at(
+    scope: &[u8],
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+    int_width: usize,
+) -> Option<NurbsSurface> {
+    decode_cache_resolving_refs(
+        scope,
+        active_bytes,
+        tables,
+        &mut Vec::new(),
+        decode_owned_surface_cache_at,
+        int_width,
+    )
+}
+
+/// Decode a surface cache from a carrier record at the stream's integer width,
+/// following the ASM subtype table when the record stores a nested `ref N`
+/// instead of an inline cache. `active_bytes` is the full active SAB slice; `N`
+/// indexes its non-`ref` subtype openings in byte order.
+pub(crate) fn decode_surface_cache_resolving_refs_at(
     record_bytes: &[u8],
     active_bytes: &[u8],
     tables: &SubtypeTables,
+    int_width: usize,
 ) -> Option<NurbsSurface> {
-    INT_WIDTHS.into_iter().find_map(|int_width| {
-        decode_cache_resolving_refs(
-            record_bytes,
-            active_bytes,
-            tables,
-            &mut Vec::new(),
-            decode_surface_cache_at,
-            int_width,
-        )
-    })
+    decode_cache_resolving_refs(
+        record_bytes,
+        active_bytes,
+        tables,
+        &mut Vec::new(),
+        decode_surface_cache_at,
+        int_width,
+    )
 }
 
 /// Decode the 3D curve cache of a procedural curve record: the FIRST valid curve
@@ -375,21 +407,47 @@ pub(crate) fn decode_curve_cache_at(record_bytes: &[u8], int_width: usize) -> Op
     })
 }
 
-/// Decode a curve cache from a carrier record, resolving nested ASM subtype
-/// references through the active slice's subtype table.
-pub fn decode_curve_cache_resolving_refs(
+/// Decode the 3D curve cache a subtype scope itself owns: the first curve block
+/// outside every construction the scope nests.
+pub(crate) fn decode_owned_curve_cache_at(scope: &[u8], int_width: usize) -> Option<NurbsCurve> {
+    owned_marker_positions(scope, int_width)
+        .into_iter()
+        .find_map(|pos| decode_curve_block(scope, pos, int_width).map(|decoded| decoded.curve))
+}
+
+/// [`decode_owned_curve_cache_at`], following subtype-table references at the
+/// stream's integer width.
+pub(crate) fn decode_owned_curve_cache_resolving_refs_at(
+    scope: &[u8],
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+    int_width: usize,
+) -> Option<NurbsCurve> {
+    decode_cache_resolving_refs(
+        scope,
+        active_bytes,
+        tables,
+        &mut Vec::new(),
+        decode_owned_curve_cache_at,
+        int_width,
+    )
+}
+
+/// Decode a curve cache from a carrier record at the stream's integer width,
+/// resolving nested ASM subtype references through the active slice's subtype
+/// table.
+pub(crate) fn decode_curve_cache_resolving_refs_at(
     record_bytes: &[u8],
     active_bytes: &[u8],
     tables: &SubtypeTables,
+    int_width: usize,
 ) -> Option<NurbsCurve> {
-    INT_WIDTHS.into_iter().find_map(|int_width| {
-        decode_cache_resolving_refs(
-            record_bytes,
-            active_bytes,
-            tables,
-            &mut Vec::new(),
-            decode_curve_cache_at,
-            int_width,
-        )
-    })
+    decode_cache_resolving_refs(
+        record_bytes,
+        active_bytes,
+        tables,
+        &mut Vec::new(),
+        decode_curve_cache_at,
+        int_width,
+    )
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Framed CATIA `7C02` UTF-8 string catalogs.
 
-use cadmpeg_ir::le::u32_at as u32_le;
+use cadmpeg_codec_core::le::u32_at as u32_le;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -35,20 +35,28 @@ pub struct CatalogEntry {
 /// Parse every exact `7C02` catalog in a complete `CATPart` image.
 #[must_use]
 pub fn parse(bytes: &[u8]) -> Vec<Catalog> {
-    let candidates = bytes
-        .windows(2)
-        .enumerate()
-        .filter(|(_, marker)| *marker == [0x7c, 0x02])
-        .filter_map(|(pos, _)| parse_candidate(bytes, pos))
-        .collect::<Vec<_>>();
     let mut catalogs = Vec::<Catalog>::new();
-    for catalog in candidates {
-        let catalog_end = catalog.pos + catalog.total_len;
-        if catalogs
-            .iter()
-            .any(|outer| outer.pos < catalog.pos && outer.pos + outer.total_len >= catalog_end)
-        {
+    let mut enclosing_end = 0usize;
+    for pos in memchr::memchr_iter(0x7c, bytes) {
+        let Some(marker_tail) = pos.checked_add(1) else {
             continue;
+        };
+        if bytes.get(marker_tail) != Some(&0x02) {
+            continue;
+        }
+        let declared_end = pos
+            .checked_add(2)
+            .and_then(|length_offset| u32_le(bytes, length_offset))
+            .and_then(|length| usize::try_from(length).ok())
+            .and_then(|length| pos.checked_add(length));
+        if pos < enclosing_end && declared_end.is_some_and(|end| end <= enclosing_end) {
+            continue;
+        }
+        let Some(catalog) = parse_candidate(bytes, pos) else {
+            continue;
+        };
+        if let Some(catalog_end) = catalog.pos.checked_add(catalog.total_len) {
+            enclosing_end = enclosing_end.max(catalog_end);
         }
         catalogs.push(catalog);
     }
@@ -63,6 +71,9 @@ fn parse_candidate(bytes: &[u8], pos: usize) -> Option<Catalog> {
     }
     let (declared_count, mut at) = count_atom(bytes, pos + 6)?;
     let entry_count = usize::try_from(declared_count.checked_sub(1)?).ok()?;
+    if entry_count > end.checked_sub(at)? {
+        return None;
+    }
     let mut entries = Vec::with_capacity(entry_count);
     for ordinal in 0..entry_count {
         let (value_len, header_len) = match *bytes.get(at)? {
@@ -140,6 +151,12 @@ mod tests {
         let catalogs = parse(&bytes);
         assert_eq!(catalogs.len(), 1);
         assert_eq!(catalogs[0].entries[4].value, "angle\n°");
+    }
+
+    #[test]
+    fn catalog_rejects_a_count_larger_than_the_framed_entry_bytes() {
+        let bytes = [0x7c, 0x02, 8, 0, 0, 0, 0xe4, 0xff];
+        assert!(parse(&bytes).is_empty());
     }
 
     #[test]

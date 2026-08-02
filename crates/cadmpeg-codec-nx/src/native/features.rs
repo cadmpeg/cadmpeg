@@ -52,6 +52,69 @@ pub struct FeatureOperationRecord {
     pub source_offset: u64,
 }
 
+/// Exactly framed common record in one bounded feature operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationCommonFrame {
+    /// Globally unique common-frame identity.
+    pub id: String,
+    /// Owning bounded operation record.
+    pub operation_record: String,
+    /// Zero-based frame order within the operation payload.
+    pub ordinal: u32,
+    /// Three compact prefix indices.
+    pub indices: [u32; 3],
+    /// Exact compact-index tokens in order.
+    pub raw_indices: [Vec<u8>; 3],
+    /// Fixed marker selecting the index layout.
+    pub marker: [u8; 3],
+    /// Exact eight-byte state lane following the fixed state marker.
+    pub state: [u8; 8],
+    /// Duplicated frame-local ordinal.
+    pub local_ordinal: u32,
+    /// Exact canonical token repeated for the local ordinal.
+    pub raw_local_ordinal: Vec<u8>,
+    /// Nullable object reference following the duplicated ordinal.
+    pub object_index: Option<u32>,
+    /// Exact canonical nullable object-reference token.
+    pub raw_object_index: Vec<u8>,
+    /// Exact serialized frame byte length.
+    pub byte_len: u64,
+    /// Absolute offset of the first compact index token.
+    pub source_offset: u64,
+    /// Absolute offsets of the compact prefix-index tokens.
+    pub index_source_offsets: [u64; 3],
+    /// Absolute offset of the first state byte.
+    pub state_source_offset: u64,
+    /// Absolute offset of the first local-ordinal token.
+    pub local_ordinal_source_offset: u64,
+    /// Absolute offset of the object-reference token.
+    pub object_index_source_offset: u64,
+}
+
+/// Canonical terminal common-frame suffix of one feature operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationTerminalFrame {
+    /// Globally unique frame identity.
+    pub id: String,
+    /// Owning bounded operation record.
+    pub operation_record: String,
+    /// Exact common frame when it occurs immediately before this suffix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub immediate_common_frame: Option<String>,
+    /// Duplicated frame-local ordinal.
+    pub local_ordinal: u32,
+    /// Exact canonical token repeated for the local ordinal.
+    pub raw_local_ordinal: Vec<u8>,
+    /// Nullable object reference following the duplicated ordinal.
+    pub object_index: Option<u32>,
+    /// Exact canonical nullable object-reference token.
+    pub raw_object_index: Vec<u8>,
+    /// Absolute offset of the first local-ordinal token.
+    pub source_offset: u64,
+    /// Absolute offset of the object-reference token.
+    pub object_index_source_offset: u64,
+}
+
 /// Ordered length-framed string from one bounded feature-operation payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeaturePayloadString {
@@ -139,6 +202,46 @@ pub struct FeatureSimpleHoleConstructionGroup {
     pub block_references: Vec<String>,
 }
 
+/// Exact four-block construction-group lane carried by a `HOLE PACKAGE` operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureHolePackageConstructionGroupLane {
+    /// Globally unique lane identity.
+    pub id: String,
+    /// Owning `HOLE PACKAGE` operation label.
+    pub operation_label: String,
+    /// Compact selector preceding the repeated branch byte.
+    pub selector: u8,
+    /// Branch byte repeated between the two reference pairs.
+    pub branch: u8,
+    /// Ordered serialized offset-store block indices.
+    pub object_indices: [u32; 4],
+    /// Exact variable-width object-index tokens.
+    pub raw_object_indices: [Vec<u8>; 4],
+    /// Uniquely resolved offset-store blocks.
+    pub data_blocks: [String; 4],
+    /// Payload-relative offset of the lane prefix.
+    pub payload_offset: u64,
+    /// Absolute file offset of the lane prefix.
+    pub source_offset: u64,
+    /// Absolute file offsets of the four reference tokens.
+    pub reference_source_offsets: [u64; 4],
+}
+
+/// Exact relation between one hole package and one simple-hole construction group.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureHolePackageConstructionGroupUse {
+    /// Globally unique relation identity.
+    pub id: String,
+    /// Owning `HOLE PACKAGE` operation label.
+    pub operation_label: String,
+    /// Exact package lane carrying the group identity.
+    pub construction_group_lane: String,
+    /// Uniquely matched simple-hole construction group.
+    pub simple_hole_construction_group: String,
+    /// Absolute file offset of the package lane.
+    pub source_offset: u64,
+}
+
 /// Construction family named by a simple-hole template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -171,14 +274,14 @@ pub enum SimpleHoleEndTreatment {
     Chamfer,
 }
 
-/// Primary body object read or written by one feature-history operation.
+/// Primary body reference read or written by one feature-history operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureBodyReference {
     /// Globally unique reference identity.
     pub id: String,
     /// Owning operation-label identity.
     pub operation_label: String,
-    /// Primary body object index.
+    /// Serialized reference index interpreted through its resolved namespace.
     pub body_object_index: u32,
     /// Exact serialized variable-width object-index token.
     pub raw_body_object_index: Vec<u8>,
@@ -195,7 +298,7 @@ pub struct FeatureBodyReferenceOccurrence {
     pub operation_label: String,
     /// Zero-based field order within the bounded operation record.
     pub ordinal: u32,
-    /// Serialized body object index.
+    /// Serialized reference index interpreted through its resolved namespace.
     pub body_object_index: u32,
     /// Exact serialized variable-width object-index token.
     pub raw_body_object_index: Vec<u8>,
@@ -212,6 +315,17 @@ pub struct FeatureBodySegmentUse {
     pub feature_body_reference: String,
     /// Segment image in the native `segment_body_bindings` arena.
     pub segment_body_binding: String,
+}
+
+/// Primary feature body field resolved in its operation's offset-store namespace.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureBodyDataBlockUse {
+    /// Globally unique use identity.
+    pub id: String,
+    /// Primary field in the native `feature_body_references` arena.
+    pub feature_body_reference: String,
+    /// Target in the native `data_blocks` arena.
+    pub data_block: String,
 }
 
 /// Operation-header input resolved to one bounded offset-only OM data block.
@@ -832,6 +946,39 @@ pub struct FeatureSketchPayloadFixedPair {
     pub values: [f64; 2],
     /// Exact ordered seven-byte two's-complement payloads.
     pub raw_values: [[u8; 7]; 2],
+    /// Exact discriminator and branch prefix selecting the pair layout.
+    pub discriminator: Vec<u8>,
+    /// Payload-relative offset of the discriminator.
+    pub payload_offset: u64,
+    /// Payload-relative offsets of the two atom markers.
+    pub value_payload_offsets: [u64; 2],
+    /// Absolute source offset of the discriminator.
+    pub source_offset: u64,
+    /// Absolute source offsets of the two atom markers.
+    pub value_source_offsets: [u64; 2],
+}
+
+/// One exactly framed mixed Q1.55/binary32 pair in a reconstructed sketch payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureSketchPayloadMixedPair {
+    /// Globally unique mixed-pair identity.
+    pub id: String,
+    /// Owning `SKETCH` operation label.
+    pub operation_label: String,
+    /// Reconstructed sketch payload carrying the frame.
+    pub construction_payload: String,
+    /// Zero-based frame order within the payload.
+    pub ordinal: u32,
+    /// Dimensionless signed Q1.55 value.
+    pub fixed_value: f64,
+    /// Finite shifted-IEEE binary32 value widened exactly to binary64.
+    pub binary32_value: f64,
+    /// Exact seven-byte two's-complement Q1.55 payload.
+    pub fixed_raw_value: [u8; 7],
+    /// Exact four-byte shifted-binary32 encoding.
+    pub binary32_raw_value: [u8; 4],
+    /// Exact discriminator selecting the mixed pair layout.
+    pub discriminator: Vec<u8>,
     /// Payload-relative offset of the discriminator.
     pub payload_offset: u64,
     /// Payload-relative offsets of the two atom markers.
@@ -913,6 +1060,9 @@ pub struct FeatureSketchPayloadNamedRecord {
     pub scalar_fields: Vec<String>,
     /// Ordered fixed-pair fields before the next complete name field.
     pub fixed_pairs: Vec<String>,
+    /// Mixed Q1.55/binary32 pairs contained by this interval in payload order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mixed_pairs: Vec<String>,
     /// Payload-relative offset of the opening name marker.
     pub payload_start_offset: u64,
     /// Payload-relative exclusive end at the next name or payload boundary.
@@ -1066,6 +1216,17 @@ pub enum FeatureSketchDatumCsysBlockRelation {
     },
 }
 
+/// One byte-identical scalar shared by a named sketch point and datum-CSYS payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSketchDatumCsysScalarAlias {
+    /// Zero-based coordinate within the named sketch point.
+    pub sketch_coordinate_ordinal: u8,
+    /// Exact datum-CSYS scalar field occupying the same source bytes.
+    pub datum_csys_scalar: String,
+    /// Absolute source offset of the shared scalar field marker.
+    pub value_source_offset: u64,
+}
+
 /// Exact ordered dependency from a sketch point to a datum coordinate system.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSketchDatumCsysDependency {
@@ -1081,6 +1242,8 @@ pub struct FeatureSketchDatumCsysDependency {
     pub datum_csys_construction: String,
     /// Exact block relation between the complete point span and construction.
     pub block_relation: FeatureSketchDatumCsysBlockRelation,
+    /// Scalar encodings occupying the same source bytes in both typed records.
+    pub scalar_aliases: Vec<FeatureSketchDatumCsysScalarAlias>,
     /// Absolute source offset of the first sketch reference witnessing the point identity.
     pub source_offset: u64,
 }
@@ -1171,6 +1334,114 @@ pub struct FeatureProjectedCurveConstructionString {
     pub payload_offset: u64,
     /// Absolute source offset of the marker.
     pub source_offset: u64,
+}
+
+/// Exact two-group object-reference graph carried by an `FSET` payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureFsetReferenceGraph {
+    /// Globally unique graph identity.
+    pub id: String,
+    /// Owning `FSET` operation label.
+    pub operation_label: String,
+    /// Exact nonempty printable selector preceding the first group.
+    pub selector: String,
+    /// Serialized object indices in the bounded first group.
+    pub first_object_indices: [u32; 2],
+    /// Exact variable-width object-index tokens in the first group.
+    pub raw_first_object_indices: [Vec<u8>; 2],
+    /// Unique native data-block targets for the first group.
+    pub first_data_blocks: [Option<String>; 2],
+    /// Serialized object indices in the trailing second group.
+    pub second_object_indices: [u32; 3],
+    /// Exact variable-width object-index tokens in the second group.
+    pub raw_second_object_indices: [Vec<u8>; 3],
+    /// Unique native data-block targets for the second group.
+    pub second_data_blocks: [Option<String>; 3],
+    /// Absolute source offset of the graph's `01` marker.
+    pub source_offset: u64,
+    /// Absolute source offsets of the first-group width markers.
+    pub first_source_offsets: [u64; 2],
+    /// Absolute source offsets of the second-group width markers.
+    pub second_source_offsets: [u64; 3],
+}
+
+/// Serialized reference group selecting one logical `FSET` construction payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeatureFsetReferenceGroup {
+    /// Two-reference group inside the byte-counted angle-bracket frame.
+    First,
+    /// Three-reference group following the angle-bracket frame.
+    Second,
+}
+
+/// Exact logical payload reconstructed from one `FSET` reference group.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureFsetConstructionPayload {
+    /// Globally unique reconstructed-payload identity.
+    pub id: String,
+    /// Owning `FSET` operation label.
+    pub operation_label: String,
+    /// Complete reference graph selecting the source blocks.
+    pub reference_graph: String,
+    /// Serialized group selecting these blocks.
+    pub group: FeatureFsetReferenceGroup,
+    /// Ordered source blocks.
+    pub data_blocks: Vec<String>,
+    /// Exact concatenated payload length.
+    pub byte_len: u64,
+    /// SHA-256 of the concatenated bytes.
+    pub sha256: String,
+    /// Payload-relative block starts.
+    pub block_payload_offsets: Vec<u64>,
+    /// Exact source-block lengths.
+    pub block_byte_lengths: Vec<u64>,
+    /// Absolute source-block offsets.
+    pub block_source_offsets: Vec<u64>,
+}
+
+/// Exact counted nullable reference field carried by a `DELETE` payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDeleteReferenceField {
+    /// Globally unique field identity.
+    pub id: String,
+    /// Owning `DELETE` operation label.
+    pub operation_label: String,
+    /// Leading operation-local control byte.
+    pub control: u8,
+    /// Five serialized object-index slots in field order.
+    pub object_indices: [Option<u32>; 5],
+    /// Exact object-index tokens in field order.
+    pub raw_object_indices: [Vec<u8>; 5],
+    /// Independently resolved offset-store blocks; null and unresolved slots are `None`.
+    pub data_blocks: [Option<String>; 5],
+    /// Absolute source offset of the leading control byte.
+    pub source_offset: u64,
+    /// Absolute source offsets of the five object-index tokens.
+    pub object_index_source_offsets: [u64; 5],
+}
+
+/// Exact logical payload reconstructed from a complete non-null `DELETE` field.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDeleteConstructionPayload {
+    /// Globally unique reconstructed-payload identity.
+    pub id: String,
+    /// Owning `DELETE` operation label.
+    pub operation_label: String,
+    /// Complete five-slot reference field selecting the source blocks.
+    pub reference_field: String,
+    /// Ordered source blocks.
+    pub data_blocks: [String; 5],
+    /// Exact concatenated payload length.
+    pub byte_len: u64,
+    /// SHA-256 of the concatenated bytes.
+    pub sha256: String,
+    /// Payload-relative block starts.
+    pub block_payload_offsets: [u64; 5],
+    /// Exact source-block lengths.
+    pub block_byte_lengths: [u64; 5],
+    /// Absolute source-block offsets.
+    pub block_source_offsets: [u64; 5],
 }
 
 /// Ordered construction reference carried by a bounded pattern payload.
@@ -1264,14 +1535,26 @@ pub struct FeaturePatternConstructionFixedLane {
     pub value_source_offsets: Vec<u64>,
 }
 
-/// Scalar width selected by one exact pattern-transform lane.
+/// Scalar width selected by one exact pattern-transform row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FeaturePatternTransformEncoding {
-    /// Four-byte shifted IEEE-754 binary32 rows.
+    /// Single-byte exact one used by a wide row terminal value.
+    ExactOne,
+    /// Four-byte shifted IEEE-754 binary32 atom.
     Binary32,
-    /// Eight-byte shifted IEEE-754 binary64 rows.
+    /// Eight-byte shifted IEEE-754 binary64 atom.
     Binary64,
+}
+
+/// Byte layout selected by one exact pattern-transform lane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeaturePatternTransformLayout {
+    /// One shifted scalar per row and terminal mode `01`.
+    ScalarRows,
+    /// Four shifted binary64 values and one terminal value per row, with terminal mode `02`.
+    WideRows,
 }
 
 /// Exact counted transform lane carried by a bounded pattern payload.
@@ -1281,10 +1564,14 @@ pub struct FeaturePatternTransformLane {
     pub id: String,
     /// Owning `Pattern Feature` or `Pattern Geometry` operation label.
     pub operation_label: String,
+    /// Schema index framing every row in the lane.
+    pub row_schema_index: u8,
+    /// Row byte layout selected by the terminal mode.
+    pub layout: FeaturePatternTransformLayout,
     /// Count including the implicit seed row.
     pub declared_count: u8,
-    /// Homogeneous scalar encoding selected by the operation family.
-    pub encoding: FeaturePatternTransformEncoding,
+    /// Scalar encodings selected independently in row order.
+    pub encodings: Vec<FeaturePatternTransformEncoding>,
     /// Ordered finite row scalars.
     pub values: Vec<f64>,
     /// Exact scalar encodings in row order.
@@ -1297,6 +1584,62 @@ pub struct FeaturePatternTransformLane {
     pub source_offset: u64,
     /// Absolute source offsets of the scalar encodings.
     pub value_source_offsets: Vec<u64>,
+    /// Absolute source offsets of the selector tokens.
+    pub selector_source_offsets: Vec<u64>,
+}
+
+/// Exact counted instance-output lane carried by a bounded operation payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureMultiInstanceOutputLane {
+    /// Globally unique output-lane identity.
+    pub id: String,
+    /// Owning `Multi Instance Output` operation label.
+    pub operation_label: String,
+    /// Count including the implicit seed row.
+    pub declared_count: u8,
+    /// Ordered non-null compact selectors.
+    pub selectors: Vec<u32>,
+    /// Exact compact-index selector tokens in row order.
+    pub raw_selectors: Vec<Vec<u8>>,
+    /// Ordered serialized instance ordinals.
+    pub ordinals: Vec<u8>,
+    /// Ordered serialized row indices.
+    pub row_indices: Vec<u8>,
+    /// Count including the implicit seed instance.
+    pub instance_count: u8,
+    /// Ordered non-null trailing object indices.
+    pub trailing_object_indices: Vec<u32>,
+    /// Exact trailing object-index tokens in row order.
+    pub raw_trailing_object_indices: Vec<Vec<u8>>,
+    /// Absolute source offset of the opening `25 01, count` field.
+    pub source_offset: u64,
+    /// Absolute source offsets of the selector tokens.
+    pub selector_source_offsets: Vec<u64>,
+    /// Absolute source offsets of the trailing object-index tokens.
+    pub trailing_object_index_source_offsets: Vec<u64>,
+}
+
+/// Exact counted selector lane carried by an identical-instance output payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureIdenticalInstanceOutputLane {
+    /// Globally unique output-lane identity.
+    pub id: String,
+    /// Owning `IDENTICAL INSTANCE OUTPUT` operation label.
+    pub operation_label: String,
+    /// Schema index preceding the count field.
+    pub leading_schema_index: u8,
+    /// Schema index framing the serialized count.
+    pub count_schema_index: u8,
+    /// Three consecutive schema indices framing every selector row.
+    pub row_schema_indices: [u8; 3],
+    /// Count including the implicit owner row.
+    pub declared_count: u8,
+    /// Ordered non-null compact selectors.
+    pub selectors: Vec<u32>,
+    /// Exact compact-index selector tokens in row order.
+    pub raw_selectors: Vec<Vec<u8>>,
+    /// Absolute source offset of the leading schema index.
+    pub source_offset: u64,
     /// Absolute source offsets of the selector tokens.
     pub selector_source_offsets: Vec<u64>,
 }
@@ -1740,12 +2083,12 @@ pub struct FeatureExtrudePayloadHeader {
     pub source_offset: u64,
 }
 
-/// Exact terminal discriminator lane from a bounded extrusion payload.
+/// Exact terminal discriminator lane from a bounded operation payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureExtrudePayloadFooter {
-    /// Globally unique footer identity.
+pub struct FeatureOperationTerminalDiscriminator {
+    /// Globally unique lane identity.
     pub id: String,
-    /// Owning `EXTRUDE` operation label.
+    /// Owning operation label.
     pub operation_label: String,
     /// Two compact type indices following the footer prelude.
     pub type_indices: [u32; 2],
@@ -1753,8 +2096,6 @@ pub struct FeatureExtrudePayloadFooter {
     pub raw_type_indices: [Vec<u8>; 2],
     /// Absolute file offsets of the two type-index tokens.
     pub type_index_source_offsets: [u64; 2],
-    /// Two values in the counted footer lane.
-    pub mode_indices: [u32; 2],
     /// Four serialized one-byte flags.
     pub flags: [u8; 4],
     /// Compact values preceding the payload terminator.
@@ -1840,6 +2181,9 @@ pub struct FeatureOperationBodyOperand {
     pub operand_object_index: u32,
     /// Exact serialized compact-index token.
     pub raw_operand_object_index: Vec<u8>,
+    /// Same-store offset data block named by the operand, when resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operand_data_block: Option<String>,
     /// Segment body bindings naming the same body image.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub segment_body_bindings: Vec<String>,
@@ -2459,6 +2803,119 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
     records
 }
 
+/// Decode every exact common frame from bounded feature operations.
+pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOperationCommonFrame> {
+    let sections = container.om_sections();
+    let mut frames = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let operation_record = format!(
+                "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
+            );
+            for (ordinal, frame) in crate::om::operation_common_frames(record)
+                .into_iter()
+                .enumerate()
+            {
+                frames.push(FeatureOperationCommonFrame {
+                    id: format!(
+                        "nx:feature-history:operation-common-frame#{section_key}-{operation_ordinal:010}-{ordinal:010}"
+                    ),
+                    operation_record: operation_record.clone(),
+                    ordinal: ordinal as u32,
+                    indices: frame.indices,
+                    raw_indices: frame.raw_indices,
+                    marker: frame.marker,
+                    state: frame.state,
+                    local_ordinal: frame.local_ordinal,
+                    raw_local_ordinal: frame.raw_local_ordinal,
+                    object_index: frame.object_index,
+                    raw_object_index: frame.raw_object_index,
+                    byte_len: (frame.end_offset - frame.offset) as u64,
+                    source_offset: entry_offset + frame.offset as u64,
+                    index_source_offsets: frame
+                        .index_offsets
+                        .map(|offset| entry_offset + offset as u64),
+                    state_source_offset: entry_offset + frame.state_offset as u64,
+                    local_ordinal_source_offset: entry_offset
+                        + frame.local_ordinal_offset as u64,
+                    object_index_source_offset: entry_offset + frame.object_index_offset as u64,
+                });
+            }
+        }
+    }
+    frames
+}
+
+/// Decode canonical terminal common-frame suffixes from bounded operations.
+pub fn feature_operation_terminal_frames(
+    container: &Container,
+    common_frames: &[FeatureOperationCommonFrame],
+) -> Vec<FeatureOperationTerminalFrame> {
+    let sections = container.om_sections();
+    let mut frames = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let Some(frame) = crate::om::operation_terminal_frame(record) else {
+                continue;
+            };
+            let operation_record = format!(
+                "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
+            );
+            let immediate_common_frame = frame.immediate_common_frame_offset.and_then(|offset| {
+                let matches = common_frames
+                    .iter()
+                    .filter(|common| {
+                        common.operation_record == operation_record
+                            && common.source_offset == entry_offset + offset as u64
+                    })
+                    .collect::<Vec<_>>();
+                let [common] = matches.as_slice() else {
+                    return None;
+                };
+                Some(common.id.clone())
+            });
+            frames.push(FeatureOperationTerminalFrame {
+                id: format!(
+                    "nx:feature-history:operation-terminal-frame#{section_key}-{operation_ordinal:010}"
+                ),
+                operation_record,
+                immediate_common_frame,
+                local_ordinal: frame.local_ordinal,
+                raw_local_ordinal: frame.raw_local_ordinal,
+                object_index: frame.object_index,
+                raw_object_index: frame.raw_object_index,
+                source_offset: entry_offset + frame.offset as u64,
+                object_index_source_offset: entry_offset + frame.object_index_offset as u64,
+            });
+        }
+    }
+    frames
+}
+
 /// Decode ordered self-framed strings from feature-operation payloads.
 pub fn feature_payload_strings(container: &Container) -> Vec<FeaturePayloadString> {
     let sections = container.om_sections();
@@ -2744,6 +3201,116 @@ pub fn feature_simple_hole_construction_groups(
         .collect()
 }
 
+/// Decode and resolve exact four-block lanes from `HOLE PACKAGE` operations.
+pub fn feature_hole_package_construction_group_lanes(
+    container: &Container,
+) -> Vec<FeatureHolePackageConstructionGroupLane> {
+    let sections = container.om_sections();
+    let indexed = container.indexed_om_sections();
+    let mut lanes = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let Some(lane) = crate::om::hole_package_construction_group_lane(record) else {
+                continue;
+            };
+            let data_blocks = lane
+                .references
+                .iter()
+                .map(|reference| unique_offset_data_block(&indexed, reference.object_index))
+                .collect::<Option<Vec<_>>>()
+                .and_then(|blocks| blocks.try_into().ok());
+            let Some(data_blocks) = data_blocks else {
+                continue;
+            };
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
+            lanes.push(FeatureHolePackageConstructionGroupLane {
+                id: format!(
+                    "nx:feature-history:hole-package-construction-group-lane#{section_key}-{operation_ordinal:010}"
+                ),
+                operation_label,
+                selector: lane.selector,
+                branch: lane.branch,
+                object_indices: lane.references.clone().map(|reference| reference.object_index),
+                raw_object_indices: lane
+                    .references
+                    .clone()
+                    .map(|reference| reference.raw_object_index),
+                data_blocks,
+                payload_offset: lane.offset as u64,
+                source_offset: entry_offset + record.payload_offset as u64 + lane.offset as u64,
+                reference_source_offsets: lane
+                    .references
+                    .map(|reference| entry_offset + reference.offset as u64),
+            });
+        }
+    }
+    lanes
+}
+
+/// Join one package lane to one simple-hole group only by exact four-block identity.
+pub fn feature_hole_package_construction_group_uses(
+    lanes: &[FeatureHolePackageConstructionGroupLane],
+    groups: &[FeatureSimpleHoleConstructionGroup],
+) -> Vec<FeatureHolePackageConstructionGroupUse> {
+    let group_key = |group: &FeatureSimpleHoleConstructionGroup| {
+        [
+            group.first_data_blocks[0].clone(),
+            group.first_data_blocks[1].clone(),
+            group.second_data_blocks[0].clone(),
+            group.second_data_blocks[1].clone(),
+        ]
+    };
+    let mut groups_by_blocks = BTreeMap::<[String; 4], Vec<_>>::new();
+    for group in groups {
+        groups_by_blocks
+            .entry(group_key(group))
+            .or_default()
+            .push(group);
+    }
+    let mut lanes_by_blocks = BTreeMap::<[String; 4], Vec<_>>::new();
+    for lane in lanes {
+        lanes_by_blocks
+            .entry(lane.data_blocks.clone())
+            .or_default()
+            .push(lane);
+    }
+    groups_by_blocks
+        .into_iter()
+        .filter_map(|(blocks, groups)| {
+            let [group] = groups.as_slice() else {
+                return None;
+            };
+            let [lane] = lanes_by_blocks.get(&blocks)?.as_slice() else {
+                return None;
+            };
+            Some(FeatureHolePackageConstructionGroupUse {
+                id: lane.id.replacen(
+                    "hole-package-construction-group-lane",
+                    "hole-package-construction-group-use",
+                    1,
+                ),
+                operation_label: lane.operation_label.clone(),
+                construction_group_lane: lane.id.clone(),
+                simple_hole_construction_group: group.id.clone(),
+                source_offset: lane.source_offset,
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn parse_simple_hole_template(
     value: &str,
 ) -> Option<(
@@ -2845,13 +3412,19 @@ pub fn feature_body_reference_occurrences(
     references
 }
 
-/// Join primary feature body fields to exactly one segment body alias pair.
+/// Join object-index primary body fields to exactly one segment body alias pair.
 pub fn feature_body_segment_uses(
     references: &[FeatureBodyReference],
+    data_block_uses: &[FeatureBodyDataBlockUse],
     bindings: &[SegmentBodyBinding],
 ) -> Vec<FeatureBodySegmentUse> {
+    let offset_store_references = data_block_uses
+        .iter()
+        .map(|use_| use_.feature_body_reference.as_str())
+        .collect::<BTreeSet<_>>();
     references
         .iter()
+        .filter(|reference| !offset_store_references.contains(reference.id.as_str()))
         .filter_map(|reference| {
             let matches = bindings
                 .iter()
@@ -2869,6 +3442,50 @@ pub fn feature_body_segment_uses(
                     .replacen("body-reference", "body-segment-use", 1),
                 feature_body_reference: reference.id.clone(),
                 segment_body_binding: binding.id.clone(),
+            })
+        })
+        .collect()
+}
+
+/// Resolve primary feature body fields in an unambiguous operation input store.
+pub fn feature_body_data_block_uses(
+    references: &[FeatureBodyReference],
+    inputs: &[FeatureInputBlock],
+    blocks: &[crate::native::om::DataBlock],
+) -> Vec<FeatureBodyDataBlockUse> {
+    let blocks_by_id = blocks
+        .iter()
+        .map(|block| (block.id.as_str(), block))
+        .collect::<BTreeMap<_, _>>();
+    references
+        .iter()
+        .filter_map(|reference| {
+            let section_ordinals = inputs
+                .iter()
+                .filter(|input| input.operation_label == reference.operation_label)
+                .filter_map(|input| blocks_by_id.get(input.data_block.as_str()))
+                .map(|block| block.section_ordinal)
+                .collect::<BTreeSet<_>>();
+            let section_ordinals = section_ordinals.into_iter().collect::<Vec<_>>();
+            let [section_ordinal] = section_ordinals.as_slice() else {
+                return None;
+            };
+            let matches = blocks
+                .iter()
+                .filter(|block| {
+                    block.section_ordinal == *section_ordinal
+                        && block.block_ordinal == reference.body_object_index
+                })
+                .collect::<Vec<_>>();
+            let [block] = matches.as_slice() else {
+                return None;
+            };
+            Some(FeatureBodyDataBlockUse {
+                id: reference
+                    .id
+                    .replacen("body-reference", "body-data-block-use", 1),
+                feature_body_reference: reference.id.clone(),
+                data_block: block.id.clone(),
             })
         })
         .collect()
@@ -3483,12 +4100,12 @@ pub fn feature_datum_csys_payloads(
         .collect()
 }
 
-/// Shared body for the datum payload-frame extractors. Reconstruct each
+/// Shared body for construction-payload frame extractors. Reconstruct each
 /// payload's concatenated bytes, build the payload-relative-to-source-offset
 /// mapper once, scan the bytes, and let each family build its record, dropping
-/// frames whose offsets fall outside a source block. The four extractors below
-/// differ only in their payload block lane, their scanner, and their record.
-fn datum_payload_frames<P, S, R>(
+/// frames whose offsets fall outside a source block. Extractors differ only in
+/// their payload block lane, scanner, and output record.
+fn construction_payload_frames<P, S, R>(
     container: &Container,
     payloads: &[P],
     data_blocks: impl Fn(&P) -> &[String],
@@ -3504,16 +4121,9 @@ fn datum_payload_frames<P, S, R>(
             else {
                 return Vec::new();
             };
-            let source_offset =
-                |relative: usize| {
-                    let relative = relative as u64;
-                    starts.iter().zip(&lengths).zip(&sources).find_map(
-                        |((start, length), source)| {
-                            (relative >= *start && relative < start.saturating_add(*length))
-                                .then_some(source + relative - start)
-                        },
-                    )
-                };
+            let source_offset = |relative: usize| {
+                joined_payload_source_offset(relative as u64, &starts, &lengths, &sources)
+            };
             scan(&bytes)
                 .into_iter()
                 .enumerate()
@@ -3528,7 +4138,7 @@ pub fn feature_datum_csys_payload_scalar_pairs(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Vec<FeatureDatumCsysPayloadScalarPair> {
-    datum_payload_frames(
+    construction_payload_frames(
         container,
         payloads,
         |payload| &payload.data_blocks[..],
@@ -3559,7 +4169,7 @@ pub fn feature_datum_csys_payload_fixed_pairs(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Vec<FeatureDatumCsysPayloadFixedPair> {
-    datum_payload_frames(
+    construction_payload_frames(
         container,
         payloads,
         |payload| &payload.data_blocks[..],
@@ -3590,7 +4200,7 @@ pub fn feature_datum_csys_payload_scalars(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Vec<FeatureDatumCsysPayloadScalar> {
-    datum_payload_frames(
+    construction_payload_frames(
         container,
         payloads,
         |payload| &payload.data_blocks[..],
@@ -3679,7 +4289,7 @@ pub fn feature_datum_plane_payload_scalar_pairs(
     container: &Container,
     payloads: &[FeatureDatumPlanePayload],
 ) -> Vec<FeatureDatumPlanePayloadScalarPair> {
-    datum_payload_frames(
+    construction_payload_frames(
         container,
         payloads,
         |payload| payload.data_blocks.as_slice(),
@@ -3971,49 +4581,30 @@ pub fn feature_sketch_payload_coordinate_pairs(
     container: &Container,
     payloads: &[FeatureSketchConstructionPayload],
 ) -> Vec<FeatureSketchPayloadCoordinatePair> {
-    let blocks = offset_data_block_bytes(container);
-    payloads
-        .iter()
-        .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
-            else {
-                return Vec::new();
-            };
-            let source_offset =
-                |relative: usize| {
-                    let relative = relative as u64;
-                    starts.iter().zip(&lengths).zip(&sources).find_map(
-                        |((start, length), source)| {
-                            (relative >= *start && relative < start.saturating_add(*length))
-                                .then_some(source + relative - start)
-                        },
-                    )
-                };
-            crate::om::object_payload_scalar_pairs(&bytes)
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, pair)| {
-                    Some(FeatureSketchPayloadCoordinatePair {
-                        id: format!("{}-coordinate-pair-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        construction_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        values: pair.values,
-                        raw_values: pair.raw_values,
-                        payload_offset: pair.offset as u64,
-                        value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
-                        source_offset: source_offset(pair.offset)?,
-                        value_source_offsets: [
-                            source_offset(pair.value_offsets[0])?,
-                            source_offset(pair.value_offsets[1])?,
-                        ],
-                        discriminator: pair.discriminator,
-                    })
-                })
-                .collect()
-        })
-        .collect()
+    construction_payload_frames(
+        container,
+        payloads,
+        |payload| &payload.data_blocks,
+        crate::om::object_payload_scalar_pairs,
+        |payload, ordinal, pair, source_offset| {
+            Some(FeatureSketchPayloadCoordinatePair {
+                id: format!("{}-coordinate-pair-{ordinal:010}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                construction_payload: payload.id.clone(),
+                ordinal: ordinal as u32,
+                values: pair.values,
+                raw_values: pair.raw_values,
+                payload_offset: pair.offset as u64,
+                value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
+                source_offset: source_offset(pair.offset)?,
+                value_source_offsets: [
+                    source_offset(pair.value_offsets[0])?,
+                    source_offset(pair.value_offsets[1])?,
+                ],
+                discriminator: pair.discriminator,
+            })
+        },
+    )
 }
 
 /// Decode exact signed fixed-point pair frames from reconstructed sketch payloads.
@@ -4021,48 +4612,63 @@ pub fn feature_sketch_payload_fixed_pairs(
     container: &Container,
     payloads: &[FeatureSketchConstructionPayload],
 ) -> Vec<FeatureSketchPayloadFixedPair> {
-    let blocks = offset_data_block_bytes(container);
-    payloads
-        .iter()
-        .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
-            else {
-                return Vec::new();
-            };
-            let source_offset =
-                |relative: usize| {
-                    let relative = relative as u64;
-                    starts.iter().zip(&lengths).zip(&sources).find_map(
-                        |((start, length), source)| {
-                            (relative >= *start && relative < start.saturating_add(*length))
-                                .then_some(source + relative - start)
-                        },
-                    )
-                };
-            crate::om::sketch_payload_fixed_pairs(&bytes)
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, pair)| {
-                    Some(FeatureSketchPayloadFixedPair {
-                        id: format!("{}-fixed-pair-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        construction_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        values: pair.values,
-                        raw_values: pair.raw_values,
-                        payload_offset: pair.offset as u64,
-                        value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
-                        source_offset: source_offset(pair.offset)?,
-                        value_source_offsets: [
-                            source_offset(pair.value_offsets[0])?,
-                            source_offset(pair.value_offsets[1])?,
-                        ],
-                    })
-                })
-                .collect()
-        })
-        .collect()
+    construction_payload_frames(
+        container,
+        payloads,
+        |payload| &payload.data_blocks,
+        crate::om::sketch_payload_fixed_pairs,
+        |payload, ordinal, pair, source_offset| {
+            Some(FeatureSketchPayloadFixedPair {
+                id: format!("{}-fixed-pair-{ordinal:010}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                construction_payload: payload.id.clone(),
+                ordinal: ordinal as u32,
+                values: pair.values,
+                raw_values: pair.raw_values,
+                discriminator: pair.discriminator,
+                payload_offset: pair.offset as u64,
+                value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
+                source_offset: source_offset(pair.offset)?,
+                value_source_offsets: [
+                    source_offset(pair.value_offsets[0])?,
+                    source_offset(pair.value_offsets[1])?,
+                ],
+            })
+        },
+    )
+}
+
+/// Decode exact mixed Q1.55/binary32 pair frames from reconstructed sketch payloads.
+pub fn feature_sketch_payload_mixed_pairs(
+    container: &Container,
+    payloads: &[FeatureSketchConstructionPayload],
+) -> Vec<FeatureSketchPayloadMixedPair> {
+    construction_payload_frames(
+        container,
+        payloads,
+        |payload| &payload.data_blocks,
+        crate::om::sketch_payload_mixed_pairs,
+        |payload, ordinal, pair, source_offset| {
+            Some(FeatureSketchPayloadMixedPair {
+                id: format!("{}-mixed-pair-{ordinal:010}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                construction_payload: payload.id.clone(),
+                ordinal: ordinal as u32,
+                fixed_value: pair.fixed_value,
+                binary32_value: pair.binary32_value,
+                fixed_raw_value: pair.fixed_raw_value,
+                binary32_raw_value: pair.binary32_raw_value,
+                discriminator: pair.discriminator,
+                payload_offset: pair.offset as u64,
+                value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
+                source_offset: source_offset(pair.offset)?,
+                value_source_offsets: [
+                    source_offset(pair.value_offsets[0])?,
+                    source_offset(pair.value_offsets[1])?,
+                ],
+            })
+        },
+    )
 }
 
 pub(crate) fn offset_data_block_bytes_for_section<'a>(
@@ -4091,7 +4697,7 @@ pub(crate) fn offset_data_block_bytes_for_section<'a>(
     blocks
 }
 
-fn offset_data_block_bytes(container: &Container) -> BTreeMap<String, (&[u8], u64)> {
+fn offset_data_block_bytes<'a>(container: &'a Container<'_>) -> BTreeMap<String, (&'a [u8], u64)> {
     let mut blocks = BTreeMap::new();
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections().into_iter().enumerate()
@@ -4248,6 +4854,7 @@ pub fn feature_sketch_payload_named_records(
     names: &[FeatureSketchPayloadName],
     scalars: &[FeatureSketchPayloadScalar],
     fixed_pairs: &[FeatureSketchPayloadFixedPair],
+    mixed_pairs: &[FeatureSketchPayloadMixedPair],
 ) -> Vec<FeatureSketchPayloadNamedRecord> {
     let mut records = Vec::new();
     for payload in payloads {
@@ -4278,6 +4885,15 @@ pub fn feature_sketch_payload_named_records(
                 })
                 .collect::<Vec<_>>();
             record_fixed_pairs.sort_by_key(|pair| pair.payload_offset);
+            let mut record_mixed_pairs = mixed_pairs
+                .iter()
+                .filter(|pair| {
+                    pair.construction_payload == payload.id
+                        && pair.payload_offset > name.payload_offset
+                        && pair.payload_offset < end
+                })
+                .collect::<Vec<_>>();
+            record_mixed_pairs.sort_by_key(|pair| pair.payload_offset);
             records.push(FeatureSketchPayloadNamedRecord {
                 id: format!(
                     "nx:feature-history:sketch-payload-record#{}-{ordinal:010}",
@@ -4294,6 +4910,10 @@ pub fn feature_sketch_payload_named_records(
                     .map(|scalar| scalar.id.clone())
                     .collect(),
                 fixed_pairs: record_fixed_pairs
+                    .into_iter()
+                    .map(|pair| pair.id.clone())
+                    .collect(),
+                mixed_pairs: record_mixed_pairs
                     .into_iter()
                     .map(|pair| pair.id.clone())
                     .collect(),
@@ -4361,7 +4981,7 @@ pub fn feature_sketch_fixed_points(
     records
         .iter()
         .filter_map(|record| {
-            if !record.scalar_fields.is_empty() {
+            if !record.scalar_fields.is_empty() || !record.mixed_pairs.is_empty() {
                 return None;
             }
             let [fixed_pair_id] = record.fixed_pairs.as_slice() else {
@@ -4691,6 +5311,7 @@ pub fn feature_sketch_datum_csys_dependencies(
     named_points: &[OffsetStoreNamedPoint],
     point_uses: &[FeatureSketchPointUse],
     constructions: &[FeatureDatumCsysConstruction],
+    scalars: &[FeatureDatumCsysPayloadScalar],
 ) -> Vec<FeatureSketchDatumCsysDependency> {
     fn block_key(block: &str) -> Option<(&str, u32)> {
         let (store, ordinal) = block.rsplit_once(":block#")?;
@@ -4769,6 +5390,25 @@ pub fn feature_sketch_datum_csys_dependencies(
         let [(point_use, block_relation)] = candidates.as_slice() else {
             continue;
         };
+        let point = points[point_use.named_point.as_str()];
+        let scalar_aliases = point
+            .value_source_offsets
+            .iter()
+            .enumerate()
+            .flat_map(|(coordinate_ordinal, value_source_offset)| {
+                scalars
+                    .iter()
+                    .filter(move |scalar| {
+                        scalar.operation_label == construction.operation_label
+                            && scalar.source_offset == *value_source_offset
+                    })
+                    .map(move |scalar| FeatureSketchDatumCsysScalarAlias {
+                        sketch_coordinate_ordinal: coordinate_ordinal as u8,
+                        datum_csys_scalar: scalar.id.clone(),
+                        value_source_offset: *value_source_offset,
+                    })
+            })
+            .collect();
         dependencies.push(FeatureSketchDatumCsysDependency {
             id: construction.id.replacen(
                 "datum-csys-construction",
@@ -4780,6 +5420,7 @@ pub fn feature_sketch_datum_csys_dependencies(
             sketch_point_use: point_use.id.clone(),
             datum_csys_construction: construction.id.clone(),
             block_relation: block_relation.clone(),
+            scalar_aliases,
             source_offset: point_use.source_offsets[0],
         });
     }
@@ -4953,6 +5594,233 @@ pub fn feature_projected_curve_references(
         }
     })
     .collect()
+}
+
+/// Decode and resolve exact `FSET` reference graphs without assigning semantic
+/// roles to either reference group.
+pub fn feature_fset_reference_graphs(container: &Container) -> Vec<FeatureFsetReferenceGraph> {
+    let indexed = container.indexed_om_sections();
+    let sections = container.om_sections();
+    let mut graphs = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let Some(graph) = crate::om::fset_payload_reference_graph(record) else {
+                continue;
+            };
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
+            graphs.push(FeatureFsetReferenceGraph {
+                id: format!(
+                    "nx:feature-history:fset-reference-graph#{section_key}-{operation_ordinal:010}"
+                ),
+                operation_label,
+                selector: graph.selector,
+                first_object_indices: graph
+                    .first
+                    .each_ref()
+                    .map(|reference| reference.object_index),
+                raw_first_object_indices: graph
+                    .first
+                    .each_ref()
+                    .map(|reference| reference.raw_object_index.clone()),
+                first_data_blocks: graph
+                    .first
+                    .each_ref()
+                    .map(|reference| unique_offset_data_block(&indexed, reference.object_index)),
+                second_object_indices: graph
+                    .second
+                    .each_ref()
+                    .map(|reference| reference.object_index),
+                raw_second_object_indices: graph
+                    .second
+                    .each_ref()
+                    .map(|reference| reference.raw_object_index.clone()),
+                second_data_blocks: graph
+                    .second
+                    .each_ref()
+                    .map(|reference| unique_offset_data_block(&indexed, reference.object_index)),
+                source_offset: entry_offset + graph.offset as u64,
+                first_source_offsets: graph
+                    .first
+                    .each_ref()
+                    .map(|reference| entry_offset + reference.offset as u64),
+                second_source_offsets: graph
+                    .second
+                    .each_ref()
+                    .map(|reference| entry_offset + reference.offset as u64),
+            });
+        }
+    }
+    graphs
+}
+
+/// Reconstruct the two ordered logical payloads selected by each complete
+/// same-store `FSET` reference graph.
+pub fn feature_fset_construction_payloads(
+    container: &Container,
+    graphs: &[FeatureFsetReferenceGraph],
+) -> Vec<FeatureFsetConstructionPayload> {
+    let blocks = offset_data_block_bytes(container);
+    graphs
+        .iter()
+        .flat_map(|graph| {
+            let blocks = &blocks;
+            [
+                (
+                    FeatureFsetReferenceGroup::First,
+                    graph.first_data_blocks.iter(),
+                ),
+                (
+                    FeatureFsetReferenceGroup::Second,
+                    graph.second_data_blocks.iter(),
+                ),
+            ]
+            .into_iter()
+            .filter_map(move |(group, source_blocks)| {
+                let data_blocks = source_blocks.cloned().collect::<Option<Vec<_>>>()?;
+                let store = data_blocks.first()?.rsplit_once(":block#")?.0;
+                if data_blocks.iter().any(|block| {
+                    block
+                        .rsplit_once(":block#")
+                        .is_none_or(|(prefix, _)| prefix != store)
+                }) {
+                    return None;
+                }
+                let (bytes, starts, lengths, sources) =
+                    join_data_block_bytes(&data_blocks, blocks)?;
+                let group_name = match group {
+                    FeatureFsetReferenceGroup::First => "first",
+                    FeatureFsetReferenceGroup::Second => "second",
+                };
+                let operation_key = graph
+                    .operation_label
+                    .strip_prefix("nx:feature-history:operation-label#")?;
+                Some(FeatureFsetConstructionPayload {
+                    id: format!(
+                        "nx:feature-history:fset-construction-payload#{operation_key}-{group_name}"
+                    ),
+                    operation_label: graph.operation_label.clone(),
+                    reference_graph: graph.id.clone(),
+                    group,
+                    data_blocks,
+                    byte_len: bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
+                    block_payload_offsets: starts,
+                    block_byte_lengths: lengths,
+                    block_source_offsets: sources,
+                })
+            })
+        })
+        .collect()
+}
+
+/// Decode exact `DELETE` payload reference fields and independently resolve
+/// their non-null slots without assigning a target object family.
+pub fn feature_delete_reference_fields(container: &Container) -> Vec<FeatureDeleteReferenceField> {
+    let indexed = container.indexed_om_sections();
+    let sections = container.om_sections();
+    let mut fields = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let Some(field) = crate::om::delete_payload_references(record) else {
+                continue;
+            };
+            fields.push(FeatureDeleteReferenceField {
+                id: format!(
+                    "nx:feature-history:delete-reference-field#{section_key}-{operation_ordinal:010}"
+                ),
+                operation_label: format!(
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
+                ),
+                control: field.control,
+                object_indices: field
+                    .references
+                    .each_ref()
+                    .map(|reference| reference.object_index),
+                raw_object_indices: field
+                    .references
+                    .each_ref()
+                    .map(|reference| reference.raw_object_index.clone()),
+                data_blocks: field.references.each_ref().map(|reference| {
+                    reference
+                        .object_index
+                        .and_then(|object_index| unique_offset_data_block(&indexed, object_index))
+                }),
+                source_offset: entry_offset + field.offset as u64,
+                object_index_source_offsets: field
+                    .references
+                    .each_ref()
+                    .map(|reference| entry_offset + reference.offset as u64),
+            });
+        }
+    }
+    fields
+}
+
+/// Reconstruct one ordered logical payload from each complete same-store
+/// non-null `DELETE` reference field.
+pub fn feature_delete_construction_payloads(
+    container: &Container,
+    fields: &[FeatureDeleteReferenceField],
+) -> Vec<FeatureDeleteConstructionPayload> {
+    let blocks = offset_data_block_bytes(container);
+    fields
+        .iter()
+        .filter_map(|field| {
+            let data_blocks = field
+                .data_blocks
+                .clone()
+                .into_iter()
+                .collect::<Option<Vec<_>>>()?;
+            let store = data_blocks.first()?.rsplit_once(":block#")?.0;
+            if data_blocks.iter().any(|block| {
+                block
+                    .rsplit_once(":block#")
+                    .is_none_or(|(prefix, _)| prefix != store)
+            }) {
+                return None;
+            }
+            let (bytes, starts, lengths, sources) = join_data_block_bytes(&data_blocks, &blocks)?;
+            let operation_key = field
+                .operation_label
+                .strip_prefix("nx:feature-history:operation-label#")?;
+            Some(FeatureDeleteConstructionPayload {
+                id: format!("nx:feature-history:delete-construction-payload#{operation_key}"),
+                operation_label: field.operation_label.clone(),
+                reference_field: field.id.clone(),
+                data_blocks: data_blocks.try_into().ok()?,
+                byte_len: bytes.len() as u64,
+                sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
+                block_payload_offsets: starts.try_into().ok()?,
+                block_byte_lengths: lengths.try_into().ok()?,
+                block_source_offsets: sources.try_into().ok()?,
+            })
+        })
+        .collect()
 }
 
 /// Reconstruct ordered logical payloads from projected-curve reference fields.
@@ -5281,15 +6149,31 @@ pub fn feature_pattern_transform_lanes(container: &Container) -> Vec<FeaturePatt
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                declared_count: lane.declared_count,
-                encoding: match lane.encoding {
-                    crate::om::PatternTransformEncoding::Binary32 => {
-                        FeaturePatternTransformEncoding::Binary32
+                row_schema_index: lane.row_schema_index,
+                layout: match lane.layout {
+                    crate::om::PatternTransformLayout::ScalarRows => {
+                        FeaturePatternTransformLayout::ScalarRows
                     }
-                    crate::om::PatternTransformEncoding::Binary64 => {
-                        FeaturePatternTransformEncoding::Binary64
+                    crate::om::PatternTransformLayout::WideRows => {
+                        FeaturePatternTransformLayout::WideRows
                     }
                 },
+                declared_count: lane.declared_count,
+                encodings: lane
+                    .encodings
+                    .into_iter()
+                    .map(|encoding| match encoding {
+                        crate::om::PatternTransformEncoding::ExactOne => {
+                            FeaturePatternTransformEncoding::ExactOne
+                        }
+                        crate::om::PatternTransformEncoding::Binary32 => {
+                            FeaturePatternTransformEncoding::Binary32
+                        }
+                        crate::om::PatternTransformEncoding::Binary64 => {
+                            FeaturePatternTransformEncoding::Binary64
+                        }
+                    })
+                    .collect(),
                 values: lane.values,
                 raw_values: lane.raw_values,
                 selectors: lane.selectors,
@@ -5300,6 +6184,118 @@ pub fn feature_pattern_transform_lanes(container: &Container) -> Vec<FeaturePatt
                     .into_iter()
                     .map(|offset| entry_offset + offset as u64)
                     .collect(),
+                selector_source_offsets: lane
+                    .selector_offsets
+                    .into_iter()
+                    .map(|offset| entry_offset + offset as u64)
+                    .collect(),
+            });
+        }
+    }
+    lanes
+}
+
+/// Decode exact counted output lanes from bounded multi-instance payloads.
+pub fn feature_multi_instance_output_lanes(
+    container: &Container,
+) -> Vec<FeatureMultiInstanceOutputLane> {
+    let sections = container.om_sections();
+    let mut lanes = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let Some(lane) = crate::om::multi_instance_output_payload_lane(record) else {
+                continue;
+            };
+            lanes.push(FeatureMultiInstanceOutputLane {
+                id: format!(
+                    "nx:feature-history:multi-instance-output-lane#{section_key}-{operation_ordinal:010}"
+                ),
+                operation_label: format!(
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
+                ),
+                declared_count: lane.declared_count,
+                selectors: lane.selectors,
+                raw_selectors: lane.raw_selectors,
+                ordinals: lane.ordinals,
+                row_indices: lane.row_indices,
+                instance_count: lane.instance_count,
+                trailing_object_indices: lane
+                    .trailing_references
+                    .iter()
+                    .map(|reference| reference.object_index)
+                    .collect(),
+                raw_trailing_object_indices: lane
+                    .trailing_references
+                    .iter()
+                    .map(|reference| reference.raw_object_index.clone())
+                    .collect(),
+                source_offset: entry_offset + lane.offset as u64,
+                selector_source_offsets: lane
+                    .selector_offsets
+                    .into_iter()
+                    .map(|offset| entry_offset + offset as u64)
+                    .collect(),
+                trailing_object_index_source_offsets: lane
+                    .trailing_references
+                    .into_iter()
+                    .map(|reference| entry_offset + reference.offset as u64)
+                    .collect(),
+            });
+        }
+    }
+    lanes
+}
+
+/// Decode exact counted selector lanes from bounded identical-instance output
+/// payloads.
+pub fn feature_identical_instance_output_lanes(
+    container: &Container,
+) -> Vec<FeatureIdenticalInstanceOutputLane> {
+    let sections = container.om_sections();
+    let mut lanes = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let Some(lane) = crate::om::identical_instance_output_payload_lane(record) else {
+                continue;
+            };
+            lanes.push(FeatureIdenticalInstanceOutputLane {
+                id: format!(
+                    "nx:feature-history:identical-instance-output-lane#{section_key}-{operation_ordinal:010}"
+                ),
+                operation_label: format!(
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
+                ),
+                leading_schema_index: lane.leading_schema_index,
+                count_schema_index: lane.count_schema_index,
+                row_schema_indices: lane.row_schema_indices,
+                declared_count: lane.declared_count,
+                selectors: lane.selectors,
+                raw_selectors: lane.raw_selectors,
+                source_offset: entry_offset + lane.offset as u64,
                 selector_source_offsets: lane
                     .selector_offsets
                     .into_iter()
@@ -6163,10 +7159,12 @@ pub fn feature_extrude_payload_headers(container: &Container) -> Vec<FeatureExtr
     headers
 }
 
-/// Decode exact terminal discriminator lanes from bounded extrusion payloads.
-pub fn feature_extrude_payload_footers(container: &Container) -> Vec<FeatureExtrudePayloadFooter> {
+/// Decode exact terminal discriminator lanes from bounded operation payloads.
+pub fn feature_operation_terminal_discriminators(
+    container: &Container,
+) -> Vec<FeatureOperationTerminalDiscriminator> {
     let sections = container.om_sections();
-    let mut footers = Vec::new();
+    let mut lanes = Vec::new();
     for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
@@ -6181,35 +7179,34 @@ pub fn feature_extrude_payload_footers(container: &Container) -> Vec<FeatureExtr
         let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
-            let Some(footer) = crate::om::extrude_payload_footer(record) else {
+            let Some(lane) = crate::om::operation_terminal_discriminator(record) else {
                 continue;
             };
-            footers.push(FeatureExtrudePayloadFooter {
+            lanes.push(FeatureOperationTerminalDiscriminator {
                 id: format!(
-                    "nx:feature-history:extrude-payload-footer#{section_key}-{operation_ordinal:010}"
+                    "nx:feature-history:operation-terminal-discriminator#{section_key}-{operation_ordinal:010}"
                 ),
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                type_indices: footer.type_indices,
-                raw_type_indices: footer.raw_type_indices,
-                type_index_source_offsets: footer
+                type_indices: lane.type_indices,
+                raw_type_indices: lane.raw_type_indices,
+                type_index_source_offsets: lane
                     .type_index_offsets
                     .map(|offset| entry_offset + offset as u64),
-                mode_indices: footer.mode_indices,
-                flags: footer.flags,
-                trailing_indices: footer.trailing_indices,
-                raw_trailing_indices: footer.raw_trailing_indices,
-                trailing_index_source_offsets: footer
+                flags: lane.flags,
+                trailing_indices: lane.trailing_indices,
+                raw_trailing_indices: lane.raw_trailing_indices,
+                trailing_index_source_offsets: lane
                     .trailing_index_offsets
                     .into_iter()
                     .map(|offset| entry_offset + offset as u64)
                     .collect(),
-                source_offset: entry_offset + footer.offset as u64,
+                source_offset: entry_offset + lane.offset as u64,
             });
         }
     }
-    footers
+    lanes
 }
 
 /// Decode typed scalar clauses anchored to operation body-reference fields.
@@ -6319,41 +7316,100 @@ pub fn feature_operation_body_members(container: &Container) -> Vec<FeatureOpera
 pub fn feature_operation_body_operands(
     members: &[FeatureOperationBodyMember],
     references: &[FeatureBodyReferenceOccurrence],
+    inputs: &[FeatureInputBlock],
+    blocks: &[crate::native::om::DataBlock],
     bindings: &[SegmentBodyBinding],
 ) -> Vec<FeatureOperationBodyOperand> {
-    let known = references
+    let input_operations = inputs
         .iter()
-        .map(|reference| reference.body_object_index)
-        .chain(
-            bindings
-                .iter()
-                .flat_map(|binding| [binding.body_object_index, binding.body_alias_object_index]),
-        )
+        .map(|input| input.operation_label.as_str())
         .collect::<BTreeSet<_>>();
+    let mut stores_by_operation = BTreeMap::<&str, BTreeSet<&str>>::new();
+    for input in inputs {
+        let Some((store, _)) = input.data_block.rsplit_once(":block#") else {
+            continue;
+        };
+        stores_by_operation
+            .entry(input.operation_label.as_str())
+            .or_default()
+            .insert(store);
+    }
+    let unique_stores = stores_by_operation
+        .into_iter()
+        .filter_map(|(operation, stores)| {
+            let stores = stores.into_iter().collect::<Vec<_>>();
+            let [store] = stores.as_slice() else {
+                return None;
+            };
+            Some((operation, *store))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let block_ids = blocks
+        .iter()
+        .map(|block| block.id.as_str())
+        .collect::<BTreeSet<_>>();
+
     members
         .iter()
-        .filter(|member| {
-            member.member_index != member.body_object_index && known.contains(&member.member_index)
-        })
-        .map(|member| FeatureOperationBodyOperand {
-            id: member
-                .id
-                .replacen("operation-body-member", "operation-body-operand", 1),
-            operation_label: member.operation_label.clone(),
-            body_object_index: member.body_object_index,
-            body_reference_ordinal: member.body_reference_ordinal,
-            ordinal: member.ordinal,
-            operand_object_index: member.member_index,
-            raw_operand_object_index: member.raw_member_index.clone(),
-            segment_body_bindings: bindings
-                .iter()
-                .filter(|binding| {
-                    binding.body_object_index == member.member_index
-                        || binding.body_alias_object_index == member.member_index
-                })
-                .map(|binding| binding.id.clone())
-                .collect(),
-            source_offset: member.source_offset,
+        .filter_map(|member| {
+            if member.member_index == member.body_object_index {
+                return None;
+            }
+            let member_store = unique_stores.get(member.operation_label.as_str()).copied();
+            if member_store.is_none() && input_operations.contains(member.operation_label.as_str())
+            {
+                return None;
+            }
+            let operand_data_block = member_store.and_then(|store| {
+                let id = format!("{store}:block#{}", member.member_index);
+                block_ids.contains(id.as_str()).then_some(id)
+            });
+            let same_namespace_reference = references.iter().any(|reference| {
+                if reference.body_object_index != member.member_index {
+                    return false;
+                }
+                match member_store {
+                    Some(store) => {
+                        unique_stores
+                            .get(reference.operation_label.as_str())
+                            .copied()
+                            == Some(store)
+                    }
+                    None => !input_operations.contains(reference.operation_label.as_str()),
+                }
+            });
+            let segment_body_bindings = if member_store.is_none() {
+                bindings
+                    .iter()
+                    .filter(|binding| {
+                        binding.body_object_index == member.member_index
+                            || binding.body_alias_object_index == member.member_index
+                    })
+                    .map(|binding| binding.id.clone())
+                    .collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            };
+            if member_store.is_some() && operand_data_block.is_none() {
+                return None;
+            }
+            if !same_namespace_reference && segment_body_bindings.is_empty() {
+                return None;
+            }
+            Some(FeatureOperationBodyOperand {
+                id: member
+                    .id
+                    .replacen("operation-body-member", "operation-body-operand", 1),
+                operation_label: member.operation_label.clone(),
+                body_object_index: member.body_object_index,
+                body_reference_ordinal: member.body_reference_ordinal,
+                ordinal: member.ordinal,
+                operand_object_index: member.member_index,
+                raw_operand_object_index: member.raw_member_index.clone(),
+                operand_data_block,
+                segment_body_bindings,
+                source_offset: member.source_offset,
+            })
         })
         .collect()
 }
@@ -7305,6 +8361,7 @@ mod tests {
     use flate2::Compression;
 
     use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+
     use cadmpeg_ir::geometry::{
         BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
         ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -7321,7 +8378,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn nx_feature_source_content_orders_parameter_occurrences_with_text() {
+    fn nx_feature_source_content_orders_payload_text() {
         let text = super::FeaturePayloadString {
             id: "text".into(),
             operation_record: "record".into(),
@@ -7329,28 +8386,21 @@ mod tests {
             value: "Through".into(),
             source_offset: 30,
         };
-        let parameter_use = super::FeatureParameterUse {
-            id: "use".into(),
-            operation_label: "operation".into(),
-            expression: "nx:test:expression#20".into(),
-            bindings: vec!["first".into(), "second".into()],
-            source_offsets: vec![20, 40],
+        let later = super::FeaturePayloadString {
+            id: "later".into(),
+            operation_record: "record".into(),
+            ordinal: 1,
+            value: "Later".into(),
+            source_offset: 40,
         };
-        let content = crate::native::attach::feature_source_content(&[&text], &[&parameter_use]);
-        assert_eq!(content.len(), 3);
+        let content = crate::native::attach::feature_source_content(&[&later, &text]);
         assert!(matches!(
             &content[0],
-            cadmpeg_ir::features::FeatureSourceContent::Parameter(id)
-                if id.0 == "nx:test:parameter#20"
-        ));
-        assert!(matches!(
-            &content[1],
             cadmpeg_ir::features::FeatureSourceContent::Text(value) if value == "Through"
         ));
         assert!(matches!(
-            &content[2],
-            cadmpeg_ir::features::FeatureSourceContent::Parameter(id)
-                if id.0 == "nx:test:parameter#20"
+            &content[1],
+            cadmpeg_ir::features::FeatureSourceContent::Text(value) if value == "Later"
         ));
     }
 
@@ -7452,7 +8502,6 @@ mod tests {
     #[test]
     fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
         use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
-        use cadmpeg_ir::ids::BodyId;
         use std::collections::BTreeMap;
 
         let operation = super::FeatureBooleanOperation {
@@ -7467,21 +8516,25 @@ mod tests {
             tool_source_offsets: vec![1],
             source_offset: 0,
         };
-        let body = BodyId("body#10".to_string());
-        let bodies = BTreeMap::from([(10, vec![body.clone()]), (20, vec![body])]);
+        let roots = BTreeMap::from([(10, 10), (20, 10)]);
 
         assert_eq!(
-            crate::native::attach::boolean_feature_definition(&operation, &bodies),
+            crate::native::attach::boolean_feature_definition(&operation, &roots, &BTreeMap::new(),),
             FeatureDefinition::Combine {
                 target: BodySelection::Native("nx:om-object-index#10".to_string()),
                 tools: BodySelection::Native("nx:om-object-indices#20".to_string()),
                 op: BooleanOp::Cut,
+                keep_tools: false,
             }
         );
 
-        let missing_tool = BTreeMap::from([(10, vec![BodyId("body#10".to_string())])]);
+        let missing_tool = BTreeMap::from([(10, 10)]);
         assert!(matches!(
-            crate::native::attach::boolean_feature_definition(&operation, &missing_tool),
+            crate::native::attach::boolean_feature_definition(
+                &operation,
+                &missing_tool,
+                &BTreeMap::new(),
+            ),
             FeatureDefinition::Combine {
                 target: BodySelection::Native(target),
                 tools: BodySelection::Native(tools),
@@ -7961,6 +9014,7 @@ mod tests {
                 target: cadmpeg_ir::features::BodySelection::Native(target),
                 tools: cadmpeg_ir::features::BodySelection::Native(tools),
                 op: cadmpeg_ir::features::BooleanOp::Join,
+                keep_tools: false,
             } if target == "nx:om-object-index#6466" && tools == "nx:om-object-indices#6476,127"
         ));
         assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
@@ -8007,7 +9061,7 @@ mod tests {
     #[test]
     fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
         use super::{
-            FeatureDatumCsysConstruction, FeatureOperationLabel,
+            FeatureDatumCsysConstruction, FeatureDatumCsysPayloadScalar, FeatureOperationLabel,
             FeatureSketchDatumCsysBlockRelation, FeatureSketchPointUse, OffsetStoreNamedPoint,
         };
 
@@ -8050,12 +9104,24 @@ mod tests {
             data_blocks: blocks,
             source_offsets: [400; 8],
         };
+        let scalar = FeatureDatumCsysPayloadScalar {
+            id: "csys-scalar".to_string(),
+            operation_label: "csys".to_string(),
+            datum_csys_payload: "payload".to_string(),
+            ordinal: 0,
+            field_code: 0x64,
+            value: 2.0,
+            raw_value: shifted_f64_bytes(2.0),
+            payload_offset: 8,
+            source_offset: 220,
+        };
 
         let dependencies = super::feature_sketch_datum_csys_dependencies(
             &labels,
             std::slice::from_ref(&point),
             std::slice::from_ref(&point_use),
             std::slice::from_ref(&construction),
+            std::slice::from_ref(&scalar),
         );
         assert_eq!(dependencies[0].datum_csys_operation_label, "csys");
         assert_eq!(dependencies[0].sketch_operation_label, "sketch");
@@ -8066,6 +9132,27 @@ mod tests {
                 data_block: "shared".to_string()
             }
         );
+        assert_eq!(dependencies[0].scalar_aliases.len(), 1);
+        assert_eq!(
+            dependencies[0].scalar_aliases[0].sketch_coordinate_ordinal,
+            1
+        );
+        assert_eq!(
+            dependencies[0].scalar_aliases[0].datum_csys_scalar,
+            "csys-scalar"
+        );
+        assert_eq!(dependencies[0].scalar_aliases[0].value_source_offset, 220);
+
+        let mut equal_at_another_offset = scalar.clone();
+        equal_at_another_offset.source_offset = 219;
+        let unaliased = super::feature_sketch_datum_csys_dependencies(
+            &labels,
+            std::slice::from_ref(&point),
+            std::slice::from_ref(&point_use),
+            std::slice::from_ref(&construction),
+            std::slice::from_ref(&equal_at_another_offset),
+        );
+        assert!(unaliased[0].scalar_aliases.is_empty());
 
         let consecutive_point = OffsetStoreNamedPoint {
             id: "consecutive-point".to_string(),
@@ -8092,6 +9179,7 @@ mod tests {
             &[consecutive_point],
             &[consecutive_use],
             &[consecutive_construction],
+            &[],
         );
         assert_eq!(
             consecutive_dependencies[0].block_relation,
@@ -8113,6 +9201,7 @@ mod tests {
             &[point.clone(), ambiguous_point],
             &[point_use.clone(), ambiguous_use],
             std::slice::from_ref(&construction),
+            &[],
         )
         .is_empty());
 
@@ -8122,6 +9211,7 @@ mod tests {
             &[point],
             &[point_use],
             &[construction],
+            &[],
         )
         .is_empty());
     }
@@ -8313,7 +9403,8 @@ mod tests {
             stream_role: 0,
             source_offset: 0,
         }];
-        let operands = super::feature_operation_body_operands(&members, &references, &bindings);
+        let operands =
+            super::feature_operation_body_operands(&members, &references, &[], &[], &bindings);
         assert_eq!(
             operands
                 .iter()
@@ -8334,6 +9425,74 @@ mod tests {
             second_clause.source_property_key(),
             "operation_body_operand.1.0"
         );
+
+        let input = |operation: &str, data_block: &str| FeatureInputBlock {
+            id: format!("input-{operation}"),
+            operation_label: operation.to_string(),
+            input_slot: 0,
+            object_index: 1,
+            raw_object_index: vec![1],
+            data_block: data_block.to_string(),
+            source_offset: 0,
+        };
+        let block = |id: &str, section_ordinal| crate::native::om::DataBlock {
+            id: id.to_string(),
+            section_ordinal,
+            block_ordinal: 20,
+            role: crate::native::om::DataBlockRole::Column,
+            section_offset: 0,
+            byte_len: 1,
+            sha256: "hash".to_string(),
+            source_entry: "entry".to_string(),
+            source_offset: 0,
+        };
+        let inputs = [
+            input("operation", "nx:om-data-blocks-1:block#1"),
+            input("earlier", "nx:om-data-blocks-2:block#1"),
+        ];
+        let blocks = [
+            block("nx:om-data-blocks-1:block#20", 1),
+            block("nx:om-data-blocks-2:block#20", 2),
+        ];
+        assert!(super::feature_operation_body_operands(
+            &members,
+            &references,
+            &inputs,
+            &blocks,
+            &bindings,
+        )
+        .is_empty());
+
+        let same_store_reference = FeatureBodyReferenceOccurrence {
+            operation_label: "same-store".to_string(),
+            ..references[0].clone()
+        };
+        let mut same_store_inputs = inputs.to_vec();
+        same_store_inputs.push(input("same-store", "nx:om-data-blocks-1:block#2"));
+        let same_store = super::feature_operation_body_operands(
+            &members,
+            &[same_store_reference],
+            &same_store_inputs,
+            &blocks,
+            &bindings,
+        );
+        assert_eq!(same_store.len(), 1);
+        assert_eq!(
+            same_store[0].operand_data_block.as_deref(),
+            Some("nx:om-data-blocks-1:block#20")
+        );
+        assert!(same_store[0].segment_body_bindings.is_empty());
+        assert!(super::feature_operation_body_operands(
+            &members,
+            &[FeatureBodyReferenceOccurrence {
+                operation_label: "same-store".to_string(),
+                ..references[0].clone()
+            }],
+            &same_store_inputs,
+            &blocks[1..],
+            &bindings,
+        )
+        .is_empty());
     }
 
     #[test]
@@ -8751,6 +9910,7 @@ mod tests {
             ordinal: 0,
             values: [0.5, -0.5],
             raw_values: [[0; 7]; 2],
+            discriminator: vec![0x04],
             payload_offset: 20,
             value_payload_offsets: [28, 37],
             source_offset: 1020,
@@ -8759,7 +9919,7 @@ mod tests {
 
         let names = [name("first", 0, 10), name("second", 1, 50)];
         let pairs = [pair];
-        let records = feature_sketch_payload_named_records(&[payload], &names, &[], &pairs);
+        let records = feature_sketch_payload_named_records(&[payload], &names, &[], &pairs, &[]);
         assert_eq!(records[0].fixed_pairs, ["pair"]);
         assert!(records[1].fixed_pairs.is_empty());
         let points = feature_sketch_fixed_points(&records, &names, &pairs);
@@ -9040,6 +10200,7 @@ mod tests {
         let statuses = segment_body_lineage_statuses(
             &labels,
             &references,
+            &[],
             &booleans,
             &[],
             &[
@@ -9076,12 +10237,87 @@ mod tests {
         };
         let uses = feature_body_segment_uses(
             std::slice::from_ref(&reference),
+            &[],
             std::slice::from_ref(&binding),
         );
         assert_eq!(uses.len(), 1);
         assert_eq!(uses[0].feature_body_reference, reference.id);
         assert_eq!(uses[0].segment_body_binding, binding.id);
-        assert!(feature_body_segment_uses(&[reference], &[binding.clone(), binding]).is_empty());
+        assert!(
+            feature_body_segment_uses(&[reference], &[], &[binding.clone(), binding]).is_empty()
+        );
+    }
+
+    #[test]
+    fn feature_body_segment_uses_exclude_offset_store_indices() {
+        use super::{feature_body_segment_uses, FeatureBodyDataBlockUse, FeatureBodyReference};
+        use crate::native::segments::SegmentBodyBinding;
+
+        let reference = FeatureBodyReference {
+            id: "reference#0".into(),
+            operation_label: "operation#0".into(),
+            body_object_index: 11,
+            raw_body_object_index: vec![11],
+            source_offset: 90,
+        };
+        let data_block_use = FeatureBodyDataBlockUse {
+            id: "data-block-use#0".into(),
+            feature_body_reference: reference.id.clone(),
+            data_block: "block#11".into(),
+        };
+        let binding = SegmentBodyBinding {
+            id: "binding#0".into(),
+            stream_link: "stream#0".into(),
+            stream_ordinal: 0,
+            stream_kind: "partition".into(),
+            body_object_index: 10,
+            body_alias_object_index: 11,
+            stream_role: 19,
+            source_offset: 40,
+        };
+        assert!(feature_body_segment_uses(&[reference], &[data_block_use], &[binding]).is_empty());
+    }
+
+    #[test]
+    fn feature_body_data_block_uses_inherit_the_operation_input_store() {
+        use super::{feature_body_data_block_uses, FeatureBodyReference, FeatureInputBlock};
+        use crate::native::om::{DataBlock, DataBlockRole};
+
+        let reference = FeatureBodyReference {
+            id: "nx:feature-history:body-reference#0".into(),
+            operation_label: "operation#0".into(),
+            body_object_index: 72,
+            raw_body_object_index: vec![72],
+            source_offset: 90,
+        };
+        let input = FeatureInputBlock {
+            id: "input#0".into(),
+            operation_label: "operation#0".into(),
+            input_slot: 0,
+            object_index: 3,
+            raw_object_index: vec![3],
+            data_block: "nx:om-data-blocks-2:block#3".into(),
+            source_offset: 80,
+        };
+        let block = |id: &str, section_ordinal, block_ordinal| DataBlock {
+            id: id.into(),
+            section_ordinal,
+            block_ordinal,
+            role: DataBlockRole::Column,
+            section_offset: 10,
+            byte_len: 19,
+            sha256: "00".into(),
+            source_entry: "part".into(),
+            source_offset: 20,
+        };
+        let blocks = [
+            block("nx:om-data-blocks-2:block#3", 2, 3),
+            block("nx:om-data-blocks-1:block#72", 1, 72),
+            block("nx:om-data-blocks-2:block#72", 2, 72),
+        ];
+        let uses = feature_body_data_block_uses(&[reference], &[input], &blocks);
+        assert_eq!(uses.len(), 1);
+        assert_eq!(uses[0].data_block, blocks[2].id);
     }
 
     #[test]
@@ -9138,7 +10374,7 @@ mod tests {
         ];
 
         let statuses =
-            segment_body_lineage_statuses(&labels, &references, &booleans, &[], &bindings)
+            segment_body_lineage_statuses(&labels, &references, &[], &booleans, &[], &bindings)
                 .expect("required invariant");
         assert_eq!(statuses.len(), 3);
         assert!(statuses.iter().all(|status| !status.terminal));
@@ -9213,6 +10449,60 @@ mod tests {
             feature_simple_hole_construction_groups(&duplicate_lanes, &shared_references)
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
+        use super::{
+            feature_hole_package_construction_group_uses, FeatureHolePackageConstructionGroupLane,
+            FeatureSimpleHoleConstructionGroup,
+        };
+        let blocks = [
+            "block-1".to_string(),
+            "block-2".to_string(),
+            "block-3".to_string(),
+            "block-4".to_string(),
+        ];
+        let lane = FeatureHolePackageConstructionGroupLane {
+            id: "package-lane".into(),
+            operation_label: "package-operation".into(),
+            selector: 0x46,
+            branch: 0x11,
+            object_indices: [1, 2, 3, 4],
+            raw_object_indices: std::array::from_fn(|index| vec![0xf0, index as u8 + 1]),
+            data_blocks: blocks.clone(),
+            payload_offset: 20,
+            source_offset: 120,
+            reference_source_offsets: [132, 134, 141, 143],
+        };
+        let group = FeatureSimpleHoleConstructionGroup {
+            id: "simple-hole-group".into(),
+            first_data_blocks: [blocks[0].clone(), blocks[1].clone()],
+            second_data_blocks: [blocks[2].clone(), blocks[3].clone()],
+            operation_labels: vec!["simple-hole-1".into(), "simple-hole-2".into()],
+            scalar_lanes: vec!["scalar-1".into(), "scalar-2".into()],
+            block_references: vec!["references-1".into(), "references-2".into()],
+        };
+
+        let uses = feature_hole_package_construction_group_uses(
+            std::slice::from_ref(&lane),
+            std::slice::from_ref(&group),
+        );
+        assert_eq!(uses.len(), 1);
+        assert_eq!(uses[0].operation_label, lane.operation_label);
+        assert_eq!(uses[0].construction_group_lane, lane.id);
+        assert_eq!(uses[0].simple_hole_construction_group, group.id);
+
+        assert!(feature_hole_package_construction_group_uses(
+            &[lane.clone(), lane.clone()],
+            std::slice::from_ref(&group),
+        )
+        .is_empty());
+        assert!(feature_hole_package_construction_group_uses(
+            std::slice::from_ref(&lane),
+            &[group.clone(), group],
+        )
+        .is_empty());
     }
 
     #[test]

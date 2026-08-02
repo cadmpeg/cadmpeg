@@ -1,0 +1,32 @@
+{
+  "container_kind": "psb",
+  "entries": [
+    {
+      "attributes": {
+        "offset": "76"
+      },
+      "compressed_size": 57,
+      "compression": "none",
+      "name": "ActDatums",
+      "role": "psb-geometry",
+      "uncompressed_size": 57
+    },
+    {
+      "attributes": {
+        "offset": "133"
+      },
+      "compressed_size": 39,
+      "compression": "none",
+      "name": "MdlStatus",
+      "role": "metadata",
+      "uncompressed_size": 39
+    }
+  ],
+  "format": "creo",
+  "notes": [
+    "PSB container: #UGC:2 P c",
+    "layout: unknown; 2 section(s) enumerated",
+    "no VisibGeom srf_array/crv_array count header was located",
+    "container-level enumeration; `decode` preserves PSB geometry sections as unknown records and transfers only carriers whose model-space placement is complete"
+  ]
+}

@@ -1,15 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(
+    test,
+    allow(
+        clippy::doc_markdown,
+        clippy::redundant_field_names,
+        clippy::unwrap_used
+    )
+)]
 //! Reads and writes Rhino `.3dm` files through [`cadmpeg_ir::document::CadIr`].
 //!
 //! Support level: L8 for archive versions 50, 60, 70, and 80 on the cadmpeg
 //! support ladder. The codec provides bounded 3DM container inspection, typed
 //! decoding, and explicitly versioned semantic native writing.
 
-use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult, Encoder};
-use cadmpeg_ir::decode::{DecodeContext, View};
-use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::report::{ExportReport, LossCategory, LossCode, LossNote, Severity};
-use std::io::Write;
+use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_codec_core::{CodecError, ContainerSummary};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_ir::report::{ExportReport, LossKind, LossNote, Severity};
+use cadmpeg_ir::FidelityResolution;
 
 pub(crate) mod annotations;
 pub(crate) mod brep;
@@ -120,12 +128,13 @@ impl Encoder for RhinoEncoder {
         "rhino"
     }
 
-    fn encode(&self, ir: &CadIr, output: &mut dyn Write) -> Result<ExportReport, CodecError> {
-        writer::write(ir, self.version.value(), output)?;
-        let validation = cadmpeg_ir::validate(ir, Vec::new());
-        let total_entities = validation.entity_counts.values().sum();
+    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
+        let mut bytes = Vec::new();
+        writer::write(input.ir, self.version.value(), &mut bytes)?;
+        let validation = cadmpeg_ir::validate(input.ir, Vec::new());
         let vertex_quantization = self.version == RhinoArchiveVersion::V5
-            && ir
+            && input
+                .ir
                 .model
                 .tessellations
                 .iter()
@@ -135,7 +144,8 @@ impl Encoder for RhinoEncoder {
                         || f64::from(point.y as f32) != point.y
                         || f64::from(point.z as f32) != point.z
                 });
-        let normal_quantization = ir
+        let normal_quantization = input
+            .ir
             .model
             .tessellations
             .iter()
@@ -148,8 +158,7 @@ impl Encoder for RhinoEncoder {
         let mut losses = Vec::new();
         if vertex_quantization {
             losses.push(LossNote {
-                code: LossCode::MeshVertexPrecision,
-                category: LossCategory::Geometry,
+                code: LossKind::MeshVertexPrecision,
                 severity: Severity::Warning,
                 message: "archive version 50 stores standalone mesh vertices as f32".into(),
                 provenance: None,
@@ -157,30 +166,28 @@ impl Encoder for RhinoEncoder {
         }
         if normal_quantization {
             losses.push(LossNote {
-                code: LossCode::MeshVertexPrecision,
-                category: LossCategory::Geometry,
+                code: LossKind::MeshVertexPrecision,
                 severity: Severity::Warning,
                 message: "3DM mesh normals are stored as f32".into(),
                 provenance: None,
             });
         }
-        Ok(ExportReport {
+        let report = ExportReport {
             format: "rhino".into(),
-            total_entities,
-            entity_counts: validation.entity_counts,
+            census: cadmpeg_ir::EntityCensus {
+                basis: cadmpeg_ir::CensusBasis::IrArenas,
+                counts: validation.entity_counts,
+            },
+            fidelity: FidelityResolution::NotProvided,
             losses,
             notes: vec![format!("3DM archive version {}", self.version.value())],
-        })
-    }
-}
-
-impl Encoder for RhinoCodec {
-    fn id(&self) -> &'static str {
-        "rhino"
-    }
-
-    fn encode(&self, ir: &CadIr, output: &mut dyn Write) -> Result<ExportReport, CodecError> {
-        RhinoEncoder::new(RhinoArchiveVersion::V8).encode(ir, output)
+        };
+        let fidelity = if input.fidelity.is_some() {
+            FidelityResolution::NotConsumed
+        } else {
+            FidelityResolution::NotProvided
+        };
+        Ok(ExportPlan::buffered(report, fidelity, bytes))
     }
 }
 

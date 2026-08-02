@@ -4,56 +4,85 @@
 
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::records::{
-    CreationTimestamp, PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
+    sketch_link_sense_is_unconstrained, CreationTimestamp, PersistentDesignLink,
+    PersistentSubentityTag, SketchCurveLink,
 };
 use crate::sab::{Record, Token};
+use cadmpeg_codec_core::cursor::bounded_len;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
-use cadmpeg_ir::cursor::bounded_len;
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::topology::Color;
 use std::collections::{HashMap, HashSet};
 
-pub(crate) fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCurveLink> {
-    let AttributeTarget::Coedge(coedge) = &attribute.target else {
+/// The five members every `sketch_attrib_def` payload form writes.
+struct SketchLinkPayload {
+    sketch_curve_id: i64,
+    ref_b: u64,
+    sense: i64,
+    role: i64,
+    closure: i64,
+}
+
+/// Read the payload following a `sketch_attrib_def` family name.
+///
+/// The three header integers are `1`, `1`, and a form selector. Form `3` writes
+/// the members as one tagged ASCII field with a `0` between the sense and the
+/// role, form `2` as six integers with a trailing `0`, and form `0` as the five
+/// members alone. All three write the same five members in the same order, so
+/// each yields one link.
+fn sketch_link_payload(values: &[AttributeValue]) -> Option<SketchLinkPayload> {
+    let [AttributeValue::Integer(1), AttributeValue::Integer(1), AttributeValue::Integer(form), payload @ ..] =
+        values
+    else {
         return None;
     };
+    match (*form, payload) {
+        (3, [AttributeValue::String(field)]) => {
+            let fields = field.split_ascii_whitespace().collect::<Vec<_>>();
+            let [sketch_curve_id, ref_b, sense, "0", role, closure] = fields[..] else {
+                return None;
+            };
+            // `ref_b` reaches the full unsigned 64-bit range, so it is read
+            // unsigned; every other member is signed.
+            Some(SketchLinkPayload {
+                sketch_curve_id: sketch_curve_id.parse().ok()?,
+                ref_b: ref_b.parse().ok()?,
+                sense: sense.parse().ok()?,
+                role: role.parse().ok()?,
+                closure: closure.parse().ok()?,
+            })
+        }
+        (
+            2,
+            [AttributeValue::Integer(sketch_curve_id), AttributeValue::Integer(ref_b), AttributeValue::Integer(sense), AttributeValue::Integer(role), AttributeValue::Integer(closure), AttributeValue::Integer(0)],
+        )
+        | (
+            0,
+            [AttributeValue::Integer(sketch_curve_id), AttributeValue::Integer(ref_b), AttributeValue::Integer(sense), AttributeValue::Integer(role), AttributeValue::Integer(closure)],
+        ) => Some(SketchLinkPayload {
+            sketch_curve_id: *sketch_curve_id,
+            ref_b: u64::try_from(*ref_b).ok()?,
+            sense: *sense,
+            role: *role,
+            closure: *closure,
+        }),
+        _ => None,
+    }
+}
+
+pub(crate) fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCurveLink> {
     let family = attribute.values.iter().position(
         |value| matches!(value, AttributeValue::String(name) if name == "sketch_attrib_def"),
     )?;
-    let fields = attribute.values[family + 1..]
-        .iter()
-        .filter_map(|value| match value {
-            AttributeValue::String(payload) => Some(
-                payload
-                    .split_ascii_whitespace()
-                    .map(str::parse::<i64>)
-                    .collect::<Result<Vec<_>, _>>()
-                    .ok(),
-            ),
-            _ => None,
-        })
-        .flatten()
-        .find(|values| values.len() == 6)
-        .unwrap_or_else(|| {
-            attribute.values[family + 1..]
-                .iter()
-                .filter_map(|value| match value {
-                    AttributeValue::Integer(value) => Some(*value),
-                    _ => None,
-                })
-                .take(6)
-                .collect()
-        });
-    let [sketch_curve_id, 0, signed_reference, 0, role, closure] = fields.as_slice() else {
-        return None;
-    };
+    let payload = sketch_link_payload(&attribute.values[family + 1..])?;
     Some(SketchCurveLink {
         id: format!("f3d:design:sketch-curve-link#{}", attribute_key(attribute)),
-        coedge: coedge.clone(),
-        sketch_curve_id: *sketch_curve_id,
-        signed_reference: (*signed_reference != -1).then_some(*signed_reference),
-        role: *role,
-        closure: *closure,
+        target: attribute.target.clone(),
+        sketch_curve_id: payload.sketch_curve_id,
+        ref_b: payload.ref_b,
+        sense: (!sketch_link_sense_is_unconstrained(payload.sense)).then_some(payload.sense),
+        role: payload.role,
+        closure: payload.closure,
     })
 }
 

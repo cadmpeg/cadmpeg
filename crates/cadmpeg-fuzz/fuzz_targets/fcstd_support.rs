@@ -39,5 +39,6 @@ pub fn decode(bytes: Vec<u8>) {
     use cadmpeg_codec_freecad::FcstdCodec;
     use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 
+
     let _ = FcstdCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default());
 }

@@ -7,7 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::cursor::bounded_len;
+use cadmpeg_codec_core::cursor::bounded_len;
 
 use crate::psb::{self, compact_int, reference_id};
 use crate::scalar;
@@ -56,6 +56,10 @@ pub struct CurveExpressionRecord {
     pub lines: Vec<CurveExpressionLine>,
     /// Assignment statements in source order.
     pub assignments: Vec<CurveExpressionAssignment>,
+    /// Complete simultaneous-equation blocks in source order.
+    pub solve_blocks: Vec<CurveExpressionSolveBlock>,
+    /// Whether a `SOLVE`/`FOR` control sequence is malformed or incomplete.
+    pub unresolved_solve_control: bool,
     /// Curve-equation constructs prohibited by the Creo expression grammar.
     pub prohibited_constructs: Vec<String>,
     /// Byte offset of the enclosing entity label.
@@ -83,10 +87,8 @@ pub struct CurveExpressionLocalSystem {
 /// One executable assignment in a curve expression program.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CurveExpressionAssignment {
-    /// Assigned identifier.
-    pub name: String,
-    /// Unit expression declared on a newly created parameter target.
-    pub declared_unit: Option<String>,
+    /// Typed relation target receiving the right-hand value.
+    pub target: CurveExpressionTarget,
     /// Exact right-hand expression after surrounding ASCII whitespace removal.
     pub expression: String,
     /// Referenced identifiers in first-appearance order.
@@ -97,6 +99,128 @@ pub struct CurveExpressionAssignment {
     pub activation: CurveExpressionActivation,
     /// Byte offset of the assignment source line.
     pub offset: usize,
+}
+
+/// One `SOLVE`/`FOR` simultaneous-equation block.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CurveExpressionSolveBlock {
+    /// Ordered equations between the `SOLVE` and `FOR` lines.
+    pub equations: Vec<CurveExpressionEquation>,
+    /// Ordered one-way relations in the block that do not involve an unknown.
+    pub assignments: Vec<CurveExpressionAssignment>,
+    /// Ordered unknowns declared by the terminating `FOR` line.
+    pub variables: Vec<String>,
+    /// Solved scalar values aligned with `variables`; absent entries remain
+    /// nonlinear, underdetermined, inconsistent, or dependency-unresolved.
+    pub solutions: Vec<Option<CurveExpressionValue>>,
+    /// Byte offset of the `SOLVE` line.
+    pub offset: usize,
+    /// Byte offset of the terminating `FOR` line.
+    pub for_offset: usize,
+}
+
+/// One equation in a simultaneous-equation block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurveExpressionEquation {
+    /// Exact left-hand expression after surrounding ASCII whitespace removal.
+    pub left: String,
+    /// Exact right-hand expression after surrounding ASCII whitespace removal.
+    pub right: String,
+    /// Referenced identifiers in first-appearance order across both sides.
+    pub dependencies: Vec<String>,
+    /// Byte offset of the equation source line.
+    pub offset: usize,
+}
+
+/// Target of one curve-expression assignment.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CurveExpressionTarget {
+    /// Scalar parameter target.
+    Parameter {
+        /// Assigned identifier.
+        name: String,
+        /// Unit expression declared on a newly created parameter target.
+        declared_unit: Option<String>,
+    },
+    /// Dimension or parameter qualified by a relation scope.
+    ScopedSymbol {
+        /// Complete scoped relation identifier.
+        name: String,
+    },
+    /// Unscoped Creo dimension, tolerance, or pattern system symbol.
+    SystemSymbol {
+        /// Complete system identifier.
+        name: String,
+        /// Namespace family selected by the identifier prefix.
+        family: CurveExpressionSystemSymbolFamily,
+    },
+    /// Write invocation of a registered relation function.
+    FunctionWrite {
+        /// Registered function identifier.
+        name: String,
+        /// Exact argument expressions in source order.
+        arguments: Vec<String>,
+    },
+    /// Cell of a series or list parameter.
+    TableCell {
+        /// Table-valued parameter identifier.
+        parameter: String,
+        /// Exact one-based row selector expression.
+        row: String,
+        /// Exact column selector expression when present.
+        column: Option<String>,
+    },
+}
+
+/// Namespace family of an unscoped Creo relation system symbol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CurveExpressionSystemSymbolFamily {
+    /// Parent-model or assembly dimension (`d#`).
+    Dimension,
+    /// Section dimension (`sd#`).
+    SectionDimension,
+    /// Reference dimension (`rd#`).
+    ReferenceDimension,
+    /// Section reference dimension (`rsd#`).
+    SectionReferenceDimension,
+    /// Known parent dimension used in a section (`kd#`).
+    KnownDimension,
+    /// Driven dimension (`ad#`).
+    DrivenDimension,
+    /// Pattern instance count (`p#`).
+    PatternCount,
+    /// Plus, minus, or symmetric tolerance component.
+    Tolerance,
+}
+
+impl CurveExpressionAssignment {
+    pub(crate) fn parameter_target(&self) -> Option<(&str, Option<&str>)> {
+        match &self.target {
+            CurveExpressionTarget::Parameter {
+                name,
+                declared_unit,
+            } => Some((name, declared_unit.as_deref())),
+            CurveExpressionTarget::ScopedSymbol { .. }
+            | CurveExpressionTarget::SystemSymbol { .. }
+            | CurveExpressionTarget::FunctionWrite { .. }
+            | CurveExpressionTarget::TableCell { .. } => None,
+        }
+    }
+
+    fn scalar_target(&self) -> Option<(&str, Option<&str>)> {
+        match &self.target {
+            CurveExpressionTarget::Parameter {
+                name,
+                declared_unit,
+            } => Some((name, declared_unit.as_deref())),
+            CurveExpressionTarget::ScopedSymbol { name } => Some((name, None)),
+            CurveExpressionTarget::SystemSymbol { name, .. } => Some((name, None)),
+            CurveExpressionTarget::FunctionWrite { .. } => None,
+            CurveExpressionTarget::TableCell { .. } => None,
+        }
+    }
 }
 
 /// A deterministic value produced by a curve relation expression.
@@ -604,22 +728,31 @@ pub(crate) fn expression_records_with_model_name(
         }
         if lines.len() == usize::try_from(count).unwrap_or(usize::MAX) {
             let prohibited_constructs = curve_equation_prohibited_constructs(&lines);
-            let mut assignments = evaluate_expression_program(
+            let mut solve_program = curve_expression_solve_program(&lines);
+            let mut evaluation = evaluate_expression_program_details(
                 &lines,
                 model_name,
                 &ExternalRelationSymbols::default(),
             );
-            if !prohibited_constructs.is_empty() {
-                for assignment in &mut assignments {
+            if !prohibited_constructs.is_empty() || solve_program.unresolved_control {
+                for assignment in &mut evaluation.assignments {
                     assignment.value = None;
                 }
+                evaluation.solve_solutions.clear();
             }
+            synchronize_solve_blocks(
+                &mut solve_program.blocks,
+                &evaluation.assignments,
+                &evaluation.solve_solutions,
+            );
             records.push(CurveExpressionRecord {
                 entity_id,
                 backup,
                 local_system,
                 lines,
-                assignments,
+                assignments: evaluation.assignments,
+                solve_blocks: solve_program.blocks,
+                unresolved_solve_control: solve_program.unresolved_control,
                 prohibited_constructs,
                 offset,
                 expression_offset,
@@ -635,12 +768,43 @@ pub(crate) fn reevaluate_expression_records(
     external_symbols: &ExternalRelationSymbols,
 ) {
     for record in records {
-        record.assignments =
-            evaluate_expression_program(&record.lines, model_name, external_symbols);
-        if !record.prohibited_constructs.is_empty() {
-            for assignment in &mut record.assignments {
+        let mut evaluation =
+            evaluate_expression_program_details(&record.lines, model_name, external_symbols);
+        if !record.prohibited_constructs.is_empty() || record.unresolved_solve_control {
+            for assignment in &mut evaluation.assignments {
                 assignment.value = None;
             }
+            evaluation.solve_solutions.clear();
+        }
+        synchronize_solve_blocks(
+            &mut record.solve_blocks,
+            &evaluation.assignments,
+            &evaluation.solve_solutions,
+        );
+        record.assignments = evaluation.assignments;
+    }
+}
+
+fn synchronize_solve_blocks(
+    blocks: &mut [CurveExpressionSolveBlock],
+    assignments: &[CurveExpressionAssignment],
+    solutions: &BTreeMap<usize, Vec<CurveExpressionValue>>,
+) {
+    for block in blocks {
+        for assignment in &mut block.assignments {
+            if let Some(evaluated) = assignments
+                .iter()
+                .find(|evaluated| evaluated.offset == assignment.offset)
+            {
+                *assignment = evaluated.clone();
+            }
+        }
+        block.solutions = solutions.get(&block.offset).map_or_else(
+            || vec![None; block.variables.len()],
+            |values| values.iter().cloned().map(Some).collect(),
+        );
+        if block.solutions.len() != block.variables.len() {
+            block.solutions = vec![None; block.variables.len()];
         }
     }
 }
@@ -724,16 +888,41 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
     if source.starts_with("/*") {
         return None;
     }
-    let (name, expression) = source.split_once('=')?;
-    if expression.trim_start().starts_with('=') {
-        return None;
-    }
-    let (name, declared_unit) = expression_assignment_target(name.trim())?;
+    let (name, expression) = split_expression_assignment(source)?;
+    let target = expression_assignment_target(name.trim())?;
     let expression = expression.trim();
     if expression.is_empty() {
         return None;
     }
     let mut dependencies = Vec::<String>::new();
+    if let CurveExpressionTarget::TableCell {
+        parameter,
+        row,
+        column,
+    } = &target
+    {
+        dependencies.push(parameter.clone());
+        extend_expression_dependencies(&mut dependencies, row)?;
+        if let Some(column) = column {
+            extend_expression_dependencies(&mut dependencies, column)?;
+        }
+    } else if let CurveExpressionTarget::FunctionWrite { arguments, .. } = &target {
+        for argument in arguments {
+            extend_expression_dependencies(&mut dependencies, argument)?;
+        }
+    }
+    extend_expression_dependencies(&mut dependencies, expression)?;
+    Some(CurveExpressionAssignment {
+        target,
+        expression: expression.to_owned(),
+        dependencies,
+        value: None,
+        activation: CurveExpressionActivation::Active,
+        offset: line.offset,
+    })
+}
+
+fn extend_expression_dependencies(dependencies: &mut Vec<String>, expression: &str) -> Option<()> {
     let bytes = expression.as_bytes();
     let mut cursor = 0;
     while cursor < bytes.len() {
@@ -789,9 +978,8 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
             while bytes.get(following).is_some_and(u8::is_ascii_whitespace) {
                 following += 1;
             }
-            let function = bytes.get(following) == Some(&b'(')
-                && !dependency.contains(':')
-                && creo_math_function(dependency).is_some();
+            let function =
+                bytes.get(following) == Some(&b'(') && creo_relation_function(dependency).is_some();
             let constant = reserved_relation_scalar(dependency).is_some();
             if !function
                 && !constant
@@ -805,18 +993,212 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
             cursor += 1;
         }
     }
-    Some(CurveExpressionAssignment {
-        name: name.to_owned(),
-        declared_unit: declared_unit.map(str::to_owned),
-        expression: expression.to_owned(),
-        dependencies,
-        value: None,
-        activation: CurveExpressionActivation::Active,
-        offset: line.offset,
-    })
+    Some(())
 }
 
-fn expression_assignment_target(source: &str) -> Option<(&str, Option<&str>)> {
+fn split_expression_assignment(source: &str) -> Option<(&str, &str)> {
+    let bytes = source.as_bytes();
+    let mut nesting = 0usize;
+    let mut delimiter = None;
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        if let Some(quote) = delimiter {
+            if bytes[cursor] == quote {
+                delimiter = None;
+            }
+            cursor += 1;
+            continue;
+        }
+        match bytes[cursor] {
+            byte @ (b'\'' | b'"') => delimiter = Some(byte),
+            b'(' => nesting = nesting.checked_add(1)?,
+            b')' => nesting = nesting.checked_sub(1)?,
+            b'=' if nesting == 0
+                && !bytes
+                    .get(..cursor)
+                    .and_then(|prefix| prefix.last())
+                    .is_some_and(|byte| matches!(byte, b'=' | b'!' | b'~' | b'<' | b'>'))
+                && bytes.get(cursor + 1) != Some(&b'=') =>
+            {
+                return Some((source.get(..cursor)?, source.get(cursor + 1..)?));
+            }
+            _ => {}
+        }
+        cursor += 1;
+    }
+    None
+}
+
+#[derive(Default)]
+struct CurveExpressionSolveProgram {
+    blocks: Vec<CurveExpressionSolveBlock>,
+    line_indices: BTreeSet<usize>,
+    executable_line_indices: BTreeSet<usize>,
+    unresolved_control: bool,
+}
+
+struct PendingCurveExpressionSolveBlock {
+    statements: Vec<PendingCurveExpressionSolveStatement>,
+    offset: usize,
+    valid: bool,
+}
+
+struct PendingCurveExpressionSolveStatement {
+    equation: CurveExpressionEquation,
+    assignment: Option<CurveExpressionAssignment>,
+    line_index: usize,
+}
+
+fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpressionSolveProgram {
+    let mut program = CurveExpressionSolveProgram::default();
+    let mut pending = None::<PendingCurveExpressionSolveBlock>;
+    for (index, line) in lines.iter().enumerate() {
+        let source = line.text.trim();
+        if pending.is_none() {
+            if starts_relation_keyword(source, "solve") {
+                program.line_indices.insert(index);
+                pending = Some(PendingCurveExpressionSolveBlock {
+                    statements: Vec::new(),
+                    offset: line.offset,
+                    valid: source.eq_ignore_ascii_case("solve"),
+                });
+            } else if starts_relation_keyword(source, "for") {
+                program.line_indices.insert(index);
+                program.unresolved_control = true;
+            }
+            continue;
+        }
+
+        program.line_indices.insert(index);
+        if starts_relation_keyword(source, "solve") {
+            program.unresolved_control = true;
+            pending.as_mut().expect("pending solve block").valid = false;
+            continue;
+        }
+        if starts_relation_keyword(source, "for") {
+            let variables = conditional_keyword_expression(source, "for")
+                .and_then(curve_expression_solve_variables);
+            let mut block = pending.take().expect("pending solve block");
+            let mut equations = Vec::new();
+            let mut assignments = Vec::new();
+            let mut assignment_line_indices = Vec::new();
+            if let Some(variables) = &variables {
+                for statement in block.statements {
+                    if statement.equation.dependencies.iter().any(|dependency| {
+                        variables
+                            .iter()
+                            .any(|variable| variable.eq_ignore_ascii_case(dependency))
+                    }) {
+                        equations.push(statement.equation);
+                    } else if let Some(assignment) = statement.assignment {
+                        assignment_line_indices.push(statement.line_index);
+                        assignments.push(assignment);
+                    } else {
+                        block.valid = false;
+                    }
+                }
+            }
+            if let Some(variables) = variables.filter(|_| block.valid && !equations.is_empty()) {
+                program
+                    .executable_line_indices
+                    .extend(assignment_line_indices);
+                program.blocks.push(CurveExpressionSolveBlock {
+                    equations,
+                    assignments,
+                    solutions: vec![None; variables.len()],
+                    variables,
+                    offset: block.offset,
+                    for_offset: line.offset,
+                });
+            } else {
+                program.unresolved_control = true;
+            }
+            continue;
+        }
+        if source.is_empty() || source.starts_with("/*") {
+            continue;
+        }
+        let Some((left, right)) = split_expression_assignment(source) else {
+            program.unresolved_control = true;
+            pending.as_mut().expect("pending solve block").valid = false;
+            continue;
+        };
+        let (left, right) = (left.trim(), right.trim());
+        if left.is_empty() || right.is_empty() || split_expression_assignment(right).is_some() {
+            program.unresolved_control = true;
+            pending.as_mut().expect("pending solve block").valid = false;
+            continue;
+        }
+        let mut dependencies = Vec::new();
+        if extend_expression_dependencies(&mut dependencies, left).is_none()
+            || extend_expression_dependencies(&mut dependencies, right).is_none()
+        {
+            program.unresolved_control = true;
+            pending.as_mut().expect("pending solve block").valid = false;
+            continue;
+        }
+        pending
+            .as_mut()
+            .expect("pending solve block")
+            .statements
+            .push(PendingCurveExpressionSolveStatement {
+                equation: CurveExpressionEquation {
+                    left: left.to_owned(),
+                    right: right.to_owned(),
+                    dependencies,
+                    offset: line.offset,
+                },
+                assignment: expression_assignment(line),
+                line_index: index,
+            });
+    }
+    if pending.is_some() {
+        program.unresolved_control = true;
+    }
+    program
+}
+
+fn curve_expression_solve_variables(source: &str) -> Option<Vec<String>> {
+    let variables = source
+        .split(|character: char| character == ',' || character.is_ascii_whitespace())
+        .filter(|variable| !variable.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let keys = variables
+        .iter()
+        .map(|variable| expression_identifier_key(variable))
+        .collect::<BTreeSet<_>>();
+    (!variables.is_empty()
+        && keys.len() == variables.len()
+        && variables
+            .iter()
+            .all(|variable| valid_scoped_expression_identifier(variable)))
+    .then_some(variables)
+}
+
+fn expression_assignment_target(source: &str) -> Option<CurveExpressionTarget> {
+    if let Some((name, arguments)) = expression_target_function_call(source) {
+        if name.eq_ignore_ascii_case("value") {
+            let [parameter, row, rest @ ..] = arguments.as_slice() else {
+                return None;
+            };
+            let column = match rest {
+                [] => None,
+                [column] => Some((*column).to_owned()),
+                _ => return None,
+            };
+            valid_expression_identifier(parameter).then_some(())?;
+            return Some(CurveExpressionTarget::TableCell {
+                parameter: (*parameter).to_owned(),
+                row: (*row).to_owned(),
+                column,
+            });
+        }
+        return Some(CurveExpressionTarget::FunctionWrite {
+            name: name.to_owned(),
+            arguments: arguments.into_iter().map(str::to_owned).collect(),
+        });
+    }
     let (name, declared_unit) = if source.ends_with(']') {
         let unit_start = source.rfind('[')?;
         let unit = source.get(unit_start + 1..source.len() - 1)?.trim();
@@ -825,11 +1207,102 @@ fn expression_assignment_target(source: &str) -> Option<(&str, Option<&str>)> {
     } else {
         (source, None)
     };
-    let valid_name = !name.is_empty()
+    if name.contains(':') {
+        declared_unit.is_none().then_some(())?;
+        valid_scoped_expression_identifier(name).then(|| CurveExpressionTarget::ScopedSymbol {
+            name: name.to_owned(),
+        })
+    } else if let Some(family) = expression_system_symbol_family(name) {
+        declared_unit.is_none().then_some(())?;
+        Some(CurveExpressionTarget::SystemSymbol {
+            name: name.to_owned(),
+            family,
+        })
+    } else {
+        valid_expression_identifier(name).then(|| CurveExpressionTarget::Parameter {
+            name: name.to_owned(),
+            declared_unit: declared_unit.map(str::to_owned),
+        })
+    }
+}
+
+fn expression_target_function_call(source: &str) -> Option<(&str, Vec<&str>)> {
+    let argument_start = source.find('(')?;
+    source.ends_with(')').then_some(())?;
+    let name = source.get(..argument_start)?.trim_end();
+    valid_expression_identifier(name).then_some(())?;
+    let body = source.get(argument_start + 1..source.len().checked_sub(1)?)?;
+    let arguments = if body.trim().is_empty() {
+        Vec::new()
+    } else {
+        split_assignment_target_arguments(body)?
+    };
+    Some((name, arguments))
+}
+
+fn valid_expression_identifier(name: &str) -> bool {
+    !name.is_empty()
         && name.bytes().enumerate().all(|(index, byte)| {
             byte == b'_' || byte.is_ascii_alphabetic() || (index > 0 && byte.is_ascii_digit())
-        });
-    valid_name.then_some((name, declared_unit))
+        })
+}
+
+fn valid_scoped_expression_identifier(name: &str) -> bool {
+    expression_identifier_end(name.as_bytes(), 0) == Some(name.len())
+}
+
+fn expression_system_symbol_family(name: &str) -> Option<CurveExpressionSystemSymbolFamily> {
+    let digit_start = name
+        .bytes()
+        .position(|byte| byte.is_ascii_digit())
+        .filter(|digit_start| *digit_start != 0)?;
+    name.get(digit_start..)?
+        .bytes()
+        .all(|byte| byte.is_ascii_digit())
+        .then_some(())?;
+    match name.get(..digit_start)?.to_ascii_lowercase().as_str() {
+        "d" => Some(CurveExpressionSystemSymbolFamily::Dimension),
+        "sd" => Some(CurveExpressionSystemSymbolFamily::SectionDimension),
+        "rd" => Some(CurveExpressionSystemSymbolFamily::ReferenceDimension),
+        "rsd" => Some(CurveExpressionSystemSymbolFamily::SectionReferenceDimension),
+        "kd" => Some(CurveExpressionSystemSymbolFamily::KnownDimension),
+        "ad" => Some(CurveExpressionSystemSymbolFamily::DrivenDimension),
+        "p" => Some(CurveExpressionSystemSymbolFamily::PatternCount),
+        "tpm" | "tp" | "tm" => Some(CurveExpressionSystemSymbolFamily::Tolerance),
+        _ => None,
+    }
+}
+
+fn split_assignment_target_arguments(source: &str) -> Option<Vec<&str>> {
+    let mut arguments = Vec::new();
+    let mut start = 0;
+    let mut nesting = 0usize;
+    let mut delimiter = None;
+    for (offset, byte) in source.bytes().enumerate() {
+        if let Some(quote) = delimiter {
+            if byte == quote {
+                delimiter = None;
+            }
+            continue;
+        }
+        match byte {
+            b'\'' | b'"' => delimiter = Some(byte),
+            b'(' => nesting = nesting.checked_add(1)?,
+            b')' => nesting = nesting.checked_sub(1)?,
+            b',' if nesting == 0 => {
+                let argument = source.get(start..offset)?.trim();
+                (!argument.is_empty()).then_some(())?;
+                arguments.push(argument);
+                start = offset + 1;
+            }
+            _ => {}
+        }
+    }
+    (delimiter.is_none() && nesting == 0).then_some(())?;
+    let argument = source.get(start..)?.trim();
+    (!argument.is_empty()).then_some(())?;
+    arguments.push(argument);
+    Some(arguments)
 }
 
 pub(crate) fn expression_identifier_key(name: &str) -> String {
@@ -952,20 +1425,45 @@ fn branch_activation(
     }
 }
 
+struct CurveExpressionEvaluation {
+    assignments: Vec<CurveExpressionAssignment>,
+    solve_solutions: BTreeMap<usize, Vec<CurveExpressionValue>>,
+}
+
+#[cfg(test)]
 fn evaluate_expression_program(
     lines: &[CurveExpressionLine],
     model_name: Option<&str>,
     external_symbols: &ExternalRelationSymbols,
 ) -> Vec<CurveExpressionAssignment> {
+    evaluate_expression_program_details(lines, model_name, external_symbols).assignments
+}
+
+fn evaluate_expression_program_details(
+    lines: &[CurveExpressionLine],
+    model_name: Option<&str>,
+    external_symbols: &ExternalRelationSymbols,
+) -> CurveExpressionEvaluation {
+    let solve_program = curve_expression_solve_program(lines);
+    let solve_line_is_executable = |index: &usize| {
+        !solve_program.line_indices.contains(index)
+            || solve_program.executable_line_indices.contains(index)
+    };
     if !expression_program_control_is_valid(lines) {
-        return lines
-            .iter()
-            .filter_map(expression_assignment)
-            .map(|mut assignment| {
-                assignment.activation = CurveExpressionActivation::Conditional;
-                assignment
-            })
-            .collect();
+        return CurveExpressionEvaluation {
+            assignments: lines
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| solve_line_is_executable(index))
+                .map(|(_, line)| line)
+                .filter_map(expression_assignment)
+                .map(|mut assignment| {
+                    assignment.activation = CurveExpressionActivation::Conditional;
+                    assignment
+                })
+                .collect(),
+            solve_solutions: BTreeMap::new(),
+        };
     }
 
     let mut existing_symbols = external_symbols
@@ -976,8 +1474,21 @@ fn evaluate_expression_program(
     existing_symbols.extend(
         lines
             .iter()
-            .filter_map(expression_assignment)
-            .map(|assignment| expression_identifier_key(&assignment.name)),
+            .enumerate()
+            .filter(|(index, _)| solve_line_is_executable(index))
+            .filter_map(|(_, line)| expression_assignment(line))
+            .filter_map(|assignment| {
+                assignment
+                    .scalar_target()
+                    .map(|(name, _)| expression_identifier_key(name))
+            }),
+    );
+    existing_symbols.extend(
+        solve_program
+            .blocks
+            .iter()
+            .flat_map(|block| &block.variables)
+            .map(|variable| expression_identifier_key(variable)),
     );
     let context = RelationEvaluationContext {
         model_name,
@@ -995,8 +1506,72 @@ fn evaluate_expression_program(
         .collect::<BTreeSet<_>>();
     let mut stack = Vec::<ConditionalFrame>::new();
     let mut activity = CurveExpressionActivation::Active;
-    let mut assignments = Vec::new();
-    for line in lines {
+    let mut assignments = Vec::<CurveExpressionAssignment>::new();
+    let mut solve_solutions = BTreeMap::new();
+    let mut solve_block_dimensions = BTreeMap::new();
+    for (index, line) in lines.iter().enumerate() {
+        if let Some(block) = solve_program
+            .blocks
+            .iter()
+            .find(|block| block.offset == line.offset)
+        {
+            if let Some(dimensions) = block
+                .variables
+                .iter()
+                .map(|variable| {
+                    values
+                        .get(&expression_identifier_key(variable))
+                        .and_then(quantity_parts_ref)
+                        .map(|(_, dimension)| dimension)
+                })
+                .collect::<Option<Vec<_>>>()
+            {
+                solve_block_dimensions.insert(block.offset, dimensions);
+            }
+            for variable in &block.variables {
+                let key = expression_identifier_key(variable);
+                values.remove(&key);
+                defined_symbols.insert(key.clone());
+                for assignment in &mut assignments {
+                    if assignment
+                        .scalar_target()
+                        .is_some_and(|(name, _)| expression_identifier_key(name) == key)
+                    {
+                        assignment.value = None;
+                    }
+                }
+            }
+        }
+        if let Some(block) = solve_program
+            .blocks
+            .iter()
+            .find(|block| block.for_offset == line.offset)
+        {
+            if let Some(solution) =
+                solve_block_dimensions
+                    .get(&block.offset)
+                    .and_then(|dimensions| {
+                        solve_affine_expression_block(block, &values, dimensions, context)
+                    })
+            {
+                for (variable, value) in block.variables.iter().zip(&solution) {
+                    let key = expression_identifier_key(variable);
+                    values.insert(key.clone(), value.clone());
+                    for assignment in &mut assignments {
+                        if assignment
+                            .scalar_target()
+                            .is_some_and(|(name, _)| expression_identifier_key(name) == key)
+                        {
+                            assignment.value = Some(value.clone());
+                        }
+                    }
+                }
+                solve_solutions.insert(block.offset, solution);
+            }
+        }
+        if !solve_line_is_executable(&index) {
+            continue;
+        }
         let source = line.text.trim();
         if let Some(condition_source) = conditional_keyword_expression(source, "if") {
             let condition = (activity == CurveExpressionActivation::Active)
@@ -1022,39 +1597,23 @@ fn evaluate_expression_program(
             continue;
         };
         assignment.activation = activity;
-        let key = expression_identifier_key(&assignment.name);
-        let declaration_is_valid =
-            assignment.declared_unit.is_none() || !defined_symbols.contains(&key);
+        let Some((name, declared_unit)) = assignment
+            .scalar_target()
+            .map(|(name, unit)| (name.to_owned(), unit.map(str::to_owned)))
+        else {
+            assignments.push(assignment);
+            continue;
+        };
+        let key = expression_identifier_key(&name);
+        let declaration_is_valid = declared_unit.is_none() || !defined_symbols.contains(&key);
         defined_symbols.insert(key.clone());
         match activity {
             CurveExpressionActivation::Active => {
                 assignment.value = declaration_is_valid
                     .then(|| evaluate_relation_expression(&assignment.expression, &values, context))
                     .flatten()
-                    .and_then(|value| match assignment.declared_unit.as_deref() {
-                        None => Some(value),
-                        Some(unit) => {
-                            let unit = relation_unit(unit)?;
-                            match (value, unit.dimension) {
-                                (CurveExpressionValue::Number(value), _) => {
-                                    CurveExpressionValue::Number(value).with_unit(unit)
-                                }
-                                (
-                                    value @ CurveExpressionValue::Length(_),
-                                    RelationDimension::LENGTH,
-                                )
-                                | (
-                                    value @ CurveExpressionValue::Angle(_),
-                                    RelationDimension::ANGLE,
-                                ) => Some(value),
-                                (CurveExpressionValue::Quantity(value), dimension)
-                                    if value.dimension() == dimension =>
-                                {
-                                    Some(CurveExpressionValue::Quantity(value))
-                                }
-                                _ => None,
-                            }
-                        }
+                    .and_then(|value| {
+                        apply_declared_relation_unit(value, declared_unit.as_deref())
                     });
                 if let Some(value) = assignment.value.clone() {
                     values.insert(key, value);
@@ -1069,7 +1628,10 @@ fn evaluate_expression_program(
         }
         assignments.push(assignment);
     }
-    assignments
+    CurveExpressionEvaluation {
+        assignments,
+        solve_solutions,
+    }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -1426,6 +1988,7 @@ trait ExpressionValue: Clone {
     fn logical_not(self) -> Option<Self>;
     fn function(
         name: CreoMathFunction,
+        scope: Option<&str>,
         arguments: &[Self],
         context: RelationEvaluationContext<'_>,
     ) -> Option<Self>;
@@ -1480,9 +2043,11 @@ impl ExpressionValue for f64 {
 
     fn function(
         name: CreoMathFunction,
+        scope: Option<&str>,
         arguments: &[Self],
         _context: RelationEvaluationContext<'_>,
     ) -> Option<Self> {
+        scope.is_none().then_some(())?;
         evaluate_creo_math_function(name, arguments)
     }
 
@@ -1578,9 +2143,11 @@ impl ExpressionValue for AffineValue {
 
     fn function(
         name: CreoMathFunction,
+        scope: Option<&str>,
         arguments: &[Self],
         _context: RelationEvaluationContext<'_>,
     ) -> Option<Self> {
+        scope.is_none().then_some(())?;
         let constants = arguments
             .iter()
             .map(|argument| (argument.linear == 0.0).then_some(argument.constant))
@@ -1597,6 +2164,260 @@ impl ExpressionValue for AffineValue {
 
     fn finite(&self) -> bool {
         self.constant.is_finite() && self.linear.is_finite()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct SimultaneousAffineValue {
+    dimension: RelationDimension,
+    constant: f64,
+    coefficients: BTreeMap<String, f64>,
+}
+
+impl SimultaneousAffineValue {
+    fn constant(value: f64, dimension: RelationDimension) -> Self {
+        Self {
+            dimension,
+            constant: value,
+            coefficients: BTreeMap::new(),
+        }
+    }
+
+    fn scale(mut self, factor: f64) -> Self {
+        self.constant *= factor;
+        for coefficient in self.coefficients.values_mut() {
+            *coefficient *= factor;
+        }
+        self
+    }
+
+    fn combine(mut self, right: Self, subtract: bool) -> Option<Self> {
+        (self.dimension == right.dimension).then_some(())?;
+        let sign = if subtract { -1.0 } else { 1.0 };
+        self.constant += sign * right.constant;
+        for (variable, coefficient) in right.coefficients {
+            let remove = {
+                let value = self.coefficients.entry(variable.clone()).or_default();
+                *value += sign * coefficient;
+                *value == 0.0
+            };
+            if remove {
+                self.coefficients.remove(&variable);
+            }
+        }
+        Some(self)
+    }
+
+    fn as_curve_value(&self) -> Option<CurveExpressionValue> {
+        self.coefficients
+            .is_empty()
+            .then(|| quantity_value(self.constant, self.dimension))
+    }
+
+    fn constant_difference(&self, right: &Self) -> Option<f64> {
+        let difference = self.clone().combine(right.clone(), true)?;
+        difference
+            .coefficients
+            .values()
+            .all(|coefficient| *coefficient == 0.0)
+            .then_some(difference.constant)
+            .filter(|constant| constant.is_finite())
+    }
+
+    fn constant_truth(&self) -> Option<bool> {
+        (self.dimension == RelationDimension::default() && self.coefficients.is_empty())
+            .then_some(self.constant != 0.0)
+    }
+}
+
+impl ExpressionValue for SimultaneousAffineValue {
+    fn number(value: f64) -> Self {
+        Self::constant(value, RelationDimension::default())
+    }
+
+    fn reserved(name: &str) -> Option<Self> {
+        let value = CurveExpressionValue::reserved(name)?;
+        let (value, dimension) = quantity_parts_ref(&value)?;
+        Some(Self::constant(value, dimension))
+    }
+
+    fn with_unit(self, unit: RelationUnit) -> Option<Self> {
+        (self.dimension == RelationDimension::default()).then_some(())?;
+        let mut value = self.scale(unit.scale);
+        value.dimension = unit.dimension;
+        value.constant += unit.offset;
+        Some(value)
+    }
+
+    fn add(self, right: Self) -> Option<Self> {
+        self.combine(right, false)
+    }
+
+    fn subtract(self, right: Self) -> Option<Self> {
+        self.combine(right, true)
+    }
+
+    fn multiply(self, right: Self) -> Option<Self> {
+        if self.coefficients.is_empty() {
+            let dimension = self.dimension.combine(right.dimension, false)?;
+            let mut result = right.scale(self.constant);
+            result.dimension = dimension;
+            Some(result)
+        } else if right.coefficients.is_empty() {
+            let dimension = self.dimension.combine(right.dimension, false)?;
+            let mut result = self.scale(right.constant);
+            result.dimension = dimension;
+            Some(result)
+        } else {
+            None
+        }
+    }
+
+    fn divide(self, right: Self) -> Option<Self> {
+        (right.coefficients.is_empty() && right.constant != 0.0).then_some(())?;
+        let dimension = self.dimension.combine(right.dimension, true)?;
+        let mut result = self.scale(1.0 / right.constant);
+        result.dimension = dimension;
+        Some(result)
+    }
+
+    fn power(self, right: Self) -> Option<Self> {
+        if !right.coefficients.is_empty() || right.dimension != RelationDimension::default() {
+            return None;
+        }
+        if right.constant == 1.0 {
+            return Some(self);
+        }
+        if right.constant == 0.0 {
+            return Some(Self::number(1.0));
+        }
+        let value = self.as_curve_value()?;
+        let exponent = CurveExpressionValue::Number(right.constant);
+        let result = value.power(exponent)?;
+        let (value, dimension) = quantity_parts_ref(&result)?;
+        value.is_finite().then(|| Self::constant(value, dimension))
+    }
+
+    fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self> {
+        let difference = self.constant_difference(&right)?;
+        Some(Self::number(f64::from(operator.evaluate(difference, 0.0))))
+    }
+
+    fn logical_and(self, right: Self) -> Option<Self> {
+        if self.constant_truth() == Some(false) || right.constant_truth() == Some(false) {
+            return Some(Self::number(0.0));
+        }
+        let left = self.as_curve_value()?;
+        let right = right.as_curve_value()?;
+        let CurveExpressionValue::Number(value) = left.logical_and(right)? else {
+            return None;
+        };
+        Some(Self::number(value))
+    }
+
+    fn logical_or(self, right: Self) -> Option<Self> {
+        if self.constant_truth() == Some(true) || right.constant_truth() == Some(true) {
+            return Some(Self::number(1.0));
+        }
+        let left = self.as_curve_value()?;
+        let right = right.as_curve_value()?;
+        let CurveExpressionValue::Number(value) = left.logical_or(right)? else {
+            return None;
+        };
+        Some(Self::number(value))
+    }
+
+    fn logical_not(self) -> Option<Self> {
+        let value = self.as_curve_value()?;
+        let CurveExpressionValue::Number(value) = value.logical_not()? else {
+            return None;
+        };
+        Some(Self::number(value))
+    }
+
+    fn function(
+        name: CreoMathFunction,
+        scope: Option<&str>,
+        arguments: &[Self],
+        context: RelationEvaluationContext<'_>,
+    ) -> Option<Self> {
+        scope.is_none().then_some(())?;
+        match (name, arguments) {
+            (CreoMathFunction::If, [condition, when_true, when_false]) => {
+                if when_true.constant_difference(when_false) == Some(0.0) {
+                    return Some(when_true.clone());
+                }
+                let condition = condition.as_curve_value()?;
+                let CurveExpressionValue::Number(condition) = condition else {
+                    return None;
+                };
+                return Some(if condition == 0.0 {
+                    when_false.clone()
+                } else {
+                    when_true.clone()
+                });
+            }
+            (name @ (CreoMathFunction::Min | CreoMathFunction::Max), [left, right]) => {
+                let difference = left.constant_difference(right)?;
+                return Some(if extremum_selects_left(name, difference, 0.0)? {
+                    left.clone()
+                } else {
+                    right.clone()
+                });
+            }
+            (CreoMathFunction::Sign, [value, _])
+                if value.coefficients.is_empty() && value.constant == 0.0 =>
+            {
+                return Some(value.clone());
+            }
+            (CreoMathFunction::Bound, [value, lower, upper]) => {
+                (lower.constant_difference(upper)? < 0.0).then_some(())?;
+                return Some(if value.constant_difference(lower)? < 0.0 {
+                    lower.clone()
+                } else if value.constant_difference(upper)? > 0.0 {
+                    upper.clone()
+                } else {
+                    value.clone()
+                });
+            }
+            (CreoMathFunction::Dead, [value, lower, upper]) => {
+                (lower.constant_difference(upper)? <= 0.0).then_some(())?;
+                let result = if value.constant_difference(lower)? < 0.0 {
+                    value.clone().combine(lower.clone(), true)?
+                } else if value.constant_difference(upper)? > 0.0 {
+                    value.clone().combine(upper.clone(), true)?
+                } else {
+                    Self::constant(0.0, value.dimension)
+                };
+                return Some(result);
+            }
+            (CreoMathFunction::Near | CreoMathFunction::DblInTol, [left, right, tolerance]) => {
+                let difference = left.constant_difference(right)?;
+                let tolerance = tolerance.as_curve_value()?;
+                let (tolerance, tolerance_dimension) = quantity_parts_ref(&tolerance)?;
+                (left.dimension == tolerance_dimension && tolerance >= 0.0).then_some(())?;
+                return Some(Self::number(f64::from(difference.abs() <= tolerance)));
+            }
+            (CreoMathFunction::Pow, [base, exponent]) => {
+                return base.clone().power(exponent.clone());
+            }
+            _ => {}
+        }
+        let arguments = arguments
+            .iter()
+            .map(Self::as_curve_value)
+            .collect::<Option<Vec<_>>>()?;
+        let result = CurveExpressionValue::function(name, None, &arguments, context)?;
+        let (value, dimension) = quantity_parts_ref(&result)?;
+        Some(Self::constant(value, dimension))
+    }
+
+    fn negate(self) -> Option<Self> {
+        Some(self.scale(-1.0))
+    }
+
+    fn finite(&self) -> bool {
+        self.constant.is_finite() && self.coefficients.values().all(|value| value.is_finite())
     }
 }
 
@@ -1715,9 +2536,11 @@ impl ExpressionValue for CurveExpressionValue {
 
     fn function(
         name: CreoMathFunction,
+        scope: Option<&str>,
         arguments: &[Self],
         context: RelationEvaluationContext<'_>,
     ) -> Option<Self> {
+        scope.is_none().then_some(())?;
         evaluate_creo_relation_function(name, arguments, context)
     }
 
@@ -2060,9 +2883,8 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             }
             return self.values.get(&expression_identifier_key(name)).cloned();
         }
-        (!name.contains(':')).then_some(())?;
         (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
-        let function = creo_math_function(name)?;
+        let (function, scope) = creo_relation_function(name)?;
         self.cursor += 1;
         self.nesting += 1;
         self.whitespace();
@@ -2081,7 +2903,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         (self.source.get(self.cursor) == Some(&b')')).then_some(())?;
         self.cursor += 1;
         self.nesting -= 1;
-        V::function(function, &arguments, self.context)
+        V::function(function, scope, &arguments, self.context)
     }
 }
 
@@ -2126,6 +2948,7 @@ enum CreoMathFunction {
     StringEnds,
     StringMatch,
     StringPattern,
+    ContextDependent,
 }
 
 fn creo_math_function(name: &str) -> Option<CreoMathFunction> {
@@ -2169,7 +2992,25 @@ fn creo_math_function(name: &str) -> Option<CreoMathFunction> {
         "string_ends" => Some(CreoMathFunction::StringEnds),
         "string_match" => Some(CreoMathFunction::StringMatch),
         "string_pattern" => Some(CreoMathFunction::StringPattern),
+        "cable_len" | "cable_thick" | "cbl_logical_file" | "eang" | "elen" | "edistk"
+        | "ecoordx" | "ecoordy" | "evalgraph" | "trajpar_of_pnt" | "massprop_param"
+        | "material_param" | "mp_mass" | "mp_assigned_mass" | "mp_surf_area" | "mp_volume"
+        | "mp_cg_x" | "mp_cg_y" | "mp_cg_z" | "has_value" | "match_value" | "average"
+        | "value_by_argument" | "weighted_average" | "value" | "count_rows" => {
+            Some(CreoMathFunction::ContextDependent)
+        }
         _ => None,
+    }
+}
+
+fn creo_relation_function(name: &str) -> Option<(CreoMathFunction, Option<&str>)> {
+    if let Some((function, scope)) = name.split_once(':') {
+        (function.eq_ignore_ascii_case("rel_model_name")
+            && !scope.is_empty()
+            && scope.bytes().all(|byte| byte.is_ascii_digit()))
+        .then_some((CreoMathFunction::RelModelName, Some(scope)))
+    } else {
+        creo_math_function(name).map(|function| (function, None))
     }
 }
 
@@ -2276,7 +3117,8 @@ fn evaluate_creo_relation_function(
 ) -> Option<CurveExpressionValue> {
     use CurveExpressionValue::{Angle, Length, Number, Quantity, String};
     let value = match (name, arguments) {
-        (CreoMathFunction::Itos, [Number(value)]) if value.is_finite() => {
+        (CreoMathFunction::Itos, [argument]) => {
+            let (value, _) = quantity_parts_ref(argument)?;
             let rounded = value.round();
             if rounded == 0.0 {
                 String(std::string::String::new())
@@ -2284,18 +3126,17 @@ fn evaluate_creo_relation_function(
                 String(format!("{rounded:.0}"))
             }
         }
-        (CreoMathFunction::Rtos, [Number(value)]) => {
-            String(format_relation_real(*value, None, false)?)
-        }
-        (CreoMathFunction::Rtos, [Number(value), Number(decimals)]) => String(
-            format_relation_real(*value, Some(relation_precision(*decimals)?), false)?,
-        ),
-        (CreoMathFunction::Rtos, [Number(value), Number(decimals), Number(scientific)]) => {
-            String(format_relation_real(
-                *value,
-                Some(relation_precision(*decimals)?),
-                *scientific != 0.0,
-            )?)
+        (CreoMathFunction::Rtos, [argument, controls @ ..]) => {
+            let (value, _) = quantity_parts_ref(argument)?;
+            let (decimals, scientific) = match controls {
+                [] => (None, false),
+                [Number(decimals)] => (Some(relation_precision(*decimals)?), false),
+                [Number(decimals), Number(scientific)] => {
+                    (Some(relation_precision(*decimals)?), *scientific != 0.0)
+                }
+                _ => return None,
+            };
+            String(format_relation_real(value, decimals, scientific)?)
         }
         (CreoMathFunction::RelModelName, []) => String(context.model_name?.to_owned()),
         (CreoMathFunction::RelModelType, []) => String("part".to_owned()),
@@ -2552,6 +3393,27 @@ fn evaluate_relation_expression(
     (parser.cursor == parser.source.len() && value.finite()).then_some(value)
 }
 
+fn apply_declared_relation_unit(
+    value: CurveExpressionValue,
+    declared_unit: Option<&str>,
+) -> Option<CurveExpressionValue> {
+    let Some(declared_unit) = declared_unit else {
+        return Some(value);
+    };
+    let unit = relation_unit(declared_unit)?;
+    match (value, unit.dimension) {
+        (CurveExpressionValue::Number(value), _) => {
+            CurveExpressionValue::Number(value).with_unit(unit)
+        }
+        (value @ CurveExpressionValue::Length(_), RelationDimension::LENGTH)
+        | (value @ CurveExpressionValue::Angle(_), RelationDimension::ANGLE) => Some(value),
+        (CurveExpressionValue::Quantity(value), dimension) if value.dimension() == dimension => {
+            Some(CurveExpressionValue::Quantity(value))
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 fn evaluate_expression(expression: &str, values: &BTreeMap<String, f64>) -> Option<f64> {
     let mut parser = ExpressionParser {
@@ -2582,6 +3444,170 @@ fn evaluate_affine_expression(
     (parser.cursor == parser.source.len() && value.finite()).then_some(value)
 }
 
+fn evaluate_simultaneous_affine_expression(
+    expression: &str,
+    values: &BTreeMap<String, SimultaneousAffineValue>,
+    context: RelationEvaluationContext<'_>,
+) -> Option<SimultaneousAffineValue> {
+    let mut parser = ExpressionParser {
+        source: expression.as_bytes(),
+        cursor: 0,
+        values,
+        context,
+        nesting: 0,
+    };
+    let value = parser.logical_or()?;
+    parser.whitespace();
+    (parser.cursor == parser.source.len() && value.finite()).then_some(value)
+}
+
+fn solve_affine_expression_block(
+    block: &CurveExpressionSolveBlock,
+    values: &BTreeMap<String, CurveExpressionValue>,
+    variable_dimensions: &[RelationDimension],
+    context: RelationEvaluationContext<'_>,
+) -> Option<Vec<CurveExpressionValue>> {
+    (variable_dimensions.len() == block.variables.len()).then_some(())?;
+    let variable_keys = block
+        .variables
+        .iter()
+        .map(|variable| expression_identifier_key(variable))
+        .collect::<Vec<_>>();
+    let mut affine_values = values
+        .iter()
+        .filter_map(|(name, value)| {
+            let (value, dimension) = quantity_parts_ref(value)?;
+            Some((
+                name.clone(),
+                SimultaneousAffineValue::constant(value, dimension),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for (variable, dimension) in variable_keys.iter().zip(variable_dimensions) {
+        affine_values.insert(
+            variable.clone(),
+            SimultaneousAffineValue {
+                dimension: *dimension,
+                constant: 0.0,
+                coefficients: BTreeMap::from([(variable.clone(), 1.0)]),
+            },
+        );
+    }
+    let mut rows = block
+        .equations
+        .iter()
+        .map(|equation| {
+            let left =
+                evaluate_simultaneous_affine_expression(&equation.left, &affine_values, context)?;
+            let right =
+                evaluate_simultaneous_affine_expression(&equation.right, &affine_values, context)?;
+            let difference = left.combine(right, true)?;
+            let coefficients = variable_keys
+                .iter()
+                .map(|variable| {
+                    difference
+                        .coefficients
+                        .get(variable)
+                        .copied()
+                        .unwrap_or(0.0)
+                })
+                .collect::<Vec<_>>();
+            Some(AffineEquationRow {
+                coefficients,
+                rhs: -difference.constant,
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let solution = solve_unique_affine_system(&mut rows, variable_keys.len())?;
+    Some(
+        solution
+            .into_iter()
+            .zip(variable_dimensions)
+            .map(|(value, dimension)| quantity_value(value, *dimension))
+            .collect(),
+    )
+}
+
+struct AffineEquationRow {
+    coefficients: Vec<f64>,
+    rhs: f64,
+}
+
+fn solve_unique_affine_system(
+    rows: &mut [AffineEquationRow],
+    variable_count: usize,
+) -> Option<Vec<f64>> {
+    (variable_count > 0 && rows.len() >= variable_count).then_some(())?;
+    for row in rows.iter_mut() {
+        let scale = row
+            .coefficients
+            .iter()
+            .map(|value| value.abs())
+            .fold(0.0, f64::max);
+        if scale > 0.0 {
+            for coefficient in &mut row.coefficients {
+                *coefficient /= scale;
+            }
+            row.rhs /= scale;
+        }
+    }
+    let rhs_scale = rows.iter().map(|row| row.rhs.abs()).fold(1.0, f64::max);
+    let coefficient_tolerance = 1e-12;
+    let residual_tolerance = 1e-9 * rhs_scale;
+    let mut pivot_row = 0;
+    for column in 0..variable_count {
+        let selected = (pivot_row..rows.len()).max_by(|&first, &second| {
+            rows[first].coefficients[column]
+                .abs()
+                .total_cmp(&rows[second].coefficients[column].abs())
+        })?;
+        let divisor = rows[selected].coefficients[column];
+        (divisor.abs() > coefficient_tolerance).then_some(())?;
+        rows.swap(pivot_row, selected);
+        for coefficient in &mut rows[pivot_row].coefficients {
+            *coefficient /= divisor;
+        }
+        rows[pivot_row].rhs /= divisor;
+        let pivot_coefficients = rows[pivot_row].coefficients.clone();
+        let pivot_rhs = rows[pivot_row].rhs;
+        for (row_index, row) in rows.iter_mut().enumerate() {
+            if row_index == pivot_row {
+                continue;
+            }
+            let factor = row.coefficients[column];
+            if factor.abs() <= coefficient_tolerance {
+                continue;
+            }
+            for (coefficient, pivot) in row.coefficients.iter_mut().zip(&pivot_coefficients) {
+                *coefficient -= factor * pivot;
+                if coefficient.abs() <= coefficient_tolerance {
+                    *coefficient = 0.0;
+                }
+            }
+            row.rhs -= factor * pivot_rhs;
+        }
+        pivot_row += 1;
+    }
+    rows.iter()
+        .skip(variable_count)
+        .all(|row| {
+            row.coefficients
+                .iter()
+                .all(|coefficient| coefficient.abs() <= coefficient_tolerance)
+                && row.rhs.abs() <= residual_tolerance
+        })
+        .then_some(())?;
+    let solution = rows
+        .iter()
+        .take(variable_count)
+        .map(|row| row.rhs)
+        .collect::<Vec<_>>();
+    solution
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(solution)
+}
+
 fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, AffineValue> {
     let mut values = BTreeMap::from([(
         "t".to_string(),
@@ -2592,9 +3618,11 @@ fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, A
     )]);
     let mut defined_symbols = BTreeSet::from(["t".to_string()]);
     for assignment in &record.assignments {
-        let key = expression_identifier_key(&assignment.name);
-        let declaration_is_valid =
-            assignment.declared_unit.is_none() || !defined_symbols.contains(&key);
+        let Some((name, declared_unit)) = assignment.parameter_target() else {
+            continue;
+        };
+        let key = expression_identifier_key(name);
+        let declaration_is_valid = declared_unit.is_none() || !defined_symbols.contains(&key);
         defined_symbols.insert(key.clone());
         match assignment.activation {
             CurveExpressionActivation::Active => {
@@ -2602,9 +3630,7 @@ fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, A
                     .then(|| evaluate_affine_expression(&assignment.expression, &values))
                     .flatten()
                     .and_then(|value| {
-                        assignment
-                            .declared_unit
-                            .as_deref()
+                        declared_unit
                             .map_or(Some(value), |unit| value.with_unit(relation_unit(unit)?))
                     });
                 if let Some(value) = value {
@@ -2626,6 +3652,8 @@ fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, A
 /// Creo outputs `r`, `theta` (degrees), and `z` over `t` in `[0, 1]`.
 pub fn expression_helix(record: &CurveExpressionRecord) -> Option<CurveExpressionHelix> {
     record.prohibited_constructs.is_empty().then_some(())?;
+    record.solve_blocks.is_empty().then_some(())?;
+    (!record.unresolved_solve_control).then_some(())?;
     let values = evaluate_affine_program(record);
     let radius = values.get("r")?;
     let theta = values.get("theta")?;
@@ -3797,14 +4825,20 @@ mod tests {
         assert_eq!(records[1].lines[0].text, "r=5");
         assert!(records[0].lines[0].offset < records[0].lines[1].offset);
         assert_eq!(records[0].assignments.len(), 4);
-        assert_eq!(records[0].assignments[0].name, "r");
+        assert_eq!(
+            records[0].assignments[0].parameter_target(),
+            Some(("r", None))
+        );
         assert_eq!(records[0].assignments[0].expression, "5");
         assert!(records[0].assignments[0].dependencies.is_empty());
         assert_eq!(
             records[0].assignments[0].value,
             Some(CurveExpressionValue::Number(5.0))
         );
-        assert_eq!(records[0].assignments[1].name, "theta");
+        assert_eq!(
+            records[0].assignments[1].parameter_target(),
+            Some(("theta", None))
+        );
         assert_eq!(records[0].assignments[1].expression, "t*360");
         assert_eq!(records[0].assignments[1].dependencies, ["t"]);
         assert_eq!(records[0].assignments[1].value, None);
@@ -3831,13 +4865,579 @@ mod tests {
             evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
 
         assert_eq!(assignments.len(), 2);
-        assert_eq!(assignments[0].name, "seen");
+        assert_eq!(assignments[0].parameter_target(), Some(("seen", None)));
         assert_eq!(assignments[0].value, None);
-        assert_eq!(assignments[1].name, "flag");
+        assert_eq!(assignments[1].parameter_target(), Some(("flag", None)));
         assert_eq!(
             assignments[1].value,
             Some(CurveExpressionValue::Number(1.0))
         );
+    }
+
+    #[test]
+    fn retains_simultaneous_equations_without_sequential_assignments() {
+        let lines = [
+            "area=100",
+            "base=10",
+            "width=99",
+            "SOLVE",
+            "width=height+1",
+            "offset=base+1",
+            "width*height=area",
+            "FOR width, height",
+            "present=exists('width')",
+            "after_width=width",
+            "result=area+1",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let program = curve_expression_solve_program(&lines);
+        assert!(!program.unresolved_control);
+        let [block] = program.blocks.as_slice() else {
+            panic!("one solve block");
+        };
+        assert_eq!(block.variables, ["width", "height"]);
+        assert_eq!(block.offset, 3);
+        assert_eq!(block.for_offset, 7);
+        assert_eq!(block.equations.len(), 2);
+        assert_eq!(block.equations[0].left, "width");
+        assert_eq!(block.equations[0].right, "height+1");
+        assert_eq!(block.equations[0].dependencies, ["width", "height"]);
+        assert_eq!(block.equations[1].left, "width*height");
+        assert_eq!(block.equations[1].right, "area");
+        assert_eq!(block.equations[1].dependencies, ["width", "height", "area"]);
+        assert_eq!(block.assignments.len(), 1);
+        assert_eq!(
+            block.assignments[0].parameter_target(),
+            Some(("offset", None))
+        );
+        assert_eq!(block.assignments[0].expression, "base+1");
+        assert_eq!(block.assignments[0].dependencies, ["base"]);
+
+        let assignments =
+            evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
+        assert_eq!(assignments.len(), 7);
+        assert_eq!(assignments[0].parameter_target(), Some(("area", None)));
+        assert_eq!(assignments[1].parameter_target(), Some(("base", None)));
+        assert_eq!(assignments[2].parameter_target(), Some(("width", None)));
+        assert_eq!(assignments[2].value, None);
+        assert_eq!(assignments[3].parameter_target(), Some(("offset", None)));
+        assert_eq!(
+            assignments[3].value,
+            Some(CurveExpressionValue::Number(11.0))
+        );
+        assert_eq!(assignments[4].parameter_target(), Some(("present", None)));
+        assert_eq!(
+            assignments[4].value,
+            Some(CurveExpressionValue::Number(1.0))
+        );
+        assert_eq!(
+            assignments[5].parameter_target(),
+            Some(("after_width", None))
+        );
+        assert_eq!(assignments[5].value, None);
+        assert_eq!(assignments[6].parameter_target(), Some(("result", None)));
+        assert_eq!(
+            assignments[6].value,
+            Some(CurveExpressionValue::Number(101.0))
+        );
+    }
+
+    #[test]
+    fn solves_complete_affine_simultaneous_equations() {
+        let lines = [
+            "x=0",
+            "y=0",
+            "sum=10",
+            "SOLVE",
+            "x+y=sum",
+            "x-y=2",
+            "FOR x,y",
+            "product=x*y",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&3],
+            [
+                CurveExpressionValue::Number(6.0),
+                CurveExpressionValue::Number(4.0),
+            ]
+        );
+        assert_eq!(evaluation.assignments.len(), 4);
+        assert_eq!(
+            evaluation
+                .assignments
+                .iter()
+                .map(|assignment| assignment.value.clone())
+                .collect::<Vec<_>>(),
+            [
+                Some(CurveExpressionValue::Number(6.0)),
+                Some(CurveExpressionValue::Number(4.0)),
+                Some(CurveExpressionValue::Number(10.0)),
+                Some(CurveExpressionValue::Number(24.0)),
+            ]
+        );
+    }
+
+    #[test]
+    fn leaves_underdetermined_affine_systems_unsolved() {
+        let lines = ["x=0", "y=0", "SOLVE", "x+y=10", "FOR x,y"]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert!(evaluation.solve_solutions.is_empty());
+        assert_eq!(evaluation.assignments[0].value, None);
+        assert_eq!(evaluation.assignments[1].value, None);
+    }
+
+    #[test]
+    fn rejects_overflow_when_reducing_affine_comparison() {
+        let overflow = [
+            "x=0",
+            "limit=1e308",
+            "SOLVE",
+            "if(limit-(-limit)>0,x,0)=1",
+            "FOR x",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+        let evaluation = evaluate_expression_program_details(
+            &overflow,
+            None,
+            &ExternalRelationSymbols::default(),
+        );
+        assert!(evaluation.solve_solutions.is_empty());
+        assert_eq!(evaluation.assignments[0].value, None);
+    }
+
+    #[test]
+    fn solves_affine_systems_with_fixed_boolean_annihilators() {
+        let lines = ["x=0", "y=0", "SOLVE", "x=3", "y+(0&x)+(x&0)=4", "FOR x,y"]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&2],
+            [
+                CurveExpressionValue::Number(3.0),
+                CurveExpressionValue::Number(4.0),
+            ]
+        );
+
+        let lines = ["x=0", "y=0", "SOLVE", "x=3", "y+(1|x)+(x|1)=6", "FOR x,y"]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&2],
+            [
+                CurveExpressionValue::Number(3.0),
+                CurveExpressionValue::Number(4.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn solves_affine_systems_with_fixed_function_powers() {
+        let lines = [
+            "x=0[mm]",
+            "y=0",
+            "SOLVE",
+            "pow(x,1)=3[mm]",
+            "y+pow(x,0)=5",
+            "FOR x,y",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&2],
+            [
+                CurveExpressionValue::Length(3.0),
+                CurveExpressionValue::Number(4.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn solves_affine_systems_with_branch_and_sign_invariants() {
+        let lines = [
+            "x=0",
+            "y=0[mm]",
+            "SOLVE",
+            "x=3",
+            "if(x,y,y)+sign(0[mm],x)=4[mm]",
+            "FOR x,y",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&2],
+            [
+                CurveExpressionValue::Number(3.0),
+                CurveExpressionValue::Length(4.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn leaves_inconsistent_affine_systems_unsolved() {
+        let lines = [
+            "x=0", "y=0", "SOLVE", "x+y=10", "x-y=2", "x+y=11", "FOR x,y",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert!(evaluation.solve_solutions.is_empty());
+        assert_eq!(evaluation.assignments[0].value, None);
+        assert_eq!(evaluation.assignments[1].value, None);
+    }
+
+    #[test]
+    fn affine_solver_is_invariant_under_independent_equation_scaling() {
+        let mut rows = [
+            AffineEquationRow {
+                coefficients: vec![1e-15, 0.0],
+                rhs: 6e-15,
+            },
+            AffineEquationRow {
+                coefficients: vec![0.0, 1e15],
+                rhs: 4e15,
+            },
+        ];
+
+        let solution =
+            solve_unique_affine_system(&mut rows, 2).expect("independently scaled unique system");
+        assert!((solution[0] - 6.0).abs() <= 1e-12);
+        assert!((solution[1] - 4.0).abs() <= 1e-12);
+    }
+
+    #[test]
+    fn solves_dimensioned_affine_simultaneous_equations() {
+        let lines = [
+            "x=0[mm]",
+            "y=0[mm]",
+            "SOLVE",
+            "x+y=10[mm]",
+            "x-y=2[mm]",
+            "FOR x,y",
+            "area=x*y",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&2],
+            [
+                CurveExpressionValue::Length(6.0),
+                CurveExpressionValue::Length(4.0),
+            ]
+        );
+        assert_eq!(
+            evaluation.assignments[0].value,
+            Some(CurveExpressionValue::Length(6.0))
+        );
+        assert_eq!(
+            evaluation.assignments[1].value,
+            Some(CurveExpressionValue::Length(4.0))
+        );
+        assert_eq!(
+            evaluation.assignments[2].value,
+            Some(quantity_value(
+                24.0,
+                RelationDimension::LENGTH
+                    .scale(2)
+                    .expect("squared length dimension")
+            ))
+        );
+    }
+
+    #[test]
+    fn solves_affine_piecewise_expressions_with_unknown_independent_branches() {
+        let lines = [
+            "x=0[mm]",
+            "y=0[mm]",
+            "SOLVE",
+            "min(x+2[mm],x+5[mm])+y=10[mm]",
+            "max(x-1[mm],x-3[mm])-y=3[mm]",
+            "if(x+1[mm]>x,x,x+100[mm])-y=4[mm]",
+            "FOR x,y",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&2],
+            [
+                CurveExpressionValue::Length(6.0),
+                CurveExpressionValue::Length(2.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn leaves_unknown_dependent_piecewise_systems_unsolved() {
+        let lines = [
+            "x=0[mm]",
+            "y=0[mm]",
+            "SOLVE",
+            "min(x,-x)+y=10[mm]",
+            "x-y=2[mm]",
+            "FOR x,y",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert!(evaluation.solve_solutions.is_empty());
+        assert_eq!(evaluation.assignments[0].value, None);
+        assert_eq!(evaluation.assignments[1].value, None);
+    }
+
+    #[test]
+    fn solves_parallel_affine_clamps_deadbands_and_tolerance_tests() {
+        let lines = [
+            "x=0[mm]",
+            "y=0[mm]",
+            "SOLVE",
+            "bound(x+2[mm],x+1[mm],x+3[mm])+y=10[mm]",
+            "dead(x+4[mm],x+1[mm],x+3[mm])-y=1[mm]",
+            "near(x+1[mm],x+2[mm],1[mm])=1",
+            "dbl_in_tol(x+2[mm],x+1[mm],1[mm])=1",
+            "FOR x,y",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&2],
+            [
+                CurveExpressionValue::Length(8.0),
+                CurveExpressionValue::Length(0.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn leaves_unknown_dependent_clamps_unsolved() {
+        let lines = [
+            "x=0[mm]",
+            "y=0[mm]",
+            "SOLVE",
+            "bound(x,0[mm],10[mm])+y=10[mm]",
+            "x-y=2[mm]",
+            "FOR x,y",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert!(evaluation.solve_solutions.is_empty());
+        assert_eq!(evaluation.assignments[0].value, None);
+        assert_eq!(evaluation.assignments[1].value, None);
+    }
+
+    #[test]
+    fn solves_affine_systems_with_different_unknown_dimensions() {
+        let lines = [
+            "distance=0[mm]",
+            "duration=0[s]",
+            "speed=2[mm/s]",
+            "total=10[mm]",
+            "SOLVE",
+            "distance+speed*duration=total",
+            "duration=2[s]",
+            "FOR distance,duration",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&4],
+            [
+                CurveExpressionValue::Length(6.0),
+                quantity_value(2.0, RelationDimension::TIME),
+            ]
+        );
+    }
+
+    #[test]
+    fn preserves_reserved_quantity_dimensions_in_affine_systems() {
+        let lines = [
+            "acceleration=0[mm/s^2]",
+            "SOLVE",
+            "acceleration=G",
+            "FOR acceleration",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&1],
+            [quantity_value(9_800.0, RelationDimension::ACCELERATION)]
+        );
+    }
+
+    #[test]
+    fn leaves_dimensionally_inconsistent_affine_systems_unsolved() {
+        let lines = ["x=0[mm]", "SOLVE", "x=1[s]", "FOR x"]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert!(evaluation.solve_solutions.is_empty());
+        assert_eq!(evaluation.assignments[0].value, None);
+    }
+
+    #[test]
+    fn unterminated_solve_block_cannot_create_assignments() {
+        let lines = ["before=1", "SOLVE", "false_parameter=2", "after=3"]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let program = curve_expression_solve_program(&lines);
+        assert!(program.unresolved_control);
+        assert!(program.blocks.is_empty());
+        let assignments =
+            evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
+        assert_eq!(assignments.len(), 1);
+        assert_eq!(assignments[0].parameter_target(), Some(("before", None)));
     }
 
     #[test]
@@ -3858,8 +5458,10 @@ mod tests {
         let assignments =
             evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
 
-        assert_eq!(assignments[0].name, "span");
-        assert_eq!(assignments[0].declared_unit.as_deref(), Some("inch"));
+        assert_eq!(
+            assignments[0].parameter_target(),
+            Some(("span", Some("inch")))
+        );
         assert_eq!(
             assignments[0].value,
             Some(CurveExpressionValue::Length(50.8))
@@ -3868,7 +5470,10 @@ mod tests {
             panic!("dimensioned copy");
         };
         assert!((*copy - 76.2).abs() < 1e-12);
-        assert_eq!(assignments[2].declared_unit.as_deref(), Some("mm"));
+        assert_eq!(
+            assignments[2].parameter_target(),
+            Some(("span", Some("mm")))
+        );
         assert_eq!(assignments[2].value, None);
         assert_eq!(assignments[3].value, None);
     }
@@ -4009,6 +5614,366 @@ mod tests {
         assert_eq!(evaluate_expression(&excessive_power_depth, &values), None);
         let long_unary_chain = format!("{}1", "-".repeat(1024));
         assert_eq!(evaluate_expression(&long_unary_chain, &values), Some(1.0));
+    }
+
+    #[test]
+    fn retains_context_function_arguments_without_function_dependencies() {
+        let expressions = [
+            "a=cable_len(\"c\",start_id,end_id)",
+            "b=cable_thick(\"c\",location_id)",
+            "c=cbl_logical_file()",
+            "d=eang(first_entity,second_entity)",
+            "e=elen(first_entity)",
+            "f=edistk(first_entity,second_entity)",
+            "g=ecoordx(first_entity)",
+            "h=ecoordy(first_entity)",
+            "i=evalgraph(\"graph\",driver)",
+            "j=trajpar_of_pnt(\"trajectory\",\"point\")",
+            "k=massprop_param(property_name)",
+            "l=material_param(parameter_name,material_name)",
+            "m=mp_mass(model_path)",
+            "n=mp_assigned_mass(model_path)",
+            "o=mp_surf_area(model_path)",
+            "p=mp_volume(model_path)",
+            "q=mp_cg_x(model_path,coordinate_system,component_path)",
+            "r=mp_cg_y(model_path,coordinate_system,component_path)",
+            "s=mp_cg_z(model_path,coordinate_system,component_path)",
+            "t=has_value(table_parameter,needle,column)",
+            "u=match_value(table_parameter,needle,column)",
+            "v=average(table_parameter)",
+            "w=value_by_argument(table_parameter,argument,interpolation_order)",
+            "x=weighted_average(table_parameter)",
+            "y=value(table_parameter,row,column)",
+            "z=count_rows(table_parameter)",
+            "aa=min(table_parameter)",
+            "ab=max(table_parameter)",
+        ];
+        let lines = expressions
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let assignments =
+            evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(assignments.len(), expressions.len());
+        assert_eq!(assignments[0].dependencies, ["start_id", "end_id"]);
+        assert_eq!(assignments[1].dependencies, ["location_id"]);
+        assert!(assignments[2].dependencies.is_empty());
+        assert_eq!(
+            assignments[3].dependencies,
+            ["first_entity", "second_entity"]
+        );
+        assert_eq!(assignments[4].dependencies, ["first_entity"]);
+        assert_eq!(
+            assignments[5].dependencies,
+            ["first_entity", "second_entity"]
+        );
+        assert_eq!(assignments[6].dependencies, ["first_entity"]);
+        assert_eq!(assignments[7].dependencies, ["first_entity"]);
+        assert_eq!(assignments[8].dependencies, ["driver"]);
+        assert!(assignments[9].dependencies.is_empty());
+        assert_eq!(assignments[10].dependencies, ["property_name"]);
+        assert_eq!(
+            assignments[11].dependencies,
+            ["parameter_name", "material_name"]
+        );
+        for assignment in &assignments[12..16] {
+            assert_eq!(assignment.dependencies, ["model_path"]);
+        }
+        for assignment in &assignments[16..19] {
+            assert_eq!(
+                assignment.dependencies,
+                ["model_path", "coordinate_system", "component_path"]
+            );
+        }
+        for assignment in &assignments[19..21] {
+            assert_eq!(
+                assignment.dependencies,
+                ["table_parameter", "needle", "column"]
+            );
+        }
+        assert_eq!(assignments[21].dependencies, ["table_parameter"]);
+        assert_eq!(
+            assignments[22].dependencies,
+            ["table_parameter", "argument", "interpolation_order"]
+        );
+        assert_eq!(assignments[23].dependencies, ["table_parameter"]);
+        assert_eq!(
+            assignments[24].dependencies,
+            ["table_parameter", "row", "column"]
+        );
+        assert_eq!(assignments[25].dependencies, ["table_parameter"]);
+        assert_eq!(assignments[26].dependencies, ["table_parameter"]);
+        assert_eq!(assignments[27].dependencies, ["table_parameter"]);
+        assert!(assignments
+            .iter()
+            .all(|assignment| assignment.value.is_none()));
+    }
+
+    #[test]
+    fn retains_scoped_model_name_calls_without_parameter_dependencies() {
+        let lines = ["component_name=rel_model_name:27()", "copy=component_name"]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let assignments = evaluate_expression_program(
+            &lines,
+            Some("current_part"),
+            &ExternalRelationSymbols::default(),
+        );
+
+        assert_eq!(assignments.len(), 2);
+        assert!(assignments[0].dependencies.is_empty());
+        assert_eq!(assignments[0].value, None);
+        assert_eq!(assignments[1].dependencies, ["component_name"]);
+        assert_eq!(assignments[1].value, None);
+        assert_eq!(
+            evaluate_relation_expression(
+                "rel_model_name:27()",
+                &BTreeMap::new(),
+                RelationEvaluationContext {
+                    model_name: Some("current_part"),
+                    ..RelationEvaluationContext::default()
+                },
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn evaluates_scoped_symbol_targets_without_declaring_local_parameters() {
+        let lines = [
+            "d7:0=driver+1",
+            "width:fid_25:cid_12=5",
+            "copy=d7:0*2",
+            "present=exists('width:fid_25:cid_12')",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+        let mut external_symbols = ExternalRelationSymbols::default();
+        external_symbols.observe("driver", Some(CurveExpressionValue::Number(2.0)));
+
+        let assignments = evaluate_expression_program(&lines, None, &external_symbols);
+
+        assert_eq!(assignments.len(), 4);
+        assert_eq!(
+            assignments[0].target,
+            CurveExpressionTarget::ScopedSymbol {
+                name: "d7:0".to_owned(),
+            }
+        );
+        assert_eq!(assignments[0].dependencies, ["driver"]);
+        assert_eq!(
+            assignments[0].value,
+            Some(CurveExpressionValue::Number(3.0))
+        );
+        assert_eq!(
+            assignments[1].target,
+            CurveExpressionTarget::ScopedSymbol {
+                name: "width:fid_25:cid_12".to_owned(),
+            }
+        );
+        assert_eq!(assignments[2].dependencies, ["d7:0"]);
+        assert_eq!(
+            assignments[2].value,
+            Some(CurveExpressionValue::Number(6.0))
+        );
+        assert_eq!(
+            assignments[3].value,
+            Some(CurveExpressionValue::Number(1.0))
+        );
+        assert!(assignments[..2]
+            .iter()
+            .all(|assignment| assignment.parameter_target().is_none()));
+    }
+
+    #[test]
+    fn classifies_and_evaluates_unscoped_system_symbol_targets() {
+        use CurveExpressionSystemSymbolFamily::{
+            Dimension, DrivenDimension, KnownDimension, PatternCount, ReferenceDimension,
+            SectionDimension, SectionReferenceDimension, Tolerance,
+        };
+
+        let targets = [
+            ("d7", Dimension),
+            ("sd8", SectionDimension),
+            ("rd9", ReferenceDimension),
+            ("rsd10", SectionReferenceDimension),
+            ("kd11", KnownDimension),
+            ("Ad12", DrivenDimension),
+            ("p13", PatternCount),
+            ("tpm14", Tolerance),
+            ("tp15", Tolerance),
+            ("tm16", Tolerance),
+        ];
+        let mut sources = targets
+            .iter()
+            .enumerate()
+            .map(|(index, (name, _))| format!("{name}={}", index + 1))
+            .collect::<Vec<_>>();
+        sources.push("sum=d7+sd8+rd9+rsd10+kd11+Ad12+p13+tpm14+tp15+tm16".to_owned());
+        let lines = sources
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine { text, offset })
+            .collect::<Vec<_>>();
+
+        let assignments =
+            evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(assignments.len(), targets.len() + 1);
+        for (assignment, (name, family)) in assignments.iter().zip(targets) {
+            assert_eq!(
+                assignment.target,
+                CurveExpressionTarget::SystemSymbol {
+                    name: name.to_owned(),
+                    family,
+                }
+            );
+            assert!(assignment.parameter_target().is_none());
+        }
+        assert_eq!(
+            assignments
+                .last()
+                .and_then(|assignment| assignment.value.clone()),
+            Some(CurveExpressionValue::Number(55.0))
+        );
+    }
+
+    #[test]
+    fn retains_registered_function_write_targets_and_argument_dependencies() {
+        let lines = [
+            "store_value(component,if(row==1,2,3),column,\"literal\")=driver*2",
+            "notify_regeneration()=5",
+            "result=driver",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let assignments =
+            evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(assignments.len(), 3);
+        assert_eq!(
+            assignments[0].target,
+            CurveExpressionTarget::FunctionWrite {
+                name: "store_value".to_owned(),
+                arguments: vec![
+                    "component".to_owned(),
+                    "if(row==1,2,3)".to_owned(),
+                    "column".to_owned(),
+                    "\"literal\"".to_owned(),
+                ],
+            }
+        );
+        assert_eq!(
+            assignments[0].dependencies,
+            ["component", "row", "column", "driver"]
+        );
+        assert_eq!(
+            assignments[1].target,
+            CurveExpressionTarget::FunctionWrite {
+                name: "notify_regeneration".to_owned(),
+                arguments: Vec::new(),
+            }
+        );
+        assert!(assignments[1].dependencies.is_empty());
+        assert!(assignments[..2]
+            .iter()
+            .all(|assignment| assignment.value.is_none()));
+        assert_eq!(assignments[2].parameter_target(), Some(("result", None)));
+    }
+
+    #[test]
+    fn retains_table_cell_targets_without_defining_scalar_parameters() {
+        let lines = [
+            "value(samples,row_index,column_index)=driver*2",
+            "VALUE(series,2)=5",
+            "after=value(samples,row_index,column_index)",
+            "value(samples,if(row_index==1,2,3),column_index)=driver",
+            "value (spaced,row_index)=driver",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let assignments =
+            evaluate_expression_program(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(assignments.len(), 5);
+        assert_eq!(
+            assignments[0].target,
+            CurveExpressionTarget::TableCell {
+                parameter: "samples".to_owned(),
+                row: "row_index".to_owned(),
+                column: Some("column_index".to_owned()),
+            }
+        );
+        assert_eq!(
+            assignments[0].dependencies,
+            ["samples", "row_index", "column_index", "driver"]
+        );
+        assert_eq!(
+            assignments[1].target,
+            CurveExpressionTarget::TableCell {
+                parameter: "series".to_owned(),
+                row: "2".to_owned(),
+                column: None,
+            }
+        );
+        assert_eq!(assignments[1].dependencies, ["series"]);
+        assert_eq!(assignments[2].parameter_target(), Some(("after", None)));
+        assert_eq!(
+            assignments[2].dependencies,
+            ["samples", "row_index", "column_index"]
+        );
+        assert_eq!(
+            assignments[3].target,
+            CurveExpressionTarget::TableCell {
+                parameter: "samples".to_owned(),
+                row: "if(row_index==1,2,3)".to_owned(),
+                column: Some("column_index".to_owned()),
+            }
+        );
+        assert_eq!(
+            assignments[3].dependencies,
+            ["samples", "row_index", "column_index", "driver"]
+        );
+        assert_eq!(
+            assignments[4].target,
+            CurveExpressionTarget::TableCell {
+                parameter: "spaced".to_owned(),
+                row: "row_index".to_owned(),
+                column: None,
+            }
+        );
+        assert!(assignments
+            .iter()
+            .all(|assignment| assignment.value.is_none()));
     }
 
     #[test]
@@ -4383,7 +6348,11 @@ mod tests {
             ("rtos(0)", ""),
             ("rtos(-0,3,YES)", ""),
             ("rtos(0.01234,2,TRUE)", "1.23e-02"),
+            ("rtos(25.4[mm],1)", "25.4"),
+            ("rtos(0.5[rad],3)", "28.648"),
+            ("rtos(2[N],0)", "2000"),
             ("rel_model_type()", "part"),
+            ("itos(1.6[mm])", "2"),
             ("itos(1e20)", "100000000000000000000"),
             ("itos(-1e20)", "-100000000000000000000"),
         ];
@@ -4430,6 +6399,17 @@ mod tests {
             ),
             None
         );
+        for expression in ["rtos('one')", "rtos(1,2[mm])", "itos('one')"] {
+            assert_eq!(
+                evaluate_relation_expression(
+                    expression,
+                    &values,
+                    RelationEvaluationContext::default()
+                ),
+                None,
+                "{expression}"
+            );
+        }
         assert_eq!(
             evaluate_relation_expression(
                 "rel_model_name()",
@@ -4612,7 +6592,7 @@ mod tests {
             assignments[6].value,
             Some(CurveExpressionValue::Number(5.0))
         );
-        assert_eq!(assignments[7].name, "iffy");
+        assert_eq!(assignments[7].parameter_target(), Some(("iffy", None)));
         assert_eq!(
             assignments[7].value,
             Some(CurveExpressionValue::Number(9.0))

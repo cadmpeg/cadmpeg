@@ -1,0 +1,346 @@
+# SPDX-License-Identifier: Apache-2.0
+# Machine-readable record layouts for IGES.
+schema = 1
+format = "iges"
+spec = "docs/formats/iges.md"
+note = """
+IGES has no binary byte layout, but its card is a fixed 80-column text record,
+so the layouts here use `kind = "column"`: 1-based inclusive character columns
+that must tile the 80-column card exactly.
+
+`iges.md` uses unnumbered headings, so the `section` keys below are the heading
+titles rather than section numbers.
+
+Covers the ordinary card, the Parameter Data card, the Terminate data area, and
+both Directory Entry cards. Per-entity parameter slot order is not in the
+specification; `corpus/iges-envelope-a.toml` already carries the entity and form
+matrix, and the per-entity parameter order lives only in the parser.
+"""
+
+[[record]]
+name = "canonical_card"
+kind = "column"
+section = "Physical representation"
+anchor = "A canonical line contains an 80-byte card followed by a line ending."
+size = 80
+note = "Byte positions are one-based in the specification. The Global data stream is the concatenation of columns 1 through 72 from its cards."
+
+[[record.field]]
+name = "section_data"
+columns = "1-72"
+type = "text"
+source = "spec"
+anchor = "Card bytes 1 through 72 are section data."
+
+[[record.field]]
+name = "section_marker"
+columns = "73-73"
+type = "char"
+source = "spec"
+anchor = "Byte 73 is the section marker."
+
+[[record.field]]
+name = "sequence"
+columns = "74-80"
+type = "text"
+source = "spec"
+anchor = "Bytes 74 through 80 are the right-aligned decimal sequence field."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-iges/src/card.rs"
+contains = "const CARD_WIDTH: usize = 80;"
+note = "The parser's card width matches the 80-column card."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-iges/src/card.rs"
+contains = "card.get(73..80)"
+note = "The parser slices the sequence field from zero-based 73..80, which is 1-based columns 74-80."
+
+[[record]]
+name = "parameter_data_card"
+kind = "column"
+section = "Physical representation"
+anchor = "Parameter Data cards instead use bytes 65 through 72 for the right-aligned Directory Entry back-pointer, byte 73 for the `P` marker, and bytes 74 through 80 for the Parameter Data sequence."
+size = 80
+note = "The only card whose columns 1-72 are split."
+
+[[record.field]]
+name = "parameter_fragment"
+columns = "1-64"
+type = "text"
+source = "derived"
+anchor = "Parameter Data cards instead use bytes 65 through 72 for the right-aligned Directory Entry back-pointer"
+note = "Columns 1-64 are the remainder of the 1-72 data area once the back-pointer claims 65-72. The Parameter Data section states the same span outright: \"Bytes 1 through 64 of Parameter Data cards form parameter fragments.\""
+
+[[record.field]]
+name = "de_back_pointer"
+columns = "65-72"
+type = "text"
+source = "spec"
+anchor = "Parameter Data cards instead use bytes 65 through 72 for the right-aligned Directory Entry back-pointer"
+
+[[record.field]]
+name = "section_marker"
+columns = "73-73"
+type = "char"
+source = "spec"
+anchor = "byte 73 for the `P` marker"
+
+[[record.field]]
+name = "sequence"
+columns = "74-80"
+type = "text"
+source = "spec"
+anchor = "bytes 74 through 80 for the Parameter Data sequence"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-iges/src/parameter.rs"
+contains = "line.payload.get(64..72)"
+note = "The parser reads the back-pointer from zero-based 64..72, which is 1-based columns 65-72."
+
+[[record]]
+name = "directory_entry_card_1"
+kind = "column"
+section = "Directory Entry section"
+anchor = "The first card fields are entity type, Parameter Data start sequence, structure, line font pattern, level, view, transformation matrix, label-display associativity, and the eight-digit status number."
+size = 72
+note = "Columns 1-72 of the first of the two Directory Entry cards, as nine fixed eight-column fields. Blank numeric fields take their field-defined default; nonblank numeric fields are right-aligned signed decimal integers. Columns 73-80 carry the section marker and sequence field of the enclosing card."
+
+[[record.field]]
+name = "entity_type"
+columns = "1-8"
+type = "text"
+source = "spec"
+anchor = "The first card fields are entity type, Parameter Data start sequence, structure"
+
+[[record.field]]
+name = "parameter_start"
+columns = "9-16"
+type = "text"
+source = "spec"
+anchor = "entity type, Parameter Data start sequence, structure, line font pattern"
+
+[[record.field]]
+name = "structure"
+columns = "17-24"
+type = "text"
+source = "spec"
+anchor = "Parameter Data start sequence, structure, line font pattern, level"
+
+[[record.field]]
+name = "line_font_pattern"
+columns = "25-32"
+type = "text"
+source = "spec"
+anchor = "structure, line font pattern, level, view"
+
+[[record.field]]
+name = "level"
+columns = "33-40"
+type = "text"
+source = "spec"
+anchor = "line font pattern, level, view, transformation matrix"
+
+[[record.field]]
+name = "view"
+columns = "41-48"
+type = "text"
+source = "spec"
+anchor = "level, view, transformation matrix, label-display associativity"
+
+[[record.field]]
+name = "transformation_matrix"
+columns = "49-56"
+type = "text"
+source = "spec"
+anchor = "view, transformation matrix, label-display associativity, and the eight-digit status number"
+
+[[record.field]]
+name = "label_display"
+columns = "57-64"
+type = "text"
+source = "spec"
+anchor = "transformation matrix, label-display associativity, and the eight-digit status number"
+
+[[record.field]]
+name = "status"
+columns = "65-72"
+type = "text"
+source = "spec"
+anchor = "the eight-digit status number"
+note = "Four two-digit decimal subfields: blank status, subordinate-entity switch, entity-use flag, and hierarchy."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-iges/src/directory.rs"
+contains = ".get(..72)"
+note = "The parser takes columns 1-72 as the Directory Entry data area and splits it into eight-column fields."
+
+[[record]]
+name = "directory_entry_card_2"
+kind = "column"
+section = "Directory Entry section"
+anchor = "The second card fields are the repeated entity type, line weight, color, Parameter Data card count, form number, two reserved fields, entity label, and entity subscript."
+size = 72
+note = "Columns 1-72 of the second Directory Entry card. The repeated entity type must equal the first-card value. Reserved bytes are retained whether blank or nonblank."
+
+[[record.field]]
+name = "entity_type_repeat"
+columns = "1-8"
+type = "text"
+source = "spec"
+anchor = "The second card fields are the repeated entity type, line weight, color"
+
+[[record.field]]
+name = "line_weight"
+columns = "9-16"
+type = "text"
+source = "spec"
+anchor = "the repeated entity type, line weight, color, Parameter Data card count"
+
+[[record.field]]
+name = "color"
+columns = "17-24"
+type = "text"
+source = "spec"
+anchor = "line weight, color, Parameter Data card count, form number"
+
+[[record.field]]
+name = "parameter_line_count"
+columns = "25-32"
+type = "text"
+source = "spec"
+anchor = "color, Parameter Data card count, form number, two reserved fields"
+
+[[record.field]]
+name = "form_number"
+columns = "33-40"
+type = "text"
+source = "spec"
+anchor = "Parameter Data card count, form number, two reserved fields, entity label"
+
+[[record.field]]
+name = "reserved_1"
+columns = "41-48"
+type = "text"
+source = "spec"
+anchor = "form number, two reserved fields, entity label, and entity subscript"
+
+[[record.field]]
+name = "reserved_2"
+columns = "49-56"
+type = "text"
+source = "spec"
+anchor = "two reserved fields, entity label, and entity subscript"
+
+[[record.field]]
+name = "entity_label"
+columns = "57-64"
+type = "text"
+source = "spec"
+anchor = "two reserved fields, entity label, and entity subscript"
+
+[[record.field]]
+name = "entity_subscript"
+columns = "65-72"
+type = "text"
+source = "spec"
+anchor = "entity label, and entity subscript. The repeated entity type must equal the first-card value."
+
+[[record]]
+name = "terminate_data_area"
+kind = "column"
+section = "Physical representation"
+anchor = "The Terminate data area contains four eight-byte fields"
+size = 72
+note = "Columns 1-72 of the Terminate card. Each field is a section letter plus a seven-digit count. The remaining data area is blank."
+
+[[record.field]]
+name = "start_count"
+columns = "1-8"
+type = "text"
+source = "spec"
+anchor = "`S` plus the seven-digit Start count"
+
+[[record.field]]
+name = "global_count"
+columns = "9-16"
+type = "text"
+source = "spec"
+anchor = "`G` plus the seven-digit Global count"
+
+[[record.field]]
+name = "directory_entry_count"
+columns = "17-24"
+type = "text"
+source = "spec"
+anchor = "`D` plus the seven-digit Directory Entry card count"
+
+[[record.field]]
+name = "parameter_data_count"
+columns = "25-32"
+type = "text"
+source = "spec"
+anchor = "`P` plus the seven-digit Parameter Data card count"
+
+[[record.field]]
+name = "blank_remainder"
+columns = "33-72"
+type = "text"
+source = "spec"
+anchor = "The remaining data area is blank."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-iges/src/card.rs"
+contains = "terminate[0].payload.get(..32)"
+note = "The parser takes the first 32 columns of the Terminate card as the four eight-column fields."
+
+# --- Section markers --------------------------------------------------------
+
+[[token]]
+tag = "S"
+name = "Start section"
+note = "first section in the canonical order"
+section = "Physical representation"
+anchor = "The canonical section order is Start (`S`), Global (`G`), Directory Entry (`D`), Parameter Data (`P`), and Terminate (`T`)."
+
+[[token]]
+tag = "G"
+name = "Global section"
+note = "its data stream is the concatenation of columns 1 through 72 from its cards"
+section = "Physical representation"
+anchor = "Start (`S`), Global (`G`), Directory Entry (`D`)"
+
+[[token]]
+tag = "D"
+name = "Directory Entry section"
+note = "two cards per entry, twenty fixed eight-column fields"
+section = "Physical representation"
+anchor = "Global (`G`), Directory Entry (`D`), Parameter Data (`P`)"
+
+[[token]]
+tag = "P"
+name = "Parameter Data section"
+note = "columns 1-64 are parameter fragments, 65-72 the owning Directory Entry sequence"
+section = "Physical representation"
+anchor = "Directory Entry (`D`), Parameter Data (`P`), and Terminate (`T`)"
+
+[[token]]
+tag = "T"
+name = "Terminate section"
+note = "four eight-column section counts"
+section = "Physical representation"
+anchor = "Parameter Data (`P`), and Terminate (`T`)."
+
+# --- Not tabulated -----------------------------------------------------------
+
+[[not_applicable]]
+area = "Global section field order"
+reason = "The specification names the Global fields in prose but gives no numbered slot list; the Global data stream is a delimited value list, not a column layout. The only slot numbering that exists is the parser's index into the delimited values."
+section = "Global section"
+anchor = "## Global section"
+
+[[not_applicable]]
+area = "Per-entity Parameter Data slot order"
+reason = "The specification pins no fixed layout for entity parameter ordering; it lives in the per-entity decoders. The entity and form matrix is already machine-encoded in `corpus/iges-envelope-a.toml`."
+section = "Parameter Data section"
+anchor = "## Parameter Data section"

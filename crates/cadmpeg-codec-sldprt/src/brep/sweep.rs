@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_ir::be::{f64_at, u16_at};
+use cadmpeg_codec_core::be::{f64_at, u16_at};
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::{Point3, Vector3};
 

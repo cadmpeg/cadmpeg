@@ -1,0 +1,1 @@
+not implemented yet: source-less F3D unknown procedural curve f3d:brep:procedural_curve#19 cannot be regenerated losslessly
