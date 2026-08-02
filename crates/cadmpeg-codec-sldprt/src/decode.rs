@@ -189,13 +189,72 @@ fn incomplete_binder_target(
     }
 }
 
+fn sketch_constraint_has_complete_neutral_semantics(
+    definition: &cadmpeg_ir::sketches::SketchConstraintDefinition,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchConstraintDefinition as Constraint;
+
+    match definition {
+        Constraint::Native { .. } => false,
+        Constraint::Disabled
+        | Constraint::Coincident { .. }
+        | Constraint::Polygon { .. }
+        | Constraint::SplineGroup { .. }
+        | Constraint::RectangularPattern { .. }
+        | Constraint::CircularPattern { .. }
+        | Constraint::TextFrame { .. }
+        | Constraint::TextPath { .. }
+        | Constraint::CoincidentLoci { .. }
+        | Constraint::SameCoordinate { .. }
+        | Constraint::PointOnObject { .. }
+        | Constraint::Midpoint { .. }
+        | Constraint::Offset { .. }
+        | Constraint::ProjectedCopy { .. }
+        | Constraint::AtIntersection { .. }
+        | Constraint::Concentric { .. }
+        | Constraint::Coradial { .. }
+        | Constraint::Collinear { .. }
+        | Constraint::Symmetric { .. }
+        | Constraint::PointSymmetric { .. }
+        | Constraint::Horizontal { .. }
+        | Constraint::HorizontalLoci { .. }
+        | Constraint::Vertical { .. }
+        | Constraint::VerticalLoci { .. }
+        | Constraint::HorizontalPoints { .. }
+        | Constraint::VerticalPoints { .. }
+        | Constraint::Parallel { .. }
+        | Constraint::Perpendicular { .. }
+        | Constraint::Tangent { .. }
+        | Constraint::TangentLoci { .. }
+        | Constraint::Curvature { .. }
+        | Constraint::Equal { .. }
+        | Constraint::Fixed { .. }
+        | Constraint::ArcAngle { .. }
+        | Constraint::EllipseAngle { .. }
+        | Constraint::Distance { .. }
+        | Constraint::DistanceLoci { .. }
+        | Constraint::HorizontalDistance { .. }
+        | Constraint::VerticalDistance { .. }
+        | Constraint::RepeatedDistance { .. }
+        | Constraint::Angle { .. }
+        | Constraint::AngleToAxis { .. }
+        | Constraint::Radius { .. }
+        | Constraint::Diameter { .. }
+        | Constraint::SnellsLaw { .. }
+        | Constraint::Weight { .. }
+        | Constraint::InternalAlignment { .. }
+        | Constraint::Group { .. }
+        | Constraint::Text { .. } => true,
+    }
+}
+
 fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     use cadmpeg_ir::features::{
         BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent,
         FaceSelection, FeatureDefinition, FeatureSourceContent, PathRef, ProfileRef, RadiusSpec,
         RevolveExtent, Termination,
     };
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchGeometry, SpatialSketchGeometry};
+    use cadmpeg_ir::sketches::{SketchGeometry, SpatialSketchGeometry};
 
     let native = ir
         .native
@@ -761,10 +820,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .sketch_constraints
         .iter()
         .filter(|constraint| {
-            matches!(
-                constraint.definition,
-                SketchConstraintDefinition::Native { .. }
-            ) && constraint.active != Some(false)
+            !sketch_constraint_has_complete_neutral_semantics(&constraint.definition)
+                && constraint.active != Some(false)
         })
         .count();
     if native_constraints > 0 {
@@ -3386,7 +3443,8 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 mod design_loss_tests {
     use super::{
         append_design_losses, assign_configuration_bodies,
-        multiply_projected_sketch_relation_records, snapshot_active_configuration,
+        multiply_projected_sketch_relation_records,
+        sketch_constraint_has_complete_neutral_semantics, snapshot_active_configuration,
         unbound_feature_input_operation_objects, unprojected_sketch_relation_records,
     };
     use crate::native::SldprtNative;
@@ -3407,12 +3465,30 @@ mod design_loss_tests {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::report::DecodeReport;
     use cadmpeg_ir::sketches::{
-        SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketchEntity,
-        SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
+        SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
+        SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
     };
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::CadIr;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn sketch_constraint_completeness_distinguishes_neutral_and_native_semantics() {
+        assert!(sketch_constraint_has_complete_neutral_semantics(
+            &SketchConstraintDefinition::Disabled
+        ));
+        assert!(!sketch_constraint_has_complete_neutral_semantics(
+            &SketchConstraintDefinition::Native {
+                native_kind: "unresolved".into(),
+                native_state: None,
+                native_flags: None,
+                native_properties: BTreeMap::new(),
+                entities: Vec::new(),
+                parameter: None,
+                operands: Vec::new(),
+            }
+        ));
+    }
 
     #[test]
     fn typed_native_operands_are_reported_as_design_losses() {
