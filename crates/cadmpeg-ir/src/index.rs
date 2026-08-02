@@ -1,0 +1,79 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Borrowed identity index over a complete CAD model.
+
+use std::collections::{HashMap, HashSet};
+
+use crate::appearance::{Appearance, AppearanceBinding};
+use crate::attributes::SourceAttribute;
+use crate::document::CadIr;
+use crate::drawings::Drawing;
+use crate::features::{DesignConfiguration, DesignParameter, Feature, FeatureInputTopology};
+use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
+use crate::presentation::{PresentationDocument, ViewPresentation};
+use crate::products::{AssemblyJoint, Occurrence, ProductDefinition};
+use crate::schema::EntitySchema;
+use crate::semantic_annotations::SemanticAnnotation;
+use crate::sketches::{
+    Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
+    SpatialSketchEntity,
+};
+use crate::spreadsheets::Spreadsheet;
+use crate::subd::SubdSurface;
+use crate::tessellation::Tessellation;
+use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
+
+macro_rules! define_model_index {
+    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
+        /// One-pass borrowed lookup index for neutral and native identities.
+        pub struct ModelIndex<'a> {
+            $($field: HashMap<&'a str, &'a $element>,)*
+            identities: HashSet<&'a str>,
+            native_identities: HashSet<&'a str>,
+        }
+
+        impl<'a> ModelIndex<'a> {
+            /// Builds every typed lookup and the global identity universe once.
+            pub fn new(ir: &'a CadIr) -> Self {
+                let mut identities = HashSet::with_capacity(ir.model.entity_count());
+                $(let $field = ir.model.$field.iter().map(|entity| {
+                    let identity = entity.identity();
+                    identities.insert(identity);
+                    (identity, entity)
+                }).collect();)*
+                let native_identities = ir.native.0.values().flat_map(|namespace| {
+                    namespace.arenas.values().flatten().map(|record| record.id.as_str())
+                }).collect::<HashSet<_>>();
+                identities.extend(native_identities.iter().copied());
+                Self {
+                    $($field,)*
+                    identities,
+                    native_identities,
+                }
+            }
+
+            /// Returns whether any neutral or native entity owns `identity`.
+            pub fn contains(&self, identity: &str) -> bool {
+                self.identities.contains(identity)
+            }
+
+            /// Returns whether a native entity owns `identity`.
+            pub fn contains_native(&self, identity: &str) -> bool {
+                self.native_identities.contains(identity)
+            }
+
+            /// Iterates every neutral and native identity.
+            pub fn identities(&self) -> impl Iterator<Item = &'a str> + '_ {
+                self.identities.iter().copied()
+            }
+
+            $(
+                #[doc = concat!("Looks up an entity in the `", stringify!($field), "` arena.")]
+                pub fn $field(&self, identity: &str) -> Option<&'a $element> {
+                    self.$field.get(identity).copied()
+                }
+            )*
+        }
+    };
+}
+
+crate::document::arena_registry!(define_model_index);

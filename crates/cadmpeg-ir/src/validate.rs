@@ -54,7 +54,7 @@ use spreadsheets::check_spreadsheets;
 use subd::{check_procedural_surfaces, check_source_associations, check_subds};
 use topology::{
     check_coedge_pairing, check_loops, check_references, check_shell_connectivity, check_units,
-    check_wire_topology, IdSets,
+    check_wire_topology,
 };
 
 /// A radius/length that is not a finite positive number is invalid geometry.
@@ -65,23 +65,23 @@ fn nonpositive(x: f64) -> bool {
 }
 
 /// Validate `ir` and copy `losses` into the returned report unchanged.
-fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, HashSet<String>) {
+fn validate_model(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     let mut findings = Vec::new();
 
-    let ids = IdSets::build(ir);
+    let ids = crate::index::ModelIndex::new(ir);
     check_version(ir, &mut findings);
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
-    let all_ids = check_identity_and_order(ir, &mut findings);
+    check_identity_and_order(ir, &mut findings);
     check_units(ir, &mut findings);
     check_references(ir, &ids, &mut findings);
     check_pmi(ir, &mut findings);
-    check_loops(ir, &mut findings);
+    check_loops(ir, &ids, &mut findings);
     check_coedge_pairing(ir, &mut findings);
     check_shell_connectivity(ir, &mut findings);
     check_wire_topology(ir, &mut findings);
     check_carrier_reachability(ir, &mut findings);
-    check_native_links(ir, &all_ids, &mut findings);
+    check_native_links(ir, &ids, &mut findings);
     check_parameter_domains(ir, &mut findings);
     check_edge_endpoint_consistency(ir, &mut findings);
     check_pcurve_surface_consistency(ir, &mut findings);
@@ -94,23 +94,20 @@ fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, Ha
     check_sketches(ir, &mut findings);
     check_spreadsheets(ir, &mut findings);
     check_products(ir, &mut findings);
-    check_presentation(ir, &all_ids, &mut findings);
-    check_drawings(ir, &all_ids, &mut findings);
-    check_semantic_annotations(ir, &all_ids, &mut findings);
+    check_presentation(ir, &ids, &mut findings);
+    check_drawings(ir, &ids, &mut findings);
+    check_semantic_annotations(ir, &ids, &mut findings);
 
-    (
-        ValidationReport {
-            entity_counts: entity_counts(ir),
-            findings,
-            losses,
-        },
-        all_ids,
-    )
+    ValidationReport {
+        entity_counts: entity_counts(ir),
+        findings,
+        losses,
+    }
 }
 
 /// Validate one neutral product model.
 pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
-    validate_with_ids(ir, losses).0
+    validate_model(ir, losses)
 }
 
 /// Validate a neutral product model together with its decode-time source sidecar.
@@ -119,7 +116,7 @@ pub fn validate_with_source_fidelity(
     source_fidelity: &SourceFidelity,
     losses: Vec<LossNote>,
 ) -> ValidationReport {
-    let (mut report, mut all_ids) = validate_with_ids(ir, losses);
+    let mut report = validate_model(ir, losses);
     if let Err(error) = source_fidelity.validate() {
         report.findings.push(Finding {
             check: Check::PayloadIntegrity,
@@ -128,6 +125,11 @@ pub fn validate_with_source_fidelity(
             entity: None,
         });
     }
+    let index = crate::index::ModelIndex::new(ir);
+    let mut all_ids = index
+        .identities()
+        .map(str::to_owned)
+        .collect::<HashSet<_>>();
     all_ids.extend(
         source_fidelity
             .retained_records

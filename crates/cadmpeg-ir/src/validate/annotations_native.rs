@@ -148,7 +148,7 @@ fn field_path_resolves(mut value: &serde_json::Value, path: &str) -> bool {
 
 pub(super) fn check_native_links(
     ir: &CadIr,
-    all_ids: &HashSet<String>,
+    all_ids: &crate::index::ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) {
     let native_ids = collect_native_ids(ir)

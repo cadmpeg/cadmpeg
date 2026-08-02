@@ -9,7 +9,7 @@ use crate::report::{Check, Finding, Severity};
 
 pub(super) fn check_presentation(
     ir: &CadIr,
-    all_ids: &HashSet<String>,
+    all_ids: &crate::index::ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) {
     if ir.model.presentation_documents.len() > 1 {

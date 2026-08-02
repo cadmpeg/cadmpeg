@@ -46,6 +46,7 @@ pub mod geometry;
 pub mod hash;
 
 pub mod ids;
+pub mod index;
 pub mod math;
 pub mod native;
 pub mod pmi;

@@ -97,7 +97,7 @@ crate::document::arena_registry!(define_model_identity_checks);
 /// id in the document (model arenas, unknowns, and native records). Downstream
 /// checks resolve annotation and link targets against this set instead of
 /// re-enumerating the id universe.
-pub(super) fn check_identity_and_order(ir: &CadIr, findings: &mut Vec<Finding>) -> HashSet<String> {
+pub(super) fn check_identity_and_order(ir: &CadIr, findings: &mut Vec<Finding>) {
     let mut seen = HashSet::new();
     check_model_identity_and_order(ir, &mut seen, findings);
     let native_ids = collect_native_ids(ir);
@@ -111,7 +111,6 @@ pub(super) fn check_identity_and_order(ir: &CadIr, findings: &mut Vec<Finding>) 
     for (arena, ids) in by_arena {
         check_order(arena, ids, findings);
     }
-    seen
 }
 
 pub(super) fn collect_native_ids(ir: &CadIr) -> Vec<(String, &str)> {
