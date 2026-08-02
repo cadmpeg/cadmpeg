@@ -1982,6 +1982,10 @@ fn build_geometry_ir(
         &mut ir.model.features,
         &supplemental_config_lanes,
     );
+    crate::history::project_configuration_supplemental_edge_selections(
+        &mut ir,
+        &supplemental_config_lanes,
+    );
     crate::resolved_features::project_compact_sketch_profiles(
         &mut ir.model.features,
         &mut sketches,
@@ -2780,6 +2784,10 @@ fn build_metadata_ir(
     );
     crate::resolved_features::project_compact_edge_selections(
         &mut ir.model.features,
+        &supplemental_config_lanes,
+    );
+    crate::history::project_configuration_supplemental_edge_selections(
+        &mut ir,
         &supplemental_config_lanes,
     );
     crate::resolved_features::project_compact_sketch_profiles(

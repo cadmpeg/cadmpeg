@@ -4975,6 +4975,121 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn supplemental_edge_paths_project_into_matching_configuration_state() {
+        use cadmpeg_ir::features::{
+            ChamferGroup, ChamferSpec, ConfigurationFeatureState, DesignConfiguration,
+            EdgeSelection, Feature as NeutralFeature, FeatureDefinition, FeatureId, Length,
+        };
+
+        let producer_id = FeatureId("producer".into());
+        let consumer_id = FeatureId("consumer".into());
+        let unresolved = FeatureDefinition::Chamfer {
+            groups: vec![ChamferGroup {
+                edges: EdgeSelection::Unresolved,
+                spec: ChamferSpec::Distance {
+                    distance: Length(1.0),
+                },
+            }],
+            flip_direction: false,
+        };
+        let neutral_feature =
+            |id: FeatureId, ordinal, native_ref: &str, definition| NeutralFeature {
+                id,
+                ordinal,
+                name: None,
+                suppressed: Some(false),
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition,
+                native_ref: Some(native_ref.into()),
+            };
+        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.features = vec![
+            neutral_feature(
+                producer_id.clone(),
+                0,
+                "producer-native",
+                FeatureDefinition::StoredGeometry,
+            ),
+            neutral_feature(
+                consumer_id.clone(),
+                1,
+                "consumer-native",
+                unresolved.clone(),
+            ),
+        ];
+        ir.model.configurations.push(DesignConfiguration {
+            id: cadmpeg_ir::features::ConfigurationId("configuration".into()),
+            ordinal: 0,
+            active: true,
+            source_index: Some(1),
+            name: "Default".into(),
+            material: None,
+            properties: BTreeMap::from([("id".into(), "1".into())]),
+            bodies: ConfigurationBodies::Resolved(Vec::new()),
+            parameter_values: BTreeMap::new(),
+            suppressed_features: Vec::new(),
+            parameter_overrides: BTreeMap::new(),
+            feature_states: BTreeMap::from([
+                (
+                    producer_id.clone(),
+                    ConfigurationFeatureState {
+                        suppressed: false,
+                        dependencies: Vec::new(),
+                        outputs: Vec::new(),
+                        definition: FeatureDefinition::StoredGeometry,
+                    },
+                ),
+                (
+                    consumer_id.clone(),
+                    ConfigurationFeatureState {
+                        suppressed: false,
+                        dependencies: Vec::new(),
+                        outputs: Vec::new(),
+                        definition: unresolved,
+                    },
+                ),
+            ]),
+            native_ref: None,
+        });
+        let mut lane = feature_input_lane("sldprt:feature-input:config-objects#1", Some("1"));
+        lane.edge_selections
+            .push(crate::records::FeatureInputEdgeSelection {
+                id: "selection".into(),
+                parent: lane.id.clone(),
+                ordinal: 0,
+                offset: 100,
+                object_name_ref: "name".into(),
+                feature_ref: "consumer-native".into(),
+                local_edge_ids: vec![7],
+                components: Vec::new(),
+                producer_feature_refs: vec!["producer-native".into()],
+                terminal_feature_ref: Some("producer-native".into()),
+            });
+
+        project_configuration_supplemental_edge_selections(&mut ir, &[lane]);
+
+        let state = &ir.model.configurations[0].feature_states[&consumer_id];
+        assert_eq!(state.dependencies, vec![producer_id.clone()]);
+        assert!(matches!(
+            &state.definition,
+            FeatureDefinition::Chamfer { groups, .. }
+                if matches!(
+                    &groups[0].edges,
+                    EdgeSelection::Generated { edges, .. }
+                        if edges.len() == 1
+                            && edges[0].feature == producer_id
+                            && edges[0].local_id == "7"
+                )
+        ));
+    }
+
+    #[test]
     fn configuration_hole_inherits_shared_construction_and_placement() {
         use cadmpeg_ir::features::{
             FeatureDefinition, FeatureId, HoleKind, HolePlacement, Length, Termination,
@@ -9391,6 +9506,54 @@ pub(crate) fn project_configuration_design_states(
     }
 }
 
+/// Project edge operands carried only by supplemental config-object lanes into
+/// the matching configuration-local feature snapshots.
+pub(crate) fn project_configuration_supplemental_edge_selections(
+    ir: &mut cadmpeg_ir::CadIr,
+    lanes: &[crate::records::FeatureInputLane],
+) {
+    for lane in lanes
+        .iter()
+        .filter(|lane| crate::resolved_features::is_supplemental_config_lane(lane))
+    {
+        let Some(slot_index) = lane
+            .configuration
+            .as_deref()
+            .and_then(|value| value.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let Some(configuration_index) =
+            configuration_index_for_slot(&ir.model.configurations, slot_index)
+        else {
+            continue;
+        };
+        let states = &ir.model.configurations[configuration_index].feature_states;
+        let mut features = ir.model.features.clone();
+        for feature in &mut features {
+            let Some(state) = states.get(&feature.id) else {
+                continue;
+            };
+            feature.suppressed = Some(state.suppressed);
+            feature.dependencies.clone_from(&state.dependencies);
+            feature.outputs.clone_from(&state.outputs);
+            feature.definition.clone_from(&state.definition);
+        }
+        crate::resolved_features::project_compact_edge_selections(
+            &mut features,
+            std::slice::from_ref(lane),
+        );
+        let states = &mut ir.model.configurations[configuration_index].feature_states;
+        for feature in features {
+            let Some(state) = states.get_mut(&feature.id) else {
+                continue;
+            };
+            state.dependencies = feature.dependencies;
+            state.definition = feature.definition;
+        }
+    }
+}
+
 fn restore_configuration_tree_node_definitions(
     features: &mut [cadmpeg_ir::features::Feature],
     base_features: &[cadmpeg_ir::features::Feature],
@@ -9791,41 +9954,51 @@ pub(crate) fn configuration_lane_assignments(
             let [lane_index] = lane_indices.as_slice() else {
                 return None;
             };
-            let explicit_candidates = configurations
-                .iter()
-                .enumerate()
-                .filter(|(_, configuration)| {
-                    configuration
-                        .properties
-                        .get("id")
-                        .and_then(|value| value.parse::<u32>().ok())
-                        == Some(slot_index)
-                })
-                .map(|(position, _)| position)
-                .collect::<Vec<_>>();
-            let candidates = if explicit_candidates.is_empty() {
-                configurations
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, configuration)| {
-                        configuration
-                            .properties
-                            .get("id")
-                            .and_then(|value| value.parse::<u32>().ok())
-                            .is_none()
-                            && configuration.ordinal == slot_index
-                    })
-                    .map(|(position, _)| position)
-                    .collect::<Vec<_>>()
-            } else {
-                explicit_candidates
-            };
-            let [configuration_index] = candidates.as_slice() else {
-                return None;
-            };
-            Some((*configuration_index, *lane_index))
+            Some((
+                configuration_index_for_slot(configurations, slot_index)?,
+                *lane_index,
+            ))
         })
         .collect()
+}
+
+fn configuration_index_for_slot(
+    configurations: &[DesignConfiguration],
+    slot_index: u32,
+) -> Option<usize> {
+    let explicit_candidates = configurations
+        .iter()
+        .enumerate()
+        .filter(|(_, configuration)| {
+            configuration
+                .properties
+                .get("id")
+                .and_then(|value| value.parse::<u32>().ok())
+                == Some(slot_index)
+        })
+        .map(|(position, _)| position)
+        .collect::<Vec<_>>();
+    let candidates = if explicit_candidates.is_empty() {
+        configurations
+            .iter()
+            .enumerate()
+            .filter(|(_, configuration)| {
+                configuration
+                    .properties
+                    .get("id")
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .is_none()
+                    && configuration.ordinal == slot_index
+            })
+            .map(|(position, _)| position)
+            .collect::<Vec<_>>()
+    } else {
+        explicit_candidates
+    };
+    let [configuration_index] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*configuration_index)
 }
 
 pub(crate) fn unresolved_configuration_lanes(
