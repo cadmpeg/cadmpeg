@@ -163,7 +163,9 @@ fn rederived_body_census(
             | FeatureDefinition::DatumPointUnresolved
             | FeatureDefinition::DatumCoordinateSystem { .. }
             | FeatureDefinition::DatumCoordinateSystemUnresolved
-            | FeatureDefinition::Sketch { .. } => {
+            | FeatureDefinition::Sketch { .. }
+            | FeatureDefinition::ProjectedCurve { .. }
+            | FeatureDefinition::SectionShape { .. } => {
                 if !feature.outputs.is_empty() {
                     return Err((
                         feature.id.clone(),
@@ -356,9 +358,9 @@ mod tests {
 
     use cadmpeg_ir::features::{
         Angle, BodyRetentionMode, ChamferGroup, ChamferSpec, ConfigurationBodies,
-        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, EdgeSelection,
-        FaceSelection, Feature, FilletGroup, HoleKind, HolePlacement, RadiusSpec, Termination,
-        ThickenSide,
+        ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
+        CurveProjectionDirectionState, DesignConfiguration, EdgeSelection, FaceSelection, Feature,
+        FilletGroup, HoleKind, HolePlacement, PathRef, RadiusSpec, Termination, ThickenSide,
     };
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -499,6 +501,24 @@ mod tests {
         }
     }
 
+    fn body_neutral_feature(id: &str, ordinal: u64, definition: FeatureDefinition) -> Feature {
+        Feature {
+            id: FeatureId(id.to_string()),
+            ordinal,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition,
+            native_ref: None,
+        }
+    }
+
     #[test]
     fn complete_hole_preserves_the_existing_body_identity() {
         let mut ir = complete_block_ir();
@@ -508,6 +528,65 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies: vec![body] }
+        );
+    }
+
+    #[test]
+    fn curve_construction_families_do_not_change_the_body_census() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        ir.model.features.extend([
+            body_neutral_feature(
+                "projected-curve",
+                1,
+                FeatureDefinition::ProjectedCurve {
+                    source: PathRef::Unresolved("source".to_string()),
+                    target_faces: FaceSelection::Unresolved,
+                    direction: CurveProjectionDirection::State(
+                        CurveProjectionDirectionState::Unresolved,
+                    ),
+                    bidirectional: None,
+                },
+            ),
+            body_neutral_feature(
+                "section",
+                2,
+                FeatureDefinition::SectionShape {
+                    first: BodySelection::Unresolved,
+                    second: BodySelection::Unresolved,
+                    approximate: None,
+                },
+            ),
+        ]);
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: vec![body] }
+        );
+    }
+
+    #[test]
+    fn curve_construction_family_cannot_claim_a_body_output() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        let mut section = body_neutral_feature(
+            "section",
+            1,
+            FeatureDefinition::SectionShape {
+                first: BodySelection::Unresolved,
+                second: BodySelection::Unresolved,
+                approximate: None,
+            },
+        );
+        section.outputs.push(body);
+        ir.model.features.push(section);
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Unsupported {
+                feature: Some(FeatureId("section".to_string())),
+                reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
+            }
         );
     }
 
