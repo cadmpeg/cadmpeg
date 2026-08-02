@@ -114,6 +114,19 @@ impl ModelDraft {
         T::arena_mut(&mut self.model)
     }
 
+    /// Returns the staged model for coordinated multi-arena construction.
+    pub fn model(&self) -> &Model {
+        &self.model
+    }
+
+    /// Returns the staged model for coordinated multi-arena construction.
+    ///
+    /// Commit still checks all identities and references, including entities inserted
+    /// through this lower-level surface.
+    pub fn model_mut(&mut self) -> &mut Model {
+        &mut self.model
+    }
+
     /// Records sparse exactness for a staged entity.
     pub fn exactness(&mut self, identity: impl Into<String>, exactness: Exactness) {
         let identity = identity.into();
@@ -157,7 +170,19 @@ impl ModelDraft {
 
     fn validate_against(&self, base: &CadIr) -> Result<(), DraftError> {
         let index = ModelIndex::new(base);
-        for identity in &self.identities {
+        let mut staged_identities = HashSet::with_capacity(self.model.entity_count());
+        macro_rules! collect_staged_identities {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+                $(for entity in &self.model.$field {
+                    let identity = entity.identity().to_owned();
+                    if !staged_identities.insert(identity.clone()) {
+                        return Err(DraftError::IdentityCollision(identity));
+                    }
+                })*
+            };
+        }
+        crate::document::arena_registry!(collect_staged_identities);
+        for identity in &staged_identities {
             if index.contains(identity) {
                 return Err(DraftError::IdentityCollision(identity.clone()));
             }
@@ -170,7 +195,7 @@ impl ModelDraft {
                     entity.visit_references(&mut |reference| {
                         if missing.is_none()
                             && !index.contains(&reference.target)
-                            && !self.identities.contains(&reference.target)
+                            && !staged_identities.contains(&reference.target)
                         {
                             missing = Some(reference.target);
                         }
