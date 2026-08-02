@@ -825,9 +825,25 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         PathRef::Unresolved(_) | PathRef::Native(_) => true,
         PathRef::Sketch(_) => false,
     };
-    let incomplete_termination = |termination: &Termination| {
-        matches!(termination, Termination::Unresolved)
-            || matches!(termination, Termination::ToFace { face, .. } if incomplete_face_selection(face))
+    let incomplete_vertex_selection = |selection: &cadmpeg_ir::features::VertexSelection| {
+        matches!(
+            selection,
+            cadmpeg_ir::features::VertexSelection::Unresolved
+                | cadmpeg_ir::features::VertexSelection::Native(_)
+        )
+    };
+    let incomplete_termination = |termination: &Termination| match termination {
+        Termination::Unresolved => true,
+        Termination::ToFace { face, .. }
+        | Termination::OffsetFromFace { face, .. }
+        | Termination::ToShape { target: face } => incomplete_face_selection(face),
+        Termination::ToVertex { vertex } => incomplete_vertex_selection(vertex),
+        Termination::Blind { .. }
+        | Termination::ThroughAll
+        | Termination::ThroughNext
+        | Termination::ToFirst
+        | Termination::ToLast
+        | Termination::Angle { .. } => false,
     };
     let incomplete_extrude_extent = |extent: &ExtrudeExtent| match extent {
         ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
@@ -881,8 +897,19 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::ProjectedCurve {
                 source,
                 target_faces,
-                ..
-            } => incomplete_path(source) || incomplete_face_selection(target_faces),
+                direction,
+                bidirectional,
+            } => {
+                incomplete_path(source)
+                    || incomplete_face_selection(target_faces)
+                    || matches!(
+                        direction,
+                        cadmpeg_ir::features::CurveProjectionDirection::State(
+                            cadmpeg_ir::features::CurveProjectionDirectionState::Unresolved
+                        )
+                    )
+                    || bidirectional.is_none()
+            }
             FeatureDefinition::CompositeCurve { segments, .. } => {
                 segments.is_empty() || segments.iter().any(incomplete_path)
             }
@@ -901,11 +928,28 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::SpatialSketch { sketch } => sketch.is_none(),
             FeatureDefinition::Extrude {
                 profile,
+                direction,
+                start,
                 extent,
                 op,
+                direction_source,
                 ..
             } => {
                 incomplete_profile(profile)
+                    || matches!(direction, cadmpeg_ir::features::ExtrudeDirection::Unresolved)
+                    || match start {
+                        cadmpeg_ir::features::ExtrudeStart::Unresolved => true,
+                        cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } => {
+                            incomplete_face_selection(face)
+                        }
+                        cadmpeg_ir::features::ExtrudeStart::ProfilePlane
+                        | cadmpeg_ir::features::ExtrudeStart::OffsetProfilePlane { .. } => false,
+                    }
+                    || matches!(
+                        direction_source,
+                        Some(cadmpeg_ir::features::ExtrusionDirectionSource::Edge { reference })
+                            if incomplete_path(reference)
+                    )
                     || incomplete_extrude_extent(extent)
                     || *op == BooleanOp::Unresolved
             }
@@ -980,13 +1024,33 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 thickness,
                 side,
             } => incomplete_face_selection(faces) || thickness.is_none() || side.is_none(),
-            FeatureDefinition::OffsetSurface { faces, .. }
-            | FeatureDefinition::KnitSurface { faces, .. }
-            | FeatureDefinition::ExtendSurface { faces, .. } => incomplete_face_selection(faces),
+            FeatureDefinition::OffsetSurface { faces, distance } => {
+                incomplete_face_selection(faces) || distance.is_none()
+            }
+            FeatureDefinition::KnitSurface {
+                faces,
+                merge_entities,
+                create_solid,
+                ..
+            } => {
+                incomplete_face_selection(faces)
+                    || merge_entities.is_none()
+                    || create_solid.is_none()
+            }
+            FeatureDefinition::ExtendSurface {
+                faces,
+                distance,
+                method,
+            } => {
+                incomplete_face_selection(faces)
+                    || distance.is_none()
+                    || *method == cadmpeg_ir::features::SurfaceExtension::Unresolved
+            }
             FeatureDefinition::FilledSurface {
                 boundary,
                 support_faces,
                 continuity,
+                merge_result,
                 ..
             } => {
                 (match boundary {
@@ -1000,9 +1064,13 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     } else {
                         incomplete_face_selection(support_faces)
                     }
+                    || continuity.is_none()
+                    || merge_result.is_none()
             }
-            FeatureDefinition::TrimSurface { faces, tool, .. } => {
-                incomplete_face_selection(faces) || incomplete_path(tool)
+            FeatureDefinition::TrimSurface { faces, tool, keep } => {
+                incomplete_face_selection(faces)
+                    || incomplete_path(tool)
+                    || *keep == cadmpeg_ir::features::TrimRegion::Unresolved
             }
             FeatureDefinition::RuledSurface {
                 edges,
@@ -1019,8 +1087,16 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,
-                ..
-            } => incomplete_face_selection(faces) || incomplete_face_selection(neutral_plane),
+                pull_direction,
+                angle,
+                outward,
+            } => {
+                incomplete_face_selection(faces)
+                    || incomplete_face_selection(neutral_plane)
+                    || pull_direction.is_none()
+                    || angle.is_none()
+                    || outward.is_none()
+            }
             FeatureDefinition::Combine { target, tools, op } => {
                 incomplete_body_selection(target)
                     || incomplete_body_selection(tools)
@@ -3713,6 +3789,129 @@ mod design_loss_tests {
         assert!(report.losses.iter().any(|loss| {
             loss.message
                 == "3 typed feature(s) retain native or unresolved required operation operands."
+        }));
+    }
+
+    #[test]
+    fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
+        let mut ir = CadIr::empty(Units::default());
+        let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
+        let profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
+        let path = PathRef::Sketch(sketch);
+        let face = FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId("face".into())]);
+        let extrude = |direction, termination| FeatureDefinition::Extrude {
+            profile: profile.clone(),
+            direction,
+            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination,
+                    draft: None,
+                    offset: None,
+                },
+            },
+            op: BooleanOp::NewBody,
+            direction_source: None,
+            solid: Some(true),
+            face_maker: None,
+            inner_wire_taper: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
+        };
+        let definitions = [
+            FeatureDefinition::ProjectedCurve {
+                source: path.clone(),
+                target_faces: face.clone(),
+                direction: cadmpeg_ir::features::CurveProjectionDirection::State(
+                    cadmpeg_ir::features::CurveProjectionDirectionState::Unresolved,
+                ),
+                bidirectional: Some(false),
+            },
+            extrude(
+                cadmpeg_ir::features::ExtrudeDirection::Unresolved,
+                cadmpeg_ir::features::Termination::Blind {
+                    length: Length(10.0),
+                },
+            ),
+            extrude(
+                cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+                cadmpeg_ir::features::Termination::ToVertex {
+                    vertex: cadmpeg_ir::features::VertexSelection::Native("vertex".into()),
+                },
+            ),
+            FeatureDefinition::OffsetSurface {
+                faces: face.clone(),
+                distance: None,
+            },
+            FeatureDefinition::KnitSurface {
+                faces: face.clone(),
+                merge_entities: None,
+                create_solid: None,
+                gap_tolerance: None,
+            },
+            FeatureDefinition::ExtendSurface {
+                faces: face.clone(),
+                distance: Some(Length(10.0)),
+                method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
+            },
+            FeatureDefinition::FilledSurface {
+                boundary: cadmpeg_ir::features::SurfaceBoundary::Path(path.clone()),
+                support_faces: face.clone(),
+                continuity: None,
+                merge_result: Some(false),
+            },
+            FeatureDefinition::TrimSurface {
+                faces: face.clone(),
+                tool: path.clone(),
+                keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            },
+            FeatureDefinition::Draft {
+                faces: face.clone(),
+                neutral_plane: face.clone(),
+                pull_direction: None,
+                angle: None,
+                outward: None,
+            },
+            FeatureDefinition::ProjectedCurve {
+                source: path,
+                target_faces: face,
+                direction: cadmpeg_ir::features::CurveProjectionDirection::State(
+                    cadmpeg_ir::features::CurveProjectionDirectionState::TargetNormal,
+                ),
+                bidirectional: Some(false),
+            },
+        ];
+        for (ordinal, definition) in definitions.into_iter().enumerate() {
+            ir.model.features.push(Feature {
+                id: FeatureId(format!("operation-{ordinal}")),
+                ordinal: ordinal as u64,
+                name: None,
+                suppressed: Some(false),
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition,
+                native_ref: None,
+            });
+        }
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "9 typed feature(s) retain native or unresolved required operation operands."
         }));
     }
 
