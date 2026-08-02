@@ -493,6 +493,7 @@ pub(crate) fn try_decode_freeform_surfaces(
             container_only: false,
             geometry_transferred: true,
             coverage,
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses,
             notes: container::summarize(scan).notes,
         },

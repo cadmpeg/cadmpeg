@@ -70,6 +70,7 @@ fn decode_exchange_mode(
         container_only: options.container_only,
         geometry_transferred: false,
         coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses: Vec::new(),
         notes: exchange
             .references

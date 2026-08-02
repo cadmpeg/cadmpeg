@@ -186,6 +186,7 @@ pub(crate) fn try_decode_e5(
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses,
             notes: container::summarize(scan).notes,
         },

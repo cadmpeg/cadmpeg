@@ -512,6 +512,7 @@ pub(crate) fn build_geometry_report(
         container_only: false,
         geometry_transferred: true,
         coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
         notes: container::summarize(scan).notes,
     }
@@ -644,6 +645,7 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
         container_only,
         geometry_transferred: false,
         coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
         notes: summary.notes,
     }

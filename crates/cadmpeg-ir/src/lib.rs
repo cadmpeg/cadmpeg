@@ -38,6 +38,7 @@ pub mod codec;
 
 pub mod diff;
 pub mod document;
+pub mod draft;
 pub mod drawings;
 pub mod eval;
 pub mod examples;

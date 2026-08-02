@@ -9967,6 +9967,7 @@ fn build_geometry_report(
         container_only: false,
         geometry_transferred: true,
         coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
         notes: summary_notes(scan),
     }
@@ -11561,6 +11562,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
         container_only,
         geometry_transferred: false,
         coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
         notes: summary_notes(scan),
     }

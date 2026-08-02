@@ -192,6 +192,7 @@ pub(crate) fn try_decode_zero_entity(
             container_only: false,
             geometry_transferred: true,
             coverage,
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: vec![LossNote {
                 code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
                 severity: Severity::Blocking,

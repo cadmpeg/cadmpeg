@@ -123,6 +123,7 @@ pub(crate) fn decode(bytes: &[u8], options: DecodeOptions) -> Result<DecodeResul
             container_only: options.container_only,
             geometry_transferred,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses,
             notes,
         },

@@ -1948,6 +1948,7 @@ impl<'a> DecodeContext<'a> {
                 container_only: false,
                 geometry_transferred: self.geometry_transferred,
                 coverage: std::collections::BTreeMap::new(),
+                transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
                 losses,
                 notes,
             },

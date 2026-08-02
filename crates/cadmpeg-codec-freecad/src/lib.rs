@@ -1417,6 +1417,7 @@ impl Codec for FcstdCodec {
                 container_only: options.container_only,
                 geometry_transferred,
                 coverage: std::collections::BTreeMap::new(),
+                transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
                 losses,
                 notes: container::summarize(&scan).notes,
             },

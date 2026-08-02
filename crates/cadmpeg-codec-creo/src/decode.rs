@@ -33253,6 +33253,7 @@ fn build_report(
         container_only,
         geometry_transferred: has_transferred_geometry(ir),
         coverage,
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
         notes: summary.notes,
     }
