@@ -2240,6 +2240,7 @@ fn build_geometry_ir(
         &ir.model.surfaces,
     );
     sync_active_configuration_face_selections(&mut ir);
+    crate::history::order_model_features_for_regeneration(&mut ir);
     stamp_feature_baseline(&mut ir);
     assign_native_configuration_indices(&ir, &mut native);
     if let Some(source) = &mut ir.source {
@@ -2982,6 +2983,7 @@ fn build_metadata_ir(
     sync_active_configuration_face_selections(&mut ir);
     crate::history::order_features_for_regeneration(&mut ir.model.features);
     crate::history::project_configuration_sketch_states(&mut ir, &histories, &lanes, &annotations);
+    crate::history::order_model_features_for_regeneration(&mut ir);
     stamp_feature_baseline(&mut ir);
     lanes.extend(supplemental_config_lanes);
     let native = crate::native::SldprtNative {

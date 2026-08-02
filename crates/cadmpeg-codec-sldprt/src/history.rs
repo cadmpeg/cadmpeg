@@ -2741,6 +2741,60 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![
+                feature("sldprt:history:feature#0:0", None, 0),
+                feature("sldprt:history:feature#0:1", None, 1),
+            ],
+        };
+        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.features = project_features(&[history]);
+        let predecessor = ir.model.features[1].id.clone();
+        let consumer = ir.model.features[0].id.clone();
+        ir.model
+            .configurations
+            .push(cadmpeg_ir::features::DesignConfiguration {
+                id: cadmpeg_ir::features::ConfigurationId("configuration".into()),
+                ordinal: 0,
+                active: true,
+                source_index: None,
+                name: "configuration".into(),
+                material: None,
+                properties: BTreeMap::new(),
+                parameter_overrides: BTreeMap::new(),
+                suppressed_features: Vec::new(),
+                bodies: cadmpeg_ir::features::ConfigurationBodies::Unresolved,
+                parameter_values: BTreeMap::new(),
+                feature_states: BTreeMap::from([(
+                    consumer.clone(),
+                    cadmpeg_ir::features::ConfigurationFeatureState {
+                        suppressed: false,
+                        dependencies: vec![predecessor.clone()],
+                        outputs: Vec::new(),
+                        definition: ir.model.features[0].definition.clone(),
+                    },
+                )]),
+                native_ref: None,
+            });
+
+        assert!(order_model_features_for_regeneration(&mut ir));
+        let ordinals = ir
+            .model
+            .features
+            .iter()
+            .map(|feature| (&feature.id, feature.ordinal))
+            .collect::<HashMap<_, _>>();
+        assert!(ordinals[&predecessor] < ordinals[&consumer]);
+        assert!(ir.model.features[0].dependencies.is_empty());
+    }
+
+    #[test]
     fn blind_extrusion_uses_its_sole_dimension_as_depth() {
         let mut feature = feature("sldprt:history:feature#1:2", Some("12"), 2);
         feature.xml_tag = "Extrusion".into();
@@ -5481,6 +5535,40 @@ pub fn order_features_for_regeneration(features: &mut [cadmpeg_ir::features::Fea
     }
     for (ordinal, index) in order.into_iter().enumerate() {
         features[index].ordinal = ordinal as u64;
+    }
+    true
+}
+
+/// Assign one regeneration order that satisfies the baseline feature graph and
+/// every configuration-local feature graph.
+pub fn order_model_features_for_regeneration(ir: &mut cadmpeg_ir::CadIr) -> bool {
+    let mut ordering_graph = ir.model.features.clone();
+    let by_id = ordering_graph
+        .iter()
+        .enumerate()
+        .map(|(index, feature)| (feature.id.clone(), index))
+        .collect::<HashMap<_, _>>();
+    for configuration in &ir.model.configurations {
+        for (feature_id, state) in &configuration.feature_states {
+            let Some(&index) = by_id.get(feature_id) else {
+                continue;
+            };
+            for dependency in &state.dependencies {
+                if !ordering_graph[index].dependencies.contains(dependency) {
+                    ordering_graph[index].dependencies.push(dependency.clone());
+                }
+            }
+        }
+    }
+    if !order_features_for_regeneration(&mut ordering_graph) {
+        return false;
+    }
+    let ordinals = ordering_graph
+        .into_iter()
+        .map(|feature| (feature.id, feature.ordinal))
+        .collect::<HashMap<_, _>>();
+    for feature in &mut ir.model.features {
+        feature.ordinal = ordinals[&feature.id];
     }
     true
 }
@@ -9783,6 +9871,15 @@ pub(crate) fn project_configuration_sketch_states(
         for (feature_id, state) in &mut configuration.feature_states {
             if let Some(base_definition) = base.get(feature_id) {
                 inherit_configuration_shared_semantics(&mut state.definition, base_definition);
+                if let FeatureDefinition::DatumOffsetPlane {
+                    reference: Some(DatumPlaneReference::Feature(reference)),
+                    ..
+                } = &state.definition
+                {
+                    if !state.dependencies.contains(reference) {
+                        state.dependencies.push(reference.clone());
+                    }
+                }
             }
         }
     }
