@@ -4222,10 +4222,7 @@ fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && parameter.evaluated_value.is_finite()
             && (parameter.family_discriminator.is_some() || parameter.owner_record_index.is_some())
             && parameter.family_discriminator.is_none_or(|value| {
-                design::decode::parameters::valid_design_parameter_discriminator(
-                    value,
-                    &parameter.source_kind,
-                )
+                design::decode::parameters::valid_design_parameter_discriminator(value)
             })
             && parameter.kind == expected_kind
             && owner_shape_valid

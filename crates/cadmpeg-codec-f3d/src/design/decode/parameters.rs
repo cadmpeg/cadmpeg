@@ -129,9 +129,7 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
         expression_end + trailer_len
     };
     let (source_kind, source_kind_end) = lp_utf16_bounded(payload, source_kind_at, 1..=256)?;
-    if family_discriminator
-        .is_some_and(|value| !valid_design_parameter_discriminator(value, &source_kind))
-    {
+    if family_discriminator.is_some_and(|value| !valid_design_parameter_discriminator(value)) {
         return None;
     }
     let first_at = source_kind_end + usize::from(discriminated) * 4;
@@ -207,16 +205,16 @@ pub(crate) fn design_parameter_discriminator(source_kind: &str) -> u64 {
     }
 }
 
-pub(crate) fn valid_design_parameter_discriminator(value: u64, source_kind: &str) -> bool {
-    value == 6 || (value == 0 && source_kind != "TangencyWeight")
+pub(crate) fn valid_design_parameter_discriminator(value: u64) -> bool {
+    matches!(value, 0 | 3 | 4 | 6)
 }
 
 fn valid_design_parameter_family(discriminator: Option<u64>, source_kind: &str, tail: u8) -> bool {
     match tail {
         16 => discriminator == Some(6),
-        19 => {
-            discriminator.is_none_or(|value| value == design_parameter_discriminator(source_kind))
-        }
+        19 => discriminator.is_none_or(|value| {
+            matches!(value, 0 | 3 | 4) || (value == 6 && source_kind == "TangencyWeight")
+        }),
         _ => false,
     }
 }

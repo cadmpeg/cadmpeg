@@ -2305,9 +2305,36 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     assert_eq!(tangency.name, "d81");
     assert_eq!(tangency.evaluated_value, 1.0);
 
-    let mut invalid_tangency =
+    let mut earlier_tangency =
         parameter_record(Some(24409), "1", "TangencyWeight", Some(""), "d81", 1.0);
-    invalid_tangency[22..30].copy_from_slice(&0u64.to_le_bytes());
+    earlier_tangency[22..30].copy_from_slice(&0u64.to_le_bytes());
+    assert_eq!(
+        parse_design_parameter(&earlier_tangency)
+            .expect("earlier tangency parameter")
+            .family_discriminator,
+        Some(0)
+    );
+
+    for discriminator in [3u64, 4] {
+        let mut earlier_distance = parameter_record(
+            Some(44),
+            "Width / 2",
+            "AlongDistance",
+            Some("mm"),
+            "d12",
+            3.0,
+        );
+        earlier_distance[22..30].copy_from_slice(&discriminator.to_le_bytes());
+        assert_eq!(
+            parse_design_parameter(&earlier_distance)
+                .expect("earlier feature parameter")
+                .family_discriminator,
+            Some(discriminator)
+        );
+    }
+
+    let mut invalid_tangency = earlier_tangency;
+    invalid_tangency[22..30].copy_from_slice(&5u64.to_le_bytes());
     assert!(parse_design_parameter(&invalid_tangency).is_none());
 
     let mut revised_distance = parameter_record(
