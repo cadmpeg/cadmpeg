@@ -36780,22 +36780,37 @@ fn typed_marker_relation_definition_in_sketch(
             let mut exact_entities = marker
                 .links
                 .iter()
-                .filter_map(|link| {
-                    markers_by_id
-                        .get(link.entity_ref.as_str())
-                        .filter(|linked| {
-                            matches!(
-                                linked.kind,
-                                SketchInputKind::LineOrCircle | SketchInputKind::Arc
-                            )
-                        })
-                        .and_then(|_| {
-                            let mut matching = sketch_entities.iter().filter(|entity| {
-                                entity.native_ref.as_deref() == Some(link.entity_ref.as_str())
-                            });
-                            let entity = matching.next()?;
-                            matching.next().is_none().then_some(entity.id.clone())
-                        })
+                .flat_map(|link| {
+                    let Some(linked) = markers_by_id.get(link.entity_ref.as_str()) else {
+                        return Vec::new();
+                    };
+                    if kind == Fixed
+                        && matches!(
+                            linked.kind,
+                            SketchInputKind::Point
+                                | SketchInputKind::ConstrainedPoint
+                                | SketchInputKind::LineOrCircle
+                                | SketchInputKind::Arc
+                        )
+                    {
+                        return marker_entities(&link.entity_ref, markers_by_id, loci_by_marker);
+                    }
+                    if !matches!(
+                        linked.kind,
+                        SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                    ) {
+                        return Vec::new();
+                    }
+                    let mut matching = sketch_entities.iter().filter(|entity| {
+                        entity.native_ref.as_deref() == Some(link.entity_ref.as_str())
+                    });
+                    let Some(entity) = matching.next() else {
+                        return Vec::new();
+                    };
+                    if matching.next().is_some() {
+                        return Vec::new();
+                    }
+                    vec![entity.id.clone()]
                 })
                 .collect::<Vec<_>>();
             exact_entities.sort();
@@ -46893,6 +46908,93 @@ mod profile_join_tests {
             ),
             Some(SketchConstraintDefinition::Vertical { entity: exact })
         );
+    }
+
+    #[test]
+    fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles() {
+        let mut relation = marker("fixed", None);
+        relation.kind = SketchInputKind::Relation(SketchRelationKind::Fixed);
+        relation.links = vec![
+            SketchInputLink {
+                local_id: 2,
+                entity_ref: "point".into(),
+            },
+            SketchInputLink {
+                local_id: 7,
+                entity_ref: "radius".into(),
+            },
+        ];
+        let mut point = marker("point", Some([1.0, 2.0]));
+        point.kind = SketchInputKind::Point;
+        let mut radius = marker("radius", None);
+        radius.kind = SketchInputKind::Relation(SketchRelationKind::Radius);
+        let markers = HashMap::from([
+            (relation.id.as_str(), &relation),
+            (point.id.as_str(), &point),
+            (radius.id.as_str(), &radius),
+        ]);
+        let point_id = SketchEntityId("point-entity".into());
+        let loci = HashMap::from([(
+            point.id.clone(),
+            vec![SketchLocus::Entity(point_id.clone())],
+        )]);
+        let point_entity = SketchEntity {
+            id: point_id.clone(),
+            sketch: SketchId("sketch".into()),
+            construction: false,
+            native_ref: Some(point.id.clone()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(1.0, 2.0),
+            },
+        };
+
+        assert_eq!(
+            typed_marker_relation_definition_in_sketch(
+                &relation,
+                &SketchId("sketch".into()),
+                std::slice::from_ref(&point_entity),
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::Fixed {
+                entity: point_id.clone(),
+            })
+        );
+
+        let mut second = marker("second", Some([3.0, 4.0]));
+        second.kind = SketchInputKind::Point;
+        relation.links.push(SketchInputLink {
+            local_id: 8,
+            entity_ref: second.id.clone(),
+        });
+        let markers = HashMap::from([
+            (relation.id.as_str(), &relation),
+            (point.id.as_str(), &point),
+            (radius.id.as_str(), &radius),
+            (second.id.as_str(), &second),
+        ]);
+        let loci = HashMap::from([
+            (
+                point.id.clone(),
+                vec![SketchLocus::Entity(point_id.clone())],
+            ),
+            (
+                second.id.clone(),
+                vec![SketchLocus::Entity(SketchEntityId("second-entity".into()))],
+            ),
+        ]);
+        assert!(matches!(
+            typed_marker_relation_definition_in_sketch(
+                &relation,
+                &SketchId("sketch".into()),
+                &[point_entity],
+                &markers,
+                &loci,
+            ),
+            Some(SketchConstraintDefinition::Native { .. })
+        ));
     }
 
     #[test]
