@@ -358,12 +358,21 @@ impl BrepAssembly {
                 draft.model.bodies.len()
             )));
         }
+        let mut identities = HashSet::with_capacity(draft.model.entity_count());
+        macro_rules! collect_identities {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+                $(identities.extend(
+                    draft.model.$field.iter().map(|entity| entity.identity().to_owned())
+                );)*
+            };
+        }
+        crate::document::arena_registry!(collect_identities);
         macro_rules! check_closure {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
                 $(for entity in &draft.model.$field {
                     let mut missing = None;
                     entity.visit_references(&mut |reference| {
-                        if missing.is_none() && !draft.identities.contains(&reference.target) {
+                        if missing.is_none() && !identities.contains(&reference.target) {
                             missing = Some(reference.target);
                         }
                     });
@@ -390,10 +399,10 @@ mod tests {
     use super::{BrepAssembly, DraftError, ModelDraft};
     use crate::annotations::Annotations;
     use crate::document::CadIr;
-    use crate::ids::{BodyId, PointId};
+    use crate::ids::{BodyId, PointId, RegionId};
     use crate::math::Point3;
     use crate::report::{TransferDisposition, TransferLedger};
-    use crate::topology::{Body, BodyKind, Point};
+    use crate::topology::{Body, BodyKind, Point, Region};
     use crate::units::Units;
 
     fn point(id: &str) -> Point {
@@ -461,5 +470,28 @@ mod tests {
         ledger
             .verify(&crate::index::ModelIndex::new(&ir))
             .expect("committed ledger targets resolve");
+    }
+
+    #[test]
+    fn brep_assembly_checks_entities_added_through_the_model_surface() {
+        let body_id = BodyId("test:model:body#direct".into());
+        let region_id = RegionId("test:model:region#direct".into());
+        let mut draft = ModelDraft::new();
+        draft.model_mut().bodies.push(Body {
+            id: body_id.clone(),
+            kind: BodyKind::Wire,
+            regions: vec![region_id.clone()],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        draft.model_mut().regions.push(Region {
+            id: region_id,
+            body: body_id,
+            shells: Vec::new(),
+        });
+
+        BrepAssembly::new(draft).expect("directly staged closed body");
     }
 }
