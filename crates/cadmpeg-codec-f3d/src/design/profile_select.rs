@@ -1340,6 +1340,8 @@ fn historical_selection_regions(
     }
     let mut state_ids = state_ids.into_iter().collect::<Vec<_>>();
     state_ids.sort_unstable();
+    let mut previous_member_points = None;
+    let mut previous_selection = None;
     let state_selections = state_ids
         .into_iter()
         .filter_map(|state_id| {
@@ -1351,7 +1353,23 @@ fn historical_selection_regions(
                         .or_else(|| resolved_selection_member_points(member, sketch, entities))
                 })
                 .collect::<Option<Vec<_>>>()?;
-            selection_for_member_points(members, sketch, entities, &member_points, tolerance)
+            let key = member_points
+                .iter()
+                .map(|points| {
+                    points
+                        .iter()
+                        .map(|point| (point.x.to_bits(), point.y.to_bits(), point.z.to_bits()))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            if previous_member_points.as_ref() == Some(&key) {
+                return previous_selection.clone();
+            }
+            let selection =
+                selection_for_member_points(members, sketch, entities, &member_points, tolerance);
+            previous_member_points = Some(key);
+            previous_selection.clone_from(&selection);
+            selection
         })
         .collect::<Vec<_>>();
     if !state_selections.is_empty() {
