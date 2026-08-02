@@ -27858,6 +27858,19 @@ mod idless_history_binding_tests {
     }
 
     #[test]
+    fn native_extrusion_class_establishes_an_end_spec_owner() {
+        let mut cut = feature(1, "localized cut");
+        cut.xml_tag = "Feature".into();
+        cut.input_class = Some("moCut_c".into());
+        assert!(is_extrusion_end_spec_owner(&cut));
+
+        cut.input_class = Some("moRefPlane_c".into());
+        assert!(!is_extrusion_end_spec_owner(&cut));
+        cut.xml_tag = "Cut".into();
+        assert!(is_extrusion_end_spec_owner(&cut));
+    }
+
+    #[test]
     fn repeated_legacy_holes_own_two_consecutive_profile_children() {
         let mut first = feature(10, "localized hole A");
         first.name = "hole A".into();
@@ -32970,7 +32983,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
             let owners = histories
                 .iter()
                 .flat_map(|history| &history.features)
-                .filter(|feature| matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut"))
+                .filter(|feature| is_extrusion_end_spec_owner(feature))
                 .filter(|feature| feature.parameters.len() == 1)
                 .filter(|feature| {
                     feature.parameters.get(*name).is_some_and(|value| {
@@ -33007,7 +33020,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
             else {
                 continue;
             };
-            if !matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut") {
+            if !is_extrusion_end_spec_owner(feature) {
                 continue;
             }
             let has_depth =
@@ -33157,6 +33170,12 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 .insert("EndCondition2".into(), second.clone());
         }
     }
+}
+
+fn is_extrusion_end_spec_owner(feature: &crate::records::Feature) -> bool {
+    native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+        == NativeClassKind::Extrusion
+        || matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut")
 }
 
 /// Add target and tool body paths carried by compact combine objects.
