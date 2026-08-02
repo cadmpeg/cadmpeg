@@ -289,6 +289,20 @@ fn rederived_body_census(
                 }
                 bodies.extend(feature.outputs.iter().cloned());
             }
+            FeatureDefinition::TrimSurface { .. } => {
+                preserve_complete_outputs(
+                    feature,
+                    &bodies,
+                    crate::decode::trim_surface_definition_is_incomplete(feature),
+                )?;
+            }
+            FeatureDefinition::ExtendSurface { .. } => {
+                preserve_complete_outputs(
+                    feature,
+                    &bodies,
+                    crate::decode::extend_surface_definition_is_incomplete(feature),
+                )?;
+            }
             FeatureDefinition::Hole { .. } => {
                 preserve_complete_single_output(
                     feature,
@@ -401,19 +415,34 @@ fn preserve_complete_single_output(
     bodies: &BTreeSet<BodyId>,
     incomplete: bool,
 ) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+    preserve_complete_outputs(feature, bodies, incomplete)?;
+    if feature.outputs.len() != 1 {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::InvalidOutputLineage,
+        ));
+    }
+    Ok(())
+}
+
+fn preserve_complete_outputs(
+    feature: &cadmpeg_ir::features::Feature,
+    bodies: &BTreeSet<BodyId>,
+    incomplete: bool,
+) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
     if incomplete {
         return Err((
             feature.id.clone(),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     }
-    let [output] = feature.outputs.as_slice() else {
-        return Err((
-            feature.id.clone(),
-            UnsupportedBodyCensusReason::InvalidOutputLineage,
-        ));
-    };
-    if !bodies.contains(output) {
+    if feature.outputs.is_empty()
+        || feature.outputs.iter().collect::<BTreeSet<_>>().len() != feature.outputs.len()
+        || feature
+            .outputs
+            .iter()
+            .any(|output| !bodies.contains(output))
+    {
         return Err((
             feature.id.clone(),
             UnsupportedBodyCensusReason::InvalidOutputLineage,
@@ -637,9 +666,9 @@ mod tests {
         CurveProjectionDirectionState, DesignConfiguration, EdgeSelection, ExtrudeDirection,
         ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FilletGroup, HoleKind,
         HolePlacement, PathRef, ProfileRef, RadiusSpec, RevolutionConstruction, RibConstruction,
-        RibDraft, SketchSpace, SweepMode, Termination, ThickenSide,
+        RibDraft, SketchSpace, SurfaceExtension, SweepMode, Termination, ThickenSide, TrimRegion,
     };
-    use cadmpeg_ir::ids::FaceId;
+    use cadmpeg_ir::ids::{CurveId, FaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::topology::{Body, BodyKind};
 
@@ -1641,6 +1670,103 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies: vec![body] }
+        );
+    }
+
+    #[test]
+    fn complete_surface_edits_preserve_every_declared_body_identity() {
+        let mut ir = complete_block_ir();
+        let first = ir.model.bodies[0].id.clone();
+        let second = BodyId("second".to_string());
+        ir.model.bodies.push(model_body(&second.0));
+        ir.model.features[0].outputs.push(second.clone());
+        ir.model.features[0].definition = FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Bodies(vec![first.clone(), second.clone()]),
+        };
+        let faces = FaceSelection::Faces(vec![FaceId("face".to_string())]);
+        let mut trim = body_neutral_feature(
+            "trim-surface",
+            1,
+            FeatureDefinition::TrimSurface {
+                faces: faces.clone(),
+                tool: PathRef::Curves(vec![CurveId("trim-curve".to_string())]),
+                keep: TrimRegion::Inside,
+            },
+        );
+        trim.outputs = vec![first.clone(), second.clone()];
+        let mut extend = body_neutral_feature(
+            "extend-surface",
+            2,
+            FeatureDefinition::ExtendSurface {
+                faces,
+                distance: Some(Length(0.5)),
+                method: SurfaceExtension::Natural,
+            },
+        );
+        extend.outputs = vec![first.clone(), second.clone()];
+        ir.model.features.extend([trim, extend]);
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified {
+                bodies: vec![first, second]
+            }
+        );
+    }
+
+    #[test]
+    fn surface_edits_reject_incomplete_construction_before_output_lineage() {
+        let definitions = [
+            FeatureDefinition::TrimSurface {
+                faces: FaceSelection::Unresolved,
+                tool: PathRef::Unresolved("trim".to_string()),
+                keep: TrimRegion::Unresolved,
+            },
+            FeatureDefinition::ExtendSurface {
+                faces: FaceSelection::Unresolved,
+                distance: None,
+                method: SurfaceExtension::Unresolved,
+            },
+        ];
+        for (ordinal, definition) in definitions.into_iter().enumerate() {
+            let mut ir = complete_block_ir();
+            ir.model.features.push(body_neutral_feature(
+                "surface-edit",
+                u64::try_from(ordinal).expect("two surface edit families") + 1,
+                definition,
+            ));
+            assert_eq!(
+                evaluate_saved_body_census(&ir),
+                BodyCensusEvaluation::Unsupported {
+                    feature: Some(FeatureId("surface-edit".to_string())),
+                    reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn complete_surface_edit_rejects_an_output_absent_from_prior_history() {
+        let mut ir = complete_block_ir();
+        let missing = BodyId("missing".to_string());
+        let mut trim = body_neutral_feature(
+            "trim-surface",
+            1,
+            FeatureDefinition::TrimSurface {
+                faces: FaceSelection::Faces(vec![FaceId("face".to_string())]),
+                tool: PathRef::Curves(vec![CurveId("trim-curve".to_string())]),
+                keep: TrimRegion::Outside,
+            },
+        );
+        trim.outputs = vec![missing];
+        ir.model.features.push(trim);
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Unsupported {
+                feature: Some(FeatureId("trim-surface".to_string())),
+                reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
+            }
         );
     }
 

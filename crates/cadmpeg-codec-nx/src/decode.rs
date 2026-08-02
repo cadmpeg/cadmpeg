@@ -10306,20 +10306,13 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "projected curve"
             }
-            FeatureDefinition::TrimSurface { faces, tool, keep }
-                if face_selection_is_incomplete(faces)
-                    || path_ref_is_incomplete(tool)
-                    || matches!(keep, TrimRegion::Unresolved) =>
+            FeatureDefinition::TrimSurface { .. }
+                if trim_surface_definition_is_incomplete(feature) =>
             {
                 "trim surface"
             }
-            FeatureDefinition::ExtendSurface {
-                faces,
-                distance,
-                method,
-            } if face_selection_is_incomplete(faces)
-                || distance.is_none_or(|distance| !positive_feature_length(distance))
-                || matches!(method, cadmpeg_ir::features::SurfaceExtension::Unresolved) =>
+            FeatureDefinition::ExtendSurface { .. }
+                if extend_surface_definition_is_incomplete(feature) =>
             {
                 "extend surface"
             }
@@ -10693,6 +10686,29 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
         }
     }
     incomplete
+}
+
+pub(crate) fn trim_surface_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::TrimSurface { faces, tool, keep } = &feature.definition else {
+        return true;
+    };
+    face_selection_is_incomplete(faces)
+        || path_ref_is_incomplete(tool)
+        || matches!(keep, TrimRegion::Unresolved)
+}
+
+pub(crate) fn extend_surface_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::ExtendSurface {
+        faces,
+        distance,
+        method,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    face_selection_is_incomplete(faces)
+        || distance.is_none_or(|distance| !positive_feature_length(distance))
+        || matches!(method, cadmpeg_ir::features::SurfaceExtension::Unresolved)
 }
 
 pub(crate) fn sew_bodies_definition_is_incomplete(feature: &Feature) -> bool {
