@@ -13578,6 +13578,9 @@ mod marker_tests {
             Some(6)
         );
 
+        let compact = build_payload(0, body_offset + 68);
+        assert!(component_face_reference_at(&compact, body_offset).is_some());
+
         let flagged = build_payload(0x40, body_offset + 100);
         assert!(component_face_reference_at(&flagged, body_offset).is_some());
         let mut record = CLASS_MARKER.to_vec();
@@ -23304,8 +23307,15 @@ fn component_face_reference_at(
     {
         return None;
     }
-    let marker = body_offset.checked_add(if flags == [0x40, 0] { 100 } else { 92 })?;
-    compact_surface_reference_at(payload, marker).map(|components| (marker, components))
+    let marker_offsets: &[usize] = if flags == [0x40, 0] {
+        &[100]
+    } else {
+        &[68, 92]
+    };
+    marker_offsets.iter().find_map(|relative| {
+        let marker = body_offset.checked_add(*relative)?;
+        compact_surface_reference_at(payload, marker).map(|components| (marker, components))
+    })
 }
 
 fn component_face_reference_in_record(
