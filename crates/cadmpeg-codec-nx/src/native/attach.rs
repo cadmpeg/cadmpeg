@@ -38,7 +38,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::decode::Scan;
-use crate::native::history::active_feature_closure;
+use crate::native::history::{active_feature_closure, BodyWriterHistory};
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 
 use super::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
@@ -611,7 +611,7 @@ fn attach_feature_operations(
             .or_default()
             .push(reference);
     }
-    let mut last_body_writer = BTreeMap::<u32, FeatureId>::new();
+    let mut body_writer_history = BodyWriterHistory::default();
     let body_alias_roots =
         crate::native::segments::body_alias_roots(body_bindings).unwrap_or_default();
     let canonical_body =
@@ -1105,14 +1105,9 @@ fn attach_feature_operations(
             .expect("every operation label owns one neutral feature identity")
             .clone();
         let mut dependencies = Vec::new();
-        if let Some(body) = body_references.get(label.id.as_str()) {
-            if let Some(writer) = last_body_writer.get(&canonical_body(*body)) {
-                dependencies.push(writer.clone());
-            }
-        }
         if let Some(operation) = booleans.get(label.id.as_str()) {
             for body in &operation.tool_object_indices {
-                if let Some(writer) = last_body_writer.get(&canonical_body(*body)) {
+                if let Some(writer) = body_writer_history.native_writer(canonical_body(*body)) {
                     if !dependencies.contains(writer) {
                         dependencies.push(writer.clone());
                     }
@@ -1125,7 +1120,7 @@ fn attach_feature_operations(
             .flatten()
         {
             if let Some(writer) =
-                last_body_writer.get(&canonical_body(operand.operand_object_index))
+                body_writer_history.native_writer(canonical_body(operand.operand_object_index))
             {
                 if !dependencies.contains(writer) {
                     dependencies.push(writer.clone());
@@ -1276,6 +1271,15 @@ fn attach_feature_operations(
                 .cloned()
                 .unwrap_or_default();
         }
+        let native_primary_body = body_references
+            .get(label.id.as_str())
+            .copied()
+            .map(canonical_body);
+        body_writer_history.extend_primary_dependencies(
+            native_primary_body,
+            &outputs,
+            &mut dependencies,
+        );
         if let Some(body) = body_references.get(label.id.as_str()) {
             source_properties.insert("primary_body_object_index".to_string(), body.to_string());
         }
@@ -2107,9 +2111,11 @@ fn attach_feature_operations(
                 .collect::<Option<Vec<_>>>()
                 .unwrap_or_default();
             let op = extrude_boolean_op(
-                body_references
-                    .get(label.id.as_str())
-                    .is_none_or(|body| last_body_writer.contains_key(&canonical_body(*body))),
+                body_references.get(label.id.as_str()).is_none_or(|body| {
+                    body_writer_history
+                        .native_writer(canonical_body(*body))
+                        .is_some()
+                }),
                 &output_kinds,
             );
             extrude_feature_definition(
@@ -2228,6 +2234,8 @@ fn attach_feature_operations(
             annotations.exactness(&annotation.id.0, Exactness::Derived);
             ir.model.semantic_annotations.push(annotation);
         }
+        let native_output = (!deletes_body).then_some(native_primary_body).flatten();
+        body_writer_history.record_writer(native_output, &outputs, &id);
         ir.model.features.push(Feature {
             id: id.clone(),
             ordinal: base_ordinal + ordinal as u64,
@@ -2243,11 +2251,6 @@ fn attach_feature_operations(
             definition,
             native_ref: Some(label.id.clone()),
         });
-        if !deletes_body {
-            if let Some(body) = body_references.get(label.id.as_str()) {
-                last_body_writer.insert(canonical_body(*body), id);
-            }
-        }
     }
 }
 
