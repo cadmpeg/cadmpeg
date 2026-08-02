@@ -27688,16 +27688,20 @@ mod idless_history_binding_tests {
     }
 
     #[test]
-    fn directly_preceding_profile_binds_a_classless_dissectable_extrusion() {
+    fn history_metadata_does_not_interrupt_an_extrusion_profile_pair() {
         let mut profile = feature(1, "sketch");
         profile.id = "profile-native".into();
         profile.xml_tag = "Sketch".into();
         profile.input_class = Some("moProfileFeature_c".into());
         profile.source_id = Some("41".into());
+        let mut metadata = feature(2, "attribute");
+        metadata.id = "metadata-native".into();
+        metadata.source_id = Some("42".into());
+        metadata.input_class = Some("moAttribute_c".into());
         let mut extrusion = feature(2, "extrusion");
         extrusion.id = "extrusion-native".into();
         extrusion.xml_tag = "Extrusion".into();
-        extrusion.source_id = Some("42".into());
+        extrusion.source_id = Some("43".into());
         extrusion
             .properties
             .insert("Dissectable".into(), "true".into());
@@ -27707,7 +27711,7 @@ mod idless_history_binding_tests {
             properties: BTreeMap::new(),
             content: Vec::new(),
             configurations: Vec::new(),
-            features: vec![profile, extrusion],
+            features: vec![profile, metadata, extrusion],
         };
         let lane = FeatureInputLane {
             id: "lane".into(),
@@ -27724,11 +27728,19 @@ mod idless_history_binding_tests {
                     value: "name-1".into(),
                 },
                 FeatureInputName {
-                    id: "extrusion-name".into(),
+                    id: "metadata-name".into(),
                     parent: "lane".into(),
                     ordinal: 1,
-                    offset: 200,
+                    offset: 150,
                     object_id: Some(42),
+                    value: "name-2".into(),
+                },
+                FeatureInputName {
+                    id: "extrusion-name".into(),
+                    parent: "lane".into(),
+                    ordinal: 2,
+                    offset: 200,
+                    object_id: Some(43),
                     value: "name-2".into(),
                 },
             ],
@@ -34593,6 +34605,10 @@ pub(crate) fn project_adjacent_extrusion_profiles(
         .flat_map(|history| &history.features)
         .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
+    let history_features = histories
+        .iter()
+        .map(|history| (history.id.as_str(), history.features.as_slice()))
+        .collect::<HashMap<_, _>>();
     let neutral_indices = features
         .iter()
         .enumerate()
@@ -34603,6 +34619,13 @@ pub(crate) fn project_adjacent_extrusion_profiles(
         let mut objects = native_features
             .values()
             .filter_map(|feature| Some((feature_object_name(feature, lane)?, *feature)))
+            .filter(|(_, feature)| {
+                !history_features
+                    .get(feature.parent.as_str())
+                    .is_some_and(|features| {
+                        crate::history::is_history_metadata_record(feature, features)
+                    })
+            })
             .collect::<Vec<_>>();
         objects.sort_by_key(|(name, _)| name.offset);
         let object_kind = |name: &FeatureInputName, feature: &crate::records::Feature| {

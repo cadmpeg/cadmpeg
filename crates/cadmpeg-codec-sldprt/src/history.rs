@@ -710,7 +710,7 @@ fn is_custom_property(feature: &Feature) -> bool {
     feature.xml_tag.eq_ignore_ascii_case("CustomProperty")
 }
 
-fn is_history_metadata_record(feature: &Feature, features: &[Feature]) -> bool {
+pub(crate) fn is_history_metadata_record(feature: &Feature, features: &[Feature]) -> bool {
     if is_custom_property(feature)
         || matches!(
             feature.input_class.as_deref(),
