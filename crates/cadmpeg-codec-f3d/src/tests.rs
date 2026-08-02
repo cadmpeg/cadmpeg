@@ -963,6 +963,36 @@ fn synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh() -> Vec<u8> {
     replace_generated_face_with_nurbs_surface(synthetic_geometry_with_pcurve_smbh())
 }
 
+fn synthetic_inline_pcurve_with_referenced_support_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let asmheader_end = records[0].offset + records[0].len - 1;
+
+    let mut target = vec![0x0f];
+    t_ident(&mut target, "int_int_cur");
+    target.extend_from_slice(&generated_pcurve_block());
+    target.push(0x10);
+    bytes.splice(asmheader_end..asmheader_end, target);
+
+    let opener = bytes
+        .windows(b"\x0f\x0d\x0bexp_par_cur".len())
+        .position(|window| window == b"\x0f\x0d\x0bexp_par_cur")
+        .expect("inline pcurve scope");
+    let close = bytes[opener..]
+        .windows([0x10, 0x0a, 0x0b, 0x0a, 0x0b].len())
+        .position(|window| window == [0x10, 0x0a, 0x0b, 0x0a, 0x0b])
+        .map(|offset| opener + offset)
+        .expect("inline pcurve scope close");
+    let mut reference = vec![0x0f];
+    t_ident(&mut reference, "ref");
+    t_long(&mut reference, 0);
+    reference.push(0x10);
+    bytes.splice(close..close, reference);
+    bytes
+}
+
 fn replace_generated_face_with_nurbs_surface(mut bytes: Vec<u8>) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
@@ -23022,6 +23052,25 @@ fn inline_pcurve_scope_is_its_exact_carrier_identity() {
             .count(),
         1
     );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("explicit UV pcurve reference")));
+}
+
+#[test]
+fn inline_pcurve_owns_its_carrier_ahead_of_referenced_supports() {
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_inline_pcurve_with_referenced_support_smbh(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("inline pcurve with referenced support");
+
+    assert_eq!(result.ir.model.pcurves.len(), 1);
     assert!(result
         .report
         .losses
