@@ -394,6 +394,38 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 "{incomplete_configuration_feature_snapshots} configuration(s) lack a complete evaluated feature snapshot; {incomplete_configuration_parameter_snapshots} configuration(s) lack a complete evaluated parameter snapshot."
             )));
     }
+    let incoherent_configuration_suppression =
+        ir.model
+            .configurations
+            .iter()
+            .filter(|configuration| {
+                let mut suppressed = std::collections::HashSet::new();
+                configuration
+                    .suppressed_features
+                    .iter()
+                    .any(|feature| !feature_ids.contains(feature) || !suppressed.insert(feature))
+                    || (!configuration.feature_states.is_empty()
+                        && configuration.feature_states.iter().any(|(feature, state)| {
+                            state.suppressed != suppressed.contains(feature)
+                        }))
+            })
+            .count();
+    let incoherent_configuration_overrides = ir
+        .model
+        .configurations
+        .iter()
+        .filter(|configuration| {
+            configuration
+                .parameter_overrides
+                .keys()
+                .any(|parameter| !parameter_ids.contains(parameter))
+        })
+        .count();
+    if incoherent_configuration_suppression > 0 || incoherent_configuration_overrides > 0 {
+        report.losses.push(SldprtLossCode::ConfigIncompleteSnapshot.note(format!(
+            "{incoherent_configuration_suppression} configuration(s) have missing, repeated, or feature-state-inconsistent suppression members; {incoherent_configuration_overrides} configuration(s) reference missing parameter overrides."
+        )));
+    }
 
     let feature_names = ir
         .model
@@ -5184,6 +5216,69 @@ mod design_loss_tests {
             loss.message
                 .contains("complete evaluated parameter snapshot")
                 || loss.message.contains("lack an evaluated scalar")
+        }));
+    }
+
+    #[test]
+    fn configuration_suppression_and_override_references_are_coherent() {
+        let mut ir = CadIr::empty(Units::default());
+        let feature = FeatureId("feature".into());
+        let definition = FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::History,
+            children: Vec::new(),
+            active_child: None,
+        };
+        ir.model.features.push(Feature {
+            id: feature.clone(),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: definition.clone(),
+            native_ref: None,
+        });
+        ir.model.configurations.push(DesignConfiguration {
+            id: ConfigurationId("configuration".into()),
+            ordinal: 0,
+            active: true,
+            source_index: Some(0),
+            name: "Default".into(),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+            parameter_values: BTreeMap::new(),
+            suppressed_features: Vec::new(),
+            parameter_overrides: BTreeMap::from([(ParameterId("missing".into()), "1mm".into())]),
+            feature_states: BTreeMap::from([(
+                feature,
+                ConfigurationFeatureState {
+                    suppressed: true,
+                    dependencies: Vec::new(),
+                    outputs: Vec::new(),
+                    definition,
+                },
+            )]),
+            native_ref: Some("native:configuration".into()),
+        });
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message == "1 configuration(s) have missing, repeated, or feature-state-inconsistent suppression members; 1 configuration(s) reference missing parameter overrides."
         }));
     }
 
