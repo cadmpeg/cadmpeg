@@ -10334,13 +10334,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::FaceBlend { .. } if face_blend_definition_is_incomplete(feature) => {
                 "face blend"
             }
-            FeatureDefinition::SewBodies {
-                bodies,
-                gap_tolerance,
-            } if body_selection_is_incomplete(bodies)
-                || resolved_body_selection_len(bodies).is_some_and(|count| count < 2)
-                || gap_tolerance.is_some_and(|tolerance| !positive_feature_length(tolerance)) =>
-            {
+            FeatureDefinition::SewBodies { .. } if sew_bodies_definition_is_incomplete(feature) => {
                 "sew bodies"
             }
             FeatureDefinition::TrimBodies {
@@ -10386,18 +10380,11 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "section"
             }
-            FeatureDefinition::Combine { target, tools, op }
-                if body_selection_is_incomplete(target)
-                    || body_selection_is_incomplete(tools)
-                    || resolved_body_selection_len(target) != Some(1)
-                    || body_selections_overlap(target, tools)
-                    || matches!(op, BooleanOp::Unresolved) =>
-            {
+            FeatureDefinition::Combine { .. } if combine_definition_is_incomplete(feature) => {
                 "body combine"
             }
-            FeatureDefinition::DeleteBody { bodies, mode }
-                if body_selection_is_incomplete(bodies)
-                    || matches!(mode, BodyRetentionMode::Unresolved) =>
+            FeatureDefinition::DeleteBody { .. }
+                if delete_body_definition_is_incomplete(feature) =>
             {
                 "delete body"
             }
@@ -10712,6 +10699,37 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
         }
     }
     incomplete
+}
+
+pub(crate) fn sew_bodies_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::SewBodies {
+        bodies,
+        gap_tolerance,
+    } = &feature.definition
+    else {
+        return true;
+    };
+    body_selection_is_incomplete(bodies)
+        || resolved_body_selection_len(bodies).is_some_and(|count| count < 2)
+        || gap_tolerance.is_some_and(|tolerance| !positive_feature_length(tolerance))
+}
+
+pub(crate) fn combine_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Combine { target, tools, op } = &feature.definition else {
+        return true;
+    };
+    body_selection_is_incomplete(target)
+        || body_selection_is_incomplete(tools)
+        || resolved_body_selection_len(target) != Some(1)
+        || body_selections_overlap(target, tools)
+        || matches!(op, BooleanOp::Unresolved | BooleanOp::NewBody)
+}
+
+pub(crate) fn delete_body_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::DeleteBody { bodies, mode } = &feature.definition else {
+        return true;
+    };
+    body_selection_is_incomplete(bodies) || matches!(mode, BodyRetentionMode::Unresolved)
 }
 
 pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {

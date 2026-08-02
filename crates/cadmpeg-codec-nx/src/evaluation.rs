@@ -4,7 +4,9 @@
 use std::collections::BTreeSet;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition, FeatureId, Length};
+use cadmpeg_ir::features::{
+    BodyRetentionMode, BodySelection, BooleanOp, FeatureDefinition, FeatureId, Length,
+};
 use cadmpeg_ir::ids::BodyId;
 
 /// Why a saved-body census cannot yet be evaluated exactly.
@@ -343,6 +345,37 @@ fn rederived_body_census(
                     crate::decode::replace_face_definition_is_incomplete(feature),
                 )?;
             }
+            FeatureDefinition::Combine { target, tools, .. } => {
+                apply_complete_body_combine(
+                    feature,
+                    &mut bodies,
+                    target,
+                    tools,
+                    crate::decode::combine_definition_is_incomplete(feature),
+                )?;
+            }
+            FeatureDefinition::SewBodies {
+                bodies: selection, ..
+            } => {
+                apply_complete_body_replacement(
+                    feature,
+                    &mut bodies,
+                    selection,
+                    crate::decode::sew_bodies_definition_is_incomplete(feature),
+                )?;
+            }
+            FeatureDefinition::DeleteBody {
+                bodies: selection,
+                mode,
+            } => {
+                apply_complete_body_retention(
+                    feature,
+                    &mut bodies,
+                    selection,
+                    *mode,
+                    crate::decode::delete_body_definition_is_incomplete(feature),
+                )?;
+            }
             _ => {
                 return Err((
                     feature.id.clone(),
@@ -417,6 +450,119 @@ fn apply_complete_boolean_outputs(
                 UnsupportedBodyCensusReason::InvalidOutputLineage,
             ));
         }
+    }
+    Ok(())
+}
+
+fn apply_complete_body_combine(
+    feature: &cadmpeg_ir::features::Feature,
+    bodies: &mut BTreeSet<BodyId>,
+    target: &BodySelection,
+    tools: &BodySelection,
+    incomplete: bool,
+) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+    if incomplete {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+        ));
+    }
+    let (Some([target]), Some(tools)) = (
+        explicit_body_selection(target),
+        explicit_body_selection(tools),
+    ) else {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+        ));
+    };
+    if feature.outputs.as_slice() != std::slice::from_ref(target)
+        || !bodies.contains(target)
+        || tools.iter().any(|tool| !bodies.contains(tool))
+    {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::InvalidOutputLineage,
+        ));
+    }
+    for tool in tools {
+        bodies.remove(tool);
+    }
+    Ok(())
+}
+
+fn apply_complete_body_replacement(
+    feature: &cadmpeg_ir::features::Feature,
+    bodies: &mut BTreeSet<BodyId>,
+    inputs: &BodySelection,
+    incomplete: bool,
+) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+    if incomplete {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+        ));
+    }
+    let Some(inputs) = explicit_body_selection(inputs) else {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+        ));
+    };
+    let input_set = inputs.iter().cloned().collect::<BTreeSet<_>>();
+    if inputs.iter().any(|input| !bodies.contains(input))
+        || feature.outputs.is_empty()
+        || feature.outputs.iter().collect::<BTreeSet<_>>().len() != feature.outputs.len()
+        || feature
+            .outputs
+            .iter()
+            .any(|output| bodies.contains(output) && !input_set.contains(output))
+    {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::InvalidOutputLineage,
+        ));
+    }
+    for input in inputs {
+        bodies.remove(input);
+    }
+    bodies.extend(feature.outputs.iter().cloned());
+    Ok(())
+}
+
+fn apply_complete_body_retention(
+    feature: &cadmpeg_ir::features::Feature,
+    bodies: &mut BTreeSet<BodyId>,
+    selection: &BodySelection,
+    mode: BodyRetentionMode,
+    incomplete: bool,
+) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+    if incomplete {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+        ));
+    }
+    let Some(selected) = explicit_body_selection(selection) else {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+        ));
+    };
+    if !feature.outputs.is_empty() || selected.iter().any(|body| !bodies.contains(body)) {
+        return Err((
+            feature.id.clone(),
+            UnsupportedBodyCensusReason::InvalidOutputLineage,
+        ));
+    }
+    match mode {
+        BodyRetentionMode::DeleteSelected => {
+            for body in selected {
+                bodies.remove(body);
+            }
+        }
+        BodyRetentionMode::KeepSelected => bodies.retain(|body| selected.contains(body)),
+        BodyRetentionMode::Unresolved => unreachable!("incomplete retention mode returned above"),
     }
     Ok(())
 }
@@ -1057,7 +1203,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_body_waits_for_historical_body_identity_evaluation() {
+    fn delete_body_removes_an_existing_selected_body() {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
         ir.model.features.push(Feature {
@@ -1078,12 +1224,147 @@ mod tests {
             },
             native_ref: None,
         });
+        ir.model.bodies.clear();
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: Vec::new() }
+        );
+    }
+
+    #[test]
+    fn keep_selected_removes_every_unselected_body() {
+        let mut ir = complete_block_ir();
+        let retained = ir.model.bodies[0].id.clone();
+        let removed = BodyId("removed".to_string());
+        ir.model.features[0].outputs.push(removed.clone());
+        ir.model.features[0].definition = FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Bodies(vec![retained.clone(), removed.clone()]),
+        };
+        ir.model.features.push(body_neutral_feature(
+            "retain",
+            1,
+            FeatureDefinition::DeleteBody {
+                bodies: BodySelection::Bodies(vec![retained.clone()]),
+                mode: BodyRetentionMode::KeepSelected,
+            },
+        ));
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified {
+                bodies: vec![retained]
+            }
+        );
+    }
+
+    #[test]
+    fn combine_consumes_tools_and_preserves_the_target_identity() {
+        let mut ir = complete_block_ir();
+        let target = ir.model.bodies[0].id.clone();
+        let tool = BodyId("tool".to_string());
+        ir.model.features[0].outputs.push(tool.clone());
+        ir.model.features[0].definition = FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
+        };
+        ir.model.features.push(body_preserving_feature(
+            "combine",
+            1,
+            target.clone(),
+            FeatureDefinition::Combine {
+                target: BodySelection::Bodies(vec![target.clone()]),
+                tools: BodySelection::Bodies(vec![tool]),
+                op: BooleanOp::Join,
+            },
+        ));
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified {
+                bodies: vec![target]
+            }
+        );
+    }
+
+    #[test]
+    fn sew_replaces_all_inputs_with_its_declared_outputs() {
+        let mut ir = complete_block_ir();
+        let first = ir.model.bodies[0].id.clone();
+        let second = BodyId("second".to_string());
+        let sewn = BodyId("sewn".to_string());
+        ir.model.bodies[0] = model_body(&sewn.0);
+        ir.model.features[0].outputs = vec![first.clone(), second.clone()];
+        ir.model.features[0].definition = FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Bodies(vec![first.clone(), second.clone()]),
+        };
+        let mut feature = body_preserving_feature(
+            "sew",
+            1,
+            sewn.clone(),
+            FeatureDefinition::SewBodies {
+                bodies: BodySelection::Bodies(vec![first, second]),
+                gap_tolerance: None,
+            },
+        );
+        feature.outputs = vec![sewn.clone()];
+        ir.model.features.push(feature);
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: vec![sewn] }
+        );
+    }
+
+    #[test]
+    fn combine_rejects_a_tool_absent_from_prior_history() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        ir.model.features.push(body_preserving_feature(
+            "combine",
+            1,
+            body.clone(),
+            FeatureDefinition::Combine {
+                target: BodySelection::Bodies(vec![body]),
+                tools: BodySelection::Bodies(vec![BodyId("missing".to_string())]),
+                op: BooleanOp::Cut,
+            },
+        ));
 
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("delete".to_string())),
-                reason: UnsupportedBodyCensusReason::UnsupportedFeatureDefinition,
+                feature: Some(FeatureId("combine".to_string())),
+                reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
+            }
+        );
+    }
+
+    #[test]
+    fn sew_rejects_an_output_identity_owned_by_an_unconsumed_body() {
+        let mut ir = complete_block_ir();
+        let first = ir.model.bodies[0].id.clone();
+        let second = BodyId("second".to_string());
+        let unrelated = BodyId("unrelated".to_string());
+        ir.model.bodies = vec![model_body(&unrelated.0)];
+        ir.model.features[0].outputs = vec![first.clone(), second.clone(), unrelated.clone()];
+        ir.model.features[0].definition = FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Bodies(vec![first.clone(), second.clone(), unrelated.clone()]),
+        };
+        ir.model.features.push(body_preserving_feature(
+            "sew",
+            1,
+            unrelated,
+            FeatureDefinition::SewBodies {
+                bodies: BodySelection::Bodies(vec![first, second]),
+                gap_tolerance: None,
+            },
+        ));
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Unsupported {
+                feature: Some(FeatureId("sew".to_string())),
+                reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
         );
     }
