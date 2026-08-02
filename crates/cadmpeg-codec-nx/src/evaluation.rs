@@ -118,7 +118,8 @@ fn active_configuration_is_admitted(ir: &CadIr, saved: &BTreeSet<BodyId>) -> boo
         && configuration_bodies.len() == saved.len()
         && configuration_bodies.iter().collect::<BTreeSet<_>>()
             == saved.iter().collect::<BTreeSet<_>>()
-        && !crate::decode::active_configuration_state_is_incomplete(ir, configuration)
+        && (ir.model.features.iter().all(is_body_neutral_feature)
+            || !crate::decode::active_configuration_state_is_incomplete(ir, configuration))
 }
 
 fn rederived_body_census(
@@ -1248,6 +1249,25 @@ mod tests {
                 feature: None,
                 reason: UnsupportedBodyCensusReason::ConfigurationEvaluation,
             }
+        );
+    }
+
+    #[test]
+    fn body_neutral_history_needs_only_exact_configuration_body_membership() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut datum = body_neutral_feature(
+            "datum",
+            0,
+            FeatureDefinition::DatumCoordinateSystemUnresolved,
+        );
+        datum.suppressed = None;
+        ir.model.features.push(datum);
+        attach_complete_active_configuration(&mut ir);
+        ir.model.configurations[0].feature_states.clear();
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: Vec::new() }
         );
     }
 
