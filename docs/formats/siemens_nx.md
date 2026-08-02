@@ -282,6 +282,10 @@ metadata[metadata_count]
 prototype[prototype_count]
 01 occurrence_count_plus_one:u8
 prototype_index:u8[occurrence_count]
+01 uuid_count_plus_one:u8
+uuid[uuid_count]
+01 occurrence_count_plus_one:u8
+uuid_index:u8[occurrence_count]
 ```
 
 Each `metadata` and `prototype` is `04 record_len:u8`, followed by
@@ -291,6 +295,12 @@ metadata value is `MODEL`. Each occurrence index is one-based and lies in
 `1..=prototype_count`. Occurrence order and repeated indices preserve distinct
 uses of the same named prototype. The roster does not assign hierarchy or a
 placement transform.
+
+Each `uuid` uses string tag `03` and the same length framing, and contains 36
+lowercase hexadecimal UUID characters with hyphens at positions 8, 13, 18, and
+23. Each UUID index is one-based and lies in `1..=uuid_count`. It associates
+the corresponding occurrence ordinal with the UUID table independently of the
+prototype index.
 
 `part/attrs` has an `UgAttributes` root. Each `Attribute` supplies `owner`,
 `pdmBased`, `title`/`utf8title`, `value`/`utf8value`, `version`, and an XML schema

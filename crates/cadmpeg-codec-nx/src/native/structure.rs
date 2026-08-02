@@ -23,6 +23,21 @@ pub struct FastLoadComponentPrototype {
     pub source_offset: u64,
 }
 
+/// One UUID identity in the fast-load component roster.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FastLoadComponentUuid {
+    /// Globally unique native UUID-record identity.
+    pub id: String,
+    /// Zero-based position in the serialized UUID table.
+    pub ordinal: u32,
+    /// Canonical lowercase UUID text.
+    pub uuid: String,
+    /// Directory entry containing the UUID table.
+    pub source_entry: String,
+    /// Absolute file offset of the UUID tag.
+    pub source_offset: u64,
+}
+
 /// One ordered component use referencing a reusable fast-load prototype.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FastLoadComponentOccurrence {
@@ -34,6 +49,10 @@ pub struct FastLoadComponentOccurrence {
     pub prototype: String,
     /// One-based serialized prototype-table index.
     pub prototype_index: u8,
+    /// Referenced [`FastLoadComponentUuid::id`].
+    pub component_uuid: String,
+    /// Absolute file offset of the UUID-table index.
+    pub uuid_source_offset: u64,
     /// Directory entry containing the roster.
     pub source_entry: String,
     /// Absolute file offset of the prototype index.
@@ -44,6 +63,9 @@ struct Candidate {
     prototypes: Vec<(usize, String)>,
     occurrences_offset: usize,
     prototype_indices: Vec<u8>,
+    uuids: Vec<(usize, String)>,
+    uuid_indices_offset: usize,
+    uuid_indices: Vec<u8>,
 }
 
 /// Extract the component roster only when its entry and internal frame are
@@ -52,6 +74,7 @@ pub fn fast_load_component_roster(
     container: &Container<'_>,
 ) -> (
     Vec<FastLoadComponentPrototype>,
+    Vec<FastLoadComponentUuid>,
     Vec<FastLoadComponentOccurrence>,
 ) {
     let mut entries = container
@@ -59,35 +82,35 @@ pub fn fast_load_component_roster(
         .iter()
         .filter(|entry| entry.name == ENTRY_NAME && entry.file_span.is_some());
     let Some(entry) = entries.next() else {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     };
     if entries.next().is_some() {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     }
     let Some((entry_offset, entry_size)) = entry.file_span else {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     };
     let (Ok(entry_offset_usize), Ok(entry_size)) =
         (usize::try_from(entry_offset), usize::try_from(entry_size))
     else {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     };
     let Some(end) = entry_offset_usize.checked_add(entry_size) else {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     };
     let Some(bytes) = container.data.get(entry_offset_usize..end) else {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     };
     let Some(payload) = framed_payload(bytes) else {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     };
 
     let mut candidates = (0..payload.len()).filter_map(|start| parse_candidate(payload, start));
     let Some(candidate) = candidates.next() else {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     };
     if candidates.next().is_some() {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     }
 
     let prototypes: Vec<_> = candidate
@@ -102,6 +125,18 @@ pub fn fast_load_component_roster(
             source_offset: entry_offset + ENVELOPE_LEN as u64 + offset as u64,
         })
         .collect();
+    let uuids: Vec<_> = candidate
+        .uuids
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, (offset, uuid))| FastLoadComponentUuid {
+            id: format!("nx:fast-load:uuid#{ordinal}"),
+            ordinal: ordinal as u32,
+            uuid,
+            source_entry: entry.name.clone(),
+            source_offset: entry_offset + ENVELOPE_LEN as u64 + offset as u64,
+        })
+        .collect();
     let occurrences = candidate
         .prototype_indices
         .into_iter()
@@ -111,6 +146,13 @@ pub fn fast_load_component_roster(
             ordinal: ordinal as u32,
             prototype: prototypes[usize::from(prototype_index - 1)].id.clone(),
             prototype_index,
+            component_uuid: uuids[usize::from(candidate.uuid_indices[ordinal] - 1)]
+                .id
+                .clone(),
+            uuid_source_offset: entry_offset
+                + ENVELOPE_LEN as u64
+                + candidate.uuid_indices_offset as u64
+                + ordinal as u64,
             source_entry: entry.name.clone(),
             source_offset: entry_offset
                 + ENVELOPE_LEN as u64
@@ -118,7 +160,7 @@ pub fn fast_load_component_roster(
                 + ordinal as u64,
         })
         .collect();
-    (prototypes, occurrences)
+    (prototypes, uuids, occurrences)
 }
 
 fn framed_payload(bytes: &[u8]) -> Option<&[u8]> {
@@ -169,10 +211,31 @@ fn parse_candidate(bytes: &[u8], start: usize) -> Option<Candidate> {
         .all(|index| (1..=prototype_count).contains(index))
         .then_some(())?;
 
+    take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
+    let uuid_count = decoded_count(*take(bytes, &mut at, 1)?.first()?)?;
+    let mut uuids = Vec::with_capacity(uuid_count);
+    for _ in 0..uuid_count {
+        let uuid = parse_tagged_string(bytes, &mut at, 3)?;
+        is_uuid(&uuid.1).then_some(())?;
+        uuids.push(uuid);
+    }
+    take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
+    (decoded_count(*take(bytes, &mut at, 1)?.first()?)? == occurrence_count).then_some(())?;
+    let uuid_indices_offset = at;
+    let uuid_indices = take(bytes, &mut at, occurrence_count)?.to_vec();
+    let uuid_count = u8::try_from(uuid_count).ok()?;
+    uuid_indices
+        .iter()
+        .all(|index| (1..=uuid_count).contains(index))
+        .then_some(())?;
+
     Some(Candidate {
         prototypes,
         occurrences_offset,
         prototype_indices,
+        uuids,
+        uuid_indices_offset,
+        uuid_indices,
     })
 }
 
@@ -183,14 +246,29 @@ fn decoded_count(encoded: u8) -> Option<usize> {
 }
 
 fn parse_string(bytes: &[u8], at: &mut usize) -> Option<(usize, String)> {
+    parse_tagged_string(bytes, at, 4)
+}
+
+fn parse_tagged_string(bytes: &[u8], at: &mut usize, tag: u8) -> Option<(usize, String)> {
     let offset = *at;
-    take(bytes, at, 1)?.eq(&[4]).then_some(())?;
+    take(bytes, at, 1)?.eq(&[tag]).then_some(())?;
     let framed_len = decoded_count(*take(bytes, at, 1)?.first()?)?;
     let framed = take(bytes, at, framed_len)?;
     let (&terminator, value) = framed.split_last()?;
     value.iter().all(|byte| *byte >= 0x20).then_some(())?;
     (terminator == 0).then_some(())?;
     Some((offset, std::str::from_utf8(value).ok()?.to_owned()))
+}
+
+fn is_uuid(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(i, byte)| {
+            if matches!(i, 8 | 13 | 18 | 23) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)
+            }
+        })
 }
 
 fn take<'a>(bytes: &'a [u8], at: &mut usize, len: usize) -> Option<&'a [u8]> {
@@ -242,6 +320,15 @@ mod tests {
             u8::try_from(indices.len() + 1).expect("short test occurrence list"),
         ]);
         bytes.extend(indices);
+        bytes.extend([1, 2]);
+        bytes.extend([3, 38]);
+        bytes.extend(b"01234567-89ab-cdef-0123-456789abcdef");
+        bytes.push(0);
+        bytes.extend([
+            1,
+            u8::try_from(indices.len() + 1).expect("short test occurrence list"),
+        ]);
+        bytes.extend(std::iter::repeat(1).take(indices.len()));
         bytes
     }
 
@@ -273,7 +360,8 @@ mod tests {
     #[test]
     fn extracts_repeated_component_occurrences() {
         let container = container(payload(&["plate", "bolt", "nut"], &[1, 2, 2, 3]));
-        let (prototypes, occurrences) = fast_load_component_roster(&container);
+        let (prototypes, uuids, occurrences) = fast_load_component_roster(&container);
+        assert_eq!(uuids.len(), 1);
         assert_eq!(
             prototypes
                 .iter()
@@ -296,7 +384,7 @@ mod tests {
         let container = container(payload(&["plate"], &[1, 2]));
         assert_eq!(
             fast_load_component_roster(&container),
-            (Vec::new(), Vec::new())
+            (Vec::new(), Vec::new(), Vec::new())
         );
     }
 
@@ -306,7 +394,7 @@ mod tests {
         container.data.to_mut()[11] += 1;
         assert_eq!(
             fast_load_component_roster(&container),
-            (Vec::new(), Vec::new())
+            (Vec::new(), Vec::new(), Vec::new())
         );
     }
 
@@ -321,7 +409,7 @@ mod tests {
         bytes[offset + 1] = 2;
         assert_eq!(
             fast_load_component_roster(&container(bytes)),
-            (Vec::new(), Vec::new())
+            (Vec::new(), Vec::new(), Vec::new())
         );
     }
 
@@ -336,7 +424,7 @@ mod tests {
         bytes[terminator] = b'X';
         assert_eq!(
             fast_load_component_roster(&container(bytes)),
-            (Vec::new(), Vec::new())
+            (Vec::new(), Vec::new(), Vec::new())
         );
     }
 
@@ -347,7 +435,7 @@ mod tests {
         let container = container(first);
         assert_eq!(
             fast_load_component_roster(&container),
-            (Vec::new(), Vec::new())
+            (Vec::new(), Vec::new(), Vec::new())
         );
     }
 }

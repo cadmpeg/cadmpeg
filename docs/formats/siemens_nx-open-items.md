@@ -458,7 +458,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** The stream has a big-endian bounded envelope. Its typed component
 roster defines ordered named prototypes and a one-based prototype index for
-each distinct occurrence. Other payload fields remain uninterpreted.
+each distinct occurrence. A second counted table stores UUID identities, and a
+parallel one-based index associates every occurrence with one UUID. Other
+payload fields remain uninterpreted.
 
 **Need.** We must know the remaining payload grammar, including hierarchy,
 placement, UUID, and state fields.

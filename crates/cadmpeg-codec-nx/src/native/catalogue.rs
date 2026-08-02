@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Declarative catalogue of the native record families.
 //!
-//! One [`CatalogueRow`] per model field (207 total). Each row names the `nx`
+//! One [`CatalogueRow`] per model field (208 total). Each row names the `nx`
 //! namespace arena the family serializes into, and — for families that also emit
 //! source annotations — the tag, exactness, and a `note` fn. Row order is the
 //! observable annotation-emission order for the note-bearing rows;
@@ -45,8 +45,8 @@ pub(crate) struct CatalogueRow {
     /// Record count for this family, feeding the catalogue-derived emptiness
     /// fold ([`NativeModel::is_empty`]) and inspect counts.
     pub(crate) len: fn(&NativeModel) -> usize,
-    /// Whether an empty family contributes to [`NativeModel::is_empty`]. 160 of
-    /// the 207 families count; the 47 that do not are transcribed verbatim from
+    /// Whether an empty family contributes to [`NativeModel::is_empty`]. 161 of
+    /// the 208 families count; the 47 that do not are transcribed verbatim from
     /// the legacy hand-written all-empty guard, which omitted them. The
     /// exclusions look like oversights (25 of the 26 `display_jt` families are
     /// excluded, for instance) but are frozen observable behavior: flipping any
@@ -140,6 +140,11 @@ impl ContainerNoted for FastLoadComponentPrototype {
     }
 }
 impl ContainerNoted for FastLoadComponentOccurrence {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for FastLoadComponentUuid {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
     }
@@ -1772,18 +1777,27 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         arena: "fast_load_component_prototypes",
         tag: Some("FAST_LOAD_COMPONENT_PROTOTYPE"),
         exactness: Exactness::ByteExact,
-        note: Some(|m, r, a| note_container(&m.structure.component_prototypes, r, a)),
-        emit: |m, r, ns| emit_arena(&m.structure.component_prototypes, r, ns),
-        len: |m| m.structure.component_prototypes.len(),
+        note: Some(|m, r, a| note_container(&m.structure.prototypes, r, a)),
+        emit: |m, r, ns| emit_arena(&m.structure.prototypes, r, ns),
+        len: |m| m.structure.prototypes.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "fast_load_component_occurrences",
         tag: Some("FAST_LOAD_COMPONENT_OCCURRENCE"),
         exactness: Exactness::ByteExact,
-        note: Some(|m, r, a| note_container(&m.structure.component_occurrences, r, a)),
-        emit: |m, r, ns| emit_arena(&m.structure.component_occurrences, r, ns),
-        len: |m| m.structure.component_occurrences.len(),
+        note: Some(|m, r, a| note_container(&m.structure.occurrences, r, a)),
+        emit: |m, r, ns| emit_arena(&m.structure.occurrences, r, ns),
+        len: |m| m.structure.occurrences.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "fast_load_component_uuids",
+        tag: Some("FAST_LOAD_COMPONENT_UUID"),
+        exactness: Exactness::ByteExact,
+        note: Some(|m, r, a| note_container(&m.structure.uuids, r, a)),
+        emit: |m, r, ns| emit_arena(&m.structure.uuids, r, ns),
+        len: |m| m.structure.uuids.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
