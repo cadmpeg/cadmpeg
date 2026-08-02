@@ -4956,6 +4956,33 @@ mod marker_tests {
     }
 
     #[test]
+    fn compact_extrusion_to_face_preserves_an_unparsed_declared_face_child() {
+        let end_spec = b"\xff\xff\x01\x00\x0b\x00moEndSpec_c";
+        let face_ref = b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w";
+        let mut payload = vec![0; 180];
+        payload[..end_spec.len()].copy_from_slice(end_spec);
+        let anchor = end_spec.len() - 2;
+        payload[anchor + 4..anchor + 8].copy_from_slice(&1u32.to_le_bytes());
+        payload[anchor + 18..anchor + 22].copy_from_slice(&4u32.to_le_bytes());
+        payload[anchor + 30..anchor + 33].copy_from_slice(&[1, 1, 0]);
+        let child = anchor + 33;
+        payload[child..child + face_ref.len()].copy_from_slice(face_ref);
+        let body = child + face_ref.len();
+        payload[body..body + 18].copy_from_slice(&[
+            0x18, 0x81, 0xca, 0x80, 2, 0, 0xcc, 0x80, 0, 0, 0xce, 0x80, 1, 0, 0, 0, 0xd0, 0x80,
+        ]);
+
+        assert_eq!(compact_extrusion_to_face_at(&payload, anchor), Some(body));
+
+        let mut lane_token = payload[anchor..].to_vec();
+        lane_token[..2].copy_from_slice(&[0x0c, 0x8e]);
+        assert_eq!(compact_extrusion_to_face_at(&lane_token, 0), None);
+
+        payload[body + 4] = 3;
+        assert_eq!(compact_extrusion_to_face_at(&payload, anchor), None);
+    }
+
+    #[test]
     fn compact_extrusion_to_face_accepts_extended_legacy_face_path_padding() {
         let mut payload = vec![0; 300];
         payload[..2].copy_from_slice(&[0x34, 0x80]);
@@ -33658,6 +33685,10 @@ fn compact_extrusion_to_face_at(payload: &[u8], offset: usize) -> Option<usize> 
     // two-byte token `03 00`; their remaining header and child grammar is
     // identical. Keep that token scoped to the to-face form whose required
     // single-face child independently validates the interpretation.
+    let direct_end_spec = offset
+        .checked_sub(15)
+        .and_then(|start| payload.get(start..offset + 2))
+        == Some(b"\xff\xff\x01\x00\x0b\x00moEndSpec_c".as_slice());
     let legacy_header = payload.get(offset..offset + 2) == Some(&[3, 0])
         && payload.get(offset + 2..offset + 12) == Some(&[0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
         && payload
@@ -33696,6 +33727,34 @@ fn compact_extrusion_to_face_at(payload: &[u8], offset: usize) -> Option<usize> 
     }
     (body_offset..body_offset.saturating_add(160))
         .find(|marker| compact_termination_reference_at(payload, *marker))
+        .or_else(|| {
+            // A declared single-face child is still a complete native
+            // selection when its compact body header validates but its
+            // component path uses an unknown layout. Preserve that child as
+            // the reference instead of discarding the independently decoded
+            // to-face termination.
+            (direct_end_spec
+                && declared
+                && compact_tokenized_single_face_child_at(payload, body_offset))
+            .then_some(body_offset)
+        })
+}
+
+fn compact_tokenized_single_face_child_at(payload: &[u8], offset: usize) -> bool {
+    let Some(body) = payload.get(offset..offset + 18) else {
+        return false;
+    };
+    let token_at = |index: usize| u16::from_le_bytes([body[index], body[index + 1]]);
+    let is_class_token = |token: u16| token & 0x8000 != 0 && token != 0xffff;
+    is_class_token(token_at(0))
+        && is_class_token(token_at(2))
+        && token_at(4) == 2
+        && is_class_token(token_at(6))
+        && token_at(8) == 0
+        && is_class_token(token_at(10))
+        && token_at(12) == 1
+        && token_at(14) == 0
+        && is_class_token(token_at(16))
 }
 
 fn compact_single_face_child_body_at(payload: &[u8], offset: usize) -> bool {
