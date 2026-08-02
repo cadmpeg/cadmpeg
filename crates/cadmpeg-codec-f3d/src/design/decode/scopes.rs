@@ -23,7 +23,7 @@ use crate::records::{
     DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
     DesignRectangularPatternConstruction, DesignRectangularPatternInstances, DesignScaleOperation,
     DesignSolidPrimitive, DesignSurfaceExtendMethod, DesignSurfaceExtendOperation,
-    DesignSurfaceStitchOperation, DesignWorkAxisConstruction,
+    DesignSurfaceOffsetOperation, DesignSurfaceStitchOperation, DesignWorkAxisConstruction,
 };
 use cadmpeg_codec_core::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
 use cadmpeg_codec_core::CodecError;
@@ -123,6 +123,8 @@ pub fn decode_parameter_scopes(
             scope.scale_operation = exact_scale_operation(bytes, &scope);
             scope.surface_extend_operation =
                 exact_surface_extend_operation(bytes, &records, &scope);
+            scope.surface_offset_operation =
+                exact_surface_offset_operation(bytes, &records, &scope);
             scope.fixed_extrude_parameters =
                 exact_fixed_extrude_parameters(bytes, &records, &scope);
             scope.fixed_fillet_parameters = exact_fixed_fillet_parameters(bytes, &records, &scope);
@@ -167,7 +169,87 @@ pub(crate) fn exact_surface_extend_operation(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignSurfaceExtendOperation> {
-    if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::SurfaceExtend) {
+    let operation = exact_surface_boundary_operation(
+        bytes,
+        records,
+        scope,
+        DesignFeatureFamily::SurfaceExtend,
+        8,
+    )?;
+    if operation.distance <= 0.0 {
+        return None;
+    }
+    let method = match operation.mode {
+        0 => DesignSurfaceExtendMethod::Natural,
+        1 => DesignSurfaceExtendMethod::Tangent,
+        2 => DesignSurfaceExtendMethod::Perpendicular,
+        _ => return None,
+    };
+    Some(DesignSurfaceExtendOperation {
+        distance: operation.distance,
+        distance_offset: operation.distance_offset,
+        distance_record_index: operation.distance_record_index,
+        method,
+        method_offset: operation.mode_offset,
+        boundary_record_index: operation.boundary_record_index,
+        boundary_reference_record_index: operation.boundary_reference_record_index,
+        boundary_reference_offset: operation.boundary_reference_offset,
+        edge_record_indices: operation.edge_record_indices,
+        tolerance: operation.tolerance,
+        tolerance_offset: operation.tolerance_offset,
+    })
+}
+
+pub(crate) fn exact_surface_offset_operation(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Option<DesignSurfaceOffsetOperation> {
+    let operation = exact_surface_boundary_operation(
+        bytes,
+        records,
+        scope,
+        DesignFeatureFamily::SurfaceOffset,
+        65,
+    )?;
+    (operation.mode == 1).then_some(DesignSurfaceOffsetOperation {
+        distance: operation.distance,
+        distance_offset: operation.distance_offset,
+        distance_record_index: operation.distance_record_index,
+        boundary_mode: operation.mode,
+        boundary_mode_offset: operation.mode_offset,
+        boundary_record_index: operation.boundary_record_index,
+        boundary_reference_record_index: operation.boundary_reference_record_index,
+        boundary_reference_offset: operation.boundary_reference_offset,
+        edge_record_indices: operation.edge_record_indices,
+        tolerance: operation.tolerance,
+        tolerance_offset: operation.tolerance_offset,
+    })
+}
+
+#[derive(Clone)]
+struct ExactSurfaceBoundaryOperation {
+    distance: f64,
+    distance_offset: u64,
+    distance_record_index: u32,
+    mode: u32,
+    mode_offset: u64,
+    boundary_record_index: u32,
+    boundary_reference_record_index: u32,
+    boundary_reference_offset: u64,
+    edge_record_indices: Vec<u32>,
+    tolerance: f64,
+    tolerance_offset: u64,
+}
+
+fn exact_surface_boundary_operation(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    family: DesignFeatureFamily,
+    boundary_kind: u32,
+) -> Option<ExactSurfaceBoundaryOperation> {
+    if design_feature_family(&scope.kind) != Some(family) {
         return None;
     }
     let [distance_record_index, boundary_record_index, edge_record_indices @ ..] =
@@ -181,7 +263,6 @@ pub(crate) fn exact_surface_extend_operation(
     let scalar = exact_fixed_scalar(bytes, records, *distance_record_index)?;
     if scalar.owner_record_index != Some(scope.record_index)
         || scalar.ordinal != 0
-        || scalar.value <= 0.0
         || records
             .frames(*distance_record_index)
             .filter(|(start, end)| {
@@ -239,7 +320,7 @@ pub(crate) fn exact_surface_extend_operation(
                     })
                 || bytes.get(tail..tail + 2)? != [0; 2]
                 || bytes.get(tail + 11..tail + 21)? != [0; 10]
-                || u32_at(bytes, tail + 21)? != 8
+                || u32_at(bytes, tail + 21)? != boundary_kind
                 || bytes.get(tail + 25..tail + 35)? != [0; 10]
                 || u32_at(bytes, tail + 35)? != 210
                 || u32_at(bytes, tail + 47)? != 210
@@ -253,20 +334,15 @@ pub(crate) fn exact_surface_extend_operation(
             {
                 return None;
             }
-            let method = match u32_at(bytes, tail + 2)? {
-                0 => DesignSurfaceExtendMethod::Natural,
-                1 => DesignSurfaceExtendMethod::Tangent,
-                2 => DesignSurfaceExtendMethod::Perpendicular,
-                _ => return None,
-            };
+            let mode = u32_at(bytes, tail + 2)?;
             let boundary_reference_record_index = marked_record_reference(bytes, tail + 6)?;
             let tolerance = f64_at(bytes, tail + 39)?;
-            (tolerance.is_finite() && tolerance > 0.0).then_some(DesignSurfaceExtendOperation {
+            (tolerance.is_finite() && tolerance > 0.0).then_some(ExactSurfaceBoundaryOperation {
                 distance: scalar.value,
                 distance_offset: scalar.value_offset,
                 distance_record_index: *distance_record_index,
-                method,
-                method_offset: u64::try_from(tail + 2).ok()?,
+                mode,
+                mode_offset: u64::try_from(tail + 2).ok()?,
                 boundary_record_index: *boundary_record_index,
                 boundary_reference_record_index,
                 boundary_reference_offset: u64::try_from(tail + 6).ok()?,
@@ -3023,6 +3099,7 @@ pub(crate) fn parse_parameter_scope(
         scale_operation: None,
         surface_stitch_operation,
         surface_extend_operation: None,
+        surface_offset_operation: None,
         surface_patch_boundaries,
         base_flange_operation,
         edge_flange_operation,

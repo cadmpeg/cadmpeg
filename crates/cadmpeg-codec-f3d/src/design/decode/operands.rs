@@ -52,6 +52,7 @@ pub fn decode_edge_operands(
                     | DesignFeatureFamily::Loft
                     | DesignFeatureFamily::Sweep
                     | DesignFeatureFamily::SurfaceExtend
+                    | DesignFeatureFamily::SurfaceOffset
             )
         ) || matches!(scope.kind.as_str(), "EdgeFlange" | "Hem")
     }) {
@@ -64,6 +65,9 @@ pub fn decode_edge_operands(
             .flat_map(|group| group.members.iter().copied())
             .collect::<HashSet<_>>();
         if let Some(operation) = &scope.surface_extend_operation {
+            member_indices.extend(operation.edge_record_indices.iter().copied());
+        }
+        if let Some(operation) = &scope.surface_offset_operation {
             member_indices.extend(operation.edge_record_indices.iter().copied());
         }
         let Some(stream) = native_stream(&scope.id) else {

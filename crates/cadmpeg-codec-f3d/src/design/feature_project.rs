@@ -300,6 +300,22 @@ pub fn project_parameter_design_with_edge_identities(
                         parameters: BTreeMap::new(),
                         properties: native_scope_properties(scope, native_scope),
                     }),
+                Some(DesignFeatureFamily::SurfaceOffset) => {
+                    scope.surface_offset_operation.as_ref().map_or_else(
+                        || FeatureDefinition::Native {
+                            kind: scope.kind.clone(),
+                            parameters: BTreeMap::new(),
+                            properties: native_scope_properties(scope, native_scope),
+                        },
+                        |operation| FeatureDefinition::OffsetSurface {
+                            faces: cadmpeg_ir::features::FaceSelection::Native(format!(
+                                "{native_scope}:design-record#{}",
+                                operation.boundary_record_index
+                            )),
+                            distance: Some(Length(operation.distance * 10.0)),
+                        },
+                    )
+                }
                 Some(DesignFeatureFamily::BoundaryFill) => {
                     project_boundary_fill(scope, construction_groups).unwrap_or_else(|| {
                         FeatureDefinition::Native {

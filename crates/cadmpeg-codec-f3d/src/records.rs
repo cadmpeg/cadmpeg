@@ -1539,6 +1539,9 @@ pub struct DesignParameterScope {
     /// Exact distance, method, and boundary records carried by a `SurfaceExtend` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface_extend_operation: Option<DesignSurfaceExtendOperation>,
+    /// Exact distance and boundary records carried by a `SurfaceOffset` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface_offset_operation: Option<DesignSurfaceOffsetOperation>,
     /// Exact profile and thickness records carried by a `BaseFlange` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_flange_operation: Option<DesignBaseFlangeOperation>,
@@ -1700,6 +1703,33 @@ pub struct DesignSurfaceExtendOperation {
     pub method: DesignSurfaceExtendMethod,
     /// Byte offset of the method enum.
     pub method_offset: u64,
+    /// Indexed boundary-carrier record.
+    pub boundary_record_index: u32,
+    /// Additional indexed reference carried by the boundary tail.
+    pub boundary_reference_record_index: u32,
+    /// Byte offset of `boundary_reference_record_index`'s marked reference.
+    pub boundary_reference_offset: u64,
+    /// Ordered edge-recipe records contained by the boundary carrier.
+    pub edge_record_indices: Vec<u32>,
+    /// Positive modelling tolerance in source centimetres.
+    pub tolerance: f64,
+    /// Byte offset of `tolerance`.
+    pub tolerance_offset: u64,
+}
+
+/// Fixed construction records named by a `SurfaceOffset` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignSurfaceOffsetOperation {
+    /// Signed offset distance in source centimetres.
+    pub distance: f64,
+    /// Byte offset of `distance`.
+    pub distance_offset: u64,
+    /// Indexed scalar record carrying `distance`.
+    pub distance_record_index: u32,
+    /// Source boundary-mode enum.
+    pub boundary_mode: u32,
+    /// Byte offset of `boundary_mode`.
+    pub boundary_mode_offset: u64,
     /// Indexed boundary-carrier record.
     pub boundary_record_index: u32,
     /// Additional indexed reference carried by the boundary tail.
