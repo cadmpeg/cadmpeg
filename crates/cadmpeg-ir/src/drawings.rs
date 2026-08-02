@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(transparent)]
 /// Stable identity of one neutral drawing entity.
-pub struct DrawingId(pub String);
+pub struct DrawingId(#[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String);
 
 /// Semantic role of a drawing entity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

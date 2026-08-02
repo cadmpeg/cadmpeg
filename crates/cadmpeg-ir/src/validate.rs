@@ -30,6 +30,7 @@ mod identity_order;
 mod pmi;
 mod presentation;
 mod products;
+mod referential_integrity;
 mod semantic_annotations;
 mod sketches;
 mod spreadsheets;
@@ -48,6 +49,7 @@ use identity_order::{check_identity_and_order, check_version, collect_native_ids
 use pmi::check_pmi;
 use presentation::check_presentation;
 use products::check_products;
+use referential_integrity::check_typed_references;
 use semantic_annotations::check_semantic_annotations;
 use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
@@ -97,6 +99,7 @@ fn validate_model(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     check_presentation(ir, &ids, &mut findings);
     check_drawings(ir, &ids, &mut findings);
     check_semantic_annotations(ir, &ids, &mut findings);
+    check_typed_references(ir, &ids, &mut findings);
 
     ValidationReport {
         entity_counts: entity_counts(ir),

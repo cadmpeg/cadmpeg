@@ -12,7 +12,7 @@ use crate::transform::Transform;
 /// Stable assembly-joint identity.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(transparent)]
-pub struct JointId(pub String);
+pub struct JointId(#[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String);
 
 /// Role of a component definition in the product tree.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

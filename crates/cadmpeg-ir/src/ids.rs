@@ -12,10 +12,19 @@ macro_rules! id_type {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*
         #[derive(
-            Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+            Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, JsonSchema,
         )]
         #[serde(transparent)]
         pub struct $name(pub String);
+
+        impl Serialize for $name {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                crate::schema::serialize_reference_id(&self.0, serializer)
+            }
+        }
 
         impl $name {
             /// Borrow the underlying id string.

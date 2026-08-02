@@ -16,6 +16,7 @@ use crate::ids::{
 };
 use crate::math::{Point3, Vector3};
 use crate::native::NativeRecord;
+use crate::products::{ProductDefinition, ProductDefinitionKind};
 use crate::provenance::{Exactness, SourceObjectAssociation};
 use crate::report::{Check, LossKind, LossNote, Severity};
 use crate::subd::{
@@ -76,6 +77,50 @@ fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
         }
     });
     assert!(missing.is_empty(), "unresolved references: {missing:?}");
+}
+
+#[test]
+fn typed_reference_walk_ignores_id_shaped_plain_strings() {
+    let mut ir = crate::CadIr::empty(crate::units::Units::default());
+    let owner = crate::ids::ProductDefinitionId("test:model:product#owner".into());
+    let target = crate::ids::BodyId("test:model:body#missing".into());
+    ir.model.product_definitions.push(ProductDefinition {
+        id: owner.clone(),
+        kind: ProductDefinitionKind::Part,
+        source_name: Some("test:model:name#not-a-reference".into()),
+        label: None,
+        description: None,
+        part_number: None,
+        bom_properties: std::collections::BTreeMap::new(),
+        bodies: vec![target.clone()],
+        native_ref: None,
+    });
+
+    let mut references = Vec::new();
+    ir.model
+        .visit_references(&mut |reference| references.push(reference.target));
+    assert_eq!(references, vec![target.0.clone()]);
+
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::ReferentialIntegrity
+            && finding.entity.as_deref() == Some(owner.0.as_str())
+            && finding.message.contains(&target.0)
+    }));
+    assert!(!report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("not-a-reference")));
+}
+
+#[test]
+fn typed_ids_keep_their_canonical_json_string_shape() {
+    let id = crate::ids::BodyId("test:model:body#1".into());
+    assert_eq!(serde_json::to_string(&id).unwrap(), "\"test:model:body#1\"");
+    assert_eq!(
+        serde_json::from_str::<crate::ids::BodyId>("\"test:model:body#1\"").unwrap(),
+        id
+    );
 }
 
 #[test]

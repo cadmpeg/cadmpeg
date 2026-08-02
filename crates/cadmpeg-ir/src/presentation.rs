@@ -8,7 +8,9 @@ use std::collections::BTreeMap;
 /// Stable presentation-document identity.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(transparent)]
-pub struct PresentationId(pub String);
+pub struct PresentationId(
+    #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
+);
 
 /// Persisted camera pose.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
