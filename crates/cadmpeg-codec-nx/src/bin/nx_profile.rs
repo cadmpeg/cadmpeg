@@ -3,15 +3,18 @@
 
 use std::collections::BTreeMap;
 use std::env;
+use std::ffi::OsStr;
 use std::fs;
-use std::io::Cursor;
-use std::path::PathBuf;
+use std::io::{Cursor, Write};
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 use cadmpeg_ir::report::LossCategory;
 use cadmpeg_ir::{CadIr, Severity};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, Serialize)]
 struct Profile {
@@ -25,7 +28,7 @@ struct Profile {
     highest_passing_gate: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct FixtureEvidence {
     filename: String,
     deterministic: bool,
@@ -40,14 +43,14 @@ struct FixtureEvidence {
     rederivation: VerificationStatus,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum VerificationStatus {
     Missing,
     Verified,
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 struct EntityCounts {
     bodies: usize,
     faces: usize,
@@ -106,12 +109,35 @@ struct Assertion {
     required: &'static str,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct DecodedFixtureEvidence {
+    canonical_sha256: String,
+    native_namespace_version: Option<u32>,
+    entities: EntityCounts,
+    losses: BTreeMap<LossCategory, usize>,
+    loss_codes: BTreeMap<String, usize>,
+    validation_errors: usize,
+    all_bodies_colored: bool,
+    all_faces_colored: bool,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut arguments = env::args_os().skip(1);
-    let fixture_directory = arguments
+    let first_argument = arguments
         .next()
-        .map(PathBuf::from)
         .ok_or("usage: nx-profile FIXTURE_DIRECTORY OUTPUT_JSON")?;
+    if first_argument == OsStr::new("--decode-fixture") {
+        let path = arguments
+            .next()
+            .map(PathBuf::from)
+            .ok_or("usage: nx-profile --decode-fixture INPUT_PRT")?;
+        if arguments.next().is_some() {
+            return Err("usage: nx-profile --decode-fixture INPUT_PRT".into());
+        }
+        println!("{}", serde_json::to_string(&decode_fixture(&path)?)?);
+        return Ok(());
+    }
+    let fixture_directory = PathBuf::from(first_argument);
     let output = arguments
         .next()
         .map(PathBuf::from)
@@ -137,57 +163,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut totals = EntityCounts::default();
     let mut total_loss_codes = BTreeMap::new();
     for path in paths {
-        let bytes = fs::read(&path)?;
-        let first = NxCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default())?;
-        let second = NxCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default())?;
-        let entities = EntityCounts::from_ir(&first.ir);
+        let first = decode_fixture_in_worker(&path)?;
+        let second = decode_fixture_in_worker(&path)?;
+        let entities = first.entities;
         totals.add(&entities);
-        let mut losses = BTreeMap::new();
-        let mut loss_codes = BTreeMap::new();
-        for loss in &first.report.losses {
-            if loss.severity >= Severity::Warning {
-                *losses.entry(loss.code.category()).or_insert(0) += 1;
-                *loss_codes
-                    .entry(loss.code.as_str().to_string())
-                    .or_insert(0) += 1;
-                *total_loss_codes
-                    .entry(loss.code.as_str().to_string())
-                    .or_insert(0) += 1;
-            }
+        for (code, count) in &first.loss_codes {
+            *total_loss_codes.entry(code.clone()).or_insert(0) += count;
         }
-        let validation_errors = cadmpeg_ir::validate(&first.ir, Vec::new())
-            .findings
-            .iter()
-            .filter(|finding| finding.severity >= Severity::Error)
-            .count();
         fixtures.push(FixtureEvidence {
             filename: path
                 .file_name()
                 .and_then(|name| name.to_str())
                 .ok_or("fixture filename is not UTF-8")?
                 .to_string(),
-            deterministic: first.ir.to_canonical_json()? == second.ir.to_canonical_json()?,
-            native_namespace_version: first
-                .ir
-                .native
-                .namespace("nx")
-                .map(|namespace| namespace.version),
-            all_bodies_colored: !first.ir.model.bodies.is_empty()
-                && first
-                    .ir
-                    .model
-                    .bodies
-                    .iter()
-                    .all(|body| body.color.is_some()),
-            all_faces_colored: !first.ir.model.faces.is_empty()
-                && first.ir.model.faces.iter().all(|face| face.color.is_some()),
+            deterministic: first.canonical_sha256 == second.canonical_sha256,
+            native_namespace_version: first.native_namespace_version,
+            all_bodies_colored: first.all_bodies_colored,
+            all_faces_colored: first.all_faces_colored,
             // NX has no neutral feature evaluator yet. This must remain false until
             // evaluation is attempted and its body census is compared here.
             rederivation: VerificationStatus::Missing,
             entities,
-            losses,
-            loss_codes,
-            validation_errors,
+            losses: first.losses,
+            loss_codes: first.loss_codes,
+            validation_errors: first.validation_errors,
         });
     }
 
@@ -210,6 +209,93 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     json.push('\n');
     fs::write(output, json)?;
     Ok(())
+}
+
+fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::error::Error>> {
+    let bytes = fs::read(path)?;
+    let decoded = NxCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default())?;
+    let mut losses = BTreeMap::new();
+    let mut loss_codes = BTreeMap::new();
+    for loss in &decoded.report.losses {
+        if loss.severity >= Severity::Warning {
+            *losses.entry(loss.code.category()).or_insert(0) += 1;
+            *loss_codes
+                .entry(loss.code.as_str().to_string())
+                .or_insert(0) += 1;
+        }
+    }
+    let validation_errors = cadmpeg_ir::validate(&decoded.ir, Vec::new())
+        .findings
+        .iter()
+        .filter(|finding| finding.severity >= Severity::Error)
+        .count();
+    Ok(DecodedFixtureEvidence {
+        canonical_sha256: canonical_sha256(&decoded.ir)?,
+        native_namespace_version: decoded
+            .ir
+            .native
+            .namespace("nx")
+            .map(|namespace| namespace.version),
+        entities: EntityCounts::from_ir(&decoded.ir),
+        losses,
+        loss_codes,
+        validation_errors,
+        all_bodies_colored: !decoded.ir.model.bodies.is_empty()
+            && decoded
+                .ir
+                .model
+                .bodies
+                .iter()
+                .all(|body| body.color.is_some()),
+        all_faces_colored: !decoded.ir.model.faces.is_empty()
+            && decoded
+                .ir
+                .model
+                .faces
+                .iter()
+                .all(|face| face.color.is_some()),
+    })
+}
+
+fn canonical_sha256(ir: &CadIr) -> Result<String, serde_json::Error> {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+
+    struct Sha256Writer(Sha256);
+
+    impl Write for Sha256Writer {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.update(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let mut writer = Sha256Writer(Sha256::new());
+    serde_json::to_writer_pretty(&mut writer, ir)?;
+    let digest = writer.0.finalize();
+    let mut encoded = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    Ok(encoded)
+}
+
+fn decode_fixture_in_worker(
+    path: &Path,
+) -> Result<DecodedFixtureEvidence, Box<dyn std::error::Error>> {
+    let output = Command::new(env::current_exe()?)
+        .arg("--decode-fixture")
+        .arg(path)
+        .output()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("NX profile worker failed for {}: {stderr}", path.display()).into());
+    }
+    Ok(serde_json::from_slice(&output.stdout)?)
 }
 
 fn capability_gates(fixtures: &[FixtureEvidence]) -> Vec<Gate> {
@@ -367,6 +453,15 @@ mod tests {
             all_faces_colored: false,
             rederivation: VerificationStatus::Verified,
         }
+    }
+
+    #[test]
+    fn streaming_canonical_hash_matches_the_canonical_document() {
+        let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        assert_eq!(
+            canonical_sha256(&ir).unwrap(),
+            cadmpeg_ir::hash::sha256_hex(ir.to_canonical_json().unwrap().as_bytes())
+        );
     }
 
     #[test]
