@@ -11,6 +11,7 @@ use std::process::Command;
 
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::report::LossCategory;
 use cadmpeg_ir::{CadIr, Severity};
 use serde::{Deserialize, Serialize};
@@ -119,6 +120,7 @@ struct DecodedFixtureEvidence {
     validation_errors: usize,
     all_bodies_colored: bool,
     all_faces_colored: bool,
+    rederivation: VerificationStatus,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -180,9 +182,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             native_namespace_version: first.native_namespace_version,
             all_bodies_colored: first.all_bodies_colored,
             all_faces_colored: first.all_faces_colored,
-            // NX has no neutral feature evaluator yet. This must remain false until
-            // evaluation is attempted and its body census is compared here.
-            rederivation: VerificationStatus::Missing,
+            rederivation: first.rederivation,
             entities,
             losses: first.losses,
             loss_codes: first.loss_codes,
@@ -254,7 +254,51 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
                 .faces
                 .iter()
                 .all(|face| face.color.is_some()),
+        rederivation: neutral_rederivation_status(&decoded.ir),
     })
+}
+
+/// Evaluate the closed zero-shape base case of neutral NX history.
+///
+/// Tree nodes carry ordering, annotations, or expressions but cannot create or
+/// modify shape. A history made entirely from resolved tree nodes therefore
+/// re-derives an empty saved-body census exactly. Other feature families remain
+/// unverified until their neutral geometry evaluator exists.
+fn neutral_rederivation_status(ir: &CadIr) -> VerificationStatus {
+    let history_is_resolved_zero_shape = ir.model.bodies.is_empty()
+        && ir.model.features.iter().all(|feature| {
+            feature.suppressed.is_some()
+                && feature.outputs.is_empty()
+                && matches!(feature.definition, FeatureDefinition::TreeNode { .. })
+        });
+    if !history_is_resolved_zero_shape {
+        return VerificationStatus::Missing;
+    }
+
+    if ir.model.configurations.is_empty() {
+        return VerificationStatus::Verified;
+    }
+    let mut active = ir
+        .model
+        .configurations
+        .iter()
+        .filter(|configuration| configuration.active);
+    let Some(configuration) = active.next() else {
+        return VerificationStatus::Missing;
+    };
+    if active.next().is_some()
+        || configuration
+            .bodies
+            .resolved()
+            .is_none_or(|bodies| !bodies.is_empty())
+        || configuration.feature_states.values().any(|state| {
+            !state.outputs.is_empty()
+                || !matches!(state.definition, FeatureDefinition::TreeNode { .. })
+        })
+    {
+        return VerificationStatus::Missing;
+    }
+    VerificationStatus::Verified
 }
 
 fn canonical_sha256(ir: &CadIr) -> Result<String, serde_json::Error> {
@@ -461,6 +505,46 @@ mod tests {
         assert_eq!(
             canonical_sha256(&ir).unwrap(),
             cadmpeg_ir::hash::sha256_hex(ir.to_canonical_json().unwrap().as_bytes())
+        );
+    }
+
+    #[test]
+    fn empty_neutral_history_rederives_the_empty_saved_body_census() {
+        let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        assert_eq!(
+            neutral_rederivation_status(&ir),
+            VerificationStatus::Verified
+        );
+    }
+
+    #[test]
+    fn unresolved_tree_state_does_not_claim_rederivation() {
+        use cadmpeg_ir::features::{Feature, FeatureId, FeatureTreeNodeRole};
+
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.features.push(Feature {
+            id: FeatureId("feature".to_string()),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children: Vec::new(),
+                active_child: None,
+            },
+            native_ref: None,
+        });
+
+        assert_eq!(
+            neutral_rederivation_status(&ir),
+            VerificationStatus::Missing
         );
     }
 
