@@ -334,7 +334,7 @@ Termination code `4` is to-face. Token +22 is a Boolean reference-side flag, tok
 
 An extrusion object without an `EndCondition` attribute, without an owned `Depth` or `D1` scalar, and without a decoded compact end-spec termination has an unresolved extent. The class, profile reference, direction, draft, and Boolean operation remain independently meaningful.
 
-An extrusion object without `Profile` or `DissectableChildren` has an unresolved profile unless it has the following dissected-child signature. A nested profile stream owned by an extrusion resolves the profile to its transferred sketch.
+An extrusion object without `Profile` or `DissectableChildren` has an unresolved profile unless it has one of the feature-input adjacency forms defined below. A nested profile stream owned by an extrusion resolves the profile to its transferred sketch.
 
 An extrusion immediately followed by an `moProfileFeature_c` object whose `Description` equals its name and whose name ends in `<n>` for decimal `n` uses that following feature as its dissected profile. This child signature applies when the extrusion omits its `Dissectable` property and supersedes an immediately preceding generic profile object. An ordinary following profile without the child signature is not an extrusion operand.
 
@@ -482,7 +482,7 @@ A compact `moCombineBodies_c` object carries its target and tool as the first an
 
 The compact Combine operation is a little-endian u32 at feature-name marker offset `+ 117 + 2 × name-code-unit-count`. Twelve zero bytes precede it; six zero bytes and `ff ff ff ff` follow it. Values `0`, `1`, and `2` mean join, subtract, and intersect respectively.
 
-An extrusion object immediately following a `moProfileFeature_c` object consumes that profile feature. A profile feature may instead be followed by a sequence containing only sketch-block definition and sketch-block instance objects and then the extrusion. In that form, the profile feature's `DissectableChildren` identifiers are exactly the distinct object identifiers of the intervening sketch-block definitions; the extrusion consumes the profile feature containing those blocks. A compact extrusion without `DissectableChildren` also consumes a `moProfileFeature_c` object immediately following it. The profile feature is an ordered dependency of the extrusion. These adjacency forms are independent of the `DissectableChildren` property used by explicitly linked extrusion objects.
+An extrusion object immediately following a `moProfileFeature_c` object consumes that profile feature. A profile feature may instead be followed by a sequence containing only sketch-block definition and sketch-block instance objects and then the extrusion. In that form, the profile feature's `DissectableChildren` identifiers are exactly the distinct object identifiers of the intervening sketch-block definitions; the extrusion consumes the profile feature containing those blocks. A compact extrusion without `DissectableChildren` also consumes a `moProfileFeature_c` object immediately following it. The profile feature is an ordered dependency of the extrusion. These adjacency forms are independent of the extrusion's `Dissectable` and `DissectableChildren` attributes; an explicit dissected-child association has precedence over ordinary adjacency.
 
 The inline extrusion operation trailer establishes the extrusion object family independently of its class token. This applies when a repeated token is shared by more than one declared extrusion class.
 

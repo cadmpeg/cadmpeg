@@ -27675,6 +27675,137 @@ mod idless_history_binding_tests {
     }
 
     #[test]
+    fn directly_preceding_profile_survives_a_dissectable_extrusion_flag() {
+        let mut profile = feature(1, "sketch");
+        profile.id = "profile-native".into();
+        profile.xml_tag = "Sketch".into();
+        profile.input_class = Some("moProfileFeature_c".into());
+        profile.source_id = Some("41".into());
+        let mut extrusion = feature(2, "extrusion");
+        extrusion.id = "extrusion-native".into();
+        extrusion.xml_tag = "Extrusion".into();
+        extrusion.input_class = Some("moICE_c".into());
+        extrusion.source_id = Some("42".into());
+        extrusion
+            .properties
+            .insert("Dissectable".into(), "true".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![profile, extrusion],
+        };
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: Vec::new(),
+            names: vec![
+                FeatureInputName {
+                    id: "profile-name".into(),
+                    parent: "lane".into(),
+                    ordinal: 0,
+                    offset: 100,
+                    object_id: Some(41),
+                    value: "name-1".into(),
+                },
+                FeatureInputName {
+                    id: "extrusion-name".into(),
+                    parent: "lane".into(),
+                    ordinal: 1,
+                    offset: 200,
+                    object_id: Some(42),
+                    value: "name-2".into(),
+                },
+            ],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+        let profile_id = cadmpeg_ir::features::FeatureId("profile".into());
+        let mut features = vec![
+            cadmpeg_ir::features::Feature {
+                id: profile_id.clone(),
+                ordinal: 0,
+                name: None,
+                suppressed: Some(false),
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition: FeatureDefinition::Sketch {
+                    space: cadmpeg_ir::features::SketchSpace::Planar,
+                    sketch: None,
+                },
+                native_ref: Some("profile-native".into()),
+            },
+            cadmpeg_ir::features::Feature {
+                id: cadmpeg_ir::features::FeatureId("extrusion".into()),
+                ordinal: 1,
+                name: None,
+                suppressed: Some(false),
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition: FeatureDefinition::Extrude {
+                    profile: cadmpeg_ir::features::ProfileRef::Unresolved(
+                        "extrusion-native".into(),
+                    ),
+                    direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+                    start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
+                    extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                        side: cadmpeg_ir::features::ExtrudeSide {
+                            termination: Termination::Blind {
+                                length: Length(1.0),
+                            },
+                            draft: None,
+                            offset: None,
+                        },
+                    },
+                    op: BooleanOp::Join,
+                    direction_source: None,
+                    solid: Some(true),
+                    face_maker: None,
+                    inner_wire_taper: None,
+                    length_along_profile_normal: None,
+                    allow_multi_profile_faces: None,
+                },
+                native_ref: Some("extrusion-native".into()),
+            },
+        ];
+
+        project_adjacent_extrusion_profiles(
+            &mut features,
+            std::slice::from_ref(&history),
+            std::slice::from_ref(&lane),
+        );
+
+        assert!(matches!(
+            &features[1].definition,
+            FeatureDefinition::Extrude {
+                profile: cadmpeg_ir::features::ProfileRef::Feature(actual),
+                ..
+            } if actual == &profile_id
+        ));
+        assert_eq!(features[1].dependencies, [profile_id]);
+    }
+
+    #[test]
     fn exact_dimension_schemas_bind_classless_thread_and_chamfer_features() {
         let mut thread = feature(1, "localized thread");
         thread.parameters.insert("D2".into(), "<MOD-DIAM>8".into());
@@ -34472,9 +34603,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             let first_kind = object_kind(first_name, first);
             let second_kind = object_kind(second_name, second);
             let association = match (first_kind, second_kind) {
-                (NativeClassKind::ProfileFeature, NativeClassKind::Extrusion)
-                    if !is_dissectable(second) =>
-                {
+                (NativeClassKind::ProfileFeature, NativeClassKind::Extrusion) => {
                     Some((*first, *second, 0))
                 }
                 (NativeClassKind::Extrusion, NativeClassKind::ProfileFeature)
