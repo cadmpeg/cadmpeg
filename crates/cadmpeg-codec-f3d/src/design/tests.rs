@@ -4481,6 +4481,31 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             ..
         })
     ));
+    let shifted_thicken_at = bytes.len();
+    let mut shifted_thicken = vec![0; 312];
+    shifted_thicken[34] = 1;
+    shifted_thicken[35..39].copy_from_slice(&200u32.to_le_bytes());
+    shifted_thicken[46..48].copy_from_slice(&[1, 1]);
+    shifted_thicken[48..52].copy_from_slice(&74u32.to_le_bytes());
+    bytes.extend_from_slice(&shifted_thicken);
+    let shifted_thicken_scope = DesignParameterScope {
+        byte_offset: shifted_thicken_at as u64,
+        frame_length: 312,
+        reference_members: vec![74, 200, 201, 202],
+        ..thicken_scope.clone()
+    };
+    assert!(matches!(
+        exact_direct_face_operation(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &shifted_thicken_scope,
+        ),
+        Some(DesignDirectFaceOperation::Thicken {
+            signed_thickness: -1.0,
+            thickness_record_index: 74,
+            ..
+        })
+    ));
     thicken_scope.direct_face_operation =
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope);
     let thicken_group = DesignConstructionOperandGroup {

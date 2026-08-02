@@ -1776,19 +1776,40 @@ pub(crate) fn exact_direct_face_operation(
                 distance_offset: scalar.value_offset,
             })
         }
-        DesignFeatureFamily::Thicken if scope.reference_members.len() == 3 => {
-            let reference_offset = match parameter_scope_payload_length(scope) {
+        DesignFeatureFamily::Thicken if scope.reference_members.len() >= 3 => {
+            let (reference_offset, thickness_is_first) = match parameter_scope_payload_length(scope)
+            {
+                Some(length)
+                    if length
+                        == 276
+                            + 11 * u64::try_from(scope.reference_members.len().checked_sub(2)?)
+                                .ok()?
+                        && bytes.get(start + 34) == Some(&1)
+                        && u32_at(bytes, start + 35) == scope.reference_members.get(1).copied()
+                        && bytes.get(start + 39..start + 45) == Some(&[0; 6])
+                        && matches!(bytes.get(start + 45), Some(0 | 1))
+                        && bytes.get(start + 46..start + 48) == Some(&[1, 1])
+                        && u32_at(bytes, start + 48)
+                            == scope.reference_members.first().copied() =>
+                {
+                    (47, true)
+                }
                 Some(281)
                     if matches!(bytes.get(start + 45), Some(0 | 1))
                         && bytes.get(start + 46) == Some(&1) =>
                 {
-                    46
+                    (46, false)
                 }
-                Some(287) if bytes.get(start + 47) == Some(&1) => 47,
+                Some(287) if bytes.get(start + 47) == Some(&1) => (47, false),
                 _ => return None,
             };
             let thickness_record_index = u32_at(bytes, start + reference_offset + 1)?;
-            if scope.reference_members.last() != Some(&thickness_record_index) {
+            let expected_thickness = if thickness_is_first {
+                scope.reference_members.first()
+            } else {
+                scope.reference_members.last()
+            };
+            if expected_thickness != Some(&thickness_record_index) {
                 return None;
             }
             let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
