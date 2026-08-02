@@ -41,6 +41,8 @@ struct FixtureEvidence {
     all_faces_colored: bool,
     /// Neutral feature evaluation evidence for the saved current-body census.
     rederivation: VerificationStatus,
+    /// First exact semantic boundary reached by neutral body-census replay.
+    rederivation_boundary: Option<RederivationBoundary>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -48,6 +50,13 @@ struct FixtureEvidence {
 enum VerificationStatus {
     Missing,
     Verified,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct RederivationBoundary {
+    feature: Option<String>,
+    feature_name: Option<String>,
+    reason: String,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -120,6 +129,7 @@ struct DecodedFixtureEvidence {
     all_bodies_colored: bool,
     all_faces_colored: bool,
     rederivation: VerificationStatus,
+    rederivation_boundary: Option<RederivationBoundary>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -182,6 +192,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             all_bodies_colored: first.all_bodies_colored,
             all_faces_colored: first.all_faces_colored,
             rederivation: first.rederivation,
+            rederivation_boundary: first.rederivation_boundary,
             entities,
             losses: first.losses,
             loss_codes: first.loss_codes,
@@ -196,7 +207,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .last()
         .map(|gate| gate.level.clone());
     let profile = Profile {
-        version: 3,
+        version: 4,
         format: "nx",
         fixtures,
         totals,
@@ -228,6 +239,7 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
         .iter()
         .filter(|finding| finding.severity >= Severity::Error)
         .count();
+    let (rederivation, rederivation_boundary) = neutral_rederivation_evidence(&decoded.ir);
     Ok(DecodedFixtureEvidence {
         canonical_sha256: canonical_sha256(&decoded.ir)?,
         native_namespace_version: decoded
@@ -253,16 +265,63 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
                 .faces
                 .iter()
                 .all(|face| face.color.is_some()),
-        rederivation: neutral_rederivation_status(&decoded.ir),
+        rederivation,
+        rederivation_boundary,
     })
 }
 
 /// Evaluate the admitted exact body-identity effects of neutral NX history.
-fn neutral_rederivation_status(ir: &CadIr) -> VerificationStatus {
-    if cadmpeg_codec_nx::evaluation::evaluate_saved_body_census(ir).is_verified() {
-        VerificationStatus::Verified
-    } else {
-        VerificationStatus::Missing
+fn neutral_rederivation_evidence(ir: &CadIr) -> (VerificationStatus, Option<RederivationBoundary>) {
+    use cadmpeg_codec_nx::evaluation::{BodyCensusEvaluation, UnsupportedBodyCensusReason};
+
+    match cadmpeg_codec_nx::evaluation::evaluate_saved_body_census(ir) {
+        BodyCensusEvaluation::Verified { .. } => (VerificationStatus::Verified, None),
+        BodyCensusEvaluation::Mismatch { .. } => (
+            VerificationStatus::Missing,
+            Some(RederivationBoundary {
+                feature: None,
+                feature_name: None,
+                reason: "saved_body_census_mismatch".to_string(),
+            }),
+        ),
+        BodyCensusEvaluation::Unsupported { feature, reason } => {
+            let feature_name = feature.as_ref().and_then(|id| {
+                ir.model
+                    .features
+                    .iter()
+                    .find(|candidate| candidate.id == *id)
+                    .and_then(|feature| feature.name.clone())
+            });
+            let reason = match reason {
+                UnsupportedBodyCensusReason::UnresolvedSuppression => "unresolved_suppression",
+                UnsupportedBodyCensusReason::UnsupportedFeatureDefinition => {
+                    "unsupported_feature_definition"
+                }
+                UnsupportedBodyCensusReason::IncompleteFeatureDefinition => {
+                    "incomplete_feature_definition"
+                }
+                UnsupportedBodyCensusReason::InvalidOutputLineage => "invalid_output_lineage",
+                UnsupportedBodyCensusReason::InvalidHistoryOrder => "invalid_history_order",
+                UnsupportedBodyCensusReason::ConfigurationEvaluation => "configuration_evaluation",
+                _ => "unknown_evaluation_boundary",
+            };
+            (
+                VerificationStatus::Missing,
+                Some(RederivationBoundary {
+                    feature: feature.map(|id| id.0),
+                    feature_name,
+                    reason: reason.to_string(),
+                }),
+            )
+        }
+        _ => (
+            VerificationStatus::Missing,
+            Some(RederivationBoundary {
+                feature: None,
+                feature_name: None,
+                reason: "unknown_evaluation_boundary".to_string(),
+            }),
+        ),
     }
 }
 
@@ -463,6 +522,7 @@ mod tests {
             all_bodies_colored: false,
             all_faces_colored: false,
             rederivation: VerificationStatus::Verified,
+            rederivation_boundary: None,
         }
     }
 
@@ -479,8 +539,8 @@ mod tests {
     fn empty_neutral_history_rederives_the_empty_saved_body_census() {
         let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
         assert_eq!(
-            neutral_rederivation_status(&ir),
-            VerificationStatus::Verified
+            neutral_rederivation_evidence(&ir),
+            (VerificationStatus::Verified, None)
         );
     }
 
@@ -521,13 +581,13 @@ mod tests {
         });
 
         assert_eq!(
-            neutral_rederivation_status(&ir),
-            VerificationStatus::Verified
+            neutral_rederivation_evidence(&ir),
+            (VerificationStatus::Verified, None)
         );
     }
 
     #[test]
-    fn unresolved_tree_state_does_not_claim_rederivation() {
+    fn unresolved_body_neutral_state_does_not_block_rederivation() {
         use cadmpeg_ir::features::{Feature, FeatureId, FeatureTreeNodeRole};
 
         let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
@@ -552,8 +612,8 @@ mod tests {
         });
 
         assert_eq!(
-            neutral_rederivation_status(&ir),
-            VerificationStatus::Missing
+            neutral_rederivation_evidence(&ir),
+            (VerificationStatus::Verified, None)
         );
     }
 

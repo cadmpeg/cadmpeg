@@ -145,12 +145,15 @@ fn rederived_body_census(
         previous_ordinal = Some(feature.ordinal);
         seen_features.insert(feature.id.clone());
         match feature.suppressed {
-            None => {
+            None if !feature.outputs.is_empty()
+                || !is_body_neutral_definition(&feature.definition) =>
+            {
                 return Err((
                     feature.id.clone(),
                     UnsupportedBodyCensusReason::UnresolvedSuppression,
                 ));
             }
+            None => {}
             Some(true) => continue,
             Some(false) => {}
         }
@@ -421,6 +424,25 @@ fn rederived_body_census(
         }
     }
     Ok(bodies)
+}
+
+fn is_body_neutral_definition(definition: &FeatureDefinition) -> bool {
+    matches!(
+        definition,
+        FeatureDefinition::TreeNode { .. }
+            | FeatureDefinition::DatumPrincipalPlane { .. }
+            | FeatureDefinition::DatumPlane { .. }
+            | FeatureDefinition::DatumPlaneUnresolved
+            | FeatureDefinition::DatumOffsetPlane { .. }
+            | FeatureDefinition::DatumAxis { .. }
+            | FeatureDefinition::DatumPoint { .. }
+            | FeatureDefinition::DatumPointUnresolved
+            | FeatureDefinition::DatumCoordinateSystem { .. }
+            | FeatureDefinition::DatumCoordinateSystemUnresolved
+            | FeatureDefinition::Sketch { .. }
+            | FeatureDefinition::ProjectedCurve { .. }
+            | FeatureDefinition::SectionShape { .. }
+    )
 }
 
 fn preserve_complete_single_output(
@@ -1874,6 +1896,45 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified {
                 bodies: vec![seed, first_copy, second_copy]
+            }
+        );
+    }
+
+    #[test]
+    fn unresolved_suppression_is_irrelevant_to_output_free_construction() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.features.push(Feature {
+            id: FeatureId("datum".to_string()),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::DatumCoordinateSystemUnresolved,
+            native_ref: None,
+        });
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: Vec::new() }
+        );
+    }
+
+    #[test]
+    fn unresolved_suppression_still_blocks_a_body_effect() {
+        let mut ir = complete_block_ir();
+        ir.model.features[0].suppressed = None;
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Unsupported {
+                feature: Some(FeatureId("block".to_string())),
+                reason: UnsupportedBodyCensusReason::UnresolvedSuppression,
             }
         );
     }
