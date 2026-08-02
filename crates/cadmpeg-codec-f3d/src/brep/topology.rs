@@ -190,7 +190,16 @@ pub(crate) fn keep_faces_and_carriers(
                 out.stats.mesh_surface_faces += 1;
             } else {
                 out.stats.unknown_surface_faces += 1;
-                count_kind(&mut out.stats.unknown_surface_kinds, &surf_rec.head);
+                let native_kind = if surf_rec.head == "spline" {
+                    nurbs::subtypes::owned_construction_subtype(
+                        record_slice(surf_rec, bytes),
+                        ref_width,
+                    )
+                    .unwrap_or_else(|| surf_rec.head.clone())
+                } else {
+                    surf_rec.head.clone()
+                };
+                count_kind(&mut out.stats.unknown_surface_kinds, &native_kind);
             }
         }
     }

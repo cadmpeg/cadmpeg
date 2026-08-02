@@ -993,6 +993,22 @@ pub(crate) fn decode_embedded_base_curve_resolving_refs(
         return Some(block.curve);
     }
     let saved = *position;
+    // Some revision-gated owners omit the redundant `intcurve` identifier and
+    // store only its sense followed by the compact subtype-table reference.
+    if matches!(bytes.get(*position), Some(0x0a | 0x0b)) {
+        take_bool(bytes, position)?;
+        let reference = *position;
+        if bytes.get(reference) == Some(&0x0f) {
+            let scope = subtype_span(bytes, reference, int_width)?;
+            if let Some(curve) =
+                decode_owned_curve_cache_resolving_refs_at(scope, active_bytes, tables, int_width)
+            {
+                *position = reference + scope.len();
+                return Some(curve);
+            }
+        }
+        *position = saved;
+    }
     match take_native_ident(bytes, position)?.as_str() {
         "straight" => {
             let origin = take_native_vec3(bytes, position, 0x13)?;

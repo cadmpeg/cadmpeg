@@ -4989,6 +4989,34 @@ fn synthetic_ref_cyl_spl_sur_smbh() -> Vec<u8> {
     bytes
 }
 
+fn synthetic_revision_ref_directrix_cyl_spl_sur_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_versioned_cyl_spl_sur_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let asmheader = &records[0];
+
+    let mut target = Vec::new();
+    target.push(0x0f);
+    t_ident(&mut target, "exact_int_cur");
+    target.extend_from_slice(&generated_curve_block());
+    target.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut target, 0.009);
+    target.push(0x10);
+    let target_start = bytes
+        .windows(target.len())
+        .position(|window| window == target)
+        .expect("inline directrix definition");
+
+    let mut reference = vec![0x0f, 0x04];
+    reference.extend_from_slice(&0i64.to_le_bytes());
+    reference.push(0x10);
+    bytes.splice(target_start..target_start + target.len(), reference);
+    let asmheader_end = asmheader.offset + asmheader.len - 1;
+    bytes.splice(asmheader_end..asmheader_end, target);
+    bytes
+}
+
 fn synthetic_rb_blend_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -19823,6 +19851,27 @@ fn decode_resolves_generated_ref_translational_extrusion() {
         result.ir.model.procedural_surfaces[0].cache_fit_tolerance,
         Some(0.02)
     );
+}
+
+#[test]
+fn decode_resolves_revision_extrusion_implicit_directrix_reference() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    let f3d = f3d_with_smbh(&synthetic_revision_ref_directrix_cyl_spl_sur_smbh());
+    let result = F3dCodec
+        .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.model.procedural_surfaces.len(), 1);
+    assert!(matches!(
+        result.ir.model.procedural_surfaces[0].definition,
+        ProceduralSurfaceDefinition::Extrusion { .. }
+    ));
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.code == cadmpeg_ir::report::LossKind::GeometryNotTransferred));
 }
 
 #[test]

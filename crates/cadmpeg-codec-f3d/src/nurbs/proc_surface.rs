@@ -4169,7 +4169,7 @@ fn decode_procedural_resolving_refs(
         .or_else(|| decode_sum_spl_sur(bytes, int_width, Some((active_bytes, tables))))
         .or_else(|| decode_rot_spl_sur(bytes, int_width, Some((active_bytes, tables))))
         .or_else(|| decode_off_spl_sur(bytes, int_width, Some((active_bytes, tables))))
-        .or_else(|| decode_cyl_spl_sur_at(bytes, int_width))
+        .or_else(|| decode_cyl_spl_sur_at(bytes, int_width, Some((active_bytes, tables))))
         .or_else(|| decode_var_blend_spl_sur(bytes, int_width, Some((active_bytes, tables))))
         .or_else(|| decode_vertex_blend_spl_sur(bytes, int_width, Some((active_bytes, tables))))
         .or_else(|| decode_full_rb_blend_spl_sur(bytes, int_width, active_bytes, tables))

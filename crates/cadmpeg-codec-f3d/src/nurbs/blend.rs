@@ -35,77 +35,98 @@ use cadmpeg_ir::math::{Point3, Vector3};
 pub(crate) fn decode_cyl_spl_sur_at(
     record_bytes: &[u8],
     int_width: usize,
+    resolver: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"cyl_spl_sur", b"cylsur"];
     let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
     let span = subtype_span(record_bytes, start, int_width)?;
-    let directrix = decode_curve_cache_at(span, int_width)?;
-
     let mut position = name.len() + 3;
     // The revision-gated layout stores the directrix as a nested intcurve scope
     // and ends with the shared revision-gated surface tail, so its cache is
     // located by parsing that tail. The compact layout has no tail: its optional
     // final surface cache is the last surface block in the scope.
-    let (parameter_interval, direction, native_position, cache_fit_tolerance, revision_form) =
-        if span.get(position) == Some(&0x04) {
-            let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let (
+        directrix,
+        parameter_interval,
+        direction,
+        native_position,
+        cache_fit_tolerance,
+        revision_form,
+    ) = if span.get(position) == Some(&0x04) {
+        let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        // Sense flag of the embedded directrix curve. It is the carrier's
+        // whole boolean run, so it travels in the revision form's `flags`.
+        let directrix_start = position;
+        let directrix_sense = if matches!(span.get(position), Some(0x0a | 0x0b)) {
+            span.get(position) == Some(&0x0a)
+        } else {
             (take_native_ident(span, &mut position)? == "intcurve").then_some(())?;
-            // Sense flag of the embedded directrix curve. It is the carrier's
-            // whole boolean run, so it travels in the revision form's `flags`.
-            let directrix_sense = take_bool(span, &mut position)?;
-            let directrix_scope = subtype_span(span, position, int_width)?;
-            position += directrix_scope.len();
-            let start = take_optional_range_value(span, &mut position)?;
-            let end = take_optional_range_value(span, &mut position)?;
-            let interval = [start?, end?];
-            let direction = take_native_vec3(span, &mut position, 0x14)?;
-            let native_position = take_native_vec3(span, &mut position, 0x13)?;
-            let RevisionSurfaceTail {
-                enumeration: tail_enum,
-                fit_tolerance,
-                parameterization,
+            let sense = take_bool(span, &mut position)?;
+            position = directrix_start;
+            sense
+        };
+        let (active_bytes, tables) = resolver?;
+        let directrix = decode_embedded_base_curve_resolving_refs(
+            span,
+            &mut position,
+            int_width,
+            active_bytes,
+            tables,
+        )?;
+        let start = take_optional_range_value(span, &mut position)?;
+        let end = take_optional_range_value(span, &mut position)?;
+        let interval = [start?, end?];
+        let direction = take_native_vec3(span, &mut position, 0x14)?;
+        let native_position = take_native_vec3(span, &mut position, 0x13)?;
+        let RevisionSurfaceTail {
+            enumeration: tail_enum,
+            fit_tolerance,
+            parameterization,
+            discontinuities,
+            tail_flag,
+        } = decode_revision_surface_tail(span, &mut position, int_width)?;
+        (
+            directrix,
+            interval,
+            direction,
+            native_position,
+            fit_tolerance,
+            Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
+                revision,
+                support_bounds: [None; 4],
+                reference_endpoints: [None; 2],
+                second_endpoints: [None; 2],
+                flags: vec![directrix_sense],
+                tail_enum,
+                tail_parameterization: parameterization,
                 discontinuities,
                 tail_flag,
-            } = decode_revision_surface_tail(span, &mut position, int_width)?;
-            (
-                interval,
-                direction,
-                native_position,
-                fit_tolerance,
-                Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
-                    revision,
-                    support_bounds: [None; 4],
-                    reference_endpoints: [None; 2],
-                    second_endpoints: [None; 2],
-                    flags: vec![directrix_sense],
-                    tail_enum,
-                    tail_parameterization: parameterization,
-                    discontinuities,
-                    tail_flag,
-                    trailing_flags: Vec::new(),
-                }),
-            )
-        } else {
-            let interval = [
-                take_f64(span, &mut position)?,
-                take_f64(span, &mut position)?,
-            ];
-            let direction = take_native_vec3(span, &mut position, 0x14)?;
-            let native_position = take_native_vec3(span, &mut position, 0x13)?;
-            let cache_fit_tolerance = owned_marker_positions(span, int_width)
-                .into_iter()
-                .filter_map(|at| decode_surface_block(span, at, int_width))
-                .next_back()
-                .filter(|cache| span.get(cache.end) == Some(&0x06))
-                .and_then(|cache| read_f64(span, cache.end + 1).map(|v| v * LEN_TO_MM));
-            (
-                interval,
-                direction,
-                native_position,
-                cache_fit_tolerance,
-                None,
-            )
-        };
+                trailing_flags: Vec::new(),
+            }),
+        )
+    } else {
+        let directrix = decode_curve_cache_at(span, int_width)?;
+        let interval = [
+            take_f64(span, &mut position)?,
+            take_f64(span, &mut position)?,
+        ];
+        let direction = take_native_vec3(span, &mut position, 0x14)?;
+        let native_position = take_native_vec3(span, &mut position, 0x13)?;
+        let cache_fit_tolerance = owned_marker_positions(span, int_width)
+            .into_iter()
+            .filter_map(|at| decode_surface_block(span, at, int_width))
+            .next_back()
+            .filter(|cache| span.get(cache.end) == Some(&0x06))
+            .and_then(|cache| read_f64(span, cache.end + 1).map(|v| v * LEN_TO_MM));
+        (
+            directrix,
+            interval,
+            direction,
+            native_position,
+            cache_fit_tolerance,
+            None,
+        )
+    };
 
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Extrusion {

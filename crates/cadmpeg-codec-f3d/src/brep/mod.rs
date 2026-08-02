@@ -167,7 +167,8 @@ pub struct Stats {
     /// Faces resting on a spline/procedural surface whose shape was not decoded
     /// into a typed carrier; emitted with an unknown-geometry surface.
     pub unknown_surface_faces: usize,
-    /// Undecoded face-surface counts by full native record name.
+    /// Undecoded face-surface counts by owned native construction kind, or by
+    /// record head when the record owns no construction subtype.
     pub unknown_surface_kinds: std::collections::BTreeMap<String, usize>,
     /// Faces whose surface record explicitly delegates shape to mesh attributes.
     pub mesh_surface_faces: usize,

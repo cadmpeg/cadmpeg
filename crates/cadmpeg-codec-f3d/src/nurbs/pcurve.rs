@@ -902,7 +902,7 @@ mod width_tests {
             bytes.extend_from_slice(&curve_block(int_width));
             bytes.push(0x10);
 
-            let decoded = decode_cyl_spl_sur_at(&bytes, int_width)
+            let decoded = decode_cyl_spl_sur_at(&bytes, int_width, None)
                 .unwrap_or_else(|| panic!("cache-less extrusion at width {int_width}"));
             assert_eq!(decoded.cache_fit_tolerance, None);
             let DecodedProceduralSurfaceDefinition::Extrusion {
