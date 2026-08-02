@@ -1042,6 +1042,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::Block {
                 dimensions,
                 placement,
+                ..
             } => dimensions.is_none() || placement.is_none(),
             FeatureDefinition::ProjectOnSurface {
                 sources,
@@ -4259,6 +4260,7 @@ mod design_loss_tests {
             FeatureDefinition::Block {
                 dimensions: None,
                 placement: None,
+                op: BooleanOp::Unresolved,
             },
             FeatureDefinition::ProjectOnSurface {
                 sources: PathRef::Native("sources".into()),
