@@ -2172,7 +2172,12 @@ fn build_geometry_ir(
         &ir.model.faces,
         &ir.model.surfaces,
     );
-    sync_active_configuration_cosmetic_thread_faces(&mut ir);
+    crate::resolved_features::project_unbound_offset_plane_faces(
+        &mut ir.model.features,
+        &ir.model.faces,
+        &ir.model.surfaces,
+    );
+    sync_active_configuration_face_selections(&mut ir);
     stamp_feature_baseline(&mut ir);
     assign_native_configuration_indices(&ir, &mut native);
     if let Some(source) = &mut ir.source {
@@ -2886,7 +2891,12 @@ fn build_metadata_ir(
         &ir.model.faces,
         &ir.model.surfaces,
     );
-    sync_active_configuration_cosmetic_thread_faces(&mut ir);
+    crate::resolved_features::project_unbound_offset_plane_faces(
+        &mut ir.model.features,
+        &ir.model.faces,
+        &ir.model.surfaces,
+    );
+    sync_active_configuration_face_selections(&mut ir);
     crate::history::order_features_for_regeneration(&mut ir.model.features);
     crate::history::project_configuration_sketch_states(&mut ir, &histories, &lanes, &annotations);
     stamp_feature_baseline(&mut ir);
@@ -3111,7 +3121,7 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
     }
 }
 
-fn sync_active_configuration_cosmetic_thread_faces(ir: &mut CadIr) {
+fn sync_active_configuration_face_selections(ir: &mut CadIr) {
     let mut active = ir
         .model
         .configurations
@@ -3164,6 +3174,69 @@ fn sync_active_configuration_cosmetic_thread_faces(ir: &mut CadIr) {
                 cadmpeg_ir::features::FaceSelection::Unresolved
                     | cadmpeg_ir::features::FaceSelection::Native(_)
             )
+        {
+            *face = resolved_face;
+        }
+    }
+    let resolved = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let cadmpeg_ir::features::FeatureDefinition::DatumOffsetPlane {
+                reference:
+                    Some(cadmpeg_ir::features::DatumPlaneReference::Face {
+                        face: face @ cadmpeg_ir::features::FaceSelection::Faces(selected),
+                        origin,
+                        normal,
+                        u_axis,
+                    }),
+                distance,
+            } = &feature.definition
+            else {
+                return None;
+            };
+            (!selected.is_empty()).then_some((
+                feature.id.clone(),
+                face.clone(),
+                *origin,
+                *normal,
+                *u_axis,
+                *distance,
+            ))
+        })
+        .collect::<Vec<_>>();
+    let configuration = &mut ir.model.configurations[configuration_index];
+    for (
+        feature,
+        resolved_face,
+        resolved_origin,
+        resolved_normal,
+        resolved_u_axis,
+        resolved_distance,
+    ) in resolved
+    {
+        let Some(state) = configuration.feature_states.get_mut(&feature) else {
+            continue;
+        };
+        let cadmpeg_ir::features::FeatureDefinition::DatumOffsetPlane {
+            reference:
+                Some(cadmpeg_ir::features::DatumPlaneReference::Face {
+                    face,
+                    origin,
+                    normal,
+                    u_axis,
+                }),
+            distance,
+        } = &mut state.definition
+        else {
+            continue;
+        };
+        if *origin == resolved_origin
+            && *normal == resolved_normal
+            && *u_axis == resolved_u_axis
+            && *distance == resolved_distance
+            && matches!(face, cadmpeg_ir::features::FaceSelection::Unresolved)
         {
             *face = resolved_face;
         }

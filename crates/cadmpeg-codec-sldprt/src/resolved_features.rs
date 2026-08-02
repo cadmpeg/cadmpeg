@@ -2277,12 +2277,12 @@ mod marker_tests {
         surface_selection_producer_features, tangent_bounded_curve,
         terminal_extended_profile_point_coordinates, terminal_repeated_radial_circle_pairs,
         unique_arc_center_marker, unique_cylindrical_face, unique_dimensioned_rectangle_markers,
-        unique_locus, unique_marker_candidate, wide_direct_line_endpoint_markers,
-        wide_indexed_curve_endpoint_indices, Angle, BooleanOp, CompactPointReferenceKind,
-        CompactReferencePlaneIndex, ComponentPathEnd, Length, CLASS_MARKER,
-        COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER,
-        LEGACY_SKETCH_MARKER, MINIMAL_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
-        SKETCH_MARKER,
+        unique_locus, unique_marker_candidate, unique_planar_face,
+        wide_direct_line_endpoint_markers, wide_indexed_curve_endpoint_indices, Angle, BooleanOp,
+        CompactPointReferenceKind, CompactReferencePlaneIndex, ComponentPathEnd, Length,
+        CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN,
+        LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, MINIMAL_REFERENCE_PLANE_FRAME_LEN,
+        NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
     };
     use crate::records::{
         Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -13687,6 +13687,59 @@ mod marker_tests {
         duplicate.id = FaceId("other-face".into());
         assert_eq!(
             unique_cylindrical_face(4.0, &[face, duplicate], &[surface]),
+            None
+        );
+    }
+
+    #[test]
+    fn frame_only_plane_support_requires_one_coincident_face() {
+        let surface = Surface {
+            id: SurfaceId("plane".into()),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 5.0),
+                normal: Vector3::new(0.0, 0.0, -1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        };
+        let face = Face {
+            id: FaceId("face".into()),
+            shell: ShellId("shell".into()),
+            surface: surface.id.clone(),
+            sense: Sense::Forward,
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: None,
+        };
+
+        assert_eq!(
+            unique_planar_face(
+                Point3::new(4.0, -2.0, 5.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                std::slice::from_ref(&face),
+                std::slice::from_ref(&surface),
+            ),
+            Some(face.id.clone())
+        );
+        assert_eq!(
+            unique_planar_face(
+                Point3::new(0.0, 0.0, 6.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                std::slice::from_ref(&face),
+                std::slice::from_ref(&surface),
+            ),
+            None
+        );
+        let mut duplicate = face.clone();
+        duplicate.id = FaceId("other-face".into());
+        assert_eq!(
+            unique_planar_face(
+                Point3::new(0.0, 0.0, 5.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                &[face, duplicate],
+                &[surface],
+            ),
             None
         );
     }
@@ -25969,10 +26022,6 @@ pub(crate) fn enrich_history_reference_planes(
     }
     for ((history_index, feature_index), (origin, normal, u_axis)) in unique_reference_frames {
         let feature = &mut histories[history_index].features[feature_index];
-        if feature.properties.contains_key("Reference") || feature.properties.contains_key("Plane")
-        {
-            continue;
-        }
         feature.properties.insert(
             "ReferenceFaceOrigin".into(),
             format!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
@@ -33386,6 +33435,97 @@ fn unique_cylindrical_face(radius: f64, faces: &[Face], surfaces: &[Surface]) ->
     let mut candidates = faces
         .iter()
         .filter(|face| cylindrical.contains(&face.surface))
+        .map(|face| face.id.clone());
+    let selected = candidates.next()?;
+    candidates.next().is_none().then_some(selected)
+}
+
+/// Resolve frame-only offset-plane supports when exactly one B-rep face lies
+/// on the serialized support plane.
+pub(crate) fn project_unbound_offset_plane_faces(
+    features: &mut [cadmpeg_ir::features::Feature],
+    faces: &[Face],
+    surfaces: &[Surface],
+) {
+    for feature in features {
+        let FeatureDefinition::DatumOffsetPlane {
+            reference:
+                Some(cadmpeg_ir::features::DatumPlaneReference::Face {
+                    face,
+                    origin,
+                    normal,
+                    ..
+                }),
+            ..
+        } = &mut feature.definition
+        else {
+            continue;
+        };
+        if !matches!(face, cadmpeg_ir::features::FaceSelection::Unresolved) {
+            continue;
+        }
+        let Some(selected) = unique_planar_face(*origin, *normal, faces, surfaces) else {
+            continue;
+        };
+        *face = cadmpeg_ir::features::FaceSelection::Faces(vec![selected]);
+    }
+}
+
+fn unique_planar_face(
+    origin: Point3,
+    normal: Vector3,
+    faces: &[Face],
+    surfaces: &[Surface],
+) -> Option<FaceId> {
+    let normal_length = normal.norm();
+    if !normal_length.is_finite() || normal_length <= f64::EPSILON {
+        return None;
+    }
+    let normal = Vector3::new(
+        normal.x / normal_length,
+        normal.y / normal_length,
+        normal.z / normal_length,
+    );
+    let tolerance = 1.0e-8
+        * origin
+            .x
+            .abs()
+            .max(origin.y.abs())
+            .max(origin.z.abs())
+            .max(1.0);
+    let planar = surfaces
+        .iter()
+        .filter_map(|surface| match surface.geometry {
+            SurfaceGeometry::Plane {
+                origin: candidate_origin,
+                normal: candidate_normal,
+                ..
+            } => {
+                let candidate_length = candidate_normal.norm();
+                if !candidate_length.is_finite() || candidate_length <= f64::EPSILON {
+                    return None;
+                }
+                let alignment = (normal.x * candidate_normal.x
+                    + normal.y * candidate_normal.y
+                    + normal.z * candidate_normal.z)
+                    / candidate_length;
+                let displacement = Vector3::new(
+                    candidate_origin.x - origin.x,
+                    candidate_origin.y - origin.y,
+                    candidate_origin.z - origin.z,
+                );
+                let distance = displacement.x * normal.x
+                    + displacement.y * normal.y
+                    + displacement.z * normal.z;
+                ((alignment.abs() - 1.0).abs() <= 1.0e-9 && distance.abs() <= tolerance)
+                    .then_some(&surface.id)
+            }
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
+    let mut candidates = faces
+        .iter()
+        .filter(|face| planar.contains(&face.surface))
         .map(|face| face.id.clone());
     let selected = candidates.next()?;
     candidates.next().is_none().then_some(selected)
