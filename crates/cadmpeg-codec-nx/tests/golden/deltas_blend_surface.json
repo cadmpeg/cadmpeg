@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "4",
+      "ir_version": "5",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -27,7 +27,6 @@
             "sense": "forward"
           }
         ],
-        "components": [],
         "configurations": [],
         "curves": [
           {
@@ -121,8 +120,7 @@
             "surface": "nx:s0:blend-surf#0"
           }
         ],
-        "product_occurrences": [],
-        "products": [],
+        "product_definitions": [],
         "regions": [
           {
             "body": "nx:s0:body#2",
@@ -277,10 +275,10 @@
           "deltas.0.grammar": "typed_status_framed_records",
           "deltas_streams": "1",
           "directory_entries": "1",
-          "file_size": "499",
+          "file_size": "516",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "485",
+          "footer_offset": "502",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -314,7 +312,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 485, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 502, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -393,7 +391,7 @@
             "tag": "partition"
           },
           "nx:container:parasolid#1": {
-            "offset": 370,
+            "offset": 371,
             "stream": 1,
             "tag": "deltas"
           },
@@ -484,7 +482,7 @@
           "byte_len": 145,
           "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChkZWx0YXMpIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AAA4AAwAAAOMAAEBAAEBAAEBAAEBAAEBK1IABgEABgEAAQG/cGJN0vGp/D9wYk3S8an8P/AAAAAAAAA/8AAAAAAAAAABAQABAQABAQABAQ==",
           "id": "nx:container:parasolid#1",
-          "offset": 370,
+          "offset": 371,
           "sha256": "6630359cad2aa27219a275c9e1a598c16c16575098c5567ff7bdcffc207083a1",
           "stream": "nx:container"
         }
@@ -500,11 +498,11 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 409,
+        "compressed_size": 426,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 409
+        "uncompressed_size": 426
       },
       {
         "attributes": {
@@ -536,7 +534,7 @@
       },
       {
         "attributes": {
-          "file_offset": "370",
+          "file_offset": "371",
           "kind": "deltas",
           "records.body": "0",
           "records.delta.full.blend_surf": "1",
@@ -558,7 +556,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 485, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 502, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]

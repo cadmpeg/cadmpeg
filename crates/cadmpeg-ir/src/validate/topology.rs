@@ -227,79 +227,8 @@ fn collect_pattern_paths<'a>(
         _ => {}
     }
 }
+use crate::index::ModelIndex;
 use crate::sketches::{SketchConstraintDefinition as Definition, SketchLocus};
-
-/// Presence sets for every arena, keyed by the string id.
-pub(super) struct IdSets {
-    bodies: HashSet<String>,
-    regions: HashSet<String>,
-    shells: HashSet<String>,
-    faces: HashSet<String>,
-    loops: HashSet<String>,
-    coedges: HashSet<String>,
-    edges: HashSet<String>,
-    vertices: HashSet<String>,
-    points: HashSet<String>,
-    surfaces: HashSet<String>,
-    procedural_surfaces: HashSet<String>,
-    curves: HashSet<String>,
-    procedural_curves: HashSet<String>,
-    pcurves: HashSet<String>,
-    subds: HashSet<String>,
-    appearances: HashSet<String>,
-    tessellations: HashSet<String>,
-    unknowns: HashSet<String>,
-}
-
-impl IdSets {
-    pub(super) fn build(ir: &CadIr) -> Self {
-        IdSets {
-            bodies: ir.model.bodies.iter().map(|e| e.id.0.clone()).collect(),
-            regions: ir.model.regions.iter().map(|e| e.id.0.clone()).collect(),
-            shells: ir.model.shells.iter().map(|e| e.id.0.clone()).collect(),
-            faces: ir.model.faces.iter().map(|e| e.id.0.clone()).collect(),
-            loops: ir.model.loops.iter().map(|e| e.id.0.clone()).collect(),
-            coedges: ir.model.coedges.iter().map(|e| e.id.0.clone()).collect(),
-            edges: ir.model.edges.iter().map(|e| e.id.0.clone()).collect(),
-            vertices: ir.model.vertices.iter().map(|e| e.id.0.clone()).collect(),
-            points: ir.model.points.iter().map(|e| e.id.0.clone()).collect(),
-            surfaces: ir.model.surfaces.iter().map(|e| e.id.0.clone()).collect(),
-            procedural_surfaces: ir
-                .model
-                .procedural_surfaces
-                .iter()
-                .map(|e| e.id.0.clone())
-                .collect(),
-            curves: ir.model.curves.iter().map(|e| e.id.0.clone()).collect(),
-            procedural_curves: ir
-                .model
-                .procedural_curves
-                .iter()
-                .map(|e| e.id.0.clone())
-                .collect(),
-            pcurves: ir.model.pcurves.iter().map(|e| e.id.0.clone()).collect(),
-            subds: ir.model.subds.iter().map(|e| e.id.0.clone()).collect(),
-            appearances: ir
-                .model
-                .appearances
-                .iter()
-                .map(|e| e.id.0.clone())
-                .collect(),
-            tessellations: ir
-                .model
-                .tessellations
-                .iter()
-                .map(|e| e.id.clone())
-                .collect(),
-            unknowns: ir
-                .all_native_unknowns()
-                .unwrap_or_default()
-                .into_iter()
-                .map(|record| record.id.0)
-                .collect(),
-        }
-    }
-}
 
 pub(super) fn ref_error(findings: &mut Vec<Finding>, owner: &str, target_kind: &str, target: &str) {
     findings.push(Finding {
@@ -348,157 +277,157 @@ pub(super) fn check_units(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 }
 
-pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding>) {
+pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
     for b in &ir.model.bodies {
         for l in &b.regions {
-            if !ids.regions.contains(&l.0) {
+            if ids.regions(&l.0).is_none() {
                 ref_error(findings, &b.id.0, "region", &l.0);
             }
         }
     }
     for l in &ir.model.regions {
-        if !ids.bodies.contains(&l.body.0) {
+        if ids.bodies(&l.body.0).is_none() {
             ref_error(findings, &l.id.0, "body", &l.body.0);
         }
         for s in &l.shells {
-            if !ids.shells.contains(&s.0) {
+            if ids.shells(&s.0).is_none() {
                 ref_error(findings, &l.id.0, "shell", &s.0);
             }
         }
     }
     for s in &ir.model.shells {
-        if !ids.regions.contains(&s.region.0) {
+        if ids.regions(&s.region.0).is_none() {
             ref_error(findings, &s.id.0, "region", &s.region.0);
         }
         for f in &s.faces {
-            if !ids.faces.contains(&f.0) {
+            if ids.faces(&f.0).is_none() {
                 ref_error(findings, &s.id.0, "face", &f.0);
             }
         }
         for e in &s.wire_edges {
-            if !ids.edges.contains(&e.0) {
+            if ids.edges(&e.0).is_none() {
                 ref_error(findings, &s.id.0, "wire edge", &e.0);
             }
         }
         for v in &s.free_vertices {
-            if !ids.vertices.contains(&v.0) {
+            if ids.vertices(&v.0).is_none() {
                 ref_error(findings, &s.id.0, "free vertex", &v.0);
             }
         }
     }
     for f in &ir.model.faces {
-        if !ids.shells.contains(&f.shell.0) {
+        if ids.shells(&f.shell.0).is_none() {
             ref_error(findings, &f.id.0, "shell", &f.shell.0);
         }
-        if !ids.surfaces.contains(&f.surface.0) {
+        if ids.surfaces(&f.surface.0).is_none() {
             ref_error(findings, &f.id.0, "surface", &f.surface.0);
         }
         for lp in &f.loops {
-            if !ids.loops.contains(&lp.0) {
+            if ids.loops(&lp.0).is_none() {
                 ref_error(findings, &f.id.0, "loop", &lp.0);
             }
         }
     }
     for lp in &ir.model.loops {
-        if !ids.faces.contains(&lp.face.0) {
+        if ids.faces(&lp.face.0).is_none() {
             ref_error(findings, &lp.id.0, "face", &lp.face.0);
         }
         for ce in &lp.coedges {
-            if !ids.coedges.contains(&ce.0) {
+            if ids.coedges(&ce.0).is_none() {
                 ref_error(findings, &lp.id.0, "coedge", &ce.0);
             }
         }
         for use_ in &lp.vertex_uses {
-            if !ids.vertices.contains(&use_.vertex.0) {
+            if ids.vertices(&use_.vertex.0).is_none() {
                 ref_error(findings, &lp.id.0, "vertex", &use_.vertex.0);
             }
             if let Some(after) = &use_.after {
-                if !ids.coedges.contains(&after.0) {
+                if ids.coedges(&after.0).is_none() {
                     ref_error(findings, &lp.id.0, "coedge(vertex-use after)", &after.0);
                 }
             }
             for pcurve in &use_.pcurves {
-                if !ids.pcurves.contains(&pcurve.pcurve.0) {
+                if ids.pcurves(&pcurve.pcurve.0).is_none() {
                     ref_error(findings, &lp.id.0, "pcurve(vertex use)", &pcurve.pcurve.0);
                 }
             }
         }
     }
     for ce in &ir.model.coedges {
-        if !ids.loops.contains(&ce.owner_loop.0) {
+        if ids.loops(&ce.owner_loop.0).is_none() {
             ref_error(findings, &ce.id.0, "loop", &ce.owner_loop.0);
         }
-        if !ids.edges.contains(&ce.edge.0) {
+        if ids.edges(&ce.edge.0).is_none() {
             ref_error(findings, &ce.id.0, "edge", &ce.edge.0);
         }
-        if !ids.coedges.contains(&ce.next.0) {
+        if ids.coedges(&ce.next.0).is_none() {
             ref_error(findings, &ce.id.0, "coedge(next)", &ce.next.0);
         }
-        if !ids.coedges.contains(&ce.previous.0) {
+        if ids.coedges(&ce.previous.0).is_none() {
             ref_error(findings, &ce.id.0, "coedge(previous)", &ce.previous.0);
         }
-        if !ids.coedges.contains(&ce.radial_next.0) {
+        if ids.coedges(&ce.radial_next.0).is_none() {
             ref_error(findings, &ce.id.0, "coedge(radial_next)", &ce.radial_next.0);
         }
         for use_ in &ce.pcurves {
-            if !ids.pcurves.contains(&use_.pcurve.0) {
+            if ids.pcurves(&use_.pcurve.0).is_none() {
                 ref_error(findings, &ce.id.0, "pcurve", &use_.pcurve.0);
             }
         }
         if let Some(curve) = &ce.use_curve {
-            if !ids.curves.contains(&curve.0) {
+            if ids.curves(&curve.0).is_none() {
                 ref_error(findings, &ce.id.0, "coedge use curve", &curve.0);
             }
         }
     }
     for e in &ir.model.edges {
         if let Some(c) = &e.curve {
-            if !ids.curves.contains(&c.0) {
+            if ids.curves(&c.0).is_none() {
                 ref_error(findings, &e.id.0, "curve", &c.0);
             }
         }
-        if !ids.vertices.contains(&e.start.0) {
+        if ids.vertices(&e.start.0).is_none() {
             ref_error(findings, &e.id.0, "vertex(start)", &e.start.0);
         }
-        if !ids.vertices.contains(&e.end.0) {
+        if ids.vertices(&e.end.0).is_none() {
             ref_error(findings, &e.id.0, "vertex(end)", &e.end.0);
         }
     }
     for v in &ir.model.vertices {
-        if !ids.points.contains(&v.point.0) {
+        if ids.points(&v.point.0).is_none() {
             ref_error(findings, &v.id.0, "point", &v.point.0);
         }
     }
     for binding in &ir.model.appearance_bindings {
         use crate::appearance::AppearanceTarget;
         let owner = format!("appearance-binding:{}", binding.appearance.0);
-        if !ids.appearances.contains(&binding.appearance.0) {
+        if ids.appearances(&binding.appearance.0).is_none() {
             ref_error(findings, &owner, "appearance", &binding.appearance.0);
         }
         match &binding.target {
-            AppearanceTarget::Body(body) if !ids.bodies.contains(&body.0) => {
+            AppearanceTarget::Body(body) if ids.bodies(&body.0).is_none() => {
                 ref_error(findings, &owner, "body", &body.0);
             }
-            AppearanceTarget::Face(face) if !ids.faces.contains(&face.0) => {
+            AppearanceTarget::Face(face) if ids.faces(&face.0).is_none() => {
                 ref_error(findings, &owner, "face", &face.0);
             }
-            AppearanceTarget::Edge(edge) if !ids.edges.contains(&edge.0) => {
+            AppearanceTarget::Edge(edge) if ids.edges(&edge.0).is_none() => {
                 ref_error(findings, &owner, "edge", &edge.0);
             }
-            AppearanceTarget::Vertex(vertex) if !ids.vertices.contains(&vertex.0) => {
+            AppearanceTarget::Vertex(vertex) if ids.vertices(&vertex.0).is_none() => {
                 ref_error(findings, &owner, "vertex", &vertex.0);
             }
-            AppearanceTarget::Surface(surface) if !ids.surfaces.contains(&surface.0) => {
+            AppearanceTarget::Surface(surface) if ids.surfaces(&surface.0).is_none() => {
                 ref_error(findings, &owner, "surface", &surface.0);
             }
-            AppearanceTarget::Curve(curve) if !ids.curves.contains(&curve.0) => {
+            AppearanceTarget::Curve(curve) if ids.curves(&curve.0).is_none() => {
                 ref_error(findings, &owner, "curve", &curve.0);
             }
-            AppearanceTarget::Point(point) if !ids.points.contains(&point.0) => {
+            AppearanceTarget::Point(point) if ids.points(&point.0).is_none() => {
                 ref_error(findings, &owner, "point", &point.0);
             }
             AppearanceTarget::Tessellation(tessellation)
-                if !ids.tessellations.contains(tessellation) =>
+                if ids.tessellations(tessellation).is_none() =>
             {
                 ref_error(findings, &owner, "tessellation", tessellation);
             }
@@ -511,19 +440,19 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         let owner = &attribute.id.0;
         match &attribute.target {
             AttributeTarget::Document => {}
-            AttributeTarget::Body(id) if !ids.bodies.contains(&id.0) => {
+            AttributeTarget::Body(id) if ids.bodies(&id.0).is_none() => {
                 ref_error(findings, owner, "body", &id.0);
             }
-            AttributeTarget::Face(id) if !ids.faces.contains(&id.0) => {
+            AttributeTarget::Face(id) if ids.faces(&id.0).is_none() => {
                 ref_error(findings, owner, "face", &id.0);
             }
-            AttributeTarget::Coedge(id) if !ids.coedges.contains(&id.0) => {
+            AttributeTarget::Coedge(id) if ids.coedges(&id.0).is_none() => {
                 ref_error(findings, owner, "coedge", &id.0);
             }
-            AttributeTarget::Edge(id) if !ids.edges.contains(&id.0) => {
+            AttributeTarget::Edge(id) if ids.edges(&id.0).is_none() => {
                 ref_error(findings, owner, "edge", &id.0);
             }
-            AttributeTarget::Vertex(id) if !ids.vertices.contains(&id.0) => {
+            AttributeTarget::Vertex(id) if ids.vertices(&id.0).is_none() => {
                 ref_error(findings, owner, "vertex", &id.0);
             }
             _ => {}
@@ -532,7 +461,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
     for s in &ir.model.surfaces {
         match &s.geometry {
             SurfaceGeometry::Procedural { construction } => {
-                if !ids.procedural_surfaces.contains(&construction.0) {
+                if ids.procedural_surfaces(&construction.0).is_none() {
                     ref_error(
                         findings,
                         &s.id.0,
@@ -566,7 +495,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     });
                 }
             }
-            SurfaceGeometry::Unknown { record: Some(u) } if !ids.unknowns.contains(&u.0) => {
+            SurfaceGeometry::Unknown { record: Some(u) } if !ids.contains(&u.0) => {
                 ref_error(findings, &s.id.0, "unknown record", &u.0);
             }
             _ => {}
@@ -575,7 +504,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
     for curve in &ir.model.curves {
         match &curve.geometry {
             CurveGeometry::Procedural { construction } => {
-                if !ids.procedural_curves.contains(&construction.0) {
+                if ids.procedural_curves(&construction.0).is_none() {
                     ref_error(
                         findings,
                         &curve.id.0,
@@ -609,13 +538,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             CurveGeometry::Unknown {
                 record: Some(unknown),
             } => {
-                if !ids.unknowns.contains(&unknown.0) {
+                if !ids.contains(&unknown.0) {
                     ref_error(findings, &curve.id.0, "unknown record", &unknown.0);
                 }
             }
             CurveGeometry::Composite { segments, .. } => {
                 for segment in segments {
-                    if !ids.curves.contains(&segment.curve.0) {
+                    if ids.curves(&segment.curve.0).is_none() {
                         ref_error(findings, &curve.id.0, "curve", &segment.curve.0);
                     }
                 }
@@ -650,7 +579,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         );
     }
     for procedural in &ir.model.procedural_surfaces {
-        if !ids.surfaces.contains(&procedural.surface.0) {
+        if ids.surfaces(&procedural.surface.0).is_none() {
             ref_error(
                 findings,
                 &procedural.surface.0,
@@ -662,23 +591,23 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             ProceduralSurfaceDefinition::Exact { .. } => {}
             ProceduralSurfaceDefinition::Compound { components, .. } => {
                 for component in components {
-                    if !ids.surfaces.contains(&component.0) {
+                    if ids.surfaces(&component.0).is_none() {
                         ref_error(findings, &procedural.id.0, "surface", &component.0);
                     }
                 }
             }
             ProceduralSurfaceDefinition::SubSurface { support, .. } => {
-                if !ids.surfaces.contains(&support.0) {
+                if ids.surfaces(&support.0).is_none() {
                     ref_error(findings, &procedural.id.0, "surface", &support.0);
                 }
             }
             ProceduralSurfaceDefinition::Taper {
                 support, reference, ..
             } => {
-                if !ids.surfaces.contains(&support.0) {
+                if ids.surfaces(&support.0).is_none() {
                     ref_error(findings, &procedural.id.0, "surface", &support.0);
                 }
-                if !ids.curves.contains(&reference.0) {
+                if ids.curves(&reference.0).is_none() {
                     ref_error(findings, &procedural.id.0, "curve", &reference.0);
                 }
             }
@@ -691,13 +620,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                         .chain(entry.path.auxiliaries.iter())
                         .chain(entry.profile.iter().map(|member| &member.curve))
                     {
-                        if !ids.curves.contains(&curve.0) {
+                        if ids.curves(&curve.0).is_none() {
                             ref_error(findings, &procedural.id.0, "curve", &curve.0);
                         }
                     }
                     for member in &entry.profile {
                         if let Some(surface) = &member.data.surface {
-                            if !ids.surfaces.contains(&surface.0) {
+                            if ids.surfaces(&surface.0).is_none() {
                                 ref_error(findings, &procedural.id.0, "surface", &surface.0);
                             }
                         }
@@ -706,7 +635,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             }
             ProceduralSurfaceDefinition::CompoundLoft { construction } => {
                 let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| {
-                    if !ids.curves.contains(&curve.0) {
+                    if ids.curves(&curve.0).is_none() {
                         ref_error(findings, &procedural.id.0, "curve", &curve.0);
                     }
                 };
@@ -739,7 +668,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     for member in &scale.members {
                         check_curve(&member.curve, findings);
                         if let Some(surface) = &member.data.surface {
-                            if !ids.surfaces.contains(&surface.0) {
+                            if ids.surfaces(&surface.0).is_none() {
                                 ref_error(findings, &procedural.id.0, "surface", &surface.0);
                             }
                         }
@@ -748,7 +677,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             }
             ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } => {
                 let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| {
-                    if !ids.curves.contains(&curve.0) {
+                    if ids.curves(&curve.0).is_none() {
                         ref_error(findings, &procedural.id.0, "curve", &curve.0);
                     }
                 };
@@ -785,7 +714,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     for member in &scale.members {
                         check_curve(&member.curve, findings);
                         if let Some(surface) = &member.data.surface {
-                            if !ids.surfaces.contains(&surface.0) {
+                            if ids.surfaces(&surface.0).is_none() {
                                 ref_error(findings, &procedural.id.0, "surface", &surface.0);
                             }
                         }
@@ -795,13 +724,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             ProceduralSurfaceDefinition::Skin { construction } => {
                 fn check_law_curves(
                     expression: &crate::geometry::LawExpression,
-                    ids: &IdSets,
+                    ids: &ModelIndex<'_>,
                     procedural: &crate::geometry::ProceduralSurface,
                     findings: &mut Vec<Finding>,
                 ) {
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            if !ids.curves.contains(&curve.0) {
+                            if ids.curves(&curve.0).is_none() {
                                 ref_error(findings, &procedural.id.0, "curve", &curve.0);
                             }
                         }
@@ -814,7 +743,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                 }
                 let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| {
-                    if !ids.curves.contains(&curve.0) {
+                    if ids.curves(&curve.0).is_none() {
                         ref_error(findings, &procedural.id.0, "curve", &curve.0);
                     }
                 };
@@ -824,7 +753,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                         for profile in profiles {
                             check_curve(&profile.curve, findings);
                             if let Some(surface) = &profile.data.surface {
-                                if !ids.surfaces.contains(&surface.0) {
+                                if ids.surfaces(&surface.0).is_none() {
                                     ref_error(findings, &procedural.id.0, "surface", &surface.0);
                                 }
                             }
@@ -847,13 +776,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             ProceduralSurfaceDefinition::Law { construction } => {
                 fn check_law_curves(
                     expression: &crate::geometry::LawExpression,
-                    ids: &IdSets,
+                    ids: &ModelIndex<'_>,
                     procedural: &crate::geometry::ProceduralSurface,
                     findings: &mut Vec<Finding>,
                 ) {
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            if !ids.curves.contains(&curve.0) {
+                            if ids.curves(&curve.0).is_none() {
                                 ref_error(findings, &procedural.id.0, "curve", &curve.0);
                             }
                         }
@@ -876,13 +805,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             ProceduralSurfaceDefinition::Net { construction } => {
                 fn check_law_curves(
                     expression: &crate::geometry::LawExpression,
-                    ids: &IdSets,
+                    ids: &ModelIndex<'_>,
                     procedural: &crate::geometry::ProceduralSurface,
                     findings: &mut Vec<Finding>,
                 ) {
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            if !ids.curves.contains(&curve.0) {
+                            if ids.curves(&curve.0).is_none() {
                                 ref_error(findings, &procedural.id.0, "curve", &curve.0);
                             }
                         }
@@ -906,13 +835,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                         .chain(entry.path.auxiliaries.iter())
                         .chain(entry.profile.iter().map(|member| &member.curve))
                     {
-                        if !ids.curves.contains(&curve.0) {
+                        if ids.curves(&curve.0).is_none() {
                             ref_error(findings, &procedural.id.0, "curve", &curve.0);
                         }
                     }
                     for member in &entry.profile {
                         if let Some(surface) = &member.data.surface {
-                            if !ids.surfaces.contains(&surface.0) {
+                            if ids.surfaces(&surface.0).is_none() {
                                 ref_error(findings, &procedural.id.0, "surface", &surface.0);
                             }
                         }
@@ -929,7 +858,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     .into_iter()
                     .chain(std::iter::once(&construction.second_exact_surface))
                 {
-                    if !ids.surfaces.contains(&surface.0) {
+                    if ids.surfaces(&surface.0).is_none() {
                         ref_error(findings, &procedural.id.0, "surface", &surface.0);
                     }
                 }
@@ -938,7 +867,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     ..
                 } = &construction.first_shape
                 {
-                    if !ids.surfaces.contains(&surface.0) {
+                    if ids.surfaces(&surface.0).is_none() {
                         ref_error(findings, &procedural.id.0, "surface", &surface.0);
                     }
                 }
@@ -947,7 +876,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     &construction.second.curve,
                     &construction.center_curve,
                 ] {
-                    if !ids.curves.contains(&curve.0) {
+                    if ids.curves(&curve.0).is_none() {
                         ref_error(findings, &procedural.id.0, "curve", &curve.0);
                     }
                 }
@@ -955,12 +884,12 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             ProceduralSurfaceDefinition::VariableBlend { construction } => {
                 for side in construction.sides.iter() {
                     if let Some(surface) = &side.surface {
-                        if !ids.surfaces.contains(&surface.0) {
+                        if ids.surfaces(&surface.0).is_none() {
                             ref_error(findings, &procedural.id.0, "surface", &surface.0);
                         }
                     }
                     if let Some(curve) = &side.curve {
-                        if !ids.curves.contains(&curve.0) {
+                        if ids.curves(&curve.0).is_none() {
                             ref_error(findings, &procedural.id.0, "curve", &curve.0);
                         }
                     }
@@ -973,7 +902,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 .into_iter()
                 .flatten()
                 {
-                    if !ids.curves.contains(&curve.0) {
+                    if ids.curves(&curve.0).is_none() {
                         ref_error(findings, &procedural.id.0, "curve", &curve.0);
                     }
                 }
@@ -984,11 +913,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     .iter()
                     .chain(construction.entries.iter().flat_map(|entry| &entry.profile))
                 {
-                    if !ids.curves.contains(&member.curve.0) {
+                    if ids.curves(&member.curve.0).is_none() {
                         ref_error(findings, &procedural.id.0, "curve", &member.curve.0);
                     }
                     if let Some(surface) = &member.data.surface {
-                        if !ids.surfaces.contains(&surface.0) {
+                        if ids.surfaces(&surface.0).is_none() {
                             ref_error(findings, &procedural.id.0, "surface", &surface.0);
                         }
                     }
@@ -999,7 +928,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     .chain(construction.direction_curve.iter())
                     .chain(construction.trailing_curve.iter())
                 {
-                    if !ids.curves.contains(&curve.0) {
+                    if ids.curves(&curve.0).is_none() {
                         ref_error(findings, &procedural.id.0, "curve", &curve.0);
                     }
                 }
@@ -1007,17 +936,17 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
                 for side in construction.sides.iter() {
                     if let Some(surface) = &side.surface {
-                        if !ids.surfaces.contains(&surface.0) {
+                        if ids.surfaces(&surface.0).is_none() {
                             ref_error(findings, &procedural.id.0, "surface", &surface.0);
                         }
                     }
                     if let Some(curve) = &side.curve {
-                        if !ids.curves.contains(&curve.0) {
+                        if ids.curves(&curve.0).is_none() {
                             ref_error(findings, &procedural.id.0, "curve", &curve.0);
                         }
                     }
                 }
-                if !ids.curves.contains(&construction.center.0) {
+                if ids.curves(&construction.center.0).is_none() {
                     ref_error(findings, &procedural.id.0, "curve", &construction.center.0);
                 }
             }
@@ -1026,14 +955,14 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     match &boundary.geometry {
                         crate::geometry::VertexBlendBoundaryGeometry::Circle { curve, .. }
                         | crate::geometry::VertexBlendBoundaryGeometry::Plane { curve, .. } => {
-                            if !ids.curves.contains(&curve.0) {
+                            if ids.curves(&curve.0).is_none() {
                                 ref_error(findings, &procedural.id.0, "curve", &curve.0);
                             }
                         }
                         crate::geometry::VertexBlendBoundaryGeometry::Pcurve {
                             surface, ..
                         } => {
-                            if !ids.surfaces.contains(&surface.0) {
+                            if ids.surfaces(&surface.0).is_none() {
                                 ref_error(findings, &procedural.id.0, "surface", &surface.0);
                             }
                         }
@@ -1045,7 +974,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             | ProceduralSurfaceDefinition::LinearSweep { directrix, .. }
             | ProceduralSurfaceDefinition::Revolution { directrix, .. }
             | ProceduralSurfaceDefinition::AxisRevolution { directrix, .. } => {
-                if !ids.curves.contains(&directrix.0) {
+                if ids.curves(&directrix.0).is_none() {
                     ref_error(findings, &procedural.id.0, "curve", &directrix.0);
                 }
             }
@@ -1056,13 +985,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             } => {
                 fn check_law_curves(
                     expression: &crate::geometry::LawExpression,
-                    ids: &IdSets,
+                    ids: &ModelIndex<'_>,
                     procedural: &crate::geometry::ProceduralSurface,
                     findings: &mut Vec<Finding>,
                 ) {
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            if !ids.curves.contains(&curve.0) {
+                            if ids.curves(&curve.0).is_none() {
                                 ref_error(findings, &procedural.id.0, "curve", &curve.0);
                             }
                         }
@@ -1075,7 +1004,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                 }
                 for curve in [profile, spine] {
-                    if !ids.curves.contains(&curve.0) {
+                    if ids.curves(&curve.0).is_none() {
                         ref_error(findings, &procedural.id.0, "curve", &curve.0);
                     }
                 }
@@ -1092,7 +1021,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                         crate::geometry::SweepSurfaceLayout::ExplicitGuide {
                             guide_curve, ..
                         } => {
-                            if !ids.curves.contains(&guide_curve.0) {
+                            if ids.curves(&guide_curve.0).is_none() {
                                 ref_error(findings, &procedural.id.0, "curve", &guide_curve.0);
                             }
                             Vec::new()
@@ -1102,7 +1031,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                             auxiliary_curve,
                             ..
                         } => {
-                            if !ids.surfaces.contains(&support_surface.0) {
+                            if ids.surfaces(&support_surface.0).is_none() {
                                 ref_error(
                                     findings,
                                     &procedural.id.0,
@@ -1111,7 +1040,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                                 );
                             }
                             if let Some(curve) = auxiliary_curve {
-                                if !ids.curves.contains(&curve.0) {
+                                if ids.curves(&curve.0).is_none() {
                                     ref_error(findings, &procedural.id.0, "curve", &curve.0);
                                 }
                             }
@@ -1136,26 +1065,26 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 }
             }
             ProceduralSurfaceDefinition::Offset { support, .. } => {
-                if !ids.surfaces.contains(&support.0) {
+                if ids.surfaces(&support.0).is_none() {
                     ref_error(findings, &procedural.id.0, "surface", &support.0);
                 }
             }
             ProceduralSurfaceDefinition::Subset { support, .. }
             | ProceduralSurfaceDefinition::ParallelOffset { support, .. } => {
-                if !ids.surfaces.contains(&support.0) {
+                if ids.surfaces(&support.0).is_none() {
                     ref_error(findings, &procedural.id.0, "surface", &support.0);
                 }
             }
             ProceduralSurfaceDefinition::Ruled { first, second } => {
                 for curve in [first, second] {
-                    if !ids.curves.contains(&curve.0) {
+                    if ids.curves(&curve.0).is_none() {
                         ref_error(findings, &procedural.id.0, "curve", &curve.0);
                     }
                 }
             }
             ProceduralSurfaceDefinition::Sum { first, second, .. } => {
                 for curve in [first, second] {
-                    if !ids.curves.contains(&curve.0) {
+                    if ids.curves(&curve.0).is_none() {
                         ref_error(findings, &procedural.id.0, "curve", &curve.0);
                     }
                 }
@@ -1167,24 +1096,24 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 ..
             } => {
                 for support in supports.iter().flatten() {
-                    if !ids.surfaces.contains(&support.surface.0) {
+                    if ids.surfaces(&support.surface.0).is_none() {
                         ref_error(findings, &procedural.id.0, "surface", &support.surface.0);
                     }
                 }
                 if let Some(spine) = spine {
-                    if !ids.curves.contains(&spine.0) {
+                    if ids.curves(&spine.0).is_none() {
                         ref_error(findings, &procedural.id.0, "curve", &spine.0);
                     }
                 }
                 if let Some(native) = native {
                     let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| {
-                        if !ids.curves.contains(&curve.0) {
+                        if ids.curves(&curve.0).is_none() {
                             ref_error(findings, &procedural.id.0, "curve", &curve.0);
                         }
                     };
                     let check_surface =
                         |surface: &crate::ids::SurfaceId, findings: &mut Vec<Finding>| {
-                            if !ids.surfaces.contains(&surface.0) {
+                            if ids.surfaces(&surface.0).is_none() {
                                 ref_error(findings, &procedural.id.0, "surface", &surface.0);
                             }
                         };
@@ -1206,7 +1135,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             ProceduralSurfaceDefinition::Unknown {
                 record: Some(record),
             } => {
-                if !ids.unknowns.contains(&record.0) {
+                if !ids.contains(&record.0) {
                     ref_error(findings, &procedural.id.0, "unknown record", &record.0);
                 }
             }
@@ -1220,17 +1149,17 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 boundaries,
                 ..
             } => {
-                if !ids.surfaces.contains(&support.0) {
+                if ids.surfaces(&support.0).is_none() {
                     ref_error(findings, &procedural.id.0, "surface", &support.0);
                 }
                 for boundary in boundaries {
-                    if !ids.curves.contains(&boundary.0) {
+                    if ids.curves(&boundary.0).is_none() {
                         ref_error(findings, &procedural.id.0, "curve", &boundary.0);
                     }
                 }
             }
             ProceduralSurfaceDefinition::Deformable { construction } => {
-                if !ids.surfaces.contains(&construction.support.0) {
+                if ids.surfaces(&construction.support.0).is_none() {
                     ref_error(
                         findings,
                         &procedural.id.0,
@@ -1244,10 +1173,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 | crate::geometry::DeformableSurfaceData::Full { surface, curve, .. } =
                     &construction.data
                 {
-                    if !ids.surfaces.contains(&surface.0) {
+                    if ids.surfaces(&surface.0).is_none() {
                         ref_error(findings, &procedural.id.0, "surface", &surface.0);
                     }
-                    if !ids.curves.contains(&curve.0) {
+                    if ids.curves(&curve.0).is_none() {
                         ref_error(findings, &procedural.id.0, "curve", &curve.0);
                     }
                 }
@@ -1255,7 +1184,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         }
     }
     for procedural in &ir.model.procedural_curves {
-        if !ids.curves.contains(&procedural.curve.0) {
+        if ids.curves(&procedural.curve.0).is_none() {
             ref_error(findings, &procedural.curve.0, "curve", &procedural.curve.0);
         }
         match &procedural.definition {
@@ -1268,13 +1197,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             } => {
                 fn check(
                     expression: &crate::geometry::LawExpression,
-                    ids: &IdSets,
+                    ids: &ModelIndex<'_>,
                     procedural: &crate::geometry::ProceduralCurve,
                     findings: &mut Vec<Finding>,
                 ) {
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            if !ids.curves.contains(&curve.0) {
+                            if ids.curves(&curve.0).is_none() {
                                 ref_error(findings, &procedural.id.0, "curve", &curve.0);
                             }
                         }
@@ -1288,7 +1217,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 }
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
-                        if !ids.surfaces.contains(&surface.0) {
+                        if ids.surfaces(&surface.0).is_none() {
                             ref_error(findings, &procedural.id.0, "surface", &surface.0);
                         }
                     }
@@ -1301,7 +1230,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             }
             ProceduralCurveDefinition::Compound { components, .. } => {
                 for component in components {
-                    if !ids.curves.contains(&component.0) {
+                    if ids.curves(&component.0).is_none() {
                         ref_error(findings, &procedural.id.0, "curve", &component.0);
                     }
                 }
@@ -1309,7 +1238,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             ProceduralCurveDefinition::Intersection { context, .. } => {
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
-                        if !ids.surfaces.contains(&surface.0) {
+                        if ids.surfaces(&surface.0).is_none() {
                             ref_error(findings, &procedural.id.0, "surface", &surface.0);
                         }
                     }
@@ -1317,7 +1246,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             }
             ProceduralCurveDefinition::TolerantIntersection { supports, .. } => {
                 for surface in supports {
-                    if !ids.surfaces.contains(&surface.0) {
+                    if ids.surfaces(&surface.0).is_none() {
                         ref_error(findings, &procedural.id.0, "surface", &surface.0);
                     }
                 }
@@ -1325,7 +1254,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             ProceduralCurveDefinition::ThreeSurfaceIntersection { context, third, .. } => {
                 for side in context.sides.iter().chain(std::iter::once(third)) {
                     if let Some(surface) = &side.surface {
-                        if !ids.surfaces.contains(&surface.0) {
+                        if ids.surfaces(&surface.0).is_none() {
                             ref_error(findings, &procedural.id.0, "surface", &surface.0);
                         }
                     }
@@ -1334,7 +1263,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             ProceduralCurveDefinition::SurfaceCurve { context, .. } => {
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
-                        if !ids.surfaces.contains(&surface.0) {
+                        if ids.surfaces(&surface.0).is_none() {
                             ref_error(findings, &procedural.id.0, "surface", &surface.0);
                         }
                     }
@@ -1345,24 +1274,24 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 cast_surface,
                 ..
             } => {
-                if !ids.surfaces.contains(&cast_surface.0) {
+                if ids.surfaces(&cast_surface.0).is_none() {
                     ref_error(findings, &procedural.id.0, "surface", &cast_surface.0);
                 }
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
-                        if !ids.surfaces.contains(&surface.0) {
+                        if ids.surfaces(&surface.0).is_none() {
                             ref_error(findings, &procedural.id.0, "surface", &surface.0);
                         }
                     }
                 }
             }
             ProceduralCurveDefinition::SurfaceOffset { context, base, .. } => {
-                if !ids.curves.contains(&base.0) {
+                if ids.curves(&base.0).is_none() {
                     ref_error(findings, &procedural.id.0, "curve", &base.0);
                 }
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
-                        if !ids.surfaces.contains(&surface.0) {
+                        if ids.surfaces(&surface.0).is_none() {
                             ref_error(findings, &procedural.id.0, "surface", &surface.0);
                         }
                     }
@@ -1371,18 +1300,18 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             ProceduralCurveDefinition::Spring { context, .. } => {
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
-                        if !ids.surfaces.contains(&surface.0) {
+                        if ids.surfaces(&surface.0).is_none() {
                             ref_error(findings, &procedural.id.0, "surface", &surface.0);
                         }
                     }
                 }
             }
             ProceduralCurveDefinition::Deformable { bend, data, .. } => {
-                if !ids.curves.contains(&bend.0) {
+                if ids.curves(&bend.0).is_none() {
                     ref_error(findings, &procedural.id.0, "curve", &bend.0);
                 }
                 if let crate::geometry::DeformableCurveData::Surface { surface } = data {
-                    if !ids.surfaces.contains(&surface.0) {
+                    if ids.surfaces(&surface.0).is_none() {
                         ref_error(findings, &procedural.id.0, "surface", &surface.0);
                     }
                 }
@@ -1390,12 +1319,12 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             ProceduralCurveDefinition::Projection {
                 context, source, ..
             } => {
-                if !ids.curves.contains(&source.0) {
+                if ids.curves(&source.0).is_none() {
                     ref_error(findings, &procedural.id.0, "curve", &source.0);
                 }
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
-                        if !ids.surfaces.contains(&surface.0) {
+                        if ids.surfaces(&surface.0).is_none() {
                             ref_error(findings, &procedural.id.0, "surface", &surface.0);
                         }
                     }
@@ -1407,11 +1336,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 distance_law,
                 ..
             } => {
-                if !ids.curves.contains(&source.0) {
+                if ids.curves(&source.0).is_none() {
                     ref_error(findings, &procedural.id.0, "curve", &source.0);
                 }
                 if let Some(support) = support {
-                    if !ids.surfaces.contains(&support.0) {
+                    if ids.surfaces(&support.0).is_none() {
                         ref_error(findings, &procedural.id.0, "surface", &support.0);
                     }
                 }
@@ -1419,38 +1348,38 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     function, ..
                 }) = distance_law
                 {
-                    if !ids.curves.contains(&function.0) {
+                    if ids.curves(&function.0).is_none() {
                         ref_error(findings, &procedural.id.0, "curve", &function.0);
                     }
                 }
             }
             ProceduralCurveDefinition::SpatialOffset { source, .. } => {
-                if !ids.curves.contains(&source.0) {
+                if ids.curves(&source.0).is_none() {
                     ref_error(findings, &procedural.id.0, "curve", &source.0);
                 }
             }
             ProceduralCurveDefinition::TwoSidedOffset { context, .. } => {
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
-                        if !ids.surfaces.contains(&surface.0) {
+                        if ids.surfaces(&surface.0).is_none() {
                             ref_error(findings, &procedural.id.0, "surface", &surface.0);
                         }
                     }
                 }
             }
             ProceduralCurveDefinition::VectorOffset { source, .. } => {
-                if !ids.curves.contains(&source.0) {
+                if ids.curves(&source.0).is_none() {
                     ref_error(findings, &procedural.id.0, "curve", &source.0);
                 }
             }
             ProceduralCurveDefinition::Subset { source, .. } => {
-                if !ids.curves.contains(&source.0) {
+                if ids.curves(&source.0).is_none() {
                     ref_error(findings, &procedural.id.0, "curve", &source.0);
                 }
             }
             ProceduralCurveDefinition::BlendSpine { blend_surface } => {
                 if let Some(surface) = blend_surface {
-                    if !ids.surfaces.contains(&surface.0) {
+                    if ids.surfaces(&surface.0).is_none() {
                         ref_error(findings, &procedural.id.0, "surface", &surface.0);
                     }
                 }
@@ -1459,7 +1388,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 native_kind: _,
                 record: Some(record),
             } => {
-                if !ids.unknowns.contains(&record.0) {
+                if !ids.contains(&record.0) {
                     ref_error(findings, &procedural.id.0, "unknown record", &record.0);
                 }
             }
@@ -1908,7 +1837,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
     check_feature_references(ir, ids, findings);
 }
 
-fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding>) {
+fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
     use crate::features::{
         EdgeSelection, ExtrudeExtent, FeatureDefinition, PathRef, ProfileRef, ScaleCenter,
         Termination,
@@ -1966,7 +1895,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         }
         let mut seen = HashSet::new();
         for body in &configuration.bodies {
-            if !ids.bodies.contains(&body.0) {
+            if ids.bodies(&body.0).is_none() {
                 ref_error(findings, &configuration.id.0, "configuration body", &body.0);
             }
             if !seen.insert(body) {
@@ -2181,7 +2110,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
             let mut outputs = HashSet::new();
             for output in &state.outputs {
-                if !ids.bodies.contains(&output.0) {
+                if ids.bodies(&output.0).is_none() {
                     ref_error(
                         findings,
                         &configuration.id.0,
@@ -2433,7 +2362,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
         for body in &feature.outputs {
-            if !ids.bodies.contains(&body.0) {
+            if ids.bodies(&body.0).is_none() {
                 ref_error(findings, &feature.id.0, "output body", &body.0);
             }
         }
@@ -2536,7 +2465,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     &feature.id.0,
                     "Form control cage",
                     cages.iter().map(|cage| cage.0.as_str()),
-                    &ids.subds,
+                    |identity| ids.subds(identity).is_some(),
                 );
             }
             FeatureDefinition::CosmeticThread {
@@ -2809,7 +2738,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                             &feature.id.0,
                             "loft section vertex",
                             std::iter::once(vertex.0.as_str()),
-                            &ids.vertices,
+                            |identity| ids.vertices(identity).is_some(),
                         ),
                     }
                 }
@@ -4078,7 +4007,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     &feature.id.0,
                     "profile face",
                     faces.iter().map(|id| id.0.as_str()),
-                    &ids.faces,
+                    |identity| ids.faces(identity).is_some(),
                 ),
                 ProfileRef::HistoricalFaces {
                     state,
@@ -4152,14 +4081,14 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     &feature.id.0,
                     "path edge",
                     edges.iter().map(|id| id.0.as_str()),
-                    &ids.edges,
+                    |identity| ids.edges(identity).is_some(),
                 ),
                 PathRef::Curves(curves) => check_ids(
                     findings,
                     &feature.id.0,
                     "path curve",
                     curves.iter().map(|id| id.0.as_str()),
-                    &ids.curves,
+                    |identity| ids.curves(identity).is_some(),
                 ),
                 PathRef::HistoricalEdges {
                     state,
@@ -4209,7 +4138,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     &feature.id.0,
                     "termination face",
                     faces.iter().map(|id| id.0.as_str()),
-                    &ids.faces,
+                    |identity| ids.faces(identity).is_some(),
                 );
             }
             if let Termination::ToShape {
@@ -4221,7 +4150,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     &feature.id.0,
                     "termination shape face",
                     faces.iter().map(|id| id.0.as_str()),
-                    &ids.faces,
+                    |identity| ids.faces(identity).is_some(),
                 );
             }
             if let Termination::ToVertex {
@@ -4251,7 +4180,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     &feature.id.0,
                     "selected edge",
                     edges.iter().map(|id| id.0.as_str()),
-                    &ids.edges,
+                    |identity| ids.edges(identity).is_some(),
                 ),
                 EdgeSelection::Historical {
                     state,
@@ -4341,7 +4270,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     &feature.id.0,
                     "selected face",
                     faces.iter().map(|id| id.0.as_str()),
-                    &ids.faces,
+                    |identity| ids.faces(identity).is_some(),
                 ),
                 FaceSelection::Historical {
                     state,
@@ -4447,7 +4376,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                         &feature.id.0,
                         "selected body",
                         bodies.iter().map(|id| id.0.as_str()),
-                        &ids.bodies,
+                        |identity| ids.bodies(identity).is_some(),
                     );
                 }
                 BodySelection::Historical {
@@ -4926,10 +4855,10 @@ fn check_ids<'a>(
     owner: &str,
     kind: &str,
     values: impl Iterator<Item = &'a str>,
-    valid: &HashSet<String>,
+    valid: impl Fn(&str) -> bool,
 ) {
     for value in values {
-        if !valid.contains(value) {
+        if !valid(value) {
             ref_error(findings, owner, kind, value);
         }
     }
@@ -5263,7 +5192,7 @@ fn locus_entity(locus: &SketchLocus) -> &crate::sketches::SketchEntityId {
     }
 }
 
-pub(super) fn check_loops(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(super) fn check_loops(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
     let by_id: HashMap<&str, &Coedge> = ir
         .model
         .coedges
@@ -5275,7 +5204,7 @@ pub(super) fn check_loops(ir: &CadIr, findings: &mut Vec<Finding>) {
         let outer_count = face
             .loops
             .iter()
-            .filter_map(|id| ir.model.loops.iter().find(|loop_| loop_.id == *id))
+            .filter_map(|id| ids.loops(&id.0))
             .filter(|loop_| loop_.boundary_role == crate::topology::LoopBoundaryRole::Outer)
             .count();
         if outer_count > 1 {

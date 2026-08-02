@@ -7,6 +7,7 @@ use super::trimming::pcurve_geometry;
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
+use cadmpeg_ir::draft::ModelDraft;
 use cadmpeg_ir::geometry::Pcurve;
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
@@ -89,7 +90,7 @@ fn list_index(record: &ParameterRecord, index: usize) -> Option<usize> {
 }
 
 fn topology_vertex(
-    candidate: &mut CadIr,
+    candidate: &mut ModelDraft,
     vertex_ids: &mut BTreeMap<(u32, usize), VertexId>,
     vertex_lists: &BTreeMap<u32, Vec<Point3>>,
     stem: &str,
@@ -101,12 +102,12 @@ fn topology_vertex(
         .or_insert_with(|| {
             let point_id = PointId(format!("iges:model:point#{stem}:D{list}:{}", index + 1));
             let vertex_id = VertexId(format!("iges:model:vertex#{stem}:D{list}:{}", index + 1));
-            candidate.model.points.push(Point {
+            candidate.model_mut().points.push(Point {
                 source_object: None,
                 id: point_id.clone(),
                 position: vertex_lists[&list][index],
             });
-            candidate.model.vertices.push(Vertex {
+            candidate.model_mut().vertices.push(Vertex {
                 id: vertex_id.clone(),
                 point: point_id,
                 tolerance: None,
@@ -117,7 +118,7 @@ fn topology_vertex(
 }
 
 fn project_pcurve_uses(
-    candidate: &mut CadIr,
+    candidate: &mut ModelDraft,
     source: &CadIr,
     uses: &[(bool, u32)],
     surface: &cadmpeg_ir::geometry::SurfaceGeometry,
@@ -129,7 +130,7 @@ fn project_pcurve_uses(
         .map(|(index, (isoparametric, sequence))| {
             let (geometry, range) = pcurve_geometry(source, *sequence, surface, factor)?;
             let id = PcurveId(format!("{id_stem}:{index}"));
-            candidate.model.pcurves.push(Pcurve {
+            candidate.model_mut().pcurves.push(Pcurve {
                 id: id.clone(),
                 geometry,
                 wrapper_reversed: None,
@@ -660,7 +661,7 @@ pub(super) fn project(
 
     for definition in body_definitions {
         let entry = definition.entry;
-        let mut candidate = ir.clone();
+        let mut candidate = ModelDraft::new();
         let stem = format!("D{}", entry.sequence);
         let body_id = BodyId(format!("iges:model:body#{stem}"));
         let region_id = RegionId(format!("iges:model:region#{stem}"));
@@ -882,7 +883,7 @@ pub(super) fn project(
                                 edge_key.0,
                                 edge_key.1 + 1
                             ));
-                            candidate.model.edges.push(Edge {
+                            candidate.model_mut().edges.push(Edge {
                                 id: id.clone(),
                                 curve: Some(curve_id),
                                 start: vertex_ids
@@ -920,7 +921,7 @@ pub(super) fn project(
                             .entry((shell_sequence, edge_key.0, edge_key.1))
                             .or_default()
                             .push(coedge_id.clone());
-                        candidate.model.coedges.push(Coedge {
+                        candidate.model_mut().coedges.push(Coedge {
                             id: coedge_id.clone(),
                             owner_loop: loop_id.clone(),
                             edge: edge_id,
@@ -938,7 +939,7 @@ pub(super) fn project(
                     if !valid {
                         break;
                     }
-                    candidate.model.loops.push(Loop {
+                    candidate.model_mut().loops.push(Loop {
                         id: loop_id.clone(),
                         face: face_id.clone(),
                         boundary_role: if face_definition.has_outer_loop && face_loop_index == 0 {
@@ -955,7 +956,7 @@ pub(super) fn project(
                 if !valid {
                     break;
                 }
-                candidate.model.faces.push(Face {
+                candidate.model_mut().faces.push(Face {
                     id: face_id.clone(),
                     shell: shell_id.clone(),
                     surface: surface_id,
@@ -971,7 +972,7 @@ pub(super) fn project(
             if !valid {
                 break;
             }
-            candidate.model.shells.push(Shell {
+            candidate.model_mut().shells.push(Shell {
                 id: shell_id.clone(),
                 region: region_id.clone(),
                 faces: shell_faces,
@@ -997,7 +998,7 @@ pub(super) fn project(
                     .iter()
                     .filter_map(|id| {
                         candidate
-                            .model
+                            .model()
                             .coedges
                             .iter()
                             .find(|coedge| coedge.id == *id)
@@ -1016,7 +1017,7 @@ pub(super) fn project(
         for ring in radial.values() {
             for (index, id) in ring.iter().enumerate() {
                 if let Some(coedge) = candidate
-                    .model
+                    .model_mut()
                     .coedges
                     .iter_mut()
                     .find(|coedge| coedge.id == *id)
@@ -1025,12 +1026,12 @@ pub(super) fn project(
                 }
             }
         }
-        candidate.model.regions.push(Region {
+        candidate.model_mut().regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
             shells: region_shells,
         });
-        candidate.model.bodies.push(Body {
+        candidate.model_mut().bodies.push(Body {
             id: body_id,
             kind: definition.kind,
             regions: vec![region_id],
@@ -1039,15 +1040,14 @@ pub(super) fn project(
             color: None,
             visible: None,
         });
-        candidate.model.finalize();
-        if !cadmpeg_ir::validate(&candidate, Vec::new()).is_ok() {
+        candidate.model_mut().finalize();
+        if candidate.commit_model(ir).is_err() {
             losses.push(entity_loss(
                 entry,
                 "shell candidate failed neutral validation",
             ));
             continue;
         }
-        *ir = candidate;
         decoded.insert(entry.sequence);
         decoded.extend(consumed);
         decoded.extend(edge_ids.keys().map(|key| key.0));

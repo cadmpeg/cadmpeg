@@ -1,5 +1,5 @@
 {
-  "ir_version": "4",
+  "ir_version": "5",
   "units": {
     "length": "millimeter"
   },
@@ -26,5 +26,4 @@
     "features": [],
     "configurations": [],
     "parameters": [],
-    "sketches": [],
-    "sketc
+    "sket

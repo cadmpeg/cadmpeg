@@ -6,6 +6,7 @@ use super::geometry::entity_loss;
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
+use cadmpeg_ir::draft::ModelDraft;
 use cadmpeg_ir::geometry::{CurveGeometry, Pcurve, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
@@ -79,7 +80,7 @@ fn point_position(ir: &CadIr, id: &VertexId) -> Option<Point3> {
 }
 
 fn face_vertex(
-    candidate: &mut CadIr,
+    candidate: &mut ModelDraft,
     vertices: &mut Vec<(Point3, VertexId)>,
     stem: &str,
     boundary: usize,
@@ -94,12 +95,12 @@ fn face_vertex(
     let index = vertices.len();
     let point_id = PointId(format!("iges:model:point#{stem}:{boundary}:{index}"));
     let vertex_id = VertexId(format!("iges:model:vertex#{stem}:{boundary}:{index}"));
-    candidate.model.points.push(Point {
+    candidate.model_mut().points.push(Point {
         source_object: None,
         id: point_id.clone(),
         position,
     });
-    candidate.model.vertices.push(Vertex {
+    candidate.model_mut().vertices.push(Vertex {
         id: vertex_id.clone(),
         point: point_id,
         tolerance: None,
@@ -496,7 +497,7 @@ pub(super) fn project(
             ));
             continue;
         };
-        let mut candidate = ir.clone();
+        let mut candidate = ModelDraft::new();
         let stem = format!("D{}", entry.sequence);
         let body_id = BodyId(format!("iges:model:body#{stem}"));
         let region_id = RegionId(format!("iges:model:region#{stem}"));
@@ -638,7 +639,7 @@ pub(super) fn project(
                     boundary_index,
                     item.end,
                 );
-                candidate.model.edges.push(Edge {
+                candidate.model_mut().edges.push(Edge {
                     id: edge_id.clone(),
                     curve: Some(item.model_curve),
                     start: start_vertex,
@@ -654,7 +655,7 @@ pub(super) fn project(
                         let id = PcurveId(format!(
                             "iges:model:pcurve#{stem}:{boundary_index}:{segment_index}:{pcurve_index}"
                         ));
-                        candidate.model.pcurves.push(Pcurve {
+                        candidate.model_mut().pcurves.push(Pcurve {
                             id: id.clone(),
                             geometry,
                             wrapper_reversed: None,
@@ -670,7 +671,7 @@ pub(super) fn project(
                     })
                     .collect();
                 let coedge_id = coedge_ids[segment_index].clone();
-                candidate.model.coedges.push(Coedge {
+                candidate.model_mut().coedges.push(Coedge {
                     id: coedge_id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: edge_id,
@@ -684,7 +685,7 @@ pub(super) fn project(
                     use_curve_parameter_range: None,
                 });
             }
-            candidate.model.loops.push(Loop {
+            candidate.model_mut().loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary_role: if trimmed_surface {
@@ -705,7 +706,7 @@ pub(super) fn project(
         if !valid {
             continue;
         }
-        candidate.model.faces.push(Face {
+        candidate.model_mut().faces.push(Face {
             id: face_id.clone(),
             shell: shell_id.clone(),
             surface: surface_id,
@@ -715,19 +716,19 @@ pub(super) fn project(
             color: None,
             tolerance: None,
         });
-        candidate.model.shells.push(Shell {
+        candidate.model_mut().shells.push(Shell {
             id: shell_id.clone(),
             region: region_id.clone(),
             faces: vec![face_id],
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         });
-        candidate.model.regions.push(Region {
+        candidate.model_mut().regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
             shells: vec![shell_id],
         });
-        candidate.model.bodies.push(Body {
+        candidate.model_mut().bodies.push(Body {
             id: body_id,
             kind: BodyKind::Sheet,
             regions: vec![region_id],
@@ -736,16 +737,14 @@ pub(super) fn project(
             color: None,
             visible: None,
         });
-        candidate.model.finalize();
-        let validation = cadmpeg_ir::validate(&candidate, Vec::new());
-        if !validation.is_ok() {
+        candidate.model_mut().finalize();
+        if candidate.commit_model(ir).is_err() {
             losses.push(entity_loss(
                 entry,
                 "trimmed sheet candidate failed neutral validation",
             ));
             continue;
         }
-        *ir = candidate;
         decoded.insert(entry.sequence);
         decoded.extend(consumed);
     }

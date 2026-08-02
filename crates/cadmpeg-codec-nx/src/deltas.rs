@@ -4200,10 +4200,11 @@ mod reference_type_map_tests {
     }
 
     #[test]
+    #[allow(clippy::disallowed_methods)] // Test-only hostile-size fixture construction.
     fn reference_type_map_precedes_counted_record_at_shared_kind() {
         let map = vec![0, 1, 0, 1, 0, 3, 0, 82, 0, 1, 0, 0, 2, 100];
         let mut bytes = map.clone();
-        bytes.extend(std::iter::repeat_n(0, 65_536 * 4));
+        bytes.resize(bytes.len() + 65_536 * 4, 0);
 
         let census = walk(&bytes);
 

@@ -344,7 +344,7 @@ mod tests {
             1,
             u8::try_from(indices.len() + 1).expect("short test occurrence list"),
         ]);
-        bytes.extend(std::iter::repeat(b'9').take(indices.len()));
+        bytes.extend(std::iter::repeat_n(b'9', indices.len()));
         bytes.extend([
             1,
             2,
@@ -371,7 +371,7 @@ mod tests {
             1,
             u8::try_from(indices.len() + 1).expect("short test occurrence list"),
         ]);
-        bytes.extend(std::iter::repeat(1).take(indices.len()));
+        bytes.extend(std::iter::repeat_n(1, indices.len()));
         bytes
     }
 

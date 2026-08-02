@@ -7,6 +7,8 @@ use std::collections::{HashMap, HashSet};
 #[cfg(test)]
 use std::mem::size_of;
 
+use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase, VersionContract};
+
 use crate::catalog;
 use crate::container;
 use crate::entity_table;
@@ -157,7 +159,8 @@ const CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION: u32 = 206;
 #[cfg(test)]
 const CATIA_OBJECT_GRAPH_SEGMENT_VERSION: u32 = 208;
 
-const CATIA_ARENA_NAMES: &[&str] = &[
+/// Complete CATIA native arena manifest in lexical order.
+pub(crate) const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
     "catalog_entries",
     "catalogs",
@@ -5011,6 +5014,698 @@ pub struct CatiaNative {
     /// Zero-entity counted vertex-incidence records.
     #[serde(default)]
     pub zero_entity_vertex_incidences: Vec<CatiaZeroEntityVertexIncidence>,
+}
+/// Owning, flattened arena payload shared by borrowed and consuming stores.
+pub(crate) struct CatiaArenaProjection {
+    alias_rows: Vec<CatiaAliasRow>,
+    catalogs: Vec<CatiaCatalog>,
+    consolidated_circles: Vec<CatiaConsolidatedCircle>,
+    consolidated_class61_records: Vec<CatiaConsolidatedClass61Record>,
+    consolidated_cone_faces: Vec<CatiaConsolidatedConeFace>,
+    consolidated_cones: Vec<CatiaConsolidatedCone>,
+    consolidated_cylinders: Vec<CatiaConsolidatedCylinder>,
+    consolidated_embedded_cylinders: Vec<CatiaConsolidatedEmbeddedCylinder>,
+    consolidated_edge_nodes: Vec<CatiaConsolidatedEdgeNode>,
+    consolidated_edge_runs: Vec<CatiaConsolidatedEdgeRun>,
+    consolidated_groups: Vec<CatiaConsolidatedGroup>,
+    consolidated_line_profiles: Vec<CatiaConsolidatedLineProfile>,
+    consolidated_owner_packets: Vec<CatiaConsolidatedOwnerPacket>,
+    consolidated_parameter_points: Vec<CatiaConsolidatedParameterPoint>,
+    consolidated_pcurves: Vec<CatiaConsolidatedPcurve>,
+    consolidated_reference_lists: Vec<CatiaConsolidatedReferenceList>,
+    consolidated_revolutions: Vec<CatiaConsolidatedRevolution>,
+    consolidated_spheres: Vec<CatiaConsolidatedSphere>,
+    consolidated_tori: Vec<CatiaConsolidatedTorus>,
+    consolidated_vertex_identities: Vec<CatiaConsolidatedVertexIdentity>,
+    configuration_row_chains: Vec<CatiaConfigurationRowChain>,
+    design_objects: Vec<CatiaDesignObject>,
+    entity_records: Vec<CatiaEntityRecord>,
+    external_references: Vec<CatiaExternalReference>,
+    finjpl_segments: Vec<CatiaFinjplSegment>,
+    legacy_entity_runs: Vec<CatiaLegacyEntityRun>,
+    object_graphs: Vec<CatiaObjectGraph>,
+    preview_images: Vec<CatiaPreviewImage>,
+    reference_signature_cohorts: Vec<CatiaReferenceSignatureCohort>,
+    value_blocks: Vec<CatiaValueBlock>,
+    zero_entity_edge_strides: Vec<CatiaZeroEntityEdgeStride>,
+    zero_entity_oriented_use_pairs: Vec<CatiaZeroEntityOrientedUsePair>,
+    zero_entity_ownership_roots: Vec<CatiaZeroEntityOwnershipRoot>,
+    zero_entity_endpoint_pair_candidates: Vec<CatiaZeroEntityEndpointPairCandidate>,
+    zero_entity_records: Vec<CatiaZeroEntityRecord>,
+    zero_entity_support_runs: Vec<CatiaZeroEntitySupportRun>,
+    zero_entity_endpoint_locus_candidates: Vec<CatiaZeroEntityEndpointLocusCandidate>,
+    zero_entity_vertex_incidences: Vec<CatiaZeroEntityVertexIncidence>,
+    catalog_entries: Vec<CatiaCatalogEntry>,
+    object_graph_records: Vec<CatiaObjectRecord>,
+    value_schema_selections: Vec<CatiaValueSchemaSelection>,
+}
+
+impl From<&CatiaNative> for CatiaArenaProjection {
+    fn from(native: &CatiaNative) -> Self {
+        let mut catalogs = native.catalogs.clone();
+        let catalog_entries = catalogs
+            .iter_mut()
+            .flat_map(|catalog| std::mem::take(&mut catalog.entries))
+            .collect();
+        let mut object_graphs = native.object_graphs.clone();
+        let object_graph_records = object_graphs
+            .iter_mut()
+            .flat_map(|graph| std::mem::take(&mut graph.records))
+            .collect();
+        let mut value_blocks = native.value_blocks.clone();
+        let value_schema_selections = value_blocks
+            .iter_mut()
+            .flat_map(|block| std::mem::take(&mut block.schema_selections))
+            .collect();
+        Self {
+            alias_rows: native.alias_rows.clone(),
+            catalogs,
+            consolidated_circles: native.consolidated_circles.clone(),
+            consolidated_class61_records: native.consolidated_class61_records.clone(),
+            consolidated_cone_faces: native.consolidated_cone_faces.clone(),
+            consolidated_cones: native.consolidated_cones.clone(),
+            consolidated_cylinders: native.consolidated_cylinders.clone(),
+            consolidated_embedded_cylinders: native.consolidated_embedded_cylinders.clone(),
+            consolidated_edge_nodes: native.consolidated_edge_nodes.clone(),
+            consolidated_edge_runs: native.consolidated_edge_runs.clone(),
+            consolidated_groups: native.consolidated_groups.clone(),
+            consolidated_line_profiles: native.consolidated_line_profiles.clone(),
+            consolidated_owner_packets: native.consolidated_owner_packets.clone(),
+            consolidated_parameter_points: native.consolidated_parameter_points.clone(),
+            consolidated_pcurves: native.consolidated_pcurves.clone(),
+            consolidated_reference_lists: native.consolidated_reference_lists.clone(),
+            consolidated_revolutions: native.consolidated_revolutions.clone(),
+            consolidated_spheres: native.consolidated_spheres.clone(),
+            consolidated_tori: native.consolidated_tori.clone(),
+            consolidated_vertex_identities: native.consolidated_vertex_identities.clone(),
+            configuration_row_chains: native.configuration_row_chains.clone(),
+            design_objects: native.design_objects.clone(),
+            entity_records: native.entity_records.clone(),
+            external_references: native.external_references.clone(),
+            finjpl_segments: native.finjpl_segments.clone(),
+            legacy_entity_runs: native.legacy_entity_runs.clone(),
+            object_graphs,
+            preview_images: native.preview_images.clone(),
+            reference_signature_cohorts: native.reference_signature_cohorts.clone(),
+            value_blocks,
+            zero_entity_edge_strides: native.zero_entity_edge_strides.clone(),
+            zero_entity_oriented_use_pairs: native.zero_entity_oriented_use_pairs.clone(),
+            zero_entity_ownership_roots: native.zero_entity_ownership_roots.clone(),
+            zero_entity_endpoint_pair_candidates: native
+                .zero_entity_endpoint_pair_candidates
+                .clone(),
+            zero_entity_records: native.zero_entity_records.clone(),
+            zero_entity_support_runs: native.zero_entity_support_runs.clone(),
+            zero_entity_endpoint_locus_candidates: native
+                .zero_entity_endpoint_locus_candidates
+                .clone(),
+            zero_entity_vertex_incidences: native.zero_entity_vertex_incidences.clone(),
+            catalog_entries,
+            object_graph_records,
+            value_schema_selections,
+        }
+    }
+}
+
+impl From<CatiaNative> for CatiaArenaProjection {
+    fn from(mut native: CatiaNative) -> Self {
+        let catalog_entries = native
+            .catalogs
+            .iter_mut()
+            .flat_map(|catalog| std::mem::take(&mut catalog.entries))
+            .collect();
+        let object_graph_records = native
+            .object_graphs
+            .iter_mut()
+            .flat_map(|graph| std::mem::take(&mut graph.records))
+            .collect();
+        let value_schema_selections = native
+            .value_blocks
+            .iter_mut()
+            .flat_map(|block| std::mem::take(&mut block.schema_selections))
+            .collect();
+        Self {
+            alias_rows: native.alias_rows,
+            catalogs: native.catalogs,
+            consolidated_circles: native.consolidated_circles,
+            consolidated_class61_records: native.consolidated_class61_records,
+            consolidated_cone_faces: native.consolidated_cone_faces,
+            consolidated_cones: native.consolidated_cones,
+            consolidated_cylinders: native.consolidated_cylinders,
+            consolidated_embedded_cylinders: native.consolidated_embedded_cylinders,
+            consolidated_edge_nodes: native.consolidated_edge_nodes,
+            consolidated_edge_runs: native.consolidated_edge_runs,
+            consolidated_groups: native.consolidated_groups,
+            consolidated_line_profiles: native.consolidated_line_profiles,
+            consolidated_owner_packets: native.consolidated_owner_packets,
+            consolidated_parameter_points: native.consolidated_parameter_points,
+            consolidated_pcurves: native.consolidated_pcurves,
+            consolidated_reference_lists: native.consolidated_reference_lists,
+            consolidated_revolutions: native.consolidated_revolutions,
+            consolidated_spheres: native.consolidated_spheres,
+            consolidated_tori: native.consolidated_tori,
+            consolidated_vertex_identities: native.consolidated_vertex_identities,
+            configuration_row_chains: native.configuration_row_chains,
+            design_objects: native.design_objects,
+            entity_records: native.entity_records,
+            external_references: native.external_references,
+            finjpl_segments: native.finjpl_segments,
+            legacy_entity_runs: native.legacy_entity_runs,
+            object_graphs: native.object_graphs,
+            preview_images: native.preview_images,
+            reference_signature_cohorts: native.reference_signature_cohorts,
+            value_blocks: native.value_blocks,
+            zero_entity_edge_strides: native.zero_entity_edge_strides,
+            zero_entity_oriented_use_pairs: native.zero_entity_oriented_use_pairs,
+            zero_entity_ownership_roots: native.zero_entity_ownership_roots,
+            zero_entity_endpoint_pair_candidates: native.zero_entity_endpoint_pair_candidates,
+            zero_entity_records: native.zero_entity_records,
+            zero_entity_support_runs: native.zero_entity_support_runs,
+            zero_entity_endpoint_locus_candidates: native.zero_entity_endpoint_locus_candidates,
+            zero_entity_vertex_incidences: native.zero_entity_vertex_incidences,
+            catalog_entries,
+            object_graph_records,
+            value_schema_selections,
+        }
+    }
+}
+
+type CatiaFamilyRow = FamilyRow<CatiaArenaProjection, (), cadmpeg_ir::NativeNamespace, ()>;
+
+/// Declarative CATIA native-family catalogue.
+pub(crate) const CATIA_FAMILIES: &[CatiaFamilyRow] = &[
+    CatiaFamilyRow {
+        arena: "alias_rows",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| namespace.set_arena(row.arena, &projection.alias_rows),
+        len: |projection| projection.alias_rows.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "catalogs",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| namespace.set_arena(row.arena, &projection.catalogs),
+        len: |projection| projection.catalogs.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_circles",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_circles)
+        },
+        len: |projection| projection.consolidated_circles.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_class61_records",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_class61_records)
+        },
+        len: |projection| projection.consolidated_class61_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_cone_faces",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_cone_faces)
+        },
+        len: |projection| projection.consolidated_cone_faces.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_cones",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_cones)
+        },
+        len: |projection| projection.consolidated_cones.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_cylinders",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_cylinders)
+        },
+        len: |projection| projection.consolidated_cylinders.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_embedded_cylinders",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_embedded_cylinders)
+        },
+        len: |projection| projection.consolidated_embedded_cylinders.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_edge_nodes",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_edge_nodes)
+        },
+        len: |projection| projection.consolidated_edge_nodes.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_edge_runs",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_edge_runs)
+        },
+        len: |projection| projection.consolidated_edge_runs.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_groups",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_groups)
+        },
+        len: |projection| projection.consolidated_groups.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_line_profiles",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_line_profiles)
+        },
+        len: |projection| projection.consolidated_line_profiles.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_owner_packets",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_owner_packets)
+        },
+        len: |projection| projection.consolidated_owner_packets.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_parameter_points",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_parameter_points)
+        },
+        len: |projection| projection.consolidated_parameter_points.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_pcurves",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_pcurves)
+        },
+        len: |projection| projection.consolidated_pcurves.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_reference_lists",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_reference_lists)
+        },
+        len: |projection| projection.consolidated_reference_lists.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_revolutions",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_revolutions)
+        },
+        len: |projection| projection.consolidated_revolutions.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_spheres",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_spheres)
+        },
+        len: |projection| projection.consolidated_spheres.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_tori",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_tori)
+        },
+        len: |projection| projection.consolidated_tori.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_vertex_identities",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_vertex_identities)
+        },
+        len: |projection| projection.consolidated_vertex_identities.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "configuration_row_chains",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.configuration_row_chains)
+        },
+        len: |projection| projection.configuration_row_chains.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "design_objects",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.design_objects)
+        },
+        len: |projection| projection.design_objects.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "entity_records",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.entity_records)
+        },
+        len: |projection| projection.entity_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "external_references",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.external_references)
+        },
+        len: |projection| projection.external_references.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "finjpl_segments",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.finjpl_segments)
+        },
+        len: |projection| projection.finjpl_segments.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "legacy_entity_runs",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.legacy_entity_runs)
+        },
+        len: |projection| projection.legacy_entity_runs.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "object_graphs",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.object_graphs)
+        },
+        len: |projection| projection.object_graphs.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "preview_images",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.preview_images)
+        },
+        len: |projection| projection.preview_images.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "reference_signature_cohorts",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.reference_signature_cohorts)
+        },
+        len: |projection| projection.reference_signature_cohorts.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "value_blocks",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| namespace.set_arena(row.arena, &projection.value_blocks),
+        len: |projection| projection.value_blocks.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "zero_entity_edge_strides",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.zero_entity_edge_strides)
+        },
+        len: |projection| projection.zero_entity_edge_strides.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "zero_entity_oriented_use_pairs",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.zero_entity_oriented_use_pairs)
+        },
+        len: |projection| projection.zero_entity_oriented_use_pairs.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "zero_entity_ownership_roots",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.zero_entity_ownership_roots)
+        },
+        len: |projection| projection.zero_entity_ownership_roots.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "zero_entity_endpoint_pair_candidates",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.zero_entity_endpoint_pair_candidates)
+        },
+        len: |projection| projection.zero_entity_endpoint_pair_candidates.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "zero_entity_records",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.zero_entity_records)
+        },
+        len: |projection| projection.zero_entity_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "zero_entity_support_runs",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.zero_entity_support_runs)
+        },
+        len: |projection| projection.zero_entity_support_runs.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "zero_entity_endpoint_locus_candidates",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.zero_entity_endpoint_locus_candidates)
+        },
+        len: |projection| projection.zero_entity_endpoint_locus_candidates.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "zero_entity_vertex_incidences",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.zero_entity_vertex_incidences)
+        },
+        len: |projection| projection.zero_entity_vertex_incidences.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "catalog_entries",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.catalog_entries)
+        },
+        len: |projection| projection.catalog_entries.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "object_graph_records",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.object_graph_records)
+        },
+        len: |projection| projection.object_graph_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "value_schema_selections",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.value_schema_selections)
+        },
+        len: |projection| projection.value_schema_selections.len(),
+        counts_toward_emptiness: true,
+    },
+];
+
+const CATIA_CATALOGUE: Catalogue<
+    'static,
+    CatiaArenaProjection,
+    (),
+    cadmpeg_ir::NativeNamespace,
+    (),
+> = Catalogue::new(
+    CATIA_FAMILIES,
+    VersionContract {
+        minimum: 0,
+        maximum: u32::MAX,
+    },
+);
+
+fn store_projection(
+    projection: &CatiaArenaProjection,
+    namespace: &mut cadmpeg_ir::NativeNamespace,
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    namespace.version = CATIA_NATIVE_VERSION;
+    CATIA_CATALOGUE.emit_all(projection, namespace)?;
+    debug_assert!(CATIA_ARENA_NAMES
+        .iter()
+        .all(|name| namespace.arenas.contains_key(*name)));
+    Ok(())
 }
 
 impl Default for CatiaNative {
@@ -10321,270 +11016,15 @@ impl CatiaNative {
         &self,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-        namespace.version = CATIA_NATIVE_VERSION;
-        let catalogs = self
-            .catalogs
-            .iter()
-            .cloned()
-            .map(|mut catalog| {
-                catalog.entries.clear();
-                catalog
-            })
-            .collect::<Vec<_>>();
-        let entries = self
-            .catalogs
-            .iter()
-            .flat_map(|catalog| catalog.entries.iter().cloned())
-            .collect::<Vec<_>>();
-        let graphs = self
-            .object_graphs
-            .iter()
-            .cloned()
-            .map(|mut graph| {
-                graph.records.clear();
-                graph
-            })
-            .collect::<Vec<_>>();
-        let records = self
-            .object_graphs
-            .iter()
-            .flat_map(|graph| graph.records.iter().cloned())
-            .collect::<Vec<_>>();
-        let value_blocks = self
-            .value_blocks
-            .iter()
-            .cloned()
-            .map(|mut block| {
-                block.schema_selections.clear();
-                block
-            })
-            .collect::<Vec<_>>();
-        let value_schema_selections = self
-            .value_blocks
-            .iter()
-            .flat_map(|block| block.schema_selections.iter().cloned())
-            .collect::<Vec<_>>();
-        namespace.set_arena("catalogs", &catalogs)?;
-        namespace.set_arena("consolidated_circles", &self.consolidated_circles)?;
-        namespace.set_arena(
-            "consolidated_class61_records",
-            &self.consolidated_class61_records,
-        )?;
-        namespace.set_arena("consolidated_cone_faces", &self.consolidated_cone_faces)?;
-        namespace.set_arena("consolidated_cones", &self.consolidated_cones)?;
-        namespace.set_arena("consolidated_cylinders", &self.consolidated_cylinders)?;
-        namespace.set_arena(
-            "consolidated_embedded_cylinders",
-            &self.consolidated_embedded_cylinders,
-        )?;
-        namespace.set_arena("consolidated_edge_nodes", &self.consolidated_edge_nodes)?;
-        namespace.set_arena("consolidated_edge_runs", &self.consolidated_edge_runs)?;
-        namespace.set_arena("consolidated_groups", &self.consolidated_groups)?;
-        namespace.set_arena(
-            "consolidated_line_profiles",
-            &self.consolidated_line_profiles,
-        )?;
-        namespace.set_arena(
-            "consolidated_owner_packets",
-            &self.consolidated_owner_packets,
-        )?;
-        namespace.set_arena(
-            "consolidated_parameter_points",
-            &self.consolidated_parameter_points,
-        )?;
-        namespace.set_arena("consolidated_pcurves", &self.consolidated_pcurves)?;
-        namespace.set_arena(
-            "consolidated_reference_lists",
-            &self.consolidated_reference_lists,
-        )?;
-        namespace.set_arena("consolidated_revolutions", &self.consolidated_revolutions)?;
-        namespace.set_arena("consolidated_spheres", &self.consolidated_spheres)?;
-        namespace.set_arena("consolidated_tori", &self.consolidated_tori)?;
-        namespace.set_arena(
-            "consolidated_vertex_identities",
-            &self.consolidated_vertex_identities,
-        )?;
-        namespace.set_arena("configuration_row_chains", &self.configuration_row_chains)?;
-        namespace.set_arena("design_objects", &self.design_objects)?;
-        namespace.set_arena("entity_records", &self.entity_records)?;
-        namespace.set_arena("external_references", &self.external_references)?;
-        namespace.set_arena("finjpl_segments", &self.finjpl_segments)?;
-        namespace.set_arena("legacy_entity_runs", &self.legacy_entity_runs)?;
-        namespace.set_arena("alias_rows", &self.alias_rows)?;
-        namespace.set_arena("catalog_entries", &entries)?;
-        namespace.set_arena("object_graphs", &graphs)?;
-        namespace.set_arena("object_graph_records", &records)?;
-        namespace.set_arena("preview_images", &self.preview_images)?;
-        namespace.set_arena(
-            "reference_signature_cohorts",
-            &self.reference_signature_cohorts,
-        )?;
-        namespace.set_arena("value_blocks", &value_blocks)?;
-        namespace.set_arena("value_schema_selections", &value_schema_selections)?;
-        namespace.set_arena("zero_entity_edge_strides", &self.zero_entity_edge_strides)?;
-        namespace.set_arena(
-            "zero_entity_oriented_use_pairs",
-            &self.zero_entity_oriented_use_pairs,
-        )?;
-        namespace.set_arena(
-            "zero_entity_ownership_roots",
-            &self.zero_entity_ownership_roots,
-        )?;
-        namespace.set_arena(
-            "zero_entity_endpoint_pair_candidates",
-            &self.zero_entity_endpoint_pair_candidates,
-        )?;
-        namespace.set_arena("zero_entity_records", &self.zero_entity_records)?;
-        namespace.set_arena("zero_entity_support_runs", &self.zero_entity_support_runs)?;
-        namespace.set_arena(
-            "zero_entity_endpoint_locus_candidates",
-            &self.zero_entity_endpoint_locus_candidates,
-        )?;
-        namespace.set_arena(
-            "zero_entity_vertex_incidences",
-            &self.zero_entity_vertex_incidences,
-        )?;
-        debug_assert!(CATIA_ARENA_NAMES
-            .iter()
-            .all(|name| namespace.arenas.contains_key(*name)));
-        Ok(())
+        store_projection(&CatiaArenaProjection::from(self), namespace)
     }
 
     /// Store this namespace while moving child arenas out of their typed owners.
-    ///
-    /// Decode paths use this form so large object graphs are not cloned while
-    /// converting them into generic native records.
     pub fn store_owned(
         self,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-        let Self {
-            version: _,
-            alias_rows,
-            mut catalogs,
-            consolidated_circles,
-            consolidated_class61_records,
-            consolidated_cone_faces,
-            consolidated_cones,
-            consolidated_cylinders,
-            consolidated_embedded_cylinders,
-            consolidated_edge_nodes,
-            consolidated_edge_runs,
-            consolidated_groups,
-            consolidated_line_profiles,
-            consolidated_owner_packets,
-            consolidated_parameter_points,
-            consolidated_pcurves,
-            consolidated_reference_lists,
-            consolidated_revolutions,
-            consolidated_spheres,
-            consolidated_tori,
-            consolidated_vertex_identities,
-            configuration_row_chains,
-            design_objects,
-            entity_records,
-            external_references,
-            finjpl_segments,
-            legacy_entity_runs,
-            mut object_graphs,
-            preview_images,
-            reference_signature_cohorts,
-            mut value_blocks,
-            zero_entity_edge_strides,
-            zero_entity_oriented_use_pairs,
-            zero_entity_ownership_roots,
-            zero_entity_endpoint_pair_candidates,
-            zero_entity_records,
-            zero_entity_support_runs,
-            zero_entity_endpoint_locus_candidates,
-            zero_entity_vertex_incidences,
-        } = self;
-        let entries = catalogs
-            .iter_mut()
-            .flat_map(|catalog| std::mem::take(&mut catalog.entries))
-            .collect::<Vec<_>>();
-        let records = object_graphs
-            .iter_mut()
-            .flat_map(|graph| std::mem::take(&mut graph.records))
-            .collect::<Vec<_>>();
-        let value_schema_selections = value_blocks
-            .iter_mut()
-            .flat_map(|block| std::mem::take(&mut block.schema_selections))
-            .collect::<Vec<_>>();
-
-        namespace.version = CATIA_NATIVE_VERSION;
-        namespace.set_arena("catalogs", &catalogs)?;
-        namespace.set_arena("consolidated_circles", &consolidated_circles)?;
-        namespace.set_arena(
-            "consolidated_class61_records",
-            &consolidated_class61_records,
-        )?;
-        namespace.set_arena("consolidated_cone_faces", &consolidated_cone_faces)?;
-        namespace.set_arena("consolidated_cones", &consolidated_cones)?;
-        namespace.set_arena("consolidated_cylinders", &consolidated_cylinders)?;
-        namespace.set_arena(
-            "consolidated_embedded_cylinders",
-            &consolidated_embedded_cylinders,
-        )?;
-        namespace.set_arena("consolidated_edge_nodes", &consolidated_edge_nodes)?;
-        namespace.set_arena("consolidated_edge_runs", &consolidated_edge_runs)?;
-        namespace.set_arena("consolidated_groups", &consolidated_groups)?;
-        namespace.set_arena("consolidated_line_profiles", &consolidated_line_profiles)?;
-        namespace.set_arena("consolidated_owner_packets", &consolidated_owner_packets)?;
-        namespace.set_arena(
-            "consolidated_parameter_points",
-            &consolidated_parameter_points,
-        )?;
-        namespace.set_arena("consolidated_pcurves", &consolidated_pcurves)?;
-        namespace.set_arena(
-            "consolidated_reference_lists",
-            &consolidated_reference_lists,
-        )?;
-        namespace.set_arena("consolidated_revolutions", &consolidated_revolutions)?;
-        namespace.set_arena("consolidated_spheres", &consolidated_spheres)?;
-        namespace.set_arena("consolidated_tori", &consolidated_tori)?;
-        namespace.set_arena(
-            "consolidated_vertex_identities",
-            &consolidated_vertex_identities,
-        )?;
-        namespace.set_arena("configuration_row_chains", &configuration_row_chains)?;
-        namespace.set_arena("design_objects", &design_objects)?;
-        namespace.set_arena("entity_records", &entity_records)?;
-        namespace.set_arena("external_references", &external_references)?;
-        namespace.set_arena("catalog_entries", &entries)?;
-        namespace.set_arena("object_graphs", &object_graphs)?;
-        namespace.set_arena("object_graph_records", &records)?;
-        namespace.set_arena("finjpl_segments", &finjpl_segments)?;
-        namespace.set_arena("legacy_entity_runs", &legacy_entity_runs)?;
-        namespace.set_arena("alias_rows", &alias_rows)?;
-        namespace.set_arena("preview_images", &preview_images)?;
-        namespace.set_arena("reference_signature_cohorts", &reference_signature_cohorts)?;
-        namespace.set_arena("value_blocks", &value_blocks)?;
-        namespace.set_arena("value_schema_selections", &value_schema_selections)?;
-        namespace.set_arena("zero_entity_edge_strides", &zero_entity_edge_strides)?;
-        namespace.set_arena(
-            "zero_entity_oriented_use_pairs",
-            &zero_entity_oriented_use_pairs,
-        )?;
-        namespace.set_arena("zero_entity_ownership_roots", &zero_entity_ownership_roots)?;
-        namespace.set_arena(
-            "zero_entity_endpoint_pair_candidates",
-            &zero_entity_endpoint_pair_candidates,
-        )?;
-        namespace.set_arena("zero_entity_records", &zero_entity_records)?;
-        namespace.set_arena("zero_entity_support_runs", &zero_entity_support_runs)?;
-        namespace.set_arena(
-            "zero_entity_endpoint_locus_candidates",
-            &zero_entity_endpoint_locus_candidates,
-        )?;
-        namespace.set_arena(
-            "zero_entity_vertex_incidences",
-            &zero_entity_vertex_incidences,
-        )?;
-        debug_assert!(CATIA_ARENA_NAMES
-            .iter()
-            .all(|name| namespace.arenas.contains_key(*name)));
-        Ok(())
+        store_projection(&CatiaArenaProjection::from(self), namespace)
     }
 }
 

@@ -41,8 +41,9 @@ use crate::decode::Scan;
 use crate::native::history::{active_feature_closure, BodyWriterHistory};
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 
-use super::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
+use super::catalogue::NATIVE_CATALOGUE;
 use super::display_jt::{display_jt_tessellations, DisplayJtTessellationInputs};
+use cadmpeg_ir::native::catalogue::Phase;
 
 pub(crate) fn attach(
     ir: &mut CadIr,
@@ -114,13 +115,7 @@ pub(crate) fn attach(
         annotations.exactness(&tessellation.id, Exactness::Derived);
         ir.model.tessellations.push(tessellation);
     }
-    let note_group_a_end = note_group_a_end();
-    let note_group_b_end = note_group_b_end();
-    for row in &CATALOGUE[..note_group_a_end] {
-        if let Some(note) = row.note {
-            note(model, row, annotations);
-        }
-    }
+    NATIVE_CATALOGUE.note_phase(Phase::GroupA, model, annotations);
     for attribute in &model.om.part_attributes {
         annotations
             .note(&attribute.id, annotation_stream, attribute.source_offset)
@@ -183,11 +178,7 @@ pub(crate) fn attach(
         },
         annotations,
     );
-    for row in &CATALOGUE[note_group_a_end..note_group_b_end] {
-        if let Some(note) = row.note {
-            note(model, row, annotations);
-        }
-    }
+    NATIVE_CATALOGUE.note_phase(Phase::GroupB, model, annotations);
     for (section_index, (entry, section)) in object_sections.iter().enumerate() {
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (record_index, record) in section
@@ -299,9 +290,7 @@ pub(crate) fn attach(
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
     namespace.version = namespace.version.max(181);
-    for row in CATALOGUE {
-        (row.emit)(model, row, namespace)?;
-    }
+    NATIVE_CATALOGUE.emit_all(model, namespace)?;
     Ok(())
 }
 

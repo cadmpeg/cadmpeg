@@ -1,6 +1,6 @@
 # cadmpeg architecture
 
-cadmpeg routes native CAD containers through format codecs into neutral `CadIr` version 4 plus source annotations and retained native records, then optionally validates and encodes them. [cad-ir.md](cad-ir.md) defines canonical units and parameterization, identity, topology, free carriers, source annotations, retained records, and native-namespace contracts. Crate documentation and `cadmpeg --help` define exact APIs and CLI options.
+cadmpeg routes native CAD containers through format codecs into neutral `CadIr` version 5 plus source annotations and retained native records, then optionally validates and encodes them. [cad-ir.md](cad-ir.md) defines canonical units and parameterization, identity, topology, free carriers, source annotations, retained records, and native-namespace contracts. Crate documentation and `cadmpeg --help` define exact APIs and CLI options.
 
 ## Pipeline
 
@@ -19,7 +19,7 @@ native CAD ── detect + inspect ──> container summary
 - `convert` performs load/decode, validation, and export. Validation errors stop export unless `--allow-invalid` is set.
 - `diff` reads or decodes two inputs and compares units, tolerances, the neutral model, native namespaces, source annotations, and retained records. ID-bearing records are matched by globally unique IDs. Vector position is not entity identity.
 
-CADIR input bypasses codec detection and parses directly into `CadIr`. The parser accepts exactly IR version 4, including its required `subds` arena; source annotations and retained records remain outside the document. Geometry exports are refused when a source decode transferred no geometry unless `--allow-empty` is set.
+CADIR input bypasses codec detection and parses directly into `CadIr`. The parser accepts exactly IR version 5, including its required `subds` arena; source annotations and retained records remain outside the document. Geometry exports are refused when a source decode transferred no geometry unless `--allow-empty` is set.
 
 ## Decode session
 

@@ -361,7 +361,8 @@ mod tests {
             format: "test".into(),
             container_only: false,
             geometry_transferred: true,
-            coverage: Default::default(),
+            coverage: std::collections::BTreeMap::default(),
+            transfer_ledger: crate::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };

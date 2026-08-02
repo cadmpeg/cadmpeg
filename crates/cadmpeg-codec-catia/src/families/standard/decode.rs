@@ -1115,6 +1115,9 @@ pub(crate) fn try_decode_standard(
 ) -> Option<FamilyOutput> {
     let work_budget = ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
     let brep = scan.brep.as_ref()?;
+    if !work_budget.charge() {
+        return None;
+    }
     let points = fbb::standard_vertex_points(brep)
         .unwrap_or_default()
         .into_iter()

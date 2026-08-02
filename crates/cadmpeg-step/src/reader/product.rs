@@ -4,9 +4,11 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::{BodyId, OccurrenceId, ProductId};
+use cadmpeg_ir::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::product::{OccurrenceParent, Product, ProductOccurrence};
+use cadmpeg_ir::products::{
+    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+};
 use cadmpeg_ir::transform::Transform;
 
 use crate::parse::{Exchange, RawRecord, Value};
@@ -70,11 +72,16 @@ pub(super) fn decode(
             .and_then(ValueExt::text)
             .filter(|name| !name.is_empty());
         let bodies = shape_bindings.get(&step_id).cloned().unwrap_or_default();
-        ir.model.products.push(Product {
+        ir.model.product_definitions.push(ProductDefinition {
             id: product_ir_id(step_id),
-            product_id,
-            name,
+            kind: ProductDefinitionKind::Part,
+            source_name: name.clone(),
+            label: name,
+            description: None,
+            part_number: Some(product_id),
+            bom_properties: BTreeMap::new(),
             bodies,
+            native_ref: Some(format!("#{step_id}")),
         });
         typed.insert(step_id);
     }
@@ -107,18 +114,35 @@ pub(super) fn decode(
     let mut definition_occurrences = BTreeMap::<u64, Vec<OccurrenceId>>::new();
     let mut occurrence_paths = BTreeMap::<OccurrenceId, BTreeSet<u64>>::new();
     let mut pending_occurrences = VecDeque::new();
+    let mut root_ordinal = 0_u32;
     for (&definition, &product) in &definitions {
         if child_definitions.contains(&definition) {
             continue;
         }
         let id = OccurrenceId(format!("step:product:occurrence#definition-{definition}"));
-        ir.model.product_occurrences.push(ProductOccurrence {
+        ir.model.occurrences.push(Occurrence {
             id: id.clone(),
-            product: product_ir_id(product),
+            prototype: PrototypeReference::Local {
+                definition: product_ir_id(product),
+            },
             parent: OccurrenceParent::Root,
+            ordinal: root_ordinal,
             transform: Transform::identity(),
+            prototype_transform: Transform::identity(),
+            scale: [1.0; 3],
             name: None,
+            linked_subelements: Vec::new(),
+            visible: None,
+            element_component: None,
+            claim_child: None,
+            copy_on_change: None,
+            copy_on_change_source: None,
+            copy_on_change_group: None,
+            copy_on_change_touched: None,
+            link_transform: None,
+            native_ref: None,
         });
+        root_ordinal = root_ordinal.saturating_add(1);
         definition_occurrences
             .entry(definition)
             .or_default()
@@ -128,6 +152,7 @@ pub(super) fn decode(
     }
     let placements = occurrence_placements(exchange, geometry, &usages, &mut warnings);
     let mut usage_instances = BTreeMap::<u64, usize>::new();
+    let mut child_ordinals = BTreeMap::<OccurrenceId, u32>::new();
     let mut usages_by_parent = BTreeMap::<u64, Vec<u64>>::new();
     for (&usage_id, usage) in &usages {
         usages_by_parent
@@ -170,24 +195,41 @@ pub(super) fn decode(
                 format!("-instance-{instance}")
             };
             let id = OccurrenceId(format!("step:product:occurrence#{usage_id}{suffix}"));
-            if ir.model.product_occurrences.len() >= MAX_OCCURRENCES {
+            if ir.model.occurrences.len() >= MAX_OCCURRENCES {
                 warnings.push(format!(
                     "assembly occurrence expansion exceeds the {MAX_OCCURRENCES}-occurrence limit"
                 ));
                 break 'expansion;
             }
-            ir.model.product_occurrences.push(ProductOccurrence {
+            let ordinal = child_ordinals.entry(parent.clone()).or_default();
+            ir.model.occurrences.push(Occurrence {
                 id: id.clone(),
-                product: product_ir_id(product),
+                prototype: PrototypeReference::Local {
+                    definition: product_ir_id(product),
+                },
                 parent: OccurrenceParent::Occurrence {
                     occurrence: parent.clone(),
                 },
+                ordinal: *ordinal,
                 transform: placements
                     .get(&usage_id)
                     .copied()
                     .unwrap_or_else(Transform::identity),
+                prototype_transform: Transform::identity(),
+                scale: [1.0; 3],
                 name: usage.name.clone(),
+                linked_subelements: Vec::new(),
+                visible: None,
+                element_component: None,
+                claim_child: None,
+                copy_on_change: None,
+                copy_on_change_source: None,
+                copy_on_change_group: None,
+                copy_on_change_touched: None,
+                link_transform: None,
+                native_ref: Some(format!("#{usage_id}")),
             });
+            *ordinal = ordinal.saturating_add(1);
             let mut path = parent_path;
             path.insert(usage.child_definition);
             occurrence_paths.insert(id.clone(), path);
@@ -599,8 +641,8 @@ fn basis(z: Vector3, x: Vector3) -> [[f64; 3]; 3] {
     );
     [[x.x, y.x, z.x], [x.y, y.y, z.y], [x.z, y.z, z.z]]
 }
-fn product_ir_id(id: u64) -> ProductId {
-    ProductId(format!("step:product:product#{id}"))
+fn product_ir_id(id: u64) -> ProductDefinitionId {
+    ProductDefinitionId(format!("step:product:product#{id}"))
 }
 
 trait RecordExt {

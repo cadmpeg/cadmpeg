@@ -83,10 +83,21 @@ pub(crate) fn transfer(
         insert_appearance(ir, rgba);
     }
 
-    let positional_colors = (body.len() > 1 && body.len() == ir.model.faces.len())
-        .then(|| brep.and_then(standard_face_colors))
-        .flatten()
-        .filter(|colors| colors.as_slice() == body.as_slice());
+    let positional_colors = brep
+        .and_then(standard_face_colors)
+        .filter(|colors| colors.len() == ir.model.faces.len())
+        .filter(|colors| match all_faces.as_slice() {
+            [] => body.len() > 1 && colors.as_slice() == body.as_slice(),
+            [base] => {
+                let overrides = colors
+                    .iter()
+                    .copied()
+                    .filter(|rgba| rgba != base)
+                    .collect::<Vec<_>>();
+                same_color_multiset(&overrides, &body)
+            }
+            _ => false,
+        });
     if let Some(colors) = positional_colors {
         let faces = ir
             .model
@@ -98,14 +109,7 @@ pub(crate) fn transfer(
             let appearance = insert_appearance(ir, rgba);
             insert_binding(ir, &appearance, AppearanceTarget::Face(face), index);
         }
-        result.transferred_packets += body.len();
-        // A unique all-face packet is completely superseded by the proven
-        // positional population but its semantics are still transferred.
-        if all_faces.len() == 1 {
-            result.transferred_packets += 1;
-        } else {
-            result.unresolved_packets += all_faces.len();
-        }
+        result.transferred_packets += body.len() + all_faces.len();
     } else {
         if all_faces.len() == 1 && !ir.model.faces.is_empty() {
             let appearance = insert_appearance(ir, all_faces[0]);
@@ -140,6 +144,17 @@ pub(crate) fn transfer(
         result.transferred_packets + result.unresolved_packets
     );
     result
+}
+
+fn same_color_multiset(left: &[[u8; 4]], right: &[[u8; 4]]) -> bool {
+    fn counts(values: &[[u8; 4]]) -> BTreeMap<[u8; 4], usize> {
+        let mut counts = BTreeMap::new();
+        for value in values {
+            *counts.entry(*value).or_default() += 1;
+        }
+        counts
+    }
+    counts(left) == counts(right)
 }
 
 fn packet(field: &ValueField) -> Option<Packet> {
@@ -482,5 +497,101 @@ mod tests {
             .appearance_bindings
             .iter()
             .all(|binding| binding.appearance.as_str().contains("d11a1fff")));
+    }
+
+    #[test]
+    fn base_plus_override_population_uses_effective_fbb_face_colors() {
+        let gray = [0x8c, 0x8c, 0x8c, 0xff];
+        let blue = [0x0d, 0x26, 0xe6, 0xff];
+        for target in 0..6 {
+            let mut colors = [gray; 6];
+            colors[target] = blue;
+            let brep = colors
+                .into_iter()
+                .flat_map(|rgba| [0xb0, 4, 4, 0xff, rgba[3], rgba[2], rgba[1], rgba[0]])
+                .collect::<Vec<_>>();
+            let mut ir = model(6);
+            let result = transfer(
+                &mut ir,
+                &native(vec![
+                    inline(0xeb, &[1, gray[0], gray[1], gray[2]]),
+                    inline(0xec, &[3, blue[0], blue[1], blue[2], blue[3]]),
+                ]),
+                None,
+                Some(&brep),
+            );
+            assert_eq!(
+                (
+                    result.decoded_packets,
+                    result.transferred_packets,
+                    result.unresolved_packets,
+                    result.emitted_assets,
+                    result.emitted_bindings
+                ),
+                (2, 2, 0, 2, 6)
+            );
+            for (index, binding) in ir.model.appearance_bindings.iter().enumerate() {
+                let key = if index == target {
+                    "0d26e6ff"
+                } else {
+                    "8c8c8cff"
+                };
+                assert!(binding.appearance.as_str().contains(key));
+            }
+        }
+    }
+
+    #[test]
+    fn base_plus_distinct_overrides_requires_exact_fbb_multiset() {
+        let colors = [
+            [0xe6, 0x0d, 0x0d, 0xff],
+            [0x0d, 0xcc, 0x1a, 0xff],
+            [0x0d, 0x26, 0xe6, 0xff],
+            [0xf2, 0xcc, 0x0d, 0xff],
+            [0xd9, 0x0d, 0xbf, 0xff],
+            [0x0d, 0xcc, 0xd9, 0xff],
+        ];
+        let fields = std::iter::once(inline(0xeb, &[1, colors[0][0], colors[0][1], colors[0][2]]))
+            .chain(
+                colors[1..]
+                    .iter()
+                    .map(|rgba| inline(0xec, &[3, rgba[0], rgba[1], rgba[2], rgba[3]])),
+            )
+            .collect::<Vec<_>>();
+        let brep = colors
+            .into_iter()
+            .flat_map(|rgba| [0xb0, 4, 4, 0xff, rgba[3], rgba[2], rgba[1], rgba[0]])
+            .collect::<Vec<_>>();
+        let mut ir = model(6);
+        let result = transfer(&mut ir, &native(fields.clone()), None, Some(&brep));
+        assert_eq!(
+            (
+                result.decoded_packets,
+                result.transferred_packets,
+                result.unresolved_packets,
+                result.emitted_bindings
+            ),
+            (6, 6, 0, 6)
+        );
+        for (binding, rgba) in ir.model.appearance_bindings.iter().zip(colors) {
+            assert!(binding.appearance.as_str().contains(&format!(
+                "{:02x}{:02x}{:02x}{:02x}",
+                rgba[0], rgba[1], rgba[2], rgba[3]
+            )));
+        }
+
+        let mut mismatched = brep;
+        mismatched[7] = 0xff;
+        let mut ir = model(6);
+        let result = transfer(&mut ir, &native(fields), None, Some(&mismatched));
+        assert_eq!(
+            (result.transferred_packets, result.unresolved_packets),
+            (1, 5)
+        );
+        assert!(ir
+            .model
+            .appearance_bindings
+            .iter()
+            .all(|binding| binding.appearance.as_str().contains("e60d0dff")));
     }
 }

@@ -54,7 +54,7 @@ memchr = "2"
 base64 = "0.23"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
-zip = { version = "8", default-features = false, features = ["deflate", "zstd"] }
+zip = { version = "8", default-features = false, features = ["deflate-flate2", "zstd"] }
 flate2 = "1"
 crc32fast = "1"
 roxmltree = "0.21"

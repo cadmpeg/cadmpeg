@@ -11,7 +11,9 @@ use crate::features::{FeatureId, ParameterId};
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(transparent)]
-pub struct SpreadsheetId(pub String);
+pub struct SpreadsheetId(
+    #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
+);
 
 /// One sheet and its ordered cell/layout state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

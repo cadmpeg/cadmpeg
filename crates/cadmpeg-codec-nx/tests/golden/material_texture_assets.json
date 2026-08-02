@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "4",
+      "ir_version": "5",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -17,7 +17,6 @@
           }
         ],
         "coedges": [],
-        "components": [],
         "configurations": [],
         "curves": [
           {
@@ -60,8 +59,7 @@
         "presentation_layers": [],
         "procedural_curves": [],
         "procedural_surfaces": [],
-        "product_occurrences": [],
-        "products": [],
+        "product_definitions": [],
         "regions": [
           {
             "body": "nx:derived:point-body#0",
@@ -155,7 +153,7 @@
                 "name": "AISI Steel 4340",
                 "sha256": "c37e17ffad699c434f3e742e63207776cf4eab017efde278d2ee6fde02381b0d",
                 "source_entry": "/Root/materialsTif/AISI Steel 4340",
-                "source_offset": 369,
+                "source_offset": 389,
                 "version": 42
               }
             ],
@@ -177,10 +175,10 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "3",
-          "file_size": "403",
+          "file_size": "423",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "389",
+          "footer_offset": "409",
           "header_entry_count": "3",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -219,7 +217,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 389, 3 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 409, 3 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -343,15 +341,15 @@
           "file_offset": "178",
           "region": "HEADER"
         },
-        "compressed_size": 191,
+        "compressed_size": 211,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 191
+        "uncompressed_size": 211
       },
       {
         "attributes": {
-          "file_offset": "369",
+          "file_offset": "389",
           "region": "HEADER"
         },
         "compressed_size": 10,
@@ -362,7 +360,7 @@
       },
       {
         "attributes": {
-          "file_offset": "379",
+          "file_offset": "399",
           "region": "HEADER"
         },
         "compressed_size": 10,
@@ -402,7 +400,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 389, 3 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 409, 3 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]

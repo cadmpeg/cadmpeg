@@ -3,17 +3,6 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
-use crate::drawings::Drawing;
-use crate::features::{DesignConfiguration, DesignParameter, FeatureInputTopology};
-use crate::presentation::{PresentationDocument, ViewPresentation};
-use crate::products::{AssemblyJoint, Component, Occurrence};
-use crate::semantic_annotations::SemanticAnnotation;
-use crate::sketches::{
-    Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
-    SpatialSketchEntity,
-};
-use crate::spreadsheets::Spreadsheet;
-use crate::subd::SubdSurface;
 
 pub(super) fn check_version(ir: &CadIr, findings: &mut Vec<Finding>) {
     if ir.ir_version != IR_VERSION {
@@ -83,21 +72,20 @@ pub(super) fn check_order<'a>(
 }
 
 macro_rules! define_model_identity_checks {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] => $key:expr; )*) => {
+    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
         fn check_model_identity_and_order(
             ir: &CadIr,
             seen: &mut HashSet<String>,
             findings: &mut Vec<Finding>,
         ) {
             $(
-                let key: fn(&$element) -> String = $key;
                 check_order(
                     stringify!($field),
-                    ir.model.$field.iter().map(|entity| key(entity)).collect::<Vec<_>>().iter().map(String::as_str),
+                    ir.model.$field.iter().map(crate::schema::EntitySchema::identity),
                     findings,
                 );
                 for entity in &ir.model.$field {
-                    push_identity(seen, findings, &key(entity));
+                    push_identity(seen, findings, crate::schema::EntitySchema::identity(entity));
                 }
             )*
         }
@@ -109,7 +97,7 @@ crate::document::arena_registry!(define_model_identity_checks);
 /// id in the document (model arenas, unknowns, and native records). Downstream
 /// checks resolve annotation and link targets against this set instead of
 /// re-enumerating the id universe.
-pub(super) fn check_identity_and_order(ir: &CadIr, findings: &mut Vec<Finding>) -> HashSet<String> {
+pub(super) fn check_identity_and_order(ir: &CadIr, findings: &mut Vec<Finding>) {
     let mut seen = HashSet::new();
     check_model_identity_and_order(ir, &mut seen, findings);
     let native_ids = collect_native_ids(ir);
@@ -123,7 +111,6 @@ pub(super) fn check_identity_and_order(ir: &CadIr, findings: &mut Vec<Finding>) 
     for (arena, ids) in by_arena {
         check_order(arena, ids, findings);
     }
-    seen
 }
 
 pub(super) fn collect_native_ids(ir: &CadIr) -> Vec<(String, &str)> {
@@ -141,7 +128,7 @@ pub(super) fn collect_native_ids(ir: &CadIr) -> Vec<(String, &str)> {
 }
 
 macro_rules! define_registered_entity_counts {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] => $key:expr; )*) => {
+    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
         fn registered_entity_counts(ir: &CadIr) -> BTreeMap<String, usize> {
             BTreeMap::from([
                 $((stringify!($field).into(), ir.model.$field.len())),*

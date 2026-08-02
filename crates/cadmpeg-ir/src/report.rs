@@ -371,6 +371,102 @@ pub struct DecodeReport {
     pub losses: Vec<LossNote>,
     /// Free-form informational notes (e.g. container findings).
     pub notes: Vec<String>,
+    /// Per-source disposition ledger for decoded records and entities.
+    #[serde(default, skip_serializing_if = "TransferLedger::is_empty")]
+    pub transfer_ledger: TransferLedger,
+}
+
+/// Final disposition of one source record or semantic object.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TransferDisposition {
+    /// Transferred as an exact neutral or native entity.
+    Emitted,
+    /// Preserved in a native retained-record arena.
+    Retained,
+    /// Transferred with an explicit approximation.
+    Approximated,
+    /// Deliberately not transferred.
+    Omitted,
+}
+
+/// One source object's transfer disposition.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TransferRecord {
+    /// Stable source identity or source-local record key.
+    pub source: String,
+    /// Resulting neutral or native identity, when one was produced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    /// Final transfer disposition.
+    pub disposition: TransferDisposition,
+    /// Concise reason for approximation or omission.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// Complete source-to-result accounting for a decode.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TransferLedger {
+    /// Entries in deterministic source traversal order.
+    pub entries: Vec<TransferRecord>,
+}
+
+impl TransferLedger {
+    /// Returns whether the ledger contains no transfer entries.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Records one source disposition.
+    pub fn record(
+        &mut self,
+        source: impl Into<String>,
+        target: Option<String>,
+        disposition: TransferDisposition,
+        note: Option<String>,
+    ) {
+        self.entries.push(TransferRecord {
+            source: source.into(),
+            target,
+            disposition,
+            note,
+        });
+    }
+
+    /// Verifies every produced target against a finalized model index.
+    pub fn verify(&self, index: &crate::index::ModelIndex<'_>) -> Result<(), String> {
+        for entry in &self.entries {
+            let produces_target = matches!(
+                entry.disposition,
+                TransferDisposition::Emitted
+                    | TransferDisposition::Retained
+                    | TransferDisposition::Approximated
+            );
+            match (&entry.target, produces_target) {
+                (Some(target), true) if !index.contains(target) => {
+                    return Err(format!(
+                        "transfer source {:?} targets unresolved identity {:?}",
+                        entry.source, target
+                    ));
+                }
+                (None, true) => {
+                    return Err(format!(
+                        "transfer source {:?} has {:?} disposition without a target",
+                        entry.source, entry.disposition
+                    ));
+                }
+                (Some(_), false) => {
+                    return Err(format!(
+                        "omitted transfer source {:?} unexpectedly has a target",
+                        entry.source
+                    ));
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
 }
 
 /// A statically declared decode-coverage measure.

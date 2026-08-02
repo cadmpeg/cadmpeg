@@ -195,6 +195,18 @@ fn f3d_native_mut(ir: &mut cadmpeg_ir::document::CadIr) -> F3dNativeMut<'_> {
 
 #[test]
 fn native_arenas_have_pinned_shape_and_typed_round_trip() {
+    let catalogue_names = crate::native::F3D_FAMILIES
+        .iter()
+        .map(|row| row.arena)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(crate::native::F3D_FAMILIES.len(), 62);
+    assert_eq!(
+        catalogue_names,
+        crate::native::F3D_ARENA_NAMES
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>()
+    );
     let decoded = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh_and_protein(&synthetic_geometry_smbh())),

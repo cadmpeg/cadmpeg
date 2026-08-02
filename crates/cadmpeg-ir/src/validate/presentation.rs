@@ -9,7 +9,7 @@ use crate::report::{Check, Finding, Severity};
 
 pub(super) fn check_presentation(
     ir: &CadIr,
-    all_ids: &HashSet<String>,
+    all_ids: &crate::index::ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) {
     if ir.model.presentation_documents.len() > 1 {
@@ -82,8 +82,8 @@ pub(super) fn check_presentation(
     let points = ids(&ir.model.points, |item| item.id.as_str());
     let curves = ids(&ir.model.curves, |item| item.id.as_str());
     let surfaces = ids(&ir.model.surfaces, |item| item.id.as_str());
-    let products = ids(&ir.model.products, |item| item.id.as_str());
-    let occurrences = ids(&ir.model.product_occurrences, |item| item.id.as_str());
+    let products = ids(&ir.model.product_definitions, |item| item.id.as_str());
+    let occurrences = ids(&ir.model.occurrences, |item| item.id.as_str());
     let pmi = ids(&ir.model.pmi, |item| item.id.as_str());
     let tessellations = ids(&ir.model.tessellations, |item| item.id.as_str());
     for layer in &ir.model.presentation_layers {

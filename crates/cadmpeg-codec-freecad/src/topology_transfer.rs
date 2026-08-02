@@ -3,6 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use cadmpeg_codec_core::decode::DecodeContext;
 use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -32,6 +33,7 @@ type IndexedPolygon = (Vec<Point3>, Option<Vec<f64>>, f64);
 
 /// Transfer text or binary shape-set topology with placements applied once.
 pub(crate) fn transfer(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     payloads: &[ShapePayloadRecord],
     properties: &[PropertyRecord],
@@ -50,7 +52,7 @@ pub(crate) fn transfer(
         let mut builder = Builder::new(payload, tables, source_object);
         builder.emit_pcurves(ir);
         for root in builder.body_roots()? {
-            builder.append_body(ir, root)?;
+            builder.append_body(ctx, ir, root)?;
         }
         builder.emit_unowned_triangulations(ir);
     }
@@ -305,7 +307,12 @@ impl<'a> Builder<'a> {
             .collect()
     }
 
-    fn append_body(&mut self, ir: &mut CadIr, root: BodyRoot) -> Result<(), CodecError> {
+    fn append_body(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        ir: &mut CadIr,
+        root: BodyRoot,
+    ) -> Result<(), CodecError> {
         self.body_scope = root.transform;
         let root_shape = self.shape(root.shape)?;
         let root_kind = root_shape.kind;
@@ -342,13 +349,13 @@ impl<'a> Builder<'a> {
         let tessellation_start = ir.model.tessellations.len();
         let mut regions = Vec::new();
         self.append_shape_regions(
+            ctx,
             ir,
             &body_id,
             root.shape,
             Transform::identity(),
             root.reversed,
             &mut regions,
-            0,
         )?;
         if regions.is_empty() {
             ir.model.tessellations.truncate(tessellation_start);
@@ -366,22 +373,18 @@ impl<'a> Builder<'a> {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)] // Depth is explicit to bound hostile topology nesting.
+    #[allow(clippy::too_many_arguments)]
     fn append_shape_regions(
         &mut self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         body: &BodyId,
         shape_index: usize,
         transform: Transform,
         reversed: bool,
         output: &mut Vec<RegionId>,
-        depth: usize,
     ) -> Result<(), CodecError> {
-        if depth > 256 {
-            return Err(CodecError::Malformed(
-                "topology nesting limit exceeded".into(),
-            ));
-        }
+        let _depth = ctx.enter_nested("transfer FCStd topology nesting", None)?;
         let shape = self.shape(shape_index)?.clone();
         if matches!(
             shape.kind,
@@ -389,13 +392,13 @@ impl<'a> Builder<'a> {
         ) {
             for child in &shape.children {
                 self.append_shape_regions(
+                    ctx,
                     ir,
                     body,
                     child.shape,
                     transform.compose(self.tables.location(child.location)),
                     reversed ^ is_reversed(child.orientation),
                     output,
-                    depth + 1,
                 )?;
             }
             return Ok(());

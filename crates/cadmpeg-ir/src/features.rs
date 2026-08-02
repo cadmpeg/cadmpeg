@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(transparent)]
-pub struct FeatureId(pub String);
+pub struct FeatureId(#[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String);
 
 impl FeatureId {
     /// Borrow the underlying id string.
@@ -42,7 +42,9 @@ impl<S: Into<String>> From<S> for FeatureId {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(transparent)]
-pub struct ConfigurationId(pub String);
+pub struct ConfigurationId(
+    #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
+);
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
@@ -158,7 +160,9 @@ pub struct ConfigurationFeatureState {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(transparent)]
-pub struct ParameterId(pub String);
+pub struct ParameterId(
+    #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
+);
 
 /// A named design expression, optionally owned by a construction feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

@@ -1095,10 +1095,10 @@ impl NativeModel {
 
     /// Whether every emptiness-counting record family is empty. Derived from
     /// [`CATALOGUE`](super::catalogue::CATALOGUE): the fold visits
-    /// exactly the rows whose `counts_toward_emptiness` flag is set (161 of the
-    /// 208 families), reproducing the operand set of the legacy hand-written
-    /// all-empty guard. The 47 non-counting families are documented on
-    /// [`CatalogueRow::counts_toward_emptiness`](super::catalogue::CatalogueRow::counts_toward_emptiness).
+    /// exactly the rows whose `counts_toward_emptiness` flag is set, reproducing
+    /// the operand set of the legacy hand-written all-empty guard. The
+    /// non-counting families are documented on
+    /// [`FamilyRow::counts_toward_emptiness`](cadmpeg_ir::native::catalogue::FamilyRow::counts_toward_emptiness).
     /// The fold is order-insensitive — the legacy guard was a pure `&&` of
     /// `is_empty()` calls on plain `Vec`s — so it is behavior-identical to the
     /// conjunction it replaces.
@@ -1106,9 +1106,6 @@ impl NativeModel {
     /// The caller additionally checks `object_sections`, the sole non-model
     /// operand of the legacy guard, which this method does not cover.
     pub(crate) fn is_empty(&self) -> bool {
-        super::catalogue::CATALOGUE
-            .iter()
-            .filter(|row| row.counts_toward_emptiness)
-            .all(|row| (row.len)(self) == 0)
+        super::catalogue::NATIVE_CATALOGUE.is_empty(self)
     }
 }
