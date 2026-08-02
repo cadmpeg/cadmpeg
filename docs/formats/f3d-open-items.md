@@ -364,6 +364,14 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 
 **Need.** A writer must choose the value to emit for a link a neutral model does not carry. Without the meaning, only a link decoded from source restores it.
 
+### DR-31. `Pipe` section discriminator and scalar lanes
+
+**Question.** Which field selects the cross-section shape of a `Pipe` scope? What do its third and fourth scalar lanes measure for each shape?
+
+**Known.** A `Pipe` parameter scope has four ordered scalar references followed by one settings reference and one counted path-selection group. The first two scalar values are path fractions and are both `1.0` in each known scope. The third and fourth values are positive lengths. The path group contains persistent edge selections and one solved point-and-direction carrier. The scope has no sketch-profile selection, so it is not the fixed `Sweep` form. The fixed u32 at primary-header offset 26 is `4` in each known scope. The settings reference contains a u32 and one finite double, but their meanings are not established.
+
+**Need.** A neutral pipe needs an explicit section shape and the dimensions that define that shape. Treating the two lengths as one particular shape's size and wall thickness would lose the construction when another discriminator value selects a different shape. **Blocked on specimens:** the known scopes do not vary the settings fields independently of the section dimensions. Settling the fields needs otherwise equal pipes with each available section shape and with the hollow option both off and on.
+
 ## 3. External references
 
 ### XR-01. `neutronData` with a different GUID
