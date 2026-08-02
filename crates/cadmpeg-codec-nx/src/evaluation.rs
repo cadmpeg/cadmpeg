@@ -145,9 +145,7 @@ fn rederived_body_census(
         previous_ordinal = Some(feature.ordinal);
         seen_features.insert(feature.id.clone());
         match feature.suppressed {
-            None if !feature.outputs.is_empty()
-                || !is_body_neutral_definition(&feature.definition) =>
-            {
+            None if !is_body_neutral_feature(feature) => {
                 return Err((
                     feature.id.clone(),
                     UnsupportedBodyCensusReason::UnresolvedSuppression,
@@ -178,6 +176,11 @@ fn rederived_body_census(
                     ));
                 }
             }
+            FeatureDefinition::Native { kind, .. }
+                if kind == "DELETE"
+                    && !feature
+                        .source_properties
+                        .contains_key("primary_body_object_index") => {}
             FeatureDefinition::Block {
                 dimensions: Some(dimensions),
                 placement: Some(placement),
@@ -426,23 +429,29 @@ fn rederived_body_census(
     Ok(bodies)
 }
 
-fn is_body_neutral_definition(definition: &FeatureDefinition) -> bool {
-    matches!(
-        definition,
-        FeatureDefinition::TreeNode { .. }
-            | FeatureDefinition::DatumPrincipalPlane { .. }
-            | FeatureDefinition::DatumPlane { .. }
-            | FeatureDefinition::DatumPlaneUnresolved
-            | FeatureDefinition::DatumOffsetPlane { .. }
-            | FeatureDefinition::DatumAxis { .. }
-            | FeatureDefinition::DatumPoint { .. }
-            | FeatureDefinition::DatumPointUnresolved
-            | FeatureDefinition::DatumCoordinateSystem { .. }
-            | FeatureDefinition::DatumCoordinateSystemUnresolved
-            | FeatureDefinition::Sketch { .. }
-            | FeatureDefinition::ProjectedCurve { .. }
-            | FeatureDefinition::SectionShape { .. }
-    )
+fn is_body_neutral_feature(feature: &cadmpeg_ir::features::Feature) -> bool {
+    feature.outputs.is_empty()
+        && (matches!(
+            feature.definition,
+            FeatureDefinition::TreeNode { .. }
+                | FeatureDefinition::DatumPrincipalPlane { .. }
+                | FeatureDefinition::DatumPlane { .. }
+                | FeatureDefinition::DatumPlaneUnresolved
+                | FeatureDefinition::DatumOffsetPlane { .. }
+                | FeatureDefinition::DatumAxis { .. }
+                | FeatureDefinition::DatumPoint { .. }
+                | FeatureDefinition::DatumPointUnresolved
+                | FeatureDefinition::DatumCoordinateSystem { .. }
+                | FeatureDefinition::DatumCoordinateSystemUnresolved
+                | FeatureDefinition::Sketch { .. }
+                | FeatureDefinition::ProjectedCurve { .. }
+                | FeatureDefinition::SectionShape { .. }
+        ) || matches!(
+            &feature.definition,
+            FeatureDefinition::Native { kind, .. }
+                if kind == "DELETE"
+                    && !feature.source_properties.contains_key("primary_body_object_index")
+        ))
 }
 
 fn preserve_complete_single_output(
@@ -1934,6 +1943,48 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
                 feature: Some(FeatureId("block".to_string())),
+                reason: UnsupportedBodyCensusReason::UnresolvedSuppression,
+            }
+        );
+    }
+
+    #[test]
+    fn native_delete_without_a_primary_body_is_body_neutral() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut deletion = Feature {
+            id: FeatureId("delete".to_string()),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "DELETE".to_string(),
+                parameters: BTreeMap::new(),
+                properties: BTreeMap::new(),
+            },
+            native_ref: None,
+        };
+        ir.model.features.push(deletion.clone());
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: Vec::new() }
+        );
+
+        deletion
+            .source_properties
+            .insert("primary_body_object_index".to_string(), "7".to_string());
+        ir.model.features[0] = deletion;
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Unsupported {
+                feature: Some(FeatureId("delete".to_string())),
                 reason: UnsupportedBodyCensusReason::UnresolvedSuppression,
             }
         );
