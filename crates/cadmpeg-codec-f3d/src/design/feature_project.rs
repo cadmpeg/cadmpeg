@@ -2514,113 +2514,124 @@ pub(crate) fn project_fixed_loft(
         .collect::<Vec<_>>();
     groups.sort_by_key(|group| group.scope_reference_ordinal);
     let body_count = groups.iter().filter(|group| group.role == ROLE_0X4).count();
-    let (sections, guides, centerline) = match operation {
-        DesignExtrudeOperation::Join if body_count == 1 => (
-            groups
-                .iter()
-                .filter(|group| group.role == 0x41_0000_0000)
-                .map(|group| LoftSection::Profile(ProfileRef::Native(group.id.clone())))
-                .collect::<Vec<_>>(),
-            Vec::new(),
-            None,
-        ),
-        DesignExtrudeOperation::NewBody if body_count == 0 => {
-            let guided_profiles = groups
-                .iter()
-                .filter(|group| group.role == 0x43_0000_0000)
-                .map(|group| {
-                    LoftSection::Profile(
-                        resolved_profile_face_group(scope, group, face_operands)
-                            .unwrap_or_else(|| ProfileRef::Native(group.id.clone())),
-                    )
-                })
-                .collect::<Vec<_>>();
-            if guided_profiles.len() == 2 {
-                let guides = groups
-                    .iter()
-                    .filter(|group| group.role == ROLE_0X5)
-                    .map(|group| {
-                        resolved_loft_path(
-                            group,
-                            construction_groups,
-                            edge_operands,
-                            edge_identity_operands,
-                            scope,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                let centerlines = groups
-                    .iter()
-                    .filter(|group| group.role == 0x7_0000_0000)
-                    .map(|group| {
-                        resolved_loft_path(
-                            group,
-                            construction_groups,
-                            edge_operands,
-                            edge_identity_operands,
-                            scope,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                let centerline = match centerlines.as_slice() {
-                    [] => None,
-                    [centerline] if guides.is_empty() => Some(centerline.clone()),
-                    _ => return None,
-                };
-                (guided_profiles, guides, centerline)
-            } else if guided_profiles.is_empty() {
-                let role = if groups.iter().all(|group| group.role == 0x41_0000_0000) {
-                    0x41_0000_0000
-                } else if groups.iter().all(|group| group.role == ROLE_0X5) {
-                    ROLE_0X5
-                } else {
-                    return None;
-                };
-                (
-                    groups
-                        .iter()
-                        .filter(|group| group.role == role)
-                        .map(|group| LoftSection::Profile(ProfileRef::Native(group.id.clone())))
-                        .collect::<Vec<_>>(),
-                    Vec::new(),
-                    None,
+    let expected_body_count = usize::from(*operation != DesignExtrudeOperation::NewBody);
+    if body_count != expected_body_count {
+        return None;
+    }
+    let operands = groups
+        .iter()
+        .filter(|group| group.role != ROLE_0X4)
+        .copied()
+        .collect::<Vec<_>>();
+    let profile_groups = operands
+        .iter()
+        .filter(|group| matches!(group.role, 0x41_0000_0000 | 0x43_0000_0000))
+        .copied()
+        .collect::<Vec<_>>();
+    let (sections, guides, centerline) = if profile_groups.len() >= 2 {
+        if operands.iter().any(|group| {
+            !matches!(
+                group.role,
+                0x41_0000_0000 | 0x43_0000_0000 | ROLE_0X5 | 0x7_0000_0000
+            )
+        }) {
+            return None;
+        }
+        let sections = profile_groups
+            .iter()
+            .map(|group| {
+                LoftSection::Profile(
+                    resolved_profile_face_group(scope, group, face_operands)
+                        .unwrap_or_else(|| ProfileRef::Native(group.id.clone())),
                 )
-            } else if guided_profiles.len() == 1
-                && groups
-                    .iter()
-                    .all(|group| matches!(group.role, 0x43_0000_0000 | ROLE_0X5))
-            {
-                let point_ordinal = groups
-                    .iter()
-                    .position(|group| group.role == ROLE_0X5 && group.members.len() == 1)?;
-                if !matches!(point_ordinal, 0) && point_ordinal + 1 != groups.len() {
-                    return None;
-                }
-                if groups.iter().enumerate().any(|(ordinal, group)| {
-                    ordinal != point_ordinal && group.role == ROLE_0X5 && group.members.len() == 1
-                }) {
-                    return None;
-                }
-                (
-                    groups
-                        .iter()
-                        .enumerate()
-                        .map(|(ordinal, group)| {
-                            if ordinal == point_ordinal {
-                                LoftSection::Point(LoftPointSection::Native(group.id.clone()))
-                            } else {
-                                LoftSection::Profile(ProfileRef::Native(group.id.clone()))
-                            }
-                        })
-                        .collect(),
-                    Vec::new(),
-                    None,
+            })
+            .collect::<Vec<_>>();
+        let guides = operands
+            .iter()
+            .filter(|group| group.role == ROLE_0X5)
+            .map(|group| {
+                resolved_loft_path(
+                    group,
+                    construction_groups,
+                    edge_operands,
+                    edge_identity_operands,
+                    scope,
                 )
-            } else {
+            })
+            .collect::<Vec<_>>();
+        let centerlines = operands
+            .iter()
+            .filter(|group| group.role == 0x7_0000_0000)
+            .map(|group| {
+                resolved_loft_path(
+                    group,
+                    construction_groups,
+                    edge_operands,
+                    edge_identity_operands,
+                    scope,
+                )
+            })
+            .collect::<Vec<_>>();
+        let centerline = match centerlines.as_slice() {
+            [] => None,
+            [centerline] if guides.is_empty() => Some(centerline.clone()),
+            _ => return None,
+        };
+        (sections, guides, centerline)
+    } else if *operation == DesignExtrudeOperation::NewBody {
+        if profile_groups.len() == 1
+            && operands
+                .iter()
+                .all(|group| matches!(group.role, 0x43_0000_0000 | ROLE_0X5))
+        {
+            let point_ordinal = operands
+                .iter()
+                .position(|group| group.role == ROLE_0X5 && group.members.len() == 1)?;
+            if !matches!(point_ordinal, 0) && point_ordinal + 1 != operands.len() {
                 return None;
             }
+            if operands.iter().enumerate().any(|(ordinal, group)| {
+                ordinal != point_ordinal && group.role == ROLE_0X5 && group.members.len() == 1
+            }) {
+                return None;
+            }
+            (
+                operands
+                    .iter()
+                    .enumerate()
+                    .map(|(ordinal, group)| {
+                        if ordinal == point_ordinal {
+                            LoftSection::Point(LoftPointSection::Native(group.id.clone()))
+                        } else {
+                            LoftSection::Profile(ProfileRef::Native(group.id.clone()))
+                        }
+                    })
+                    .collect(),
+                Vec::new(),
+                None,
+            )
+        } else if profile_groups.is_empty() {
+            let role = if operands.iter().all(|group| group.role == 0x41_0000_0000) {
+                0x41_0000_0000
+            } else if operands.iter().all(|group| group.role == ROLE_0X5) {
+                ROLE_0X5
+            } else {
+                return None;
+            };
+            (
+                operands
+                    .iter()
+                    .filter(|group| group.role == role)
+                    .map(|group| LoftSection::Profile(ProfileRef::Native(group.id.clone())))
+                    .collect::<Vec<_>>(),
+                Vec::new(),
+                None,
+            )
+        } else {
+            return None;
         }
-        _ => return None,
+    } else {
+        return None;
     };
     if sections.len() < 2
         || sections.len() + guides.len() + usize::from(centerline.is_some()) + body_count

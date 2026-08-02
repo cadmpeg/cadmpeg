@@ -5326,6 +5326,44 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         Some(cadmpeg_ir::features::FeatureDefinition::Loft { sections, guides, .. })
             if sections.len() == 2 && guides.is_empty()
     ));
+    let guided_role_41 = [
+        loft_group(0, 0x41_0000_0000),
+        loft_group(1, 0x41_0000_0000),
+        loft_group(2, 0x41_0000_0000),
+        loft_group(3, 0x5_0000_0000),
+    ];
+    assert!(matches!(
+        crate::design::feature_project::project_fixed_loft(
+            &loft_scope,
+            &guided_role_41,
+            &[],
+            &[],
+            &[],
+        ),
+        Some(cadmpeg_ir::features::FeatureDefinition::Loft { sections, guides, .. })
+            if sections.len() == 3 && guides.len() == 1
+    ));
+    loft_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Loft {
+        operation: DesignExtrudeOperation::Cut,
+        operation_offset: (loft_start + 29) as u64,
+    });
+    let cut = [
+        loft_group(0, 0x4_0000_0000),
+        loft_group(1, 0x41_0000_0000),
+        loft_group(2, 0x43_0000_0000),
+    ];
+    assert!(matches!(
+        crate::design::feature_project::project_fixed_loft(&loft_scope, &cut, &[], &[], &[]),
+        Some(cadmpeg_ir::features::FeatureDefinition::Loft {
+            sections,
+            op: cadmpeg_ir::features::BooleanOp::Cut,
+            ..
+        }) if sections.len() == 2
+    ));
+    loft_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Loft {
+        operation: DesignExtrudeOperation::NewBody,
+        operation_offset: (loft_start + 29) as u64,
+    });
     let role_5 = [
         loft_group(0, 0x5_0000_0000),
         loft_group(1, 0x5_0000_0000),
