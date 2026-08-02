@@ -4,6 +4,7 @@
 use cadmpeg_ir::annotations::ExactnessNote;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::draft::{ModelCheckpoint, ModelDraft};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve,
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
@@ -48,74 +49,6 @@ enum GeometryStatus {
     Retained,
     Decoded,
     Failed,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ArenaLengths {
-    bodies: usize,
-    regions: usize,
-    shells: usize,
-    faces: usize,
-    loops: usize,
-    coedges: usize,
-    edges: usize,
-    vertices: usize,
-    points: usize,
-    curves: usize,
-    pcurves: usize,
-    surfaces: usize,
-    subds: usize,
-    tessellations: usize,
-    procedural_curves: usize,
-    procedural_surfaces: usize,
-}
-
-impl ArenaLengths {
-    fn capture(ir: &CadIr) -> Self {
-        Self {
-            bodies: ir.model.bodies.len(),
-            regions: ir.model.regions.len(),
-            shells: ir.model.shells.len(),
-            faces: ir.model.faces.len(),
-            loops: ir.model.loops.len(),
-            coedges: ir.model.coedges.len(),
-            edges: ir.model.edges.len(),
-            vertices: ir.model.vertices.len(),
-            points: ir.model.points.len(),
-            curves: ir.model.curves.len(),
-            pcurves: ir.model.pcurves.len(),
-            surfaces: ir.model.surfaces.len(),
-            subds: ir.model.subds.len(),
-            tessellations: ir.model.tessellations.len(),
-            procedural_curves: ir.model.procedural_curves.len(),
-            procedural_surfaces: ir.model.procedural_surfaces.len(),
-        }
-    }
-
-    fn added_since(self, before: Self) -> Option<usize> {
-        [
-            (self.bodies, before.bodies),
-            (self.regions, before.regions),
-            (self.shells, before.shells),
-            (self.faces, before.faces),
-            (self.loops, before.loops),
-            (self.coedges, before.coedges),
-            (self.edges, before.edges),
-            (self.vertices, before.vertices),
-            (self.points, before.points),
-            (self.curves, before.curves),
-            (self.pcurves, before.pcurves),
-            (self.surfaces, before.surfaces),
-            (self.subds, before.subds),
-            (self.tessellations, before.tessellations),
-            (self.procedural_curves, before.procedural_curves),
-            (self.procedural_surfaces, before.procedural_surfaces),
-        ]
-        .into_iter()
-        .try_fold(0_usize, |total, (after, before)| {
-            total.checked_add(after.checked_sub(before)?)
-        })
-    }
 }
 
 // Instance expansion re-enters `decode_geometry` per member, which reaches the mesh decoder's
@@ -361,8 +294,8 @@ impl<'a> DecodeContext<'a> {
         let validation =
             cadmpeg_ir::validate_with_source_fidelity(&candidate, &source_fidelity, Vec::new());
         if validation.is_ok() {
-            let added = ArenaLengths::capture(&candidate)
-                .added_since(ArenaLengths::capture(&self.ir))
+            let added = ModelCheckpoint::capture(&self.ir.model)
+                .added_count(&candidate.model)
                 .ok_or_else(|| "candidate removed existing IR entities".to_string())?;
             self.expansion_budget.entities(added)?;
             let unknowns = candidate
@@ -1532,7 +1465,7 @@ impl<'a> DecodeContext<'a> {
                 links.extend(nested);
                 continue;
             }
-            let before = ArenaLengths::capture(&self.ir);
+            let before = ModelCheckpoint::capture(&self.ir.model);
             let previous_selection = self.selected_object.replace(member_order);
             let previous_key =
                 self.instance_key
@@ -1542,11 +1475,11 @@ impl<'a> DecodeContext<'a> {
             self.selected_object = previous_selection;
             self.instance_key = previous_key;
             self.instance_path = previous_path;
-            let after = ArenaLengths::capture(&self.ir);
+            let after = ModelCheckpoint::capture(&self.ir.model);
             if before == after {
                 return Err(format!("definition member {member_id} did not decode"));
             }
-            links.extend(self.transform_new_entities(before, transform)?);
+            links.extend(self.transform_new_entities(&before, transform)?);
         }
         self.instance_color = previous_color;
         self.instance_visible = previous_visible;
@@ -1557,47 +1490,72 @@ impl<'a> DecodeContext<'a> {
 
     fn transform_new_entities(
         &mut self,
-        before: ArenaLengths,
+        before: &ModelCheckpoint,
         transform: Transform,
     ) -> Result<Vec<String>, String> {
         let mut owned_curves = BTreeSet::new();
         let mut owned_surfaces = BTreeSet::new();
-        for edge in &self.ir.model.edges[before.edges..] {
+        for edge in before
+            .added::<Edge>(&self.ir.model)
+            .ok_or_else(|| "instance decode removed existing edges".to_string())?
+        {
             if let Some(curve) = &edge.curve {
                 owned_curves.insert(curve.clone());
             }
         }
-        for face in &self.ir.model.faces[before.faces..] {
+        for face in before
+            .added::<Face>(&self.ir.model)
+            .ok_or_else(|| "instance decode removed existing faces".to_string())?
+        {
             owned_surfaces.insert(face.surface.clone());
         }
         let mut links = Vec::new();
         let mut derived_ids = Vec::new();
-        for body in &mut self.ir.model.bodies[before.bodies..] {
+        let bodies_added = before
+            .added::<Body>(&self.ir.model)
+            .ok_or_else(|| "instance decode removed existing bodies".to_string())?
+            .len();
+        for body in before
+            .added_mut::<Body>(&mut self.ir.model)
+            .ok_or_else(|| "instance decode removed existing bodies".to_string())?
+        {
             compose_body_transform(body, transform);
             links.push(body.id.to_string());
             derived_ids.push(body.id.to_string());
         }
-        for point in &mut self.ir.model.points[before.points..] {
-            if before.bodies == self.ir.model.bodies.len() {
+        for point in before
+            .added_mut::<Point>(&mut self.ir.model)
+            .ok_or_else(|| "instance decode removed existing points".to_string())?
+        {
+            if bodies_added == 0 {
                 point.position = transform.apply_point(point.position);
                 derived_ids.push(point.id.to_string());
             }
         }
-        for curve in &mut self.ir.model.curves[before.curves..] {
+        for curve in before
+            .added_mut::<Curve>(&mut self.ir.model)
+            .ok_or_else(|| "instance decode removed existing curves".to_string())?
+        {
             if !owned_curves.contains(&curve.id) {
                 transform_curve(curve, transform)?;
                 links.push(curve.id.to_string());
                 derived_ids.push(curve.id.to_string());
             }
         }
-        for surface in &mut self.ir.model.surfaces[before.surfaces..] {
+        for surface in before
+            .added_mut::<Surface>(&mut self.ir.model)
+            .ok_or_else(|| "instance decode removed existing surfaces".to_string())?
+        {
             if !owned_surfaces.contains(&surface.id) {
                 transform_surface(surface, transform)?;
                 links.push(surface.id.to_string());
                 derived_ids.push(surface.id.to_string());
             }
         }
-        for mesh in &mut self.ir.model.tessellations[before.tessellations..] {
+        for mesh in before
+            .added_mut::<Tessellation>(&mut self.ir.model)
+            .ok_or_else(|| "instance decode removed existing tessellations".to_string())?
+        {
             for vertex in &mut mesh.vertices {
                 *vertex = transform.apply_point(*vertex);
             }
@@ -1609,21 +1567,26 @@ impl<'a> DecodeContext<'a> {
             links.push(mesh.id.clone());
             derived_ids.push(mesh.id.clone());
         }
-        for subd in &mut self.ir.model.subds[before.subds..] {
+        for subd in before
+            .added_mut::<cadmpeg_ir::SubdSurface>(&mut self.ir.model)
+            .ok_or_else(|| "instance decode removed existing subdivision surfaces".to_string())?
+        {
             for vertex in &mut subd.vertices {
                 vertex.point = transform.apply_point(vertex.point);
             }
             links.push(subd.id.to_string());
             derived_ids.push(subd.id.to_string());
         }
-        if self.ir.model.procedural_curves.len() > before.procedural_curves
-            || self.ir.model.procedural_surfaces.len() > before.procedural_surfaces
+        let procedural_curve_start = before.arena_len::<ProceduralCurve>();
+        let procedural_surface_start = before.arena_len::<ProceduralSurface>();
+        if self.ir.model.procedural_curves.len() > procedural_curve_start
+            || self.ir.model.procedural_surfaces.len() > procedural_surface_start
         {
-            let omitted_ids = self.ir.model.procedural_curves[before.procedural_curves..]
+            let omitted_ids = self.ir.model.procedural_curves[procedural_curve_start..]
                 .iter()
                 .map(|procedure| procedure.id.to_string())
                 .chain(
-                    self.ir.model.procedural_surfaces[before.procedural_surfaces..]
+                    self.ir.model.procedural_surfaces[procedural_surface_start..]
                         .iter()
                         .map(|procedure| procedure.id.to_string()),
                 )
@@ -1631,11 +1594,11 @@ impl<'a> DecodeContext<'a> {
             self.ir
                 .model
                 .procedural_curves
-                .truncate(before.procedural_curves);
+                .truncate(procedural_curve_start);
             self.ir
                 .model
                 .procedural_surfaces
-                .truncate(before.procedural_surfaces);
+                .truncate(procedural_surface_start);
             for id in omitted_ids {
                 self.annotations.exactness.remove(&id);
                 self.annotations.provenance.remove(&id);
@@ -1948,6 +1911,7 @@ impl<'a> DecodeContext<'a> {
                 container_only: false,
                 geometry_transferred: self.geometry_transferred,
                 coverage: std::collections::BTreeMap::new(),
+                transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
                 losses,
                 notes,
             },
@@ -2640,15 +2604,23 @@ impl<'a> DecodeContext<'a> {
                 let links = staged.links.clone();
                 let warnings = staged.warnings.clone();
                 let full_topology = matches!(staged.kind, BrepTransferKind::FullTopology);
-                let emitted_geometry = !staged.curves.is_empty() || !staged.surfaces.is_empty();
-                let cache_only =
-                    !full_topology && !emitted_geometry && !staged.tessellations.is_empty();
-                let fallback = staged.clone().free_carrier_fallback("IR validation");
-                let validation = self.validate_candidate(|candidate, candidate_annotations| {
-                    staged.apply(candidate, candidate_annotations);
-                    append_record_links_at(candidate, source_order, &links);
-                });
-                if validation.is_ok() {
+                let emitted_geometry = !staged.draft.model().curves.is_empty()
+                    || !staged.draft.model().surfaces.is_empty();
+                let cache_only = !full_topology
+                    && !emitted_geometry
+                    && !staged.draft.model().tessellations.is_empty();
+                let entity_count = staged.draft.entity_count();
+                let committed = self
+                    .expansion_budget
+                    .entities(entity_count)
+                    .and_then(|()| staged.apply(&mut self.ir, &mut self.annotations));
+                if let Err(error) = committed {
+                    self.scan_warning(
+                        source_order,
+                        &format!("Brep draft rejected before commit: {error}"),
+                    );
+                } else {
+                    self.append_links(source_order, &links);
                     for warning in warnings {
                         if let Some(cause) = warning.strip_prefix("Brep topology fallback: ") {
                             self.typed_losses.push(LossNote {
@@ -2674,31 +2646,6 @@ impl<'a> DecodeContext<'a> {
                         self.scan_warning(
                             source_order,
                             "Brep topology invalid; decoded child carriers retained",
-                        );
-                    }
-                } else {
-                    self.scan_warning(
-                        source_order,
-                        &format!(
-                            "Brep transfer rejected by IR validation: {}",
-                            validation.expect_err("checked error")
-                        ),
-                    );
-                    let fallback_links = fallback.links.clone();
-                    let fallback_validation =
-                        self.validate_candidate(|candidate, candidate_annotations| {
-                            fallback.apply(candidate, candidate_annotations);
-                            append_record_links_at(candidate, source_order, &fallback_links);
-                        });
-                    if fallback_validation.is_ok() {
-                        self.geometry_transferred |= emitted_geometry;
-                    } else {
-                        self.scan_warning(
-                            source_order,
-                            &format!(
-                                "Brep fallback rejected by IR validation: {}",
-                                fallback_validation.expect_err("checked error")
-                            ),
                         );
                     }
                 }
@@ -3044,25 +2991,10 @@ fn stage_extrusion_caps(
     true
 }
 
-#[derive(Debug, Clone, Default)]
-struct StagedBrep {
+#[derive(Debug, Default)]
+struct BrepDraft {
     kind: BrepTransferKind,
-    bodies: Vec<Body>,
-    regions: Vec<Region>,
-    shells: Vec<Shell>,
-    faces: Vec<Face>,
-    loops: Vec<Loop>,
-    coedges: Vec<Coedge>,
-    edges: Vec<Edge>,
-    vertices: Vec<Vertex>,
-    points: Vec<Point>,
-    surfaces: Vec<Surface>,
-    curves: Vec<Curve>,
-    procedural_curves: Vec<ProceduralCurve>,
-    procedural_surfaces: Vec<ProceduralSurface>,
-    pcurves: Vec<Pcurve>,
-    tessellations: Vec<Tessellation>,
-    exactness: Vec<(String, Exactness)>,
+    draft: ModelDraft,
     links: Vec<String>,
     warnings: Vec<String>,
 }
@@ -3094,69 +3026,72 @@ struct BrepStageContext<'a> {
     unknown: &'a UnknownId,
 }
 
-impl StagedBrep {
-    fn apply(self, ir: &mut CadIr, annotations: &mut cadmpeg_ir::Annotations) {
-        ir.model.bodies.extend(self.bodies);
-        ir.model.regions.extend(self.regions);
-        ir.model.shells.extend(self.shells);
-        ir.model.faces.extend(self.faces);
-        ir.model.loops.extend(self.loops);
-        ir.model.coedges.extend(self.coedges);
-        ir.model.edges.extend(self.edges);
-        ir.model.vertices.extend(self.vertices);
-        ir.model.points.extend(self.points);
-        ir.model.surfaces.extend(self.surfaces);
-        ir.model.curves.extend(self.curves);
-        ir.model.procedural_curves.extend(self.procedural_curves);
-        ir.model
-            .procedural_surfaces
-            .extend(self.procedural_surfaces);
-        ir.model.pcurves.extend(self.pcurves);
-        ir.model.tessellations.extend(self.tessellations);
-        for (id, exactness) in self.exactness {
-            annotations.exactness.insert(
-                id,
-                ExactnessNote {
-                    entity: exactness,
-                    fields: BTreeMap::new(),
-                },
-            );
-        }
+impl BrepDraft {
+    fn apply(
+        self,
+        ir: &mut CadIr,
+        annotations: &mut cadmpeg_ir::Annotations,
+    ) -> Result<(), String> {
+        self.draft
+            .commit(
+                ir,
+                annotations,
+                &mut Vec::new(),
+                &mut cadmpeg_ir::report::TransferLedger::default(),
+            )
+            .map_err(|error| error.to_string())
     }
 
     fn free_carrier_fallback(mut self, cause: impl Into<String>) -> Self {
         self.kind = BrepTransferKind::FreeCarrierFallback;
         let emitted: BTreeSet<String> = self
+            .draft
+            .model()
             .curves
             .iter()
             .map(|value| value.id.to_string())
-            .chain(self.surfaces.iter().map(|value| value.id.to_string()))
-            .chain(self.tessellations.iter().map(|value| value.id.clone()))
             .chain(
-                self.procedural_curves
+                self.draft
+                    .model()
+                    .surfaces
+                    .iter()
+                    .map(|value| value.id.to_string()),
+            )
+            .chain(
+                self.draft
+                    .model()
+                    .tessellations
+                    .iter()
+                    .map(|value| value.id.clone()),
+            )
+            .chain(
+                self.draft
+                    .model()
+                    .procedural_curves
                     .iter()
                     .map(|value| value.id.to_string()),
             )
             .collect();
         self.links.retain(|id| emitted.contains(id));
-        self.exactness.retain(|(id, _)| emitted.contains(id));
-        self.bodies.clear();
-        self.regions.clear();
-        self.shells.clear();
-        self.faces.clear();
-        self.loops.clear();
-        self.coedges.clear();
-        self.edges.clear();
-        self.vertices.clear();
-        self.points.clear();
-        self.pcurves.clear();
+        self.draft.retain_exactness(|id| emitted.contains(id));
+        let model = self.draft.model_mut();
+        model.bodies.clear();
+        model.regions.clear();
+        model.shells.clear();
+        model.faces.clear();
+        model.loops.clear();
+        model.coedges.clear();
+        model.edges.clear();
+        model.vertices.clear();
+        model.points.clear();
+        model.pcurves.clear();
         self.warnings
             .push(format!("Brep topology fallback: {}", cause.into()));
         self
     }
 }
 
-fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves::GeometryError> {
+fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::GeometryError> {
     let BrepTransferInput {
         expand,
         data,
@@ -3170,9 +3105,9 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
         semantic_error,
         mesh_budget,
     } = input;
-    let mut staged = StagedBrep {
+    let mut staged = BrepDraft {
         kind: BrepTransferKind::FullTopology,
-        ..StagedBrep::default()
+        ..BrepDraft::default()
     };
     let mut c3 = BTreeMap::new();
     let mut surfaces = BTreeMap::new();
@@ -3202,16 +3137,20 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
             ) {
                 Ok(mesh) => {
                     staged.warnings.extend(mesh.warnings.clone());
-                    staged.exactness.push((
+                    staged.draft.exactness(
                         mesh.tessellation.id.clone(),
                         if mesh.scaled {
                             Exactness::Derived
                         } else {
                             Exactness::ByteExact
                         },
-                    ));
+                    );
                     staged.links.push(mesh.tessellation.id.clone());
-                    staged.tessellations.push(mesh.tessellation);
+                    staged
+                        .draft
+                        .model_mut()
+                        .tessellations
+                        .push(mesh.tessellation);
                 }
                 Err(error) => {
                     staged
@@ -3282,19 +3221,19 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
             }) => {
                 let id: cadmpeg_ir::ids::SurfaceId =
                     format!("rhino:object:surface#{key}.slot-{index}").into();
-                staged.surfaces.push(Surface {
+                staged.draft.model_mut().surfaces.push(Surface {
                     id: id.clone(),
                     geometry,
                     source_object: Some(association.clone()),
                 });
-                staged.exactness.push((
+                staged.draft.exactness(
                     id.to_string(),
                     if derived {
                         Exactness::Derived
                     } else {
                         Exactness::ByteExact
                     },
-                ));
+                );
                 surfaces.insert(index as i32, id);
             }
             Ok(crate::curves::DecodedGeometry::Surface {
@@ -3337,10 +3276,19 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
     if semantic_error.is_some() || child_failed {
         staged.links.extend(
             staged
+                .draft
+                .model()
                 .curves
                 .iter()
                 .map(|curve| curve.id.to_string())
-                .chain(staged.surfaces.iter().map(|surface| surface.id.to_string())),
+                .chain(
+                    staged
+                        .draft
+                        .model()
+                        .surfaces
+                        .iter()
+                        .map(|surface| surface.id.to_string()),
+                ),
         );
         return Ok(staged.free_carrier_fallback(
             semantic_error
@@ -3355,7 +3303,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
             return Ok(staged.free_carrier_fallback(format!("C2 curve decode failed: {error}")));
         }
     };
-    staged.pcurves = pcurves;
+    staged.draft.model_mut().pcurves = pcurves;
     let body_id: cadmpeg_ir::ids::BodyId = format!("rhino:object:body#{key}").into();
     let mut vertex_ids = Vec::with_capacity(raw.vertices.len());
     for (index, vertex) in raw.vertices.iter().enumerate() {
@@ -3363,7 +3311,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
             format!("rhino:object:point#{key}.vertex-{index}").into();
         let vertex_id: cadmpeg_ir::ids::VertexId =
             format!("rhino:object:vertex#{key}.slot-{index}").into();
-        staged.points.push(Point {
+        staged.draft.model_mut().points.push(Point {
             id: point_id.clone(),
             position: Point3::new(
                 crate::wire::scaled_coordinate(vertex.point.0[0], scale).ok_or_else(|| {
@@ -3378,7 +3326,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
             ),
             source_object: Some(association.clone()),
         });
-        staged.vertices.push(Vertex {
+        staged.draft.model_mut().vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
             tolerance: scaled_tolerance(vertex.tolerance, scale)?,
@@ -3389,7 +3337,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
     for (index, edge) in raw.edges.iter().enumerate() {
         let id: cadmpeg_ir::ids::EdgeId = format!("rhino:object:edge#{key}.slot-{index}").into();
         let curve = c3.get(&edge.curve).cloned();
-        staged.edges.push(Edge {
+        staged.draft.model_mut().edges.push(Edge {
             id: id.clone(),
             curve,
             start: vertex_ids[edge.vertices[0] as usize].clone(),
@@ -3415,7 +3363,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
         let component = grouping.face_groups[index];
         let serialized_sense = grouping.directions.as_ref().map(|values| values[index]);
         let id: cadmpeg_ir::ids::FaceId = format!("rhino:object:face#{key}.slot-{index}").into();
-        staged.faces.push(Face {
+        staged.draft.model_mut().faces.push(Face {
             id: id.clone(),
             shell: format!("rhino:object:shell#{key}.component-{component}").into(),
             surface,
@@ -3432,7 +3380,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
         let id: cadmpeg_ir::ids::LoopId = format!("rhino:object:loop#{key}.slot-{index}").into();
         let face_id = face_ids[loop_record.face as usize].clone();
         let mut coedges = Vec::with_capacity(loop_record.trims.len());
-        let coedge_start = staged.coedges.len();
+        let coedge_start = staged.draft.model_mut().coedges.len();
         for trim_index in &loop_record.trims {
             let trim = &raw.trims[*trim_index as usize];
             let coedge_id: cadmpeg_ir::ids::CoedgeId =
@@ -3445,7 +3393,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
                 let synthetic_id: cadmpeg_ir::ids::EdgeId =
                     format!("rhino:object:edge#{key}.singular-{trim_index}").into();
                 if !synthetic_edges.contains_key(trim_index) {
-                    staged.edges.push(Edge {
+                    staged.draft.model_mut().edges.push(Edge {
                         id: synthetic_id.clone(),
                         curve: None,
                         start: vertex_ids[trim.vertices[0] as usize].clone(),
@@ -3464,7 +3412,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
                     crate::curves::error(trim.source_range.start, "trim C2 missing")
                 })?)
             };
-            staged.coedges.push(Coedge {
+            staged.draft.model_mut().coedges.push(Coedge {
                 id: coedge_id.clone(),
                 owner_loop: id.clone(),
                 edge: edge_id,
@@ -3488,19 +3436,23 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
         for offset in 0..coedges.len() {
             let next = coedges[(offset + 1) % coedges.len()].clone();
             let previous = coedges[(offset + coedges.len() - 1) % coedges.len()].clone();
-            staged.coedges[coedge_start + offset].next = next;
-            staged.coedges[coedge_start + offset].previous = previous;
+            staged.draft.model_mut().coedges[coedge_start + offset].next = next;
+            staged.draft.model_mut().coedges[coedge_start + offset].previous = previous;
         }
-        staged.loops.push(Loop {
+        staged.draft.model_mut().loops.push(Loop {
             id: id.clone(),
             face: face_id.clone(),
             boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
             coedges,
             vertex_uses: Vec::new(),
         });
-        staged.faces[loop_record.face as usize].loops.push(id);
+        staged.draft.model_mut().faces[loop_record.face as usize]
+            .loops
+            .push(id);
     }
     let coedge_positions: BTreeMap<cadmpeg_ir::ids::CoedgeId, usize> = staged
+        .draft
+        .model()
         .coedges
         .iter()
         .enumerate()
@@ -3517,7 +3469,8 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
         }
         for (offset, id) in uses.iter().enumerate() {
             let next = uses[(offset + 1) % uses.len()].clone();
-            staged.coedges[*coedge_positions.get(id).expect("coedge staged")].radial_next = next;
+            staged.draft.model_mut().coedges[*coedge_positions.get(id).expect("coedge staged")]
+                .radial_next = next;
         }
     }
     let mut regions = Vec::new();
@@ -3532,7 +3485,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
             .entry(region_label)
             .or_default()
             .push(shell_id.clone());
-        staged.shells.push(Shell {
+        staged.draft.model_mut().shells.push(Shell {
             id: shell_id,
             region: region_id.clone(),
             faces: faces.iter().map(|index| face_ids[*index].clone()).collect(),
@@ -3555,15 +3508,18 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
             region.shells = shell_ids;
         }
     }
-    staged.regions = regions;
-    staged.bodies.push(Body {
+    staged.draft.model_mut().regions = regions;
+    let body_regions = staged
+        .draft
+        .model()
+        .regions
+        .iter()
+        .map(|region| region.id.clone())
+        .collect();
+    staged.draft.model_mut().bodies.push(Body {
         id: body_id.clone(),
         kind: brep_body_kind(raw.minor, raw.is_solid),
-        regions: staged
-            .regions
-            .iter()
-            .map(|region| region.id.clone())
-            .collect(),
+        regions: body_regions,
         transform: None,
         name: association.name.clone(),
         color: association.color,
@@ -3571,27 +3527,40 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
     });
     staged.links.extend(
         staged
+            .draft
+            .model()
             .curves
             .iter()
             .map(|curve| curve.id.to_string())
-            .chain(staged.surfaces.iter().map(|surface| surface.id.to_string())),
+            .chain(
+                staged
+                    .draft
+                    .model()
+                    .surfaces
+                    .iter()
+                    .map(|surface| surface.id.to_string()),
+            ),
     );
     staged.links.push(body_id.to_string());
-    for id in staged
-        .bodies
-        .iter()
-        .map(|value| value.id.to_string())
-        .chain(staged.regions.iter().map(|value| value.id.to_string()))
-        .chain(staged.shells.iter().map(|value| value.id.to_string()))
-        .chain(staged.faces.iter().map(|value| value.id.to_string()))
-        .chain(staged.loops.iter().map(|value| value.id.to_string()))
-        .chain(staged.coedges.iter().map(|value| value.id.to_string()))
-        .chain(staged.edges.iter().map(|value| value.id.to_string()))
-        .chain(staged.vertices.iter().map(|value| value.id.to_string()))
-        .chain(staged.points.iter().map(|value| value.id.to_string()))
-        .chain(staged.pcurves.iter().map(|value| value.id.to_string()))
-    {
-        staged.exactness.push((id, Exactness::Derived));
+    let derived_ids = {
+        let model = staged.draft.model();
+        model
+            .bodies
+            .iter()
+            .map(|value| value.id.to_string())
+            .chain(model.regions.iter().map(|value| value.id.to_string()))
+            .chain(model.shells.iter().map(|value| value.id.to_string()))
+            .chain(model.faces.iter().map(|value| value.id.to_string()))
+            .chain(model.loops.iter().map(|value| value.id.to_string()))
+            .chain(model.coedges.iter().map(|value| value.id.to_string()))
+            .chain(model.edges.iter().map(|value| value.id.to_string()))
+            .chain(model.vertices.iter().map(|value| value.id.to_string()))
+            .chain(model.points.iter().map(|value| value.id.to_string()))
+            .chain(model.pcurves.iter().map(|value| value.id.to_string()))
+            .collect::<Vec<_>>()
+    };
+    for id in derived_ids {
+        staged.draft.exactness(id, Exactness::Derived);
     }
     let _ = writer_version;
     scale_plane_pcurves(&mut staged, scale);
@@ -3640,23 +3609,24 @@ pub(crate) fn embedded_brep_json(
     if staged.kind != BrepTransferKind::FullTopology {
         return None;
     }
+    let model = staged.draft.model();
     serde_json::to_string(&serde_json::json!({
         "kind": "brep",
-        "bodies": staged.bodies,
-        "regions": staged.regions,
-        "shells": staged.shells,
-        "faces": staged.faces,
-        "loops": staged.loops,
-        "coedges": staged.coedges,
-        "edges": staged.edges,
-        "vertices": staged.vertices,
-        "points": staged.points,
-        "surfaces": staged.surfaces,
-        "curves": staged.curves,
-        "procedural_curves": staged.procedural_curves,
-        "procedural_surfaces": staged.procedural_surfaces,
-        "pcurves": staged.pcurves,
-        "tessellations": staged.tessellations,
+        "bodies": model.bodies,
+        "regions": model.regions,
+        "shells": model.shells,
+        "faces": model.faces,
+        "loops": model.loops,
+        "coedges": model.coedges,
+        "edges": model.edges,
+        "vertices": model.vertices,
+        "points": model.points,
+        "surfaces": model.surfaces,
+        "curves": model.curves,
+        "procedural_curves": model.procedural_curves,
+        "procedural_surfaces": model.procedural_surfaces,
+        "pcurves": model.pcurves,
+        "tessellations": model.tessellations,
     }))
     .ok()
 }
@@ -3666,35 +3636,43 @@ pub(crate) fn embedded_brep_json(
 /// parameterization to millimeters while the trims stay in native units;
 /// the UV poles of pcurves on plane faces scale to match. NURBS surface
 /// parameters are knot-domain values and do not scale.
-fn scale_plane_pcurves(staged: &mut StagedBrep, scale: f64) {
+fn scale_plane_pcurves(staged: &mut BrepDraft, scale: f64) {
     if scale == 1.0 {
         return;
     }
     let plane_surfaces = staged
+        .draft
+        .model()
         .surfaces
         .iter()
         .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Plane { .. }))
-        .map(|surface| surface.id.0.as_str())
+        .map(|surface| surface.id.0.clone())
         .collect::<BTreeSet<_>>();
     let plane_faces = staged
+        .draft
+        .model()
         .faces
         .iter()
-        .filter(|face| plane_surfaces.contains(face.surface.0.as_str()))
-        .map(|face| face.id.0.as_str())
+        .filter(|face| plane_surfaces.contains(&face.surface.0))
+        .map(|face| face.id.0.clone())
         .collect::<BTreeSet<_>>();
     let plane_loops = staged
+        .draft
+        .model()
         .loops
         .iter()
-        .filter(|value| plane_faces.contains(value.face.0.as_str()))
-        .map(|value| value.id.0.as_str())
+        .filter(|value| plane_faces.contains(&value.face.0))
+        .map(|value| value.id.0.clone())
         .collect::<BTreeSet<_>>();
     let plane_pcurves = staged
+        .draft
+        .model()
         .coedges
         .iter()
-        .filter(|coedge| plane_loops.contains(coedge.owner_loop.0.as_str()))
+        .filter(|coedge| plane_loops.contains(&coedge.owner_loop.0))
         .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.0.clone()))
         .collect::<BTreeSet<_>>();
-    for pcurve in &mut staged.pcurves {
+    for pcurve in &mut staged.draft.model_mut().pcurves {
         if !plane_pcurves.contains(&pcurve.id.0) {
             continue;
         }
@@ -3740,7 +3718,7 @@ fn brep_body_kind(minor: u8, is_solid: Option<i32>) -> BodyKind {
 }
 
 fn stage_brep_procedural_surface(
-    staged: &mut StagedBrep,
+    staged: &mut BrepDraft,
     index: usize,
     geometry: cadmpeg_ir::geometry::NurbsSurface,
     definition: crate::surfaces::DecodedProceduralSurface,
@@ -3773,7 +3751,7 @@ fn stage_brep_procedural_surface(
         .collect::<Vec<_>>();
     let surface_id: cadmpeg_ir::ids::SurfaceId =
         format!("rhino:object:surface#{}.slot-{index}", context.key).into();
-    staged.surfaces.push(Surface {
+    staged.draft.model_mut().surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Nurbs(geometry),
         source_object: Some(context.association.clone()),
@@ -3808,26 +3786,30 @@ fn stage_brep_procedural_surface(
         context.key
     )
     .into();
-    staged.procedural_surfaces.push(ProceduralSurface {
-        id: procedural_id.clone(),
-        surface: surface_id.clone(),
-        definition,
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    });
     staged
-        .exactness
-        .push((surface_id.to_string(), Exactness::Derived));
+        .draft
+        .model_mut()
+        .procedural_surfaces
+        .push(ProceduralSurface {
+            id: procedural_id.clone(),
+            surface: surface_id.clone(),
+            definition,
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        });
     staged
-        .exactness
-        .push((procedural_id.to_string(), Exactness::Derived));
+        .draft
+        .exactness(surface_id.to_string(), Exactness::Derived);
+    staged
+        .draft
+        .exactness(procedural_id.to_string(), Exactness::Derived);
     staged.links.push(surface_id.to_string());
     staged.links.push(procedural_id.to_string());
     Ok(surface_id)
 }
 
 fn stage_curve_tree(
-    staged: &mut StagedBrep,
+    staged: &mut BrepDraft,
     curve: crate::curves::DecodedCurve,
     key: &str,
     path: &str,
@@ -3855,19 +3837,19 @@ fn stage_curve_tree(
     } else {
         curve.geometry
     };
-    staged.curves.push(Curve {
+    staged.draft.model_mut().curves.push(Curve {
         id: id.clone(),
         geometry,
         source_object: Some(association.clone()),
     });
-    staged.exactness.push((id.to_string(), Exactness::Derived));
+    staged.draft.exactness(id.to_string(), Exactness::Derived);
     staged.links.push(id.to_string());
     if let Some(compound) = curve.compound {
         let procedure_id: cadmpeg_ir::ids::ProceduralCurveId =
             format!("rhino:object:procedural-curve#{key}.{path}").into();
         staged
-            .exactness
-            .push((procedure_id.to_string(), Exactness::Derived));
+            .draft
+            .exactness(procedure_id.to_string(), Exactness::Derived);
         staged_links_procedure(
             staged,
             ProceduralCurve {
@@ -3886,9 +3868,9 @@ fn stage_curve_tree(
     id
 }
 
-fn staged_links_procedure(staged: &mut StagedBrep, procedure: ProceduralCurve) {
+fn staged_links_procedure(staged: &mut BrepDraft, procedure: ProceduralCurve) {
     staged.links.push(procedure.id.to_string());
-    staged.procedural_curves.push(procedure);
+    staged.draft.model_mut().procedural_curves.push(procedure);
 }
 
 fn decode_pcurves(
@@ -5127,37 +5109,37 @@ mod tests {
     fn fallback_discards_topology_and_unknown_record_self_link() {
         let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0".into();
         let surface_id: cadmpeg_ir::ids::SurfaceId = "rhino:object:surface#x.slot-0".into();
-        let mut staged = StagedBrep {
-            curves: vec![Curve {
-                id: curve_id.clone(),
-                geometry: CurveGeometry::Unknown { record: None },
-                source_object: None,
-            }],
-            surfaces: vec![Surface {
-                id: surface_id.clone(),
-                geometry: cadmpeg_ir::geometry::SurfaceGeometry::Unknown { record: None },
-                source_object: None,
-            }],
+        let mut staged = BrepDraft {
             links: vec![
                 curve_id.to_string(),
                 surface_id.to_string(),
                 "rhino:object:body#x".to_string(),
                 "rhino:object:record#x".to_string(),
             ],
-            bodies: vec![Body {
-                id: "rhino:object:body#x".into(),
-                kind: BodyKind::Sheet,
-                regions: Vec::new(),
-                transform: None,
-                name: None,
-                color: None,
-                visible: None,
-            }],
-            ..StagedBrep::default()
+            ..BrepDraft::default()
         };
+        staged.draft.model_mut().curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        staged.draft.model_mut().surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        staged.draft.model_mut().bodies.push(Body {
+            id: "rhino:object:body#x".into(),
+            kind: BodyKind::Sheet,
+            regions: Vec::new(),
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
         staged = staged.free_carrier_fallback("C2 failure");
         assert_eq!(staged.kind, BrepTransferKind::FreeCarrierFallback);
-        assert!(staged.bodies.is_empty());
+        assert!(staged.draft.model().bodies.is_empty());
         assert_eq!(
             staged.links,
             vec![curve_id.to_string(), surface_id.to_string()]
@@ -5179,18 +5161,20 @@ mod tests {
                 }],
             )
             .expect("required invariant");
-        let staged = StagedBrep {
+        let mut staged = BrepDraft {
             kind: BrepTransferKind::FreeCarrierFallback,
-            curves: vec![Curve {
-                id: curve_id.clone(),
-                geometry: CurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false)),
-                source_object: None,
-            }],
             links: vec![unknown.to_string(), curve_id.to_string()],
-            ..StagedBrep::default()
+            ..BrepDraft::default()
         };
+        staged.draft.model_mut().curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false)),
+            source_object: None,
+        });
         let links = staged.links.clone();
-        staged.apply(&mut candidate, &mut cadmpeg_ir::Annotations::default());
+        staged
+            .apply(&mut candidate, &mut cadmpeg_ir::Annotations::default())
+            .expect("commit fallback carrier");
         append_record_links(&mut candidate, &unknown, &links);
         assert_eq!(
             candidate
@@ -5204,7 +5188,7 @@ mod tests {
     }
 
     #[test]
-    fn colliding_staged_ids_fail_only_the_cloned_candidate() {
+    fn colliding_staged_ids_are_rejected_without_mutating_the_candidate() {
         let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0".into();
         let curve = Curve {
             id: curve_id,
@@ -5214,12 +5198,12 @@ mod tests {
         let mut live = CadIr::empty(Units::default());
         live.model.curves.push(curve.clone());
         let mut candidate = live.clone();
-        StagedBrep {
-            curves: vec![curve],
-            ..StagedBrep::default()
-        }
-        .apply(&mut candidate, &mut cadmpeg_ir::Annotations::default());
-        assert!(!cadmpeg_ir::validate::validate(&candidate, Vec::new()).is_ok());
+        let mut staged = BrepDraft::default();
+        staged.draft.model_mut().curves.push(curve);
+        assert!(staged
+            .apply(&mut candidate, &mut cadmpeg_ir::Annotations::default())
+            .is_err());
+        assert_eq!(candidate, live);
         assert_eq!(live.model.curves.len(), 1);
     }
 
@@ -5253,33 +5237,34 @@ mod tests {
         })
         .expect("stage plane Brep");
         assert_eq!(staged.kind, BrepTransferKind::FullTopology);
+        let model = staged.draft.model();
         assert_eq!(
             (
-                staged.bodies.len(),
-                staged.regions.len(),
-                staged.shells.len(),
-                staged.faces.len(),
-                staged.loops.len(),
-                staged.coedges.len(),
-                staged.edges.len(),
-                staged.vertices.len(),
-                staged.pcurves.len(),
-                staged.curves.len(),
-                staged.surfaces.len(),
+                model.bodies.len(),
+                model.regions.len(),
+                model.shells.len(),
+                model.faces.len(),
+                model.loops.len(),
+                model.coedges.len(),
+                model.edges.len(),
+                model.vertices.len(),
+                model.pcurves.len(),
+                model.curves.len(),
+                model.surfaces.len(),
             ),
             (1, 1, 1, 1, 1, 3, 3, 3, 3, 3, 1)
         );
-        assert_eq!(staged.points[1].position.x, 25.4);
-        assert_eq!(staged.vertices[0].tolerance, Some(0.254));
-        assert_eq!(staged.edges[0].tolerance, Some(0.254));
-        assert_eq!(staged.pcurves[0].fit_tolerance, Some(0.02));
-        let PcurveGeometry::Nurbs { control_points, .. } = &staged.pcurves[0].geometry else {
+        assert_eq!(model.points[1].position.x, 25.4);
+        assert_eq!(model.vertices[0].tolerance, Some(0.254));
+        assert_eq!(model.edges[0].tolerance, Some(0.254));
+        assert_eq!(model.pcurves[0].fit_tolerance, Some(0.02));
+        let PcurveGeometry::Nurbs { control_points, .. } = &model.pcurves[0].geometry else {
             panic!("line C2 must be a NURBS pcurve");
         };
         // Plane parameters are lengths: the native `u = 1.0` trim endpoint
         // scales with the document (inches -> millimeters).
         assert_eq!(control_points[1].u, 25.4);
-        assert_eq!(staged.coedges[0].radial_next, staged.coedges[0].id);
+        assert_eq!(model.coedges[0].radial_next, model.coedges[0].id);
         let links = staged.links.clone();
         let mut candidate = CadIr::empty(Units::default());
         candidate
@@ -5291,7 +5276,9 @@ mod tests {
                 }],
             )
             .expect("required invariant");
-        staged.apply(&mut candidate, &mut cadmpeg_ir::Annotations::default());
+        staged
+            .apply(&mut candidate, &mut cadmpeg_ir::Annotations::default())
+            .expect("commit staged plane B-rep");
         append_record_links(&mut candidate, &unknown, &links);
         let report = cadmpeg_ir::validate::validate(&candidate, Vec::new());
         assert!(report.is_ok(), "{report:?}");

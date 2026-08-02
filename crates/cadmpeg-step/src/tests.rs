@@ -15,6 +15,7 @@ use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::units::{LengthUnit, Units};
 use cadmpeg_ir::CadIr;
+use std::fmt::Write as _;
 use std::io::Cursor;
 
 use crate::{
@@ -98,11 +99,8 @@ fn parser_rejects_excessive_parameter_nesting_without_recursing_unboundedly() {
 fn parser_bounds_exponential_anchor_expansion() {
     let mut anchors = String::from("<a0>=(1,1);\n");
     for index in 1..40 {
-        anchors.push_str(&format!(
-            "<a{index}>=(<a{}>,<a{}>);\n",
-            index - 1,
-            index - 1
-        ));
+        writeln!(anchors, "<a{index}>=(<a{}>,<a{}>);", index - 1, index - 1)
+            .expect("write anchor fixture");
     }
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','','',(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<a39>);ENDSEC;END-ISO-10303-21;"
@@ -115,15 +113,13 @@ fn parser_bounds_exponential_anchor_expansion() {
 fn parser_bounds_aggregate_anchor_materialization() {
     let mut anchors = String::from("<a0>=(1,1);\n");
     for index in 1..18 {
-        anchors.push_str(&format!(
-            "<a{index}>=(<a{}>,<a{}>);\n",
-            index - 1,
-            index - 1
-        ));
+        writeln!(anchors, "<a{index}>=(<a{}>,<a{}>);", index - 1, index - 1)
+            .expect("write anchor fixture");
     }
-    let records = (1..=8)
-        .map(|id| format!("#{id}=ITEM(<a17>);"))
-        .collect::<String>();
+    let records = (1..=8).fold(String::new(), |mut records, id| {
+        write!(records, "#{id}=ITEM(<a17>);").expect("write anchor record fixture");
+        records
+    });
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','','',(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;"
     );
@@ -1231,22 +1227,42 @@ fn step_color_assets_round_trip_names_and_tessellation_targets_strictly() {
 #[test]
 fn writer_round_trips_product_body_ownership() {
     let mut ir = unit_cube();
-    let product = cadmpeg_ir::ids::ProductId("product-0".into());
-    ir.model.products.push(cadmpeg_ir::product::Product {
-        id: product.clone(),
-        product_id: "PART-001".into(),
-        name: Some("Cube part".into()),
-        bodies: vec![ir.model.bodies[0].id.clone()],
-    });
+    let product = cadmpeg_ir::ids::ProductDefinitionId("product-0".into());
     ir.model
-        .product_occurrences
-        .push(cadmpeg_ir::product::ProductOccurrence {
-            id: cadmpeg_ir::ids::OccurrenceId("root-0".into()),
-            product,
-            parent: cadmpeg_ir::product::OccurrenceParent::Root,
-            transform: cadmpeg_ir::transform::Transform::identity(),
-            name: Some("Cube root".into()),
+        .product_definitions
+        .push(cadmpeg_ir::products::ProductDefinition {
+            id: product.clone(),
+            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+            source_name: Some("Cube part".into()),
+            label: Some("Cube part".into()),
+            description: None,
+            part_number: Some("PART-001".into()),
+            bom_properties: std::collections::BTreeMap::default(),
+            bodies: vec![ir.model.bodies[0].id.clone()],
+            native_ref: None,
         });
+    ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
+        id: cadmpeg_ir::ids::OccurrenceId("root-0".into()),
+        prototype: cadmpeg_ir::products::PrototypeReference::Local {
+            definition: product,
+        },
+        parent: cadmpeg_ir::products::OccurrenceParent::Root,
+        ordinal: 0,
+        transform: cadmpeg_ir::transform::Transform::identity(),
+        prototype_transform: cadmpeg_ir::transform::Transform::identity(),
+        scale: [1.0; 3],
+        name: Some("Cube root".into()),
+        linked_subelements: Vec::new(),
+        visible: None,
+        element_component: None,
+        claim_child: None,
+        copy_on_change: None,
+        copy_on_change_source: None,
+        copy_on_change_group: None,
+        copy_on_change_touched: None,
+        link_transform: None,
+        native_ref: None,
+    });
     let options = StepWriteOptions {
         schema: StepSchema::Ap242Edition3,
         unsupported: StepUnsupportedPolicy::Reject,
@@ -1257,10 +1273,15 @@ fn writer_round_trips_product_body_ownership() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode product-owned body");
-    assert_eq!(decoded.ir.model.products.len(), 1);
-    assert_eq!(decoded.ir.model.products[0].product_id, "PART-001");
-    assert_eq!(decoded.ir.model.products[0].bodies.len(), 1);
-    assert_eq!(decoded.ir.model.product_occurrences.len(), 1);
+    assert_eq!(decoded.ir.model.product_definitions.len(), 1);
+    assert_eq!(
+        decoded.ir.model.product_definitions[0]
+            .part_number
+            .as_deref(),
+        Some("PART-001")
+    );
+    assert_eq!(decoded.ir.model.product_definitions[0].bodies.len(), 1);
+    assert_eq!(decoded.ir.model.occurrences.len(), 1);
 }
 
 #[test]
@@ -1338,19 +1359,19 @@ fn writer_round_trips_standalone_points_and_curves() {
 
 #[test]
 fn decode_builds_product_occurrences_with_relative_placement() {
-    use cadmpeg_ir::product::OccurrenceParent;
+    use cadmpeg_ir::products::OccurrenceParent;
 
     let bytes = include_bytes!("../tests/fixtures/ap242_assembly.p21");
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode AP242 assembly");
 
-    assert_eq!(result.ir.model.products.len(), 2);
-    assert_eq!(result.ir.model.product_occurrences.len(), 2);
+    assert_eq!(result.ir.model.product_definitions.len(), 2);
+    assert_eq!(result.ir.model.occurrences.len(), 2);
     let child = result
         .ir
         .model
-        .product_occurrences
+        .occurrences
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
         .unwrap();
@@ -1370,12 +1391,12 @@ fn decode_builds_product_occurrences_with_relative_placement() {
     let roundtrip = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode written product graph");
-    assert_eq!(roundtrip.ir.model.products.len(), 2);
-    assert_eq!(roundtrip.ir.model.product_occurrences.len(), 2);
+    assert_eq!(roundtrip.ir.model.product_definitions.len(), 2);
+    assert_eq!(roundtrip.ir.model.occurrences.len(), 2);
     let child = roundtrip
         .ir
         .model
-        .product_occurrences
+        .occurrences
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
         .expect("round-tripped child occurrence");
@@ -1393,7 +1414,7 @@ fn decode_builds_occurrence_placement_from_mapped_item() {
     let child = result
         .ir
         .model
-        .product_occurrences
+        .occurrences
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("Mapped child"))
         .unwrap();
@@ -1418,7 +1439,7 @@ fn decode_transfers_ap242_one_based_tessellation_indices() {
     assert_eq!(mesh.triangles, [[0, 1, 2]]);
     assert_eq!(mesh.normals.len(), 3);
     assert_eq!(
-        mesh.body.as_ref().map(|body| body.as_str()),
+        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
         Some("step:data:body#38")
     );
     let complex = result
@@ -1751,23 +1772,27 @@ fn mapped_representation_dag_is_memoized() {
         let map = 1_000 + level;
         let first = 2_000 + level * 2;
         let second = first + 1;
-        records.push_str(&format!(
+        write!(
+            records,
             "#{representation}=SHAPE_REPRESENTATION('',(#{first},#{second}),$);\n\
 #{map}=REPRESENTATION_MAP($,#{next});\n\
 #{first}=MAPPED_ITEM('',#{map},$);\n\
 #{second}=MAPPED_ITEM('',#{map},$);\n"
-        ));
+        )
+        .expect("write mapped representation fixture");
     }
-    records.push_str(&format!(
+    write!(
+        records,
         "#{}=SHAPE_REPRESENTATION('',(#9000),$);\n#9000=MANIFOLD_SOLID_BREP('',#9001);\n#9001=CLOSED_SHELL('',());",
         100 + depth
-    ));
+    )
+    .expect("write terminal representation fixture");
 
     let result = decode_inline(&records);
-    assert_eq!(result.ir.model.products.len(), 1);
-    assert_eq!(result.ir.model.products[0].bodies.len(), 1);
+    assert_eq!(result.ir.model.product_definitions.len(), 1);
+    assert_eq!(result.ir.model.product_definitions[0].bodies.len(), 1);
     assert_eq!(
-        result.ir.model.products[0].bodies[0].as_str(),
+        result.ir.model.product_definitions[0].bodies[0].as_str(),
         "step:data:body#9000"
     );
 }
@@ -1866,7 +1891,7 @@ fn typed_pmi_measure_uses_its_explicit_conversion_unit() {
 
 #[test]
 fn repeated_subassembly_instances_each_receive_the_subtree() {
-    use cadmpeg_ir::product::OccurrenceParent;
+    use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
 
     let result = decode_inline(
         "#1=APPLICATION_CONTEXT('mechanical design');
@@ -1885,13 +1910,19 @@ fn repeated_subassembly_instances_each_receive_the_subtree() {
 #21=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u2','sub two','',#6,#9,$);
 #22=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u3','leaf','',#9,#12,$);",
     );
-    assert_eq!(result.ir.model.product_occurrences.len(), 5);
+    assert_eq!(result.ir.model.occurrences.len(), 5);
     let subassemblies = result
         .ir
         .model
-        .product_occurrences
+        .occurrences
         .iter()
-        .filter(|occurrence| occurrence.product.as_str() == "step:product:product#7")
+        .filter(|occurrence| {
+            matches!(
+                &occurrence.prototype,
+                PrototypeReference::Local { definition }
+                    if definition.as_str() == "step:product:product#7"
+            )
+        })
         .collect::<Vec<_>>();
     assert_eq!(subassemblies.len(), 2);
     for subassembly in subassemblies {
@@ -1899,7 +1930,7 @@ fn repeated_subassembly_instances_each_receive_the_subtree() {
             result
                 .ir
                 .model
-                .product_occurrences
+                .occurrences
                 .iter()
                 .filter(|occurrence| matches!(
                     &occurrence.parent,
@@ -1927,14 +1958,18 @@ fn ap203_specified_source_formations_build_occurrence_tree() {
 #10=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u1','part instance','',#6,#9,$);",
     );
 
-    assert_eq!(result.ir.model.products.len(), 2);
-    assert_eq!(result.ir.model.product_occurrences.len(), 2);
+    assert_eq!(result.ir.model.product_definitions.len(), 2);
+    assert_eq!(result.ir.model.occurrences.len(), 2);
     assert!(result
         .ir
         .model
-        .product_occurrences
+        .occurrences
         .iter()
-        .any(|occurrence| occurrence.product.as_str() == "step:product:product#7"));
+        .any(|occurrence| matches!(
+            &occurrence.prototype,
+            cadmpeg_ir::products::PrototypeReference::Local { definition }
+                if definition.as_str() == "step:product:product#7"
+        )));
     assert!(!result
         .ir
         .native_unknowns("step")
@@ -3156,7 +3191,7 @@ fn source_native_record_reduction_is_reported() {
         "asm_histories".into(),
         vec![cadmpeg_ir::NativeRecord {
             id: "asm-history-0".into(),
-            fields: Default::default(),
+            fields: std::iter::empty().collect(),
         }],
     );
     ir.finalize();
@@ -3175,7 +3210,7 @@ fn strict_writer_rejects_before_emitting_bytes() {
         "asm_histories".into(),
         vec![cadmpeg_ir::NativeRecord {
             id: "asm-history-0".into(),
-            fields: Default::default(),
+            fields: std::iter::empty().collect(),
         }],
     );
     ir.finalize();
@@ -3317,7 +3352,7 @@ fn face_appearance_binding_styles_the_advanced_face() {
             b: 0.125,
             a: 1.0,
         }),
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
@@ -3326,7 +3361,7 @@ fn face_appearance_binding_styles_the_advanced_face() {
         appearance: AppearanceId("test:appearance#black".to_string()),
         source_entity_id: None,
         object_type: None,
-        channels: Default::default(),
+        channels: std::collections::BTreeMap::default(),
     });
     let s = export(&ir);
     assert!(s.contains("COLOUR_RGB('',0.125,0.125,0.125)"));
@@ -3376,7 +3411,7 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
             b: 0.0,
             a: 1.0,
         }),
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
@@ -3385,7 +3420,7 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         appearance: AppearanceId("test:appearance#black".to_string()),
         source_entity_id: None,
         object_type: None,
-        channels: Default::default(),
+        channels: std::collections::BTreeMap::default(),
     });
 
     let s = export(&ir);
@@ -3397,7 +3432,7 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     // Each color's style chain is emitted once and shared; grouping the styled
     // items by their style ref must yield exactly two groups sized 1 and
     // face_count - 1 (the lone override plus every inherited face).
-    let mut per_style: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut per_style = std::collections::BTreeMap::<String, usize>::default();
     for item in &styled {
         // STYLED_ITEM('color',(#psa),#face)
         let psa = item

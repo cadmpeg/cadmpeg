@@ -8,7 +8,9 @@ use std::collections::BTreeMap;
 /// Stable semantic-annotation identity.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(transparent)]
-pub struct SemanticAnnotationId(pub String);
+pub struct SemanticAnnotationId(
+    #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
+);
 
 /// Semantic role of an annotation independent of its drawing presentation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

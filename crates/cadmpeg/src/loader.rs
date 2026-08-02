@@ -168,6 +168,7 @@ mod tests {
             container_only: false,
             geometry_transferred: false,
             coverage: Default::default(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };

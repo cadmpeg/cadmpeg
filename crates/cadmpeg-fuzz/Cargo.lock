@@ -87,6 +87,7 @@ name = "cadmpeg-codec-f3d"
 version = "0.3.0"
 dependencies = [
  "cadmpeg-codec-core",
+ "cadmpeg-container",
  "cadmpeg-ir",
  "roxmltree",
  "schemars",
@@ -103,6 +104,7 @@ name = "cadmpeg-codec-freecad"
 version = "0.3.0"
 dependencies = [
  "cadmpeg-codec-core",
+ "cadmpeg-container",
  "cadmpeg-ir",
  "flate2",
  "roxmltree",
@@ -170,6 +172,7 @@ name = "cadmpeg-container"
 version = "0.3.0"
 dependencies = [
  "cadmpeg-codec-core",
+ "crc32fast",
  "flate2",
  "zip",
 ]

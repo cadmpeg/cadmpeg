@@ -2675,6 +2675,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         container_only: false,
         geometry_transferred: true,
         coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
         notes: container::summarize(scan).notes,
     }
@@ -3603,6 +3604,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         container_only,
         geometry_transferred: false,
         coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
         notes: summary.notes,
     }
@@ -3735,6 +3737,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3830,6 +3833,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -3917,6 +3921,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -4093,6 +4098,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -4879,6 +4885,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -5119,6 +5126,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -5186,6 +5194,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -5238,6 +5247,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -5321,6 +5331,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -5361,6 +5372,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -5403,6 +5415,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -5452,6 +5465,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -5606,6 +5620,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };
@@ -5921,6 +5936,7 @@ mod design_loss_tests {
             container_only: false,
             geometry_transferred: true,
             coverage: std::collections::BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: Vec::new(),
             notes: Vec::new(),
         };

@@ -11,6 +11,7 @@ use crate::math::{Point3, Vector3};
 /// The explicit matrix preserves source coefficients. Validation checks the
 /// affine bottom row.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(transparent)]
 pub struct Transform {
     /// Row-major 4×4 matrix; `rows[3]` is normally `[0, 0, 0, 1]`.
     pub rows: [[f64; 4]; 4],
@@ -41,7 +42,13 @@ impl Transform {
 
     /// Whether this is a finite, right-handed rigid transform.
     pub fn is_proper_rigid(&self) -> bool {
-        if !self.is_affine() {
+        const EPSILON: f64 = 1.0e-9;
+        if !self.is_finite()
+            || self.rows[3]
+                .iter()
+                .zip([0.0, 0.0, 0.0, 1.0])
+                .any(|(actual, expected)| (*actual - expected).abs() > EPSILON)
+        {
             return false;
         }
         let x = [self.rows[0][0], self.rows[1][0], self.rows[2][0]];
@@ -60,11 +67,11 @@ impl Transform {
         ];
         [x, y, z]
             .into_iter()
-            .all(|axis| (dot(axis, axis) - 1.0).abs() <= 1.0e-9)
-            && dot(x, y).abs() <= 1.0e-9
-            && dot(x, z).abs() <= 1.0e-9
-            && dot(y, z).abs() <= 1.0e-9
-            && (dot(cross, z) - 1.0).abs() <= 1.0e-9
+            .all(|axis| (dot(axis, axis) - 1.0).abs() <= EPSILON)
+            && dot(x, y).abs() <= EPSILON
+            && dot(x, z).abs() <= EPSILON
+            && dot(y, z).abs() <= EPSILON
+            && (dot(cross, z) - 1.0).abs() <= EPSILON
     }
 
     /// Composes transforms as `self * right` for column-vector application.

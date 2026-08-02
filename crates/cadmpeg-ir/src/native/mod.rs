@@ -8,6 +8,8 @@ use schemars::JsonSchema;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+pub mod catalogue;
+
 /// One non-empty native arena reported as an exporter loss.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct LossCount {
@@ -22,6 +24,9 @@ pub struct LossCount {
 /// Conversion failure between codec-owned typed records and generic records.
 #[derive(Debug, thiserror::Error)]
 pub enum NativeConvertError {
+    /// Native namespace version lies outside the codec's declared contract.
+    #[error(transparent)]
+    UnsupportedVersion(#[from] catalogue::NativeVersionError),
     /// A serialized typed record has no string `id` field.
     #[error("native record is missing a string id")]
     MissingId,

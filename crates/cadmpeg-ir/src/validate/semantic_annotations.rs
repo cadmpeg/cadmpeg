@@ -8,7 +8,7 @@ use crate::report::{Check, Finding, Severity};
 
 pub(super) fn check_semantic_annotations(
     ir: &CadIr,
-    all_ids: &HashSet<String>,
+    all_ids: &crate::index::ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) {
     let mut orders = HashSet::new();

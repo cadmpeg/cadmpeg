@@ -34,11 +34,13 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, OccurrenceId, PcurveId, PointId,
-    ProceduralCurveId, ProceduralSurfaceId, ProductId, RegionId, ShellId, SurfaceId, UnknownId,
-    VertexId,
+    ProceduralCurveId, ProceduralSurfaceId, ProductDefinitionId, RegionId, ShellId, SurfaceId,
+    UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::product::{OccurrenceParent, Product, ProductOccurrence};
+use cadmpeg_ir::products::{
+    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+};
 use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchCoordinateAxis,
@@ -24961,8 +24963,8 @@ fn transfer_part_product(
     let Some(model_name_offset) = scan.framing.model_name_offset else {
         return false;
     };
-    let product_id = ProductId("creo:model:product#root".to_string());
-    let occurrence_id = OccurrenceId("creo:model:product_occurrence#root".to_string());
+    let product_id = ProductDefinitionId("creo:model:product_definition#root".to_string());
+    let occurrence_id = OccurrenceId("creo:model:occurrence#root".to_string());
     annotate(
         annotations,
         &product_id,
@@ -24979,18 +24981,38 @@ fn transfer_part_product(
         "part_product_occurrence",
         Exactness::Derived,
     );
-    ir.model.products.push(Product {
+    ir.model.product_definitions.push(ProductDefinition {
         id: product_id.clone(),
-        product_id: model_name.clone(),
-        name: Some(model_name.clone()),
+        kind: ProductDefinitionKind::Part,
+        source_name: Some(model_name.clone()),
+        label: Some(model_name.clone()),
+        description: None,
+        part_number: Some(model_name.clone()),
+        bom_properties: BTreeMap::default(),
         bodies: ir.model.bodies.iter().map(|body| body.id.clone()).collect(),
+        native_ref: None,
     });
-    ir.model.product_occurrences.push(ProductOccurrence {
+    ir.model.occurrences.push(Occurrence {
         id: occurrence_id,
-        product: product_id,
+        prototype: PrototypeReference::Local {
+            definition: product_id,
+        },
         parent: OccurrenceParent::Root,
+        ordinal: 0,
         transform: Transform::identity(),
+        prototype_transform: Transform::identity(),
+        scale: [1.0; 3],
         name: Some(model_name.clone()),
+        linked_subelements: Vec::new(),
+        visible: None,
+        element_component: None,
+        claim_child: None,
+        copy_on_change: None,
+        copy_on_change_source: None,
+        copy_on_change_group: None,
+        copy_on_change_touched: None,
+        link_transform: None,
+        native_ref: None,
     });
     true
 }
@@ -33231,6 +33253,7 @@ fn build_report(
         container_only,
         geometry_transferred: has_transferred_geometry(ir),
         coverage,
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
         notes: summary.notes,
     }

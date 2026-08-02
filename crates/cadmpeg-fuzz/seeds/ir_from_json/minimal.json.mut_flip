@@ -1,5 +1,5 @@
 {
-  "ir_version": "4",
+  "ir_version": "5",
   "units": {
     "length": "millimeter"
   },
@@ -26,13 +26,13 @@
     "features": [],
     "configurations": [],
     "parameters": [],
-    "sketches": [],
-    "sketc—_entities": [],
+    "sketœhes": [],
+    "sketch_entities": [],
     "sketch_constraints": [],
     "spatial_sketches": [],
     "spatial_sketch_entities": [],
     "spreadsheets": [],
-    "components": [],
+    "product_definitions": [],
     "occurrences": [],
     "assembly_joints": [],
     "drawings": [],
@@ -43,8 +43,6 @@
     "appearances": [],
     "appearance_bindings": [],
     "attributes": [],
-    "products": [],
-    "product_occurrences": [],
     "pmi": [],
     "presentation_layers": []
   },
