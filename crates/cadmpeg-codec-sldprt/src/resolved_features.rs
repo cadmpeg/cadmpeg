@@ -14056,10 +14056,12 @@ mod marker_tests {
         assert_eq!(component.local_id, Some(1));
 
         let mut prior = feature("prior", "42");
-        prior.ordinal = 1;
+        prior.ordinal = 3;
         let mut consumer = feature("consumer", "88");
         consumer.ordinal = 2;
-        let path = [88_u32, 42, 88]
+        let mut future = feature("future", "99");
+        future.ordinal = 1;
+        let path = [88_u32, 42, 99, 88]
             .into_iter()
             .map(|source| FeatureInputComponentPathEntry {
                 instance: Some(0x8180),
@@ -14072,7 +14074,7 @@ mod marker_tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(
-            component_path_input_features(&path, &[prior, consumer], "consumer"),
+            component_path_input_features(&path, &[prior, consumer, future], "consumer"),
             ["prior"]
         );
     }
@@ -34466,7 +34468,24 @@ fn feature_precedes_consumer(
         .iter()
         .find(|consumer| consumer.id == consumer_ref)
         .is_some_and(|consumer| {
-            feature.parent == consumer.parent && feature.ordinal < consumer.ordinal
+            if feature.parent != consumer.parent {
+                return false;
+            }
+            match (
+                feature
+                    .source_id
+                    .as_deref()
+                    .and_then(|source| source.parse::<u32>().ok())
+                    .filter(|source| *source != 0),
+                consumer
+                    .source_id
+                    .as_deref()
+                    .and_then(|source| source.parse::<u32>().ok())
+                    .filter(|source| *source != 0),
+            ) {
+                (Some(feature_source), Some(consumer_source)) => feature_source < consumer_source,
+                _ => feature.ordinal < consumer.ordinal,
+            }
         })
 }
 
