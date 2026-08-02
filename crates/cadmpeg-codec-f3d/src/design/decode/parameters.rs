@@ -255,11 +255,13 @@ pub fn decode_parameter_owners(
         let bytes = scan.entry_bytes(&entry.name)?;
         let at = usize::try_from(header.byte_offset).ok();
         let owner = at.and_then(|at| {
-            [107, 104, 103, 101, 99].into_iter().find_map(|length| {
-                at.checked_add(length)
-                    .and_then(|end| bytes.get(at..end))
-                    .and_then(parse_parameter_owner)
-            })
+            [108, 107, 104, 103, 101, 99]
+                .into_iter()
+                .find_map(|length| {
+                    at.checked_add(length)
+                        .and_then(|end| bytes.get(at..end))
+                        .and_then(parse_parameter_owner)
+                })
         });
         let Some(mut owner) = owner else {
             continue;
@@ -282,8 +284,9 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
         || frame.get(19..24) != Some(&[1, 1, 0, 0, 0])
         || frame.get(24) != Some(&1)
         || frame.get(29..35) != Some(&[0; 6])
-        || (frame.len() != 107 && frame.get(39) != Some(&0))
-        || (frame.len() == 107 && (frame.get(39) != Some(&1) || frame.get(40..44) != Some(&[0; 4])))
+        || (!matches!(frame.len(), 107 | 108) && frame.get(39) != Some(&0))
+        || (matches!(frame.len(), 107 | 108)
+            && (frame.get(39) != Some(&1) || frame.get(40..44) != Some(&[0; 4])))
     {
         return None;
     }
@@ -389,6 +392,23 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
             97,
             101..107,
         ),
+        108 => (
+            f64_at(frame, 44)?,
+            52,
+            53,
+            57..63,
+            63,
+            71,
+            72,
+            76..82,
+            Some((82, 83, 84)),
+            85,
+            86,
+            90..97,
+            97,
+            98,
+            102..108,
+        ),
         _ => return None,
     };
     if frame.get(parameter_marker) != Some(&1)
@@ -436,11 +456,11 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
         // The frame length already selected the field layout above, and any
         // length outside that set returned there. The remaining lengths 99,
         // 103, and 104 all read the evaluated value at 40; only the counted
-        // form at 101 and the tagged form at 107 shift it. A new layout arm
-        // above must add its own offset here rather than inherit 40.
+        // form at 101 and the tagged forms at 107 and 108 shift it. A new
+        // layout arm above must add its own offset here rather than inherit 40.
         evaluated_value_offset: match frame.len() {
             101 => 41,
-            107 => 44,
+            107 | 108 => 44,
             _ => 40,
         },
         parameter_record_index,

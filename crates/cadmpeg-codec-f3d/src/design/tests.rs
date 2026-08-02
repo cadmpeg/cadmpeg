@@ -2485,6 +2485,31 @@ fn tagged_scalar_parameter_owner_frame() -> Vec<u8> {
     frame
 }
 
+fn tagged_scalar_variant_parameter_owner_frame() -> Vec<u8> {
+    let mut frame = vec![0; 108];
+    frame[0..4].copy_from_slice(&3u32.to_le_bytes());
+    frame[4..7].copy_from_slice(b"299");
+    frame[7..11].copy_from_slice(&44u32.to_le_bytes());
+    frame[19] = 1;
+    frame[20..24].copy_from_slice(&1u32.to_le_bytes());
+    frame[24] = 1;
+    frame[25..29].copy_from_slice(&12u32.to_le_bytes());
+    frame[35..39].copy_from_slice(&1u32.to_le_bytes());
+    frame[39] = 1;
+    frame[44..52].copy_from_slice(&0.8f64.to_le_bytes());
+    frame[52] = 1;
+    frame[53..57].copy_from_slice(&45u32.to_le_bytes());
+    frame[63..67].copy_from_slice(&73u32.to_le_bytes());
+    frame[71] = 1;
+    frame[72..76].copy_from_slice(&12u32.to_le_bytes());
+    frame[82] = 1;
+    frame[85] = 1;
+    frame[86..90].copy_from_slice(&46u32.to_le_bytes());
+    frame[97] = 1;
+    frame[98..102].copy_from_slice(&12u32.to_le_bytes());
+    frame
+}
+
 #[test]
 fn parameter_owner_frame_has_repeated_scope_and_both_record_orders() {
     let parsed = parse_parameter_owner(&parameter_owner_frame()).unwrap();
@@ -2510,7 +2535,7 @@ fn parameter_owner_frame_has_repeated_scope_and_both_record_orders() {
     assert!(parse_parameter_owner(&malformed).is_none());
 }
 
-/// A parameter-owner frame length outside the five layouts carries no known
+/// A parameter-owner frame length outside the six layouts carries no known
 /// field positions, so it declines. The evaluated-value offset therefore never
 /// reaches a length the layout match did not accept, and the three lengths that
 /// take its default all hold the value at 40.
@@ -2589,6 +2614,18 @@ fn tagged_scalar_parameter_owner_carries_a_scalar_type_prefix() {
     assert_eq!(parsed.evaluated_value_offset, 44);
     assert_eq!(parsed.parameter_record_index, 45);
     assert_eq!(parsed.variant, None);
+    assert_eq!(parsed.companion_record_index, 46);
+}
+
+#[test]
+fn tagged_scalar_parameter_owner_can_carry_a_variant_slot() {
+    let parsed = parse_parameter_owner(&tagged_scalar_variant_parameter_owner_frame())
+        .expect("tagged scalar variant parameter owner");
+    assert_eq!(parsed.evaluated_value, 0.8);
+    assert_eq!(parsed.evaluated_value_offset, 44);
+    assert_eq!(parsed.parameter_record_index, 45);
+    assert_eq!(parsed.owned_ordinal, 73);
+    assert_eq!(parsed.variant, Some(0));
     assert_eq!(parsed.companion_record_index, 46);
 }
 
