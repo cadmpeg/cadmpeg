@@ -6007,6 +6007,24 @@ fn parasolid_entity_52_integers_require_complete_counted_values() {
 }
 
 #[test]
+fn parasolid_field_names_require_a_complete_nonempty_reference_lane() {
+    let bytes = [
+        0xaa, 0x00, 0x63, 0x00, 0x00, 0x00, 0x03, 0x00, 0x19, 0x00, 0x1c, 0x00, 0x1d, 0x00, 0x1e,
+        0xbb,
+    ];
+    let records = crate::parasolid::field_names_records(&bytes);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].offset, 1);
+    assert_eq!(records[0].byte_len, 14);
+    assert_eq!(records[0].xmt, 25);
+    assert_eq!(records[0].name_xmts, [28, 29, 30]);
+    assert!(crate::parasolid::field_names_record_at(&bytes[..14], 1).is_none());
+
+    let empty = [0x00, 0x63, 0, 0, 0, 0, 0, 25];
+    assert!(crate::parasolid::field_names_records(&empty).is_empty());
+}
+
+#[test]
 fn parasolid_entity_53_doubles_require_complete_finite_values() {
     let mut bytes = vec![0xaa, 0x00, 0x53, 0xff];
     bytes.extend_from_slice(&2u32.to_be_bytes());
@@ -14047,6 +14065,7 @@ mod golden {
         "om_record_areas",
         "parasolid_attribute_class_uses",
         "parasolid_attribute_field_uses",
+        "parasolid_attribute_field_names",
         "parasolid_attribute_definitions",
         "parasolid_blend_bound_records",
         "parasolid_blend_surface_records",
@@ -14072,6 +14091,7 @@ mod golden {
         "parasolid_entity_52_integer_records",
         "parasolid_entity_53_double_records",
         "parasolid_entity_54_string_records",
+        "parasolid_field_names_records",
         "parasolid_intersection_records",
         "parasolid_offset_surface_records",
         "parasolid_support_uv_records",
@@ -14792,7 +14812,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (216), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (218), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -14801,7 +14821,7 @@ mod golden {
     fn catalogue_arenas_match_known_arenas() {
         use crate::native::catalogue::{note_group_a_end, note_group_b_end, CATALOGUE};
 
-        assert_eq!(CATALOGUE.len(), 216, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 218, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE[note_group_a_end()].arena,
             "feature_parameter_uses",

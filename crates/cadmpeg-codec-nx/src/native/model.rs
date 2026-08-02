@@ -78,6 +78,8 @@ pub(crate) struct ParasolidRecords {
     pub(crate) parasolid_support_uv_records: Vec<ParasolidSupportUvRecord>,
     pub(crate) parasolid_chart_records: Vec<ParasolidChartRecord>,
     pub(crate) parasolid_attribute_definitions: Vec<ParasolidAttributeDefinition>,
+    pub(crate) parasolid_field_names_records: Vec<ParasolidFieldNamesRecord>,
+    pub(crate) parasolid_attribute_field_names: Vec<ParasolidAttributeFieldNames>,
     pub(crate) parasolid_entity_51_records: Vec<ParasolidEntity51Record>,
     pub(crate) parasolid_entity_52_integer_records: Vec<ParasolidEntity52IntegerRecord>,
     pub(crate) parasolid_entity_53_double_records: Vec<ParasolidEntity53DoubleRecord>,
@@ -291,6 +293,7 @@ impl NativeModel {
     pub(crate) fn has_untransferred_parasolid_attribute_fields(&self) -> bool {
         parasolid_attribute_definitions_have_untransferred_fields(
             &self.parasolid.parasolid_attribute_definitions,
+            &self.parasolid.parasolid_attribute_field_names,
         )
     }
 
@@ -324,6 +327,12 @@ impl NativeModel {
         let parasolid_entity_52_integer_records = parasolid_entity_52_integer_records(streams);
         let parasolid_entity_53_double_records = parasolid_entity_53_double_records(streams);
         let parasolid_entity_54_string_records = parasolid_entity_54_string_records(streams);
+        let parasolid_field_names_records = parasolid_field_names_records(streams);
+        let parasolid_attribute_field_names = parasolid_attribute_field_names(
+            &parasolid_attribute_definitions,
+            &parasolid_field_names_records,
+            &parasolid_entity_54_string_records,
+        );
         let parasolid_entity_51_numeric_uses = parasolid_entity_51_numeric_uses(
             &parasolid_entity_51_records,
             &parasolid_entity_52_integer_records,
@@ -872,6 +881,8 @@ impl NativeModel {
                 parasolid_support_uv_records,
                 parasolid_chart_records,
                 parasolid_attribute_definitions,
+                parasolid_field_names_records,
+                parasolid_attribute_field_names,
                 parasolid_entity_51_records,
                 parasolid_entity_52_integer_records,
                 parasolid_entity_53_double_records,

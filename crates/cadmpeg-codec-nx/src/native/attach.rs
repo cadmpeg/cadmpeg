@@ -147,6 +147,7 @@ pub(crate) fn attach(
             class_uses: &model.parasolid.parasolid_topology_attribute_class_uses,
             definitions: &model.parasolid.parasolid_attribute_definitions,
             field_uses: &model.parasolid.parasolid_attribute_field_uses,
+            field_names: &model.parasolid.parasolid_attribute_field_names,
             string_uses: &model.parasolid.parasolid_entity_51_string_uses,
             strings: &model.parasolid.parasolid_entity_54_string_records,
         },
@@ -159,6 +160,7 @@ pub(crate) fn attach(
             class_uses: &model.parasolid.parasolid_topology_attribute_class_uses,
             definitions: &model.parasolid.parasolid_attribute_definitions,
             field_uses: &model.parasolid.parasolid_attribute_field_uses,
+            field_names: &model.parasolid.parasolid_attribute_field_names,
             numeric_uses: &model.parasolid.parasolid_entity_51_numeric_uses,
             integers: &model.parasolid.parasolid_entity_52_integer_records,
             doubles: &model.parasolid.parasolid_entity_53_double_records,
@@ -2373,6 +2375,7 @@ struct ParasolidStringAttributeSources<'a> {
     class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],
     definitions: &'a [crate::native::parasolid::ParasolidAttributeDefinition],
     field_uses: &'a [crate::native::parasolid::ParasolidAttributeFieldUse],
+    field_names: &'a [crate::native::parasolid::ParasolidAttributeFieldNames],
     string_uses: &'a [crate::native::parasolid::ParasolidEntity51StringUse],
     strings: &'a [crate::native::parasolid::ParasolidEntity54StringRecord],
 }
@@ -2454,6 +2457,7 @@ fn attach_parasolid_topology_string_attributes(
                 sources.class_uses,
                 sources.definitions,
                 sources.field_uses,
+                sources.field_names,
             );
             ir.model.attributes.push(SourceAttribute {
                 id,
@@ -2480,6 +2484,7 @@ struct ParasolidNumericAttributeSources<'a> {
     pub(crate) class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],
     pub(crate) definitions: &'a [crate::native::parasolid::ParasolidAttributeDefinition],
     pub(crate) field_uses: &'a [crate::native::parasolid::ParasolidAttributeFieldUse],
+    pub(crate) field_names: &'a [crate::native::parasolid::ParasolidAttributeFieldNames],
     pub(crate) numeric_uses: &'a [crate::native::parasolid::ParasolidEntity51NumericUse],
     pub(crate) integers: &'a [crate::native::parasolid::ParasolidEntity52IntegerRecord],
     pub(crate) doubles: &'a [crate::native::parasolid::ParasolidEntity53DoubleRecord],
@@ -2491,6 +2496,7 @@ fn parasolid_topology_attribute_field_name(
     class_uses: &[crate::native::parasolid::ParasolidTopologyAttributeClassUse],
     definitions: &[crate::native::parasolid::ParasolidAttributeDefinition],
     field_uses: &[crate::native::parasolid::ParasolidAttributeFieldUse],
+    field_names: &[crate::native::parasolid::ParasolidAttributeFieldNames],
 ) -> Option<String> {
     let mut classes = class_uses
         .iter()
@@ -2516,9 +2522,17 @@ fn parasolid_topology_attribute_field_name(
     if matching_definitions.next().is_some() {
         return None;
     }
+    let declared_name = field_names
+        .iter()
+        .filter(|names| names.attribute_definition == definition.id)
+        .collect::<Vec<_>>();
     let field_name = match (definition.name.as_str(), field_use.field_ordinal) {
         ("SDL/TYSA_DENSITY", 0) => "density".to_string(),
         ("SDL/TYSA_DENSITY", 1) => "units".to_string(),
+        _ if matches!(declared_name.as_slice(), [_]) => declared_name[0]
+            .names
+            .get(field_use.field_ordinal as usize)?
+            .clone(),
         _ => format!(
             "field_{}.parasolid_type_{}",
             field_use.field_ordinal, field_use.field_code
@@ -2725,6 +2739,7 @@ fn attach_parasolid_topology_numeric_attributes(
                 sources.class_uses,
                 sources.definitions,
                 sources.field_uses,
+                sources.field_names,
             );
             ir.model.attributes.push(SourceAttribute {
                 id,
@@ -7741,6 +7756,7 @@ mod tests {
                 class_uses: &[class_use],
                 definitions: &[definition],
                 field_uses: &[],
+                field_names: &[],
                 numeric_uses: &uses,
                 integers: &[integer],
                 doubles: &[double],
@@ -7798,7 +7814,7 @@ mod tests {
     #[test]
     fn topology_attribute_field_names_use_unique_declared_assignments() {
         use crate::native::parasolid::{
-            ParasolidAttributeDefinition, ParasolidAttributeFieldUse,
+            ParasolidAttributeDefinition, ParasolidAttributeFieldNames, ParasolidAttributeFieldUse,
             ParasolidAttributeFieldValueKind, ParasolidTopologyAttributeClassUse,
             ParasolidTopologyAttributeListReference,
         };
@@ -7858,6 +7874,7 @@ mod tests {
                 std::slice::from_ref(&class_use),
                 std::slice::from_ref(&definition),
                 std::slice::from_ref(&field_use),
+                &[],
             )
             .as_deref(),
             Some("SDL/TYSA_DENSITY.density")
@@ -7879,9 +7896,36 @@ mod tests {
                 std::slice::from_ref(&class_use),
                 std::slice::from_ref(&definition),
                 &[units],
+                &[],
             )
             .as_deref(),
             Some("SDL/TYSA_DENSITY.units")
+        );
+
+        let named_definition = ParasolidAttributeDefinition {
+            name: "PVM/25_1".into(),
+            field_names_xmt: 25,
+            ..definition.clone()
+        };
+        let field_names = ParasolidAttributeFieldNames {
+            id: "field-names-relation".into(),
+            stream_ordinal: 3,
+            attribute_definition: named_definition.id.clone(),
+            field_names_record: "field-names-record".into(),
+            string_records: vec!["name-1".into(), "name-2".into()],
+            names: vec!["width".into(), "units".into()],
+        };
+        assert_eq!(
+            super::parasolid_topology_attribute_field_name(
+                &reference,
+                "double-use",
+                std::slice::from_ref(&class_use),
+                std::slice::from_ref(&named_definition),
+                std::slice::from_ref(&field_use),
+                std::slice::from_ref(&field_names),
+            )
+            .as_deref(),
+            Some("PVM/25_1.width")
         );
 
         let duplicate_class = ParasolidTopologyAttributeClassUse {
@@ -7894,6 +7938,7 @@ mod tests {
             &[class_use, duplicate_class],
             &[definition],
             &[field_use],
+            &[],
         )
         .is_none());
     }

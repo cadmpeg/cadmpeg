@@ -1466,6 +1466,40 @@ pub struct ParasolidAttributeDefinition {
     pub inflated_offset: u64,
 }
 
+/// Counted Parasolid type-99 field-name reference record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidFieldNamesRecord {
+    /// Globally unique native-record identity.
+    pub id: String,
+    /// Zero-based embedded stream ordinal.
+    pub stream_ordinal: u32,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Ordered stream-local character or Unicode value references.
+    pub name_xmts: Vec<u32>,
+    /// Exact framed record length.
+    pub byte_len: u64,
+    /// Offset of the record tag in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Complete type-80 declaration-to-field-name-list relation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidAttributeFieldNames {
+    /// Globally unique relation identity.
+    pub id: String,
+    /// Zero-based embedded stream ordinal.
+    pub stream_ordinal: u32,
+    /// Owning type-80 declaration.
+    pub attribute_definition: String,
+    /// Uniquely resolved type-99 field-name record.
+    pub field_names_record: String,
+    /// Ordered uniquely resolved type-84 records.
+    pub string_records: Vec<String>,
+    /// Ordered exact printable field names.
+    pub names: Vec<String>,
+}
+
 /// Explicit topology-record ownership of one Parasolid attribute list.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidTopologyAttributeListReference {
@@ -1715,6 +1749,107 @@ pub fn parasolid_attribute_definitions(streams: &[Stream]) -> Vec<ParasolidAttri
                 })
         })
         .collect()
+}
+
+/// Decode every counted type-99 attribute field-name record.
+pub fn parasolid_field_names_records(streams: &[Stream]) -> Vec<ParasolidFieldNamesRecord> {
+    let mut records = streams
+        .iter()
+        .enumerate()
+        .filter(|(_, stream)| stream.kind.is_parasolid())
+        .flat_map(|(stream_ordinal, stream)| {
+            crate::parasolid::field_names_records(&stream.inflated)
+                .into_iter()
+                .map(move |record| ParasolidFieldNamesRecord {
+                    id: format!(
+                        "nx:s{stream_ordinal}:field-names#{}-{}",
+                        record.xmt, record.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    xmt: record.xmt,
+                    name_xmts: record.name_xmts,
+                    byte_len: record.byte_len as u64,
+                    inflated_offset: record.offset as u64,
+                })
+        })
+        .collect::<Vec<_>>();
+    records.sort_by(|first, second| first.id.cmp(&second.id));
+    records
+}
+
+/// Resolve complete type-80 field-name lists through type-99 and type-84 records.
+pub fn parasolid_attribute_field_names(
+    definitions: &[ParasolidAttributeDefinition],
+    field_names: &[ParasolidFieldNamesRecord],
+    strings: &[ParasolidEntity54StringRecord],
+) -> Vec<ParasolidAttributeFieldNames> {
+    let mut definitions_by_identity =
+        BTreeMap::<(u32, u32), Vec<&ParasolidAttributeDefinition>>::new();
+    for definition in definitions {
+        definitions_by_identity
+            .entry((definition.stream_ordinal, definition.xmt))
+            .or_default()
+            .push(definition);
+    }
+    let mut lists = BTreeMap::<(u32, u32), Vec<&ParasolidFieldNamesRecord>>::new();
+    for list in field_names {
+        lists
+            .entry((list.stream_ordinal, list.xmt))
+            .or_default()
+            .push(list);
+    }
+    let mut strings_by_xmt = BTreeMap::<(u32, u32), Vec<&ParasolidEntity54StringRecord>>::new();
+    for string in strings {
+        strings_by_xmt
+            .entry((string.stream_ordinal, string.xmt))
+            .or_default()
+            .push(string);
+    }
+    let mut relations = definitions_by_identity
+        .values()
+        .filter_map(|definitions| {
+            let [definition] = definitions.as_slice() else {
+                return None;
+            };
+            Some(*definition)
+        })
+        .filter(|definition| definition.field_names_xmt > 1)
+        .filter_map(|definition| {
+            let [list] = lists
+                .get(&(definition.stream_ordinal, definition.field_names_xmt))?
+                .as_slice()
+            else {
+                return None;
+            };
+            (list.name_xmts.len() == definition.field_codes.len()).then_some(())?;
+            let resolved = list
+                .name_xmts
+                .iter()
+                .map(|xmt| {
+                    let [string] = strings_by_xmt
+                        .get(&(definition.stream_ordinal, *xmt))?
+                        .as_slice()
+                    else {
+                        return None;
+                    };
+                    Some(*string)
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(ParasolidAttributeFieldNames {
+                id: format!(
+                    "nx:s{}:attribute-field-names#{}",
+                    definition.stream_ordinal, definition.xmt
+                ),
+                stream_ordinal: definition.stream_ordinal,
+                attribute_definition: definition.id.clone(),
+                field_names_record: list.id.clone(),
+                string_records: resolved.iter().map(|string| string.id.clone()).collect(),
+                names: resolved.iter().map(|string| string.value.clone()).collect(),
+            })
+        })
+        .collect::<Vec<_>>();
+    relations.sort_by(|first, second| first.id.cmp(&second.id));
+    relations
 }
 
 /// Retain complete typed rolling-ball blend records from all Parasolid streams.
@@ -2200,9 +2335,14 @@ pub fn parasolid_attribute_field_uses(
 /// Whether declarations require an attribute value or name record not yet decoded.
 pub fn parasolid_attribute_definitions_have_untransferred_fields(
     definitions: &[ParasolidAttributeDefinition],
+    field_names: &[ParasolidAttributeFieldNames],
 ) -> bool {
+    let resolved_names = field_names
+        .iter()
+        .map(|names| names.attribute_definition.as_str())
+        .collect::<BTreeSet<_>>();
     definitions.iter().any(|definition| {
-        definition.field_names_xmt != 1
+        (definition.field_names_xmt != 1 && !resolved_names.contains(definition.id.as_str()))
             || definition
                 .field_codes
                 .iter()
@@ -2879,14 +3019,89 @@ mod tests {
         };
 
         assert!(!parasolid_attribute_definitions_have_untransferred_fields(
-            &[definition(1, vec![1, 2, 3]),]
+            &[definition(1, vec![1, 2, 3]),],
+            &[],
         ));
         assert!(parasolid_attribute_definitions_have_untransferred_fields(
-            &[definition(22, vec![1]),]
+            &[definition(22, vec![1]),],
+            &[],
         ));
         assert!(parasolid_attribute_definitions_have_untransferred_fields(
-            &[definition(1, vec![4]),]
+            &[definition(1, vec![4]),],
+            &[],
         ));
+        let named_definition = definition(22, vec![1]);
+        let names = ParasolidAttributeFieldNames {
+            id: "names".into(),
+            stream_ordinal: 0,
+            attribute_definition: named_definition.id.clone(),
+            field_names_record: "record".into(),
+            string_records: vec!["string".into()],
+            names: vec!["field".into()],
+        };
+        assert!(!parasolid_attribute_definitions_have_untransferred_fields(
+            &[named_definition],
+            &[names],
+        ));
+    }
+
+    #[test]
+    fn attribute_field_names_require_complete_unambiguous_same_stream_relations() {
+        let definition = ParasolidAttributeDefinition {
+            id: "definition".into(),
+            stream_ordinal: 3,
+            xmt: 20,
+            next_definition_xmt: 1,
+            identifier_xmt: 21,
+            identifier_inflated_offset: 10,
+            name: "CLASS".into(),
+            type_id: 8000,
+            action_codes: [0; 8],
+            field_names_xmt: 25,
+            legal_owner_flags: [0; 16],
+            field_count: 3,
+            field_codes: vec![2, 1, 1],
+            inflated_offset: 20,
+        };
+        let list = ParasolidFieldNamesRecord {
+            id: "field-names".into(),
+            stream_ordinal: 3,
+            xmt: 25,
+            name_xmts: vec![28, 29, 30],
+            byte_len: 15,
+            inflated_offset: 30,
+        };
+        let strings = [28, 29, 30].map(|xmt| ParasolidEntity54StringRecord {
+            id: format!("string-{xmt}"),
+            stream_ordinal: 3,
+            xmt,
+            value: (xmt - 27).to_string(),
+            byte_len: 10,
+            inflated_offset: u64::from(xmt),
+        });
+
+        let relations = parasolid_attribute_field_names(
+            std::slice::from_ref(&definition),
+            std::slice::from_ref(&list),
+            &strings,
+        );
+        assert_eq!(relations.len(), 1);
+        assert_eq!(relations[0].names, ["1", "2", "3"]);
+
+        let mut incomplete = list.clone();
+        incomplete.name_xmts.pop();
+        assert!(parasolid_attribute_field_names(
+            std::slice::from_ref(&definition),
+            &[incomplete],
+            &strings,
+        )
+        .is_empty());
+        assert!(parasolid_attribute_field_names(
+            &[definition.clone(), definition],
+            &[list],
+            &strings,
+        )
+        .is_empty());
     }
 
     #[test]

@@ -152,6 +152,19 @@ pub struct Entity53DoubleRecord {
     pub values: Vec<f64>,
 }
 
+/// One counted type-99 attribute field-name record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldNamesRecord {
+    /// Inflated-stream offset of the `00 63` tag.
+    pub offset: usize,
+    /// Exact framed record length.
+    pub byte_len: usize,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Ordered stream-local character or Unicode value references.
+    pub name_xmts: Vec<u32>,
+}
+
 /// Decode counted type-82 unsigned-integer records.
 pub fn entity_52_integer_records(bytes: &[u8]) -> Vec<Entity52IntegerRecord> {
     (0..bytes.len())
@@ -164,6 +177,35 @@ pub fn entity_53_double_records(bytes: &[u8]) -> Vec<Entity53DoubleRecord> {
     (0..bytes.len())
         .filter_map(|offset| entity_53_double_record_at(bytes, offset))
         .collect()
+}
+
+/// Decode counted type-99 attribute field-name records.
+pub fn field_names_records(bytes: &[u8]) -> Vec<FieldNamesRecord> {
+    (0..bytes.len())
+        .filter_map(|offset| field_names_record_at(bytes, offset))
+        .collect()
+}
+
+pub(crate) fn field_names_record_at(bytes: &[u8], offset: usize) -> Option<FieldNamesRecord> {
+    let mut at = offset.checked_add(2)?;
+    (bytes.get(offset..at) == Some(&[0, 0x63])).then_some(())?;
+    if bytes.get(at) == Some(&0xff) {
+        at += 1;
+    }
+    let count = usize::try_from(be::u32_at(bytes, at)?).ok()?;
+    (count > 0).then_some(())?;
+    at += 4;
+    let xmt = read_xmt(bytes, &mut at).filter(|xmt| *xmt > 1)?;
+    (count <= bytes.len().checked_sub(at)? / 2).then_some(())?;
+    let name_xmts = (0..count)
+        .map(|_| read_xmt(bytes, &mut at).filter(|xmt| *xmt > 1))
+        .collect::<Option<Vec<_>>>()?;
+    Some(FieldNamesRecord {
+        offset,
+        byte_len: at - offset,
+        xmt,
+        name_xmts,
+    })
 }
 
 /// Decode one complete type-82 unsigned-integer record at `offset`.

@@ -1653,6 +1653,8 @@ Parasolid type-79 attribute identifiers are `00 4f [ff], name_len:u32 BE, xmt, n
 
 A type-80 attribute definition is `00 50 [ff], field_count:u32 BE, xmt, next_definition, identifier, type_id:u32 BE, action[8], field_names, legal_owner[16], field_code[field_count]`. XMT and reference fields use the compact or extended XMT encoding. The definition XMT, identifier reference, and type ID are non-null. `identifier` must resolve uniquely to a type-79 record in the same stream; otherwise the definition remains untyped. `next_definition` and `field_names` may be null reference `1`. Each action code is in `0..=6`, and each legal-owner flag is binary. Each field code is in `0..=10`; zero is an ignored user-field extension, and codes 1 through 10 denote integer, real, character, point, vector, direction, axis, tag, pointer, and Unicode storage respectively. The definition identity is the type-80 XMT, not its type-79 identifier XMT. Definition order and physical adjacency do not participate in the join.
 
+A type-99 field-name list is `00 63 [ff], field_count:u32 BE, xmt, name[field_count]`. The count is nonzero, and the XMT and every name reference are non-null. A type-80 `field_names` reference resolves only when exactly one same-stream type-99 record has that XMT, its count equals the definition's field count, and every ordered name reference resolves uniquely to a same-stream type-84 character or type-98 Unicode value. The resulting names correspond positionally to the definition's field codes.
+
 A type-81 entity/attribute-list record is `00 51 [ff], flags:u32 BE,
 xmt, sequence:u32 BE, definition, references`. XMT fields use the
 compact or extended XMT encoding. `xmt` is non-null, `sequence` is nonzero, and
@@ -1705,7 +1707,8 @@ type-84 value referenced by that type-81 record. Each value record transfers as
 one topology-targeted source attribute whose values retain serialized lane
 order. The independently resolved class relation identifies the owning
 attribute definition. A uniquely assigned type-82, type-83, or type-84 field is
-named by its exact class name, zero-based declared field ordinal, and declared
+named by its exact class name and resolved declared field name. Without a resolved
+field-name list, it is named by the zero-based declared field ordinal and declared
 field code. `SDL/TYSA_DENSITY` field zero is `density` and field one is `units`.
 
 When a value resolves without a unique declared-field assignment, its neutral

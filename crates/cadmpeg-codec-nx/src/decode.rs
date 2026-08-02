@@ -10038,7 +10038,7 @@ fn build_geometry_report(
         losses.push(LossNote {
             code: LossKind::AttributesNotTransferred,
             severity: Severity::Warning,
-            message: "Parasolid field-code 4 through 10 values or serialized field names were not \
+            message: "Parasolid field-code 4 through 10 values or Unicode field names were not \
                       transferred because those record layouts are not decoded."
                 .to_string(),
             provenance: None,
