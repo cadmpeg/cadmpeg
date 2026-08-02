@@ -2212,8 +2212,8 @@ mod marker_tests {
         compact_single_face_reference_path_at, compact_single_face_reference_record_at,
         compact_sketch_surface_component_path_at, compact_surface_selection_at,
         complete_ordered_compact_line_profile, component_face_reference_at,
-        component_face_reference_in_record, component_path_features, component_path_input_features,
-        component_path_preceding_feature, component_path_terminal_feature,
+        component_face_reference_in_record, component_path_feature, component_path_features,
+        component_path_input_features, component_path_terminal_feature,
         component_profile_source_at, component_reference_curve_path_at,
         consecutive_legacy_profile_line_endpoints, constraint_midplane_frame,
         constraint_reference_plane_frame, coordinate_centered_line_endpoints,
@@ -2279,9 +2279,10 @@ mod marker_tests {
         unique_arc_center_marker, unique_cylindrical_face, unique_dimensioned_rectangle_markers,
         unique_locus, unique_marker_candidate, wide_direct_line_endpoint_markers,
         wide_indexed_curve_endpoint_indices, Angle, BooleanOp, CompactPointReferenceKind,
-        CompactReferencePlaneIndex, Length, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
-        FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER,
-        MINIMAL_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
+        CompactReferencePlaneIndex, ComponentPathEnd, Length, CLASS_MARKER,
+        COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER,
+        LEGACY_SKETCH_MARKER, MINIMAL_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
+        SKETCH_MARKER,
     };
     use crate::records::{
         Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -13741,11 +13742,18 @@ mod marker_tests {
             feature_ref: "thread-native".into(),
             producer_feature_refs: vec!["producer-native".into()],
             terminal_feature_ref: Some("producer-native".into()),
-            components: vec![FeatureInputComponentPathEntry {
-                instance: Some(0x8020),
-                type_signature: signature,
-                local_id: Some(7),
-            }],
+            components: vec![
+                FeatureInputComponentPathEntry {
+                    instance: Some(0x8020),
+                    type_signature: signature,
+                    local_id: Some(7),
+                },
+                FeatureInputComponentPathEntry {
+                    instance: Some(0x8021),
+                    type_signature: signature,
+                    local_id: Some(u32::try_from(offset / 20).expect("test offset fits u32")),
+                },
+            ],
         };
         let lane = |id: &str, offset| FeatureInputLane {
             id: id.into(),
@@ -14260,8 +14268,9 @@ mod marker_tests {
         let producer = feature("producer", "42");
         let other = feature("other", "43");
         let history = [&producer, &other, &owner];
-        let (component, preceding) = component_path_preceding_feature(&mixed, &history, "mirror")
-            .expect("required invariant");
+        let (component, preceding) =
+            component_path_feature(&mixed, &history, "mirror", ComponentPathEnd::Trailing)
+                .expect("required invariant");
         assert_eq!(preceding.id, "other");
         assert_eq!(component.local_id, Some(1));
 
@@ -32804,10 +32813,11 @@ pub(crate) fn project_compact_surface_selections(
             }
             for selection in feature_selections {
                 let native = compact_surface_selection_value(&selection.components);
-                let generated = component_path_preceding_feature(
+                let generated = component_path_feature(
                     &selection.components,
                     &history_features,
                     &selection.feature_ref,
+                    ComponentPathEnd::Trailing,
                 )
                 .and_then(|(component, producer)| {
                     feature_ids_by_native
@@ -33194,10 +33204,11 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
             .iter()
             .map(|(_, components)| {
                 let components = components.as_ref()?;
-                let (component, producer) = component_path_preceding_feature(
+                let (component, producer) = component_path_feature(
                     components,
                     &history_features,
                     native_feature.id.as_str(),
+                    ComponentPathEnd::Leading,
                 )?;
                 Some((
                     feature_ids_by_native.get(producer.id.as_str())?.clone(),
@@ -35105,10 +35116,17 @@ pub(crate) fn component_path_terminal_feature(
     None
 }
 
-fn component_path_preceding_feature<'a>(
+#[derive(Clone, Copy)]
+enum ComponentPathEnd {
+    Leading,
+    Trailing,
+}
+
+fn component_path_feature<'a>(
     components: &'a [FeatureInputComponentPathEntry],
     features: &[&'a crate::records::Feature],
     owner_ref: &str,
+    end: ComponentPathEnd,
 ) -> Option<(
     &'a FeatureInputComponentPathEntry,
     &'a crate::records::Feature,
@@ -35134,11 +35152,15 @@ fn component_path_preceding_feature<'a>(
             .and_modify(|candidate| *candidate = None)
             .or_insert(Some(*feature));
     }
-    components.iter().rev().find_map(|component| {
+    let candidate = |component: &'a FeatureInputComponentPathEntry| {
         let source_id = u32::from_le_bytes(component.type_signature[4..8].try_into().ok()?);
         let feature = by_source.get(&source_id)?.as_ref()?;
         (source_id < owner_source).then_some((component, *feature))
-    })
+    };
+    match end {
+        ComponentPathEnd::Leading => components.iter().find_map(candidate),
+        ComponentPathEnd::Trailing => components.iter().rev().find_map(candidate),
+    }
 }
 
 pub(crate) fn project_adjacent_extrusion_profiles(
