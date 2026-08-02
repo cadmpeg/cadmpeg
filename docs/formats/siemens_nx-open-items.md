@@ -456,7 +456,8 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What is the field grammar and semantics of `/Root/FastLoad/Structure`?
 
-**Known.** The stream has a big-endian bounded envelope. Its typed component
+**Known.** The stream has a big-endian bounded OM envelope and typed class and
+member declarations. Its typed component
 roster defines ordered named prototypes and a one-based prototype index for
 each distinct occurrence. A second counted table stores UUID identities, and a
 parallel one-based index associates every occurrence with one UUID. Other

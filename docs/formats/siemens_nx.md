@@ -268,7 +268,8 @@ stream.
 
 `/Root/FastLoad/Structure` begins with the twelve-byte envelope
 `ff ff ff ff 00 00 00 00 payload_len:u32 BE`. `payload_len + 12` equals the
-bounded directory-entry size. Its payload contains one component roster with
+bounded directory-entry size. The payload begins `OM 01 01` and carries
+length-framed NX OM class and member declarations. Its component roster has
 this grammar:
 
 ```text

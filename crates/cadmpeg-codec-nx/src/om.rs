@@ -5024,9 +5024,16 @@ pub fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
         else {
             break;
         };
-        let Some(end) = offset
+        let standard_end = offset
             .checked_add(16)
+            .and_then(|header_end| header_end.checked_add(payload_len));
+        let compact_terminal_end = offset
+            .checked_add(12)
             .and_then(|header_end| header_end.checked_add(payload_len))
+            .filter(|end| *end == bytes.len());
+        let Some(end) = standard_end
+            .filter(|end| *end <= bytes.len())
+            .or(compact_terminal_end)
         else {
             at = offset + 4;
             continue;

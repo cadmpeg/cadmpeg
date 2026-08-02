@@ -3681,6 +3681,20 @@ fn om_size_frame_bounds_its_type_declarations() {
 }
 
 #[test]
+fn om_size_frame_accepts_exact_terminal_twelve_byte_envelope() {
+    let mut bytes = size_framed_om_section();
+    let payload_len = u32::try_from(bytes.len() - 12).expect("short OM fixture");
+    bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
+    let sections = crate::om::sections(&bytes);
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].byte_len, bytes.len());
+    assert_eq!(sections[0].types[0].name, "UGS::FEATURE_RECORD");
+
+    bytes.push(0);
+    assert!(crate::om::sections(&bytes).is_empty());
+}
+
+#[test]
 fn om_size_frame_uses_validated_internal_record_area_pointer() {
     let bytes = size_framed_om_section_with_record_area();
     let section = crate::om::sections(&bytes).remove(0);
