@@ -3950,12 +3950,12 @@ pub fn feature_datum_csys_payloads(
         .collect()
 }
 
-/// Shared body for the datum payload-frame extractors. Reconstruct each
+/// Shared body for construction-payload frame extractors. Reconstruct each
 /// payload's concatenated bytes, build the payload-relative-to-source-offset
 /// mapper once, scan the bytes, and let each family build its record, dropping
-/// frames whose offsets fall outside a source block. The four extractors below
-/// differ only in their payload block lane, their scanner, and their record.
-fn datum_payload_frames<P, S, R>(
+/// frames whose offsets fall outside a source block. Extractors differ only in
+/// their payload block lane, scanner, and output record.
+fn construction_payload_frames<P, S, R>(
     container: &Container,
     payloads: &[P],
     data_blocks: impl Fn(&P) -> &[String],
@@ -3971,16 +3971,9 @@ fn datum_payload_frames<P, S, R>(
             else {
                 return Vec::new();
             };
-            let source_offset =
-                |relative: usize| {
-                    let relative = relative as u64;
-                    starts.iter().zip(&lengths).zip(&sources).find_map(
-                        |((start, length), source)| {
-                            (relative >= *start && relative < start.saturating_add(*length))
-                                .then_some(source + relative - start)
-                        },
-                    )
-                };
+            let source_offset = |relative: usize| {
+                joined_payload_source_offset(relative as u64, &starts, &lengths, &sources)
+            };
             scan(&bytes)
                 .into_iter()
                 .enumerate()
@@ -3995,7 +3988,7 @@ pub fn feature_datum_csys_payload_scalar_pairs(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Vec<FeatureDatumCsysPayloadScalarPair> {
-    datum_payload_frames(
+    construction_payload_frames(
         container,
         payloads,
         |payload| &payload.data_blocks[..],
@@ -4026,7 +4019,7 @@ pub fn feature_datum_csys_payload_fixed_pairs(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Vec<FeatureDatumCsysPayloadFixedPair> {
-    datum_payload_frames(
+    construction_payload_frames(
         container,
         payloads,
         |payload| &payload.data_blocks[..],
@@ -4057,7 +4050,7 @@ pub fn feature_datum_csys_payload_scalars(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Vec<FeatureDatumCsysPayloadScalar> {
-    datum_payload_frames(
+    construction_payload_frames(
         container,
         payloads,
         |payload| &payload.data_blocks[..],
@@ -4146,7 +4139,7 @@ pub fn feature_datum_plane_payload_scalar_pairs(
     container: &Container,
     payloads: &[FeatureDatumPlanePayload],
 ) -> Vec<FeatureDatumPlanePayloadScalarPair> {
-    datum_payload_frames(
+    construction_payload_frames(
         container,
         payloads,
         |payload| payload.data_blocks.as_slice(),
@@ -4438,49 +4431,30 @@ pub fn feature_sketch_payload_coordinate_pairs(
     container: &Container,
     payloads: &[FeatureSketchConstructionPayload],
 ) -> Vec<FeatureSketchPayloadCoordinatePair> {
-    let blocks = offset_data_block_bytes(container);
-    payloads
-        .iter()
-        .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
-            else {
-                return Vec::new();
-            };
-            let source_offset =
-                |relative: usize| {
-                    let relative = relative as u64;
-                    starts.iter().zip(&lengths).zip(&sources).find_map(
-                        |((start, length), source)| {
-                            (relative >= *start && relative < start.saturating_add(*length))
-                                .then_some(source + relative - start)
-                        },
-                    )
-                };
-            crate::om::object_payload_scalar_pairs(&bytes)
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, pair)| {
-                    Some(FeatureSketchPayloadCoordinatePair {
-                        id: format!("{}-coordinate-pair-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        construction_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        values: pair.values,
-                        raw_values: pair.raw_values,
-                        payload_offset: pair.offset as u64,
-                        value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
-                        source_offset: source_offset(pair.offset)?,
-                        value_source_offsets: [
-                            source_offset(pair.value_offsets[0])?,
-                            source_offset(pair.value_offsets[1])?,
-                        ],
-                        discriminator: pair.discriminator,
-                    })
-                })
-                .collect()
-        })
-        .collect()
+    construction_payload_frames(
+        container,
+        payloads,
+        |payload| &payload.data_blocks,
+        crate::om::object_payload_scalar_pairs,
+        |payload, ordinal, pair, source_offset| {
+            Some(FeatureSketchPayloadCoordinatePair {
+                id: format!("{}-coordinate-pair-{ordinal:010}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                construction_payload: payload.id.clone(),
+                ordinal: ordinal as u32,
+                values: pair.values,
+                raw_values: pair.raw_values,
+                payload_offset: pair.offset as u64,
+                value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
+                source_offset: source_offset(pair.offset)?,
+                value_source_offsets: [
+                    source_offset(pair.value_offsets[0])?,
+                    source_offset(pair.value_offsets[1])?,
+                ],
+                discriminator: pair.discriminator,
+            })
+        },
+    )
 }
 
 /// Decode exact signed fixed-point pair frames from reconstructed sketch payloads.
@@ -4488,49 +4462,30 @@ pub fn feature_sketch_payload_fixed_pairs(
     container: &Container,
     payloads: &[FeatureSketchConstructionPayload],
 ) -> Vec<FeatureSketchPayloadFixedPair> {
-    let blocks = offset_data_block_bytes(container);
-    payloads
-        .iter()
-        .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
-            else {
-                return Vec::new();
-            };
-            let source_offset =
-                |relative: usize| {
-                    let relative = relative as u64;
-                    starts.iter().zip(&lengths).zip(&sources).find_map(
-                        |((start, length), source)| {
-                            (relative >= *start && relative < start.saturating_add(*length))
-                                .then_some(source + relative - start)
-                        },
-                    )
-                };
-            crate::om::sketch_payload_fixed_pairs(&bytes)
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, pair)| {
-                    Some(FeatureSketchPayloadFixedPair {
-                        id: format!("{}-fixed-pair-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        construction_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        values: pair.values,
-                        raw_values: pair.raw_values,
-                        discriminator: pair.discriminator,
-                        payload_offset: pair.offset as u64,
-                        value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
-                        source_offset: source_offset(pair.offset)?,
-                        value_source_offsets: [
-                            source_offset(pair.value_offsets[0])?,
-                            source_offset(pair.value_offsets[1])?,
-                        ],
-                    })
-                })
-                .collect()
-        })
-        .collect()
+    construction_payload_frames(
+        container,
+        payloads,
+        |payload| &payload.data_blocks,
+        crate::om::sketch_payload_fixed_pairs,
+        |payload, ordinal, pair, source_offset| {
+            Some(FeatureSketchPayloadFixedPair {
+                id: format!("{}-fixed-pair-{ordinal:010}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                construction_payload: payload.id.clone(),
+                ordinal: ordinal as u32,
+                values: pair.values,
+                raw_values: pair.raw_values,
+                discriminator: pair.discriminator,
+                payload_offset: pair.offset as u64,
+                value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
+                source_offset: source_offset(pair.offset)?,
+                value_source_offsets: [
+                    source_offset(pair.value_offsets[0])?,
+                    source_offset(pair.value_offsets[1])?,
+                ],
+            })
+        },
+    )
 }
 
 /// Decode exact mixed Q1.55/binary32 pair frames from reconstructed sketch payloads.
@@ -4538,51 +4493,32 @@ pub fn feature_sketch_payload_mixed_pairs(
     container: &Container,
     payloads: &[FeatureSketchConstructionPayload],
 ) -> Vec<FeatureSketchPayloadMixedPair> {
-    let blocks = offset_data_block_bytes(container);
-    payloads
-        .iter()
-        .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(&payload.data_blocks, &blocks)
-            else {
-                return Vec::new();
-            };
-            let source_offset =
-                |relative: usize| {
-                    let relative = relative as u64;
-                    starts.iter().zip(&lengths).zip(&sources).find_map(
-                        |((start, length), source)| {
-                            (relative >= *start && relative < start.saturating_add(*length))
-                                .then_some(source + relative - start)
-                        },
-                    )
-                };
-            crate::om::sketch_payload_mixed_pairs(&bytes)
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, pair)| {
-                    Some(FeatureSketchPayloadMixedPair {
-                        id: format!("{}-mixed-pair-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        construction_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        fixed_value: pair.fixed_value,
-                        binary32_value: pair.binary32_value,
-                        fixed_raw_value: pair.fixed_raw_value,
-                        binary32_raw_value: pair.binary32_raw_value,
-                        discriminator: pair.discriminator,
-                        payload_offset: pair.offset as u64,
-                        value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
-                        source_offset: source_offset(pair.offset)?,
-                        value_source_offsets: [
-                            source_offset(pair.value_offsets[0])?,
-                            source_offset(pair.value_offsets[1])?,
-                        ],
-                    })
-                })
-                .collect()
-        })
-        .collect()
+    construction_payload_frames(
+        container,
+        payloads,
+        |payload| &payload.data_blocks,
+        crate::om::sketch_payload_mixed_pairs,
+        |payload, ordinal, pair, source_offset| {
+            Some(FeatureSketchPayloadMixedPair {
+                id: format!("{}-mixed-pair-{ordinal:010}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                construction_payload: payload.id.clone(),
+                ordinal: ordinal as u32,
+                fixed_value: pair.fixed_value,
+                binary32_value: pair.binary32_value,
+                fixed_raw_value: pair.fixed_raw_value,
+                binary32_raw_value: pair.binary32_raw_value,
+                discriminator: pair.discriminator,
+                payload_offset: pair.offset as u64,
+                value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
+                source_offset: source_offset(pair.offset)?,
+                value_source_offsets: [
+                    source_offset(pair.value_offsets[0])?,
+                    source_offset(pair.value_offsets[1])?,
+                ],
+            })
+        },
+    )
 }
 
 pub(crate) fn offset_data_block_bytes_for_section<'a>(
