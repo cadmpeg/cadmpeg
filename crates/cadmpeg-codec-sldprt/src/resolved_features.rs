@@ -12544,6 +12544,30 @@ mod marker_tests {
     }
 
     #[test]
+    fn compact_edge_selection_accepts_object_terminated_u16_paths() {
+        let marker = 12;
+        let mut payload = vec![0; marker + 18];
+        payload[..4].copy_from_slice(&4u32.to_le_bytes());
+        payload[4..8].copy_from_slice(&[0, 2, 0, 0]);
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        payload.extend([0x0e, 0x02, 0x13, 0x02, 0x13, 0x02, 0x13, 0x02]);
+        payload.extend([0; 8]);
+        payload.extend([0xe2, 0x80, 0, 0]);
+
+        assert_eq!(
+            compact_edge_selection_at(&payload, marker),
+            Some(vec![526, 531, 531, 531])
+        );
+
+        payload[marker + 18 + 8 + 7] = 1;
+        assert_eq!(compact_edge_selection_at(&payload, marker), None);
+        payload[marker + 18 + 8 + 7] = 0;
+        payload[marker + 18 + 8 + 8] = 0xff;
+        payload[marker + 18 + 8 + 9] = 0xff;
+        assert_eq!(compact_edge_selection_at(&payload, marker), None);
+    }
+
+    #[test]
     fn compact_edge_selection_rejects_unbounded_counts_and_short_headers() {
         let mut payload = vec![0; 40];
         payload[..4].copy_from_slice(&u32::MAX.to_le_bytes());
@@ -25022,11 +25046,17 @@ fn compact_u16_edge_ids(payload: &[u8], cursor: usize, count: usize) -> Option<V
         .chunks_exact(2)
         .map(|bytes| u32::from(u16::from_le_bytes([bytes[0], bytes[1]])))
         .collect::<Vec<_>>();
-    let suffix = payload.get(end..end + 19)?;
-    (ids.iter().all(|id| *id != 0)
-        && suffix[..16].iter().all(|byte| *byte == 0)
-        && suffix[16..19] == [0xff, 0xfe, 0xff])
-    .then_some(ids)
+    let suffix = payload.get(end..)?;
+    let sentinel_terminated = suffix.get(..19).is_some_and(|suffix| {
+        suffix[..16].iter().all(|byte| *byte == 0) && suffix[16..19] == [0xff, 0xfe, 0xff]
+    });
+    let object_terminated = suffix.get(..10).is_some_and(|suffix| {
+        suffix[..8].iter().all(|byte| *byte == 0) && {
+            let token = u16::from_le_bytes([suffix[8], suffix[9]]);
+            token & 0x8000 != 0 && token != u16::MAX
+        }
+    });
+    (ids.iter().all(|id| *id != 0) && (sentinel_terminated || object_terminated)).then_some(ids)
 }
 
 fn compact_body_selection_vector(
