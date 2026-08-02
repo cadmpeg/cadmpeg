@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Generate deterministic, conservative NX capability-gate evidence.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
@@ -11,7 +11,8 @@ use std::process::Command;
 
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
-use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::{FeatureDefinition, Length};
+use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::LossCategory;
 use cadmpeg_ir::{CadIr, Severity};
 use serde::{Deserialize, Serialize};
@@ -258,20 +259,18 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
     })
 }
 
-/// Evaluate the closed zero-shape base case of neutral NX history.
-///
-/// Tree nodes carry ordering, annotations, or expressions but cannot create or
-/// modify shape. A history made entirely from resolved tree nodes therefore
-/// re-derives an empty saved-body census exactly. Other feature families remain
-/// unverified until their neutral geometry evaluator exists.
+/// Evaluate the admitted exact body-identity effects of neutral NX history.
 fn neutral_rederivation_status(ir: &CadIr) -> VerificationStatus {
-    let history_is_resolved_zero_shape = ir.model.bodies.is_empty()
-        && ir.model.features.iter().all(|feature| {
-            feature.suppressed.is_some()
-                && feature.outputs.is_empty()
-                && matches!(feature.definition, FeatureDefinition::TreeNode { .. })
-        });
-    if !history_is_resolved_zero_shape {
+    let Some(rederived_bodies) = rederived_body_census(ir) else {
+        return VerificationStatus::Missing;
+    };
+    let saved_bodies = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect::<BTreeSet<_>>();
+    if saved_bodies.len() != ir.model.bodies.len() || rederived_bodies != saved_bodies {
         return VerificationStatus::Missing;
     }
 
@@ -287,18 +286,61 @@ fn neutral_rederivation_status(ir: &CadIr) -> VerificationStatus {
         return VerificationStatus::Missing;
     };
     if active.next().is_some()
+        || !saved_bodies.is_empty()
         || configuration
             .bodies
             .resolved()
-            .is_none_or(|bodies| !bodies.is_empty())
-        || configuration.feature_states.values().any(|state| {
-            !state.outputs.is_empty()
-                || !matches!(state.definition, FeatureDefinition::TreeNode { .. })
-        })
+            .is_none_or(|bodies| bodies.iter().cloned().collect::<BTreeSet<_>>() != saved_bodies)
+        || !configuration.feature_states.is_empty()
     {
         return VerificationStatus::Missing;
     }
     VerificationStatus::Verified
+}
+
+fn rederived_body_census(ir: &CadIr) -> Option<BTreeSet<BodyId>> {
+    let mut bodies = BTreeSet::new();
+    for feature in &ir.model.features {
+        match feature.suppressed {
+            None => return None,
+            Some(true) => continue,
+            Some(false) => {}
+        }
+        match &feature.definition {
+            FeatureDefinition::TreeNode { .. }
+            | FeatureDefinition::DatumPrincipalPlane { .. }
+            | FeatureDefinition::DatumPlane { .. }
+            | FeatureDefinition::DatumPlaneUnresolved
+            | FeatureDefinition::DatumOffsetPlane { .. }
+            | FeatureDefinition::DatumAxis { .. }
+            | FeatureDefinition::DatumPoint { .. }
+            | FeatureDefinition::DatumPointUnresolved
+            | FeatureDefinition::DatumCoordinateSystem { .. }
+            | FeatureDefinition::DatumCoordinateSystemUnresolved
+            | FeatureDefinition::Sketch { .. } => {
+                if !feature.outputs.is_empty() {
+                    return None;
+                }
+            }
+            FeatureDefinition::Block {
+                dimensions: Some(dimensions),
+                placement: Some(placement),
+            } if dimensions.iter().copied().all(positive_length) && placement.is_proper_rigid() => {
+                let [output] = feature.outputs.as_slice() else {
+                    return None;
+                };
+                if !bodies.insert(output.clone()) {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
+    }
+    Some(bodies)
+}
+
+fn positive_length(length: Length) -> bool {
+    length.0.is_finite() && length.0 > 0.0
 }
 
 fn canonical_sha256(ir: &CadIr) -> Result<String, serde_json::Error> {
@@ -511,6 +553,47 @@ mod tests {
     #[test]
     fn empty_neutral_history_rederives_the_empty_saved_body_census() {
         let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        assert_eq!(
+            neutral_rederivation_status(&ir),
+            VerificationStatus::Verified
+        );
+    }
+
+    #[test]
+    fn complete_block_rederives_its_saved_body_identity() {
+        use cadmpeg_ir::features::{Feature, FeatureId};
+        use cadmpeg_ir::topology::{Body, BodyKind};
+
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let body = BodyId("body".to_string());
+        ir.model.bodies.push(Body {
+            id: body.clone(),
+            kind: BodyKind::Solid,
+            regions: Vec::new(),
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        ir.model.features.push(Feature {
+            id: FeatureId("block".to_string()),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: vec![body],
+            definition: FeatureDefinition::Block {
+                dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
+                placement: Some(cadmpeg_ir::transform::Transform::identity()),
+            },
+            native_ref: None,
+        });
+
         assert_eq!(
             neutral_rederivation_status(&ir),
             VerificationStatus::Verified
