@@ -69,6 +69,9 @@ pub struct FeatureOperationCommonFrame {
     pub marker: [u8; 3],
     /// Exact eight-byte state lane following the fixed state marker.
     pub state: [u8; 8],
+    /// Whether the operation modifies Parasolid data, when the stored field is boolean.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modifies_parasolid_data: Option<bool>,
     /// Duplicated frame-local ordinal.
     pub local_ordinal: u32,
     /// Exact canonical token repeated for the local ordinal.
@@ -2844,6 +2847,7 @@ pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOper
                     raw_indices: frame.raw_indices,
                     marker: frame.marker,
                     state: frame.state,
+                    modifies_parasolid_data: operation_modifies_parasolid_data(frame.state),
                     local_ordinal: frame.local_ordinal,
                     raw_local_ordinal: frame.raw_local_ordinal,
                     object_index: frame.object_index,
@@ -2862,6 +2866,14 @@ pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOper
         }
     }
     frames
+}
+
+fn operation_modifies_parasolid_data(state: [u8; 8]) -> Option<bool> {
+    match state[4] {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
 }
 
 /// Decode canonical terminal common-frame suffixes from bounded operations.
@@ -10594,5 +10606,15 @@ mod tests {
         let mut malformed = name;
         malformed.value = "Point0".to_string();
         assert!(feature_block_payload_points(&[record], &[malformed], &scalars).is_empty());
+    }
+
+    #[test]
+    fn operation_common_frame_types_the_parasolid_modification_field() {
+        let mut state = [0; 8];
+        assert_eq!(operation_modifies_parasolid_data(state), Some(false));
+        state[4] = 1;
+        assert_eq!(operation_modifies_parasolid_data(state), Some(true));
+        state[4] = 2;
+        assert_eq!(operation_modifies_parasolid_data(state), None);
     }
 }

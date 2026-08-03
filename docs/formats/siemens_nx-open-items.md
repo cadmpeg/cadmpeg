@@ -284,9 +284,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### OM-09. Embedded operation common-frame ownership
 
-**Question.** Which operation owns each embedded common frame, and what does each field in its eight-byte state lane mean?
+**Question.** Which operation owns each embedded common frame, and what do the state-lane fields other than `m_modifiesParasolidData` mean?
 
-**Known.** `siemens_nx.md` §7.1 "A bounded operation payload's terminal common-frame suffix is" and `siemens_nx.md` §7.1 "An exact common frame is" define the exact frame and state-lane boundaries for the admitted operation families.
+**Known.** `siemens_nx.md` §7.1 "A bounded operation payload's terminal common-frame suffix is" and `siemens_nx.md` §7.1 "An exact common frame is" define the exact frame and state-lane boundaries for the admitted operation families. The fifth state byte is the Boolean `m_modifiesParasolidData` field.
 
 **Need.** We must know ownership and field roles to attach the state to the correct operation.
 
