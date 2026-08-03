@@ -324,12 +324,18 @@ fn the_bytes_group_prefix_reaches_the_tool_and_its_help() {
     let file = write(dir.path(), "counter.bin", &(0u8..16).collect::<Vec<u8>>());
 
     // `inspect bytes hex --help` prints the tool's help rather than a
-    // subcommand-conflict error.
+    // subcommand-conflict error. The usage line carries both path segments and
+    // the arguments belong to `hex`. The predicate omits the leading executable
+    // name, which clap takes from `argv[0]` and renders as `cadmpeg.exe` on
+    // Windows.
     cadmpeg()
         .args(["inspect", "bytes", "hex", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("cadmpeg inspect bytes hex"));
+        .stdout(
+            predicate::str::contains("inspect bytes hex [OPTIONS] <FILE>")
+                .and(predicate::str::contains("--width <WIDTH>")),
+        );
 
     // The grouped form runs the same tool as the direct form.
     let expected = "00000000  00 01 02 03 04 05 06 07  08 09 0a 0b 0c 0d 0e 0f  \
