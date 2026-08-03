@@ -25,7 +25,7 @@ use crate::records::{
     DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignRuledSurfaceOperation,
     DesignScaleOperation, DesignSolidPrimitive, DesignSurfaceExtendMethod,
     DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation, DesignSurfaceStitchOperation,
-    DesignWorkAxisConstruction,
+    DesignThreadConstruction, DesignWorkAxisConstruction,
 };
 use cadmpeg_codec_core::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
 use cadmpeg_codec_core::CodecError;
@@ -136,6 +136,7 @@ pub fn decode_parameter_scopes(
             scope.path_feature_construction =
                 exact_path_feature_construction(bytes, &records, &scope, parameter_owners);
             scope.combine_operation = exact_combine_operation(bytes, &records, &scope);
+            scope.thread_construction = exact_thread_construction(bytes, &scope);
             scope.draft_operation = exact_draft_operation(bytes, &records, &scope);
             scope.circular_pattern_construction = exact_circular_pattern_construction_with_owners(
                 bytes,
@@ -166,6 +167,67 @@ pub fn decode_parameter_scopes(
     out.sort_by_key(|scope| scope.id.clone());
     out.dedup_by_key(|scope| scope.id.clone());
     Ok(out)
+}
+
+pub(crate) fn exact_thread_construction(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<DesignThreadConstruction> {
+    let start = usize::try_from(scope.byte_offset).ok()?;
+    if scope.kind != "Thread"
+        || scope.frame_length != 449
+        || scope.paired_class_tag != "258"
+        || scope.reference_members.len() != 4
+        || bytes.get(start + 11..start + 21)? != [0; 10]
+        || f64_at(bytes, start + 21)?.to_bits() != 60.0f64.to_bits()
+        || bytes.get(start + 29..start + 34)? != [1, 2, 0, 0, 0]
+        || bytes.get(start + 34..start + 38)? != [0x36, 0, 0x67, 0]
+    {
+        return None;
+    }
+    parse_thread_payload(bytes, start, scope.reference_members[0])
+}
+
+pub(crate) fn parse_thread_payload(
+    bytes: &[u8],
+    start: usize,
+    face_group_record_index: u32,
+) -> Option<DesignThreadConstruction> {
+    let (designation, after_designation) = lp_utf16_bounded(bytes, start + 38, 1..=128)?;
+    let (nominal, after_nominal) = lp_utf16_bounded(bytes, after_designation, 1..=64)?;
+    let (profile, after_profile) = lp_utf16_bounded(bytes, after_nominal, 1..=256)?;
+    if after_profile != start + 108 || bytes.get(start + 108..start + 113)? != [0, 1, 0, 0, 0] {
+        return None;
+    }
+    let nominal_size = nominal.parse::<f64>().ok()?;
+    let major_diameter = f64_at(bytes, start + 113)?;
+    let minor_diameter = f64_at(bytes, start + 121)?;
+    let pitch = (bytes.get(start + 129) == Some(&1)).then(|| f64_at(bytes, start + 130))??;
+    let pitch_diameter = f64_at(bytes, start + 138)?;
+    if bytes.get(start + 146..start + 148)? != [0, 1]
+        || ![
+            nominal_size,
+            major_diameter,
+            minor_diameter,
+            pitch,
+            pitch_diameter,
+        ]
+        .into_iter()
+        .all(|value| value.is_finite() && value > 0.0)
+        || !(minor_diameter < pitch_diameter && pitch_diameter < major_diameter)
+    {
+        return None;
+    }
+    Some(DesignThreadConstruction {
+        designation,
+        nominal_size,
+        profile,
+        major_diameter,
+        minor_diameter,
+        pitch,
+        pitch_diameter,
+        face_group_record_index,
+    })
 }
 
 pub(crate) fn bind_joint_origin_frames_from_assemblies(
@@ -3655,6 +3717,7 @@ pub(crate) fn parse_parameter_scope(
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
         combine_operation: None,
+        thread_construction: None,
         draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,

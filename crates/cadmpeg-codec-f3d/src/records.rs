@@ -1467,6 +1467,27 @@ pub struct DesignCombineOperation {
     pub body_selection_record_indexes: Vec<u32>,
 }
 
+/// Exact standard and size construction carried by a `Thread` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignThreadConstruction {
+    /// Standard thread designation.
+    pub designation: String,
+    /// Numeric nominal size interpreted by `profile`.
+    pub nominal_size: f64,
+    /// Thread profile name.
+    pub profile: String,
+    /// Physical major diameter in Design length units.
+    pub major_diameter: f64,
+    /// Physical minor diameter in Design length units.
+    pub minor_diameter: f64,
+    /// Thread pitch in Design length units.
+    pub pitch: f64,
+    /// Pitch diameter in Design length units.
+    pub pitch_diameter: f64,
+    /// Counted face-selection group referenced by the scope.
+    pub face_group_record_index: u32,
+}
+
 /// Exact signed-angle lanes carried by a `Draft` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignDraftOperation {
@@ -1621,6 +1642,9 @@ pub struct DesignParameterScope {
     /// Exact Boolean construction carried by a `Combine` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub combine_operation: Option<DesignCombineOperation>,
+    /// Exact standard and size construction carried by a `Thread` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_construction: Option<DesignThreadConstruction>,
     /// Exact signed-angle construction carried by a `Draft` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub draft_operation: Option<DesignDraftOperation>,

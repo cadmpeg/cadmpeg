@@ -10977,6 +10977,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
         combine_operation: None,
+        thread_construction: None,
         draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,

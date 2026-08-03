@@ -241,6 +241,7 @@ pub fn decode_face_operands(
             && group.role == 0x0000_0008_0000_0000;
         let is_split_face_operand = scope.kind == "SplitFace";
         let is_delete_face_operand = scope.kind == "DeleteFace";
+        let is_thread_face = scope.kind == "Thread" && group.role == 0x0000_0010_0000_0000;
         let is_draft_operand =
             design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Draft);
         if !is_extrude_operand
@@ -253,6 +254,7 @@ pub fn decode_face_operands(
             && !is_mirror_seed
             && !is_split_face_operand
             && !is_delete_face_operand
+            && !is_thread_face
             && !is_draft_operand
         {
             continue;
@@ -608,6 +610,7 @@ pub fn decode_construction_operand_groups(
             || scope.kind == "SurfaceStitch"
             || scope.kind == "DeleteFace"
             || scope.kind == "Decal"
+            || scope.kind == "Thread"
             || matches!(scope.kind.as_str(), "BaseFlange" | "EdgeFlange" | "Hem")
             || has_typed_edge_treatment_group(&scope.kind)
     }) {

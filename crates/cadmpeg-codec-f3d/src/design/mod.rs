@@ -51,6 +51,7 @@ pub(crate) enum DesignFeatureFamily {
     Hole,
     Split,
     Scale,
+    Thread,
 }
 
 /// Return the canonical operation family while preserving `kind` verbatim on
@@ -86,6 +87,7 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
         "Hole" => Some(DesignFeatureFamily::Hole),
         "Split" => Some(DesignFeatureFamily::Split),
         "Scale" | "Maßstab" => Some(DesignFeatureFamily::Scale),
+        "Thread" => Some(DesignFeatureFamily::Thread),
         _ => None,
     }
 }

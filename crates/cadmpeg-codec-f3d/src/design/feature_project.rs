@@ -523,6 +523,54 @@ pub fn project_parameter_design_with_edge_identities(
                         }
                     },
                 ),
+                Some(DesignFeatureFamily::Thread) => scope
+                    .thread_construction
+                    .as_ref()
+                    .filter(|construction| construction.profile == "ISO Metric profile")
+                    .map_or_else(
+                        || FeatureDefinition::Native {
+                            kind: scope.kind.clone(),
+                            parameters: parameters
+                                .iter()
+                                .map(|(_, parameter)| {
+                                    (parameter.name.clone(), parameter.expression.clone())
+                                })
+                                .collect(),
+                            properties: native_scope_properties(scope, native_scope),
+                        },
+                        |construction| {
+                            let group = construction_groups.iter().find(|group| {
+                                native_stream(&group.id) == Some(native_scope)
+                                    && group.scope_record_index == scope.record_index
+                                    && group.record_index == construction.face_group_record_index
+                            });
+                            let face = group
+                                .and_then(|group| {
+                                    resolved_historical_face_group(scope, group, face_operands)
+                                })
+                                .or_else(|| {
+                                    group.map(|group| {
+                                        cadmpeg_ir::features::FaceSelection::Native(
+                                            group.id.clone(),
+                                        )
+                                    })
+                                })
+                                .unwrap_or(cadmpeg_ir::features::FaceSelection::Unresolved);
+                            let extent = parameters
+                                .iter()
+                                .find(|(ordinal, _)| *ordinal == 1)
+                                .and_then(|(_, parameter)| design_length(parameter))
+                                .filter(|length| length.0 > 0.0)
+                                .map(|length| cadmpeg_ir::features::CosmeticThreadExtent::Blind {
+                                    length,
+                                });
+                            FeatureDefinition::CosmeticThread {
+                                face,
+                                diameter: Some(Length(construction.nominal_size)),
+                                extent,
+                            }
+                        },
+                    ),
                 None => {
                     if let Some(primitive) = scope.solid_primitive.as_ref() {
                         let operation = |operation| match operation {
