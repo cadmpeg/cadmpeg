@@ -2245,6 +2245,12 @@ pub struct DesignConstructionOperandTransform {
     pub transform: [[f64; 4]; 4],
     /// Byte offset of the first matrix scalar.
     pub transform_offset: u64,
+    /// Second ordered affine transform in the dual-matrix frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secondary_transform: Option<[[f64; 4]; 4]>,
+    /// Byte offset of the second matrix's first scalar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secondary_transform_offset: Option<u64>,
     /// Indexed record immediately following the transform.
     pub following_record_index: u32,
     /// Following-record header byte offset.

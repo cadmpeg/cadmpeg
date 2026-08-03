@@ -1675,10 +1675,26 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             header.byte_offset == transform.byte_offset
                                 && header.class_tag == transform.class_tag
                         })
-                    && transform.transform_offset == transform.byte_offset.saturating_add(22)
                     && crate::design::decode::sketch::valid_sketch_transform(&transform.transform)
                     && transform.following_record_index == transform.record_index.saturating_add(1)
-                    && transform.following_byte_offset == transform.byte_offset.saturating_add(152)
+                    && match (
+                        &transform.secondary_transform,
+                        transform.secondary_transform_offset,
+                    ) {
+                        (None, None) => {
+                            transform.transform_offset == transform.byte_offset.saturating_add(22)
+                                && transform.following_byte_offset
+                                    == transform.byte_offset.saturating_add(152)
+                        }
+                        (Some(secondary), Some(secondary_offset)) => {
+                            transform.transform_offset == transform.byte_offset.saturating_add(21)
+                                && secondary_offset == transform.byte_offset.saturating_add(149)
+                                && transform.following_byte_offset
+                                    == transform.byte_offset.saturating_add(278)
+                                && crate::design::decode::sketch::valid_sketch_transform(secondary)
+                        }
+                        _ => false,
+                    }
                     && records_by_index
                         .get(&(native_stream, transform.following_record_index))
                         .is_some_and(|header| {

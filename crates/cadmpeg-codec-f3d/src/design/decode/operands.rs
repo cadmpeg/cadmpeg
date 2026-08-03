@@ -1281,18 +1281,45 @@ pub(crate) fn parse_construction_operand_transform(
     use crate::design::decode::sketch::valid_sketch_transform;
 
     let start = usize::try_from(header.byte_offset).ok()?;
-    if bytes.get(start + 11..start + 22)? != [0; 11] {
-        return None;
-    }
-    let values = cadmpeg_codec_core::le::f64s_at(bytes, start + 22, 16)?;
-    let mut transform = [[0.0; 4]; 4];
-    for (ordinal, value) in values.iter().copied().enumerate() {
-        transform[ordinal / 4][ordinal % 4] = value;
-    }
-    if !valid_sketch_transform(&transform) || bytes.get(start + 150..start + 152)? != [1, 0] {
-        return None;
-    }
-    let following_at = start.checked_add(152)?;
+    let matrix_at = |at| {
+        let values = cadmpeg_codec_core::le::f64s_at(bytes, at, 16)?;
+        let mut transform = [[0.0; 4]; 4];
+        for (ordinal, value) in values.iter().copied().enumerate() {
+            transform[ordinal / 4][ordinal % 4] = value;
+        }
+        valid_sketch_transform(&transform).then_some(transform)
+    };
+    let standard = || {
+        if bytes.get(start + 11..start + 22)? != [0; 11]
+            || bytes.get(start + 150..start + 152)? != [1, 0]
+        {
+            return None;
+        }
+        let transform_at = start.checked_add(22)?;
+        Some((
+            transform_at,
+            matrix_at(transform_at)?,
+            None,
+            None,
+            start.checked_add(152)?,
+        ))
+    };
+    let dual = || {
+        if bytes.get(start + 11..start + 21)? != [0; 10] || bytes.get(start + 277) != Some(&0) {
+            return None;
+        }
+        let transform_at = start.checked_add(21)?;
+        let secondary_transform_at = start.checked_add(149)?;
+        Some((
+            transform_at,
+            matrix_at(transform_at)?,
+            Some(secondary_transform_at),
+            Some(matrix_at(secondary_transform_at)?),
+            start.checked_add(278)?,
+        ))
+    };
+    let (transform_at, transform, secondary_transform_at, secondary_transform, following_at) =
+        standard().or_else(dual)?;
     let (following_class_tag, after_tag) =
         lp_ascii_filtered(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
     let following_record_index = u32_at(bytes, after_tag)?;
@@ -1304,7 +1331,9 @@ pub(crate) fn parse_construction_operand_transform(
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
         transform,
-        transform_offset: u64::try_from(start + 22).ok()?,
+        transform_offset: u64::try_from(transform_at).ok()?,
+        secondary_transform,
+        secondary_transform_offset: secondary_transform_at.and_then(|at| u64::try_from(at).ok()),
         following_record_index,
         following_byte_offset: u64::try_from(following_at).ok()?,
         following_class_tag,

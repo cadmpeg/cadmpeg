@@ -7595,12 +7595,40 @@ fn construction_operand_trailing_transform_has_exact_affine_frame() {
         .expect("exact construction-operand transform");
     assert_eq!(parsed.transform, transform);
     assert_eq!(parsed.transform_offset, 22);
+    assert_eq!(parsed.secondary_transform, None);
+    assert_eq!(parsed.secondary_transform_offset, None);
     assert_eq!(parsed.following_record_index, 301);
     assert_eq!(parsed.following_byte_offset, following_at as u64);
     assert_eq!(parsed.following_class_tag, "432");
 
     bytes[150] = 0;
     assert!(parse_construction_operand_transform(&bytes, &header).is_none());
+
+    let secondary = [
+        [1.0_f64, 0.0, 0.0, 2.0],
+        [0.0, 1.0, 0.0, 3.0],
+        [0.0, 0.0, 1.0, 4.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let mut dual = bytes[..21].to_vec();
+    for value in transform.into_iter().flatten() {
+        dual.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in secondary.into_iter().flatten() {
+        dual.extend_from_slice(&value.to_le_bytes());
+    }
+    dual.push(0);
+    let dual_following_at = dual.len();
+    dual.extend_from_slice(&3u32.to_le_bytes());
+    dual.extend_from_slice(b"432");
+    dual.extend_from_slice(&(record_index + 1).to_le_bytes());
+    let parsed = parse_construction_operand_transform(&dual, &header)
+        .expect("exact dual construction-operand transform");
+    assert_eq!(parsed.transform, transform);
+    assert_eq!(parsed.transform_offset, 21);
+    assert_eq!(parsed.secondary_transform, Some(secondary));
+    assert_eq!(parsed.secondary_transform_offset, Some(149));
+    assert_eq!(parsed.following_byte_offset, dual_following_at as u64);
 }
 
 #[test]
