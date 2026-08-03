@@ -2017,9 +2017,11 @@ fn linked_profile_point(payload: &[u8], offset: usize) -> Option<LinkedProfilePo
         && payload.get(offset + 146..offset + 150) != Some(&u32::MAX.to_le_bytes())
         && sketch_marker_prefix_at(payload, offset.checked_add(154)?);
     let long_tail = matches!(
-        payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()),
+        payload.get(offset..offset + SKETCH_MARKER.len()),
         Some(prefix)
-            if prefix == LEGACY_SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER
+            if prefix == SKETCH_MARKER
+                || prefix == LEGACY_SKETCH_MARKER
+                || prefix == LEGACY_EXTENDED_SKETCH_MARKER
     ) && payload.get(offset + 108..offset + 144) == Some(&[0; 36])
         && payload
             .get(offset + 144..offset + 148)
@@ -6835,6 +6837,17 @@ mod marker_tests {
             .expect("extended-tail linked profile point");
         assert_eq!(point.kind, SketchInputKind::Point);
         assert_eq!(point.coordinates_m, Some([1.25, -2.5]));
+
+        extended[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        extended[offset + 158..].copy_from_slice(SKETCH_MARKER);
+        assert_eq!(
+            linked_profile_point(&extended, offset),
+            Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
+        );
+        assert_eq!(
+            super::sketch_input_entities(&extended, "lane")[0].kind,
+            SketchInputKind::Point
+        );
 
         extended[offset..offset + LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
         extended[offset + 17..offset + 21].copy_from_slice(&1u32.to_le_bytes());
