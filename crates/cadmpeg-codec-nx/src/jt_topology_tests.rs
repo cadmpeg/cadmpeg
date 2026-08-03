@@ -40,5 +40,3 @@ fn jt_topological_dual_mesh_reconstructs_closed_tetrahedron() {
         vec![Some(0), Some(1), Some(2)]
     );
 }
-
-

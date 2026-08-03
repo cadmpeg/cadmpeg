@@ -1404,4 +1404,3 @@ pub fn revolution_extents(rows: &[FeatureRow]) -> Vec<FeatureRevolutionExtent> {
     result.sort_by_key(|record| record.offset);
     result
 }
-

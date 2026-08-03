@@ -290,4 +290,3 @@ pub fn entity_tables(
     }
     tables
 }
-

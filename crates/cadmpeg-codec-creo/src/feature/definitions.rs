@@ -1619,7 +1619,11 @@ pub(crate) fn placement_instruction_rows(
     rows
 }
 
-pub(crate) fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegmentTable> {
+pub(crate) fn segment_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<FeatureSegmentTable> {
     let table = find_bytes(payload, b"segtab_ptr\0", start, end)?;
     let mut cursor = table + b"segtab_ptr\0".len();
     while payload
@@ -2256,7 +2260,11 @@ fn complete_trim_entity_entry(payload: &[u8], offset: usize, end: usize) -> bool
     cursor < end && payload.get(cursor) == Some(&0)
 }
 
-pub(crate) fn trim_vertex_entry(payload: &[u8], offset: usize, end: usize) -> Option<(Vec<u32>, u32, usize)> {
+pub(crate) fn trim_vertex_entry(
+    payload: &[u8],
+    offset: usize,
+    end: usize,
+) -> Option<(Vec<u32>, u32, usize)> {
     let mut cursor = offset;
     if payload.get(cursor) == Some(&psb::token::ARRAY_OPEN) {
         let (count, next) = psb::compact_int(payload, cursor + 1);
@@ -3035,7 +3043,11 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
     })
 }
 
-pub(crate) fn positional_section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection3d> {
+pub(crate) fn positional_section_3d(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<FeatureSection3d> {
     let (section, name_end) = payload[start..end]
         .windows(4)
         .enumerate()
@@ -3962,7 +3974,11 @@ fn relation_operand_vectors(bytes: &[u8]) -> Option<[[Option<u32>; 4]; 3]> {
     chunks.next().is_none().then_some(result)
 }
 
-pub(crate) fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRelationTable> {
+pub(crate) fn relation_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<FeatureRelationTable> {
     let table = find_bytes(payload, b"relat_ptr\0", start, end)?;
     let mut cursor = table + b"relat_ptr\0".len();
     if payload.get(cursor..cursor + 2) == Some(&[0xf4, 0x04]) {
@@ -5847,4 +5863,3 @@ pub fn bind_depdb_section_owners(
         }
     }
 }
-

@@ -63,7 +63,6 @@ fn ug_part_segment_index_uses_row_one_self_boundary() {
     assert_eq!(index.padding, &[0xaa, 0xbb, 0xcc, 0xdd]);
 }
 
-
 #[test]
 fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -116,7 +115,6 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     assert!(crate::decode::analytic_surface_offset(&support, &elliptical).is_none());
 }
 
-
 #[test]
 fn nx_sphere_offset_lineage_follows_signed_radius_orientation() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -142,7 +140,6 @@ fn nx_sphere_offset_lineage_follows_signed_radius_orientation() {
     );
     assert!(crate::decode::analytic_surface_offset(&sphere(4.0), &sphere(-6.5)).is_none());
 }
-
 
 #[test]
 fn nx_torus_offset_lineage_requires_one_ring_orientation() {
@@ -172,7 +169,6 @@ fn nx_torus_offset_lineage_requires_one_ring_orientation() {
     assert!(crate::decode::analytic_surface_offset(&torus(2.0), &torus(10.0)).is_none());
 }
 
-
 #[test]
 fn decode_reports_unclassified_bounded_offset_store_controls() {
     let file = prt_with_named_payloads(&[(
@@ -193,7 +189,6 @@ fn decode_reports_unclassified_bounded_offset_store_controls() {
                 .contains("1 of 1 bounded offset-store control block(s)")
     }));
 }
-
 
 #[test]
 fn parasolid_entity_51_records_retain_layout_selected_references() {
@@ -223,7 +218,6 @@ fn parasolid_entity_51_records_retain_layout_selected_references() {
     assert!(crate::parasolid::entity_51_record_at(&bytes[..25], 0).is_none());
 }
 
-
 #[test]
 fn parasolid_entity_51_definition_uses_extended_xmt_framing() {
     let mut bytes = vec![0, 0x51];
@@ -241,7 +235,6 @@ fn parasolid_entity_51_definition_uses_extended_xmt_framing() {
     assert_eq!(record.byte_len, 28);
     assert!(crate::parasolid::entity_51_record_at(&bytes[..27], 0).is_none());
 }
-
 
 #[test]
 fn parasolid_entity_51_reference_count_is_five_plus_flags() {
@@ -284,7 +277,6 @@ fn parasolid_entity_51_reference_count_is_five_plus_flags() {
     }
 }
 
-
 #[test]
 fn parasolid_entity_51_rejects_nonzero_upper_flag_bytes() {
     let mut bytes = vec![0, 0x51];
@@ -298,7 +290,6 @@ fn parasolid_entity_51_rejects_nonzero_upper_flag_bytes() {
 
     assert!(crate::parasolid::entity_51_record_at(&bytes, 0).is_none());
 }
-
 
 #[test]
 fn parasolid_entity_54_strings_require_exact_length_and_terminator() {
@@ -327,7 +318,6 @@ fn parasolid_entity_54_strings_require_exact_length_and_terminator() {
     );
 }
 
-
 #[test]
 fn parasolid_entity_52_integers_require_complete_counted_values() {
     let mut bytes = vec![0xaa, 0x00, 0x52];
@@ -350,7 +340,6 @@ fn parasolid_entity_52_integers_require_complete_counted_values() {
     assert!(crate::parasolid::entity_52_integer_record_at(&bytes[..bytes.len() - 1], 1).is_none());
 }
 
-
 #[test]
 fn parasolid_field_names_require_a_complete_nonempty_reference_lane() {
     let bytes = [
@@ -368,7 +357,6 @@ fn parasolid_field_names_require_a_complete_nonempty_reference_lane() {
     let empty = [0x00, 0x63, 0, 0, 0, 0, 0, 25];
     assert!(crate::parasolid::field_names_records(&empty).is_empty());
 }
-
 
 #[test]
 fn parasolid_entity_53_doubles_require_complete_finite_values() {
@@ -394,7 +382,6 @@ fn parasolid_entity_53_doubles_require_complete_finite_values() {
     assert!(crate::parasolid::entity_53_double_records(&bytes).is_empty());
     assert!(crate::parasolid::entity_53_double_record_at(&bytes, 1).is_none());
 }
-
 
 #[test]
 fn parasolid_transformable_attribute_values_preserve_vector_and_axis_grouping() {
@@ -449,7 +436,6 @@ fn parasolid_transformable_attribute_values_preserve_vector_and_axis_grouping() 
     );
 }
 
-
 #[test]
 fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
     let tags = [
@@ -481,7 +467,6 @@ fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
     assert!(crate::parasolid::entity_62_unicode_records(&invalid).is_empty());
 }
 
-
 #[test]
 fn topology_rejects_shell_with_broken_face_ownership_chain() {
     let valid = topology_partition_stream();
@@ -512,7 +497,6 @@ fn topology_rejects_shell_with_broken_face_ownership_chain() {
     );
 }
 
-
 #[test]
 fn topology_retains_shell_body_identity_without_body_record() {
     let mut stream = topology_partition_stream();
@@ -536,7 +520,6 @@ fn topology_retains_shell_body_identity_without_body_record() {
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
-
 
 #[test]
 fn topology_accepts_cached_last_face_and_implicit_region_identity() {
@@ -578,7 +561,6 @@ fn topology_accepts_cached_last_face_and_implicit_region_identity() {
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
-
 #[test]
 fn topology_rejects_nonreciprocal_fin_ring() {
     let mut stream = topology_partition_stream();
@@ -609,7 +591,6 @@ fn topology_rejects_nonreciprocal_fin_ring() {
         .is_none());
 }
 
-
 #[test]
 fn topology_accepts_fixed_record_envelope_escape() {
     let mut stream = topology_partition_stream();
@@ -625,7 +606,6 @@ fn topology_accepts_fixed_record_envelope_escape() {
     );
     assert_eq!(graph.face_loop_rings(4).unwrap().len(), 1);
 }
-
 
 #[test]
 fn topology_iterates_each_record_family_in_physical_order() {
@@ -643,7 +623,6 @@ fn topology_iterates_each_record_family_in_physical_order() {
         vec![77, 3]
     );
 }
-
 
 #[test]
 fn decode_synthesizes_vertex_for_closed_null_vertex_fin() {
@@ -666,7 +645,6 @@ fn decode_synthesizes_vertex_for_closed_null_vertex_fin() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn topology_invalid_candidate_cannot_shadow_later_valid_record() {
     let mut stream = record(14, 39);
@@ -678,7 +656,6 @@ fn topology_invalid_candidate_cannot_shadow_later_valid_record() {
     assert!(face.pos >= 39);
     assert!(face.face_fields().is_some());
 }
-
 
 #[test]
 fn decode_retains_topology_owned_point_at_origin() {
@@ -710,7 +687,6 @@ fn decode_retains_topology_owned_point_at_origin() {
     );
 }
 
-
 #[test]
 fn decode_orders_graph_only_origin_before_later_nonzero_point() {
     let mut stream = topology_partition_stream();
@@ -734,7 +710,6 @@ fn decode_orders_graph_only_origin_before_later_nonzero_point() {
     assert_eq!(points[1].1, cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0));
     assert_eq!(points[1].2.map(|node| node.xmt), Some(77));
 }
-
 
 #[test]
 fn decode_orders_graph_only_escaped_analytics_before_later_records() {
@@ -781,7 +756,6 @@ fn decode_orders_graph_only_escaped_analytics_before_later_records() {
     assert_eq!(curves[1].2.map(|node| node.xmt), Some(78));
 }
 
-
 #[test]
 fn decode_does_not_attach_unreferenced_point_to_solid_topology() {
     let mut stream = topology_partition_stream();
@@ -801,7 +775,6 @@ fn decode_does_not_attach_unreferenced_point_to_solid_topology() {
     assert_eq!(result.ir.model.bodies.len(), 1);
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn decode_retains_connected_topology_with_unknown_surface_carrier() {
@@ -829,7 +802,6 @@ fn decode_retains_connected_topology_with_unknown_surface_carrier() {
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
-
 #[test]
 fn decode_retains_unknown_non_null_edge_curve_carrier() {
     let mut stream = topology_partition_stream();
@@ -851,7 +823,6 @@ fn decode_retains_unknown_non_null_edge_curve_carrier() {
     assert!(matches!(curve.geometry, CurveGeometry::Unknown { .. }));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn decode_drops_unknown_carrier_outside_emitted_topology() {
@@ -877,7 +848,6 @@ fn decode_drops_unknown_carrier_outside_emitted_topology() {
     assert_eq!(result.ir.model.edges.len(), 1);
 }
 
-
 #[test]
 fn decode_retains_native_carrierless_edge() {
     let mut stream = topology_partition_stream();
@@ -901,7 +871,6 @@ fn decode_retains_native_carrierless_edge() {
     assert_eq!(edge.param_range, None);
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
@@ -1026,7 +995,6 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
     assert_eq!(off_support_ir.model.edges[0].curve, None);
 }
 
-
 #[test]
 fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -1064,7 +1032,6 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
     assert_eq!(edge.param_range, None);
     assert!(ir.model.procedural_curves.is_empty());
 }
-
 
 #[test]
 fn intersection_support_completion_requires_one_unique_incident_complement() {
@@ -1179,7 +1146,6 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
     assert_eq!(context.sides[1].pcurve.as_ref(), Some(&pcurve_geometry));
 }
 
-
 #[test]
 fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
     use cadmpeg_ir::geometry::{
@@ -1280,7 +1246,6 @@ fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
         assert!(point.z.abs() < 0.01);
     }
 }
-
 
 #[test]
 fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluable() {
@@ -1414,7 +1379,6 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
     assert_eq!(control_points.first(), Some(&Point2::new(0.0, 0.0)));
     assert_eq!(control_points.last(), Some(&Point2::new(1.0, 0.0)));
 }
-
 
 #[test]
 fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
@@ -1594,7 +1558,6 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     .is_none());
 }
 
-
 #[test]
 fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
     let stream = pcurve_topology_partition_stream();
@@ -1642,7 +1605,6 @@ fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
     );
 }
 
-
 #[test]
 fn decode_assigns_descending_pcurve_trim_to_the_coedge_use() {
     let mut stream = pcurve_topology_partition_stream();
@@ -1672,7 +1634,6 @@ fn decode_assigns_descending_pcurve_trim_to_the_coedge_use() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_omits_surface_curve_missing_tolerance_sentinel() {
     let mut stream = pcurve_topology_partition_stream();
@@ -1694,7 +1655,6 @@ fn decode_omits_surface_curve_missing_tolerance_sentinel() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_rejects_overflowing_pcurve_parameter_conversion() {
     let mut stream = pcurve_topology_partition_stream();
@@ -1713,7 +1673,6 @@ fn decode_rejects_overflowing_pcurve_parameter_conversion() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_preserves_multiple_shells_in_one_region() {
     let stream = shared_region_shells_partition_stream();
@@ -1730,7 +1689,6 @@ fn decode_preserves_multiple_shells_in_one_region() {
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
-
 
 #[test]
 fn nx_offset_surface_accepts_unbounded_representable_distance() {
@@ -1753,7 +1711,6 @@ fn nx_offset_surface_accepts_unbounded_representable_distance() {
     assert!(crate::topology::offset_surfaces(&stream).is_empty());
 }
 
-
 #[test]
 fn offset_surface_envelope_does_not_consume_the_following_record() {
     let mut stream = offset_surface_topology_partition_stream();
@@ -1770,7 +1727,6 @@ fn offset_surface_envelope_does_not_consume_the_following_record() {
     );
     assert!(graph.get(29, 20).is_some());
 }
-
 
 #[test]
 fn nx_blend_surface_requires_a_nonzero_rolling_ball_radius() {
@@ -1791,7 +1747,6 @@ fn nx_blend_surface_requires_a_nonzero_rolling_ball_radius() {
     assert!(crate::topology::blend_surfaces(&stream).is_empty());
 }
 
-
 #[test]
 fn detect_high_on_magic() {
     assert_eq!(NxCodec.detect(MAGIC), Confidence::High);
@@ -1800,7 +1755,6 @@ fn detect_high_on_magic() {
     // A Creo/Granite .prt shares the extension but not the magic.
     assert_eq!(NxCodec.detect(b"\xe0\x02\xff\xfeGRANITE"), Confidence::No);
 }
-
 
 #[test]
 fn container_parses_header_and_directory() {
@@ -1815,7 +1769,6 @@ fn container_parses_header_and_directory() {
         .iter()
         .any(|e| e.name == "/Root/UG_PART/UG_PART" && e.file_span.is_some()));
 }
-
 
 #[test]
 fn container_rejects_incomplete_counted_directories() {
@@ -1838,7 +1791,6 @@ fn container_rejects_incomplete_counted_directories() {
     footer[footer_offset + 6..footer_offset + 10].copy_from_slice(&1_u32.to_le_bytes());
     assert!(container::scan_bytes(footer).is_err());
 }
-
 
 #[test]
 fn container_rejects_trailing_or_overlapping_footer_data() {
@@ -1873,7 +1825,6 @@ fn container_rejects_trailing_or_overlapping_footer_data() {
     assert!(container::scan_bytes(overlap).is_err());
 }
 
-
 #[test]
 fn inspect_reports_bounded_nx_object_model_entities() {
     let mut cur = Cursor::new(prt_with_indexed_om_section());
@@ -1884,7 +1835,6 @@ fn inspect_reports_bounded_nx_object_model_entities() {
         note == "NX object model: 1 indexed section(s), 2 bounded entity record(s)"
     }));
 }
-
 
 #[test]
 fn decode_projects_part_attributes_to_document_attributes() {
@@ -1915,7 +1865,6 @@ fn decode_projects_part_attributes_to_document_attributes() {
     );
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn decode_exposes_strict_nx_jpeg_preview_metadata() {
@@ -1984,7 +1933,6 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
         .any(|unknown| unknown.id.0 == "nx:container:jpeg-preview#0"));
 }
 
-
 #[test]
 fn decode_rejects_repeated_nx_arrangement_terminators_atomically() {
     let mut arrangements =
@@ -2000,7 +1948,6 @@ fn decode_rejects_repeated_nx_arrangement_terminators_atomically() {
     assert!(result.ir.model.configurations.is_empty());
 }
 
-
 #[test]
 fn parasolid_extraction_classifies_partition_and_schema() {
     let f = single_part_prt();
@@ -2012,7 +1959,6 @@ fn parasolid_extraction_classifies_partition_and_schema() {
     assert_eq!(part.schema.as_deref(), Some("SCH_TEST_1_9999"));
     assert!(part.inflated.starts_with(b"PS\x00\x00"));
 }
-
 
 #[test]
 fn decode_transfers_point_plane_cylinder_line() {
@@ -2096,7 +2042,6 @@ fn decode_transfers_point_plane_cylinder_line() {
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
-
 #[test]
 fn decode_emits_connected_primitive_brep() {
     let mut cur = Cursor::new(topology_part_prt());
@@ -2152,7 +2097,6 @@ fn decode_emits_connected_primitive_brep() {
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
-
 #[test]
 fn decode_reports_missing_assembly_placements_only_for_external_references() {
     let file = prt_with_named_payloads(&[
@@ -2174,7 +2118,6 @@ fn decode_reports_missing_assembly_placements_only_for_external_references() {
             && loss.message.contains("Assembly occurrence placements")
     }));
 }
-
 
 #[test]
 fn retained_material_library_assets_do_not_imply_an_assignment_loss() {
@@ -2211,7 +2154,6 @@ fn retained_material_library_assets_do_not_imply_an_assignment_loss() {
         .iter()
         .all(|loss| loss.code != LossKind::MaterialNotTransferred));
 }
-
 
 #[test]
 fn offset_surface_parameter_solver_preserves_support_parameters() {
@@ -2309,7 +2251,6 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
     assert!((nested_parameters.v - expected.v).abs() < 1.0e-3);
 }
 
-
 #[test]
 fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
     let stream = offset_surface_topology_partition_stream();
@@ -2338,7 +2279,6 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
     assert_eq!(actual, seed);
 }
 
-
 #[test]
 fn decode_tracks_fully_extended_offset_common_header() {
     let stream = offset_surface_with_fully_extended_common_header();
@@ -2362,7 +2302,6 @@ fn decode_tracks_fully_extended_offset_common_header() {
     assert_ne!(procedural.surface, *support);
     assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
 }
-
 
 #[test]
 fn decode_tracks_fully_extended_compact_geometry_headers() {
@@ -2406,7 +2345,6 @@ fn decode_tracks_fully_extended_compact_geometry_headers() {
         .any(|curve| matches!(curve.geometry, CurveGeometry::Nurbs(_))));
 }
 
-
 #[test]
 fn intersection_construction_recovers_one_missing_term_from_unique_edge_endpoints() {
     let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
@@ -2423,7 +2361,6 @@ fn intersection_construction_recovers_one_missing_term_from_unique_edge_endpoint
         crate::intersection::RejectionCounts::default()
     );
 }
-
 
 #[test]
 fn intersection_construction_rejects_missing_term_without_topology_endpoint_match() {
@@ -2444,7 +2381,6 @@ fn intersection_construction_rejects_missing_term_without_topology_endpoint_matc
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_start_term, 1);
 }
-
 
 #[test]
 fn intersection_auxiliaries_reject_duplicate_identities() {
@@ -2502,7 +2438,6 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
     assert!(crate::intersection::blend_bounds(&blend_bound).is_empty());
 }
 
-
 #[test]
 fn intersection_rejection_census_requires_resolved_supports() {
     let mut stream = charted_intersection_curve_topology_partition_stream();
@@ -2522,7 +2457,6 @@ fn intersection_rejection_census_requires_resolved_supports() {
         crate::intersection::RejectionCounts::default()
     );
 }
-
 
 #[test]
 fn uncharted_intersection_requires_exact_topology_bounds() {
@@ -2551,7 +2485,6 @@ fn uncharted_intersection_requires_exact_topology_bounds() {
     assert!(crate::intersection::scan(&stream).uncharted.is_empty());
 }
 
-
 #[test]
 fn intersection_chart_accepts_one_matching_parameter_complement() {
     let ext11 = ext11_charted_intersection_curve_stream();
@@ -2574,7 +2507,6 @@ fn intersection_chart_accepts_one_matching_parameter_complement() {
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_chart, 1);
 }
-
 
 #[test]
 fn decode_lifts_pcurve_only_fin_carrier_to_its_surface() {
@@ -2616,7 +2548,6 @@ fn decode_lifts_pcurve_only_fin_carrier_to_its_surface() {
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
-
 #[test]
 fn decode_emits_blend_with_extended_support_reference() {
     let stream = blend_surface_with_extended_support_reference();
@@ -2629,7 +2560,6 @@ fn decode_emits_blend_with_extended_support_reference() {
         result.ir.model.procedural_surfaces[0].surface
     );
 }
-
 
 #[test]
 fn decode_binds_blend_ball_centre_spine() {
@@ -2649,7 +2579,6 @@ fn decode_binds_blend_ball_centre_spine() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_resolves_forward_blend_support_reference() {
     let stream = blend_surface_with_forward_blend_support();
@@ -2668,7 +2597,6 @@ fn decode_resolves_forward_blend_support_reference() {
     );
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn decode_reports_status_framed_deltas_records_and_tombstones() {
@@ -2697,7 +2625,6 @@ fn decode_reports_status_framed_deltas_records_and_tombstones() {
     );
 }
 
-
 #[test]
 fn decode_accepts_exact_loop_and_rejects_incomplete_fin_deltas() {
     let stream = variable_status_framed_deltas_stream();
@@ -2711,7 +2638,6 @@ fn decode_accepts_exact_loop_and_rejects_incomplete_fin_deltas() {
         Some("1")
     );
 }
-
 
 #[test]
 fn deltas_walks_complete_status_prefixed_entity_51_records() {
@@ -2759,7 +2685,6 @@ fn deltas_walks_complete_status_prefixed_entity_51_records() {
         .all(|record| record.kind != 81));
 }
 
-
 #[test]
 fn deltas_walks_attribute_records_that_share_a_terminal_zero() {
     let mut stream = vec![0, 84];
@@ -2799,7 +2724,6 @@ fn deltas_walks_attribute_records_that_share_a_terminal_zero() {
         .all(|byte| *byte == 0xff));
 }
 
-
 #[test]
 fn deltas_walks_fixed_record_that_shares_a_terminal_zero() {
     let mut stream = vec![0, 84];
@@ -2822,7 +2746,6 @@ fn deltas_walks_fixed_record_that_shares_a_terminal_zero() {
     assert_eq!(census.records[1].offset, census.records[0].end - 1);
     assert_eq!(census.bytes_decoded, stream.len());
 }
-
 
 #[test]
 fn deltas_fixed_records_share_a_terminal_zero_with_their_successor() {
@@ -2853,7 +2776,6 @@ fn deltas_fixed_records_share_a_terminal_zero_with_their_successor() {
     assert_eq!(census.records[1].offset, census.records[0].end - 1);
     assert_eq!(census.bytes_decoded, stream.len());
 }
-
 
 #[test]
 fn deltas_type_101_record_takes_precedence_over_an_overlapping_fixed_candidate() {
@@ -2894,7 +2816,6 @@ fn deltas_type_101_record_takes_precedence_over_an_overlapping_fixed_candidate()
     assert_eq!(census.bytes_decoded, type_101.len());
 }
 
-
 #[test]
 fn deltas_does_not_share_a_consecutive_reference_byte() {
     let mut stream = vec![0, 81];
@@ -2919,7 +2840,6 @@ fn deltas_does_not_share_a_consecutive_reference_byte() {
         [81]
     );
 }
-
 
 #[test]
 fn deltas_walks_complete_entity_value_records() {
@@ -2968,7 +2888,6 @@ fn deltas_walks_complete_entity_value_records() {
         "abc"
     );
 }
-
 
 #[test]
 fn deltas_walks_complete_type_91_records() {
@@ -3026,7 +2945,6 @@ fn deltas_walks_complete_type_91_records() {
     assert!(crate::deltas::walk(&invalid).records.is_empty());
 }
 
-
 #[test]
 fn deltas_walks_complete_group_records() {
     let mut direct = vec![0, 90, 0xff, 0xfe, 0, 1];
@@ -3077,7 +2995,6 @@ fn deltas_walks_complete_group_records() {
     assert!(crate::deltas::walk(&escaped).records.is_empty());
 }
 
-
 #[test]
 fn deltas_walks_complete_attdef_lists() {
     let mut direct = vec![0, 74];
@@ -3123,7 +3040,6 @@ fn deltas_walks_complete_attdef_lists() {
     escaped[20..22].copy_from_slice(&1u16.to_be_bytes());
     assert!(crate::deltas::walk(&escaped).records.is_empty());
 }
-
 
 #[test]
 fn deltas_walks_complete_type_101_records() {
@@ -3177,7 +3093,6 @@ fn deltas_walks_complete_type_101_records() {
     assert!(crate::deltas::walk(&escaped).records.is_empty());
 }
 
-
 #[test]
 fn deltas_walks_auxiliary_family_tombstones() {
     let mut stream = Vec::new();
@@ -3209,7 +3124,6 @@ fn deltas_walks_auxiliary_family_tombstones() {
         .iter()
         .all(|byte| *byte == 0xff));
 }
-
 
 #[test]
 fn deltas_term_use_numeric_tails_follow_the_declared_endpoint_count() {
@@ -3251,7 +3165,6 @@ fn deltas_term_use_numeric_tails_follow_the_declared_endpoint_count() {
     assert_eq!(census.bytes_decoded, 34);
 }
 
-
 #[test]
 fn deltas_tagged_reference_lanes_require_complete_known_kind_and_xmt_pairs() {
     let stream = [
@@ -3279,7 +3192,6 @@ fn deltas_tagged_reference_lanes_require_complete_known_kind_and_xmt_pairs() {
     }
 }
 
-
 #[test]
 fn deltas_point_normalizes_to_partition_record_framing() {
     let record = crate::deltas::walk(&status_framed_deltas_point_stream())
@@ -3294,7 +3206,6 @@ fn deltas_point_normalizes_to_partition_record_framing() {
     put_vec3(&mut expected, 16, [0.0125, -0.002, 0.004]);
     assert_eq!(record.canonical_bytes, expected);
 }
-
 
 #[test]
 fn deltas_intersection_normalizes_before_partition_style_decode() {
@@ -3313,7 +3224,6 @@ fn deltas_intersection_normalizes_before_partition_style_decode() {
     assert_eq!(intersections[0].xmt, 12);
     assert_eq!(intersections[0].references, [6, 7, 20, 21, 22, 23]);
 }
-
 
 #[test]
 fn deltas_walks_complete_single_byte_intersection_data_records() {
@@ -3350,7 +3260,6 @@ fn deltas_walks_complete_single_byte_intersection_data_records() {
     assert!(residual[..record_len].iter().all(|byte| *byte == 0xff));
     assert!(residual.ends_with(&stream[..record_len]));
 }
-
 
 #[test]
 fn deltas_rejects_denormal_topology_tolerance_payload_coincidences() {
@@ -3397,7 +3306,6 @@ fn deltas_rejects_denormal_topology_tolerance_payload_coincidences() {
     assert!(crate::deltas::walk(&vertex).records.is_empty());
 }
 
-
 #[test]
 fn deltas_rejects_denormal_point_payload_coincidences() {
     let mut point = status_framed_deltas_point_stream();
@@ -3418,7 +3326,6 @@ fn deltas_rejects_denormal_point_payload_coincidences() {
     point[position + 8..].fill(0);
     assert_eq!(crate::deltas::walk(&point).full_counts["POINT"], 1);
 }
-
 
 #[test]
 fn deltas_walks_complete_intersection_auxiliary_records() {
@@ -3460,7 +3367,6 @@ fn deltas_walks_complete_intersection_auxiliary_records() {
         assert!(residual.ends_with(bytes));
     }
 }
-
 
 #[test]
 fn deltas_walks_status_framed_blend_bound_records() {
@@ -3513,7 +3419,6 @@ fn deltas_walks_status_framed_blend_bound_records() {
     assert!(crate::deltas::walk(&invalid_status).records.is_empty());
 }
 
-
 #[test]
 fn deltas_walks_complete_nurbs_auxiliary_records() {
     let source = bspline_partition_stream();
@@ -3548,7 +3453,6 @@ fn deltas_walks_complete_nurbs_auxiliary_records() {
     }
 }
 
-
 #[test]
 fn deltas_walks_complete_status_framed_surface_descriptors() {
     let mut descriptor = 126u16.to_be_bytes().to_vec();
@@ -3582,7 +3486,6 @@ fn deltas_walks_complete_status_framed_surface_descriptors() {
     *invalid_status.last_mut().expect("final reference status") = 1;
     assert!(crate::deltas::walk(&invalid_status).records.is_empty());
 }
-
 
 #[test]
 fn deltas_walks_complete_surface_data_headers() {
@@ -3631,7 +3534,6 @@ fn deltas_walks_complete_surface_data_headers() {
     assert!(crate::deltas::walk(&invalid_status).records.is_empty());
 }
 
-
 #[test]
 fn deltas_walks_complete_curve_data_headers() {
     fn record(escape: bool, xmt: u32, mode: u8, reference: u32) -> Vec<u8> {
@@ -3667,7 +3569,6 @@ fn deltas_walks_complete_curve_data_headers() {
     *invalid_status.last_mut().expect("final status") = 0;
     assert!(crate::deltas::walk(&invalid_status).records.is_empty());
 }
-
 
 #[test]
 fn deltas_walks_complete_type_141_records() {
@@ -3716,7 +3617,6 @@ fn deltas_walks_complete_type_141_records() {
     assert!(residual[..decoded_len].iter().all(|byte| *byte == 0xff));
     assert!(residual.ends_with(&[direct, direct_extended, escaped, ambiguous_escaped].concat()));
 }
-
 
 #[test]
 fn deltas_walks_complete_type_45_records() {
@@ -3806,7 +3706,6 @@ fn deltas_walks_complete_type_45_records() {
     assert!(crate::deltas::walk(&subnormal).records.is_empty());
 }
 
-
 #[test]
 fn deltas_walks_complete_type_70_records() {
     fn record(escape: bool, xmt: u32, count: u16, trailing_reference: u32) -> Vec<u8> {
@@ -3852,7 +3751,6 @@ fn deltas_walks_complete_type_70_records() {
     assert!(crate::deltas::walk(&mismatched).records.is_empty());
 }
 
-
 #[test]
 fn deltas_offset_surface_normalizes_exact_record_envelope() {
     let stream = deltas_offset_surface_partition_stream();
@@ -3888,7 +3786,6 @@ fn deltas_offset_surface_normalizes_exact_record_envelope() {
         .iter()
         .any(|record| record.kind == 60));
 }
-
 
 #[test]
 fn deltas_procedural_wrappers_normalize_complete_record_envelopes() {
@@ -3932,7 +3829,6 @@ fn deltas_procedural_wrappers_normalize_complete_record_envelopes() {
         .any(|record| record.kind == 56));
 }
 
-
 #[test]
 fn deltas_fixed_record_boundary_accepts_known_auxiliary_tag() {
     let mut stream = deltas_bspline_curve_wrapper_stream();
@@ -3948,7 +3844,6 @@ fn deltas_fixed_record_boundary_accepts_known_auxiliary_tag() {
     assert_eq!(wrapper.end, wrapper_len);
     assert_eq!(wrapper.canonical_bytes.len(), 23);
 }
-
 
 #[test]
 fn deltas_fixed_records_accept_direct_extended_and_escaped_envelopes() {
@@ -4003,7 +3898,6 @@ fn deltas_fixed_records_accept_direct_extended_and_escaped_envelopes() {
     assert_eq!(census.records[2].position, Some([1.0, 2.0, 3.0]));
 }
 
-
 #[test]
 fn merged_deltas_full_record_replaces_partition_node() {
     let partition = topology_partition_stream();
@@ -4017,7 +3911,6 @@ fn merged_deltas_full_record_replaces_partition_node() {
     assert_eq!(points[0].position.z, 4.0);
     assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_some());
 }
-
 
 #[test]
 fn merged_tombstone_preserves_a_topology_referenced_carrier() {
@@ -4035,7 +3928,6 @@ fn merged_tombstone_preserves_a_topology_referenced_carrier() {
     assert_eq!(crate::geometry::points(&merged)[0].position.x, 10.0);
 }
 
-
 #[test]
 fn merged_exact_key_tombstone_removes_unreferenced_partition_node() {
     let mut partition = record(29, 40);
@@ -4045,7 +3937,6 @@ fn merged_exact_key_tombstone_removes_unreferenced_partition_node() {
     let merged = crate::deltas::merge_full_records(&partition, &tombstone);
     assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_none());
 }
-
 
 #[test]
 fn merged_deltas_uses_last_full_or_tombstone_event() {
@@ -4077,7 +3968,6 @@ fn deltas_body_revision(node_id: u32) -> Vec<u8> {
     revision
 }
 
-
 #[test]
 fn final_body_revision_scopes_deltas_overlay_events() {
     let mut partition = record(29, 40);
@@ -4096,7 +3986,6 @@ fn final_body_revision_scopes_deltas_overlay_events() {
     let merged = crate::deltas::merge_full_records(&partition, &current_delete);
     assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_none());
 }
-
 
 #[test]
 fn unmatched_tombstones_are_scoped_to_the_final_body_revision() {
@@ -4117,7 +4006,6 @@ fn unmatched_tombstones_are_scoped_to_the_final_body_revision() {
     );
 }
 
-
 #[test]
 fn semantic_residual_masks_historical_body_revisions() {
     let mut deltas = deltas_body_revision(1);
@@ -4132,7 +4020,6 @@ fn semantic_residual_masks_historical_body_revisions() {
         .all(|byte| *byte == 0xff));
     assert!(residual.ends_with(&[0, 38, 0x11, 0x22, 0x33]));
 }
-
 
 #[test]
 fn unmatched_delta_tombstones_follow_exact_last_event_identity() {
@@ -4169,7 +4056,6 @@ fn unmatched_delta_tombstones_follow_exact_last_event_identity() {
     );
 }
 
-
 #[test]
 fn deltas_tombstone_decodes_compact_and_extended_xmt_identities() {
     let compact = [0, 29, 0, 11, 0, 1];
@@ -4178,7 +4064,6 @@ fn deltas_tombstone_decodes_compact_and_extended_xmt_identities() {
     assert_eq!(crate::deltas::walk(&compact).tombstones[0].xmt, 11);
     assert_eq!(crate::deltas::walk(&extended).tombstones[0].xmt, 40_000);
 }
-
 
 #[test]
 fn deltas_body_revision_retains_prefix_identities_and_bounded_state_tail() {
@@ -4209,7 +4094,6 @@ fn deltas_body_revision_retains_prefix_identities_and_bounded_state_tail() {
     assert_eq!(census.body_revisions[0].end, bytes.len());
     assert_eq!(census.bytes_decoded, bytes.len());
 }
-
 
 #[test]
 fn deltas_reference_state_packets_decode_compact_and_extended_references() {
@@ -4284,7 +4168,6 @@ fn deltas_reference_state_packets_decode_compact_and_extended_references() {
     assert_eq!(compound_census.bytes_decoded, compound.len());
 }
 
-
 #[test]
 fn deltas_reference_marker_packets_decode_extended_references_atomically() {
     let packet = [
@@ -4315,7 +4198,6 @@ fn deltas_reference_marker_packets_decode_extended_references_atomically() {
             .is_empty());
     }
 }
-
 
 #[test]
 fn deltas_region_schema_declaration_exposes_a_following_marker_packet() {
@@ -4359,7 +4241,6 @@ fn deltas_region_schema_declaration_exposes_a_following_marker_packet() {
         .is_empty());
 }
 
-
 #[test]
 fn deltas_body_revision_does_not_absorb_an_adjacent_tagged_reference_lane() {
     let mut bytes = vec![0, 12, 0, 3];
@@ -4386,7 +4267,6 @@ fn deltas_body_revision_does_not_absorb_an_adjacent_tagged_reference_lane() {
     assert_eq!(census.bytes_decoded, bytes.len());
 }
 
-
 #[test]
 fn decode_emits_point_added_by_deltas_stream() {
     let mut cur = Cursor::new(prt_with_partition(&deltas_point_partition_stream()));
@@ -4396,7 +4276,6 @@ fn decode_emits_point_added_by_deltas_stream() {
     assert_eq!(result.ir.model.points[0].position.y, -2.0);
     assert_eq!(result.ir.model.points[0].position.z, 4.0);
 }
-
 
 #[test]
 fn decode_replaces_partition_point_with_same_xmt_deltas_point() {
@@ -4415,7 +4294,6 @@ fn decode_replaces_partition_point_with_same_xmt_deltas_point() {
     assert_eq!(result.ir.model.points[0].position.z, 4.0);
 }
 
-
 #[test]
 fn decode_preserves_partition_edge_topology_over_deltas_history() {
     let partition = topology_partition_stream();
@@ -4431,7 +4309,6 @@ fn decode_preserves_partition_edge_topology_over_deltas_history() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_preserves_partition_face_and_vertex_topology_over_deltas_history() {
     let partition = topology_partition_stream();
@@ -4444,7 +4321,6 @@ fn decode_preserves_partition_face_and_vertex_topology_over_deltas_history() {
     assert_eq!(result.ir.model.vertices[0].tolerance, Some(0.1));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn decode_preserves_partition_loop_topology_over_deltas_history() {
@@ -4464,7 +4340,6 @@ fn decode_preserves_partition_loop_topology_over_deltas_history() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_preserves_partition_shell_topology_over_deltas_history() {
     let partition = topology_partition_stream();
@@ -4483,7 +4358,6 @@ fn decode_preserves_partition_shell_topology_over_deltas_history() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_preserves_partition_fin_topology_over_deltas_history() {
     let partition = topology_partition_stream();
@@ -4500,7 +4374,6 @@ fn decode_preserves_partition_fin_topology_over_deltas_history() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_replaces_partition_line_from_status_framed_deltas() {
     let partition = topology_partition_stream();
@@ -4516,7 +4389,6 @@ fn decode_replaces_partition_line_from_status_framed_deltas() {
     assert_eq!(direction, Vector3::new(0.0, 1.0, 0.0));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn decode_replaces_partition_plane_from_status_framed_deltas() {
@@ -4539,7 +4411,6 @@ fn decode_replaces_partition_plane_from_status_framed_deltas() {
     );
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn decode_replaces_partition_offset_surface_from_status_framed_deltas() {
@@ -4570,7 +4441,6 @@ fn decode_replaces_partition_offset_surface_from_status_framed_deltas() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_replaces_partition_blend_surface_from_status_framed_deltas() {
     let partition = blend_surface_topology_partition_stream();
@@ -4600,7 +4470,6 @@ fn decode_replaces_partition_blend_surface_from_status_framed_deltas() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_replaces_partition_trimmed_curve_from_status_framed_deltas() {
     let partition = trimmed_topology_partition_stream();
@@ -4620,7 +4489,6 @@ fn decode_replaces_partition_trimmed_curve_from_status_framed_deltas() {
     assert_eq!(result.ir.model.edges[0].param_range, Some([0.3, 0.7]));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn decode_replaces_partition_surface_curve_from_status_framed_deltas() {
@@ -4645,7 +4513,6 @@ fn decode_replaces_partition_surface_curve_from_status_framed_deltas() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_replaces_partition_circle_from_status_framed_deltas() {
     let partition = circle_topology_partition_stream();
@@ -4664,7 +4531,6 @@ fn decode_replaces_partition_circle_from_status_framed_deltas() {
     )));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn decode_replaces_partition_ellipse_from_status_framed_deltas() {
@@ -4691,7 +4557,6 @@ fn decode_replaces_partition_ellipse_from_status_framed_deltas() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_replaces_partition_cylinder_from_status_framed_deltas() {
     let partition = cylinder_topology_partition_stream();
@@ -4710,7 +4575,6 @@ fn decode_replaces_partition_cylinder_from_status_framed_deltas() {
     )));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn decode_replaces_partition_cone_from_status_framed_deltas() {
@@ -4733,7 +4597,6 @@ fn decode_replaces_partition_cone_from_status_framed_deltas() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_replaces_partition_sphere_from_status_framed_deltas() {
     let partition = sphere_topology_partition_stream();
@@ -4752,7 +4615,6 @@ fn decode_replaces_partition_sphere_from_status_framed_deltas() {
     )));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn decode_replaces_partition_torus_from_status_framed_deltas() {
@@ -4778,7 +4640,6 @@ fn decode_replaces_partition_torus_from_status_framed_deltas() {
     )));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn intersection_pcurve_attachment_requires_face_incidence() {
@@ -4826,7 +4687,6 @@ fn intersection_pcurve_attachment_requires_face_incidence() {
     ));
 }
 
-
 #[test]
 fn decode_derives_analytic_support_uv_without_serialized_values() {
     let stream = charted_intersection_without_uv_stream();
@@ -4850,7 +4710,6 @@ fn decode_derives_analytic_support_uv_without_serialized_values() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_accepts_intersection_terms_within_chart_tolerance() {
     let stream = charted_intersection_with_approximated_term_stream();
@@ -4867,7 +4726,6 @@ fn decode_accepts_intersection_terms_within_chart_tolerance() {
     assert!(matches!(carrier.geometry, CurveGeometry::Nurbs(_)));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn decode_emits_ext11_deltas_intersection_chart() {
@@ -4889,7 +4747,6 @@ fn decode_emits_ext11_deltas_intersection_chart() {
     assert_eq!(nurbs.control_points[1].x, 10.0);
     assert_eq!(nurbs.knots, vec![2.0, 2.0, 5.0, 5.0]);
 }
-
 
 #[test]
 fn decode_assigns_ext11_uv_lanes_by_unique_surface_evaluation() {
@@ -4916,7 +4773,6 @@ fn decode_assigns_ext11_uv_lanes_by_unique_surface_evaluation() {
     assert_eq!(second, [Point2::new(0.0, 0.0), Point2::new(0.0, 10.0)]);
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn ext11_uv_assignment_eliminates_the_complementary_support_lane() {
@@ -4948,7 +4804,6 @@ fn ext11_uv_assignment_eliminates_the_complementary_support_lane() {
     assert_eq!(assigned, [lanes[0].clone(), None]);
 }
 
-
 #[test]
 fn topology_selects_one_candidate_at_an_ambiguous_record_offset() {
     let mut stream = vec![0; 40];
@@ -4957,7 +4812,6 @@ fn topology_selects_one_candidate_at_an_ambiguous_record_offset() {
     assert_eq!(graph.of_kind(12).count(), 1);
     assert_eq!(graph.at_pos(0).map(|node| node.xmt), Some(65_536));
 }
-
 
 #[test]
 fn trimmed_curves_reject_nonfinite_endpoint_witnesses() {
@@ -4972,7 +4826,6 @@ fn trimmed_curves_reject_nonfinite_endpoint_witnesses() {
     put_f64(&mut stream, trim + 21, f64::MAX);
     assert!(crate::topology::trimmed_curves(&stream).is_empty());
 }
-
 
 #[test]
 fn nurbs_carriers_reject_nonfinite_millimeter_control_points() {
@@ -5001,7 +4854,6 @@ fn nurbs_carriers_reject_nonfinite_millimeter_control_points() {
     put_f64(&mut curve, payload + 31, f64::MIN_POSITIVE);
     assert!(crate::nurbs::pcurves(&curve).is_empty());
 }
-
 
 #[test]
 fn nurbs_carriers_reject_invalid_basis_cardinality() {
@@ -5033,7 +4885,6 @@ fn nurbs_carriers_reject_invalid_basis_cardinality() {
     assert!(crate::nurbs::curves(&short_knots).is_empty());
 }
 
-
 #[test]
 fn nurbs_surface_rejects_mismatched_descriptor_payload_reference() {
     let mut stream = bspline_partition_stream();
@@ -5044,7 +4895,6 @@ fn nurbs_surface_rejects_mismatched_descriptor_payload_reference() {
     put_ref(&mut stream, descriptor + 46, 22);
     assert!(crate::nurbs::surfaces(&stream).is_empty());
 }
-
 
 #[test]
 fn nurbs_carriers_reject_duplicate_support_identities() {
@@ -5088,7 +4938,6 @@ fn nurbs_carriers_reject_duplicate_support_identities() {
     }
 }
 
-
 #[test]
 fn nurbs_decodes_descriptors_at_the_stream_boundary() {
     fn move_record_to_end(stream: &mut Vec<u8>, tag: u8, xmt: u16, len: usize) {
@@ -5109,7 +4958,6 @@ fn nurbs_decodes_descriptors_at_the_stream_boundary() {
     assert_eq!(crate::nurbs::curves(&curve).len(), 1);
 }
 
-
 #[test]
 fn intersection_chart_rejects_nonfinite_millimeter_tolerance() {
     let mut stream = charted_intersection_curve_topology_partition_stream();
@@ -5120,7 +4968,6 @@ fn intersection_chart_rejects_nonfinite_millimeter_tolerance() {
     put_f64(&mut stream, chart + 28, f64::MAX);
     assert!(crate::intersection::curves(&stream).is_empty());
 }
-
 
 #[test]
 fn decode_replaces_ambiguous_ext11_uv_lanes_from_analytic_supports() {
@@ -5137,7 +4984,6 @@ fn decode_replaces_ambiguous_ext11_uv_lanes_from_analytic_supports() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_completes_one_non_sentinel_ext11_uv_lane_analytically() {
     let stream = partial_ext11_charted_intersection_curve_stream();
@@ -5153,7 +4999,6 @@ fn decode_completes_one_non_sentinel_ext11_uv_lane_analytically() {
     assert!(context.sides[1].pcurve.is_some());
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn completed_intersection_support_lane_attaches_after_topology_emission() {
@@ -5250,7 +5095,6 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         .any(|pcurve| pcurve.pcurve == completed.id)));
 }
 
-
 #[test]
 fn ext11_uv_completion_runs_after_support_incidence_resolution() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
@@ -5290,7 +5134,6 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
@@ -5326,7 +5169,6 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
     assert!(context.sides.iter().all(|side| side.pcurve.is_some()));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
@@ -5472,7 +5314,6 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
     assert!(context.sides[0].pcurve.is_some());
 }
 
-
 #[test]
 fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
@@ -5521,7 +5362,6 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
@@ -5556,7 +5396,6 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
 
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn equivalent_offset_supports_share_a_complete_parameter_lane() {
@@ -5656,7 +5495,6 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
     ));
 }
 
-
 #[test]
 fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
     let surface = cadmpeg_ir::geometry::NurbsSurface {
@@ -5689,7 +5527,6 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
     assert!((after_invalid_seed.u - expected.u).abs() < 1.0e-10);
     assert!((after_invalid_seed.v - expected.v).abs() < 1.0e-10);
 }
-
 
 #[test]
 fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
@@ -5916,7 +5753,6 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     assert!(nurbs_lanes[0].last().unwrap().u > 4.0);
 }
 
-
 #[test]
 fn surface_intersection_jacobian_is_stable_at_large_model_coordinates() {
     use cadmpeg_ir::geometry::Surface;
@@ -5964,7 +5800,6 @@ fn surface_intersection_jacobian_is_stable_at_large_model_coordinates() {
     }
 }
 
-
 #[test]
 fn damped_intersection_correction_reduces_a_rank_deficient_system() {
     let matrix = [
@@ -5989,7 +5824,6 @@ fn damped_intersection_correction_reduces_a_rank_deficient_system() {
         assert!((actual - expected).abs() < 1.0e-8);
     }
 }
-
 
 #[test]
 fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
@@ -6032,7 +5866,6 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
     );
 }
 
-
 #[test]
 fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
     let mut control_points = Vec::new();
@@ -6070,7 +5903,6 @@ fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
     assert!((actual.v - expected.v).abs() < 1.0e-10);
 }
 
-
 #[test]
 fn nurbs_parameter_solver_preserves_close_equal_branches() {
     let mut control_points = Vec::new();
@@ -6101,7 +5933,6 @@ fn nurbs_parameter_solver_preserves_close_equal_branches() {
     assert!((actual.u - expected.u).abs() < 1.0e-10);
     assert!((actual.v - expected.v).abs() < 1.0e-10);
 }
-
 
 #[test]
 fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
@@ -6136,7 +5967,6 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
 
     assert!((actual - 0.25).abs() < 1.0e-10);
 }
-
 
 #[test]
 fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
@@ -6273,7 +6103,6 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
     );
 }
 
-
 #[test]
 fn blend_contact_offset_requires_the_radius_magnitude() {
     assert!(crate::decode::blend_contact_offset_matches(2.0, 5.0, 3.0));
@@ -6287,7 +6116,6 @@ fn blend_contact_offset_requires_the_radius_magnitude() {
         2.0, 5.001, 3.0
     ));
 }
-
 
 #[test]
 fn blend_contact_matches_separate_analytic_offset_carriers() {
@@ -6351,7 +6179,6 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
             .is_none()
     );
 }
-
 
 #[test]
 fn blend_contact_matches_concentric_blend_carriers() {
@@ -6455,7 +6282,6 @@ fn blend_contact_matches_concentric_blend_carriers() {
     assert!(crate::decode::constant_surface_offset_between(&ir, &inner, &outer, 0).is_none());
 }
 
-
 #[test]
 fn closest_spine_parameter_inverts_periodic_analytic_curves() {
     use cadmpeg_ir::geometry::Curve;
@@ -6507,7 +6333,6 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
         "{lower}"
     );
 }
-
 
 #[test]
 fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
@@ -6948,7 +6773,6 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     assert!(crate::decode::blend_surface_point(&ir, &outer, expected.u, expected.v).is_none());
 }
 
-
 #[test]
 fn decode_emits_both_intersection_support_pcurves() {
     let stream = two_support_charted_intersection_curve_stream();
@@ -6966,7 +6790,6 @@ fn decode_emits_both_intersection_support_pcurves() {
     assert!(context.sides[1].pcurve.is_some());
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn decode_retains_uncharted_intersection_without_inventing_a_range() {
@@ -7009,7 +6832,6 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
         .all(|edge| edge.param_range.is_none()));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn terminal_plane_intersection_establishes_exact_bidirectional_charts() {
@@ -7066,7 +6888,6 @@ fn terminal_plane_intersection_establishes_exact_bidirectional_charts() {
     assert_eq!(edge.param_range, Some([0.0, 1.0]));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn terminal_cylinder_generator_establishes_exact_bidirectional_charts() {
@@ -7139,7 +6960,6 @@ fn terminal_cylinder_generator_establishes_exact_bidirectional_charts() {
     ));
 }
 
-
 #[test]
 fn terminal_cone_generator_establishes_exact_bidirectional_charts() {
     let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
@@ -7193,7 +7013,6 @@ fn terminal_cone_generator_establishes_exact_bidirectional_charts() {
     }
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn terminal_sphere_and_torus_meridians_establish_exact_bidirectional_charts() {
@@ -7287,7 +7106,6 @@ fn terminal_sphere_and_torus_meridians_establish_exact_bidirectional_charts() {
     }
 }
 
-
 #[test]
 fn decode_emits_inline_descriptor_intersection_witnesses() {
     let stream = inline_descriptor_intersection_curve_stream();
@@ -7311,7 +7129,6 @@ fn decode_emits_inline_descriptor_intersection_witnesses() {
     ));
 }
 
-
 #[test]
 fn decode_emits_topology_when_record_xmt_uses_extended_encoding() {
     let stream = large_xmt_headers(&topology_partition_stream());
@@ -7324,7 +7141,6 @@ fn decode_emits_topology_when_record_xmt_uses_extended_encoding() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_maps_parasolid_tolerance_sentinel_to_none() {
     let stream = topology_with_missing_tolerances();
@@ -7335,7 +7151,6 @@ fn decode_maps_parasolid_tolerance_sentinel_to_none() {
     assert_eq!(result.ir.model.edges[0].tolerance, None);
     assert_eq!(result.ir.model.faces[0].tolerance, None);
 }
-
 
 #[test]
 fn decode_dual_writes_inline_entity_metadata_to_annotations() {
@@ -7390,7 +7205,6 @@ fn decode_dual_writes_inline_entity_metadata_to_annotations() {
     }
 }
 
-
 #[test]
 fn decode_transfers_bspline_surface_and_curve() {
     let stream = bspline_partition_stream();
@@ -7424,7 +7238,6 @@ fn decode_transfers_bspline_surface_and_curve() {
     assert!((curve.control_points[1].x - 20.0).abs() < 1e-9);
 }
 
-
 #[test]
 fn nurbs_decodes_extended_xmt_arrays_payload_and_long_surface_descriptor() {
     let surfaces = crate::nurbs::surfaces(&extended_bspline_surface_stream());
@@ -7437,7 +7250,6 @@ fn nurbs_decodes_extended_xmt_arrays_payload_and_long_surface_descriptor() {
     assert_eq!(surface.control_points.len(), 4);
     assert_eq!(surface.control_points[3].y, 20.0);
 }
-
 
 #[test]
 fn nurbs_decodes_escaped_surface_payload_envelope() {
@@ -7456,7 +7268,6 @@ fn nurbs_decodes_escaped_surface_payload_envelope() {
     assert_eq!(surface.control_points.len(), 4);
     assert_eq!(surface.control_points[3].y, 20.0);
 }
-
 
 #[test]
 fn nurbs_coalesces_equivalent_surface_descriptor_representations() {
@@ -7488,7 +7299,6 @@ fn nurbs_coalesces_equivalent_surface_descriptor_representations() {
     assert_eq!(surface.control_points.len(), 4);
 }
 
-
 #[test]
 fn nurbs_coalesces_equivalent_curve_descriptor_representations() {
     let mut stream = bspline_partition_stream();
@@ -7517,7 +7327,6 @@ fn nurbs_coalesces_equivalent_curve_descriptor_representations() {
     assert_eq!(curve.control_points.len(), 2);
 }
 
-
 #[test]
 fn nurbs_decodes_escaped_curve_descriptor_and_payload_count() {
     let mut stream = bspline_partition_stream();
@@ -7542,7 +7351,6 @@ fn nurbs_decodes_escaped_curve_descriptor_and_payload_count() {
     assert_eq!(curve.control_points[1].x, 20.0);
 }
 
-
 #[test]
 fn nurbs_compact_curve_descriptor_survives_a_status_prefix_collision() {
     let mut stream = bspline_partition_stream();
@@ -7554,7 +7362,6 @@ fn nurbs_compact_curve_descriptor_survives_a_status_prefix_collision() {
 
     assert_eq!(crate::nurbs::curves(&stream).len(), 1);
 }
-
 
 #[test]
 fn nurbs_decodes_dimension_four_rational_curve() {
@@ -7590,7 +7397,6 @@ fn nurbs_decodes_dimension_four_rational_curve() {
     assert_eq!(curve.control_points[1].x, 20.0);
 }
 
-
 #[test]
 fn decode_replaces_partition_bspline_surface_wrapper_from_deltas() {
     let partition = bspline_surface_replacement_partition_stream();
@@ -7606,7 +7412,6 @@ fn decode_replaces_partition_bspline_surface_wrapper_from_deltas() {
     )));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn decode_replaces_partition_bspline_curve_wrapper_from_deltas() {
@@ -7624,7 +7429,6 @@ fn decode_replaces_partition_bspline_curve_wrapper_from_deltas() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_uses_partner_fin_vertex_for_edge_endpoint() {
     let mut cur = Cursor::new(prt_with_partition(
@@ -7638,7 +7442,6 @@ fn decode_uses_partner_fin_vertex_for_edge_endpoint() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_resolves_forward_trimmed_curve_chain() {
     let mut cur = Cursor::new(prt_with_partition(&forward_trimmed_curve_chain_stream()));
@@ -7648,7 +7451,6 @@ fn decode_resolves_forward_trimmed_curve_chain() {
     assert_eq!(edge.param_range, Some([0.25, 0.75]));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn decode_retains_a_curve_when_its_trim_range_misses_edge_vertices() {
@@ -7667,7 +7469,6 @@ fn decode_retains_a_curve_when_its_trim_range_misses_edge_vertices() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_omits_overflowing_line_trim_range() {
     let mut stream = trimmed_topology_partition_stream();
@@ -7683,7 +7484,6 @@ fn decode_omits_overflowing_line_trim_range() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_resolves_extended_xmt_reference_inside_edge_record() {
     let mut cur = Cursor::new(prt_with_partition(
@@ -7696,7 +7496,6 @@ fn decode_resolves_extended_xmt_reference_inside_edge_record() {
         Some(&result.ir.model.curves[0].id)
     );
 }
-
 
 #[test]
 fn decode_tracks_extended_face_reference_shift() {
@@ -7714,7 +7513,6 @@ fn decode_tracks_extended_face_reference_shift() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_tracks_extended_edge_reference_shift() {
     let mut cur = Cursor::new(prt_with_partition(
@@ -7729,7 +7527,6 @@ fn decode_tracks_extended_edge_reference_shift() {
         Some(&result.ir.model.curves[0].id)
     );
 }
-
 
 #[test]
 fn decode_tracks_all_extended_topology_reference_shifts() {
@@ -7749,7 +7546,6 @@ fn decode_tracks_all_extended_topology_reference_shifts() {
     assert_eq!(result.ir.model.points[0].position.x, 10.0);
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn decode_tracks_fully_extended_geometry_header_shift() {
@@ -7783,7 +7579,6 @@ fn decode_tracks_fully_extended_geometry_header_shift() {
     ));
 }
 
-
 #[test]
 fn decode_tracks_geometry_envelope_escape_shift() {
     let mut cur = Cursor::new(prt_with_partition(
@@ -7802,7 +7597,6 @@ fn decode_tracks_geometry_envelope_escape_shift() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn cylinder_gate_rejects_denormal_radius() {
     // A coincidental byte alignment can present a unit axis and a model-scale
@@ -7815,7 +7609,6 @@ fn cylinder_gate_rejects_denormal_radius() {
     put_vec3(&mut cy, 75, [1.0, 0.0, 0.0]);
     assert!(crate::geometry::surfaces(&cy).is_empty());
 }
-
 
 #[test]
 fn graph_owned_analytic_geometry_has_no_scanner_magnitude_limit() {
@@ -7838,7 +7631,6 @@ fn graph_owned_analytic_geometry_has_no_scanner_magnitude_limit() {
     assert!(crate::geometry::decode_surface_record(&cylinder, 0x33, 0).is_none());
 }
 
-
 #[test]
 fn ellipse_requires_ordered_serialized_radii() {
     let mut ellipse = record(0x20, 107);
@@ -7854,7 +7646,6 @@ fn ellipse_requires_ordered_serialized_radii() {
     put_f64(&mut ellipse, 99, 0.01);
     assert_eq!(crate::geometry::curves(&ellipse).len(), 1);
 }
-
 
 #[test]
 fn graph_owned_point_has_no_scanner_magnitude_limit() {
@@ -7882,7 +7673,6 @@ fn graph_owned_point_has_no_scanner_magnitude_limit() {
     assert!(crate::topology::Graph::parse(&stream).get(29, 11).is_none());
 }
 
-
 #[test]
 fn decoded_tolerance_has_no_model_magnitude_limit() {
     assert_eq!(crate::decode::decoded_tolerance(1_001.0), Some(1_001_000.0));
@@ -7890,7 +7680,6 @@ fn decoded_tolerance_has_no_model_magnitude_limit() {
     assert_eq!(crate::decode::decoded_tolerance(f64::INFINITY), None);
     assert_eq!(crate::decode::decoded_tolerance(f64::MAX), None);
 }
-
 
 #[test]
 fn analytic_frame_gate_rejects_nonorthogonal_reference_direction() {
@@ -7903,7 +7692,6 @@ fn analytic_frame_gate_rejects_nonorthogonal_reference_direction() {
     put_vec3(&mut plane, 67, [1.0, 0.0, 0.0]);
     assert_eq!(crate::geometry::surfaces(&plane).len(), 1);
 }
-
 
 #[test]
 fn cone_gate_rejects_nonfinite_or_degenerate_half_angle() {
@@ -7922,7 +7710,6 @@ fn cone_gate_rejects_nonfinite_or_degenerate_half_angle() {
         assert!(crate::geometry::surfaces(&cone).is_empty());
     }
 }
-
 
 #[test]
 fn analytic_scanners_include_extended_reference_shifts_in_record_ownership() {
@@ -7949,7 +7736,6 @@ fn analytic_scanners_include_extended_reference_shifts_in_record_ownership() {
     assert_eq!(crate::geometry::curves(&curves).len(), 1);
 }
 
-
 #[test]
 fn analytic_record_ownership_is_shared_across_carrier_families() {
     let mut stream = vec![0; 158];
@@ -7968,7 +7754,6 @@ fn analytic_record_ownership_is_shared_across_carrier_families() {
     assert!(crate::geometry::points(&stream).is_empty());
 }
 
-
 #[test]
 fn decode_assembly_reports_external_dependency() {
     let mut cur = Cursor::new(assembly_prt());
@@ -7980,7 +7765,6 @@ fn decode_assembly_reports_external_dependency() {
         .iter()
         .any(|l| l.message.contains("assembly")));
 }
-
 
 #[test]
 fn external_reference_string_table_is_end_anchored() {
@@ -7999,7 +7783,6 @@ fn external_reference_string_table_is_end_anchored() {
     assert!(crate::container::parse_extref_string_table(&trailed).is_none());
     assert!(crate::container::parse_extref_string_table(b"\x01\xff\xff\xff\xff").is_none());
 }
-
 
 #[test]
 fn external_reference_record_parser_requires_sorted_doubled_handle_set() {
@@ -8055,7 +7838,6 @@ fn external_reference_record_parser_requires_sorted_doubled_handle_set() {
     );
 }
 
-
 #[test]
 fn external_reference_empty_record_parser_requires_the_complete_form() {
     assert_eq!(
@@ -8076,7 +7858,6 @@ fn external_reference_empty_record_parser_requires_the_complete_form() {
     );
 }
 
-
 #[test]
 fn external_reference_tail_pairs_require_adjacent_complete_tokens() {
     let bytes = [
@@ -8089,7 +7870,6 @@ fn external_reference_tail_pairs_require_adjacent_complete_tokens() {
     );
     assert!(crate::container::parse_extref_reference_pairs(&bytes[10..]).is_empty());
 }
-
 
 #[test]
 fn container_reads_rmfastload_active_ids() {
@@ -8115,7 +7895,6 @@ fn container_reads_rmfastload_active_ids() {
     assert_eq!(table.object_ids[49].raw, 50u32.to_le_bytes());
 }
 
-
 #[test]
 fn decode_retains_every_rmfastload_active_body() {
     let mut cur = Cursor::new(prt_with_two_active_bodies_and_rmfastload());
@@ -8140,7 +7919,6 @@ fn decode_retains_every_rmfastload_active_body() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
-
 #[test]
 fn decode_selects_active_shell_when_body_record_is_absent() {
     let mut cur = Cursor::new(prt_with_missing_active_body_record());
@@ -8156,7 +7934,6 @@ fn decode_selects_active_shell_when_body_record_is_absent() {
         .all(|loss| !loss.message.contains("sub-body partition")));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn decode_keeps_bodies_when_rmfastload_overlap_is_weak() {
@@ -8176,7 +7953,6 @@ fn decode_keeps_bodies_when_rmfastload_overlap_is_weak() {
         .any(|loss| loss.message.contains("sub-body partition")));
 }
 
-
 #[test]
 fn container_only_preserves_streams_without_geometry() {
     let mut cur = Cursor::new(single_part_prt());
@@ -8187,7 +7963,6 @@ fn container_only_preserves_streams_without_geometry() {
     assert_eq!(result.ir.native_unknowns("nx").unwrap().len(), 1);
     assert!(result.ir.model.points.is_empty());
 }
-
 
 #[test]
 fn inspect_enumerates_streams_and_names_schema() {
@@ -8200,7 +7975,6 @@ fn inspect_enumerates_streams_and_names_schema() {
     assert!(summary.entries.iter().any(|e| e.role == "parasolid-stream"));
     assert!(summary.notes.iter().any(|n| n.contains("partition")));
 }
-
 
 #[test]
 fn inspect_classifies_named_container_streams() {
@@ -8245,7 +8019,6 @@ fn inspect_classifies_named_container_streams() {
     assert_eq!(roles["/Root/qafmetadata"], "asset-catalog");
     assert_eq!(roles["/Root/vendor/private"], "named-opaque-stream");
 }
-
 
 #[test]
 fn decode_retains_unsupported_named_stream_payloads() {
@@ -8295,7 +8068,6 @@ fn decode_retains_unsupported_named_stream_payloads() {
     }
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
-
 
 #[test]
 fn design_intent_losses_distinguish_native_and_sketch_gaps() {
@@ -8527,7 +8299,6 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
 #[path = "integration_tests.rs"]
 mod integration_tests;
 
-
 #[test]
 fn extraction_uses_ug_part_bounds_and_all_standard_zlib_headers() {
     let part = zlib_compress_at_level(&partition_stream(), 6);
@@ -8552,7 +8323,6 @@ fn extraction_uses_ug_part_bounds_and_all_standard_zlib_headers() {
     assert_eq!(streams.len(), 1);
     assert_eq!(streams[0].schema.as_deref(), Some("SCH_TEST_1_9999"));
 }
-
 
 #[test]
 fn extraction_rejects_zlib_members_with_invalid_integrity_trailers() {
@@ -8579,7 +8349,6 @@ fn extraction_rejects_zlib_members_with_invalid_integrity_trailers() {
     let container = container::scan_bytes(indexed.clone()).expect("test SPLMSSTR container");
     assert!(parasolid::extract_streams(&ctx, root, &container).is_err());
 }
-
 
 #[test]
 fn extraction_uses_ordered_segment_wrappers_in_indexed_payloads() {

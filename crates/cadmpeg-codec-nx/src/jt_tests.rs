@@ -60,7 +60,6 @@ fn jt_int32_cdp2_decodes_empty_and_bitlength_packets() {
     );
 }
 
-
 #[test]
 fn jt_int32_cdp2_decodes_arithmetic_context_with_zero_frequency_entry() {
     let mut context_bits = Vec::<bool>::new();
@@ -104,7 +103,6 @@ fn jt_int32_cdp2_decodes_arithmetic_context_with_zero_frequency_entry() {
     assert!(super::decode_int32_cdp2(&packet, 0).is_none());
 }
 
-
 #[test]
 fn jt_int32_cdp2_decodes_unsplit_and_split_chopper_packets() {
     let nested = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
@@ -127,7 +125,6 @@ fn jt_int32_cdp2_decodes_unsplit_and_split_chopper_packets() {
     );
 }
 
-
 #[test]
 fn jt_int32_cdp2_frames_zero_chop_nested_packet() {
     let nested = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
@@ -141,7 +138,6 @@ fn jt_int32_cdp2_frames_zero_chop_nested_packet() {
     packet[6] = 3;
     assert!(super::frame_int32_cdp2(&packet, 0).is_none());
 }
-
 
 #[test]
 fn jt_predictors_reconstruct_primal_integers() {
@@ -188,7 +184,6 @@ fn jt_predictors_reconstruct_primal_integers() {
     assert_eq!(primers, residuals[..4]);
 }
 
-
 #[test]
 fn jt_predictors_use_wrapping_i32_arithmetic() {
     use super::{unpack_predictor_residuals, Predictor};
@@ -198,7 +193,6 @@ fn jt_predictors_use_wrapping_i32_arithmetic() {
         [0, 0, 0, i32::MAX, i32::MIN]
     );
 }
-
 
 #[test]
 fn jt_uniform_dequantization_uses_the_full_unsigned_code_range() {
@@ -213,7 +207,6 @@ fn jt_uniform_dequantization_uses_the_full_unsigned_code_range() {
     assert_eq!(super::dequantize_uniform(4, [10.0, 20.0], 2), None);
     assert_eq!(super::dequantize_uniform(-1, [4.0, 4.0], 32), Some(4.0));
 }
-
 
 #[test]
 fn jt_quantized_coordinate_array_decodes_three_lag1_code_vectors() {
@@ -252,7 +245,6 @@ fn jt_quantized_coordinate_array_decodes_three_lag1_code_vectors() {
     assert_eq!(points[3], [18.333_334; 3]);
 }
 
-
 #[test]
 fn jt_deering_normal_applies_sextant_octant_and_code_bounds() {
     let normal = super::deering_normal(1, 7, 8191, 0, 13).unwrap();
@@ -263,7 +255,6 @@ fn jt_deering_normal_applies_sextant_octant_and_code_bounds() {
     assert!(super::deering_normal(0, 8, 0, 0, 13).is_none());
     assert!(super::deering_normal(0, 7, 8192, 0, 13).is_none());
 }
-
 
 #[test]
 fn jt_quantized_texture_coordinates_decode_component_major_lag1_codes() {
@@ -299,14 +290,12 @@ fn jt_quantized_texture_coordinates_decode_component_major_lag1_codes() {
     array.extend_from_slice(&packet);
     array.extend_from_slice(&0x8765_4321_u32.to_le_bytes());
 
-    let (values, hash, consumed) =
-        super::decode_vertex_texture_coordinates(&array, 4, 2).unwrap();
+    let (values, hash, consumed) = super::decode_vertex_texture_coordinates(&array, 4, 2).unwrap();
     assert_eq!(hash, 0x8765_4321);
     assert_eq!(consumed, array.len());
     assert_eq!(values[0], vec![-0.5, -0.5]);
     assert_eq!(values[3], vec![2.5, 2.5]);
 }
-
 
 #[test]
 fn jt_quantized_colors_decode_rgb_and_hsv_quantizers() {
@@ -367,7 +356,6 @@ fn jt_quantized_colors_decode_rgb_and_hsv_quantizers() {
     assert!((colors[1][3] - 1.0 / 6.0).abs() < 1e-6);
 }
 
-
 #[test]
 fn jt_vertex_flags_require_a_complete_binary_value_packet() {
     let mut bits = vec![0];
@@ -402,5 +390,3 @@ fn jt_vertex_flags_require_a_complete_binary_value_packet() {
     array[last] |= 1;
     assert!(super::decode_vertex_flags(&array, 3).is_none());
 }
-
-

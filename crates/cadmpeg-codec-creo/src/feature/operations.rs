@@ -371,4 +371,3 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
     current.sort_by_key(|operation| operation.offset);
     current
 }
-

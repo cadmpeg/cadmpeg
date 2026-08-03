@@ -35,7 +35,6 @@ fn om_index_pairs_object_ids_with_bounded_entity_records() {
     );
 }
 
-
 #[test]
 fn om_compact_index_lane_decodes_direct_extended_and_null_entries() {
     use super::CompactIndex::{Null, Value};
@@ -53,7 +52,6 @@ fn om_compact_index_lane_decodes_direct_extended_and_null_entries() {
     );
     assert_eq!(super::compact_indices(&[0x80]), None);
 }
-
 
 #[test]
 fn om_data_block_object_frame_requires_complete_discriminator() {
@@ -88,7 +86,6 @@ fn om_data_block_object_frame_requires_complete_discriminator() {
     assert!(super::data_block_object_frames(&null).is_empty());
 }
 
-
 #[test]
 fn om_offset_store_counted_index_lane_requires_complete_non_null_members() {
     let bytes = [
@@ -111,19 +108,15 @@ fn om_offset_store_counted_index_lane_requires_complete_non_null_members() {
     );
 
     assert!(
-        super::offset_store_counted_index_lanes(&[0x01, 0x03, 0x42, 0xff, 0x01, 0x11,])
-            .is_empty()
+        super::offset_store_counted_index_lanes(&[0x01, 0x03, 0x42, 0xff, 0x01, 0x11,]).is_empty()
     );
     assert!(
-        super::offset_store_counted_index_lanes(&[0x01, 0x03, 0x42, 0x80, 0x01, 0x11,])
-            .is_empty()
+        super::offset_store_counted_index_lanes(&[0x01, 0x03, 0x42, 0x80, 0x01, 0x11,]).is_empty()
     );
     assert!(
-        super::offset_store_counted_index_lanes(&[0x01, 0x03, 0x42, 0x62, 0x01, 0x10,])
-            .is_empty()
+        super::offset_store_counted_index_lanes(&[0x01, 0x03, 0x42, 0x62, 0x01, 0x10,]).is_empty()
     );
 }
-
 
 #[test]
 fn om_offset_store_abr_lane_requires_sixteen_slots_and_exact_terminator() {
@@ -157,7 +150,6 @@ fn om_offset_store_abr_lane_requires_sixteen_slots_and_exact_terminator() {
     assert!(super::offset_store_abr_reference_lanes(&bytes).is_empty());
 }
 
-
 #[test]
 fn om_sketch_scalar_field_requires_exact_frame_and_finite_shifted_value() {
     let bytes = [
@@ -176,7 +168,6 @@ fn om_sketch_scalar_field_requires_exact_frame_and_finite_shifted_value() {
     malformed[6] = 0x70;
     assert!(super::construction_payload_scalar_fields(&malformed).is_empty());
 }
-
 
 #[test]
 fn om_sketch_name_field_decodes_direct_and_extended_compact_type_codes() {
@@ -209,7 +200,6 @@ fn om_sketch_name_field_decodes_direct_and_extended_compact_type_codes() {
     .is_empty());
 }
 
-
 #[test]
 fn om_sketch_name_field_decodes_type_free_payload_leading_form() {
     let fields = super::construction_payload_named_fields(&[
@@ -228,7 +218,6 @@ fn om_sketch_name_field_decodes_type_free_payload_leading_form() {
     ])
     .is_empty());
 }
-
 
 #[test]
 fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
@@ -273,7 +262,6 @@ fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
     assert!(super::offset_store_named_point(&[&zero, &second]).is_none());
 }
 
-
 #[test]
 fn sketch_fixed_pair_parser_reads_signed_q1_55_atoms() {
     let bytes = [
@@ -291,7 +279,6 @@ fn sketch_fixed_pair_parser_reads_signed_q1_55_atoms() {
     malformed[16] = 1;
     assert!(super::sketch_payload_fixed_pairs(&malformed).is_empty());
 }
-
 
 #[test]
 fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
@@ -323,7 +310,6 @@ fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
     assert!(super::sketch_payload_fixed_pairs(&malformed).is_empty());
 }
 
-
 #[test]
 fn sketch_fixed_pair_parser_accepts_the_three_member_branch() {
     let discriminator = [
@@ -344,7 +330,6 @@ fn sketch_fixed_pair_parser_accepts_the_three_member_branch() {
     bytes[14] = 0x02;
     assert!(super::sketch_payload_fixed_pairs(&bytes).is_empty());
 }
-
 
 #[test]
 fn sketch_mixed_pair_parser_requires_q1_55_then_shifted_binary32() {
@@ -368,7 +353,6 @@ fn sketch_mixed_pair_parser_requires_q1_55_then_shifted_binary32() {
     assert!(super::sketch_payload_mixed_pairs(&malformed).is_empty());
 }
 
-
 #[test]
 fn datum_csys_fixed_pair_requires_its_exact_branch_discriminator() {
     let mut bytes = vec![
@@ -387,7 +371,6 @@ fn datum_csys_fixed_pair_requires_its_exact_branch_discriminator() {
     bytes[0] = 0x08;
     assert!(super::datum_csys_payload_fixed_pairs(&bytes).is_empty());
 }
-
 
 #[test]
 fn datum_csys_fixed_pair_accepts_the_continuation_branch() {
@@ -415,7 +398,6 @@ fn datum_csys_fixed_pair_accepts_the_continuation_branch() {
     assert!(super::datum_csys_payload_fixed_pairs(&bytes).is_empty());
 }
 
-
 #[test]
 fn om_datum_csys_scalar_field_uses_the_common_shifted_binary64_frame() {
     let mut shifted = 25.4_f64.to_be_bytes();
@@ -431,7 +413,6 @@ fn om_datum_csys_scalar_field_uses_the_common_shifted_binary64_frame() {
     assert_eq!(fields[0].value, 25.4);
     assert_eq!(fields[0].raw_value, shifted);
 }
-
 
 #[test]
 fn om_simple_hole_lane_requires_two_identical_nonempty_scalar_runs() {
@@ -480,7 +461,6 @@ fn om_simple_hole_lane_requires_two_identical_nonempty_scalar_runs() {
     );
 }
 
-
 #[test]
 fn om_simple_hole_lane_accepts_one_repeated_scalar() {
     let mut scalar = 25.4f64.to_be_bytes();
@@ -508,7 +488,6 @@ fn om_simple_hole_lane_accepts_one_repeated_scalar() {
     assert_eq!(lane.raw_values, [scalar]);
     assert_eq!(lane.witness_offsets, [vec![200], vec![209]]);
 }
-
 
 #[test]
 fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
@@ -597,7 +576,6 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
     );
 }
 
-
 #[test]
 fn om_hole_package_lane_retains_the_exact_four_block_group() {
     let payload = [
@@ -647,7 +625,6 @@ fn om_hole_package_lane_retains_the_exact_four_block_group() {
         .is_none()
     );
 }
-
 
 #[test]
 fn om_datum_csys_reference_lane_requires_eight_canonical_indices() {
@@ -712,16 +689,13 @@ fn om_datum_csys_reference_lane_requires_eight_canonical_indices() {
 
     let mut malformed = payload.clone();
     malformed[14] = 0x2a;
-    assert!(
-        super::datum_csys_references(super::OperationRecord {
-            bytes: &malformed,
-            payload: &malformed,
-            ..record
-        })
-        .is_none()
-    );
+    assert!(super::datum_csys_references(super::OperationRecord {
+        bytes: &malformed,
+        payload: &malformed,
+        ..record
+    })
+    .is_none());
 }
-
 
 #[test]
 fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
@@ -752,14 +726,12 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
     );
     let mut malformed = payload;
     malformed[6] = 1;
-    assert!(
-        super::datum_plane_payload_header(super::OperationRecord {
-            bytes: &malformed,
-            payload: &malformed,
-            ..record
-        })
-        .is_none()
-    );
+    assert!(super::datum_plane_payload_header(super::OperationRecord {
+        bytes: &malformed,
+        payload: &malformed,
+        ..record
+    })
+    .is_none());
 
     let branch_payload = [
         0x22, 0x00, 0x00, 0x01, 0x00, 0x01, 0x02, 0x23, 0x01, 0x02, 0x80, 0x4c, 0x01, 0xf1, 0x02,
@@ -852,7 +824,6 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
     assert_eq!(descriptor_count_three.object_offset, 116);
 }
 
-
 #[test]
 fn om_datum_plane_object_index_lane_ends_at_logical_payload_boundary() {
     let bytes = [
@@ -870,7 +841,6 @@ fn om_datum_plane_object_index_lane_ends_at_logical_payload_boundary() {
     trailing.push(0);
     assert!(super::datum_plane_object_index_lanes(&trailing).is_empty());
 }
-
 
 #[test]
 fn om_datum_plane_object_scalar_pairs_require_the_complete_discriminator() {
@@ -893,7 +863,6 @@ fn om_datum_plane_object_scalar_pairs_require_the_complete_discriminator() {
     assert!(super::datum_plane_object_scalar_pairs(&bytes).is_empty());
 }
 
-
 #[test]
 fn om_datum_plane_descriptor_requires_complete_lowercase_hex_identity() {
     let mut bytes = *b"793487222121a5474a9125451b8e31f5?A\xf0\x1e\xff\x02\x01\x33";
@@ -913,7 +882,6 @@ fn om_datum_plane_descriptor_requires_complete_lowercase_hex_identity() {
     assert!(super::datum_plane_descriptor_block(&bytes).is_none());
     assert!(super::datum_plane_descriptor_block(&bytes[..39]).is_none());
 }
-
 
 #[test]
 fn om_datum_csys_scalar_pairs_require_discriminator_and_separator() {
@@ -953,7 +921,6 @@ fn om_datum_csys_scalar_pairs_require_discriminator_and_separator() {
     assert!(super::object_payload_scalar_pairs(&bytes).is_empty());
 }
 
-
 #[test]
 fn om_datum_csys_descriptor_requires_one_maximal_hex_identity() {
     let bytes = b"\x02\x01ae166162820ea2d993e1fdf49091850e?A\x80\xa0\xf0\x26";
@@ -967,7 +934,6 @@ fn om_datum_csys_descriptor_requires_one_maximal_hex_identity() {
     ambiguous.extend_from_slice(b"012345678901234567890123456789");
     assert!(super::datum_csys_descriptor_block(&ambiguous).is_none());
 }
-
 
 #[test]
 fn om_draft_identity_frames_require_complete_typed_framing() {
@@ -995,18 +961,13 @@ fn om_draft_identity_frames_require_complete_typed_framing() {
     assert_eq!(frames[1].identity, "def456");
 
     assert!(
-        super::draft_construction_identity_frames(b"A\x81\x54\xf0\x38\x02\x01abc123")
-            .is_empty()
+        super::draft_construction_identity_frames(b"A\x81\x54\xf0\x38\x02\x01abc123").is_empty()
     );
     assert!(
-        super::draft_construction_identity_frames(b"A\x81\x54\xf0\x38\x04\x01abc123?")
-            .is_empty()
+        super::draft_construction_identity_frames(b"A\x81\x54\xf0\x38\x04\x01abc123?").is_empty()
     );
-    assert!(
-        super::draft_construction_identity_frames(b"A\xf0\x27\xff\x02\x01ABC123?").is_empty()
-    );
+    assert!(super::draft_construction_identity_frames(b"A\xf0\x27\xff\x02\x01ABC123?").is_empty());
 }
-
 
 #[test]
 fn om_draft_fixed_lanes_require_complete_discriminator_atoms_and_terminator() {
@@ -1033,7 +994,6 @@ fn om_draft_fixed_lanes_require_complete_discriminator_atoms_and_terminator() {
     assert!(super::draft_construction_fixed_lanes(&discriminator).is_empty());
 }
 
-
 #[test]
 fn om_draft_binary32_lanes_require_complete_typed_atoms_and_terminator() {
     let discriminator = [
@@ -1059,7 +1019,6 @@ fn om_draft_binary32_lanes_require_complete_typed_atoms_and_terminator() {
     assert!(super::draft_construction_binary32_lanes(&bytes).is_empty());
     assert!(super::draft_construction_binary32_lanes(&discriminator).is_empty());
 }
-
 
 #[test]
 fn om_operation_primary_body_reference_requires_one_complete_field() {
@@ -1109,18 +1068,15 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
             },
         ]
     );
-    assert!(
-        super::operation_body_reference(super::OperationRecord {
-            offset: 100,
-            bytes: &duplicate,
-            payload_offset: 100,
-            payload: &duplicate,
-            label,
-        })
-        .is_none()
-    );
+    assert!(super::operation_body_reference(super::OperationRecord {
+        offset: 100,
+        bytes: &duplicate,
+        payload_offset: 100,
+        payload: &duplicate,
+        label,
+    })
+    .is_none());
 }
-
 
 #[test]
 fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
@@ -1182,30 +1138,26 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
         0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
         0x00, 0x80, 0x01, 0x80, 0x01, 0xff, 0x00,
     ];
-    assert!(
-        super::operation_terminal_frame(super::OperationRecord {
-            offset: 0,
-            bytes: &noncanonical,
-            payload_offset: 0,
-            payload: &noncanonical,
-            label,
-        })
-        .is_none()
-    );
+    assert!(super::operation_terminal_frame(super::OperationRecord {
+        offset: 0,
+        bytes: &noncanonical,
+        payload_offset: 0,
+        payload: &noncanonical,
+        label,
+    })
+    .is_none());
     let mismatched = [
         0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
         0x00, 0x23, 0x24, 0xff, 0x00,
     ];
-    assert!(
-        super::operation_terminal_frame(super::OperationRecord {
-            offset: 0,
-            bytes: &mismatched,
-            payload_offset: 0,
-            payload: &mismatched,
-            label,
-        })
-        .is_none()
-    );
+    assert!(super::operation_terminal_frame(super::OperationRecord {
+        offset: 0,
+        bytes: &mismatched,
+        payload_offset: 0,
+        payload: &mismatched,
+        label,
+    })
+    .is_none());
 
     let delete = [
         0x01, 0x00, 0x00, 0x01, 0x01, 0x01, 0x06, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x29,
@@ -1271,7 +1223,6 @@ fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
     assert!(outer.immediate_common_frame_offset.is_none());
 }
 
-
 #[test]
 fn om_fset_reference_graph_requires_exact_groups_and_bounds() {
     fn record(payload: &[u8]) -> super::OperationRecord<'_> {
@@ -1333,7 +1284,6 @@ fn om_fset_reference_graph_requires_exact_groups_and_bounds() {
     assert!(super::fset_payload_reference_graph(record(&duplicate)).is_none());
 }
 
-
 #[test]
 fn om_delete_reference_field_requires_five_canonical_nullable_slots() {
     fn record(payload: &[u8]) -> super::OperationRecord<'_> {
@@ -1385,7 +1335,6 @@ fn om_delete_reference_field_requires_five_canonical_nullable_slots() {
     assert!(super::delete_payload_references(record(&wrong_count)).is_none());
 }
 
-
 #[test]
 fn om_data_block_object_references_require_complete_field_frames() {
     let bytes = [
@@ -1418,7 +1367,6 @@ fn om_data_block_object_references_require_complete_field_frames() {
     );
 }
 
-
 #[test]
 fn om_size_frame_bounds_its_type_declarations() {
     let bytes = size_framed_om_section();
@@ -1443,7 +1391,6 @@ fn om_size_frame_bounds_its_type_declarations() {
     assert!(super::sections(&truncated).is_empty());
 }
 
-
 #[test]
 fn om_size_frame_accepts_exact_terminal_twelve_byte_envelope() {
     let mut bytes = size_framed_om_section();
@@ -1458,7 +1405,6 @@ fn om_size_frame_accepts_exact_terminal_twelve_byte_envelope() {
     assert!(super::sections(&bytes).is_empty());
 }
 
-
 #[test]
 fn om_size_frame_uses_validated_internal_record_area_pointer() {
     let bytes = size_framed_om_section_with_record_area();
@@ -1472,7 +1418,6 @@ fn om_size_frame_uses_validated_internal_record_area_pointer() {
     invalid[offset + 12] = 1;
     assert_eq!(super::sections(&invalid)[0].record_area, None);
 }
-
 
 #[test]
 fn om_operation_labels_require_the_complete_frame() {
@@ -1495,7 +1440,6 @@ fn om_operation_labels_require_the_complete_frame() {
     assert_eq!(super::operation_labels(&invalid, 0).len(), 1);
 }
 
-
 #[test]
 fn om_operation_records_use_consecutive_validated_headers() {
     let bytes = b"prefix\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x07UNITE\0payload\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x08SKETCH\0tail";
@@ -1510,7 +1454,6 @@ fn om_operation_records_use_consecutive_validated_headers() {
     assert!(records[1].bytes.ends_with(b"tail"));
     assert_eq!(records[1].payload, b"tail");
 }
-
 
 #[test]
 fn om_operation_payload_strings_require_complete_utf8_frames() {
@@ -1536,7 +1479,6 @@ fn om_operation_payload_strings_require_complete_utf8_frames() {
     assert_eq!(strings[1].value, "×");
 }
 
-
 #[test]
 fn om_surface_payload_strings_require_exact_length_utf8_and_terminator() {
     let bytes = b"\x66\x1b\x03\x05Steel\0\xaa\x66\x1b\x03\x02\xc3\x97\0";
@@ -1554,7 +1496,6 @@ fn om_surface_payload_strings_require_exact_length_utf8_and_terminator() {
     let control = b"\x66\x1b\x03\x01\n\0";
     assert!(super::surface_payload_strings(control).is_empty());
 }
-
 
 #[test]
 fn om_projected_curve_references_require_one_complete_field() {
@@ -1605,7 +1546,6 @@ fn om_projected_curve_references_require_one_complete_field() {
         .is_none()
     );
 }
-
 
 #[test]
 fn om_combined_projected_curve_references_require_the_complete_graph() {
@@ -1676,7 +1616,6 @@ fn om_combined_projected_curve_references_require_the_complete_graph() {
     );
 }
 
-
 #[test]
 fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
     let label = super::OperationLabel {
@@ -1720,16 +1659,13 @@ fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
 
     let mut malformed = nullable.to_vec();
     malformed[18] = 0x60;
-    assert!(
-        super::pattern_payload_references(super::OperationRecord {
-            bytes: &malformed,
-            payload: &malformed,
-            ..record
-        })
-        .is_none()
-    );
+    assert!(super::pattern_payload_references(super::OperationRecord {
+        bytes: &malformed,
+        payload: &malformed,
+        ..record
+    })
+    .is_none());
 }
-
 
 #[test]
 fn om_pattern_transform_lanes_require_counted_family_rows() {
@@ -1829,10 +1765,7 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
     })
     .expect("wide feature lane");
     assert_eq!(wide_lane.row_schema_index, 0x35);
-    assert_eq!(
-        wide_lane.layout,
-        super::PatternTransformLayout::WideRows
-    );
+    assert_eq!(wide_lane.layout, super::PatternTransformLayout::WideRows);
     assert_eq!(wide_lane.declared_count, 3);
     assert_eq!(wide_lane.values.len(), 10);
     assert_eq!(
@@ -1909,7 +1842,6 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         .is_none()
     );
 }
-
 
 #[test]
 fn om_multi_instance_output_lane_requires_consistent_counts_and_groups() {
@@ -1989,7 +1921,6 @@ fn om_multi_instance_output_lane_requires_consistent_counts_and_groups() {
     );
 }
 
-
 #[test]
 fn om_identical_instance_output_lane_requires_complete_ordered_rows() {
     let payload = b"\xaa\x34\x13\x01\x04\x14\x15\x01\x02\x16\x80\x20\x00\x02\
@@ -2055,7 +1986,6 @@ fn om_identical_instance_output_lane_requires_complete_ordered_rows() {
     );
 }
 
-
 #[test]
 fn om_geometry_instance_reference_requires_one_complete_field() {
     let label = super::OperationLabel {
@@ -2078,16 +2008,13 @@ fn om_geometry_instance_reference_requires_one_complete_field() {
     assert_eq!(field.references[0].offset, 205);
 
     let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(
-        super::pattern_payload_references(super::OperationRecord {
-            bytes: &ambiguous,
-            payload: &ambiguous,
-            ..record
-        })
-        .is_none()
-    );
+    assert!(super::pattern_payload_references(super::OperationRecord {
+        bytes: &ambiguous,
+        payload: &ambiguous,
+        ..record
+    })
+    .is_none());
 }
-
 
 #[test]
 fn om_point_feature_header_requires_the_complete_leading_envelope() {
@@ -2127,35 +2054,28 @@ fn om_point_feature_header_requires_the_complete_leading_envelope() {
     for malformed_offset in [0, 10, 51, 72] {
         let mut malformed = payload.to_vec();
         malformed[malformed_offset] ^= 0x01;
-        assert!(
-            super::point_feature_payload_header(super::OperationRecord {
-                bytes: &malformed,
-                payload: &malformed,
-                ..record
-            })
-            .is_none()
-        );
+        assert!(super::point_feature_payload_header(super::OperationRecord {
+            bytes: &malformed,
+            payload: &malformed,
+            ..record
+        })
+        .is_none());
     }
     let mut unsupported_mode = payload.to_vec();
     unsupported_mode[52] = 0x04;
-    assert!(
-        super::point_feature_payload_header(super::OperationRecord {
-            bytes: &unsupported_mode,
-            payload: &unsupported_mode,
-            ..record
-        })
-        .is_none()
-    );
-    assert!(
-        super::point_feature_payload_header(super::OperationRecord {
-            bytes: &payload[..72],
-            payload: &payload[..72],
-            ..record
-        })
-        .is_none()
-    );
+    assert!(super::point_feature_payload_header(super::OperationRecord {
+        bytes: &unsupported_mode,
+        payload: &unsupported_mode,
+        ..record
+    })
+    .is_none());
+    assert!(super::point_feature_payload_header(super::OperationRecord {
+        bytes: &payload[..72],
+        payload: &payload[..72],
+        ..record
+    })
+    .is_none());
 }
-
 
 #[test]
 fn om_point_feature_scalar_lane_spans_the_preceding_block_atomically() {
@@ -2188,7 +2108,6 @@ fn om_point_feature_scalar_lane_spans_the_preceding_block_atomically() {
     nonfinite[5..13].copy_from_slice(&[0x6f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
     assert!(super::point_feature_scalar_lane(&preceding, &nonfinite).is_none());
 }
-
 
 #[test]
 fn om_draft_feature_references_require_one_complete_graph() {
@@ -2226,8 +2145,7 @@ fn om_draft_feature_references_require_one_complete_graph() {
     assert_eq!(lane.declared_count, 3);
     assert_eq!(lane.indices, vec![(148, 224), (585, 226)]);
     assert_eq!(lane.raw_indices, vec![vec![0x80, 0x94], vec![0x82, 0x49]]);
-    let terminal_lane =
-        super::draft_feature_terminal_lane(record).expect("complete terminal lane");
+    let terminal_lane = super::draft_feature_terminal_lane(record).expect("complete terminal lane");
     assert_eq!(terminal_lane.indices, [350, 184]);
     assert_eq!(terminal_lane.raw_indices, [[0x81, 0x5e], [0x80, 0xb8]]);
     assert_eq!(terminal_lane.index_offsets, [284, 286]);
@@ -2271,16 +2189,13 @@ fn om_draft_feature_references_require_one_complete_graph() {
         })
         .is_none()
     );
-    assert!(
-        super::draft_feature_terminal_lane(super::OperationRecord {
-            bytes: &payload[..payload.len() - 1],
-            payload: &payload[..payload.len() - 1],
-            ..record
-        })
-        .is_none()
-    );
+    assert!(super::draft_feature_terminal_lane(super::OperationRecord {
+        bytes: &payload[..payload.len() - 1],
+        payload: &payload[..payload.len() - 1],
+        ..record
+    })
+    .is_none());
 }
-
 
 #[test]
 fn om_surface_feature_references_require_the_complete_common_envelope() {
@@ -2343,7 +2258,6 @@ fn om_surface_feature_references_require_the_complete_common_envelope() {
         .is_none()
     );
 }
-
 
 #[test]
 fn om_surface_feature_branches_require_one_complete_counted_group() {
@@ -2415,7 +2329,6 @@ fn om_surface_feature_branches_require_one_complete_counted_group() {
         .is_none()
     );
 }
-
 
 #[test]
 fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
@@ -2489,26 +2402,21 @@ fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
 
     let mut noncanonical = payload.to_vec();
     noncanonical[7] = 0;
-    assert!(
-        super::sketch_payload_references(super::OperationRecord {
-            payload: &noncanonical,
-            bytes: &noncanonical,
-            ..record
-        })
-        .is_none()
-    );
-    assert!(
-        super::sketch_payload_references(super::OperationRecord {
-            label: super::OperationLabel {
-                value: "BLOCK",
-                ..label
-            },
-            ..record
-        })
-        .is_none()
-    );
+    assert!(super::sketch_payload_references(super::OperationRecord {
+        payload: &noncanonical,
+        bytes: &noncanonical,
+        ..record
+    })
+    .is_none());
+    assert!(super::sketch_payload_references(super::OperationRecord {
+        label: super::OperationLabel {
+            value: "BLOCK",
+            ..label
+        },
+        ..record
+    })
+    .is_none());
 }
-
 
 #[test]
 fn om_extrude_profile_references_require_matching_witness_field() {
@@ -2547,18 +2455,15 @@ fn om_extrude_profile_references_require_matching_witness_field() {
     .unwrap();
     assert!(!field.witnessed);
     assert_eq!(field.references.len(), 2);
-    assert!(
-        super::extrude_profile_references(super::OperationRecord {
-            label: super::OperationLabel {
-                value: "SKETCH",
-                ..label
-            },
-            ..record
-        })
-        .is_none()
-    );
+    assert!(super::extrude_profile_references(super::OperationRecord {
+        label: super::OperationLabel {
+            value: "SKETCH",
+            ..label
+        },
+        ..record
+    })
+    .is_none());
 }
-
 
 #[test]
 fn om_extrude_header_decodes_shifted_ieee_scalars() {
@@ -2585,16 +2490,13 @@ fn om_extrude_header_decodes_shifted_ieee_scalars() {
 
     let mut invalid = payload.to_vec();
     invalid[5] = 0xf0;
-    assert!(
-        super::extrude_payload_header(super::OperationRecord {
-            payload: &invalid,
-            bytes: &invalid,
-            ..record
-        })
-        .is_none()
-    );
+    assert!(super::extrude_payload_header(super::OperationRecord {
+        payload: &invalid,
+        bytes: &invalid,
+        ..record
+    })
+    .is_none());
 }
-
 
 #[test]
 fn om_operation_terminal_discriminator_requires_one_complete_lane() {
@@ -2656,7 +2558,6 @@ fn om_operation_terminal_discriminator_requires_one_complete_lane() {
         .is_none()
     );
 }
-
 
 #[test]
 fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
@@ -2720,7 +2621,6 @@ fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
     assert_eq!(truncated_triples[0], triples[0]);
 }
 
-
 #[test]
 fn om_operation_body_branch_11_decodes_wrapped_member_lane_atomically() {
     let label = super::OperationLabel {
@@ -2749,16 +2649,13 @@ fn om_operation_body_branch_11_decodes_wrapped_member_lane_atomically() {
     assert_eq!(members[1].raw_member_index, [0x80, 0x01]);
 
     let truncated = &bytes[..bytes.len() - 1];
-    assert!(
-        super::operation_body_members(super::OperationRecord {
-            bytes: truncated,
-            payload: truncated,
-            ..record
-        })
-        .is_empty()
-    );
+    assert!(super::operation_body_members(super::OperationRecord {
+        bytes: truncated,
+        payload: truncated,
+        ..record
+    })
+    .is_empty());
 }
-
 
 #[test]
 fn om_trim_body_branch_11_decodes_terminal_continuation_atomically() {
@@ -2811,7 +2708,6 @@ fn om_trim_body_branch_11_decodes_terminal_continuation_atomically() {
         .is_empty()
     );
 }
-
 
 #[test]
 fn om_operation_body_decodes_homogeneous_unwrapped_reference_lanes() {
@@ -2912,7 +2808,6 @@ fn om_operation_body_decodes_homogeneous_unwrapped_reference_lanes() {
     );
 }
 
-
 #[test]
 fn om_extrude_body_32_branch_decodes_counted_lanes() {
     let label = super::OperationLabel {
@@ -2956,38 +2851,31 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
 
     let mut invalid = bytes.to_vec();
     invalid[36] = 0xff;
-    assert!(
-        super::extrude_payload_32_branch(super::OperationRecord {
-            bytes: &invalid,
-            payload: &invalid,
-            ..record
-        })
-        .is_none()
-    );
+    assert!(super::extrude_payload_32_branch(super::OperationRecord {
+        bytes: &invalid,
+        payload: &invalid,
+        ..record
+    })
+    .is_none());
 
     let mut invalid_atom = bytes.to_vec();
     invalid_atom[18] = 0x3c;
-    assert!(
-        super::extrude_payload_32_branch(super::OperationRecord {
-            bytes: &invalid_atom,
-            payload: &invalid_atom,
-            ..record
-        })
-        .is_none()
-    );
+    assert!(super::extrude_payload_32_branch(super::OperationRecord {
+        bytes: &invalid_atom,
+        payload: &invalid_atom,
+        ..record
+    })
+    .is_none());
 
     let mut wrong_terminal_body = bytes.to_vec();
     wrong_terminal_body[43] = 0x72;
-    assert!(
-        super::extrude_payload_32_branch(super::OperationRecord {
-            bytes: &wrong_terminal_body,
-            payload: &wrong_terminal_body,
-            ..record
-        })
-        .is_none()
-    );
+    assert!(super::extrude_payload_32_branch(super::OperationRecord {
+        bytes: &wrong_terminal_body,
+        payload: &wrong_terminal_body,
+        ..record
+    })
+    .is_none());
 }
-
 
 #[test]
 fn om_block_construction_field_decodes_ordered_canonical_references() {
@@ -3033,16 +2921,12 @@ fn om_block_construction_field_decodes_ordered_canonical_references() {
     );
 }
 
-
 #[test]
 fn om_boolean_operations_decode_counted_target_and_tools() {
     let bytes = b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x0aSUBTRACT\0\x31\x00\x00\x01\x00\x14\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\x00\x00\xe0\x7f\xff\xff\xff\x01\x01\x01\x02\x90\x19\x5e\x00\x01\x05\x90\x19\x5f\x90\x19\x44\x90\x19\x43\x90\x19\x60\x00";
     let operations = super::boolean_operations(bytes, 100);
     assert_eq!(operations.len(), 1);
-    assert_eq!(
-        operations[0].kind,
-        super::BooleanOperationKind::Subtract
-    );
+    assert_eq!(operations[0].kind, super::BooleanOperationKind::Subtract);
     assert_eq!(operations[0].target, 6494);
     assert_eq!(operations[0].raw_target, [0x90, 0x19, 0x5e]);
     assert_eq!(
@@ -3077,7 +2961,6 @@ fn om_boolean_operations_decode_counted_target_and_tools() {
     assert!(super::boolean_operations(&invalid, 0).is_empty());
 }
 
-
 #[test]
 fn om_index_accepts_length_framed_root_version_text() {
     let mut bytes = indexed_om_section();
@@ -3103,7 +2986,6 @@ fn om_index_accepts_length_framed_root_version_text() {
         .starts_with(b"\x04\x01\x0fNX 2027.3102 \0"));
 }
 
-
 #[test]
 fn om_store_version_can_follow_control_prefix() {
     let bytes = b"\xff\x00prefix\x04\x01\x0eNX 2027.3102\0tail";
@@ -3111,7 +2993,6 @@ fn om_store_version_can_follow_control_prefix() {
     assert_eq!(version.offset, 108);
     assert_eq!(version.value, "NX 2027.3102");
 }
-
 
 #[test]
 fn om_offset_only_index_bounds_storage_blocks() {
@@ -3138,7 +3019,6 @@ fn om_offset_only_index_bounds_storage_blocks() {
     assert_eq!(expressions[0].value, Some(25.0));
 }
 
-
 #[test]
 fn om_offset_only_index_accepts_one_root_record_inside_control_block() {
     let bytes = control_root_offset_only_indexed_om_section();
@@ -3156,7 +3036,6 @@ fn om_offset_only_index_accepts_one_root_record_inside_control_block() {
     assert_eq!(sections[0].records[0].bytes, &[0; 32]);
     assert_eq!(sections[0].numeric_expressions()[0].name, "length");
 }
-
 
 #[test]
 fn om_offset_only_index_requires_one_supported_product_record() {
@@ -3179,7 +3058,6 @@ fn om_offset_only_index_requires_one_supported_product_record() {
     assert!(super::indexed_sections(&unsupported).is_empty());
 }
 
-
 #[test]
 fn om_offset_store_control_values_require_complete_zero_prefixed_words() {
     assert_eq!(
@@ -3190,7 +3068,6 @@ fn om_offset_store_control_values_require_complete_zero_prefixed_words() {
     assert!(super::offset_store_control_values(&[0, 1, 2]).is_none());
     assert!(super::offset_store_control_values(&[1, 1, 2, 3]).is_none());
 }
-
 
 #[test]
 fn om_offset_store_control_form_requires_one_complete_grammar() {
@@ -3217,7 +3094,6 @@ fn om_offset_store_control_form_requires_one_complete_grammar() {
     assert!(super::offset_store_control_form(&product).is_none());
     assert!(super::offset_store_control_form(&[1, 2, 3, 4]).is_none());
 }
-
 
 #[test]
 fn om_offset_store_index_rows_require_complete_exact_frames() {
@@ -3260,7 +3136,6 @@ fn om_offset_store_index_rows_require_complete_exact_frames() {
     assert!(super::offset_store_index_rows(&overlong).is_empty());
     assert!(super::offset_store_index_rows(&first[..first.len() - 1]).is_empty());
 }
-
 
 #[test]
 fn om_color_table_requires_complete_names_indices_and_rgb_atoms() {
@@ -3315,7 +3190,6 @@ fn om_color_table_requires_complete_names_indices_and_rgb_atoms() {
     assert!(super::color_tables(truncated).is_empty());
 }
 
-
 #[test]
 fn om_offset_store_linked_index_rows_require_complete_exact_frames() {
     let row = b"\x02\x0b\x83\x93\x93\x8c\x16\x24\xff\xff\x90\xfe\x20\x20\x41\x00\x47\x03\x04\x01\xc0\x44\x04\x00";
@@ -3352,7 +3226,6 @@ fn om_offset_store_linked_index_rows_require_complete_exact_frames() {
     assert!(super::offset_store_linked_index_rows(&row[..row.len() - 1]).is_empty());
 }
 
-
 #[test]
 fn om_offset_store_target_index_rows_require_complete_exact_frames() {
     let row =
@@ -3376,13 +3249,9 @@ fn om_offset_store_target_index_rows_require_complete_exact_frames() {
     assert!(super::offset_store_target_index_rows(&suffix).is_empty());
     let mut mode_four = row.to_vec();
     mode_four[16] = 0x04;
-    assert_eq!(
-        super::offset_store_target_index_rows(&mode_four)[0].mode,
-        4
-    );
+    assert_eq!(super::offset_store_target_index_rows(&mode_four)[0].mode, 4);
     assert!(super::offset_store_target_index_rows(&row[..row.len() - 1]).is_empty());
 }
-
 
 #[test]
 fn om_offset_store_control_class_lane_is_a_distinct_in_range_prefix() {
@@ -3407,7 +3276,6 @@ fn om_offset_store_control_class_lane_is_a_distinct_in_range_prefix() {
     );
 }
 
-
 #[test]
 fn om_registry_uses_length_framing_and_stays_outside_entity_payloads() {
     let mut bytes = indexed_om_section();
@@ -3419,7 +3287,6 @@ fn om_registry_uses_length_framing_and_stays_outside_entity_payloads() {
     assert_eq!(sections[0].types[0].trailing_code, 0x81);
     assert_eq!(sections[0].types[0].offset, 8);
 }
-
 
 #[test]
 fn om_numeric_expression_retains_identity_name_unit_and_value() {
@@ -3467,7 +3334,6 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
     assert!(super::expression_declaration_name(b"\x04\x05p1-\0").is_none());
 }
 
-
 #[test]
 fn om_numeric_expression_types_only_canonical_parameter_names() {
     for name in ["p12foo", "p12_", "p4294967296_radius"] {
@@ -3487,7 +3353,6 @@ fn om_numeric_expression_types_only_canonical_parameter_names() {
     assert!(super::expression_declaration_name(b"\x04\x06p12_\0").is_none());
 }
 
-
 #[test]
 fn om_numeric_expression_evaluates_constant_arithmetic_formula() {
     let text = b"(Number [mm]) p9: (193.94 - 6) / 2 + 1.5e1; ";
@@ -3501,7 +3366,6 @@ fn om_numeric_expression_evaluates_constant_arithmetic_formula() {
     assert_eq!(expressions[0].expression, "(193.94 - 6) / 2 + 1.5e1");
     assert_eq!(expressions[0].value, Some(108.97));
 }
-
 
 #[test]
 fn om_numeric_expression_applies_power_before_unary_sign() {
@@ -3519,7 +3383,6 @@ fn om_numeric_expression_applies_power_before_unary_sign() {
     }
 }
 
-
 #[test]
 fn om_string_value_requires_marker_length_printability_and_terminator() {
     let bytes = b"\x66\x32\x03\x0cSKETCH_001\0\x66\x32\x03\x03A\0\x66\x32\x03\x03A\x01";
@@ -3530,23 +3393,18 @@ fn om_string_value_requires_marker_length_printability_and_terminator() {
     assert_eq!(values[1].value, "A");
 }
 
-
 #[test]
 fn om_tagged_references_preserve_family_value_order_and_bounds() {
     let bytes = b"\xe0\x12\x34\x56\x78\xca\xbc\xde\xf0\xe0\x01";
     let references = super::references(bytes, 20);
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].offset, 20);
-    assert_eq!(
-        references[0].kind,
-        super::ReferenceKind::PersistentHandle
-    );
+    assert_eq!(references[0].kind, super::ReferenceKind::PersistentHandle);
     assert_eq!(references[0].value, 0x1234_5678);
     assert_eq!(references[1].offset, 25);
     assert_eq!(references[1].kind, super::ReferenceKind::Tagged28);
     assert_eq!(references[1].value, 0x0abc_def0);
 }
-
 
 #[test]
 fn om_counted_record_references_require_a_complete_in_bounds_run() {
@@ -3554,14 +3412,10 @@ fn om_counted_record_references_require_a_complete_in_bounds_run() {
     let references = super::counted_record_references(bytes, 100, 5);
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].offset, 103);
-    assert_eq!(
-        references[0].kind,
-        super::ReferenceKind::RecordOrdinal16
-    );
+    assert_eq!(references[0].kind, super::ReferenceKind::RecordOrdinal16);
     assert_eq!(references[0].value, 2);
     assert_eq!(references[1].value, 4);
 }
-
 
 #[test]
 fn om_record_reference_stream_requires_dense_suffix() {
@@ -3580,7 +3434,6 @@ fn om_record_reference_stream_requires_dense_suffix() {
     assert!(super::dense_reference_suffix(&sparse, 0).is_empty());
 }
 
-
 #[test]
 fn om_numeric_expression_table_is_independent_of_entity_indexing() {
     let bytes = b"hostglobalvariables\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00";
@@ -3598,5 +3451,3 @@ fn om_numeric_expression_table_is_independent_of_entity_indexing() {
     );
     assert_eq!(expressions[0].value, Some(120.0));
 }
-
-
