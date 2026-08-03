@@ -227,6 +227,11 @@ of a segment body-image binding and does not make the intermediate body a
 current model body. A `DELETE` primary-body field consumes its selected body
 and declares no result body.
 
+A Boolean target list also establishes the operation's intermediate result
+body. When the operation has no primary-body writer, the result body's local
+identity is the retained Boolean-operation identity followed by `:target`.
+The Boolean-operation identity is the result state's native reference.
+
 A body selection retains input-local identity atomically only when every
 serialized object identity belongs to a segment body-image alias component.
 The identity is the smallest object index in the complete transitive alias

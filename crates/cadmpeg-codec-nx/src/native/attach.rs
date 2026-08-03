@@ -2646,7 +2646,13 @@ fn attach_feature_operations(
             native_ref: Some(label.id.clone()),
         });
         if !deletes_body {
-            if let Some(writer) = body_writer_references_by_operation.get(label.id.as_str()) {
+            let result_body = native_result_body_identity(
+                body_writer_references_by_operation
+                    .get(label.id.as_str())
+                    .copied(),
+                booleans.get(label.id.as_str()).copied(),
+            );
+            if let Some((local_id, native_ref)) = result_body {
                 let key = label
                     .id
                     .strip_prefix("nx:feature-history:operation-label#")
@@ -2658,15 +2664,29 @@ fn attach_feature_operations(
                             "nx:feature-history:result-topology#{key}"
                         )),
                         output_of: id,
-                        bodies: vec![writer.id.clone()],
+                        bodies: vec![local_id],
                         faces: Vec::new(),
                         edges: Vec::new(),
                         vertices: Vec::new(),
-                        native_ref: Some(writer.id.clone()),
+                        native_ref: Some(native_ref),
                     });
             }
         }
     }
+}
+
+/// Select the exact native writer identity for one intermediate body result.
+/// A primary-body writer is canonical when both native forms are present. The
+/// Boolean target is independently sufficient when the primary form is absent.
+fn native_result_body_identity(
+    primary: Option<&crate::native::features::FeatureBodyReference>,
+    boolean: Option<&crate::native::features::FeatureBooleanOperation>,
+) -> Option<(String, String)> {
+    primary
+        .map(|writer| (writer.id.clone(), writer.id.clone()))
+        .or_else(|| {
+            boolean.map(|operation| (format!("{}:target", operation.id), operation.id.clone()))
+        })
 }
 
 fn attach_solved_sketch_points(
@@ -6618,6 +6638,45 @@ mod tests {
                 pattern: cadmpeg_ir::features::PatternKind::Unresolved { form: None },
             } if seeds.is_empty()
         ));
+    }
+
+    #[test]
+    fn boolean_target_is_an_independent_intermediate_result_writer() {
+        use crate::native::features::{
+            FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation,
+        };
+
+        let boolean = FeatureBooleanOperation {
+            id: "nx:test:boolean#0".into(),
+            operation_label: "nx:test:operation#0".into(),
+            kind: FeatureBooleanKind::Unite,
+            target_object_index: 7,
+            raw_target_object_index: vec![7],
+            target_source_offset: 1,
+            tool_object_indices: vec![8],
+            raw_tool_object_indices: vec![vec![8]],
+            tool_source_offsets: vec![2],
+            source_offset: 0,
+        };
+        assert_eq!(
+            super::native_result_body_identity(None, Some(&boolean)),
+            Some((
+                "nx:test:boolean#0:target".into(),
+                "nx:test:boolean#0".into(),
+            ))
+        );
+
+        let primary = FeatureBodyReference {
+            id: "nx:test:primary#0".into(),
+            operation_label: boolean.operation_label.clone(),
+            body_object_index: 7,
+            raw_body_object_index: vec![7],
+            source_offset: 3,
+        };
+        assert_eq!(
+            super::native_result_body_identity(Some(&primary), Some(&boolean)),
+            Some(("nx:test:primary#0".into(), "nx:test:primary#0".into(),))
+        );
     }
 
     #[test]
