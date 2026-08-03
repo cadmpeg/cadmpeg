@@ -1435,6 +1435,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                     spatial_entities: &ir.model.spatial_sketch_entities,
                     histories: &native.asm_histories,
                     linear_tolerance: ir.tolerances.linear,
+                    angular_tolerance: ir.tolerances.angular,
                 },
             );
             crate::history::discard_projection_caches(&mut native.asm_histories);
@@ -1838,6 +1839,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             spatial_entities: &ir.model.spatial_sketch_entities,
             histories: &native.asm_histories,
             linear_tolerance: ir.tolerances.linear,
+            angular_tolerance: ir.tolerances.angular,
         },
     );
     crate::design::face_resolve::bind_extrude_start_planes(

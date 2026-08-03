@@ -4683,6 +4683,28 @@ pub(crate) fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistori
         });
     }
     surface_radii.sort_by_key(|candidate| candidate.surface);
+    let mut surface_cylinders = brep
+        .surfaces
+        .iter()
+        .filter_map(|surface| {
+            let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
+                origin,
+                axis,
+                radius,
+                ..
+            } = surface.geometry
+            else {
+                return None;
+            };
+            Some(crate::history_records::AsmHistoricalCylinder {
+                surface: entity_ref(&surface.id.0)?,
+                origin,
+                axis,
+                radius: radius.abs(),
+            })
+        })
+        .collect::<Vec<_>>();
+    surface_cylinders.sort_by_key(|candidate| candidate.surface);
 
     Some(AsmHistoricalTopology {
         bodies: refs(brep.bodies.iter().map(|entity| entity.id.0.as_str()))?,
@@ -4696,6 +4718,7 @@ pub(crate) fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistori
         points: refs(brep.points.iter().map(|entity| entity.id.0.as_str()))?,
         surfaces: refs(brep.surfaces.iter().map(|entity| entity.id.0.as_str()))?,
         surface_radii,
+        surface_cylinders,
         curves: refs(brep.curves.iter().map(|entity| entity.id.0.as_str()))?,
         curve_axes: brep
             .curves

@@ -33,6 +33,7 @@ pub(crate) struct ExtrudeProfileResolution<'a> {
     pub spatial_entities: &'a [cadmpeg_ir::sketches::SpatialSketchEntity],
     pub histories: &'a [crate::history_records::AsmHistory],
     pub linear_tolerance: f64,
+    pub angular_tolerance: f64,
 }
 
 /// Native and neutral arenas required to resolve curve selections in sketches.
@@ -814,6 +815,7 @@ pub(crate) fn resolved_extrude_profile_selection(
                 history_state_id?,
                 previous_history_state_id?,
                 resolution.linear_tolerance,
+                resolution.angular_tolerance,
             )
         })
         .or_else(|| {
@@ -842,6 +844,7 @@ fn transition_profile_selection(
     state_id: i64,
     previous_state_id: i64,
     linear_tolerance: f64,
+    angular_tolerance: f64,
 ) -> Option<ResolvedProfileSelection> {
     let mut states = histories
         .iter()
@@ -872,6 +875,18 @@ fn transition_profile_selection(
     if inserted.is_some() {
         return inserted;
     }
+    if let Some(selection) = unique_resolved_selection(inserted_faces.iter().map(|face| {
+        inserted_cylindrical_profile_selection(
+            sketch,
+            entities,
+            topology,
+            *face,
+            tolerance,
+            angular_tolerance,
+        )
+    })) {
+        return Some(selection);
+    }
     let mut previous_states = histories
         .iter()
         .flat_map(|history| &history.states)
@@ -887,6 +902,89 @@ fn transition_profile_selection(
         let points = historical_face_points(face, previous_topology)?;
         selection_containing_points(sketch, entities, &points, tolerance)
     }))
+}
+
+pub(crate) fn inserted_cylindrical_profile_selection(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    topology: &crate::history_records::AsmHistoricalTopology,
+    face: i64,
+    linear_tolerance: f64,
+    angular_tolerance: f64,
+) -> Option<ResolvedProfileSelection> {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let mut carriers = topology
+        .face_surfaces
+        .iter()
+        .filter(|binding| binding.entity == face);
+    let carrier = carriers.next()?.carrier;
+    if carriers.next().is_some() {
+        return None;
+    }
+    let mut cylinders = topology
+        .surface_cylinders
+        .iter()
+        .filter(|cylinder| cylinder.surface == carrier);
+    let cylinder = cylinders.next()?;
+    if cylinders.next().is_some() || !cylinder.radius.is_finite() || cylinder.radius <= 0.0 {
+        return None;
+    }
+    let (sketch_origin, sketch_normal, _) = sketch.resolved_placement()?;
+    let alignment = cylinder.axis.x * sketch_normal.x
+        + cylinder.axis.y * sketch_normal.y
+        + cylinder.axis.z * sketch_normal.z;
+    if alignment.abs() < angular_tolerance.cos() {
+        return None;
+    }
+    let offset = (sketch_origin.x - cylinder.origin.x) * sketch_normal.x
+        + (sketch_origin.y - cylinder.origin.y) * sketch_normal.y
+        + (sketch_origin.z - cylinder.origin.z) * sketch_normal.z;
+    let parameter = offset / alignment;
+    let center = project_to_sketch(
+        sketch,
+        Point3::new(
+            cylinder.origin.x + parameter * cylinder.axis.x,
+            cylinder.origin.y + parameter * cylinder.axis.y,
+            cylinder.origin.z + parameter * cylinder.axis.z,
+        ),
+    )?;
+    let points = historical_face_points(face, topology)?;
+    let projected = points
+        .iter()
+        .map(|point| project_to_sketch(sketch, *point))
+        .collect::<Option<Vec<_>>>()?;
+    let mut matches = sketch
+        .profiles
+        .iter()
+        .enumerate()
+        .filter_map(|(index, profile)| {
+            let [use_] = profile.as_slice() else {
+                return None;
+            };
+            let entity = entities
+                .iter()
+                .find(|entity| entity.sketch == sketch.id && entity.id == use_.entity)?;
+            let SketchGeometry::Circle {
+                center: candidate_center,
+                radius: candidate_radius,
+            } = entity.geometry
+            else {
+                return None;
+            };
+            ((candidate_center.u - center.u).hypot(candidate_center.v - center.v)
+                <= linear_tolerance
+                && (candidate_radius.0 - cylinder.radius).abs() <= linear_tolerance
+                && projected
+                    .iter()
+                    .all(|point| point_on_sketch_entity(*point, entity, linear_tolerance)))
+            .then(|| u32::try_from(index).ok())?
+        });
+    let profile = matches.next()?;
+    matches
+        .next()
+        .is_none()
+        .then(|| ResolvedProfileSelection::Loops(vec![profile]))
 }
 
 fn resolved_spatial_extrude_profile_selection(

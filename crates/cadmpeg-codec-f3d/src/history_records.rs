@@ -87,6 +87,9 @@ pub(crate) struct AsmHistoricalTopology {
     /// Characteristic radii of analytic or constant-radius blend carriers.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub surface_radii: Vec<AsmHistoricalSurfaceRadius>,
+    /// Exact right-circular cylinder carriers in this historical state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub surface_cylinders: Vec<AsmHistoricalCylinder>,
     pub curves: Vec<i64>,
     /// Model-space axes of axis-bearing curve carriers in this state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -134,6 +137,15 @@ pub(crate) struct AsmHistoricalCurveAxis {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct AsmHistoricalSurfaceRadius {
     pub surface: i64,
+    pub radius: f64,
+}
+
+/// Stable geometry of one right-circular cylinder carrier.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct AsmHistoricalCylinder {
+    pub surface: i64,
+    pub origin: Point3,
+    pub axis: Vector3,
     pub radius: f64,
 }
 

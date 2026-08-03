@@ -1931,6 +1931,168 @@ fn historical_face_points_require_complete_boundary_topology() {
 }
 
 #[test]
+fn inserted_cylinder_selects_its_exact_circular_sketch_profile() {
+    use crate::history_records::{
+        AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCylinder, AsmHistoricalEdge,
+        AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology,
+    };
+
+    let sketch_id = SketchId("sketch".into());
+    let circle_id = SketchEntityId("circle".into());
+    let circle = SketchEntity {
+        id: circle_id.clone(),
+        sketch: sketch_id.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: Length(2.0),
+        },
+    };
+    let sketch = Sketch {
+        id: sketch_id,
+        name: None,
+        configuration: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        profiles: vec![vec![SketchEntityUse {
+            entity: circle_id,
+            reversed: false,
+        }]],
+        native_ref: None,
+    };
+    let topology = AsmHistoricalTopology {
+        faces: vec![10],
+        loops: vec![11],
+        coedges: vec![12, 13, 14],
+        edges: vec![20, 21, 22],
+        vertices: vec![30, 31, 32],
+        points: vec![40, 41, 42],
+        surfaces: vec![50],
+        face_loops: vec![AsmHistoricalRelation {
+            owner_ref: 10,
+            member_refs: vec![11],
+        }],
+        loop_coedges: vec![AsmHistoricalRelation {
+            owner_ref: 11,
+            member_refs: vec![12, 13, 14],
+        }],
+        coedge_topology: vec![
+            AsmHistoricalCoedge {
+                coedge: 12,
+                owner_loop: 11,
+                edge: 20,
+                next: 13,
+                previous: 14,
+                radial_next: 12,
+            },
+            AsmHistoricalCoedge {
+                coedge: 13,
+                owner_loop: 11,
+                edge: 21,
+                next: 14,
+                previous: 12,
+                radial_next: 13,
+            },
+            AsmHistoricalCoedge {
+                coedge: 14,
+                owner_loop: 11,
+                edge: 22,
+                next: 12,
+                previous: 13,
+                radial_next: 14,
+            },
+        ],
+        edge_vertices: vec![
+            AsmHistoricalEdge {
+                edge: 20,
+                start_vertex: 30,
+                end_vertex: 31,
+            },
+            AsmHistoricalEdge {
+                edge: 21,
+                start_vertex: 31,
+                end_vertex: 32,
+            },
+            AsmHistoricalEdge {
+                edge: 22,
+                start_vertex: 32,
+                end_vertex: 30,
+            },
+        ],
+        face_surfaces: vec![AsmHistoricalCarrierBinding {
+            entity: 10,
+            carrier: 50,
+        }],
+        vertex_points: vec![
+            AsmHistoricalCarrierBinding {
+                entity: 30,
+                carrier: 40,
+            },
+            AsmHistoricalCarrierBinding {
+                entity: 31,
+                carrier: 41,
+            },
+            AsmHistoricalCarrierBinding {
+                entity: 32,
+                carrier: 42,
+            },
+        ],
+        point_positions: vec![
+            AsmHistoricalPoint {
+                point: 40,
+                position: Point3::new(2.0, 0.0, 0.0),
+            },
+            AsmHistoricalPoint {
+                point: 41,
+                position: Point3::new(0.0, 2.0, 1.0),
+            },
+            AsmHistoricalPoint {
+                point: 42,
+                position: Point3::new(-2.0, 0.0, 0.0),
+            },
+        ],
+        surface_cylinders: vec![AsmHistoricalCylinder {
+            surface: 50,
+            origin: Point3::new(0.0, 0.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            radius: 2.0,
+        }],
+        ..AsmHistoricalTopology::default()
+    };
+
+    assert_eq!(
+        crate::design::profile_select::inserted_cylindrical_profile_selection(
+            &sketch,
+            std::slice::from_ref(&circle),
+            &topology,
+            10,
+            1.0e-6,
+            1.0e-9,
+        ),
+        Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0]))
+    );
+    let mut tilted = topology;
+    tilted.surface_cylinders[0].axis = Vector3::new(0.0, 1.0, 0.0);
+    assert_eq!(
+        crate::design::profile_select::inserted_cylindrical_profile_selection(
+            &sketch,
+            std::slice::from_ref(&circle),
+            &tilted,
+            10,
+            1.0e-6,
+            1.0e-9,
+        ),
+        None
+    );
+}
+
+#[test]
 fn deleted_profile_family_requires_one_complete_multi_face_carrier() {
     use crate::history_records::{AsmHistoricalCarrierBinding, AsmHistoricalTopology};
 
@@ -8291,6 +8453,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 spatial_entities: &[],
                 histories: &[],
                 linear_tolerance: 1.0e-6,
+                angular_tolerance: 1.0e-9,
             },
             None,
             None,
@@ -8364,6 +8527,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 spatial_entities: &[],
                 histories: &[],
                 linear_tolerance: 1.0e-6,
+                angular_tolerance: 1.0e-9,
             },
             None,
             None,
@@ -8386,6 +8550,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 spatial_entities: &[],
                 histories: &[],
                 linear_tolerance: 1.0e-6,
+                angular_tolerance: 1.0e-9,
             },
             None,
             None,
@@ -8409,6 +8574,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 spatial_entities: &[],
                 histories: &[],
                 linear_tolerance: 1.0e-6,
+                angular_tolerance: 1.0e-9,
             },
             None,
             None,
@@ -14689,6 +14855,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             spatial_entities: &[],
             histories: &[],
             linear_tolerance: 1.0e-6,
+            angular_tolerance: 1.0e-9,
         },
     );
     assert!(matches!(
