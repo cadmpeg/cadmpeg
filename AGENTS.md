@@ -8,7 +8,6 @@
 Multi-agent repository etiquette:
 
 - One worktree and one branch per agent. Do not edit or build inside another agent's worktree.
-- Stage explicit paths only. Do not use `git add -A`, `git add .`, or `git commit -a`; they capture other agents' unstaged work.
 - Unstaged changes you did not make belong to another agent. Do not commit them, revert them, or bypass hooks because of them.
 - Use `--no-verify` only with the reason stated in the commit body.
 - In a conflicted merge, restore a file from a merge stage with `scripts/restore-merge-stage.sh`, not with `git checkout` or `git restore`.
@@ -23,4 +22,3 @@ Build and test operations:
 - Test expectations come from the specification or approximate equality. Do not paste a failing run's observed output into an expectation.
 - Rebuild the `cadmpeg` binary before a batch decode run. An unchanged report after a code change indicates a stale binary, not an ineffective change.
 - Do not write file content back from a truncated read. Re-read a file after formatting hooks or context compaction before you patch it.
-- `/tmp` has a small quota. Put large scratch artifacts under `~/side2/tmp`.
