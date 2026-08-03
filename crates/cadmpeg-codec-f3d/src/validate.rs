@@ -1245,14 +1245,21 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             _ => false,
                         }
                         && side_extent_discriminator_offsets
-                            == [
-                                scope.byte_offset.saturating_add(106),
-                                if side_extent_discriminators[0] == 2 {
-                                    scope.reference_count_offset.saturating_sub(4)
-                                } else {
-                                    scope.byte_offset.saturating_add(110)
-                                },
-                            ]
+                            == if direction_face_extend_values[0] == 2 {
+                                [
+                                    scope.byte_offset.saturating_add(155),
+                                    scope.byte_offset.saturating_add(178),
+                                ]
+                            } else {
+                                [
+                                    scope.byte_offset.saturating_add(106),
+                                    if side_extent_discriminators[0] == 2 {
+                                        scope.reference_count_offset.saturating_sub(4)
+                                    } else {
+                                        scope.byte_offset.saturating_add(110)
+                                    },
+                                ]
+                            }
                         && direction_face_extend_offsets
                             == [
                                 operation_offset.saturating_add(4),

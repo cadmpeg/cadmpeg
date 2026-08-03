@@ -3111,7 +3111,7 @@ pub(crate) fn parse_parameter_scope(
         // The generic scope envelope is independently self-delimiting. An
         // unrecognized Extrude prologue therefore withholds only the typed
         // fields, not the scope and its ordered reference table.
-        exact_extrude_prologue(bytes, start, *reference_count_at)
+        exact_extrude_prologue(bytes, start, *reference_count_at, reference_members)
     } else {
         None
     };
@@ -3268,9 +3268,11 @@ fn exact_extrude_prologue(
     bytes: &[u8],
     start: usize,
     reference_count_at: usize,
+    reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
-    exact_current_extrude_prologue(bytes, start)
-        .or_else(|| exact_legacy_shifted_extrude_prologue(bytes, start, reference_count_at))
+    exact_current_extrude_prologue(bytes, start).or_else(|| {
+        exact_legacy_shifted_extrude_prologue(bytes, start, reference_count_at, reference_members)
+    })
 }
 
 fn exact_current_extrude_prologue(bytes: &[u8], start: usize) -> Option<DesignExtrudePrologue> {
@@ -3376,6 +3378,7 @@ fn exact_legacy_shifted_extrude_prologue(
     bytes: &[u8],
     start: usize,
     reference_count_at: usize,
+    reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
     let operation_offset = start.checked_add(27)?;
     let operation = match u32_at(bytes, operation_offset)? {
@@ -3394,16 +3397,38 @@ fn exact_legacy_shifted_extrude_prologue(
     if !matches!(direction_face_extend_values[0], 1..=3) {
         return None;
     }
-    let first_side_extent_offset = start.checked_add(106)?;
-    let first_side_extent = u32_at(bytes, first_side_extent_offset)?;
-    let second_side_extent_offset = if first_side_extent == 2 {
-        reference_count_at.checked_sub(4)?
-    } else {
-        start.checked_add(110)?
+    let two_sided_offsets = || {
+        let first_parameter_at = start.checked_add(139)?;
+        let first_side_extent_offset = start.checked_add(155)?;
+        let first_offset_at = start.checked_add(159)?;
+        let second_side_extent_offset = start.checked_add(178)?;
+        let second_parameter_at = start.checked_add(182)?;
+        if second_parameter_at.checked_add(11)? > reference_count_at
+            || bytes.get(start.checked_add(150)?..first_side_extent_offset)? != [0; 5]
+            || bytes.get(start.checked_add(170)?..second_side_extent_offset)? != [0; 8]
+            || [first_parameter_at, first_offset_at, second_parameter_at]
+                .into_iter()
+                .map(|offset| marked_record_reference(bytes, offset))
+                .any(|reference| !reference.is_some_and(|value| reference_members.contains(&value)))
+        {
+            return None;
+        }
+        Some([first_side_extent_offset, second_side_extent_offset])
     };
-    let side_extent_discriminator_offsets = [first_side_extent_offset, second_side_extent_offset];
+    let side_extent_discriminator_offsets = if direction_face_extend_values[0] == 2 {
+        two_sided_offsets()?
+    } else {
+        let first_side_extent_offset = start.checked_add(106)?;
+        let first_side_extent = u32_at(bytes, first_side_extent_offset)?;
+        let second_side_extent_offset = if first_side_extent == 2 {
+            reference_count_at.checked_sub(4)?
+        } else {
+            start.checked_add(110)?
+        };
+        [first_side_extent_offset, second_side_extent_offset]
+    };
     let side_extent_discriminators = [
-        first_side_extent,
+        u32_at(bytes, side_extent_discriminator_offsets[0])?,
         u32_at(bytes, side_extent_discriminator_offsets[1])?,
     ];
     let extent = match (direction_face_extend_values[0], side_extent_discriminators) {
