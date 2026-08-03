@@ -5772,6 +5772,106 @@ fn body_selections_round_trip_through_json() {
 }
 
 #[test]
+fn feature_result_topology_round_trips_without_current_model_bodies() {
+    use crate::features::{FeatureId, FeatureResultTopology};
+    use crate::ids::FeatureResultTopologyId;
+
+    let state = FeatureResultTopology {
+        id: FeatureResultTopologyId("synthetic:history-result:state#0".into()),
+        output_of: FeatureId("synthetic:feature#0".into()),
+        bodies: vec!["body:17".into()],
+        faces: vec!["face:3".into()],
+        edges: vec!["edge:5".into()],
+        vertices: vec!["vertex:8".into()],
+        native_ref: Some("native:result#0".into()),
+    };
+    let json = serde_json::to_string(&state).unwrap();
+    assert_eq!(
+        serde_json::from_str::<FeatureResultTopology>(&json).unwrap(),
+        state
+    );
+}
+
+#[test]
+fn generated_body_selection_must_name_a_declared_producer_result() {
+    use crate::features::{
+        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureResultTopology,
+        GeneratedBodyRef,
+    };
+    use crate::ids::FeatureResultTopologyId;
+
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    let producer = FeatureId("synthetic:test:feature#0-producer".into());
+    ir.model.features.push(Feature {
+        id: producer.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Native {
+            kind: "producer".into(),
+            parameters: Default::default(),
+            properties: Default::default(),
+        },
+        native_ref: None,
+    });
+    ir.model
+        .feature_result_topologies
+        .push(FeatureResultTopology {
+            id: FeatureResultTopologyId("synthetic:test:feature-result-topology#producer".into()),
+            output_of: producer.clone(),
+            bodies: vec!["body#declared".into()],
+            faces: Vec::new(),
+            edges: Vec::new(),
+            vertices: Vec::new(),
+            native_ref: None,
+        });
+    ir.model.features.push(Feature {
+        id: FeatureId("synthetic:test:feature#1-consumer".into()),
+        ordinal: 1,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: vec![producer.clone()],
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Generated {
+                bodies: vec![GeneratedBodyRef {
+                    feature: producer,
+                    local_id: "body#declared".into(),
+                }],
+                native: "synthetic:native-selection#0".into(),
+            },
+        },
+        native_ref: None,
+    });
+
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.is_empty(), "{:?}", report.findings);
+    let FeatureDefinition::BaseFeature {
+        bodies: BodySelection::Generated { bodies, .. },
+    } = &mut ir.model.features[1].definition
+    else {
+        panic!("test consumer must retain its generated body selection");
+    };
+    bodies[0].local_id = "body#undeclared".into();
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message == "generated body selection is invalid"));
+}
+
+#[test]
 fn combine_omits_the_default_keep_tools_flag_from_json() {
     use crate::features::{BodySelection, BooleanOp, FeatureDefinition};
 

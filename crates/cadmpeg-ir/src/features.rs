@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use crate::assets::AssetId;
 use crate::ids::{
-    BodyId, CurveId, EdgeId, FaceId, FeatureInputTopologyId, HistoricalBodyId, HistoricalEdgeId,
-    HistoricalFaceId, OccurrenceId, SubdId, VertexId,
+    BodyId, CurveId, EdgeId, FaceId, FeatureInputTopologyId, FeatureResultTopologyId,
+    HistoricalBodyId, HistoricalEdgeId, HistoricalFaceId, OccurrenceId, SubdId, VertexId,
 };
 use crate::math::{Point2, Point3, Vector3};
 use crate::products::JointId;
@@ -233,6 +233,10 @@ pub enum PmiDimensionSubtype {
     Diameter,
     /// Radius.
     Radial,
+    /// Linear coordinate measured from an ordinate origin.
+    Ordinate,
+    /// Dimensionless integral instance count.
+    Count,
     /// Source-native family without a neutral equivalent.
     Native(String),
 }
@@ -332,6 +336,35 @@ pub struct FeatureInputTopology {
     /// Edges present in this state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub edges: Vec<HistoricalEdgeId>,
+    /// Full-fidelity source state reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_ref: Option<String>,
+}
+
+/// Persistent feature-local topology identities in one regenerated result.
+///
+/// These identities describe intermediate history results that need not be
+/// members of the saved current model topology. Generated feature selections
+/// address members through the producing feature and the corresponding local
+/// identity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FeatureResultTopology {
+    /// Globally unique result-state id.
+    pub id: FeatureResultTopologyId,
+    /// Feature that produces this state.
+    pub output_of: FeatureId,
+    /// Feature-local body identities in stable source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bodies: Vec<String>,
+    /// Feature-local face identities in stable source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub faces: Vec<String>,
+    /// Feature-local edge identities in stable source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edges: Vec<String>,
+    /// Feature-local vertex identities in stable source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub vertices: Vec<String>,
     /// Full-fidelity source state reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
@@ -1340,10 +1373,10 @@ impl FeatureDefinition {
     /// Family name of a definition whose replay produces body geometry, and `None` for
     /// definitions that do not.
     ///
-    /// A feature of one of these families carries its result geometry in the owning
-    /// [`Feature::outputs`] list, so an empty or unresolvable output list means the body
-    /// lineage was not transferred. The returned name is the stable lowercase label for
-    /// the family, suitable for grouping such features in a report.
+    /// A feature of one of these families carries current result bodies in its
+    /// [`Feature::outputs`] list or intermediate result identities in a
+    /// [`FeatureResultTopology`]. The returned name is the stable lowercase label for the
+    /// family, suitable for grouping such features in a report.
     pub fn body_output_family(&self) -> Option<&'static str> {
         match self {
             Self::BaseFeature { .. } => Some("base feature"),

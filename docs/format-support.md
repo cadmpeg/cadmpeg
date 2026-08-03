@@ -1,22 +1,14 @@
 # Format support
 
-This document lists the repository's read, write, and round-trip support. Each codec has one ladder score per declared envelope and a profile for each domain.
-
-SolidWorks `.sldprt` has the broadest native read/write path and serves as the [reference format](roadmap.md#reference-format-solidworks-sldprt) for full semantic support. Every native format remains incomplete.
-
 ## Support ladder
-
-The L0–L9 ladder measures how much source semantics a codec recovers for use. L0–L4 add usable content categories. L5–L9 require complete coverage of the categories below them.
 
 ### Scoring rules
 
-1. **Strict and cumulative.** A codec earns Ln by passing every gate through Ln. Its score equals the highest level whose gates all pass.
-2. **Integer levels.** Capabilities above the score appear as extras. The ladder has no fractional or plus-marked levels.
-3. **Resolve doubt downward.** A partially met gate fails.
-4. **Require a usable slice.** A capability rung requires working support across mainstream files in the declared envelope. A single fixture, entity census, or opaque record capture cannot satisfy it.
-5. **Pass inapplicable gates.** A format definition may establish that its document kind cannot contain a category. Missing fixtures cannot establish inapplicability.
-6. **Score each envelope.** A codec declares version and layout-variant bands and receives one score per band. A single version can earn L9. State discontinuous support per band.
-7. **Qualify the evidence.** Every score is **claimed** when code exists, **tested** when fixtures exercise it, or **proven** when it passes the [roadmap's](roadmap.md#progress-gates) representative-corpus, round-trip, and fuzzing gates.
+1. **One score.** Score is the highest fully passed level. Surplus capability shows as extras.
+2. **Full pass.** A level passes when its requirements hold across mainstream files in the declared envelope. One fixture, an entity census, or an opaque record capture does not pass a level.
+3. **Inapplicable levels.** A format definition may mark a level inapplicable when its document kind cannot contain that category. Inapplicable levels pass. Missing fixtures do not establish inapplicability.
+4. **One score per envelope.** Version and layout bands each receive their own score. Discontinuous support is stated per band.
+5. **Evidence grade.** Every score is **claimed** when code exists, **tested** when fixtures exercise it, or **proven** when it passes the [roadmap's](roadmap.md#progress-gates) representative-corpus, round-trip, and fuzzing gates.
 
 ### Levels
 

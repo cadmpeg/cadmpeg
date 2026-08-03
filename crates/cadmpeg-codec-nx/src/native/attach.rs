@@ -9,6 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
@@ -16,15 +17,16 @@ use cadmpeg_ir::features::{
     ConfigurationBodies, ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
     CurveProjectionDirectionState, DesignConfiguration, DesignParameter, EdgeSelection,
     ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition, FeatureId,
-    FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind, HolePlacement, Length,
-    ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
-    RibConstruction, RibDraft, SketchSpace, SweepMode, Termination, ThickenSide, TrimRegion,
+    FeatureResultTopology, FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind,
+    HolePlacement, Length, ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef,
+    RadiusForm, RadiusSpec, RibConstruction, RibDraft, SketchSpace, SweepMode, Termination,
+    ThickenSide, TrimRegion,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::ids::{AttributeId, BodyId, LoopId, SurfaceId, UnknownId};
+use cadmpeg_ir::ids::{AttributeId, BodyId, FeatureResultTopologyId, LoopId, SurfaceId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::semantic_annotations::{
     SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
@@ -32,11 +34,12 @@ use cadmpeg_ir::semantic_annotations::{
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchPlacement,
 };
-use cadmpeg_ir::topology::{BodyKind, Coedge, Face, Sense};
+use cadmpeg_ir::topology::{BodyKind, Coedge, Color, Face, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
+use crate::container::EntryContent;
 use crate::decode::Scan;
 use crate::native::history::{active_feature_closure, BodyWriterHistory};
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
@@ -85,10 +88,12 @@ pub(crate) fn attach(
             links: Vec::new(),
         });
     }
+    attach_jpeg_preview_assets(ir, scan, annotations, unknowns);
     let object_sections = scan.container.indexed_om_sections();
     if model.is_empty() && object_sections.is_empty() {
         return Ok(());
     }
+    attach_rm_face_colors(ir, model, scan, annotations);
     let display_jt_tessellations = display_jt_tessellations(&DisplayJtTessellationInputs {
         meshes: &model.display_jt.display_jt_polygon_meshes,
         coordinates: &model.display_jt.display_jt_vertex_coordinates,
@@ -105,6 +110,7 @@ pub(crate) fn attach(
         group_nodes: &model.display_jt.display_jt_group_node_data,
         instance_nodes: &model.display_jt.display_jt_instance_nodes,
         transforms: &model.display_jt.display_jt_geometric_transform_attributes,
+        materials: &model.display_jt.display_jt_material_attributes,
         compressed_elements: &model.display_jt.display_jt_compressed_elements,
     })
     .unwrap_or_default();
@@ -116,6 +122,7 @@ pub(crate) fn attach(
         ir.model.tessellations.push(tessellation);
     }
     NATIVE_CATALOGUE.note_phase(Phase::GroupA, model, annotations);
+    attach_material_texture_assets(ir, model, scan, annotations);
     for attribute in &model.om.part_attributes {
         annotations
             .note(&attribute.id, annotation_stream, attribute.source_offset)
@@ -289,9 +296,246 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(181);
+    namespace.version = namespace.version.max(189);
     NATIVE_CATALOGUE.emit_all(model, namespace)?;
     Ok(())
+}
+
+fn attach_rm_face_colors(
+    ir: &mut CadIr,
+    model: &crate::native::model::NativeModel,
+    scan: &Scan,
+    annotations: &mut AnnotationBuilder,
+) {
+    let face_indices = ir
+        .model
+        .faces
+        .iter()
+        .enumerate()
+        .map(|(index, face)| (face.id.0.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+    let face_ids = face_indices.keys().cloned().collect::<BTreeSet<_>>();
+    let bindings = resolve_rm_face_colors(
+        &face_ids,
+        &model.om.rm_display_color_assignments,
+        &model.om.part_color_definitions,
+        &model.parasolid.parasolid_deltas_records,
+        &super::substrate::paired_delta_streams(scan),
+    );
+    for (face_id, color) in bindings {
+        let Some(index) = face_indices.get(&face_id).copied() else {
+            continue;
+        };
+        let face = &mut ir.model.faces[index];
+        if face.color.is_none() || face.color == Some(color) {
+            face.color = Some(color);
+            annotations.derived(&face.id, "color");
+        }
+    }
+}
+
+fn resolve_rm_face_colors(
+    face_ids: &BTreeSet<String>,
+    assignments: &[super::om::RmDisplayColorAssignment],
+    definitions: &[super::om::PartColorDefinition],
+    records: &[super::parasolid::ParasolidDeltasRecord],
+    delta_pairs: &BTreeMap<usize, Vec<usize>>,
+) -> Vec<(String, Color)> {
+    let mut partitions_by_delta = BTreeMap::<u32, BTreeSet<u32>>::new();
+    for (partition, deltas) in delta_pairs {
+        for delta in deltas {
+            partitions_by_delta
+                .entry(*delta as u32)
+                .or_default()
+                .insert(*partition as u32);
+        }
+    }
+
+    let mut colors_by_object = BTreeMap::<u32, BTreeSet<String>>::new();
+    for assignment in assignments {
+        let crate::native::om::RmDisplayColorAssignmentEncoding::Linked { object_index, .. } =
+            &assignment.encoding
+        else {
+            continue;
+        };
+        colors_by_object
+            .entry(*object_index)
+            .or_default()
+            .insert(assignment.color_definition.clone());
+    }
+    let definitions_by_id = definitions
+        .iter()
+        .map(|definition| (definition.id.as_str(), definition))
+        .collect::<BTreeMap<_, _>>();
+    let mut face_records_by_node = BTreeMap::<u32, Vec<_>>::new();
+    for record in records.iter().filter(|record| record.family == "FACE") {
+        let Some(node_id) = record.node_id else {
+            continue;
+        };
+        face_records_by_node
+            .entry(node_id)
+            .or_default()
+            .push(record);
+    }
+
+    let mut bindings = Vec::new();
+    for (object_index, definition_ids) in colors_by_object {
+        if definition_ids.len() != 1 {
+            continue;
+        }
+        let definition_id = definition_ids.first().expect("one definition id");
+        let Some(definition) = definitions_by_id.get(definition_id.as_str()) else {
+            continue;
+        };
+        let candidates = face_records_by_node
+            .get(&object_index)
+            .into_iter()
+            .flatten()
+            .filter_map(|record| {
+                let partitions = partitions_by_delta.get(&record.stream_ordinal)?;
+                if partitions.len() != 1 {
+                    return None;
+                }
+                let partition = partitions.first().expect("one partition");
+                let face_id = format!("nx:s{partition}:face#{}", record.xmt);
+                face_ids.contains(&face_id).then_some(face_id)
+            })
+            .collect::<BTreeSet<_>>();
+        if candidates.len() != 1 {
+            continue;
+        }
+        let face_id = candidates.first().expect("one face id");
+        bindings.push((
+            face_id.clone(),
+            Color {
+                r: definition.rgb[0],
+                g: definition.rgb[1],
+                b: definition.rgb[2],
+                a: 1.0,
+            },
+        ));
+    }
+    bindings.sort_by(|left, right| left.0.cmp(&right.0));
+    bindings
+}
+
+/// Transfer each independently validated JPEG preview with its exact bounded
+/// container bytes. Invalid entries remain absent from the neutral asset arena.
+fn attach_jpeg_preview_assets(
+    ir: &mut CadIr,
+    scan: &Scan,
+    annotations: &mut AnnotationBuilder,
+    unknowns: &mut Vec<UnknownRecord>,
+) {
+    let stream = annotations.stream("nx:container");
+    for (ordinal, entry) in scan
+        .container
+        .entries
+        .iter()
+        .filter(|entry| entry.content() == EntryContent::PreviewImage)
+        .enumerate()
+    {
+        let Some((source_offset, source_byte_len)) = entry.file_span else {
+            continue;
+        };
+        let (Ok(start), Ok(byte_len)) = (
+            usize::try_from(source_offset),
+            usize::try_from(source_byte_len),
+        ) else {
+            continue;
+        };
+        let Some(bytes) = start
+            .checked_add(byte_len)
+            .and_then(|end| scan.container.data.get(start..end))
+        else {
+            continue;
+        };
+        let native_ref = format!("nx:container:jpeg-preview#{ordinal}");
+        if crate::decode::jpeg_dimensions(bytes).is_none() {
+            annotations
+                .note(&native_ref, stream, source_offset)
+                .tag("JPEG_PREVIEW_INVALID");
+            annotations.exactness(&native_ref, Exactness::ByteExact);
+            unknowns.push(UnknownRecord {
+                id: UnknownId(native_ref),
+                offset: source_offset,
+                byte_len: source_byte_len,
+                sha256: sha256_hex(bytes),
+                data: Some(bytes.to_vec()),
+                links: Vec::new(),
+            });
+            continue;
+        }
+        let id = AssetId(format!("{native_ref}:asset"));
+        annotations
+            .note(&id.0, stream, source_offset)
+            .tag("JPEG_PREVIEW_ASSET");
+        annotations.exactness(&id.0, Exactness::ByteExact);
+        annotations.derived(&id.0, "id");
+        annotations.derived(&id.0, "name");
+        annotations.derived(&id.0, "media_type");
+        annotations.derived(&id.0, "native_ref");
+        ir.model.assets.push(Asset {
+            id,
+            name: Some(if ordinal == 0 {
+                "preview.jpg".to_string()
+            } else {
+                format!("preview-{ordinal}.jpg")
+            }),
+            media_type: Some("image/jpeg".to_string()),
+            content: AssetContent::Embedded {
+                data: bytes.to_vec(),
+            },
+            native_ref: Some(native_ref),
+        });
+    }
+}
+
+/// Transfer the complete validated TIFF set atomically. A partial transfer
+/// would make native catalog links appear usable when one of their targets is
+/// absent from the neutral asset arena.
+fn attach_material_texture_assets(
+    ir: &mut CadIr,
+    model: &crate::native::model::NativeModel,
+    scan: &Scan,
+    annotations: &mut AnnotationBuilder,
+) {
+    let assets = model
+        .om
+        .material_texture_assets
+        .iter()
+        .map(|texture| {
+            let start = usize::try_from(texture.source_offset).ok()?;
+            let byte_len = usize::try_from(texture.byte_len).ok()?;
+            let bytes = scan
+                .container
+                .data
+                .get(start..start.checked_add(byte_len)?)?;
+            (sha256_hex(bytes) == texture.sha256).then_some(Asset {
+                id: AssetId(format!("{}:asset", texture.id)),
+                name: Some(texture.name.clone()),
+                media_type: Some("image/tiff".to_string()),
+                content: AssetContent::Embedded {
+                    data: bytes.to_vec(),
+                },
+                native_ref: Some(texture.id.clone()),
+            })
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(assets) = assets else {
+        return;
+    };
+    let stream = annotations.stream("nx:container");
+    for (texture, asset) in model.om.material_texture_assets.iter().zip(&assets) {
+        annotations
+            .note(&asset.id.0, stream, texture.source_offset)
+            .tag("MATERIAL_TEXTURE_ASSET");
+        annotations.exactness(&asset.id.0, Exactness::ByteExact);
+        annotations.derived(&asset.id.0, "id");
+        annotations.derived(&asset.id.0, "media_type");
+        annotations.derived(&asset.id.0, "native_ref");
+    }
+    ir.model.assets.extend(assets);
 }
 
 fn attach_active_configuration_parameter_values(
@@ -447,6 +691,70 @@ fn unique_active_configuration_index(configurations: &[DesignConfiguration]) -> 
     Some(*index)
 }
 
+/// Materialize the exact body set present when retained feature replay begins.
+fn attach_initial_segment_bodies(
+    ir: &mut CadIr,
+    body_bindings: &[crate::native::segments::SegmentBodyBinding],
+    annotations: &mut AnnotationBuilder,
+    stream: cadmpeg_ir::annotations::StreamHandle,
+) -> Option<FeatureId> {
+    let bindings_by_body = ir
+        .model
+        .bodies
+        .iter()
+        .filter_map(|body| {
+            let bindings = body_bindings
+                .iter()
+                .filter(|binding| {
+                    body.id
+                        .0
+                        .starts_with(&format!("nx:s{}:", binding.stream_ordinal))
+                })
+                .map(|binding| binding.id.clone())
+                .collect::<Vec<_>>();
+            (!bindings.is_empty()).then_some((body.id.clone(), bindings))
+        })
+        .collect::<BTreeMap<_, _>>();
+    if bindings_by_body.is_empty() {
+        return None;
+    }
+
+    let id = FeatureId("nx:feature-history:feature#initial-bodies".to_string());
+    let outputs = bindings_by_body.keys().cloned().collect::<Vec<_>>();
+    let source_properties = bindings_by_body
+        .values()
+        .flatten()
+        .enumerate()
+        .map(|(ordinal, binding)| (format!("segment_body_binding.{ordinal}"), binding.clone()))
+        .collect();
+    annotations
+        .note(&id, stream, 0)
+        .tag("FEATURE_HISTORY_INPUT");
+    annotations.derived(&id, "definition");
+    annotations.derived(&id, "outputs");
+    ir.model.features.push(Feature {
+        id: id.clone(),
+        ordinal: ir.model.features.len() as u64,
+        name: Some("Retained history input".to_string()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties,
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: outputs.clone(),
+        definition: FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Resolved {
+                bodies: outputs,
+                native: "nx:segment-body-bindings".to_string(),
+            },
+        },
+        native_ref: None,
+    });
+    Some(id)
+}
+
 fn attach_feature_operations(
     ir: &mut CadIr,
     features: &crate::native::model::FeatureRecords,
@@ -462,6 +770,7 @@ fn attach_feature_operations(
     let input_blocks = features.feature_input_blocks.as_slice();
     let input_block_identity_groups = features.feature_input_block_identity_groups.as_slice();
     let datum_csys_constructions = features.feature_datum_csys_constructions.as_slice();
+    let datum_csys_column_row_uses = features.feature_datum_csys_column_row_uses.as_slice();
     let datum_csys_payloads = features.feature_datum_csys_payloads.as_slice();
     let datum_csys_block_uses = features.feature_datum_csys_block_uses.as_slice();
     let datum_plane_headers = features.feature_datum_plane_headers.as_slice();
@@ -573,11 +882,31 @@ fn attach_feature_operations(
         .feature_hole_package_construction_group_uses
         .as_slice();
     let stream = annotations.stream("nx:container");
+    let initial_body_id = attach_initial_segment_bodies(ir, body_bindings, annotations, stream);
     let base_ordinal = ir.model.features.len() as u64;
     let booleans = booleans
         .iter()
         .map(|operation| (operation.operation_label.as_str(), operation))
         .collect::<BTreeMap<_, _>>();
+    let body_references_by_id = body_references
+        .iter()
+        .map(|reference| (reference.id.as_str(), reference))
+        .collect::<BTreeMap<_, _>>();
+    let body_writer_references_by_operation = body_references
+        .iter()
+        .map(|reference| (reference.operation_label.as_str(), reference))
+        .collect::<BTreeMap<_, _>>();
+    let mut offset_store_bodies_by_operation = BTreeMap::<&str, Vec<(u32, String)>>::new();
+    for body_use in body_data_block_uses {
+        let Some(reference) = body_references_by_id.get(body_use.feature_body_reference.as_str())
+        else {
+            continue;
+        };
+        offset_store_bodies_by_operation
+            .entry(reference.operation_label.as_str())
+            .or_default()
+            .push((reference.body_object_index, body_use.data_block.clone()));
+    }
     let offset_store_body_references = body_data_block_uses
         .iter()
         .map(|use_| use_.feature_body_reference.as_str())
@@ -601,6 +930,12 @@ fn attach_feature_operations(
             .push(reference);
     }
     let mut body_writer_history = BodyWriterHistory::default();
+    if let Some(feature) = initial_body_id
+        .as_ref()
+        .and_then(|id| ir.model.features.iter().find(|feature| feature.id == *id))
+    {
+        body_writer_history.record_writer(None, &feature.outputs, &feature.id);
+    }
     let body_alias_roots =
         crate::native::segments::body_alias_roots(body_bindings).unwrap_or_default();
     let canonical_body =
@@ -628,6 +963,8 @@ fn attach_feature_operations(
         .collect::<BTreeMap<_, _>>();
     let datum_csys_payloads_by_operation =
         records_by_operation(datum_csys_payloads, |payload| &payload.operation_label);
+    let datum_csys_column_row_uses_by_operation =
+        records_by_operation(datum_csys_column_row_uses, |use_| &use_.operation_label);
     let mut datum_csys_uses_by_input_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumCsysBlockUse>>::new();
     for block_use in datum_csys_block_uses {
@@ -652,24 +989,12 @@ fn attach_feature_operations(
             .or_default()
             .push(block_use);
     }
-    let operation_positions = labels
+    let chronological_labels =
+        crate::native::features::feature_operation_chronological_labels(labels);
+    let operation_positions = chronological_labels
         .iter()
         .enumerate()
         .map(|(position, label)| (label.id.as_str(), position))
-        .collect::<BTreeMap<_, _>>();
-    let feature_ids_by_operation = labels
-        .iter()
-        .filter(|label| projects_neutral_feature(&label.value))
-        .map(|label| {
-            let key = label
-                .id
-                .strip_prefix("nx:feature-history:operation-label#")
-                .unwrap_or(label.id.as_str());
-            (
-                label.id.as_str(),
-                FeatureId(format!("nx:feature-history:feature#{key}")),
-            )
-        })
         .collect::<BTreeMap<_, _>>();
     let sketch_datum_csys_dependencies = sketch_datum_csys_dependencies
         .iter()
@@ -1024,29 +1349,33 @@ fn attach_feature_operations(
         };
     let simple_hole_placements =
         hole_axis_placements_for_operations(ir, &simple_hole_operations, &hole_outputs);
-    let hole_package_operations = labels
+    let simple_hole_chamfers = simple_hole_chamfers(ir, simple_hole_templates, &hole_outputs);
+    let hole_packages = hole_package_projection(
+        ir,
+        simple_hole_templates,
+        simple_hole_construction_groups,
+        hole_package_construction_group_uses,
+        &hole_outputs,
+        &simple_hole_diameters,
+        &simple_hole_chamfers,
+    );
+    let feature_ids_by_operation = labels
         .iter()
-        .filter(|label| label.value == "HOLE PACKAGE")
-        .map(|label| label.id.clone())
-        .collect::<Vec<_>>();
-    let explicit_hole_package_outputs = hole_package_operations
-        .iter()
-        .filter_map(|operation| {
-            let object_index = body_references.get(operation.as_str())?;
-            Some((
-                operation.clone(),
-                feature_body_outputs(*object_index, &bodies_by_object_index),
-            ))
+        .filter(|label| {
+            projects_neutral_feature(&label.value)
+                && !hole_packages.internal_operations.contains(&label.id)
+        })
+        .map(|label| {
+            let key = label
+                .id
+                .strip_prefix("nx:feature-history:operation-label#")
+                .unwrap_or(label.id.as_str());
+            (
+                label.id.as_str(),
+                FeatureId(format!("nx:feature-history:feature#{key}")),
+            )
         })
         .collect::<BTreeMap<_, _>>();
-    let (hole_package_outputs, hole_package_diameters) =
-        match hole_body_projection(ir, &hole_package_operations, &explicit_hole_package_outputs) {
-            Some(projection) => (projection.outputs, projection.diameters),
-            None => (explicit_hole_package_outputs, BTreeMap::new()),
-        };
-    let hole_package_placements =
-        hole_axis_placements_for_operations(ir, &hole_package_operations, &hole_package_outputs);
-    let simple_hole_chamfers = simple_hole_chamfers(ir, simple_hole_templates, &hole_outputs);
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureParameterBinding>>::new();
     for binding in parameter_bindings {
@@ -1085,8 +1414,37 @@ fn attach_feature_operations(
         .iter()
         .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
         .collect::<BTreeMap<_, _>>();
-    for (ordinal, label) in labels.iter().enumerate() {
-        if !projects_neutral_feature(&label.value) {
+    let annotation_base_order =
+        u32::try_from(ir.model.semantic_annotations.len()).unwrap_or(u32::MAX);
+    for (annotation_ordinal, label) in labels
+        .iter()
+        .filter(|label| label.value == "TEXT")
+        .enumerate()
+    {
+        let payload_strings = payload_strings_by_operation
+            .get(label.id.as_str())
+            .map_or([].as_slice(), Vec::as_slice)
+            .iter()
+            .map(|value| value.value.as_str())
+            .collect::<Vec<_>>();
+        let Some(annotation) = text_semantic_annotation(
+            &label.id,
+            annotation_base_order
+                .saturating_add(u32::try_from(annotation_ordinal).unwrap_or(u32::MAX)),
+            &payload_strings,
+        ) else {
+            continue;
+        };
+        annotations
+            .note(&annotation.id.0, stream, label.source_offset)
+            .tag("TEXT_SEMANTIC_ANNOTATION");
+        annotations.exactness(&annotation.id.0, Exactness::Derived);
+        ir.model.semantic_annotations.push(annotation);
+    }
+    for (ordinal, label) in chronological_labels.into_iter().enumerate() {
+        if !projects_neutral_feature(&label.value)
+            || hole_packages.internal_operations.contains(&label.id)
+        {
             continue;
         }
         let id = feature_ids_by_operation
@@ -1256,7 +1614,7 @@ fn attach_feature_operations(
         if outputs.is_empty() {
             outputs = hole_outputs
                 .get(label.id.as_str())
-                .or_else(|| hole_package_outputs.get(label.id.as_str()))
+                .or_else(|| hole_packages.outputs.get(label.id.as_str()))
                 .cloned()
                 .unwrap_or_default();
         }
@@ -1470,6 +1828,17 @@ fn attach_feature_operations(
             source_properties.insert(
                 "datum_csys_construction".to_string(),
                 construction.id.clone(),
+            );
+        }
+        for (ordinal, use_) in datum_csys_column_row_uses_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("datum_csys_column_row_use.{ordinal}"),
+                use_.id.clone(),
             );
         }
         for (ordinal, payload) in datum_csys_payloads_by_operation
@@ -2012,6 +2381,7 @@ fn attach_feature_operations(
         let block_dimension_values = block_dimensions_by_operation
             .get(label.id.as_str())
             .map(|dimensions| dimensions.values);
+        let block_has_explicit_output = !outputs.is_empty();
         let block_projection = (label.value == "BLOCK")
             .then(|| block_placement(ir, block_dimension_values?, &outputs))
             .flatten();
@@ -2022,12 +2392,35 @@ fn attach_feature_operations(
         }
         let block_op = if block_projection.is_some()
             && matches!(outputs.as_slice(), [_])
-            && !body_writer_history.has_primary_writer(native_primary_body, &outputs)
-        {
+            && if block_has_explicit_output {
+                !body_writer_history.has_primary_writer(native_primary_body, &outputs)
+            } else {
+                !body_writer_history
+                    .has_output_writer_other_than(initial_body_id.as_ref(), &outputs)
+            } {
             BooleanOp::NewBody
         } else {
             BooleanOp::Unresolved
         };
+        if block_op == BooleanOp::NewBody && !block_has_explicit_output {
+            if let Some(initial_feature) = initial_body_id.as_ref().and_then(|id| {
+                ir.model
+                    .features
+                    .iter_mut()
+                    .find(|feature| feature.id == *id)
+            }) {
+                initial_feature
+                    .outputs
+                    .retain(|body| !outputs.contains(body));
+                if let FeatureDefinition::BaseFeature {
+                    bodies: BodySelection::Resolved { bodies, .. },
+                } = &mut initial_feature.definition
+                {
+                    bodies.retain(|body| !outputs.contains(body));
+                }
+                body_writer_history.retract_outputs(&initial_feature.id, &outputs);
+            }
+        }
         body_writer_history.extend_primary_dependencies(
             native_primary_body,
             &outputs,
@@ -2048,14 +2441,27 @@ fn attach_feature_operations(
             .flatten();
         let trim_body_projection = (label.value == "TRIM BODY")
             .then(|| {
-                trim_body_feature_definition(
-                    *body_references.get(label.id.as_str())?,
-                    segment_body_operands_by_operation
-                        .get(label.id.as_str())?
-                        .as_slice(),
-                    &body_alias_roots,
-                    &bodies_by_object_index,
-                )
+                body_references
+                    .get(label.id.as_str())
+                    .zip(segment_body_operands_by_operation.get(label.id.as_str()))
+                    .and_then(|(primary, operands)| {
+                        trim_body_feature_definition(
+                            *primary,
+                            operands.as_slice(),
+                            &body_alias_roots,
+                            &bodies_by_object_index,
+                        )
+                    })
+                    .or_else(|| {
+                        offset_store_trim_body_feature_definition(
+                            offset_store_bodies_by_operation
+                                .get(label.id.as_str())
+                                .map_or([].as_slice(), Vec::as_slice),
+                            operation_body_operands_by_operation
+                                .get(label.id.as_str())
+                                .map_or([].as_slice(), Vec::as_slice),
+                        )
+                    })
             })
             .flatten();
         let offset_projection = (label.value == "OFFSET")
@@ -2126,6 +2532,15 @@ fn attach_feature_operations(
                 &output_kinds,
             )
         });
+        let extract_projection = (label.value == "EXTRACT_BODY")
+            .then(|| {
+                extract_body_feature_definition(
+                    offset_store_bodies_by_operation
+                        .get(label.id.as_str())
+                        .map_or([].as_slice(), Vec::as_slice),
+                )
+            })
+            .flatten();
         let delete_projection = deletes_body
             .then(|| {
                 delete_body_feature_definition(
@@ -2159,6 +2574,7 @@ fn attach_feature_operations(
                     .or(delete_projection)
                     .or(sew_projection)
                     .or(extrude_projection)
+                    .or(extract_projection)
                     .or_else(|| blend_projection.map(|(definition, _)| definition))
                     .or_else(|| thicken_projection.map(|(definition, _)| definition))
                     .or_else(|| offset_projection.map(|(definition, _)| definition))
@@ -2175,15 +2591,29 @@ fn attach_feature_operations(
                             block_dimension_values,
                             block_placement,
                             HoleProjection {
-                                placement: simple_hole_placements
+                                placements: simple_hole_placements
                                     .get(label.id.as_str())
-                                    .or_else(|| hole_package_placements.get(label.id.as_str()))
-                                    .cloned(),
+                                    .cloned()
+                                    .into_iter()
+                                    .chain(
+                                        hole_packages
+                                            .placements
+                                            .get(label.id.as_str())
+                                            .cloned()
+                                            .unwrap_or_default(),
+                                    )
+                                    .collect(),
                                 diameter: simple_hole_diameters
                                     .get(label.id.as_str())
-                                    .or_else(|| hole_package_diameters.get(label.id.as_str()))
+                                    .or_else(|| hole_packages.diameters.get(label.id.as_str()))
                                     .copied(),
-                                chamfer: simple_hole_chamfers.get(label.id.as_str()).copied(),
+                                chamfer: simple_hole_chamfers
+                                    .get(label.id.as_str())
+                                    .or_else(|| hole_packages.chamfers.get(label.id.as_str()))
+                                    .copied(),
+                                grouped_simple_through: hole_packages
+                                    .outputs
+                                    .contains_key(label.id.as_str()),
                             },
                             native_parameters,
                         );
@@ -2222,19 +2652,6 @@ fn attach_feature_operations(
         if !source_content.is_empty() {
             annotations.derived(&id, "source_content");
         }
-        if let Some(annotation) = text_semantic_annotation(
-            &label.value,
-            &id,
-            &label.id,
-            u32::try_from(ir.model.semantic_annotations.len()).unwrap_or(u32::MAX),
-            &operation_payload_strings,
-        ) {
-            annotations
-                .note(&annotation.id.0, stream, label.source_offset)
-                .tag("TEXT_SEMANTIC_ANNOTATION");
-            annotations.exactness(&annotation.id.0, Exactness::Derived);
-            ir.model.semantic_annotations.push(annotation);
-        }
         let native_output = (!deletes_body).then_some(native_primary_body).flatten();
         body_writer_history.record_writer(native_output, &outputs, &id);
         ir.model.features.push(Feature {
@@ -2252,7 +2669,48 @@ fn attach_feature_operations(
             definition,
             native_ref: Some(label.id.clone()),
         });
+        if !deletes_body {
+            let result_body = native_result_body_identity(
+                body_writer_references_by_operation
+                    .get(label.id.as_str())
+                    .copied(),
+                booleans.get(label.id.as_str()).copied(),
+            );
+            if let Some((local_id, native_ref)) = result_body {
+                let key = label
+                    .id
+                    .strip_prefix("nx:feature-history:operation-label#")
+                    .unwrap_or(label.id.as_str());
+                ir.model
+                    .feature_result_topologies
+                    .push(FeatureResultTopology {
+                        id: FeatureResultTopologyId(format!(
+                            "nx:feature-history:result-topology#{key}"
+                        )),
+                        output_of: id,
+                        bodies: vec![local_id],
+                        faces: Vec::new(),
+                        edges: Vec::new(),
+                        vertices: Vec::new(),
+                        native_ref: Some(native_ref),
+                    });
+            }
+        }
     }
+}
+
+/// Select the exact native writer identity for one intermediate body result.
+/// A primary-body writer is canonical when both native forms are present. The
+/// Boolean target is independently sufficient when the primary form is absent.
+fn native_result_body_identity(
+    primary: Option<&crate::native::features::FeatureBodyReference>,
+    boolean: Option<&crate::native::features::FeatureBooleanOperation>,
+) -> Option<(String, String)> {
+    primary
+        .map(|writer| (writer.id.clone(), writer.id.clone()))
+        .or_else(|| {
+            boolean.map(|operation| (format!("{}:target", operation.id), operation.id.clone()))
+        })
 }
 
 fn attach_solved_sketch_points(
@@ -2963,25 +3421,20 @@ fn preceding_operation_dependency(
 }
 
 fn projects_neutral_feature(label: &str) -> bool {
-    label != "Container"
+    !matches!(label, "Container" | "TEXT")
 }
 
 fn text_semantic_annotation(
-    operation_kind: &str,
-    feature: &FeatureId,
     native_ref: &str,
     order: u32,
     payload_strings: &[&str],
 ) -> Option<SemanticAnnotation> {
-    if operation_kind != "TEXT" {
-        return None;
-    }
     let [text, font_family] = payload_strings else {
         return None;
     };
     Some(SemanticAnnotation {
-        id: SemanticAnnotationId(format!("{}:semantic-text", feature.0)),
-        object: feature.0.clone(),
+        id: SemanticAnnotationId(format!("{native_ref}:semantic-text")),
+        object: native_ref.to_string(),
         kind: SemanticAnnotationKind::Text,
         runtime_type: "TEXT".to_string(),
         order,
@@ -3828,9 +4281,10 @@ fn non_boolean_feature_definition(
 /// Permutation-invariant hole properties derived from one complete body partition.
 #[derive(Default)]
 struct HoleProjection {
-    pub(crate) placement: Option<HolePlacement>,
+    pub(crate) placements: Vec<HolePlacement>,
     pub(crate) diameter: Option<Length>,
     pub(crate) chamfer: Option<HoleKind>,
+    pub(crate) grouped_simple_through: bool,
 }
 
 fn non_boolean_feature_definition_with_parameters(
@@ -3866,11 +4320,6 @@ fn non_boolean_feature_definition_with_parameters(
         "DATUM_PLANE" => FeatureDefinition::DatumPlaneUnresolved,
         "POINT" => FeatureDefinition::DatumPointUnresolved,
         "DATUM_CSYS" => FeatureDefinition::DatumCoordinateSystemUnresolved,
-        "TEXT" if matches!(payload_strings, [_, _]) => FeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::Annotations,
-            children: Vec::new(),
-            active_child: None,
-        },
         "BLOCK" => FeatureDefinition::Block {
             dimensions: None,
             placement: None,
@@ -3928,7 +4377,7 @@ fn non_boolean_feature_definition_with_parameters(
             face: None,
             position: None,
             direction: None,
-            placements: hole.placement.into_iter().collect(),
+            placements: hole.placements,
             kind: hole.chamfer.unwrap_or_else(|| {
                 if simple_hole_template.is_some() {
                     HoleKind::Unresolved {
@@ -3968,17 +4417,26 @@ fn non_boolean_feature_definition_with_parameters(
             face: None,
             position: None,
             direction: None,
-            placements: hole.placement.into_iter().collect(),
-            kind: HoleKind::Unresolved {
-                form: None,
-                counterbore_diameter: None,
-                counterbore_depth: None,
-                countersink_diameter: None,
-                countersink_angle: None,
+            placements: hole.placements,
+            kind: if hole.grouped_simple_through {
+                hole.chamfer.unwrap_or(HoleKind::Simple)
+            } else {
+                HoleKind::Unresolved {
+                    form: None,
+                    counterbore_diameter: None,
+                    counterbore_depth: None,
+                    countersink_diameter: None,
+                    countersink_angle: None,
+                }
             },
-            exit_kind: None,
+            exit_kind: hole
+                .grouped_simple_through
+                .then_some(hole.chamfer)
+                .flatten(),
             diameter: hole.diameter,
-            extent: None,
+            extent: hole
+                .grouped_simple_through
+                .then_some(cadmpeg_ir::features::Termination::ThroughAll),
             bottom: None,
             taper_angle: None,
             specification: None,
@@ -4114,6 +4572,154 @@ fn simple_hole_operations(
     })
 }
 
+#[derive(Default)]
+struct HolePackageProjection {
+    internal_operations: BTreeSet<String>,
+    outputs: BTreeMap<String, Vec<BodyId>>,
+    diameters: BTreeMap<String, Length>,
+    chamfers: BTreeMap<String, HoleKind>,
+    placements: BTreeMap<String, Vec<HolePlacement>>,
+}
+
+fn hole_package_projection(
+    ir: &CadIr,
+    templates: &[crate::native::features::FeatureSimpleHoleTemplate],
+    groups: &[crate::native::features::FeatureSimpleHoleConstructionGroup],
+    uses: &[crate::native::features::FeatureHolePackageConstructionGroupUse],
+    outputs: &BTreeMap<String, Vec<BodyId>>,
+    diameters: &BTreeMap<String, Length>,
+    chamfers: &BTreeMap<String, HoleKind>,
+) -> HolePackageProjection {
+    let mut projection = HolePackageProjection::default();
+    let package_counts = uses
+        .iter()
+        .fold(BTreeMap::<&str, usize>::new(), |mut counts, use_| {
+            *counts.entry(use_.operation_label.as_str()).or_default() += 1;
+            counts
+        });
+    let group_counts = uses
+        .iter()
+        .fold(BTreeMap::<&str, usize>::new(), |mut counts, use_| {
+            *counts
+                .entry(use_.simple_hole_construction_group.as_str())
+                .or_default() += 1;
+            counts
+        });
+    for use_ in uses {
+        if package_counts.get(use_.operation_label.as_str()) != Some(&1)
+            || group_counts.get(use_.simple_hole_construction_group.as_str()) != Some(&1)
+        {
+            continue;
+        }
+        let Some(group) = groups
+            .iter()
+            .find(|group| group.id == use_.simple_hole_construction_group)
+        else {
+            continue;
+        };
+        if group.operation_labels.is_empty()
+            || group.operation_labels.iter().collect::<BTreeSet<_>>().len()
+                != group.operation_labels.len()
+            || group
+                .operation_labels
+                .iter()
+                .any(|operation| projection.internal_operations.contains(operation))
+        {
+            continue;
+        }
+        let child_templates = group
+            .operation_labels
+            .iter()
+            .map(|operation| {
+                templates
+                    .iter()
+                    .filter(|template| template.operation_label == *operation)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        if child_templates.iter().any(|matches| {
+            !matches!(matches.as_slice(), [template]
+                if template.form == crate::native::features::SimpleHoleForm::Simple
+                    && template.extent == crate::native::features::SimpleHoleExtent::Through)
+        }) {
+            continue;
+        }
+        let child_outputs = group
+            .operation_labels
+            .iter()
+            .filter_map(|operation| outputs.get(operation))
+            .collect::<Vec<_>>();
+        let Some([body]) = child_outputs.first().map(|bodies| bodies.as_slice()) else {
+            continue;
+        };
+        if child_outputs.len() != group.operation_labels.len()
+            || child_outputs
+                .iter()
+                .any(|candidate| candidate.as_slice() != [body.clone()])
+        {
+            continue;
+        }
+        let Some(diameter) = group
+            .operation_labels
+            .first()
+            .and_then(|operation| diameters.get(operation))
+            .copied()
+        else {
+            continue;
+        };
+        if group
+            .operation_labels
+            .iter()
+            .any(|operation| diameters.get(operation).copied() != Some(diameter))
+        {
+            continue;
+        }
+        let requests_chamfer = child_templates.iter().all(|matches| {
+            let template = matches[0];
+            template.start_treatment == crate::native::features::SimpleHoleEndTreatment::Chamfer
+                && template.end_treatment
+                    == crate::native::features::SimpleHoleEndTreatment::Chamfer
+        });
+        if !requests_chamfer {
+            continue;
+        }
+        let Some(chamfer) = group
+            .operation_labels
+            .first()
+            .and_then(|operation| chamfers.get(operation))
+            .copied()
+        else {
+            continue;
+        };
+        if group
+            .operation_labels
+            .iter()
+            .any(|operation| chamfers.get(operation).copied() != Some(chamfer))
+        {
+            continue;
+        }
+        projection
+            .internal_operations
+            .extend(group.operation_labels.iter().cloned());
+        projection
+            .outputs
+            .insert(use_.operation_label.clone(), vec![body.clone()]);
+        projection
+            .diameters
+            .insert(use_.operation_label.clone(), diameter);
+        projection
+            .chamfers
+            .insert(use_.operation_label.clone(), chamfer);
+        let placements = hole_axis_placements_for_body(ir, body);
+        if placements.len() == group.operation_labels.len() {
+            projection
+                .placements
+                .insert(use_.operation_label.clone(), placements);
+        }
+    }
+    projection
+}
+
 struct HoleBodyProjection {
     outputs: BTreeMap<String, Vec<BodyId>>,
     diameters: BTreeMap<String, Length>,
@@ -4175,29 +4781,38 @@ fn hole_axis_placements_for_operations(
         return BTreeMap::new();
     };
 
-    let angular_tolerance = ir.tolerances.angular.max(1e-12);
     let mut placements = BTreeMap::new();
     for (body, operations) in operations_by_body {
         let [operation] = operations.as_slice() else {
             continue;
         };
-        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+        let mut body_placements = hole_axis_placements_for_body(ir, &body);
+        if body_placements.len() != 1 {
             continue;
-        };
-        let Some(bores) = through_bore_cylinders(ir, &body_faces) else {
-            continue;
-        };
-        let [(origin, axis, _)] = bores.as_slice() else {
-            continue;
-        };
-        let Some(mut axis) = unit_vector(*axis) else {
-            continue;
+        }
+        placements.insert(operation.clone(), body_placements.remove(0));
+    }
+    placements
+}
+
+fn hole_axis_placements_for_body(ir: &CadIr, body: &BodyId) -> Vec<HolePlacement> {
+    let Some(body_faces) = connected_solid_body_faces(ir, body) else {
+        return Vec::new();
+    };
+    let Some(bores) = through_bore_cylinders(ir, &body_faces) else {
+        return Vec::new();
+    };
+    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let mut placements = Vec::new();
+    for (origin, axis, _) in bores {
+        let Some(mut axis) = unit_vector(axis) else {
+            return Vec::new();
         };
         let Some(leading) = [axis.x, axis.y, axis.z]
             .into_iter()
             .find(|component| component.abs() > angular_tolerance)
         else {
-            continue;
+            return Vec::new();
         };
         if leading < 0.0 {
             axis = Vector3::new(-axis.x, -axis.y, -axis.z);
@@ -4209,11 +4824,26 @@ fn hole_axis_placements_for_operations(
             origin.z - axial_offset * axis.z,
         );
         if !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite() {
-            continue;
+            return Vec::new();
         }
-        placements.insert(operation.clone(), HolePlacement::Axis { origin, axis });
+        placements.push(HolePlacement::Axis { origin, axis });
     }
+    placements.sort_by_key(hole_placement_key);
     placements
+}
+
+fn hole_placement_key(placement: &HolePlacement) -> [u64; 6] {
+    let HolePlacement::Axis { origin, axis } = placement else {
+        return [0; 6];
+    };
+    [
+        origin.x.to_bits(),
+        origin.y.to_bits(),
+        origin.z.to_bits(),
+        axis.x.to_bits(),
+        axis.y.to_bits(),
+        axis.z.to_bits(),
+    ]
 }
 
 /// Resolve hole operations to their explicit output bodies, or to the one
@@ -4546,7 +5176,62 @@ fn unique_simple_hole_template(
 /// decoded body image. Retain the complete feature-input-local identities when
 /// current topology cannot represent a consumed historical body, and fall back
 /// to the native expression when even the alias namespace is incomplete.
+struct FeatureBodySelection {
+    selection: BodySelection,
+    alias_roots: Option<Vec<u32>>,
+}
+
 fn feature_body_selection(
+    object_indices: &[u32],
+    body_alias_roots: &BTreeMap<u32, u32>,
+    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
+    native: String,
+) -> FeatureBodySelection {
+    let mut roots = Vec::new();
+    for index in object_indices {
+        let Some(root) = body_alias_roots.get(index) else {
+            return FeatureBodySelection {
+                selection: BodySelection::Native(native),
+                alias_roots: None,
+            };
+        };
+        if !roots.contains(root) {
+            roots.push(*root);
+        }
+    }
+    let resolved = roots
+        .iter()
+        .map(|root| {
+            let [body] = bodies_by_object_index.get(root)?.as_slice() else {
+                return None;
+            };
+            Some(body.clone())
+        })
+        .collect::<Option<Vec<_>>>();
+    if let Some(bodies) =
+        resolved.filter(|bodies| bodies.iter().collect::<BTreeSet<_>>().len() == bodies.len())
+    {
+        return FeatureBodySelection {
+            selection: BodySelection::Resolved { bodies, native },
+            alias_roots: Some(roots),
+        };
+    }
+    FeatureBodySelection {
+        selection: BodySelection::Local {
+            bodies: roots
+                .iter()
+                .map(|root| format!("nx:om-body-object#{root}"))
+                .collect(),
+            native,
+        },
+        alias_roots: Some(roots),
+    }
+}
+
+/// Resolve one complete body set when possible. Otherwise retain every exact
+/// input-local object identity. A body set needs no cross-role disjointness
+/// proof, so an identity outside the segment alias table remains its own root.
+fn feature_body_set_selection(
     object_indices: &[u32],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
@@ -4554,11 +5239,9 @@ fn feature_body_selection(
 ) -> BodySelection {
     let mut roots = Vec::new();
     for index in object_indices {
-        let Some(root) = body_alias_roots.get(index) else {
-            return BodySelection::Native(native);
-        };
-        if !roots.contains(root) {
-            roots.push(*root);
+        let root = body_alias_roots.get(index).copied().unwrap_or(*index);
+        if !roots.contains(&root) {
+            roots.push(root);
         }
     }
     let resolved = roots
@@ -4577,7 +5260,7 @@ fn feature_body_selection(
     }
     BodySelection::Local {
         bodies: roots
-            .into_iter()
+            .iter()
             .map(|root| format!("nx:om-body-object#{root}"))
             .collect(),
         native,
@@ -4585,19 +5268,17 @@ fn feature_body_selection(
 }
 
 fn atomic_disjoint_body_selections(
-    left: BodySelection,
-    right: BodySelection,
+    left: FeatureBodySelection,
+    right: FeatureBodySelection,
 ) -> (BodySelection, BodySelection) {
-    let complete = match (&left, &right) {
-        (
-            BodySelection::Resolved { bodies: left, .. },
-            BodySelection::Resolved { bodies: right, .. },
-        ) => !left.iter().any(|body| right.contains(body)),
-        (BodySelection::Local { bodies: left, .. }, BodySelection::Local { bodies: right, .. }) => {
-            !left.iter().any(|body| right.contains(body))
-        }
-        _ => false,
-    };
+    let complete = left.alias_roots.as_ref().is_some_and(|left| {
+        right
+            .alias_roots
+            .as_ref()
+            .is_some_and(|right| !left.iter().any(|root| right.contains(root)))
+    });
+    let left = left.selection;
+    let right = right.selection;
     if complete {
         return (left, right);
     }
@@ -4665,14 +5346,91 @@ fn delete_body_feature_definition(
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Option<FeatureDefinition> {
     let body = body_object_index?;
+    let selection = feature_body_selection(
+        &[body],
+        body_alias_roots,
+        bodies_by_object_index,
+        format!("nx:om-object-index#{body}"),
+    )
+    .selection;
     Some(FeatureDefinition::DeleteBody {
-        bodies: feature_body_selection(
-            &[body],
-            body_alias_roots,
-            bodies_by_object_index,
-            format!("nx:om-object-index#{body}"),
-        ),
+        // A typed DELETE primary-body field names one exact feature input. It
+        // needs no cross-selection alias proof when it has no segment binding.
+        bodies: match selection {
+            BodySelection::Native(native) => BodySelection::Local {
+                bodies: vec![format!("nx:om-body-object#{body}")],
+                native,
+            },
+            selection => selection,
+        },
         mode: BodyRetentionMode::DeleteSelected,
+    })
+}
+
+/// Project one input-store body as the exact feature-local source of an extract.
+/// Multiple or absent body uses do not establish a source identity.
+fn extract_body_feature_definition(
+    offset_store_bodies: &[(u32, String)],
+) -> Option<FeatureDefinition> {
+    let [(object_index, data_block)] = offset_store_bodies else {
+        return None;
+    };
+    Some(FeatureDefinition::ExtractBody {
+        source: BodySelection::Local {
+            bodies: vec![data_block.clone()],
+            native: format!("nx:om-object-index#{object_index}"),
+        },
+    })
+}
+
+/// Project exact feature-local input-store identities for a trim target and
+/// every complete, distinct tool operand. Retained-side semantics stay unresolved.
+fn offset_store_trim_body_feature_definition(
+    offset_store_bodies: &[(u32, String)],
+    operands: &[&crate::native::features::FeatureOperationBodyOperand],
+) -> Option<FeatureDefinition> {
+    let [(object_index, data_block)] = offset_store_bodies else {
+        return None;
+    };
+    let tools = if operands.is_empty()
+        || operands.iter().any(|operand| {
+            operand.body_object_index != *object_index
+                || operand.operand_object_index == *object_index
+                || operand.operand_data_block.is_none()
+        }) {
+        BodySelection::Unresolved
+    } else {
+        let mut operand_indices = BTreeSet::new();
+        if operands
+            .iter()
+            .any(|operand| !operand_indices.insert(operand.operand_object_index))
+        {
+            BodySelection::Unresolved
+        } else {
+            let tool_data_blocks = operands
+                .iter()
+                .map(|operand| operand.operand_data_block.clone())
+                .collect::<Option<Vec<_>>>()?;
+            BodySelection::Local {
+                bodies: tool_data_blocks,
+                native: format!(
+                    "nx:om-object-indices#{}",
+                    operands
+                        .iter()
+                        .map(|operand| operand.operand_object_index.to_string())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                ),
+            }
+        }
+    };
+    Some(FeatureDefinition::TrimBodies {
+        targets: BodySelection::Local {
+            bodies: vec![data_block.clone()],
+            native: format!("nx:om-object-index#{object_index}"),
+        },
+        tools,
+        keep: BodyTrimSide::Unresolved,
     })
 }
 
@@ -4687,7 +5445,7 @@ fn sew_body_feature_definition(
             .chain(operands.iter().map(|operand| operand.operand_object_index))
             .collect::<Vec<_>>();
         FeatureDefinition::SewBodies {
-            bodies: feature_body_selection(
+            bodies: feature_body_set_selection(
                 &object_indices,
                 body_alias_roots,
                 bodies_by_object_index,
@@ -5097,6 +5855,118 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
+        let definition = crate::native::om::PartColorDefinition {
+            id: "nx:test:color#201".into(),
+            color_table: "nx:test:table#0".into(),
+            color_index: 201,
+            name: "Iron Gray".into(),
+            rgb: [0.25, 0.5, 0.75],
+            raw_color_index: vec![0x80, 200],
+            raw_components: [vec![1], vec![1], vec![1]],
+            source_offset: 10,
+            component_source_offsets: [11, 12, 13],
+        };
+        let assignment = crate::native::om::RmDisplayColorAssignment {
+            id: "nx:test:assignment#0".into(),
+            ordinal: 0,
+            encoding: crate::native::om::RmDisplayColorAssignmentEncoding::Linked {
+                object_index: 42,
+                raw_object_index: vec![42],
+                object_index_source_offset: 22,
+                discriminator: 0x16,
+                target_index: 7,
+                raw_target_index: vec![7],
+                target_index_source_offset: 23,
+                indices: [1, 2, 3],
+                raw_indices: [vec![1], vec![2], vec![3]],
+                index_source_offsets: [24, 25, 26],
+                flag: 3,
+                mode: 4,
+            },
+            target_object_id: Some("nx:test:object-id#7".into()),
+            color_index: 201,
+            color_definition: definition.id.clone(),
+            raw_color_index: vec![0x80, 201],
+            source_entry: "/Root/FastLoad/RMFastLoad".into(),
+            source_offset: 20,
+            row_source_offset: 21,
+        };
+        let record = crate::native::parasolid::ParasolidDeltasRecord {
+            id: "nx:test:deltas#0".into(),
+            stream_ordinal: 1,
+            family: "FACE".into(),
+            kind: 14,
+            xmt: 99,
+            node_id: Some(42),
+            references: Vec::new(),
+            position: None,
+            byte_len: 1,
+            inflated_offset: 0,
+        };
+        let face_ids = BTreeSet::from(["nx:s0:face#99".to_string()]);
+        let pairs = BTreeMap::from([(0, vec![1])]);
+        assert_eq!(
+            resolve_rm_face_colors(
+                &face_ids,
+                std::slice::from_ref(&assignment),
+                std::slice::from_ref(&definition),
+                std::slice::from_ref(&record),
+                &pairs,
+            ),
+            vec![(
+                "nx:s0:face#99".into(),
+                Color {
+                    r: 0.25,
+                    g: 0.5,
+                    b: 0.75,
+                    a: 1.0,
+                },
+            )]
+        );
+
+        let mut target_assignment = assignment.clone();
+        target_assignment.encoding = crate::native::om::RmDisplayColorAssignmentEncoding::Target {
+            target_index: 7,
+            raw_target_index: vec![7],
+            target_index_source_offset: 23,
+            indices: [1, 2, 3],
+            raw_indices: [vec![1], vec![2], vec![3]],
+            index_source_offsets: [24, 25, 26],
+            mode: 4,
+        };
+        assert_eq!(
+            resolve_rm_face_colors(
+                &face_ids,
+                &[assignment.clone(), target_assignment],
+                std::slice::from_ref(&definition),
+                std::slice::from_ref(&record),
+                &pairs,
+            ),
+            vec![(
+                "nx:s0:face#99".into(),
+                Color {
+                    r: 0.25,
+                    g: 0.5,
+                    b: 0.75,
+                    a: 1.0,
+                },
+            )]
+        );
+
+        let mut conflicting = assignment;
+        conflicting.color_definition = "nx:test:color#other".into();
+        assert!(resolve_rm_face_colors(
+            &face_ids,
+            &[conflicting],
+            &[definition],
+            &[record],
+            &pairs,
+        )
+        .is_empty());
+    }
+
     fn hole_diameters_for_operations(
         ir: &CadIr,
         operations: &[String],
@@ -5117,6 +5987,81 @@ mod tests {
             return BTreeMap::new();
         };
         hole_diameters_for_operations(ir, &operations, outputs)
+    }
+
+    #[test]
+    fn exact_hole_package_owns_common_internal_simple_holes() {
+        use crate::native::features::{
+            FeatureHolePackageConstructionGroupUse, FeatureSimpleHoleConstructionGroup,
+            FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
+            SimpleHoleForm,
+        };
+        use cadmpeg_ir::features::{Angle, HoleKind, Length};
+        use cadmpeg_ir::ids::BodyId;
+
+        let operations = ["simple-a".to_string(), "simple-b".to_string()];
+        let templates = operations
+            .iter()
+            .map(|operation| FeatureSimpleHoleTemplate {
+                id: format!("template-{operation}"),
+                operation_label: operation.clone(),
+                payload_string: format!("string-{operation}"),
+                family: SimpleHoleFamily::GeneralHole,
+                form: SimpleHoleForm::Simple,
+                extent: SimpleHoleExtent::Through,
+                start_treatment: SimpleHoleEndTreatment::Chamfer,
+                end_treatment: SimpleHoleEndTreatment::Chamfer,
+            })
+            .collect::<Vec<_>>();
+        let group = FeatureSimpleHoleConstructionGroup {
+            id: "group".into(),
+            first_data_blocks: ["a".into(), "b".into()],
+            second_data_blocks: ["c".into(), "d".into()],
+            operation_labels: operations.to_vec(),
+            scalar_lanes: vec!["lane-a".into(), "lane-b".into()],
+            block_references: vec!["blocks-a".into(), "blocks-b".into()],
+        };
+        let use_ = FeatureHolePackageConstructionGroupUse {
+            id: "use".into(),
+            operation_label: "package".into(),
+            construction_group_lane: "package-lane".into(),
+            simple_hole_construction_group: group.id.clone(),
+            source_offset: 0,
+        };
+        let body = BodyId("body".into());
+        let outputs = operations
+            .iter()
+            .map(|operation| (operation.clone(), vec![body.clone()]))
+            .collect();
+        let diameters = operations
+            .iter()
+            .map(|operation| (operation.clone(), Length(5.1)))
+            .collect();
+        let chamfer = HoleKind::Chamfer {
+            diameter: Length(7.1),
+            angle: Angle(std::f64::consts::FRAC_PI_2),
+        };
+        let chamfers = operations
+            .iter()
+            .map(|operation| (operation.clone(), chamfer))
+            .collect();
+
+        let projection = super::hole_package_projection(
+            &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
+            &templates,
+            &[group],
+            &[use_],
+            &outputs,
+            &diameters,
+            &chamfers,
+        );
+        assert_eq!(
+            projection.internal_operations,
+            operations.into_iter().collect()
+        );
+        assert_eq!(projection.outputs["package"], [body]);
+        assert_eq!(projection.diameters["package"], Length(5.1));
+        assert_eq!(projection.chamfers["package"], chamfer);
     }
 
     #[test]
@@ -5505,6 +6450,10 @@ mod tests {
             raw_indices: [vec![0], vec![0x81, 0x5f], vec![0x80, 0xab]],
             marker: [1, 3, 2],
             state: [1, 2, 1, 1, 1, 0, 0, 0],
+            legacy_inactive_modules: Some(true),
+            modifies_parasolid_data: Some(true),
+            split_tracking_data: [0, 0],
+            group_count: 0,
             local_ordinal: 41,
             raw_local_ordinal: vec![0x29],
             object_index: Some(65),
@@ -5796,6 +6745,45 @@ mod tests {
     }
 
     #[test]
+    fn boolean_target_is_an_independent_intermediate_result_writer() {
+        use crate::native::features::{
+            FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation,
+        };
+
+        let boolean = FeatureBooleanOperation {
+            id: "nx:test:boolean#0".into(),
+            operation_label: "nx:test:operation#0".into(),
+            kind: FeatureBooleanKind::Unite,
+            target_object_index: 7,
+            raw_target_object_index: vec![7],
+            target_source_offset: 1,
+            tool_object_indices: vec![8],
+            raw_tool_object_indices: vec![vec![8]],
+            tool_source_offsets: vec![2],
+            source_offset: 0,
+        };
+        assert_eq!(
+            super::native_result_body_identity(None, Some(&boolean)),
+            Some((
+                "nx:test:boolean#0:target".into(),
+                "nx:test:boolean#0".into(),
+            ))
+        );
+
+        let primary = FeatureBodyReference {
+            id: "nx:test:primary#0".into(),
+            operation_label: boolean.operation_label.clone(),
+            body_object_index: 7,
+            raw_body_object_index: vec![7],
+            source_offset: 3,
+        };
+        assert_eq!(
+            super::native_result_body_identity(Some(&primary), Some(&boolean)),
+            Some(("nx:test:primary#0".into(), "nx:test:primary#0".into(),))
+        );
+    }
+
+    #[test]
     fn topology_inferred_hole_axis_is_not_an_authored_direction() {
         use cadmpeg_ir::features::{FeatureDefinition, HolePlacement};
         use cadmpeg_ir::math::{Point3, Vector3};
@@ -5808,10 +6796,10 @@ mod tests {
                     None,
                     None,
                     super::HoleProjection {
-                        placement: Some(HolePlacement::Axis {
+                        placements: vec![HolePlacement::Axis {
                             origin: Point3::new(1.0, 2.0, 3.0),
                             axis: Vector3::new(0.0, 0.0, 1.0),
-                        }),
+                        }],
                         ..super::HoleProjection::default()
                     },
                     std::collections::BTreeMap::new(),
@@ -6012,7 +7000,8 @@ mod tests {
                 &roots,
                 &BTreeMap::new(),
                 "nx:om-object-indices#94,122".to_string(),
-            ),
+            )
+            .selection,
             BodySelection::Local {
                 bodies: vec![
                     "nx:om-body-object#94".to_string(),
@@ -6027,7 +7016,8 @@ mod tests {
                 &roots,
                 &BTreeMap::new(),
                 "nx:om-object-indices#94,123".to_string(),
-            ),
+            )
+            .selection,
             BodySelection::Native(_)
         ));
         let aliases = BTreeMap::from([(94, 94), (150, 94)]);
@@ -6037,7 +7027,8 @@ mod tests {
                 &aliases,
                 &BTreeMap::new(),
                 "nx:om-object-indices#94,150".to_string(),
-            ),
+            )
+            .selection,
             BodySelection::Local {
                 bodies: vec!["nx:om-body-object#94".to_string()],
                 native: "nx:om-object-indices#94,150".to_string(),
@@ -6050,7 +7041,8 @@ mod tests {
                 &roots,
                 &bindings,
                 "nx:om-object-index#94".to_string(),
-            ),
+            )
+            .selection,
             BodySelection::Resolved {
                 bodies: vec![first.clone()],
                 native: "nx:om-object-index#94".to_string(),
@@ -6058,6 +7050,134 @@ mod tests {
         );
         assert_eq!(super::feature_body_outputs(94, &bindings), vec![first]);
         assert!(super::feature_body_outputs(123, &bindings).is_empty());
+    }
+
+    #[test]
+    fn segment_bound_bodies_form_the_exact_retained_history_input() {
+        use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+        use cadmpeg_ir::ids::{BodyId, RegionId};
+        use cadmpeg_ir::topology::{Body, BodyKind};
+
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let bound = BodyId("nx:s2:body#3".to_string());
+        ir.model.bodies.extend([
+            Body {
+                id: bound.clone(),
+                kind: BodyKind::Solid,
+                regions: vec![RegionId("region-2".to_string())],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+            Body {
+                id: BodyId("nx:s3:body#4".to_string()),
+                kind: BodyKind::Solid,
+                regions: vec![RegionId("region-3".to_string())],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+        ]);
+        let binding = crate::native::segments::SegmentBodyBinding {
+            id: "nx:segment-body-bindings:binding#0".to_string(),
+            stream_link: "nx:segment-stream-links:link#0".to_string(),
+            stream_ordinal: 2,
+            stream_kind: "partition".to_string(),
+            body_object_index: 10,
+            body_alias_object_index: 11,
+            stream_role: 19,
+            source_offset: 100,
+        };
+        let mut annotations = AnnotationBuilder::new();
+        let stream = annotations.stream("nx:container");
+
+        let id =
+            super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, stream)
+                .expect("one emitted body has an exact segment binding");
+
+        assert_eq!(
+            id,
+            FeatureId("nx:feature-history:feature#initial-bodies".into())
+        );
+        assert_eq!(ir.model.features[0].outputs, std::slice::from_ref(&bound));
+        assert_eq!(
+            ir.model.features[0].definition,
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Resolved {
+                    bodies: vec![bound.clone()],
+                    native: "nx:segment-body-bindings".to_string(),
+                },
+            }
+        );
+        assert_eq!(
+            crate::evaluation::evaluate_saved_body_census(&ir),
+            crate::evaluation::BodyCensusEvaluation::Mismatch {
+                rederived: vec![bound],
+                saved: ir.model.bodies.iter().map(|body| body.id.clone()).collect(),
+            }
+        );
+    }
+
+    #[test]
+    fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
+        use cadmpeg_ir::features::{
+            BodySelection, BooleanOp, Feature, FeatureDefinition, FeatureId,
+        };
+        use cadmpeg_ir::ids::BodyId;
+        use std::collections::BTreeMap;
+
+        let operation = crate::native::features::FeatureBooleanOperation {
+            id: "boolean#0".to_string(),
+            operation_label: "operation#0".to_string(),
+            kind: crate::native::features::FeatureBooleanKind::Subtract,
+            target_object_index: 94,
+            raw_target_object_index: vec![94],
+            target_source_offset: 0,
+            tool_object_indices: vec![122],
+            raw_tool_object_indices: vec![vec![122]],
+            tool_source_offsets: vec![1],
+            source_offset: 0,
+        };
+        let body = BodyId("nx:s18:body#3".to_string());
+        let definition = super::boolean_feature_definition(
+            &operation,
+            &BTreeMap::from([(94, 94), (122, 122)]),
+            &BTreeMap::from([(94, vec![body.clone()])]),
+        );
+
+        assert_eq!(
+            definition,
+            FeatureDefinition::Combine {
+                target: BodySelection::Resolved {
+                    bodies: vec![body.clone()],
+                    native: "nx:om-object-index#94".to_string(),
+                },
+                tools: BodySelection::Local {
+                    bodies: vec!["nx:om-body-object#122".to_string()],
+                    native: "nx:om-object-indices#122".to_string(),
+                },
+                op: BooleanOp::Cut,
+                keep_tools: false,
+            }
+        );
+        let feature = Feature {
+            id: FeatureId("feature".to_string()),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: vec![body],
+            definition,
+            native_ref: None,
+        };
+        assert!(!crate::decode::combine_definition_is_incomplete(&feature));
     }
 
     #[test]
@@ -6097,6 +7217,22 @@ mod tests {
                 gap_tolerance: None,
             })
         );
+        assert!(matches!(
+            super::sew_body_feature_definition(
+                736,
+                &references,
+                &roots,
+                &BTreeMap::new(),
+            ),
+            Some(FeatureDefinition::SewBodies {
+                bodies: BodySelection::Local { bodies, .. },
+                ..
+            }) if bodies == [
+                "nx:om-body-object#736",
+                "nx:om-body-object#20",
+                "nx:om-body-object#30",
+            ]
+        ));
         let resolved = BTreeMap::from([
             (10, vec![BodyId("target".to_string())]),
             (20, vec![BodyId("first-tool".to_string())]),
@@ -6154,8 +7290,92 @@ mod tests {
             })
         );
         assert_eq!(
+            super::delete_body_feature_definition(Some(72), &roots, &BTreeMap::new()),
+            Some(FeatureDefinition::DeleteBody {
+                bodies: BodySelection::Local {
+                    bodies: vec!["nx:om-body-object#72".to_string()],
+                    native: "nx:om-object-index#72".to_string(),
+                },
+                mode: BodyRetentionMode::DeleteSelected,
+            })
+        );
+        assert_eq!(
             super::delete_body_feature_definition(None, &roots, &BTreeMap::new()),
             None
+        );
+    }
+
+    #[test]
+    fn nx_extract_body_requires_one_exact_input_store_body() {
+        use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+
+        let body = (736, "nx:om-data-blocks-2:block#736".to_string());
+        assert_eq!(
+            super::extract_body_feature_definition(std::slice::from_ref(&body)),
+            Some(FeatureDefinition::ExtractBody {
+                source: BodySelection::Local {
+                    bodies: vec!["nx:om-data-blocks-2:block#736".to_string()],
+                    native: "nx:om-object-index#736".to_string(),
+                },
+            })
+        );
+        assert!(super::extract_body_feature_definition(&[]).is_none());
+        assert!(super::extract_body_feature_definition(&[body.clone(), body]).is_none());
+    }
+
+    #[test]
+    fn nx_trim_body_retains_exact_input_store_target_and_tools() {
+        use cadmpeg_ir::features::{BodySelection, BodyTrimSide, FeatureDefinition};
+
+        let body = (114, "nx:om-data-blocks-2:block#114".to_string());
+        let operand = crate::native::features::FeatureOperationBodyOperand {
+            id: "operand#0".to_string(),
+            operation_label: "operation#0".to_string(),
+            body_object_index: 114,
+            body_reference_ordinal: 0,
+            ordinal: 0,
+            operand_object_index: 113,
+            raw_operand_object_index: vec![113],
+            operand_data_block: Some("nx:om-data-blocks-2:block#113".to_string()),
+            segment_body_bindings: Vec::new(),
+            source_offset: 0,
+        };
+        assert_eq!(
+            super::offset_store_trim_body_feature_definition(
+                std::slice::from_ref(&body),
+                &[&operand],
+            ),
+            Some(FeatureDefinition::TrimBodies {
+                targets: BodySelection::Local {
+                    bodies: vec!["nx:om-data-blocks-2:block#114".to_string()],
+                    native: "nx:om-object-index#114".to_string(),
+                },
+                tools: BodySelection::Local {
+                    bodies: vec!["nx:om-data-blocks-2:block#113".to_string()],
+                    native: "nx:om-object-indices#113".to_string(),
+                },
+                keep: BodyTrimSide::Unresolved,
+            })
+        );
+        assert!(super::offset_store_trim_body_feature_definition(&[], &[&operand]).is_none());
+        assert!(super::offset_store_trim_body_feature_definition(
+            &[body.clone(), body],
+            &[&operand],
+        )
+        .is_none());
+        assert_eq!(
+            super::offset_store_trim_body_feature_definition(
+                std::slice::from_ref(&(114, "nx:om-data-blocks-2:block#114".to_string())),
+                &[],
+            ),
+            Some(FeatureDefinition::TrimBodies {
+                targets: BodySelection::Local {
+                    bodies: vec!["nx:om-data-blocks-2:block#114".to_string()],
+                    native: "nx:om-object-index#114".to_string(),
+                },
+                tools: BodySelection::Unresolved,
+                keep: BodyTrimSide::Unresolved,
+            })
         );
     }
 
@@ -6322,23 +7542,9 @@ mod tests {
                 None,
                 None,
             ),
-            cadmpeg_ir::features::FeatureDefinition::TreeNode {
-                role: cadmpeg_ir::features::FeatureTreeNodeRole::Annotations,
-                ref children,
-                active_child: None,
-            } if children.is_empty()
-        ));
-        assert!(matches!(
-            super::non_boolean_feature_definition("TEXT", &["annotation"], None, None, None),
             cadmpeg_ir::features::FeatureDefinition::Native { .. }
         ));
-        assert!(matches!(
-            super::non_boolean_feature_definition("TEXT", &["", ""], None, None, None),
-            cadmpeg_ir::features::FeatureDefinition::TreeNode {
-                role: cadmpeg_ir::features::FeatureTreeNodeRole::Annotations,
-                ..
-            }
-        ));
+        assert!(!super::projects_neutral_feature("TEXT"));
         assert!(matches!(
             super::non_boolean_feature_definition(
                 "BLOCK",
@@ -6369,16 +7575,9 @@ mod tests {
 
     #[test]
     fn nx_text_payload_projects_semantic_text_and_font_family() {
-        let feature = cadmpeg_ir::features::FeatureId("feature#text".to_string());
-        let annotation = super::text_semantic_annotation(
-            "TEXT",
-            &feature,
-            "nx:text#1",
-            7,
-            &["plate label", "Arial"],
-        )
-        .expect("valid text annotation");
-        assert_eq!(annotation.object, feature.0);
+        let annotation = super::text_semantic_annotation("nx:text#1", 7, &["plate label", "Arial"])
+            .expect("valid text annotation");
+        assert_eq!(annotation.object, "nx:text#1");
         assert_eq!(
             annotation.kind,
             cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text
@@ -6388,24 +7587,15 @@ mod tests {
         assert_eq!(annotation.native_ref, "nx:text#1");
         assert_eq!(annotation.order, 7);
 
-        let empty =
-            super::text_semantic_annotation("TEXT", &feature, "nx:text#empty", 8, &["", ""])
-                .expect("empty text fields remain a valid annotation");
+        let empty = super::text_semantic_annotation("nx:text#empty", 8, &["", ""])
+            .expect("empty text fields remain a valid annotation");
         assert_eq!(empty.text, [""]);
         assert_eq!(empty.parameters["font_family"], "");
 
         assert!(
-            super::text_semantic_annotation("BLOCK", &feature, "nx:block#1", 0, &["10", "20"],)
+            super::text_semantic_annotation("nx:text#2", 0, &["ambiguous", "Arial", "extra"],)
                 .is_none()
         );
-        assert!(super::text_semantic_annotation(
-            "TEXT",
-            &feature,
-            "nx:text#2",
-            0,
-            &["ambiguous", "Arial", "extra"],
-        )
-        .is_none());
     }
 
     #[test]
@@ -6827,6 +8017,8 @@ mod tests {
             operation_label: operation.to_string(),
             first_data_blocks: ["block#231".to_string(), "block#232".to_string()],
             second_data_blocks: ["block#233".to_string(), "block#234".to_string()],
+            first_reference_prefix: None,
+            second_reference_prefix: None,
             first_reference_offsets: [20, 22],
             second_reference_offsets: [40, 42],
         };

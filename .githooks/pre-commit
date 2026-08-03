@@ -48,8 +48,12 @@ elif [ -n "$scope" ]; then
   pkg_flags=$(printf ' -p %s' $scope)
   echo "pre-commit: cargo clippy$pkg_flags -- -D warnings -W missing-docs"
   cargo clippy $pkg_flags -- -D warnings -W missing-docs
-  echo "pre-commit: cargo test$pkg_flags --lib --bins --tests"
-  cargo test $pkg_flags --lib --bins --tests
+  # `--all-targets` rather than `--lib --bins --tests`, because `--lib` is an
+  # error when no selected package has a library target. A commit that stages
+  # only `crates/cadmpeg`, which is a binary-only package, could not pass the
+  # gate at all.
+  echo "pre-commit: cargo test$pkg_flags --all-targets"
+  cargo test $pkg_flags --all-targets
 else
   echo "pre-commit: staged Rust/Cargo files belong to no workspace crate; skipping"
 fi

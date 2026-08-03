@@ -288,8 +288,11 @@ enum Command {
         #[arg(long)]
         json: bool,
         /// Write a versioned JSON command report to this file.
-        #[arg(long)]
+        #[arg(short = 'o', long, visible_alias = "output")]
         report: Option<PathBuf>,
+        /// Replace an existing report file.
+        #[arg(long)]
+        force: bool,
         /// Resource-limit profile applied during inspection.
         #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
         limits: LimitProfile,
@@ -325,8 +328,11 @@ enum Command {
         #[arg(long)]
         json: bool,
         /// Write a versioned JSON command report to this file.
-        #[arg(long)]
+        #[arg(short = 'o', long, visible_alias = "output")]
         report: Option<PathBuf>,
+        /// Replace an existing report file.
+        #[arg(long)]
+        force: bool,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
@@ -380,8 +386,11 @@ enum Command {
         #[arg(long)]
         json: bool,
         /// Write a versioned JSON command report to this file.
-        #[arg(long)]
+        #[arg(short = 'o', long, visible_alias = "output")]
         report: Option<PathBuf>,
+        /// Replace an existing report file.
+        #[arg(long)]
+        force: bool,
         #[command(flatten)]
         decode: DecodeArgs,
     },
@@ -430,6 +439,7 @@ fn main() -> ExitCode {
             input,
             json,
             report,
+            force,
             limits,
             input_args,
             bytes,
@@ -443,6 +453,7 @@ fn main() -> ExitCode {
                     input_args.forced(),
                     json,
                     report.as_deref(),
+                    force,
                     limits.limits(),
                 )
                 .map(|()| ExitCode::SUCCESS)
@@ -469,6 +480,7 @@ fn main() -> ExitCode {
             input,
             json,
             report,
+            force,
             input_args,
             decode,
         } => commands::validate_cmd(
@@ -478,6 +490,7 @@ fn main() -> ExitCode {
             &decode,
             json,
             report.as_deref(),
+            force,
         )
         .map(|()| ExitCode::SUCCESS),
         Command::Export {
@@ -517,6 +530,7 @@ fn main() -> ExitCode {
             input_format_b,
             json,
             report,
+            force,
             decode,
         } => commands::diff(
             &registry,
@@ -531,6 +545,7 @@ fn main() -> ExitCode {
             &decode,
             json,
             report.as_deref(),
+            force,
         ),
         Command::Convert {
             input,

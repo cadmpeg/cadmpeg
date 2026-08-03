@@ -628,6 +628,197 @@ pub struct DataBlockTargetIndexRow {
     pub index_source_offsets: [u64; 3],
 }
 
+/// Exact row encoding that selects `UGS::RM_creation_display_data` in an
+/// `RMFastLoad` record area.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RmCreationDisplayDataEncoding {
+    /// Self-framed index row whose fourth post-flag index selects the class.
+    Index {
+        flag: u8,
+        indices: [u32; 4],
+        raw_indices: [Vec<u8>; 4],
+        index_source_offsets: [u64; 4],
+    },
+    /// Self-framed linked row whose third post-marker index selects the class.
+    Linked {
+        discriminator: u8,
+        target_index: u32,
+        raw_target_index: Vec<u8>,
+        target_index_source_offset: u64,
+        indices: [u32; 3],
+        raw_indices: [Vec<u8>; 3],
+        index_source_offsets: [u64; 3],
+        flag: u8,
+        mode: u8,
+    },
+    /// Self-framed target row whose third post-marker index selects the class.
+    Target {
+        target_index: u32,
+        raw_target_index: Vec<u8>,
+        target_index_source_offset: u64,
+        indices: [u32; 3],
+        raw_indices: [Vec<u8>; 3],
+        index_source_offsets: [u64; 3],
+        mode: u8,
+    },
+}
+
+/// Lossless class-selected creation-display relation in `RMFastLoad`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RmCreationDisplayDataRelation {
+    /// Globally unique relation identity.
+    pub id: String,
+    /// Zero-based relation order in ascending source order.
+    pub ordinal: u32,
+    /// Leading compact index when the row encoding carries one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_index: Option<u32>,
+    /// Exact serialized leading-index token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_first_index: Option<Vec<u8>>,
+    /// Absolute file offset of the leading compact index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_index_source_offset: Option<u64>,
+    /// Exact registered class name.
+    pub class_name: String,
+    /// Target in the native `class_definitions` arena.
+    pub class_definition: String,
+    /// Exact admitted row encoding.
+    pub encoding: RmCreationDisplayDataEncoding,
+    /// Member addressed by the target index when the row carries one and the
+    /// index resolves in the `RMFastLoad` object-ID table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_object_id: Option<String>,
+    /// Directory entry containing the relation.
+    pub source_entry: String,
+    /// Absolute file offset of the opening row discriminator.
+    pub source_offset: u64,
+}
+
+/// Complete named NX part palette for color indices 1 through 216.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PartColorTable {
+    /// Globally unique table identity.
+    pub id: String,
+    /// Registered `UGS::COLOR_table` declaration in `class_definitions`.
+    pub class_definition: String,
+    /// Name of the separately encoded background color.
+    pub background_name: String,
+    /// Normalized background RGB components.
+    pub background_rgb: [f32; 3],
+    /// Exact serialized background component atoms.
+    pub raw_background_components: [Vec<u8>; 3],
+    /// Absolute file offsets of the background component atoms.
+    pub background_component_source_offsets: [u64; 3],
+    /// Ordered entries in the native `part_color_definitions` arena.
+    pub definitions: Vec<String>,
+    /// Directory entry containing the table.
+    pub source_entry: String,
+    /// Absolute file offset of the counted name roster.
+    pub source_offset: u64,
+}
+
+/// One named RGB entry from an NX part palette.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PartColorDefinition {
+    /// Globally unique color-definition identity.
+    pub id: String,
+    /// Owning table in the native `part_color_tables` arena.
+    pub color_table: String,
+    /// One-based NX color index.
+    pub color_index: u16,
+    /// Serialized color name.
+    pub name: String,
+    /// Normalized RGB components.
+    pub rgb: [f32; 3],
+    /// Exact serialized index token.
+    pub raw_color_index: Vec<u8>,
+    /// Exact serialized component atoms.
+    pub raw_components: [Vec<u8>; 3],
+    /// Absolute file offset of the opening `05` marker.
+    pub source_offset: u64,
+    /// Absolute file offsets of the three component atoms.
+    pub component_source_offsets: [u64; 3],
+}
+
+/// Exact row encoding carrying one `RMFastLoad` display-color assignment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RmDisplayColorAssignmentEncoding {
+    /// Linked row with an unresolved leading object identity.
+    Linked {
+        /// Unresolved leading object identity.
+        object_index: u32,
+        /// Exact leading-object token.
+        raw_object_index: Vec<u8>,
+        /// Absolute leading-object token offset.
+        object_index_source_offset: u64,
+        /// Row discriminator.
+        discriminator: u8,
+        /// Target index.
+        target_index: u32,
+        /// Exact target-index token.
+        raw_target_index: Vec<u8>,
+        /// Absolute target-index token offset.
+        target_index_source_offset: u64,
+        /// Three post-marker indices.
+        indices: [u32; 3],
+        /// Exact post-marker index tokens.
+        raw_indices: [Vec<u8>; 3],
+        /// Absolute post-marker token offsets.
+        index_source_offsets: [u64; 3],
+        /// Row flag.
+        flag: u8,
+        /// Row mode.
+        mode: u8,
+    },
+    /// Target-index row without a leading object identity.
+    Target {
+        /// Target index.
+        target_index: u32,
+        /// Exact target-index token.
+        raw_target_index: Vec<u8>,
+        /// Absolute target-index token offset.
+        target_index_source_offset: u64,
+        /// Three post-marker indices.
+        indices: [u32; 3],
+        /// Exact post-marker index tokens.
+        raw_indices: [Vec<u8>; 3],
+        /// Absolute post-marker token offsets.
+        index_source_offsets: [u64; 3],
+        /// Row mode.
+        mode: u8,
+    },
+}
+
+/// Explicit color assignment carried by one complete `RMFastLoad` row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RmDisplayColorAssignment {
+    /// Globally unique assignment identity.
+    pub id: String,
+    /// Zero-based source order.
+    pub ordinal: u32,
+    /// Complete self-framed row carrying the color token.
+    pub encoding: RmDisplayColorAssignmentEncoding,
+    /// Member addressed by the row target index when it resolves in the
+    /// `RMFastLoad` object-ID table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_object_id: Option<String>,
+    /// One-based part palette index.
+    pub color_index: u16,
+    /// Target in `part_color_definitions`.
+    pub color_definition: String,
+    /// Exact color-index token.
+    pub raw_color_index: Vec<u8>,
+    /// Owning directory entry.
+    pub source_entry: String,
+    /// Absolute color-token offset.
+    pub source_offset: u64,
+    /// Absolute row-opener offset.
+    pub row_source_offset: u64,
+}
+
 /// Complete composite table spanning linked and target-index row grammars.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataBlockColumnIndexTable {
@@ -2216,23 +2407,27 @@ pub fn data_block_control_handle_pairs(
 }
 
 /// Decode framed object references from offset-only OM data blocks.
-pub fn data_block_references(container: &Container) -> Vec<DataBlockReference> {
+pub fn data_block_references(
+    container: &Container,
+    object_records: &[ObjectRecord],
+    expression_declarations: &[ExpressionDeclaration],
+) -> Vec<DataBlockReference> {
     let mut records = BTreeMap::<(String, u32), Vec<String>>::new();
-    for record in object_records(container) {
+    for record in object_records {
         let Some(object_id) = record.object_id else {
             continue;
         };
         records
-            .entry((record.source_entry, object_id))
+            .entry((record.source_entry.clone(), object_id))
             .or_default()
-            .push(record.id);
+            .push(record.id.clone());
     }
     let mut declarations = BTreeMap::<(String, u32), Vec<String>>::new();
-    for declaration in expression_declarations(container) {
+    for declaration in expression_declarations {
         declarations
-            .entry((declaration.source_entry, declaration.object_id))
+            .entry((declaration.source_entry.clone(), declaration.object_id))
             .or_default()
-            .push(declaration.id);
+            .push(declaration.id.clone());
     }
     container
         .indexed_om_sections()
@@ -2615,6 +2810,329 @@ pub fn data_block_target_index_rows(container: &Container) -> Vec<DataBlockTarge
                 .collect()
         })
         .collect()
+}
+
+/// Decode class-selected creation-display relations from `RMFastLoad` record
+/// areas. The compact indices remain uninterpreted until their object roles are
+/// established independently.
+pub fn rm_creation_display_data_relations(
+    container: &Container,
+    object_ids: &[RmFastLoadObjectId],
+) -> Vec<RmCreationDisplayDataRelation> {
+    const CLASS_NAME: &str = "UGS::RM_creation_display_data";
+
+    let mut relations = Vec::new();
+    for (entry, section) in container
+        .om_sections()
+        .into_iter()
+        .filter(|(entry, _)| entry.name == "/Root/FastLoad/RMFastLoad")
+    {
+        let Some(record_area) = section.record_area else {
+            continue;
+        };
+        let Some(record_area_offset) = section.record_area_offset else {
+            continue;
+        };
+        let Some((class_ordinal, definition)) = section
+            .types
+            .iter()
+            .enumerate()
+            .find(|(_, definition)| definition.name == CLASS_NAME)
+        else {
+            continue;
+        };
+        let Ok(class_ordinal) = u32::try_from(class_ordinal) else {
+            continue;
+        };
+        let entry_index = container
+            .entries
+            .iter()
+            .position(|candidate| std::ptr::eq(candidate, entry))
+            .expect("OM entry belongs to container");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let source_base = entry_offset + record_area_offset as u64;
+        let class_definition = format!("nx:om-entry-{entry_index}:class#{}", definition.offset);
+
+        for row in crate::om::offset_store_index_rows(record_area) {
+            if row.indices[3].0 != class_ordinal {
+                continue;
+            }
+            relations.push(RmCreationDisplayDataRelation {
+                id: String::new(),
+                ordinal: 0,
+                first_index: Some(row.first_index),
+                raw_first_index: Some(row.raw_first_index),
+                first_index_source_offset: Some(source_base + row.first_index_offset as u64),
+                class_name: CLASS_NAME.to_string(),
+                class_definition: class_definition.clone(),
+                encoding: RmCreationDisplayDataEncoding::Index {
+                    flag: row.flag,
+                    indices: row.indices.map(|(index, _)| index),
+                    raw_indices: row.raw_indices,
+                    index_source_offsets: row
+                        .indices
+                        .map(|(_, offset)| source_base + offset as u64),
+                },
+                target_object_id: None,
+                source_entry: entry.name.clone(),
+                source_offset: source_base + row.offset as u64,
+            });
+        }
+        for row in crate::om::offset_store_linked_index_rows(record_area) {
+            if row.indices[2].0 != class_ordinal {
+                continue;
+            }
+            relations.push(RmCreationDisplayDataRelation {
+                id: String::new(),
+                ordinal: 0,
+                first_index: Some(row.first_index.0),
+                raw_first_index: Some(row.raw_first_index),
+                first_index_source_offset: Some(source_base + row.first_index.1 as u64),
+                class_name: CLASS_NAME.to_string(),
+                class_definition: class_definition.clone(),
+                encoding: RmCreationDisplayDataEncoding::Linked {
+                    discriminator: row.discriminator,
+                    target_index: row.target_index.0,
+                    raw_target_index: row.raw_target_index,
+                    target_index_source_offset: source_base + row.target_index.1 as u64,
+                    indices: row.indices.map(|(index, _)| index),
+                    raw_indices: row.raw_indices,
+                    index_source_offsets: row
+                        .indices
+                        .map(|(_, offset)| source_base + offset as u64),
+                    flag: row.flag,
+                    mode: row.mode,
+                },
+                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.0),
+                source_entry: entry.name.clone(),
+                source_offset: source_base + row.offset as u64,
+            });
+        }
+        for row in crate::om::offset_store_target_index_rows(record_area) {
+            if row.indices[2].0 != class_ordinal {
+                continue;
+            }
+            relations.push(RmCreationDisplayDataRelation {
+                id: String::new(),
+                ordinal: 0,
+                first_index: None,
+                raw_first_index: None,
+                first_index_source_offset: None,
+                class_name: CLASS_NAME.to_string(),
+                class_definition: class_definition.clone(),
+                encoding: RmCreationDisplayDataEncoding::Target {
+                    target_index: row.target_index.0,
+                    raw_target_index: row.raw_target_index,
+                    target_index_source_offset: source_base + row.target_index.1 as u64,
+                    indices: row.indices.map(|(index, _)| index),
+                    raw_indices: row.raw_indices,
+                    index_source_offsets: row
+                        .indices
+                        .map(|(_, offset)| source_base + offset as u64),
+                    mode: row.mode,
+                },
+                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.0),
+                source_entry: entry.name.clone(),
+                source_offset: source_base + row.offset as u64,
+            });
+        }
+    }
+
+    relations.sort_by_key(|relation| relation.source_offset);
+    for (ordinal, relation) in relations.iter_mut().enumerate() {
+        relation.ordinal = ordinal as u32;
+        relation.id = format!("nx:rm-creation-display-data-relations:relation#{ordinal}");
+    }
+    relations
+}
+
+/// Decode complete part-local color tables from class-declaring offset stores.
+pub fn part_color_tables(container: &Container) -> (Vec<PartColorTable>, Vec<PartColorDefinition>) {
+    const CLASS_NAME: &str = "UGS::COLOR_table";
+    let mut tables = Vec::new();
+    let mut definitions = Vec::new();
+
+    for (section_ordinal, (entry, section)) in
+        container.indexed_om_sections().into_iter().enumerate()
+    {
+        let Some(storage) = section.column_storage else {
+            continue;
+        };
+        let Some(storage_offset) = section.records.first().map(|record| record.offset) else {
+            continue;
+        };
+        let Some(class) = section
+            .types
+            .iter()
+            .find(|definition| definition.name == CLASS_NAME)
+        else {
+            continue;
+        };
+        let parsed_tables = crate::om::color_tables(storage);
+        let [table] = parsed_tables.as_slice() else {
+            continue;
+        };
+        let entry_index = container
+            .entries
+            .iter()
+            .position(|candidate| std::ptr::eq(candidate, entry))
+            .expect("indexed entry belongs to container");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let source_base = entry_offset + storage_offset as u64;
+        let table_id = format!("nx:part-color-tables:table#{section_ordinal}");
+        let definition_ids = table
+            .definitions
+            .iter()
+            .map(|definition| {
+                format!(
+                    "nx:part-color-definitions-{section_ordinal}:color#{}",
+                    definition.color_index
+                )
+            })
+            .collect::<Vec<_>>();
+        definitions.extend(table.definitions.iter().zip(&definition_ids).map(
+            |(definition, id)| {
+                PartColorDefinition {
+                    id: id.clone(),
+                    color_table: table_id.clone(),
+                    color_index: definition.color_index,
+                    name: definition.name.to_string(),
+                    rgb: definition.rgb,
+                    raw_color_index: definition.raw_color_index.clone(),
+                    raw_components: definition.raw_components.clone(),
+                    source_offset: source_base + definition.offset as u64,
+                    component_source_offsets: definition
+                        .component_offsets
+                        .map(|offset| source_base + offset as u64),
+                }
+            },
+        ));
+        tables.push(PartColorTable {
+            id: table_id,
+            class_definition: format!("nx:om-entry-{entry_index}:class#{}", class.offset),
+            background_name: table.background_name.to_string(),
+            background_rgb: table.background_rgb,
+            raw_background_components: table.raw_background_components.clone(),
+            background_component_source_offsets: table
+                .background_component_offsets
+                .map(|offset| source_base + offset as u64),
+            definitions: definition_ids,
+            source_entry: entry.name.clone(),
+            source_offset: source_base + table.offset as u64,
+        });
+    }
+
+    (tables, definitions)
+}
+
+/// Decode explicit display-color assignments from `RMFastLoad` linked rows.
+pub fn rm_display_color_assignments(
+    container: &Container,
+    color_definitions: &[PartColorDefinition],
+    object_ids: &[RmFastLoadObjectId],
+) -> Vec<RmDisplayColorAssignment> {
+    let mut assignments = Vec::new();
+    for (entry, section) in container
+        .om_sections()
+        .into_iter()
+        .filter(|(entry, _)| entry.name == "/Root/FastLoad/RMFastLoad")
+    {
+        let (Some(record_area), Some(record_area_offset)) =
+            (section.record_area, section.record_area_offset)
+        else {
+            continue;
+        };
+        let source_base =
+            entry.file_span.map_or(0, |(offset, _)| offset) + record_area_offset as u64;
+        for row in crate::om::offset_store_linked_index_rows(record_area) {
+            let Some(color) = crate::om::linked_row_color_index(record_area, &row) else {
+                continue;
+            };
+            let mut matches = color_definitions
+                .iter()
+                .filter(|definition| definition.color_index == color.color_index);
+            let Some(definition) = matches.next() else {
+                continue;
+            };
+            if matches.next().is_some() {
+                continue;
+            }
+            assignments.push(RmDisplayColorAssignment {
+                id: String::new(),
+                ordinal: 0,
+                encoding: RmDisplayColorAssignmentEncoding::Linked {
+                    object_index: row.first_index.0,
+                    raw_object_index: row.raw_first_index,
+                    object_index_source_offset: source_base + row.first_index.1 as u64,
+                    discriminator: row.discriminator,
+                    target_index: row.target_index.0,
+                    raw_target_index: row.raw_target_index,
+                    target_index_source_offset: source_base + row.target_index.1 as u64,
+                    indices: row.indices.map(|(index, _)| index),
+                    raw_indices: row.raw_indices,
+                    index_source_offsets: row
+                        .indices
+                        .map(|(_, offset)| source_base + offset as u64),
+                    flag: row.flag,
+                    mode: row.mode,
+                },
+                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.0),
+                color_index: color.color_index,
+                color_definition: definition.id.clone(),
+                raw_color_index: color.raw_color_index,
+                source_entry: entry.name.clone(),
+                source_offset: source_base + color.offset as u64,
+                row_source_offset: source_base + row.offset as u64,
+            });
+        }
+        for row in crate::om::offset_store_target_index_rows(record_area) {
+            let Some(color) = crate::om::target_row_color_index(record_area, &row) else {
+                continue;
+            };
+            let mut matches = color_definitions
+                .iter()
+                .filter(|definition| definition.color_index == color.color_index);
+            let Some(definition) = matches.next() else {
+                continue;
+            };
+            if matches.next().is_some() {
+                continue;
+            }
+            assignments.push(RmDisplayColorAssignment {
+                id: String::new(),
+                ordinal: 0,
+                encoding: RmDisplayColorAssignmentEncoding::Target {
+                    target_index: row.target_index.0,
+                    raw_target_index: row.raw_target_index,
+                    target_index_source_offset: source_base + row.target_index.1 as u64,
+                    indices: row.indices.map(|(index, _)| index),
+                    raw_indices: row.raw_indices,
+                    index_source_offsets: row
+                        .indices
+                        .map(|(_, offset)| source_base + offset as u64),
+                    mode: row.mode,
+                },
+                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.0),
+                color_index: color.color_index,
+                color_definition: definition.id.clone(),
+                raw_color_index: color.raw_color_index,
+                source_entry: entry.name.clone(),
+                source_offset: source_base + color.offset as u64,
+                row_source_offset: source_base + row.offset as u64,
+            });
+        }
+    }
+    assignments.sort_by_key(|assignment| assignment.source_offset);
+    for (ordinal, assignment) in assignments.iter_mut().enumerate() {
+        assignment.ordinal = ordinal as u32;
+        assignment.id = format!("nx:rm-display-color-assignments:assignment#{ordinal}");
+    }
+    assignments
+}
+
+fn rmfastload_target_object_id(object_ids: &[RmFastLoadObjectId], target: u32) -> Option<String> {
+    let target = usize::try_from(target).ok()?;
+    object_ids.get(target).map(|object_id| object_id.id.clone())
 }
 
 /// Resolve complete composite column-index tables atomically by section.
@@ -4281,7 +4799,7 @@ mod tests {
                 .namespace("nx")
                 .expect("required invariant")
                 .version,
-            181
+            189
         );
         assert_eq!(expressions.len(), 1);
         assert_eq!(expressions[0].object_id, Some(0x102));
@@ -4953,6 +5471,15 @@ mod tests {
         assert_eq!(object_ids[49].value, 50);
         assert_eq!(object_ids[49].raw, 50u32.to_le_bytes());
         assert_eq!(table.members[49], object_ids[49].id);
+        assert_eq!(
+            super::rmfastload_target_object_id(&object_ids, 0),
+            Some(object_ids[0].id.clone())
+        );
+        assert_eq!(
+            super::rmfastload_target_object_id(&object_ids, 49),
+            Some(object_ids[49].id.clone())
+        );
+        assert_eq!(super::rmfastload_target_object_id(&object_ids, 50), None);
     }
 
     #[test]
