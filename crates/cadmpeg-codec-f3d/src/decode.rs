@@ -4228,6 +4228,7 @@ mod tests {
                 companion_record_index: 30,
                 recipe_ordinal: 0,
                 recipe_id: format!("{stream}:construction-recipe#31"),
+                recipe_kind: crate::records::ConstructionRecipeKind::Edge,
                 byte_offset: 278,
                 class_tag: "423".into(),
                 record_index: 31,

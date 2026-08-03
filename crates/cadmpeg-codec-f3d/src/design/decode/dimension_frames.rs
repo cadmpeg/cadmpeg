@@ -129,6 +129,7 @@ pub fn decode_dimension_recipe_records(
                 companion_record_index: companion.record_index,
                 recipe_ordinal: u32::try_from(recipe_ordinal).unwrap_or(u32::MAX),
                 recipe_id: recipe.id.clone(),
+                recipe_kind: recipe.kind,
                 byte_offset: u64::try_from(at).unwrap_or(u64::MAX),
                 class_tag,
                 record_index,

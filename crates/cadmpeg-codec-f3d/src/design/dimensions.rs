@@ -831,12 +831,22 @@ fn project_all_dimension_constraints(
             let linear_candidates = if parameter.source_kind.starts_with("Linear Dimension")
                 && design_dimension_unit(parameter)
             {
-                recipe_linear_dimension_candidates(
+                let candidates = recipe_linear_dimension_candidates(
                     entities,
                     &sketch,
                     parameter.evaluated_value * 10.0,
                     &parameter_id,
-                )
+                );
+                if records.iter().all(|record| {
+                    record.recipe_kind == crate::records::ConstructionRecipeKind::Edge
+                }) {
+                    candidates
+                        .into_iter()
+                        .filter(|candidate| matches!(candidate, Definition::Distance { .. }))
+                        .collect()
+                } else {
+                    candidates
+                }
             } else {
                 Vec::default()
             };
