@@ -8224,6 +8224,9 @@ fn project_ruled_surface(feature: &Feature) -> Option<FeatureDefinition> {
         edges: EdgeSelection::Native(feature.properties.get("Edges")?.clone()),
         support_faces: FaceSelection::Native(feature.properties.get("SupportFaces")?.clone()),
         mode,
+        angle: None,
+        alternate_face: None,
+        corner: None,
     })
 }
 
@@ -12232,7 +12235,16 @@ pub fn sync_neutral_features(
                 edges,
                 support_faces,
                 mode,
+                angle,
+                alternate_face,
+                corner,
             } => {
+                if angle.is_some() || alternate_face.is_some() || corner.is_some() {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} cannot encode ruled-surface angle, face-side, or corner semantics",
+                        feature.id
+                    )));
+                }
                 let edges = edge_selection_value(edges).ok_or_else(|| {
                     CodecError::Malformed(format!(
                         "SLDPRT feature {} has no ruled-surface boundary edges",

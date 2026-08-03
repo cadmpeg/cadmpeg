@@ -5295,6 +5295,9 @@ fn feature_operation_geometry_is_validated() {
                 direction: Vector3::new(0.0, 0.0, 0.0),
                 distance: Length(0.0),
             },
+            angle: None,
+            alternate_face: None,
+            corner: None,
         },
         FeatureDefinition::Scale {
             bodies: crate::features::BodySelection::Unresolved,

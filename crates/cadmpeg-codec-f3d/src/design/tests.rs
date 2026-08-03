@@ -34,10 +34,10 @@ use crate::design::decode::scopes::{
     exact_component_insert_construction, exact_direct_face_operation, exact_draft_operation,
     exact_fixed_chamfer_parameters, exact_fixed_extrude_parameters, exact_fixed_fillet_parameters,
     exact_joint_origin_frame, exact_path_feature_construction,
-    exact_rectangular_pattern_construction, exact_scale_operation, exact_solid_primitive,
-    exact_surface_extend_operation, exact_surface_offset_operation, exact_surface_stitch_operation,
-    exact_work_axis_construction, exact_work_plane_frame, exact_work_point_position,
-    parse_parameter_scope,
+    exact_rectangular_pattern_construction, exact_ruled_surface_operation, exact_scale_operation,
+    exact_solid_primitive, exact_surface_extend_operation, exact_surface_offset_operation,
+    exact_surface_stitch_operation, exact_work_axis_construction, exact_work_plane_frame,
+    exact_work_point_position, parse_parameter_scope,
 };
 use crate::design::decode::sketch::{
     bind_sketch_graph, decode_constraint_kinds, decode_pattern_definition, identity_matrix,
@@ -118,12 +118,12 @@ use crate::records::{
     DesignFixedExtrudeDistance, DesignFixedExtrudeParameters, DesignFixedExtrudeScalar,
     DesignFixedFilletParameters, DesignParameter, DesignParameterCompanion, DesignParameterKind,
     DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
-    DesignRecipeReference, DesignRecordHeader, DesignScaleOperation, DesignSketchPlacement,
-    DesignSketchProfileOperand, DesignSolidPrimitive, DesignSurfaceExtendMethod,
-    DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation, DesignSurfaceStitchOperation,
-    DesignTopologyRecipeSide, LostEdgeReference, PersistentSubentityTag, SketchConstraintKind,
-    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
-    SketchSurface, DESIGN_MODULE_SKETCH,
+    DesignRecipeReference, DesignRecordHeader, DesignRuledSurfaceCorner, DesignRuledSurfaceMethod,
+    DesignScaleOperation, DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
+    DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
+    DesignSurfaceStitchOperation, DesignTopologyRecipeSide, LostEdgeReference,
+    PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
+    SketchPoint, SketchRelation, SketchRelationOperand, SketchSurface, DESIGN_MODULE_SKETCH,
 };
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::features::{
@@ -6587,6 +6587,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         surface_stitch_operation: None,
         surface_extend_operation: None,
         surface_offset_operation: None,
+        ruled_surface_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -7075,6 +7076,56 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
 }
 
 #[test]
+fn ruled_surface_operation_reads_mode_parameters_and_ordered_edge_groups() {
+    let mut bytes = vec![0; 366];
+    bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
+    let reference = |bytes: &mut [u8], at: usize, record_index: u32| {
+        bytes[at] = 1;
+        bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+    };
+    bytes[27] = 1;
+    reference(&mut bytes, 28, 12);
+    reference(&mut bytes, 39, 11);
+    bytes[54..58].copy_from_slice(&1u32.to_le_bytes());
+    reference(&mut bytes, 58, 13);
+    bytes[73..77].copy_from_slice(&1u32.to_le_bytes());
+    reference(&mut bytes, 77, 99);
+    bytes[92..96].copy_from_slice(&1u32.to_le_bytes());
+    reference(&mut bytes, 96, 15);
+    bytes[107..111].copy_from_slice(&36u32.to_le_bytes());
+    for (ordinal, byte) in b"00000000-0000-0000-0000-000000000000".iter().enumerate() {
+        bytes[111 + ordinal * 2] = *byte;
+    }
+    bytes[186..190].copy_from_slice(&6u32.to_le_bytes());
+
+    let operation = exact_ruled_surface_operation(&bytes, 0, 366, 186, &[11, 12, 13, 14, 15, 16])
+        .expect("exact SurfaceRuled operation");
+    assert_eq!(operation.method, DesignRuledSurfaceMethod::Normal);
+    assert_eq!(operation.method_offset, 20);
+    assert_eq!(operation.corner, DesignRuledSurfaceCorner::Rounded);
+    assert_eq!(operation.corner_offset, 50);
+    assert!(operation.alternate_face);
+    assert_eq!(operation.alternate_face_offset, 27);
+    assert_eq!(operation.angle_owner_record_index, 12);
+    assert_eq!(operation.distance_owner_record_index, 11);
+    assert_eq!(operation.edge_group_record_indices, [13, 15]);
+    assert_eq!(operation.auxiliary_record_indices, [99]);
+    assert_eq!(operation.direction_entity_id, None);
+
+    bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
+    for (ordinal, byte) in b"01234567-89ab-cdef-0123-456789abcdef".iter().enumerate() {
+        bytes[111 + ordinal * 2] = *byte;
+    }
+    let operation = exact_ruled_surface_operation(&bytes, 0, 366, 186, &[11, 12, 13, 14, 15, 16])
+        .expect("directed SurfaceRuled operation");
+    assert_eq!(operation.method, DesignRuledSurfaceMethod::Direction);
+    assert_eq!(
+        operation.direction_entity_id.as_deref(),
+        Some("01234567-89ab-cdef-0123-456789abcdef")
+    );
+}
+
+#[test]
 fn surface_stitch_tolerance_uses_its_fixed_scope_owned_frame() {
     fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
         bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -7478,6 +7529,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         surface_stitch_operation: None,
         surface_extend_operation: None,
         surface_offset_operation: None,
+        ruled_surface_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -7911,6 +7963,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         surface_stitch_operation: None,
         surface_extend_operation: None,
         surface_offset_operation: None,
+        ruled_surface_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -13528,6 +13581,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         surface_stitch_operation: None,
         surface_extend_operation: None,
         surface_offset_operation: None,
+        ruled_surface_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -13686,6 +13740,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         surface_stitch_operation: None,
         surface_extend_operation: None,
         surface_offset_operation: None,
+        ruled_surface_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -13881,6 +13936,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         surface_stitch_operation: None,
         surface_extend_operation: None,
         surface_offset_operation: None,
+        ruled_surface_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -14727,6 +14783,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         surface_stitch_operation: None,
         surface_extend_operation: None,
         surface_offset_operation: None,
+        ruled_surface_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -15686,6 +15743,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         surface_stitch_operation: None,
         surface_extend_operation: None,
         surface_offset_operation: None,
+        ruled_surface_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -16171,6 +16229,7 @@ fn parameter_expressions_project_feature_dependencies() {
         surface_stitch_operation: None,
         surface_extend_operation: None,
         surface_offset_operation: None,
+        ruled_surface_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -16298,6 +16357,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         surface_stitch_operation: None,
         surface_extend_operation: None,
         surface_offset_operation: None,
+        ruled_surface_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -17333,6 +17393,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         surface_stitch_operation: None,
         surface_extend_operation: None,
         surface_offset_operation: None,
+        ruled_surface_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -17541,6 +17602,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         surface_stitch_operation: None,
         surface_extend_operation: None,
         surface_offset_operation: None,
+        ruled_surface_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -18013,6 +18075,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         surface_stitch_operation: None,
         surface_extend_operation: None,
         surface_offset_operation: None,
+        ruled_surface_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,

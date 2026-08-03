@@ -1256,6 +1256,36 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 (_, None) => true,
                 (_, Some(_)) => false,
             }
+            && match (scope.kind.as_str(), scope.ruled_surface_operation.as_ref()) {
+                ("SurfaceRuled", Some(operation)) => {
+                    operation.method_offset == scope.byte_offset.saturating_add(20)
+                        && operation.alternate_face_offset == scope.byte_offset.saturating_add(27)
+                        && operation.corner_offset == scope.byte_offset.saturating_add(50)
+                        && scope.reference_members.first()
+                            == Some(&operation.distance_owner_record_index)
+                        && scope.reference_members.get(1)
+                            == Some(&operation.angle_owner_record_index)
+                        && operation.distance_owner_record_index
+                            != operation.angle_owner_record_index
+                        && !operation.edge_group_record_indices.is_empty()
+                        && operation
+                            .edge_group_record_indices
+                            .iter()
+                            .all(|record_index| scope.reference_members.contains(record_index))
+                        && match operation.method {
+                            records::DesignRuledSurfaceMethod::Direction => {
+                                operation.direction_entity_id.is_some()
+                            }
+                            records::DesignRuledSurfaceMethod::Normal
+                            | records::DesignRuledSurfaceMethod::Tangent => {
+                                operation.direction_entity_id.is_none()
+                            }
+                        }
+                }
+                ("SurfaceRuled", None) => false,
+                (_, None) => true,
+                (_, Some(_)) => false,
+            }
             && scope.frame_length > 89
             && scope.paired_byte_offset == scope.byte_offset.saturating_add(scope.frame_length)
             && scope.kind_offset > scope.byte_offset
@@ -1667,6 +1697,19 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 && group.role == 0x0000_0004_0000_0000))
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
+                    }
+                    Some(design::DesignFeatureFamily::SurfaceRuled) => {
+                        group.role == 0x0000_0008_0000_0000
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                            && scope
+                                .ruled_surface_operation
+                                .as_ref()
+                                .is_some_and(|operation| {
+                                    operation
+                                        .edge_group_record_indices
+                                        .contains(&group.record_index)
+                                })
                     }
                     Some(design::DesignFeatureFamily::BoundaryFill) => {
                         matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0005_0000_0000)
@@ -3177,6 +3220,7 @@ fn validate_edge_operands<'a>(
                             | design::DesignFeatureFamily::Revolve
                             | design::DesignFeatureFamily::Loft
                             | design::DesignFeatureFamily::Sweep
+                            | design::DesignFeatureFamily::SurfaceRuled
                     )
                 ) || matches!(scope.kind.as_str(), "EdgeFlange" | "Hem"))
                     && usize::try_from(operand.scope_reference_ordinal)

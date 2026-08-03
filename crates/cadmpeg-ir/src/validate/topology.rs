@@ -3075,6 +3075,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 edges,
                 support_faces,
                 mode,
+                angle,
+                ..
             } => {
                 edge_selections.push(edges);
                 face_selections.push(support_faces);
@@ -3088,7 +3090,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         distance,
                     } => valid_feature_direction(*direction) && positive_feature_length(*distance),
                 };
-                if !valid {
+                if !valid || angle.is_some_and(|value| !value.0.is_finite()) {
                     feature_geometry_error(findings, feature, "ruled surface is invalid");
                 }
             }

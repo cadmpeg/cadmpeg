@@ -21,9 +21,11 @@ use crate::records::{
     DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletGroup,
     DesignFixedFilletParameters, DesignHemOperation, DesignMirrorConstruction, DesignMoveOperation,
     DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
-    DesignRectangularPatternConstruction, DesignRectangularPatternInstances, DesignScaleOperation,
-    DesignSolidPrimitive, DesignSurfaceExtendMethod, DesignSurfaceExtendOperation,
-    DesignSurfaceOffsetOperation, DesignSurfaceStitchOperation, DesignWorkAxisConstruction,
+    DesignRectangularPatternConstruction, DesignRectangularPatternInstances,
+    DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignRuledSurfaceOperation,
+    DesignScaleOperation, DesignSolidPrimitive, DesignSurfaceExtendMethod,
+    DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation, DesignSurfaceStitchOperation,
+    DesignWorkAxisConstruction,
 };
 use cadmpeg_codec_core::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
 use cadmpeg_codec_core::CodecError;
@@ -3076,6 +3078,17 @@ pub(crate) fn parse_parameter_scope(
     } else {
         None
     };
+    let ruled_surface_operation = if kind == "SurfaceRuled" {
+        exact_ruled_surface_operation(
+            bytes,
+            start,
+            paired_at,
+            *reference_count_at,
+            reference_members,
+        )
+    } else {
+        None
+    };
     let family = design_feature_family(kind);
     // A `Sketch` scope carries either the single entity-suffix reference form
     // or, when the stream's sketch entity headers use the `EntityGenesis`
@@ -3194,6 +3207,7 @@ pub(crate) fn parse_parameter_scope(
         surface_stitch_operation,
         surface_extend_operation: None,
         surface_offset_operation: None,
+        ruled_surface_operation,
         surface_patch_boundaries,
         base_flange_operation,
         edge_flange_operation,
@@ -3465,6 +3479,109 @@ pub(crate) fn exact_base_flange_operation(
         profile_record_index: *profile_record_index,
         thickness_record_index: *thickness_record_index,
         settings_record_index: *settings_record_index,
+    })
+}
+
+pub(crate) fn exact_ruled_surface_operation(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    reference_count_at: usize,
+    reference_members: &[u32],
+) -> Option<DesignRuledSurfaceOperation> {
+    if bytes.get(start.checked_add(11)?..start.checked_add(20)?)? != [0; 9] {
+        return None;
+    }
+    let method_offset = start.checked_add(20)?;
+    let method = match u32_at(bytes, method_offset)? {
+        0 => DesignRuledSurfaceMethod::Tangent,
+        1 => DesignRuledSurfaceMethod::Normal,
+        2 => DesignRuledSurfaceMethod::Direction,
+        _ => return None,
+    };
+    if bytes.get(start.checked_add(24)?..start.checked_add(27)?)? != [0; 3] {
+        return None;
+    }
+    let alternate_face_offset = start.checked_add(27)?;
+    let alternate_face = match bytes.get(alternate_face_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let fixed_reference = |at: usize| {
+        let mut cursor = at;
+        let reference = take_reference(bytes, &mut cursor)?;
+        (cursor == at.checked_add(11)?
+            && reference.segment.is_none()
+            && reference.link_name.is_none())
+        .then(|| u32::try_from(reference.target?).ok())?
+    };
+    let angle_owner_record_index = fixed_reference(start.checked_add(28)?)?;
+    let distance_owner_record_index = fixed_reference(start.checked_add(39)?)?;
+    let corner_offset = start.checked_add(50)?;
+    let corner = match u32_at(bytes, corner_offset)? {
+        0 => DesignRuledSurfaceCorner::Rounded,
+        1 => DesignRuledSurfaceCorner::Mitered,
+        _ => return None,
+    };
+    let take_reference_list = |mut cursor: usize| {
+        let count = usize::try_from(u32_at(bytes, cursor)?).ok()?;
+        if count > 100_000 {
+            return None;
+        }
+        cursor = cursor.checked_add(4)?;
+        let mut records = Vec::with_capacity(count);
+        for _ in 0..count {
+            records.push(fixed_reference(cursor)?);
+            cursor = cursor.checked_add(11)?;
+        }
+        Some((records, cursor))
+    };
+    let (mut edge_group_record_indices, mut cursor) = take_reference_list(start.checked_add(54)?)?;
+    if u32_at(bytes, cursor)? != 0 {
+        return None;
+    }
+    cursor = cursor.checked_add(4)?;
+    let (auxiliary_record_indices, next) = take_reference_list(cursor)?;
+    cursor = next;
+    if u32_at(bytes, cursor)? != 0 {
+        return None;
+    }
+    cursor = cursor.checked_add(4)?;
+    let (trailing_edge_groups, next) = take_reference_list(cursor)?;
+    cursor = next;
+    edge_group_record_indices.extend(trailing_edge_groups);
+    let (direction_entity_id, direction_end) = lp_utf16_bounded(bytes, cursor, 36..=36)?;
+    let direction_absent = direction_entity_id == "00000000-0000-0000-0000-000000000000";
+    if direction_end.checked_add(3)? != reference_count_at
+        || bytes.get(direction_end..reference_count_at)? != [0; 3]
+        || paired_at <= reference_count_at
+        || (!direction_absent && !crate::bytes::is_guid_relaxed(&direction_entity_id))
+    {
+        return None;
+    }
+    let direction_entity_id = (!direction_absent).then_some(direction_entity_id);
+    if reference_members.first() != Some(&distance_owner_record_index)
+        || reference_members.get(1) != Some(&angle_owner_record_index)
+        || edge_group_record_indices.is_empty()
+        || edge_group_record_indices
+            .iter()
+            .any(|record_index| !reference_members.contains(record_index))
+    {
+        return None;
+    }
+    Some(DesignRuledSurfaceOperation {
+        method,
+        method_offset: method_offset as u64,
+        corner,
+        corner_offset: corner_offset as u64,
+        alternate_face,
+        alternate_face_offset: alternate_face_offset as u64,
+        angle_owner_record_index,
+        distance_owner_record_index,
+        edge_group_record_indices,
+        auxiliary_record_indices,
+        direction_entity_id,
     })
 }
 

@@ -338,7 +338,15 @@ pub fn project_parameter_design_with_edge_identities(
                         },
                     )
                 }
-                Some(DesignFeatureFamily::SurfaceRuled) => FeatureDefinition::Native {
+                Some(DesignFeatureFamily::SurfaceRuled) => project_ruled_surface(
+                    scope,
+                    owners,
+                    native,
+                    construction_groups,
+                    edge_operands,
+                    edge_identity_operands,
+                )
+                .unwrap_or_else(|| FeatureDefinition::Native {
                     kind: scope.kind.clone(),
                     parameters: parameters
                         .iter()
@@ -347,7 +355,7 @@ pub fn project_parameter_design_with_edge_identities(
                         })
                         .collect(),
                     properties: native_scope_properties(scope, native_scope),
-                },
+                }),
                 Some(DesignFeatureFamily::BoundaryFill) => {
                     project_boundary_fill(scope, construction_groups).unwrap_or_else(|| {
                         FeatureDefinition::Native {
@@ -1766,6 +1774,160 @@ pub(crate) fn project_surface_stitch(
         create_solid: Some(true),
         gap_tolerance: Some(Length(operation.gap_tolerance * 10.0)),
     })
+}
+
+pub(crate) fn project_ruled_surface(
+    scope: &DesignParameterScope,
+    owners: &[crate::records::DesignParameterOwner],
+    parameters: &[DesignParameter],
+    groups: &[DesignConstructionOperandGroup],
+    edge_operands: &[DesignEdgeOperand],
+    edge_identity_operands: &[DesignEdgeIdentityOperand],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use crate::records::{DesignRuledSurfaceCorner, DesignRuledSurfaceMethod};
+    use cadmpeg_ir::features::{
+        FaceSelection, FeatureDefinition, RuledSurfaceCorner, RuledSurfaceMode,
+    };
+
+    let operation = scope.ruled_surface_operation.as_ref()?;
+    let stream = native_stream(&scope.id)?;
+    let parameter = |owner_record_index, source_kind: &str| {
+        let mut matching = owners.iter().filter(|owner| {
+            native_stream(&owner.id) == Some(stream)
+                && owner.scope_record_index == scope.record_index
+                && owner.record_index == owner_record_index
+        });
+        let owner = matching.next()?;
+        if matching.next().is_some() {
+            return None;
+        }
+        parameters.iter().find(|parameter| {
+            native_stream(&parameter.id) == Some(stream)
+                && parameter.record_index == owner.parameter_record_index
+                && parameter.source_kind == source_kind
+        })
+    };
+    let distance = design_length(parameter(
+        operation.distance_owner_record_index,
+        "ruledDistance",
+    )?)?;
+    if distance.0 <= 0.0 {
+        return None;
+    }
+    let angle = design_angle(parameter(operation.angle_owner_record_index, "ruledAngle")?)?;
+    let mode = match operation.method {
+        DesignRuledSurfaceMethod::Tangent => RuledSurfaceMode::Tangent { distance },
+        DesignRuledSurfaceMethod::Normal => RuledSurfaceMode::Normal { distance },
+        DesignRuledSurfaceMethod::Direction => return None,
+    };
+    let mut ordered_groups = Vec::with_capacity(operation.edge_group_record_indices.len());
+    for record_index in &operation.edge_group_record_indices {
+        let mut matching = groups.iter().filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+                && group.record_index == *record_index
+        });
+        let group = matching.next()?;
+        if matching.next().is_some()
+            || group.role != 0x0000_0008_0000_0000
+            || group.members.len() != 1
+        {
+            return None;
+        }
+        let reference_ordinal = usize::try_from(group.scope_reference_ordinal).ok()?;
+        if scope.reference_members.get(reference_ordinal) != Some(record_index)
+            || scope.reference_members.get(reference_ordinal + 1) != group.members.first()
+        {
+            return None;
+        }
+        ordered_groups.push(group);
+    }
+    let selections = ordered_groups
+        .iter()
+        .map(|group| {
+            resolved_edge_group(
+                group,
+                groups,
+                edge_operands,
+                edge_identity_operands,
+                scope.previous_history_state_id,
+                &neutral_feature_id(scope),
+                None,
+            )
+        })
+        .collect::<Vec<_>>();
+    let edges = merge_ruled_surface_edges(scope, selections);
+    Some(FeatureDefinition::RuledSurface {
+        edges,
+        support_faces: FaceSelection::Native(scope.id.clone()),
+        mode,
+        angle: Some(angle),
+        alternate_face: Some(operation.alternate_face),
+        corner: Some(match operation.corner {
+            DesignRuledSurfaceCorner::Rounded => RuledSurfaceCorner::Rounded,
+            DesignRuledSurfaceCorner::Mitered => RuledSurfaceCorner::Mitered,
+        }),
+    })
+}
+
+fn merge_ruled_surface_edges(
+    scope: &DesignParameterScope,
+    selections: Vec<cadmpeg_ir::features::EdgeSelection>,
+) -> cadmpeg_ir::features::EdgeSelection {
+    use cadmpeg_ir::features::EdgeSelection;
+
+    if selections.iter().all(|selection| {
+        matches!(
+            selection,
+            EdgeSelection::Edges(_) | EdgeSelection::Resolved { .. }
+        )
+    }) {
+        let mut resolved = Vec::new();
+        for selection in selections {
+            let (EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. }) = selection
+            else {
+                unreachable!("filtered resolved ruled-surface edge selection");
+            };
+            for edge in edges {
+                if resolved.contains(&edge) {
+                    return EdgeSelection::Native(scope.id.clone());
+                }
+                resolved.push(edge);
+            }
+        }
+        return EdgeSelection::Resolved {
+            edges: resolved,
+            native: scope.id.clone(),
+        };
+    }
+    let state = selections.first().and_then(|selection| match selection {
+        EdgeSelection::Historical { state, .. } => Some(state.clone()),
+        _ => None,
+    });
+    if let Some(state) = state {
+        if selections.iter().all(|selection| {
+            matches!(selection, EdgeSelection::Historical { state: candidate, .. } if candidate == &state)
+        }) {
+            let mut resolved = Vec::new();
+            for selection in selections {
+                let EdgeSelection::Historical { edges, .. } = selection else {
+                    unreachable!("filtered historical ruled-surface edge selection");
+                };
+                for edge in edges {
+                    if resolved.contains(&edge) {
+                        return EdgeSelection::Native(scope.id.clone());
+                    }
+                    resolved.push(edge);
+                }
+            }
+            return EdgeSelection::Historical {
+                state,
+                edges: resolved,
+                native: scope.id.clone(),
+            };
+        }
+    }
+    EdgeSelection::Native(scope.id.clone())
 }
 
 pub(crate) fn matrix_axis_angle(

@@ -1564,6 +1564,9 @@ pub struct DesignParameterScope {
     /// Exact distance and boundary records carried by a `SurfaceOffset` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface_offset_operation: Option<DesignSurfaceOffsetOperation>,
+    /// Exact mode, parameter, and selection records carried by a `SurfaceRuled` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ruled_surface_operation: Option<DesignRuledSurfaceOperation>,
     /// Exact profile and thickness records carried by a `BaseFlange` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_flange_operation: Option<DesignBaseFlangeOperation>,
@@ -1764,6 +1767,55 @@ pub struct DesignSurfaceOffsetOperation {
     pub tolerance: f64,
     /// Byte offset of `tolerance`.
     pub tolerance_offset: u64,
+}
+
+/// Direction law encoded by a `SurfaceRuled` operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignRuledSurfaceMethod {
+    /// Generate ruled strips tangent to the support faces.
+    Tangent,
+    /// Generate ruled strips normal to the support faces.
+    Normal,
+    /// Generate ruled strips along an explicitly selected direction.
+    Direction,
+}
+
+/// Corner law encoded by a `SurfaceRuled` operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignRuledSurfaceCorner {
+    /// Round adjacent ruled strips through a common corner.
+    Rounded,
+    /// Intersect adjacent ruled strips at a miter.
+    Mitered,
+}
+
+/// Fixed construction carried by a `SurfaceRuled` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignRuledSurfaceOperation {
+    /// Direction law.
+    pub method: DesignRuledSurfaceMethod,
+    /// Byte offset of the direction-law enum.
+    pub method_offset: u64,
+    /// Corner construction law.
+    pub corner: DesignRuledSurfaceCorner,
+    /// Byte offset of the corner-law enum.
+    pub corner_offset: u64,
+    /// Whether the opposite incident face supplies the angle reference.
+    pub alternate_face: bool,
+    /// Byte offset of the alternate-face Boolean.
+    pub alternate_face_offset: u64,
+    /// Referenced ruled-angle parameter owner.
+    pub angle_owner_record_index: u32,
+    /// Referenced ruled-distance parameter owner.
+    pub distance_owner_record_index: u32,
+    /// Ordered role-`0x08` edge-group records.
+    pub edge_group_record_indices: Vec<u32>,
+    /// Ordered auxiliary selection records between the edge-group runs.
+    pub auxiliary_record_indices: Vec<u32>,
+    /// Serialized direction entity identity; the all-zero UUID means absent.
+    pub direction_entity_id: Option<String>,
 }
 
 /// Settings a `SurfacePatch` scope carries for one boundary component.

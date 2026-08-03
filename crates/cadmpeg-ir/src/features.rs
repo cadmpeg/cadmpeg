@@ -1111,6 +1111,15 @@ pub enum FeatureDefinition {
         support_faces: FaceSelection,
         /// Direction law and extension distance.
         mode: RuledSurfaceMode,
+        /// Signed rotation from the selected ruled-surface law.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        angle: Option<Angle>,
+        /// Whether the opposite incident face supplies the angle reference.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        alternate_face: Option<bool>,
+        /// Boundary-corner construction law.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        corner: Option<RuledSurfaceCorner>,
     },
     /// Taper applied to selected faces about a neutral plane.
     Draft {
@@ -1343,6 +1352,7 @@ impl FeatureDefinition {
             Self::Loft { .. } => Some("loft"),
             Self::TrimSurface { .. } => Some("trim surface"),
             Self::ExtendSurface { .. } => Some("extend surface"),
+            Self::RuledSurface { .. } => Some("ruled surface"),
             Self::Hole { .. } => Some("hole"),
             Self::Rib { .. } => Some("rib"),
             Self::Chamfer { .. } => Some("chamfer"),
@@ -1905,6 +1915,16 @@ pub enum RuledSurfaceMode {
         /// Positive extension distance.
         distance: Length,
     },
+}
+
+/// Corner construction law for a ruled-surface operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RuledSurfaceCorner {
+    /// Join adjacent ruled strips with rounded corners.
+    Rounded,
+    /// Intersect adjacent ruled strips to form mitered corners.
+    Mitered,
 }
 
 /// Fixed locus of a body-scale transform.

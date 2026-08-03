@@ -1395,6 +1395,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 edges,
                 support_faces,
                 mode,
+                ..
             } => {
                 incomplete_edge_selection(edges)
                     || if matches!(mode, cadmpeg_ir::features::RuledSurfaceMode::Direction { .. }) {
@@ -4902,6 +4903,9 @@ mod design_loss_tests {
                         direction: Vector3::new(0.0, 0.0, 1.0),
                         distance: Length(1.0),
                     },
+                    angle: None,
+                    alternate_face: None,
+                    corner: None,
                 },
             ),
             feature(
