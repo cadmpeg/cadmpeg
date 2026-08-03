@@ -16616,6 +16616,69 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         } if drill_point_angle.0 == 118.0_f64.to_radians()
     ));
 
+    let mut counterbore_parameters = hole_parameters.to_vec();
+    counterbore_parameters.extend([
+        parameter(124, 125, "CBDepth", "d7", "3 mm", 0.3),
+        parameter(134, 135, "CBDiameter", "d8", "8 mm", 0.8),
+    ]);
+    let (features, _) = project_parameter_design(
+        &counterbore_parameters,
+        &[
+            owner(94, 32, 95, 0),
+            owner(104, 32, 105, 1),
+            owner(114, 32, 115, 2),
+            owner(124, 32, 125, 3),
+            owner(134, 32, 135, 4),
+        ],
+        std::slice::from_ref(&scopes[2]),
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::Hole {
+            kind: cadmpeg_ir::features::HoleKind::CounterboreDrilled {
+                diameter: Length(8.0),
+                depth: Length(3.0),
+                drill_point_angle,
+            },
+            bottom: None,
+            ..
+        } if drill_point_angle.0 == 118.0_f64.to_radians()
+    ));
+
+    counterbore_parameters[2].evaluated_value = std::f64::consts::PI;
+    let (features, _) = project_parameter_design(
+        &counterbore_parameters,
+        &[
+            owner(94, 32, 95, 0),
+            owner(104, 32, 105, 1),
+            owner(114, 32, 115, 2),
+            owner(124, 32, 125, 3),
+            owner(134, 32, 135, 4),
+        ],
+        std::slice::from_ref(&scopes[2]),
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::Hole {
+            kind: cadmpeg_ir::features::HoleKind::Counterbore {
+                diameter: Length(8.0),
+                depth: Length(3.0),
+            },
+            bottom: Some(cadmpeg_ir::features::HoleBottom::Flat),
+            ..
+        }
+    ));
+
     let (features, _) = project_parameter_design(
         &[
             parameter(54, 55, "leftDistance", "d2", "1 mm", 0.1),

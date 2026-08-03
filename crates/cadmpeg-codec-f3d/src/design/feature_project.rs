@@ -4195,7 +4195,7 @@ fn project_hole(
         FaceSelection, FeatureDefinition, HoleBottom, HoleKind, Termination,
     };
 
-    if scope.kind != "Hole" || parameters.len() != 3 {
+    if scope.kind != "Hole" || !matches!(parameters.len(), 3 | 5) {
         return None;
     }
     let parameter = |source_kind: &str| {
@@ -4219,15 +4219,41 @@ fn project_hole(
     {
         return None;
     }
-    let (kind, bottom) = if tip_angle.0 == std::f64::consts::PI {
-        (HoleKind::Simple, Some(HoleBottom::Flat))
-    } else {
-        (
+    let counterbore = match parameters.len() {
+        3 => None,
+        5 => {
+            let counterbore_depth = design_length(parameter("CBDepth")?)?;
+            let counterbore_diameter = design_length(parameter("CBDiameter")?)?;
+            if counterbore_depth.0 <= 0.0
+                || counterbore_depth.0 > depth.0
+                || counterbore_diameter.0 <= diameter.0
+            {
+                return None;
+            }
+            Some((counterbore_diameter, counterbore_depth))
+        }
+        _ => return None,
+    };
+    let (kind, bottom) = match (counterbore, tip_angle.0 == std::f64::consts::PI) {
+        (None, true) => (HoleKind::Simple, Some(HoleBottom::Flat)),
+        (None, false) => (
             HoleKind::SimpleDrilled {
                 drill_point_angle: tip_angle,
             },
             None,
-        )
+        ),
+        (Some((diameter, depth)), true) => (
+            HoleKind::Counterbore { diameter, depth },
+            Some(HoleBottom::Flat),
+        ),
+        (Some((diameter, depth)), false) => (
+            HoleKind::CounterboreDrilled {
+                diameter,
+                depth,
+                drill_point_angle: tip_angle,
+            },
+            None,
+        ),
     };
     Some(FeatureDefinition::Hole {
         profile: None,
