@@ -1170,18 +1170,44 @@ pub struct DesignCircularPatternConstruction {
     pub angle_record_index: u32,
     /// Byte offset of the total-angle scalar.
     pub angle_offset: u64,
-    /// Axis origin in source centimetres.
-    pub origin: [f64; 3],
-    /// Byte offset of the first origin coordinate.
-    pub origin_offset: u64,
-    /// Unit axis direction.
-    pub direction: [f64; 3],
-    /// Byte offset of the first direction coordinate.
-    pub direction_offset: u64,
+    /// Serialized axis construction and its resolved placement.
+    pub axis: DesignCircularPatternAxis,
     /// Referenced axis record.
     pub axis_record_index: u32,
     /// Referenced persistent selection operand.
     pub selection_record_index: u32,
+}
+
+/// Axis construction carried by a fixed circular-pattern scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DesignCircularPatternAxis {
+    /// Axis coordinates stored directly in the Design record.
+    Inline {
+        /// Axis origin in source centimetres.
+        origin: [f64; 3],
+        /// Byte offset of the first origin coordinate.
+        origin_offset: u64,
+        /// Unit axis direction.
+        direction: [f64; 3],
+        /// Byte offset of the first direction coordinate.
+        direction_offset: u64,
+    },
+    /// Axis selected through one or two persistent historical topology identities.
+    HistoricalEdge {
+        /// Referenced Design wrapper records, in serialized order.
+        wrapper_record_indices: Vec<u32>,
+        /// Persistent ASM identities carried by the wrappers.
+        persistent_identities: Vec<u64>,
+        /// Byte offsets parallel to `persistent_identities`.
+        identity_offsets: Vec<u64>,
+        /// Resolved model-space axis origin in millimetres.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resolved_origin: Option<Point3>,
+        /// Resolved unit model-space axis direction.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resolved_direction: Option<Vector3>,
+    },
 }
 
 /// Ordered scalar lanes carried by a rectangular-pattern scope.

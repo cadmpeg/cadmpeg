@@ -19411,10 +19411,12 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             angle: std::f64::consts::TAU,
             angle_record_index,
             angle_offset: (angle_start + 40) as u64,
-            origin: [1.0, 2.0, 3.0],
-            origin_offset: (axis_start + 25) as u64,
-            direction: [-1.0, 0.0, 0.0],
-            direction_offset: (axis_start + 49) as u64,
+            axis: crate::records::DesignCircularPatternAxis::Inline {
+                origin: [1.0, 2.0, 3.0],
+                origin_offset: (axis_start + 25) as u64,
+                direction: [-1.0, 0.0, 0.0],
+                direction_offset: (axis_start + 49) as u64,
+            },
             axis_record_index,
             selection_record_index,
         })

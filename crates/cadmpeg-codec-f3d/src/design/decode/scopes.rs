@@ -1372,19 +1372,33 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
                 scope.record_index,
             ) {
                 axis_candidates.push((
-                    origin,
-                    (start + 25) as u64,
-                    direction,
-                    (start + 49) as u64,
+                    crate::records::DesignCircularPatternAxis::Inline {
+                        origin,
+                        origin_offset: (start + 25) as u64,
+                        direction,
+                        direction_offset: (start + 49) as u64,
+                    },
                     *record_index,
                     *selection_record_index,
                 ));
             }
         }
     }
-    let [(origin, origin_offset, direction, direction_offset, record_index, selection_record_index)] =
-        axis_candidates.as_slice()
-    else {
+    for record_index in &scope.reference_members {
+        for (start, paired_at) in records.frames(*record_index) {
+            if let Some((axis, selection_record_index)) = exact_legacy_circular_pattern_axis(
+                bytes,
+                records,
+                start,
+                paired_at,
+                *record_index,
+                scope,
+            ) {
+                axis_candidates.push((axis, *record_index, selection_record_index));
+            }
+        }
+    }
+    let [(axis, record_index, selection_record_index)] = axis_candidates.as_slice() else {
         return None;
     };
     let owner_count_candidates = parameter_owners.iter().filter_map(|owner| {
@@ -1455,13 +1469,175 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
         angle: *angle,
         angle_record_index: *angle_record_index,
         angle_offset: *angle_offset,
-        origin: *origin,
-        origin_offset: *origin_offset,
-        direction: *direction,
-        direction_offset: *direction_offset,
+        axis: axis.clone(),
         axis_record_index: *record_index,
         selection_record_index: *selection_record_index,
     })
+}
+
+fn exact_legacy_circular_pattern_axis(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    start: usize,
+    paired_at: usize,
+    record_index: u32,
+    scope: &DesignParameterScope,
+) -> Option<(crate::records::DesignCircularPatternAxis, u32)> {
+    use crate::records::DesignCircularPatternAxis;
+
+    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+    if class_tag.len() != 3
+        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+        || after_tag != start + 7
+        || u32_at(bytes, after_tag) != Some(record_index)
+        || bytes.get(start + 11..start + 21) != Some(&[0; 10])
+    {
+        return None;
+    }
+    let (identity_offsets, selection_at, second_count_at, second_identity_at, scope_at, tail_at) =
+        match (paired_at.checked_sub(start), u32_at(bytes, start + 21)) {
+            (Some(129), Some(1)) => (
+                vec![start + 26, start + 56],
+                start + 40,
+                start + 51,
+                start + 55,
+                start + 66,
+                start + 77,
+            ),
+            (Some(118), Some(0)) => (
+                vec![start + 45],
+                start + 29,
+                start + 40,
+                start + 44,
+                start + 55,
+                start + 66,
+            ),
+            _ => return None,
+        };
+    let first_identity_at = identity_offsets.first().copied()?.checked_sub(1)?;
+    if (identity_offsets.len() == 2
+        && (marked_record_reference(bytes, first_identity_at).is_none()
+            || bytes.get(first_identity_at + 5..first_identity_at + 11) != Some(&[0; 6])
+            || u32_at(bytes, start + 36) != Some(1)))
+        || u32_at(bytes, second_count_at) != Some(1)
+        || marked_record_reference(bytes, second_identity_at).is_none()
+        || bytes.get(second_identity_at + 5..second_identity_at + 11) != Some(&[0; 6])
+        || marked_record_reference(bytes, scope_at) != Some(scope.record_index)
+        || bytes.get(scope_at + 5..scope_at + 11) != Some(&[0; 6])
+    {
+        return None;
+    }
+    let selection_record_index = marked_record_reference(bytes, selection_at)?;
+    if !scope.reference_members.contains(&selection_record_index)
+        || bytes.get(selection_at + 5..selection_at + 11) != Some(&[0; 6])
+    {
+        return None;
+    }
+    let opaque_index = u32_at(bytes, tail_at)?;
+    if opaque_index == 0
+        || !f64_at(bytes, tail_at + 4)?.is_finite()
+        || u32_at(bytes, tail_at + 12) != Some(opaque_index)
+        || marked_record_reference(bytes, tail_at + 16) != record_index.checked_add(2)
+        || bytes.get(tail_at + 21..tail_at + 27) != Some(&[0; 6])
+        || bytes.get(tail_at + 27..tail_at + 29) != Some(&[0; 2])
+        || marked_record_reference(bytes, tail_at + 29) != record_index.checked_add(1)
+        || bytes.get(tail_at + 34..tail_at + 40) != Some(&[0; 6])
+        || bytes.get(tail_at + 40) != Some(&0)
+        || marked_record_reference(bytes, tail_at + 41) != Some(scope.record_index)
+        || bytes.get(tail_at + 46..tail_at + 52) != Some(&[0; 6])
+    {
+        return None;
+    }
+    let (paired_class_tag, paired_after_tag) =
+        lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+    if paired_class_tag.len() != 3
+        || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit())
+        || paired_after_tag != paired_at + 7
+        || u32_at(bytes, paired_after_tag) != Some(record_index)
+    {
+        return None;
+    }
+    let wrapper_record_indices = identity_offsets
+        .iter()
+        .map(|offset| u32_at(bytes, *offset))
+        .collect::<Option<Vec<_>>>()?;
+    let wrappers = wrapper_record_indices
+        .iter()
+        .map(|record_index| exact_pattern_identity_wrapper(bytes, records, *record_index))
+        .collect::<Option<Vec<_>>>()?;
+    let mut persistent_identities = wrappers
+        .iter()
+        .map(|(identity, _)| *identity)
+        .collect::<Vec<_>>();
+    persistent_identities.sort_unstable();
+    persistent_identities.dedup();
+    let [persistent_identity] = persistent_identities.as_slice() else {
+        return None;
+    };
+    Some((
+        DesignCircularPatternAxis::HistoricalEdge {
+            wrapper_record_indices,
+            persistent_identities: vec![*persistent_identity],
+            identity_offsets: wrappers.into_iter().map(|(_, offset)| offset).collect(),
+            resolved_origin: None,
+            resolved_direction: None,
+        },
+        selection_record_index,
+    ))
+}
+
+fn exact_pattern_identity_wrapper(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    record_index: u32,
+) -> Option<(u64, u64)> {
+    let [start] = records.offsets(record_index) else {
+        return None;
+    };
+    let start = *start;
+    let (_, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
+    if after_tag != start + 7
+        || u32_at(bytes, after_tag) != Some(record_index)
+        || bytes.get(start + 11..start + 21) != Some(&[0; 10])
+        || read_u64(bytes, start + 21)? == 0
+    {
+        return None;
+    }
+    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, start + 29, 1..=256)?;
+    let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
+    if !crate::bytes::is_guid_relaxed(&asset_id)
+        || !crate::bytes::is_guid_relaxed(&context_id)
+        || u32_at(bytes, after_context_id) != Some(2)
+        || bytes.get(after_context_id + 4..after_context_id + 8) != Some(&[0; 4])
+        || marked_record_reference(bytes, after_context_id + 8) != record_index.checked_add(1)
+        || bytes.get(after_context_id + 13..after_context_id + 19) != Some(&[0; 6])
+    {
+        return None;
+    }
+    let nested_one_at = next_indexed_record_offset(bytes, after_context_id + 19)?;
+    let (_, nested_one_tag) = lp_ascii_filtered(bytes, nested_one_at, 3..=3, u8::is_ascii_digit)?;
+    if u32_at(bytes, nested_one_tag) != record_index.checked_add(1)
+        || bytes.get(nested_one_at + 11..nested_one_at + 21) != Some(&[0; 10])
+        || marked_record_reference(bytes, nested_one_at + 21) != record_index.checked_add(2)
+        || bytes.get(nested_one_at + 26..nested_one_at + 32) != Some(&[0; 6])
+    {
+        return None;
+    }
+    let identity_at = next_indexed_record_offset(bytes, nested_one_at + 32)?;
+    let (_, identity_tag) = lp_ascii_filtered(bytes, identity_at, 3..=3, u8::is_ascii_digit)?;
+    let next_at = next_indexed_record_offset(bytes, identity_at + 29)?;
+    let (_, next_tag) = lp_ascii_filtered(bytes, next_at, 3..=3, u8::is_ascii_digit)?;
+    if u32_at(bytes, identity_tag) != record_index.checked_add(2)
+        || bytes.get(identity_at + 11..identity_at + 21) != Some(&[0; 10])
+        || identity_at.checked_add(29) != Some(next_at)
+        || u32_at(bytes, next_tag) != record_index.checked_add(3)
+    {
+        return None;
+    }
+    Some((
+        read_u64(bytes, identity_at + 21)?,
+        u64::try_from(identity_at + 21).ok()?,
+    ))
 }
 
 /// Join a Mirror scope's two operand groups and fixed parameters with either a
@@ -4517,7 +4693,10 @@ mod mirror_tests {
 
 #[cfg(test)]
 mod tests {
-    use super::{exact_work_point_position, parse_parameter_scope, POINT_DATA_TYPE_GUID};
+    use super::{
+        exact_pattern_identity_wrapper, exact_work_point_position, parse_parameter_scope,
+        POINT_DATA_TYPE_GUID,
+    };
     use crate::design::decode::sketch::IndexedRecordOffsets;
     use crate::records::{DesignParameterScope, DesignRecordHeader};
     use std::collections::HashMap;
@@ -4528,6 +4707,57 @@ mod tests {
         for unit in units {
             bytes.extend_from_slice(&unit.to_le_bytes());
         }
+    }
+
+    #[test]
+    fn circular_pattern_identity_wrapper_closes_on_its_persistent_identity() {
+        fn header(bytes: &mut Vec<u8>, class_tag: &str, record_index: u32) {
+            bytes.extend_from_slice(&3u32.to_le_bytes());
+            bytes.extend_from_slice(class_tag.as_bytes());
+            bytes.extend_from_slice(&record_index.to_le_bytes());
+        }
+        fn marked(bytes: &mut Vec<u8>, record_index: u32) {
+            bytes.push(1);
+            bytes.extend_from_slice(&record_index.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+        }
+
+        let mut bytes = Vec::new();
+        let record_index = 80;
+        header(&mut bytes, "308", record_index);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&40u64.to_le_bytes());
+        lp_utf16(&mut bytes, "384d79a0-c23e-42aa-b993-74df1f8dfcae");
+        lp_utf16(&mut bytes, "352c47d7-42ba-443e-9de1-ae0e37cc129d");
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        marked(&mut bytes, record_index + 1);
+        header(&mut bytes, "305", record_index + 1);
+        bytes.extend_from_slice(&[0; 10]);
+        marked(&mut bytes, record_index + 2);
+        header(&mut bytes, "300", record_index + 2);
+        bytes.extend_from_slice(&[0; 10]);
+        let identity_offset = bytes.len();
+        bytes.extend_from_slice(&503u64.to_le_bytes());
+        header(&mut bytes, "308", record_index + 3);
+
+        assert_eq!(
+            exact_pattern_identity_wrapper(
+                &bytes,
+                &IndexedRecordOffsets::build(&bytes),
+                record_index,
+            ),
+            Some((503, identity_offset as u64))
+        );
+        bytes[identity_offset - 1] = 1;
+        assert_eq!(
+            exact_pattern_identity_wrapper(
+                &bytes,
+                &IndexedRecordOffsets::build(&bytes),
+                record_index,
+            ),
+            None
+        );
     }
 
     /// A `WorkPoint` scope record, its paired header, and one point-data record

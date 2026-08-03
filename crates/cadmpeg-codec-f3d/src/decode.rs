@@ -2996,6 +2996,11 @@ fn extend_related_design_records(
         &native.design_body_bindings,
         &native.asm_histories,
     );
+    crate::history::bind_circular_pattern_axes(
+        &mut native.design_parameter_scopes,
+        &native.asm_histories,
+        &scope_histories,
+    );
     crate::history::bind_edge_identity_history(
         &mut native.design_edge_identity_operands,
         &native.design_construction_operand_identities,

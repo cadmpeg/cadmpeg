@@ -782,9 +782,6 @@ pub(crate) fn bind_feature_body_selections(
         }
         let feature_id = feature.id.clone();
         if let FeatureDefinition::Pattern { seeds, .. } = &mut feature.definition {
-            if !seeds.is_empty() {
-                continue;
-            }
             let Some(previous_state_id) = scope.previous_history_state_id else {
                 continue;
             };
@@ -801,18 +798,30 @@ pub(crate) fn bind_feature_body_selections(
             if matching_groups.next().is_some() {
                 continue;
             }
-            let mut bodies = BodySelection::Native(group.id.clone());
+            let selection = if let [cadmpeg_ir::features::PatternSeed::Bodies(selection)] =
+                seeds.as_mut_slice()
+            {
+                selection
+            } else if seeds.is_empty() {
+                seeds.push(cadmpeg_ir::features::PatternSeed::Bodies(
+                    BodySelection::Native(group.id.clone()),
+                ));
+                let [cadmpeg_ir::features::PatternSeed::Bodies(selection)] = seeds.as_mut_slice()
+                else {
+                    unreachable!("the inserted pattern seed is a body selection")
+                };
+                selection
+            } else {
+                continue;
+            };
             bind_body_recipe_body_selection(
-                &mut bodies,
+                selection,
                 &feature_id,
                 previous_state_id,
                 scope,
                 groups,
                 body_recipe_operands,
             );
-            if matches!(bodies, BodySelection::Historical { .. }) {
-                seeds.push(cadmpeg_ir::features::PatternSeed::Bodies(bodies));
-            }
             continue;
         }
         if let FeatureDefinition::BoundaryFill { tools, cells } = &mut feature.definition {
@@ -1337,6 +1346,24 @@ pub(crate) fn bind_feature_face_selections(
                     {
                         bind_face_selection(face, scope, groups, operands);
                     }
+                }
+            }
+            cadmpeg_ir::features::FeatureDefinition::Pattern { seeds, .. } => {
+                for seed in seeds {
+                    let cadmpeg_ir::features::PatternSeed::Faces(faces) = seed else {
+                        continue;
+                    };
+                    bind_face_selection(faces, scope, groups, operands);
+                    bind_entity_face_selection(
+                        faces,
+                        &feature_id,
+                        previous_state_id,
+                        &history.id,
+                        scope,
+                        groups,
+                        entity_operands,
+                        input_topologies,
+                    );
                 }
             }
             cadmpeg_ir::features::FeatureDefinition::MoveFace { faces, .. } => {
@@ -4224,6 +4251,119 @@ pub(crate) fn bind_entity_selection_history(
         operand.resolved_edge_slot =
             unique_entity_selection_edge(&operand.historical_edge_candidates);
     }
+}
+
+/// Resolve persistent circular-pattern axis identities in the feature input topology.
+pub(crate) fn bind_circular_pattern_axes(
+    scopes: &mut [crate::records::DesignParameterScope],
+    histories: &[AsmHistory],
+    scope_histories: &HashMap<String, String>,
+) {
+    use crate::records::DesignCircularPatternAxis;
+    for scope in scopes {
+        let matching_histories = if let Some(history_id) = scope_histories.get(&scope.id) {
+            histories
+                .iter()
+                .filter(|history| history.id == *history_id)
+                .collect::<Vec<_>>()
+        } else if histories.len() == 1 {
+            histories.iter().collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        let [history] = matching_histories.as_slice() else {
+            continue;
+        };
+        let Some(construction) = &mut scope.circular_pattern_construction else {
+            continue;
+        };
+        let DesignCircularPatternAxis::HistoricalEdge {
+            persistent_identities,
+            resolved_origin,
+            resolved_direction,
+            ..
+        } = &mut construction.axis
+        else {
+            continue;
+        };
+        *resolved_origin = None;
+        *resolved_direction = None;
+        let identities = HistoricalIdentityIndex::build(
+            std::slice::from_ref(*history),
+            persistent_identities.iter().copied(),
+        );
+        let axes = persistent_identities
+            .iter()
+            .map(|identity| historical_pattern_identity_axes(*identity, &identities, history))
+            .collect::<Vec<_>>();
+        if axes.iter().any(Vec::is_empty) {
+            continue;
+        }
+        let mut axes = axes.into_iter().flatten();
+        let Some((origin, direction)) = axes.next() else {
+            continue;
+        };
+        if axes.any(|candidate| !same_axis_line((origin, direction), candidate)) {
+            continue;
+        }
+        *resolved_origin = Some(origin);
+        *resolved_direction = Some(direction);
+    }
+}
+
+fn historical_pattern_identity_axes(
+    identity: u64,
+    identities: &HistoricalIdentityIndex,
+    history: &AsmHistory,
+) -> Vec<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
+    let selected = identities
+        .selection_identity_kind(identity)
+        .map(|(kind, entity_ref, _)| (kind, entity_ref));
+    let mut axes = Vec::new();
+    for topology in history
+        .states
+        .iter()
+        .filter_map(|state| state.topology.as_ref())
+    {
+        let mut edges = HashSet::new();
+        if let Some((kind, entity_ref)) = selected {
+            edges.extend(historical_identity_edges(kind, entity_ref, topology));
+        }
+        axes.extend(edges.into_iter().filter_map(|edge| {
+            let (origin, direction) = historical_edge_axis(edge, topology)?;
+            let direction = direction.unit()?;
+            (origin.x.is_finite()
+                && origin.y.is_finite()
+                && origin.z.is_finite()
+                && direction.x.is_finite()
+                && direction.y.is_finite()
+                && direction.z.is_finite())
+            .then_some((origin, direction))
+        }));
+    }
+    axes
+}
+
+fn same_axis_line(
+    left: (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3),
+    right: (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3),
+) -> bool {
+    let direction_dot = left.1.x * right.1.x + left.1.y * right.1.y + left.1.z * right.1.z;
+    if (direction_dot.abs() - 1.0).abs() > 1.0e-9 {
+        return false;
+    }
+    let delta = cadmpeg_ir::math::Vector3::new(
+        right.0.x - left.0.x,
+        right.0.y - left.0.y,
+        right.0.z - left.0.z,
+    );
+    let cross = cadmpeg_ir::math::Vector3::new(
+        delta.y * left.1.z - delta.z * left.1.y,
+        delta.z * left.1.x - delta.x * left.1.z,
+        delta.x * left.1.y - delta.y * left.1.x,
+    );
+    let distance = (cross.x * cross.x + cross.y * cross.y + cross.z * cross.z).sqrt();
+    distance.is_finite() && distance <= 1.0e-8
 }
 
 /// Bind persistent Mirror plane selections to exact planes in the selected

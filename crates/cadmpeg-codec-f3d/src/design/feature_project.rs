@@ -3551,38 +3551,60 @@ pub(crate) fn project_circular_pattern(
     use cadmpeg_ir::features::{Angle, FeatureDefinition, PatternKind, PatternSeed};
 
     let construction = scope.circular_pattern_construction.as_ref()?;
+    let (axis_origin, axis_dir) = circular_pattern_axis(&construction.axis)?;
     let stream = native_stream(&scope.id)?;
-    let mut matching_groups = groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream)
-            && group.scope_record_index == scope.record_index
-            && group.role == 0x0000_0008_0000_0000
-            && !group.members.is_empty()
-    });
-    let group = matching_groups.next()?;
-    if matching_groups.next().is_some() {
+    let matching_groups = groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+                && matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0008_0000_0000)
+                && !group.members.is_empty()
+        })
+        .collect::<Vec<_>>();
+    let [group] = matching_groups.as_slice() else {
         return None;
-    }
-    let seeds = resolved_historical_face_group(scope, group, face_operands)
-        .map(PatternSeed::Faces)
-        .into_iter()
-        .collect();
+    };
+    let seed = if group.role == 0x0000_0004_0000_0000 {
+        PatternSeed::Faces(
+            resolved_historical_face_group(scope, group, face_operands)
+                .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone())),
+        )
+    } else {
+        PatternSeed::Bodies(cadmpeg_ir::features::BodySelection::Native(
+            group.id.clone(),
+        ))
+    };
     Some(FeatureDefinition::Pattern {
-        seeds,
+        seeds: vec![seed],
         pattern: PatternKind::Circular {
-            axis_origin: Point3::new(
-                construction.origin[0] * 10.0,
-                construction.origin[1] * 10.0,
-                construction.origin[2] * 10.0,
-            ),
-            axis_dir: Vector3::new(
-                construction.direction[0],
-                construction.direction[1],
-                construction.direction[2],
-            ),
+            axis_origin,
+            axis_dir,
             angle: Angle(construction.angle),
             count: construction.count,
         },
     })
+}
+
+fn circular_pattern_axis(
+    axis: &crate::records::DesignCircularPatternAxis,
+) -> Option<(Point3, Vector3)> {
+    use crate::records::DesignCircularPatternAxis;
+
+    match axis {
+        DesignCircularPatternAxis::Inline {
+            origin, direction, ..
+        } => Some((
+            Point3::new(origin[0] * 10.0, origin[1] * 10.0, origin[2] * 10.0),
+            Vector3::new(direction[0], direction[1], direction[2]),
+        )),
+        DesignCircularPatternAxis::HistoricalEdge {
+            resolved_origin: Some(origin),
+            resolved_direction: Some(direction),
+            ..
+        } => Some((*origin, *direction)),
+        DesignCircularPatternAxis::HistoricalEdge { .. } => None,
+    }
 }
 
 fn project_rectangular_pattern_scalars(
