@@ -8,13 +8,6 @@
 //! deltas streams are both decoded; callers must use the report to account for
 //! unresolved active-face selection and other loss.
 //!
-//! Byte-level container, analytic, NURBS, intersection-chart, and topology-graph
-//! seams live in sibling modules. This module owns the remaining IR assembly
-//! pipeline as one unit: carrier emission, procedural completion (blend, offset,
-//! support-UV, intersection pcurves), topology bind and body selection, and
-//! design-intent incompleteness predicates. Those stages share `CadIr` mutation
-//! order and mutually recursive surface evaluation, so they stay co-located.
-//!
 //! [`DecodeReport`]: cadmpeg_ir::report::DecodeReport
 
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
