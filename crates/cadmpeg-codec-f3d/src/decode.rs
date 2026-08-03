@@ -235,6 +235,26 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
     }
 }
 
+fn incomplete_feature_families(ir: &CadIr) -> std::collections::BTreeMap<&str, usize> {
+    let mut families = std::collections::BTreeMap::new();
+    for feature in &ir.model.features {
+        if !feature_definition_is_incomplete(&feature.definition) {
+            continue;
+        }
+        let family = feature.source_tag.as_deref().unwrap_or_else(|| {
+            if let cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } =
+                &feature.definition
+            {
+                kind
+            } else {
+                "<missing source tag>"
+            }
+        });
+        *families.entry(family).or_default() += 1;
+    }
+    families
+}
+
 fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGaps {
     use cadmpeg_ir::features::{
         BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection, Termination,
@@ -663,6 +683,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
 
 fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: &F3dNative) {
     let gaps = design_projection_gaps(ir, native);
+    let incomplete_families = incomplete_feature_families(ir);
     let history_budget_skips = native
         .asm_histories
         .iter()
@@ -740,8 +761,13 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
     push(
         gaps.incomplete_features,
         format!(
-            "{} feature scope(s) have no complete neutral feature definition.",
-            gaps.incomplete_features
+            "{} feature scope(s) have no complete neutral feature definition: {}.",
+            gaps.incomplete_features,
+            incomplete_families
+                .iter()
+                .map(|(family, count)| format!("{family}={count}"))
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
     );
     push(
@@ -3324,7 +3350,7 @@ fn apply_appearance_base_colors(ir: &mut CadIr) {
 mod tests {
     use super::{
         apply_appearance_base_colors, design_projection_gaps, feature_definition_is_incomplete,
-        unresolved_dimension_companion_count, DesignProjectionGaps,
+        incomplete_feature_families, unresolved_dimension_companion_count, DesignProjectionGaps,
     };
     use crate::native::F3dNative;
     use crate::records::{
@@ -3345,6 +3371,47 @@ mod tests {
         assert!(!feature_definition_is_incomplete(&native("Canvas")));
         assert!(!feature_definition_is_incomplete(&native("Decal")));
         assert!(feature_definition_is_incomplete(&native("Fillet")));
+    }
+
+    #[test]
+    fn incomplete_feature_families_are_counted_by_source_operation() {
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+
+        let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+        let feature = |id: &str, source_tag: Option<&str>, kind: &str| Feature {
+            id: FeatureId(id.into()),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: source_tag.map(str::to_owned),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: kind.into(),
+                parameters: std::collections::BTreeMap::new(),
+                properties: std::collections::BTreeMap::new(),
+            },
+            native_ref: None,
+        };
+        ir.model
+            .features
+            .push(feature("feature:1", Some("EdgeFlange"), "native-a"));
+        ir.model
+            .features
+            .push(feature("feature:2", Some("EdgeFlange"), "native-b"));
+        ir.model.features.push(feature("feature:3", None, "Hem"));
+        ir.model
+            .features
+            .push(feature("feature:4", Some("Canvas"), "Canvas"));
+
+        assert_eq!(
+            incomplete_feature_families(&ir),
+            std::collections::BTreeMap::from([("EdgeFlange", 2), ("Hem", 1)])
+        );
     }
 
     #[test]
