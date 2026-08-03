@@ -2975,11 +2975,17 @@ fn extend_related_design_records(
         &mut native.design_extrude_selection_members,
         &native.asm_histories,
     );
+    let scope_histories = crate::history::bind_scope_histories(
+        &native.design_parameter_scopes,
+        &native.design_body_bindings,
+        &native.asm_histories,
+    );
     crate::history::bind_edge_identity_history(
         &mut native.design_edge_identity_operands,
         &native.design_construction_operand_identities,
         &native.design_parameter_scopes,
         &native.asm_histories,
+        &scope_histories,
     );
     native.design_edge_operands = crate::design::decode::operands::decode_edge_operands(
         scan,
@@ -2997,6 +3003,7 @@ fn extend_related_design_records(
         &mut native.design_edge_operands,
         &native.design_parameter_scopes,
         &native.asm_histories,
+        &scope_histories,
     );
     native.design_face_operands = crate::design::decode::operands::decode_face_operands(
         scan,

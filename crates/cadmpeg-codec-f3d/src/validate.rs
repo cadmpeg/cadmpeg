@@ -3071,11 +3071,17 @@ fn validate_edge_identity_operands<'a>(
     let scopes_by_index = &ctx.scopes_by_index;
     let operand_groups_by_index = &ctx.operand_groups_by_index;
     let mut expected_edge_identity_operands = native.design_edge_identity_operands.clone();
+    let scope_histories = history::bind_scope_histories(
+        &native.design_parameter_scopes,
+        &native.design_body_bindings,
+        &native.asm_histories,
+    );
     history::bind_edge_identity_history(
         &mut expected_edge_identity_operands,
         &native.design_construction_operand_identities,
         &native.design_parameter_scopes,
         &native.asm_histories,
+        &scope_histories,
     );
     history::bind_edge_identity_bounded_face_rules(
         &mut expected_edge_identity_operands,
@@ -3724,10 +3730,16 @@ fn validate_edge_operands<'a>(
     let mut edge_operand_slots = HashSet::new();
     let mut edge_operand_records = HashSet::new();
     let mut expected_edge_operands = native.design_edge_operands.clone();
+    let scope_histories = history::bind_scope_histories(
+        &native.design_parameter_scopes,
+        &native.design_body_bindings,
+        &native.asm_histories,
+    );
     history::bind_edge_operand_history_candidates(
         &mut expected_edge_operands,
         &native.design_parameter_scopes,
         &native.asm_histories,
+        &scope_histories,
     );
     let expected_edge_operands = expected_edge_operands
         .iter()
