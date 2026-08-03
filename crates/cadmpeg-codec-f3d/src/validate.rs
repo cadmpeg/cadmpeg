@@ -295,7 +295,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let edge_identity_records =
         validate_edge_identity_operands(&ctx, &mut findings, &expected_face_operands);
     let body_recipe_operand_records = validate_body_recipe_operands(&ctx, &mut findings);
-    validate_operand_group_identity_chains(
+    validate_operand_group_carriers(
         &ctx,
         &mut findings,
         &operand_identity_groups,
@@ -1622,10 +1622,10 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 .windows(2)
                 .all(|offsets| offsets[1] >= offsets[0].saturating_add(11))
             && frame.auxiliary_record_offsets.len() == frame.auxiliary_record_indices.len()
-            && frame.identity_record_offsets.len() == frame.identity_record_indices.len()
-            && frame.identity_record_indices.len() <= 1
+            && frame.trailing_record_offsets.len() == frame.trailing_record_indices.len()
+            && frame.trailing_record_indices.len() <= 1
             && frame
-                .identity_record_offsets
+                .trailing_record_offsets
                 .first()
                 .is_none_or(|offset| *offset == group.role_offset.saturating_sub(10))
             && group.role_offset >= member_run_end
@@ -1639,8 +1639,36 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
             && frame
                 .auxiliary_record_indices
                 .iter()
-                .chain(&frame.identity_record_indices)
-                .all(|record_index| record_indices.contains(&(native_stream, *record_index)));
+                .chain(&frame.trailing_record_indices)
+                .all(|record_index| record_indices.contains(&(native_stream, *record_index)))
+            && frame.trailing_transforms.iter().all(|transform| {
+                frame
+                    .trailing_record_indices
+                    .contains(&transform.record_index)
+                    && records_by_index
+                        .get(&(native_stream, transform.record_index))
+                        .is_some_and(|header| {
+                            header.byte_offset == transform.byte_offset
+                                && header.class_tag == transform.class_tag
+                        })
+                    && transform.transform_offset == transform.byte_offset.saturating_add(22)
+                    && crate::design::decode::sketch::valid_sketch_transform(&transform.transform)
+                    && transform.following_record_index == transform.record_index.saturating_add(1)
+                    && transform.following_byte_offset == transform.byte_offset.saturating_add(152)
+                    && records_by_index
+                        .get(&(native_stream, transform.following_record_index))
+                        .is_some_and(|header| {
+                            header.byte_offset == transform.following_byte_offset
+                                && header.class_tag == transform.following_class_tag
+                        })
+            })
+            && frame
+                .trailing_transforms
+                .iter()
+                .map(|transform| transform.record_index)
+                .collect::<HashSet<_>>()
+                .len()
+                == frame.trailing_transforms.len();
         let valid = group.class_tag.len() == 3
             && group.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && group.paired_class_tag.len() == 3
@@ -2642,7 +2670,7 @@ fn validate_construction_operand_identities<'a>(
                     && persistent.next_record_index != 0
             });
         let valid = group.is_some_and(|group| {
-            identity.wrapper_record_indices.first() == group.frame.identity_record_indices.first()
+            identity.wrapper_record_indices.first() == group.frame.trailing_record_indices.first()
         }) && wrapper_shape
             && following_shape
             && persistent_shape
@@ -2884,8 +2912,8 @@ fn validate_body_recipe_operands<'a>(
     operand_records
 }
 
-/// Report operand groups lacking an identity chain.
-fn validate_operand_group_identity_chains<'a>(
+/// Report operand groups lacking a typed member carrier.
+fn validate_operand_group_carriers<'a>(
     ctx: &Ctx<'a>,
     findings: &mut Vec<Finding>,
     operand_identity_groups: &HashSet<(&'a str, u32)>,
@@ -2967,16 +2995,41 @@ fn validate_operand_group_identity_chains<'a>(
                         })
                     })
                 });
-        if !operand_identity_groups.contains(&(native_stream, group.record_index))
-            && !has_exact_identity_members
-            && !has_exact_entity_selection_members
-            && !has_exact_face_members
-            && !has_exact_body_recipe_members
-        {
+        let has_exact_sketch_profile_member = group.members.len() == 1
+            && ctx
+                .scopes_by_index
+                .get(&(native_stream, group.scope_record_index))
+                .is_some_and(|scope| {
+                    scope
+                        .extrude_profile
+                        .as_ref()
+                        .or(scope.sweep_profile.as_ref())
+                        .or(scope.base_flange_profile.as_ref())
+                        .is_some_and(|profile| group.members == [profile.record_index])
+                });
+        let has_exact_trailing_carrier = group.frame.trailing_record_indices.is_empty()
+            || operand_identity_groups.contains(&(native_stream, group.record_index))
+            || (group.frame.trailing_transforms.len() == group.frame.trailing_record_indices.len()
+                && group
+                    .frame
+                    .trailing_transforms
+                    .iter()
+                    .zip(&group.frame.trailing_record_indices)
+                    .all(|(transform, record_index)| transform.record_index == *record_index));
+        let has_exact_member_carrier = operand_identity_groups
+            .contains(&(native_stream, group.record_index))
+            || has_exact_identity_members
+            || has_exact_entity_selection_members
+            || has_exact_face_members
+            || has_exact_body_recipe_members
+            || has_exact_sketch_profile_member;
+        if !has_exact_member_carrier || !has_exact_trailing_carrier {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
-                message: "Fusion Design construction operand group has no identity chain".into(),
+                message:
+                    "Fusion Design construction operand group has no exact typed member and trailing carrier"
+                        .into(),
                 entity: Some(group.id.clone()),
             });
         }

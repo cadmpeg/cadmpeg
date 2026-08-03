@@ -892,7 +892,7 @@ impl ConstructionOperandGroupParse {
 ///
 /// The record's members are a leading-block presence byte, the property block
 /// its presence byte gates, the counted member run, two optional references,
-/// the counted identity run, a zero u32 and the u32 role, ten zero bytes, an
+/// the counted trailing-reference run, a zero u32 and the u32 role, ten zero bytes, an
 /// ordinal, a duration, and a repeat of the ordinal that one container
 /// generation omits. The tail is a reference to record `N + 2`, a flag block,
 /// a reference to record `N + 1`, a zero byte, the owning scope's reference,
@@ -952,21 +952,21 @@ pub(crate) fn parse_construction_operand_group(
         auxiliary_record_indices.push(record_index);
         auxiliary_record_offsets.push(offset);
     }
-    let Some(identity_count) = u32_at(bytes, cursor) else {
+    let Some(trailing_count) = u32_at(bytes, cursor) else {
         return NotAGroup;
     };
     cursor += 4;
-    if usize::try_from(identity_count).unwrap_or(usize::MAX) > bytes.len().saturating_sub(cursor) {
+    if usize::try_from(trailing_count).unwrap_or(usize::MAX) > bytes.len().saturating_sub(cursor) {
         return NotAGroup;
     }
-    let mut identity_record_indices = Vec::new();
-    let mut identity_record_offsets = Vec::new();
-    for _ in 0..identity_count {
+    let mut trailing_record_indices = Vec::new();
+    let mut trailing_record_offsets = Vec::new();
+    for _ in 0..trailing_count {
         let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;
         };
-        identity_record_indices.push(record_index);
-        identity_record_offsets.push(offset);
+        trailing_record_indices.push(record_index);
+        trailing_record_offsets.push(offset);
     }
     // The role occupies the high word of a u64 whose low word is zero.
     let role_at = cursor;
@@ -1079,8 +1079,9 @@ pub(crate) fn parse_construction_operand_group(
             member_count_offset,
             auxiliary_record_indices,
             auxiliary_record_offsets,
-            identity_record_indices,
-            identity_record_offsets,
+            trailing_record_indices,
+            trailing_record_offsets,
+            trailing_transforms: Vec::new(),
             opaque_index,
             opaque_index_offset,
             opaque_scalar,
@@ -1094,6 +1095,78 @@ pub(crate) fn parse_construction_operand_group(
         paired_class_tag,
         paired_byte_offset,
     }))
+}
+
+/// Bind exact affine-transform records selected by construction groups.
+pub fn bind_construction_operand_transforms(
+    scan: &ContainerScan,
+    groups: &mut [DesignConstructionOperandGroup],
+    headers: &[DesignRecordHeader],
+) -> Result<(), CodecError> {
+    let headers = headers
+        .iter()
+        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
+        .collect::<HashMap<_, _>>();
+    for group in groups {
+        group.frame.trailing_transforms.clear();
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == ids::native_scope(&entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for record_index in &group.frame.trailing_record_indices {
+            let Some(header) = headers.get(&(stream, *record_index)) else {
+                continue;
+            };
+            if let Some(transform) = parse_construction_operand_transform(bytes, header) {
+                group.frame.trailing_transforms.push(transform);
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn parse_construction_operand_transform(
+    bytes: &[u8],
+    header: &DesignRecordHeader,
+) -> Option<crate::records::DesignConstructionOperandTransform> {
+    use crate::design::decode::sketch::valid_sketch_transform;
+
+    let start = usize::try_from(header.byte_offset).ok()?;
+    if bytes.get(start + 11..start + 22)? != [0; 11] {
+        return None;
+    }
+    let values = cadmpeg_codec_core::le::f64s_at(bytes, start + 22, 16)?;
+    let mut transform = [[0.0; 4]; 4];
+    for (ordinal, value) in values.iter().copied().enumerate() {
+        transform[ordinal / 4][ordinal % 4] = value;
+    }
+    if !valid_sketch_transform(&transform) || bytes.get(start + 150..start + 152)? != [1, 0] {
+        return None;
+    }
+    let following_at = start.checked_add(152)?;
+    let (following_class_tag, after_tag) =
+        lp_ascii_filtered(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
+    let following_record_index = u32_at(bytes, after_tag)?;
+    if following_record_index != header.record_index.checked_add(1)? {
+        return None;
+    }
+    Some(crate::records::DesignConstructionOperandTransform {
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        transform,
+        transform_offset: u64::try_from(start + 22).ok()?,
+        following_record_index,
+        following_byte_offset: u64::try_from(following_at).ok()?,
+        following_class_tag,
+    })
 }
 
 /// Take one reference naming a record of the same segment, advancing `at` past
@@ -1133,10 +1206,10 @@ pub fn decode_construction_operand_identities(
         }) else {
             continue;
         };
-        let Some(identity_record_index) = group.frame.identity_record_indices.first() else {
+        let Some(trailing_record_index) = group.frame.trailing_record_indices.first() else {
             continue;
         };
-        let Some(wrapper_header) = headers.get(&(stream, *identity_record_index)) else {
+        let Some(wrapper_header) = headers.get(&(stream, *trailing_record_index)) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;

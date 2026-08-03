@@ -238,7 +238,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 - what the context UUID names
 - what the optional slot of the fixed member tail holds
 
-**Known.** `f3d.md` §8.1 "A nested entity-selection member" states that an identity absent from the preceding state gives no candidate. `f3d.md` §8.1 "An Extrude selection resolves" gives a fallback chain that ends in native retention. `f3d.md` §8.1 "The first record of a construction-operand" gives the presence encoding of the optional slot. The marker is zero when the slot is absent and one when the slot is present.
+**Known.** `f3d.md` §8.1 "A nested entity-selection member" states that an identity absent from the preceding state gives no candidate. `f3d.md` §8.1 "An Extrude selection resolves" gives a fallback chain that ends in native retention. `f3d.md` §8.1 "The first identity-wrapper record" gives the presence encoding of the optional slot. The marker is zero when the slot is absent and one when the slot is present.
 
 **Need.** Each unknown makes one Extrude selection fall back to native retention. The neutral model then has no selection.
 

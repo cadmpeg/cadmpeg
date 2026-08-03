@@ -2182,12 +2182,20 @@ pub struct DesignConstructionOperandGroupFrame {
     /// Byte offsets parallel to `auxiliary_record_indices`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub auxiliary_record_offsets: Vec<u64>,
-    /// Indexed identity-wrapper records named by the counted identity run.
+    /// Indexed records named by the counted trailing-reference run. The target
+    /// grammar is selected by the owning operand family: persistent-selection
+    /// groups name identity wrappers and placed-selection groups name affine
+    /// transforms.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub identity_record_indices: Vec<u32>,
-    /// Byte offsets parallel to `identity_record_indices`.
+    pub trailing_record_indices: Vec<u32>,
+    /// Byte offsets parallel to `trailing_record_indices`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub identity_record_offsets: Vec<u64>,
+    pub trailing_record_offsets: Vec<u64>,
+    /// Exact affine-transform records selected from the trailing-reference
+    /// run. Other trailing records remain represented by their indices and
+    /// offsets and can select another typed grammar.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub trailing_transforms: Vec<DesignConstructionOperandTransform>,
     /// Opaque ordinal: nonzero and below 256, repeated after `opaque_scalar` in
     /// every container generation but one.
     pub opaque_index: u32,
@@ -2199,6 +2207,27 @@ pub struct DesignConstructionOperandGroupFrame {
     pub opaque_scalar_offset: u64,
     /// Boolean tail variant.
     pub variant: bool,
+}
+
+/// Affine placement named by a construction-operand group's trailing run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignConstructionOperandTransform {
+    /// Indexed transform-record identity.
+    pub record_index: u32,
+    /// Transform-record header byte offset.
+    pub byte_offset: u64,
+    /// Per-file dynamic transform-record class tag.
+    pub class_tag: String,
+    /// Row-major local-to-model affine transform.
+    pub transform: [[f64; 4]; 4],
+    /// Byte offset of the first matrix scalar.
+    pub transform_offset: u64,
+    /// Indexed record immediately following the transform.
+    pub following_record_index: u32,
+    /// Following-record header byte offset.
+    pub following_byte_offset: u64,
+    /// Per-file dynamic following-record class tag.
+    pub following_class_tag: String,
 }
 
 /// Nested identity chain named by a construction-operand group.

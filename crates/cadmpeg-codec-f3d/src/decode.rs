@@ -2563,9 +2563,12 @@ fn extend_related_design_records(
                     .to_owned();
                 group
                     .frame
-                    .identity_record_indices
-                    .clone()
-                    .into_iter()
+                    .trailing_record_indices
+                    .iter()
+                    .flat_map(|record_index| {
+                        std::iter::once(*record_index).chain(record_index.checked_add(1))
+                    })
+                    .chain(group.frame.auxiliary_record_indices.iter().copied())
                     .map(move |record_index| (stream.clone(), record_index))
             }),
     );
@@ -2591,6 +2594,11 @@ fn extend_related_design_records(
     native
         .design_record_headers
         .sort_by_key(|record| record.id.clone());
+    crate::design::decode::operands::bind_construction_operand_transforms(
+        scan,
+        &mut native.design_construction_operand_groups,
+        &native.design_record_headers,
+    )?;
     native.design_construction_operand_identities =
         crate::design::decode::operands::decode_construction_operand_identities(
             scan,

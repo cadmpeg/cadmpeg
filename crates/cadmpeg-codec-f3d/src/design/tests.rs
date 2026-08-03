@@ -20,9 +20,9 @@ use crate::design::decode::operands::{
     bind_extrude_selection_identities, bind_face_operand_candidates, bind_lost_edge_groups,
     decode_fillet_radius_groups, face_recipe_program_kind, has_typed_edge_treatment_group,
     parse_body_recipe_operand, parse_construction_operand_group,
-    parse_construction_operand_identity, parse_edge_operand, parse_entity_selection_operand,
-    parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
-    parse_sketch_profile, ConstructionOperandGroupParse, FaceRecipeProgramKind,
+    parse_construction_operand_identity, parse_construction_operand_transform, parse_edge_operand,
+    parse_entity_selection_operand, parse_extrude_selection_group, parse_extrude_selection_member,
+    parse_face_operand, parse_sketch_profile, ConstructionOperandGroupParse, FaceRecipeProgramKind,
 };
 use crate::design::decode::parameters::{
     bind_parameter_companion_payloads, design_parameter_discriminator, parse_design_parameter,
@@ -4700,8 +4700,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             member_count_offset: 0,
             auxiliary_record_indices: Vec::new(),
             auxiliary_record_offsets: Vec::new(),
-            identity_record_indices: vec![202],
-            identity_record_offsets: vec![0],
+            trailing_record_indices: vec![202],
+            trailing_record_offsets: vec![0],
+            trailing_transforms: Vec::new(),
             opaque_index: 1,
             opaque_index_offset: 0,
             opaque_scalar: 0.0,
@@ -6865,7 +6866,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(group.extrude_role, Some(DesignExtrudeOperandRole::Bodies));
     assert_eq!(group.frame.member_count_offset, 21);
     assert!(group.frame.auxiliary_record_indices.is_empty());
-    assert_eq!(group.frame.identity_record_indices, [300]);
+    assert_eq!(group.frame.trailing_record_indices, [300]);
     assert_eq!(group.frame.opaque_index, 180);
     assert_eq!(group.frame.opaque_scalar, 0.125);
     assert!(group.frame.variant);
@@ -6985,7 +6986,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(auxiliary.member_offsets, [26]);
     assert_eq!(auxiliary.frame.auxiliary_record_indices, [103, 106]);
     assert_eq!(auxiliary.frame.auxiliary_record_offsets, [37, 48]);
-    assert!(auxiliary.frame.identity_record_indices.is_empty());
+    assert!(auxiliary.frame.trailing_record_indices.is_empty());
     assert_eq!(auxiliary.role, 0x0000_0011_0000_0000);
     assert_eq!(
         auxiliary.extrude_role,
@@ -7269,6 +7270,47 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
 }
 
 #[test]
+fn construction_operand_trailing_transform_has_exact_affine_frame() {
+    let record_index = 300u32;
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"339");
+    bytes.extend_from_slice(&record_index.to_le_bytes());
+    bytes.extend_from_slice(&[0; 11]);
+    let transform = [
+        [0.0_f64, -1.0, 0.0, 12.5],
+        [1.0, 0.0, 0.0, -4.0],
+        [0.0, 0.0, 1.0, 3.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    for value in transform.into_iter().flatten() {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&[1, 0]);
+    let following_at = bytes.len();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"432");
+    bytes.extend_from_slice(&(record_index + 1).to_le_bytes());
+    let header = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:record#300".into(),
+        byte_offset: 0,
+        class_tag: "339".into(),
+        record_index,
+    };
+
+    let parsed = parse_construction_operand_transform(&bytes, &header)
+        .expect("exact construction-operand transform");
+    assert_eq!(parsed.transform, transform);
+    assert_eq!(parsed.transform_offset, 22);
+    assert_eq!(parsed.following_record_index, 301);
+    assert_eq!(parsed.following_byte_offset, following_at as u64);
+    assert_eq!(parsed.following_class_tag, "432");
+
+    bytes[150] = 0;
+    assert!(parse_construction_operand_transform(&bytes, &header).is_none());
+}
+
+#[test]
 fn ruled_surface_operation_reads_mode_parameters_and_ordered_edge_groups() {
     let mut bytes = vec![0; 366];
     bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
@@ -7379,8 +7421,9 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
             member_count_offset: 1021,
             auxiliary_record_indices: Vec::new(),
             auxiliary_record_offsets: Vec::new(),
-            identity_record_indices: vec![300],
-            identity_record_offsets: vec![1043],
+            trailing_record_indices: vec![300],
+            trailing_record_offsets: vec![1043],
+            trailing_transforms: Vec::new(),
             opaque_index: 180,
             opaque_index_offset: 1071,
             opaque_scalar: 0.125,
@@ -7481,8 +7524,9 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
             member_count_offset: 921,
             auxiliary_record_indices: Vec::new(),
             auxiliary_record_offsets: Vec::new(),
-            identity_record_indices: vec![200],
-            identity_record_offsets: vec![943],
+            trailing_record_indices: vec![200],
+            trailing_record_offsets: vec![943],
+            trailing_transforms: Vec::new(),
             opaque_index: 1,
             opaque_index_offset: 971,
             opaque_scalar: 0.0,
@@ -7570,8 +7614,9 @@ fn body_recipe_operand_decodes_counted_reference_table() {
             member_count_offset: 921,
             auxiliary_record_indices: Vec::new(),
             auxiliary_record_offsets: Vec::new(),
-            identity_record_indices: vec![200],
-            identity_record_offsets: vec![943],
+            trailing_record_indices: vec![200],
+            trailing_record_offsets: vec![943],
+            trailing_transforms: Vec::new(),
             opaque_index: 1,
             opaque_index_offset: 971,
             opaque_scalar: 0.0,
@@ -8395,8 +8440,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             member_count_offset: 921,
             auxiliary_record_indices: Vec::new(),
             auxiliary_record_offsets: Vec::new(),
-            identity_record_indices: vec![91],
-            identity_record_offsets: vec![950],
+            trailing_record_indices: vec![91],
+            trailing_record_offsets: vec![950],
+            trailing_transforms: Vec::new(),
             opaque_index: 1,
             opaque_index_offset: 968,
             opaque_scalar: 0.0,
@@ -9115,8 +9161,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             member_count_offset: 920,
             auxiliary_record_indices: Vec::new(),
             auxiliary_record_offsets: Vec::new(),
-            identity_record_indices: vec![91],
-            identity_record_offsets: vec![935],
+            trailing_record_indices: vec![91],
+            trailing_record_offsets: vec![935],
+            trailing_transforms: Vec::new(),
             opaque_index: 1,
             opaque_index_offset: 954,
             opaque_scalar: 0.0,
@@ -14542,8 +14589,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             member_count_offset: 1021,
             auxiliary_record_indices: Vec::new(),
             auxiliary_record_offsets: Vec::new(),
-            identity_record_indices: vec![300],
-            identity_record_offsets: vec![1044],
+            trailing_record_indices: vec![300],
+            trailing_record_offsets: vec![1044],
+            trailing_transforms: Vec::new(),
             opaque_index: 180,
             opaque_index_offset: 1072,
             opaque_scalar: 0.125,
@@ -15332,8 +15380,9 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                 member_count_offset: 1_021 + u64::from(scope_reference_ordinal),
                 auxiliary_record_indices: Vec::new(),
                 auxiliary_record_offsets: Vec::new(),
-                identity_record_indices: vec![record_index + 1],
-                identity_record_offsets: vec![1_050 + u64::from(scope_reference_ordinal)],
+                trailing_record_indices: vec![record_index + 1],
+                trailing_record_offsets: vec![1_050 + u64::from(scope_reference_ordinal)],
+                trailing_transforms: Vec::new(),
                 opaque_index: 100,
                 opaque_index_offset: 1_068 + u64::from(scope_reference_ordinal),
                 opaque_scalar: 0.5,
@@ -16035,8 +16084,9 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             member_count_offset: 1021 + u64::from(ordinal) * 200,
             auxiliary_record_indices: Vec::new(),
             auxiliary_record_offsets: Vec::new(),
-            identity_record_indices: vec![300 + ordinal],
-            identity_record_offsets: vec![1100 + u64::from(ordinal) * 200],
+            trailing_record_indices: vec![300 + ordinal],
+            trailing_record_offsets: vec![1100 + u64::from(ordinal) * 200],
+            trailing_transforms: Vec::new(),
             opaque_index: 100,
             opaque_index_offset: 1128 + u64::from(ordinal) * 200,
             opaque_scalar: 0.5,
