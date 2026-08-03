@@ -2348,6 +2348,12 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             }
         }
     }
+    let result_topologies_by_feature = ir
+        .model
+        .feature_result_topologies
+        .iter()
+        .map(|state| (state.output_of.as_str(), state))
+        .collect::<HashMap<_, _>>();
     let mut feature_ordinals = HashSet::new();
     for feature in &ir.model.features {
         if !feature_ordinals.insert(feature.ordinal) {
@@ -4404,6 +4410,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         .get(vertex.feature.0.as_str())
                         .is_none_or(|ordinal| *ordinal >= feature.ordinal)
                     || !feature.dependencies.contains(&vertex.feature)
+                    || result_topologies_by_feature
+                        .get(vertex.feature.as_str())
+                        .is_some_and(|state| !state.vertices.contains(&vertex.local_id))
                 {
                     feature_geometry_error(
                         findings,
@@ -4492,6 +4501,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         || edges.iter().any(|edge| {
                             edge.local_id.trim().is_empty()
                                 || !feature.dependencies.contains(&edge.feature)
+                                || result_topologies_by_feature
+                                    .get(edge.feature.as_str())
+                                    .is_some_and(|state| !state.edges.contains(&edge.local_id))
                         })
                     {
                         feature_geometry_error(
@@ -4597,6 +4609,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         || faces.iter().any(|face| {
                             face.local_id.trim().is_empty()
                                 || !feature.dependencies.contains(&face.feature)
+                                || result_topologies_by_feature
+                                    .get(face.feature.as_str())
+                                    .is_some_and(|state| !state.faces.contains(&face.local_id))
                         })
                     {
                         feature_geometry_error(
@@ -4687,6 +4702,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         || bodies.iter().any(|body| {
                             body.local_id.trim().is_empty()
                                 || !feature.dependencies.contains(&body.feature)
+                                || result_topologies_by_feature
+                                    .get(body.feature.as_str())
+                                    .is_some_and(|state| !state.bodies.contains(&body.local_id))
                         })
                     {
                         feature_geometry_error(

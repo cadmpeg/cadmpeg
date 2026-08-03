@@ -1360,10 +1360,10 @@ impl FeatureDefinition {
     /// Family name of a definition whose replay produces body geometry, and `None` for
     /// definitions that do not.
     ///
-    /// A feature of one of these families carries its result geometry in the owning
-    /// [`Feature::outputs`] list, so an empty or unresolvable output list means the body
-    /// lineage was not transferred. The returned name is the stable lowercase label for
-    /// the family, suitable for grouping such features in a report.
+    /// A feature of one of these families carries current result bodies in its
+    /// [`Feature::outputs`] list or intermediate result identities in a
+    /// [`FeatureResultTopology`]. The returned name is the stable lowercase label for the
+    /// family, suitable for grouping such features in a report.
     pub fn body_output_family(&self) -> Option<&'static str> {
         match self {
             Self::BaseFeature { .. } => Some("base feature"),
