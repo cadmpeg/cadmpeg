@@ -9957,6 +9957,7 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
     fn placement_frame(
         record_index: u32,
         length: usize,
+        transform_offset: usize,
         transform: Option<[[f64; 4]; 4]>,
     ) -> Vec<u8> {
         let mut bytes = vec![0; length];
@@ -9965,7 +9966,7 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
         bytes[7..11].copy_from_slice(&record_index.to_le_bytes());
         if let Some(transform) = transform {
             for (ordinal, value) in transform.into_iter().flatten().enumerate() {
-                let at = 55 + ordinal * 8;
+                let at = transform_offset + ordinal * 8;
                 bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
             }
         }
@@ -9975,7 +9976,7 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
         bytes
     }
 
-    let compact = candidates(&placement_frame(185, 201, None), 177, "0_172", 172, 185);
+    let compact = candidates(&placement_frame(185, 201, 55, None), 177, "0_172", 172, 185);
     assert_eq!(compact.len(), 1);
     assert_eq!(compact[0].frame_length, 201);
     assert_eq!(compact[0].transform, identity_matrix());
@@ -9988,7 +9989,7 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
         [0.0, 0.0, 0.0, 1.0],
     ];
     let explicit = candidates(
-        &placement_frame(1773, 329, Some(transform)),
+        &placement_frame(1773, 329, 55, Some(transform)),
         1765,
         "0_1761",
         1761,
@@ -9998,6 +9999,20 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
     assert_eq!(explicit[0].frame_length, 329);
     assert_eq!(explicit[0].transform, transform);
     assert_eq!(explicit[0].transform_offset, Some(55));
+
+    for length in [305, 325] {
+        let legacy = candidates(
+            &placement_frame(1773, length, 48, Some(transform)),
+            1765,
+            "0_1761",
+            1761,
+            1773,
+        );
+        assert_eq!(legacy.len(), 1);
+        assert_eq!(legacy[0].frame_length, length as u64);
+        assert_eq!(legacy[0].transform, transform);
+        assert_eq!(legacy[0].transform_offset, Some(48));
+    }
 }
 
 #[test]

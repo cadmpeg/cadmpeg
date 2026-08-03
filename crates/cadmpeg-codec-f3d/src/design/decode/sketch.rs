@@ -304,8 +304,7 @@ pub(crate) fn parse_sketch_placement_candidates(
         let start = pair[0];
         let paired_at = pair[1];
         let frame_length = paired_at.saturating_sub(start);
-        if frame_length != 201 && frame_length != 329 && frame_length != 213 && frame_length != 341
-        {
+        if !matches!(frame_length, 201 | 213 | 305 | 325 | 329 | 341) {
             continue;
         }
         let Some((class_tag, after_tag)) =
@@ -330,6 +329,19 @@ pub(crate) fn parse_sketch_placement_candidates(
         }
         let (transform, transform_offset) = match frame_length {
             201 => (identity_matrix(), None),
+            305 | 325 => {
+                let Some(values) = f64s_at(bytes, start + 48, 16) else {
+                    continue;
+                };
+                let mut transform = [[0.0; 4]; 4];
+                for (ordinal, value) in values.iter().copied().enumerate() {
+                    transform[ordinal / 4][ordinal % 4] = value;
+                }
+                if !valid_sketch_transform(&transform) {
+                    continue;
+                }
+                (transform, Some((start + 48) as u64))
+            }
             329 => {
                 let Some(values) = f64s_at(bytes, start + 55, 16) else {
                     continue;

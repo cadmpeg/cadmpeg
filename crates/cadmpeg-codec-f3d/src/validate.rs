@@ -4081,6 +4081,8 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
             placement.frame_length == 201 && placement.transform_offset.is_none() && identity;
         let explicit = placement.frame_length == 329
             && placement.transform_offset == Some(placement.byte_offset.saturating_add(55));
+        let legacy_explicit = matches!(placement.frame_length, 305 | 325)
+            && placement.transform_offset == Some(placement.byte_offset.saturating_add(48));
         let genesis_compact =
             placement.frame_length == 213 && placement.transform_offset.is_none() && identity;
         let genesis_explicit = placement.frame_length == 341
@@ -4101,7 +4103,7 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
         } else {
             placement.paired_byte_offset
                 == placement.byte_offset.saturating_add(placement.frame_length)
-                && (compact || explicit || genesis_compact || genesis_explicit)
+                && (compact || explicit || legacy_explicit || genesis_compact || genesis_explicit)
                 && scope.is_some_and(|scope| {
                     design::design_feature_family(&scope.kind)
                         == Some(design::DesignFeatureFamily::Sketch)
