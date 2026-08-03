@@ -2297,7 +2297,8 @@ mod marker_tests {
         compact_geometry_locus_point_coordinates, compact_indexed_curve_endpoint_indices,
         compact_legacy_code_one_line_endpoint_indices, compact_legacy_curve_endpoint_indices,
         compact_legacy_linked_profile_point_coordinates, compact_legacy_object_line_endpoints,
-        compact_legacy_profile_vertex, compact_legacy_selected_axis_endpoint_indices,
+        compact_legacy_profile_vertex, compact_legacy_rectangle_line_endpoints,
+        compact_legacy_selected_axis_endpoint_indices,
         compact_legacy_short_role_one_curve_endpoint_indices,
         compact_legacy_short_role_two_curve_endpoint_indices, compact_line_chain_addresses,
         compact_line_region_addresses, compact_offset_plane_source,
@@ -3956,6 +3957,15 @@ mod marker_tests {
             )
             .map(|endpoints| [endpoints[0].id.as_str(), endpoints[1].id.as_str()]),
             Some(["top-right", "top-left"])
+        );
+        payload[terminal + 106] = 0;
+        assert_eq!(
+            compact_legacy_code_one_line_endpoint_indices(&payload, terminal),
+            None
+        );
+        assert_eq!(
+            compact_legacy_rectangle_line_endpoints(&payload, terminal),
+            Some([4, 2])
         );
         assert_eq!(
             indexed_rectangle_from_line_cycle(&payload, &markers.iter().collect::<Vec<_>>()),
@@ -31232,6 +31242,12 @@ pub(crate) fn project_marker_backed_sketches(
                                 )
                             })
                             .or_else(|| {
+                                compact_legacy_rectangle_line_endpoints(
+                                    &lane.native_payload,
+                                    offset,
+                                )
+                            })
+                            .or_else(|| {
                                 current_wide_rectangle_line_endpoints(&lane.native_payload, offset)
                             })?;
                         Some(marker.id.as_str())
@@ -33221,6 +33237,14 @@ fn indexed_rectangle_from_line_cycle(
                     EndpointSpace::Object,
                 ));
             }
+            if let Some(endpoints) = compact_legacy_rectangle_line_endpoints(payload, offset) {
+                return (marker.kind == SketchInputKind::LineOrCircle).then_some((
+                    endpoints,
+                    None,
+                    false,
+                    EndpointSpace::Object,
+                ));
+            }
             if let Some(endpoints) = compact_legacy_curve_endpoint_indices(payload, offset)
                 .or_else(|| compact_legacy_code_one_line_endpoint_indices(payload, offset))
             {
@@ -33471,6 +33495,21 @@ fn indexed_rectangle_from_line_cycle(
             same_dimension_length(first[0], second[0]) ^ same_dimension_length(first[1], second[1])
         }))
     .then_some(corners)
+}
+
+fn compact_legacy_rectangle_line_endpoints(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
+    if !compact_legacy_marker_body(payload, offset)
+        || marker_native_code(payload, offset) != Some(1)
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 25..offset + 27) != Some(&1u16.to_le_bytes())
+        || payload.get(offset + 31..offset + 42) != Some(&[0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        || payload.get(offset + 46..offset + 50) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 50..offset + 58) != Some(&(-1.0f64).to_le_bytes())
+    {
+        return None;
+    }
+    one_based_u16_endpoint_pair(payload, offset, 42)
+        .filter(|endpoints| endpoints[0] != endpoints[1])
 }
 
 fn legacy_extended_rectangle_line_endpoints(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
