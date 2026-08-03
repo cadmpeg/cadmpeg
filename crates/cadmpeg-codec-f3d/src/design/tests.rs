@@ -5833,6 +5833,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
         &revolve_scope,
+        &[],
     );
     assert_eq!(
         revolve_construction,
@@ -5842,8 +5843,56 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             angle: 3.5,
             angle_record_index: 1_779,
             angle_offset: (revolve_scalar_start + 40) as u64,
-            opposite_angle_record_index: 1_780,
-            opposite_angle_offset: (revolve_scalar_start + 116 + 40) as u64,
+            opposite_angle_record_index: Some(1_780),
+            opposite_angle_offset: Some((revolve_scalar_start + 116 + 40) as u64),
+        })
+    );
+
+    let indexed_revolve_start = bytes.len();
+    let indexed_angle_record_index = 1_790u32;
+    let mut indexed_revolve = vec![0; 377];
+    indexed_revolve[21..25].copy_from_slice(&2u32.to_le_bytes());
+    indexed_revolve[25..29].copy_from_slice(&2u32.to_le_bytes());
+    indexed_revolve[30..34].copy_from_slice(&1u32.to_le_bytes());
+    indexed_revolve[34] = 1;
+    indexed_revolve[35..43].copy_from_slice(&u64::from(indexed_angle_record_index).to_le_bytes());
+    bytes.extend_from_slice(&indexed_revolve);
+    let mut indexed_revolve_scope = revolve_scope.clone();
+    indexed_revolve_scope.byte_offset = indexed_revolve_start as u64;
+    indexed_revolve_scope.class_tag = "407".into();
+    indexed_revolve_scope.paired_class_tag = "258".into();
+    indexed_revolve_scope.frame_length = 377;
+    indexed_revolve_scope.reference_members = vec![200, 201, 202, 203, 204, 205, 1_790, 1_791];
+    let indexed_angle = DesignParameterOwner {
+        id: indexed_revolve_scope.id.clone(),
+        byte_offset: 0,
+        class_tag: "372".into(),
+        record_index: indexed_angle_record_index,
+        scope_record_index: indexed_revolve_scope.record_index,
+        local_ordinal: 0,
+        evaluated_value: std::f64::consts::TAU,
+        evaluated_value_offset: 45,
+        parameter_record_index: 1_792,
+        owned_ordinal: 8,
+        variant: None,
+        companion_record_index: 1_793,
+    };
+    let indexed_revolve_construction = exact_path_feature_construction(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &indexed_revolve_scope,
+        std::slice::from_ref(&indexed_angle),
+    );
+    assert_eq!(
+        indexed_revolve_construction,
+        Some(DesignPathFeatureConstruction::Revolve {
+            operation: DesignExtrudeOperation::Cut,
+            operation_offset: (indexed_revolve_start + 21) as u64,
+            angle: std::f64::consts::TAU,
+            angle_record_index: indexed_angle_record_index,
+            angle_offset: 45,
+            opposite_angle_record_index: None,
+            opposite_angle_offset: None,
         })
     );
     revolve_scope.id = "stream:scope".into();
@@ -5856,13 +5905,112 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     revolve_axis.id = "stream:axis".into();
     revolve_axis.role = 0x0000_0021_0000_0000;
     assert_eq!(
-        crate::design::feature_project::project_fixed_revolve(
+        crate::design::feature_project::project_fixed_revolve_with_entities(
             &revolve_scope,
             &[revolve_profile, revolve_axis],
+            &[],
+            &[],
+            &[],
             &[],
         ),
         None
     );
+
+    indexed_revolve_scope.id = "stream:indexed-revolve".into();
+    indexed_revolve_scope.path_feature_construction = indexed_revolve_construction;
+    let mut indexed_profile = thicken_group.clone();
+    indexed_profile.id = "stream:indexed-profile".into();
+    indexed_profile.scope_record_index = indexed_revolve_scope.record_index;
+    indexed_profile.role = 0x0000_0041_0000_0000;
+    let mut indexed_axis = indexed_profile.clone();
+    indexed_axis.id = "stream:indexed-axis".into();
+    indexed_axis.record_index = 899;
+    indexed_axis.members = vec![900];
+    indexed_axis.role = 0x0000_0021_0000_0000;
+    let mut indexed_bodies = indexed_profile.clone();
+    indexed_bodies.id = "stream:indexed-bodies".into();
+    indexed_bodies.record_index = 901;
+    indexed_bodies.role = 0x0000_0004_0000_0000;
+    let axis_selection = crate::records::DesignEntitySelectionOperand {
+        id: "stream:indexed-axis-selection".into(),
+        scope_record_index: indexed_revolve_scope.record_index,
+        group_record_index: indexed_axis.record_index,
+        group_member_ordinal: 0,
+        record_index: 900,
+        byte_offset: 0,
+        class_tag: "377".into(),
+        asset_id: "asset".into(),
+        asset_id_offset: 0,
+        context_id: "context".into(),
+        context_id_offset: 0,
+        identity_record_index: 902,
+        identity_record_offset: 0,
+        primary_identity: 100,
+        primary_identity_offset: 0,
+        secondary_identity: Some(104),
+        secondary_identity_offset: Some(0),
+        historical_edge_candidates: Vec::new(),
+        historical_face_candidates: Vec::new(),
+        resolved_edge_slot: None,
+        next_record_index: 903,
+        next_byte_offset: 0,
+    };
+    let axis_placement = DesignSketchPlacement {
+        member_run_head: false,
+        id: "stream:indexed-axis-placement".into(),
+        scope_record_index: Some(10),
+        entity_id: "Sketch_100".into(),
+        entity_suffix: 100,
+        byte_offset: 0,
+        class_tag: "305".into(),
+        record_index: 904,
+        frame_length: 201,
+        transform: [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        transform_offset: Some(0),
+        paired_class_tag: "258".into(),
+        paired_byte_offset: 0,
+    };
+    let axis_curve = SketchCurveIdentity {
+        id: "stream:indexed-axis-curve".into(),
+        record_index: 905,
+        owner_reference: Some(100),
+        class_tag: "450".into(),
+        byte_offset: 0,
+        geometry_offset: 0,
+        entity_genesis: None,
+        primary_id: 104,
+        secondary_id: 0,
+        geometry: Some(SketchCurveGeometry::Line {
+            start: Point3::new(1.0, 2.0, 3.0),
+            end: Point3::new(1.0, -3.0, 3.0),
+            direction: Vector3::new(0.0, -1.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+        }),
+    };
+    let projected = crate::design::feature_project::project_fixed_revolve_with_entities(
+        &indexed_revolve_scope,
+        &[indexed_profile, indexed_axis, indexed_bodies],
+        &[],
+        &[axis_selection],
+        &[axis_placement],
+        &[axis_curve],
+    );
+    assert!(matches!(
+        projected,
+        Some(FeatureDefinition::Revolve {
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                axis: Some(cadmpeg_ir::features::RevolutionAxis { origin, direction }),
+                ..
+            },
+            op: cadmpeg_ir::features::BooleanOp::Cut,
+        }) if origin == Point3::new(1.0, 2.0, 3.0)
+            && direction == Vector3::new(0.0, -1.0, 0.0)
+    ));
 
     let loft_start = bytes.len();
     let mut loft = vec![0; 376];
@@ -5873,7 +6021,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     loft_scope.kind = "Loft".into();
     loft_scope.frame_length = 376;
     assert_eq!(
-        exact_path_feature_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &loft_scope),
+        exact_path_feature_construction(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &loft_scope,
+            &[],
+        ),
         Some(DesignPathFeatureConstruction::Loft {
             operation: DesignExtrudeOperation::Join,
             operation_offset: (loft_start + 29) as u64,
@@ -6025,7 +6178,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     sweep_scope.frame_length = 499;
     sweep_scope.reference_members = (80..86).collect();
     assert_eq!(
-        exact_path_feature_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &sweep_scope),
+        exact_path_feature_construction(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &sweep_scope,
+            &[],
+        ),
         Some(DesignPathFeatureConstruction::Sweep {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: (sweep_start + 25) as u64,
@@ -6037,8 +6195,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         })
     );
     sweep_scope.id = "stream:sweep-scope".into();
-    sweep_scope.path_feature_construction =
-        exact_path_feature_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &sweep_scope);
+    sweep_scope.path_feature_construction = exact_path_feature_construction(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &sweep_scope,
+        &[],
+    );
     let sweep_group = |ordinal: u32, role: u64| {
         let mut group = thicken_group.clone();
         group.id = format!("stream:sweep-group-{ordinal}");
@@ -6261,7 +6423,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     pipe_scope.frame_length = 464;
     pipe_scope.reference_members = (170..174).collect();
     assert_eq!(
-        exact_path_feature_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &pipe_scope),
+        exact_path_feature_construction(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &pipe_scope,
+            &[],
+        ),
         Some(DesignPathFeatureConstruction::Pipe {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: (pipe_start + 25) as u64,

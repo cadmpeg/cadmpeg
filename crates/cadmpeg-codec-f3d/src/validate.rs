@@ -2158,10 +2158,32 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .map(|(ordinal, _)| ordinal)
             .collect::<Vec<_>>();
         let valid = match scope.path_feature_construction.as_ref() {
-            Some(records::DesignPathFeatureConstruction::Revolve { .. }) => {
-                groups.len() == 2
+            Some(records::DesignPathFeatureConstruction::Revolve {
+                operation,
+                angle,
+                angle_record_index,
+                opposite_angle_record_index,
+                opposite_angle_offset,
+                ..
+            }) => {
+                let body_count =
+                    role_count(0x0000_0004_0000_0000) + role_count(0x0000_0008_0000_0000);
+                let expected_body_count =
+                    usize::from(*operation != records::DesignExtrudeOperation::NewBody);
+                let opposite_pair_valid = matches!(
+                    (opposite_angle_record_index, opposite_angle_offset),
+                    (Some(_), Some(_)) | (None, None)
+                );
+                angle.is_finite()
+                    && *angle > 0.0
+                    && scope.reference_members.contains(angle_record_index)
+                    && opposite_pair_valid
+                    && opposite_angle_record_index
+                        .is_none_or(|record| scope.reference_members.contains(&record))
+                    && groups.len() == 2 + expected_body_count
                     && role_count(0x0000_0021_0000_0000) == 1
                     && role_count(0x0000_0041_0000_0000) == 1
+                    && body_count == expected_body_count
             }
             Some(records::DesignPathFeatureConstruction::Loft { operation, .. }) => match operation
             {

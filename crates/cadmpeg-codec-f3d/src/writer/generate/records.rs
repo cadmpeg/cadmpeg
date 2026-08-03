@@ -226,6 +226,7 @@ pub(crate) fn encode_design_bulkstream(
                 edge_operands: &native.design_edge_operands,
                 edge_identity_operands: &native.design_edge_identity_operands,
                 entity_selection_operands: &native.design_entity_selection_operands,
+                curve_identities: &native.sketch_curve_identities,
                 face_operands: &native.design_face_operands,
                 placements: &native.design_sketch_placements,
                 body_bindings: &native.design_body_bindings,

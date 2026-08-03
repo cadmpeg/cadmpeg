@@ -134,7 +134,7 @@ pub fn decode_parameter_scopes(
             scope.fixed_chamfer_parameters =
                 exact_fixed_chamfer_parameters(bytes, &records, &scope, parameter_owners);
             scope.path_feature_construction =
-                exact_path_feature_construction(bytes, &records, &scope);
+                exact_path_feature_construction(bytes, &records, &scope, parameter_owners);
             scope.combine_operation = exact_combine_operation(bytes, &records, &scope);
             scope.draft_operation = exact_draft_operation(bytes, &records, &scope);
             scope.circular_pattern_construction = exact_circular_pattern_construction_with_owners(
@@ -2610,6 +2610,7 @@ pub(crate) fn exact_path_feature_construction(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignPathFeatureConstruction> {
     let start = usize::try_from(scope.byte_offset).ok()?;
     let operation = |offset| {
@@ -2655,8 +2656,47 @@ pub(crate) fn exact_path_feature_construction(
                 angle: angle.value,
                 angle_record_index: *angle_record_index,
                 angle_offset: angle.value_offset,
-                opposite_angle_record_index: *opposite_angle_record_index,
-                opposite_angle_offset: opposite.value_offset,
+                opposite_angle_record_index: Some(*opposite_angle_record_index),
+                opposite_angle_offset: Some(opposite.value_offset),
+            })
+        }
+        DesignFeatureFamily::Revolve
+            if scope.class_tag == "407"
+                && scope.paired_class_tag == "258"
+                && parameter_scope_payload_length(scope) == Some(363)
+                && scope.reference_members.len() == 8
+                && u32_at(bytes, start + 25) == Some(2)
+                && bytes.get(start + 29) == Some(&0)
+                && u32_at(bytes, start + 30) == Some(1)
+                && bytes.get(start + 34) == Some(&1)
+                && bytes.get(start + 43..start + 45) == Some(&[0; 2]) =>
+        {
+            let angle_record_index = u32::try_from(read_u64(bytes, start + 35)?).ok()?;
+            if scope.reference_members.get(6) != Some(&angle_record_index) {
+                return None;
+            }
+            let candidates = parameter_owners
+                .iter()
+                .filter(|owner| {
+                    native_stream(&owner.id) == native_stream(&scope.id)
+                        && owner.scope_record_index == scope.record_index
+                        && owner.record_index == angle_record_index
+                        && owner.local_ordinal == 0
+                        && owner.evaluated_value.is_finite()
+                        && owner.evaluated_value > 0.0
+                })
+                .collect::<Vec<_>>();
+            let [angle] = candidates.as_slice() else {
+                return None;
+            };
+            Some(DesignPathFeatureConstruction::Revolve {
+                operation: operation(start + 21)?,
+                operation_offset: u64::try_from(start + 21).ok()?,
+                angle: angle.evaluated_value,
+                angle_record_index,
+                angle_offset: angle.evaluated_value_offset,
+                opposite_angle_record_index: None,
+                opposite_angle_offset: None,
             })
         }
         DesignFeatureFamily::Loft

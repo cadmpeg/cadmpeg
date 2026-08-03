@@ -1384,7 +1384,7 @@ pub struct DesignFixedChamferDistance {
     pub value_offset: u64,
 }
 
-/// Exact fixed construction carried by a Loft or Sweep scope.
+/// Exact construction carried by a Revolve, Loft, or Sweep scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DesignPathFeatureConstruction {
@@ -1400,10 +1400,12 @@ pub enum DesignPathFeatureConstruction {
         angle_record_index: u32,
         /// Byte offset of the angular-travel scalar.
         angle_offset: u64,
-        /// Zero-valued opposite-side angle scalar record.
-        opposite_angle_record_index: u32,
-        /// Byte offset of the opposite-side angle scalar.
-        opposite_angle_offset: u64,
+        /// Zero-valued opposite-side angle scalar record, when serialized.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        opposite_angle_record_index: Option<u32>,
+        /// Byte offset of the opposite-side angle scalar, when serialized.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        opposite_angle_offset: Option<u64>,
     },
     /// Loft result operation.
     Loft {

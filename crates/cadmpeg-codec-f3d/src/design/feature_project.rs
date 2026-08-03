@@ -24,7 +24,7 @@ use crate::records::{
     DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeStart, DesignFaceOperand,
     DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignFixedExtrudeDistance, DesignParameter,
     DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
-    DesignSketchPlacement, DesignSolidPrimitive,
+    DesignSketchPlacement, DesignSolidPrimitive, SketchCurveGeometry, SketchCurveIdentity,
 };
 use cadmpeg_codec_core::le::{u32_at, u64_at as read_u64};
 use cadmpeg_codec_core::CodecError;
@@ -44,6 +44,7 @@ pub struct ProjectInputs<'a> {
     pub(crate) edge_operands: &'a [DesignEdgeOperand],
     pub(crate) edge_identity_operands: &'a [DesignEdgeIdentityOperand],
     pub(crate) entity_selection_operands: &'a [crate::records::DesignEntitySelectionOperand],
+    pub(crate) curve_identities: &'a [SketchCurveIdentity],
     pub(crate) face_operands: &'a [DesignFaceOperand],
     pub(crate) placements: &'a [DesignSketchPlacement],
     pub(crate) body_bindings: &'a [DesignBodyBinding],
@@ -77,6 +78,7 @@ pub fn project_parameter_design(
         edge_operands,
         edge_identity_operands: &[],
         entity_selection_operands: &[],
+        curve_identities: &[],
         face_operands,
         placements,
         body_bindings: &[],
@@ -104,6 +106,7 @@ pub fn project_parameter_design_with_edge_identities(
         edge_operands,
         edge_identity_operands,
         entity_selection_operands,
+        curve_identities,
         face_operands,
         placements,
         body_bindings,
@@ -238,15 +241,19 @@ pub fn project_parameter_design_with_edge_identities(
                         }
                     })
                 }
-                Some(DesignFeatureFamily::Revolve) => {
-                    project_fixed_revolve(scope, construction_groups, edge_operands).unwrap_or_else(
-                        || FeatureDefinition::Native {
-                            kind: scope.kind.clone(),
-                            parameters: BTreeMap::new(),
-                            properties: native_scope_properties(scope, native_scope),
-                        },
-                    )
-                }
+                Some(DesignFeatureFamily::Revolve) => project_fixed_revolve_with_entities(
+                    scope,
+                    construction_groups,
+                    edge_operands,
+                    entity_selection_operands,
+                    placements,
+                    curve_identities,
+                )
+                .unwrap_or_else(|| FeatureDefinition::Native {
+                    kind: scope.kind.clone(),
+                    parameters: BTreeMap::new(),
+                    properties: native_scope_properties(scope, native_scope),
+                }),
                 Some(DesignFeatureFamily::Loft) => project_fixed_loft(
                     scope,
                     construction_groups,
@@ -2883,10 +2890,13 @@ fn fixed_boolean_operation(operation: DesignExtrudeOperation) -> cadmpeg_ir::fea
     }
 }
 
-pub(crate) fn project_fixed_revolve(
+pub(crate) fn project_fixed_revolve_with_entities(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
+    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    placements: &[DesignSketchPlacement],
+    curve_identities: &[SketchCurveIdentity],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         Angle, FeatureDefinition, ProfileRef, RevolutionAxis, RevolutionConstruction,
@@ -2915,10 +2925,15 @@ pub(crate) fn project_fixed_revolve(
         .iter()
         .filter(|group| group.role == 0x21_0000_0000)
         .collect::<Vec<_>>();
+    let bodies = groups
+        .iter()
+        .filter(|group| matches!(group.role, 0x04_0000_0000 | 0x08_0000_0000))
+        .collect::<Vec<_>>();
     let ([profile], [axis_group]) = (profiles.as_slice(), axes.as_slice()) else {
         return None;
     };
-    if groups.len() != 2 {
+    let expected_body_groups = usize::from(*operation != DesignExtrudeOperation::NewBody);
+    if bodies.len() != expected_body_groups || groups.len() != 2 + expected_body_groups {
         return None;
     }
     let [_profile_member] = profile.members.as_slice() else {
@@ -2935,12 +2950,22 @@ pub(crate) fn project_fixed_revolve(
                 && operand.record_index == *axis_member
         })
         .collect::<Vec<_>>();
-    let [axis_operand] = matches.as_slice() else {
+    let axis = if let [axis_operand] = matches.as_slice() {
+        RevolutionAxis {
+            origin: axis_operand.resolved_axis_origin?,
+            direction: axis_operand.resolved_axis_direction?,
+        }
+    } else if matches.is_empty() {
+        resolve_sketch_axis_selection(
+            scope,
+            axis_group,
+            *axis_member,
+            entity_selection_operands,
+            placements,
+            curve_identities,
+        )?
+    } else {
         return None;
-    };
-    let axis = RevolutionAxis {
-        origin: axis_operand.resolved_axis_origin?,
-        direction: axis_operand.resolved_axis_direction?,
     };
     Some(FeatureDefinition::Revolve {
         construction: RevolutionConstruction {
@@ -2959,6 +2984,99 @@ pub(crate) fn project_fixed_revolve(
         },
         op: fixed_boolean_operation(*operation),
     })
+}
+
+fn resolve_sketch_axis_selection(
+    scope: &DesignParameterScope,
+    axis_group: &DesignConstructionOperandGroup,
+    axis_member: u32,
+    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    placements: &[DesignSketchPlacement],
+    curve_identities: &[SketchCurveIdentity],
+) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+    let stream = native_stream(&scope.id)?;
+    let selections = entity_selection_operands
+        .iter()
+        .filter(|operand| {
+            native_stream(&operand.id) == Some(stream)
+                && operand.scope_record_index == scope.record_index
+                && operand.group_record_index == axis_group.record_index
+                && operand.group_member_ordinal == 0
+                && operand.record_index == axis_member
+        })
+        .collect::<Vec<_>>();
+    let [selection] = selections.as_slice() else {
+        return None;
+    };
+    let owner_reference = u32::try_from(selection.primary_identity).ok()?;
+    let placements = placements
+        .iter()
+        .filter(|placement| {
+            native_stream(&placement.id) == Some(stream)
+                && placement.entity_suffix == selection.primary_identity
+        })
+        .collect::<Vec<_>>();
+    let [placement] = placements.as_slice() else {
+        return None;
+    };
+    let curves = curve_identities
+        .iter()
+        .filter(|curve| {
+            native_stream(&curve.id) == Some(stream)
+                && curve.owner_reference == Some(owner_reference)
+                && Some(curve.primary_id) == selection.secondary_identity
+        })
+        .collect::<Vec<_>>();
+    let [curve] = curves.as_slice() else {
+        return None;
+    };
+    let SketchCurveGeometry::Line {
+        start, direction, ..
+    } = curve.geometry.as_ref()?
+    else {
+        return None;
+    };
+    let origin_scale = crate::design::face_resolve::placement_origin_scale(placement);
+    let origin = Point3::new(
+        placement.transform[0][0] * start.x
+            + placement.transform[0][1] * start.y
+            + placement.transform[0][2] * start.z
+            + placement.transform[0][3] * origin_scale,
+        placement.transform[1][0] * start.x
+            + placement.transform[1][1] * start.y
+            + placement.transform[1][2] * start.z
+            + placement.transform[1][3] * origin_scale,
+        placement.transform[2][0] * start.x
+            + placement.transform[2][1] * start.y
+            + placement.transform[2][2] * start.z
+            + placement.transform[2][3] * origin_scale,
+    );
+    let direction = Vector3::new(
+        placement.transform[0][0] * direction.x
+            + placement.transform[0][1] * direction.y
+            + placement.transform[0][2] * direction.z,
+        placement.transform[1][0] * direction.x
+            + placement.transform[1][1] * direction.y
+            + placement.transform[1][2] * direction.z,
+        placement.transform[2][0] * direction.x
+            + placement.transform[2][1] * direction.y
+            + placement.transform[2][2] * direction.z,
+    );
+    let length =
+        (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z).sqrt();
+    (origin.x.is_finite()
+        && origin.y.is_finite()
+        && origin.z.is_finite()
+        && length.is_finite()
+        && length > 0.0)
+        .then_some(cadmpeg_ir::features::RevolutionAxis {
+            origin,
+            direction: Vector3::new(
+                direction.x / length,
+                direction.y / length,
+                direction.z / length,
+            ),
+        })
 }
 
 pub(crate) fn project_fixed_loft(
