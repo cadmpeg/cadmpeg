@@ -8653,6 +8653,12 @@ mod marker_tests {
             super::wide_coordinate_roster_full_circle(&payload, &extended_circle, &markers),
             Some(([2.0, 3.0], 5.0))
         );
+        payload[104..108].copy_from_slice(&3u32.to_le_bytes());
+        assert_eq!(
+            super::wide_coordinate_roster_full_circle(&payload, &extended_circle, &markers),
+            Some(([2.0, 3.0], 5.0))
+        );
+        payload[104..108].copy_from_slice(&6u32.to_le_bytes());
         let mut terminal = payload[..102].to_vec();
         terminal.resize(153, 0);
         terminal[134..136].copy_from_slice(&[0x04, 0x00]);
@@ -43677,8 +43683,10 @@ fn extended_wide_repeated_circle_record(payload: &[u8], offset: usize) -> bool {
                 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
                 0xff, 0xff,
             ]);
+    // The trailer identities retain the circle carrier, not two curve endpoints,
+    // so a repeated identity is valid for the already-equal endpoint ordinal.
     let referenced = payload.get(offset + 102..offset + 104) == Some(&[0; 2])
-        && matches!(identities, [Some(first), Some(second)] if first != 0 && first != u32::MAX && second != 0 && second != u32::MAX && first != second)
+        && matches!(identities, [Some(first), Some(second)] if first != 0 && first != u32::MAX && second != 0 && second != u32::MAX)
         && sketch_marker_prefix_at(payload, offset.saturating_add(112));
     let terminal = extended_terminal_wide_repeated_circle_record(payload, offset);
     common && (referenced || terminal)
