@@ -2370,6 +2370,38 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 }
 
 #[test]
+fn nx_exact_empty_base_feature_is_a_complete_replay_boundary() {
+    use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
+
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#initial-bodies".into()),
+        ordinal: 0,
+        name: Some("Retained history input".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Resolved {
+                bodies: Vec::new(),
+                native: "nx:segment-body-bindings".into(),
+            },
+        },
+        native_ref: None,
+    });
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+
+    assert!(losses.is_empty());
+}
+
+#[test]
 fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
     use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId, Length};
 

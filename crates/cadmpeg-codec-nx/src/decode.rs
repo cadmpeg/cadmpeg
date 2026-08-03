@@ -10311,7 +10311,13 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
 
     let mut incomplete_feature_families = BTreeMap::<&str, usize>::new();
     for feature in &ir.model.features {
-        if feature.suppressed != Some(true) {
+        let is_exact_empty_base = matches!(
+            &feature.definition,
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Resolved { bodies, native },
+            } if bodies.is_empty() && !native.trim().is_empty() && feature.outputs.is_empty()
+        );
+        if feature.suppressed != Some(true) && !is_exact_empty_base {
             if let Some(family) = feature.definition.body_output_family().filter(|_| {
                 feature.outputs.is_empty()
                     || feature.outputs.iter().collect::<BTreeSet<_>>().len()
@@ -10326,7 +10332,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             }
         }
         let family = match &feature.definition {
-            FeatureDefinition::BaseFeature { bodies } if body_selection_is_incomplete(bodies) => {
+            FeatureDefinition::BaseFeature { bodies }
+                if !is_exact_empty_base && body_selection_is_incomplete(bodies) =>
+            {
                 "base feature"
             }
             FeatureDefinition::Block {
