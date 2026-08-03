@@ -8,7 +8,10 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use cadmpeg_ir::{topology::Color, SourceObjectAssociation};
 
-#[allow(clippy::wildcard_imports, reason = "Split check modules share a private orchestration prelude via wildcard import.")]
+#[allow(
+    clippy::wildcard_imports,
+    reason = "Split check modules share a private orchestration prelude via wildcard import."
+)]
 use super::*;
 
 fn inflate_display_jt(

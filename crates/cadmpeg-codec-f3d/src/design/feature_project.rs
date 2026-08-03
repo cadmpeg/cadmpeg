@@ -60,7 +60,10 @@ pub struct ProjectInputs<'a> {
 // Faithful reduced-arg entry point over the same slices as `ProjectInputs`;
 // its many test callers pass positional slices, so it defaults the fixed
 // edge-identity and body-binding tables and forwards through the bundle.
-#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+)]
 pub fn project_parameter_design(
     native: &[DesignParameter],
     owners: &[DesignParameterOwner],

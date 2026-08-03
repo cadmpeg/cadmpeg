@@ -1383,7 +1383,10 @@ impl MeshQuotient {
                     .any(|pair| same_unordered_pair(*pair, [left, right]))
         }
 
-        #[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
+        #[allow(
+            clippy::too_many_arguments,
+            reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+        )]
         fn partial_ordered_assignment_viable(
             assignment: &MeshFaceBoundaryAssignment,
             local_edge_by_id: &HashMap<usize, usize>,
@@ -1471,7 +1474,10 @@ impl MeshQuotient {
             })
         }
 
-        #[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
+        #[allow(
+            clippy::too_many_arguments,
+            reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+        )]
         fn partial_compact_assignment_viable(
             domain: &MeshFaceBoundaryDomain,
             local_edge_by_id: &HashMap<usize, usize>,
@@ -1611,7 +1617,10 @@ impl MeshQuotient {
             }
         }
 
-        #[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
+        #[allow(
+            clippy::too_many_arguments,
+            reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+        )]
         fn walk(
             domains: &[Vec<usize>],
             edges: &[[usize; 2]],
@@ -1672,7 +1681,10 @@ impl MeshQuotient {
                 }
             }
 
-            #[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
+            #[allow(
+                clippy::too_many_arguments,
+                reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+            )]
             fn assign(
                 root: usize,
                 point: usize,
@@ -1707,7 +1719,10 @@ impl MeshQuotient {
                 assigned[root] = None;
             }
 
-            #[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
+            #[allow(
+                clippy::too_many_arguments,
+                reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+            )]
             fn rollback(
                 assigned: &mut [Option<usize>],
                 point_uses: &mut [usize],
@@ -2944,7 +2959,10 @@ impl MeshQuotient {
                 .checked_add(usize::from(!reversed))
         }
 
-        #[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
+        #[allow(
+            clippy::too_many_arguments,
+            reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+        )]
         fn walk(
             boundaries: &[Vec<MeshBoundaryEdgeCandidate>],
             boundary_index: usize,
@@ -3294,7 +3312,10 @@ impl MeshQuotient {
             )
         }
 
-        #[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
+        #[allow(
+            clippy::too_many_arguments,
+            reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+        )]
         fn value_viable(
             root: usize,
             point: usize,
@@ -3346,7 +3367,10 @@ impl MeshQuotient {
             })
         }
 
-        #[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
+        #[allow(
+            clippy::too_many_arguments,
+            reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+        )]
         fn walk(
             domains: &[Arc<HashSet<usize>>],
             edge_roots: &[[usize; 2]],
@@ -3590,7 +3614,10 @@ fn deferred_face_quotient_options_limited(
         capacity: usize,
     }
 
-    #[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+    )]
     fn fill_gap(
         gaps: &[Gap],
         gap: usize,
@@ -3679,7 +3706,10 @@ fn deferred_face_quotient_options_limited(
         }
     }
 
-    #[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+    )]
     fn walk_gaps(
         gaps: &[Gap],
         gap: usize,

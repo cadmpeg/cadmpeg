@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Focused validation checks for carriers parameterization.
-#![allow(clippy::wildcard_imports, reason = "Split checks share private orchestration context.")]
+#![allow(
+    clippy::wildcard_imports,
+    reason = "Split checks share private orchestration context."
+)]
 
 use super::*;
 use std::collections::VecDeque;

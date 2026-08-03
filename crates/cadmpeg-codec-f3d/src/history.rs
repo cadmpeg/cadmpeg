@@ -1370,7 +1370,10 @@ fn body_revision_without_topology_change(
 
 // Each slice is a distinct decoded arena or mutable IR arena; grouping them
 // would hide the binding contract without reducing its state dependencies.
-#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+)]
 pub(crate) fn bind_feature_face_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
@@ -1479,7 +1482,10 @@ pub(crate) fn bind_feature_face_selections(
     }
 }
 
-#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+)]
 fn bind_entity_face_selection(
     selection: &mut cadmpeg_ir::features::FaceSelection,
     feature_id: &cadmpeg_ir::features::FeatureId,
