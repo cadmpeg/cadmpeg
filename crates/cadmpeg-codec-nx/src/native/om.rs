@@ -2407,23 +2407,27 @@ pub fn data_block_control_handle_pairs(
 }
 
 /// Decode framed object references from offset-only OM data blocks.
-pub fn data_block_references(container: &Container) -> Vec<DataBlockReference> {
+pub fn data_block_references(
+    container: &Container,
+    object_records: &[ObjectRecord],
+    expression_declarations: &[ExpressionDeclaration],
+) -> Vec<DataBlockReference> {
     let mut records = BTreeMap::<(String, u32), Vec<String>>::new();
-    for record in object_records(container) {
+    for record in object_records {
         let Some(object_id) = record.object_id else {
             continue;
         };
         records
-            .entry((record.source_entry, object_id))
+            .entry((record.source_entry.clone(), object_id))
             .or_default()
-            .push(record.id);
+            .push(record.id.clone());
     }
     let mut declarations = BTreeMap::<(String, u32), Vec<String>>::new();
-    for declaration in expression_declarations(container) {
+    for declaration in expression_declarations {
         declarations
-            .entry((declaration.source_entry, declaration.object_id))
+            .entry((declaration.source_entry.clone(), declaration.object_id))
             .or_default()
-            .push(declaration.id);
+            .push(declaration.id.clone());
     }
     container
         .indexed_om_sections()
