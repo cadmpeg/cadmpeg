@@ -1479,12 +1479,13 @@ fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[
     if !matches!((code, handle_state), (0 | 1, 2 | 3) | (2, 2)) {
         return None;
     }
-    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
-        || !matches!(
-            payload.get(offset + 23..offset + 27),
-            Some([0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
-        )
-        || marker_profile_curve_role(payload, offset) != Some(1)
+    if !matches!(
+        payload.get(offset..offset + SKETCH_MARKER.len()),
+        Some(prefix) if prefix == SKETCH_MARKER || prefix == LEGACY_SKETCH_MARKER
+    ) || !matches!(
+        payload.get(offset + 23..offset + 27),
+        Some([0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
+    ) || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
         || payload.get(offset + 31..offset + 39)
             != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
@@ -8994,6 +8995,19 @@ mod marker_tests {
             sketch_input_entities(&payload, "lane")[0].kind,
             SketchInputKind::Point
         );
+
+        payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[170..].copy_from_slice(SKETCH_MARKER);
+        assert_eq!(
+            legacy_declared_handle_coordinates(&payload, 0),
+            Some([0.045, -0.0225])
+        );
+        assert_eq!(
+            sketch_input_entities(&payload, "lane")[0].kind,
+            SketchInputKind::Point
+        );
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[170..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
         payload[17..21].copy_from_slice(&1u32.to_le_bytes());
         payload[76..78].copy_from_slice(&2u16.to_le_bytes());
