@@ -29,6 +29,20 @@ pub struct FeatureOperationLabel {
     pub source_offset: u64,
 }
 
+/// Return operation labels in neutral construction-history order.
+///
+/// Each feature-history section stores its operation records newest first. The
+/// native label arena retains that source order, but neutral dependencies and
+/// feature ordinals use oldest-first construction order within each section.
+pub(crate) fn feature_operation_chronological_labels(
+    labels: &[FeatureOperationLabel],
+) -> Vec<&FeatureOperationLabel> {
+    labels
+        .chunk_by(|first, second| first.section_link == second.section_link)
+        .flat_map(|section| section.iter().rev())
+        .collect()
+}
+
 /// Exactly bounded feature-history operation record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureOperationRecord {
@@ -5338,8 +5352,8 @@ pub fn feature_sketch_datum_csys_dependencies(
         Some((store, ordinal.parse().ok()?))
     }
 
-    let positions = labels
-        .iter()
+    let positions = feature_operation_chronological_labels(labels)
+        .into_iter()
         .enumerate()
         .map(|(position, label)| (label.id.as_str(), position))
         .collect::<BTreeMap<_, _>>();
@@ -8911,7 +8925,7 @@ mod tests {
     }
 
     #[test]
-    fn decoded_feature_ids_preserve_double_digit_operation_order() {
+    fn decoded_feature_ids_preserve_source_order_and_ordinals_reverse_history() {
         let section = size_framed_om_section_with_repeated_operations(12);
         let mut payload = Vec::new();
         for word in [24_u32, 9, 11, 1, 1, 24] {
@@ -8937,6 +8951,16 @@ mod tests {
         assert!(labels
             .windows(2)
             .all(|pair| pair[0].id.as_str() < pair[1].id.as_str()));
+        let features = &result.ir.model.features;
+        assert_eq!(
+            features
+                .iter()
+                .map(|feature| feature.ordinal)
+                .collect::<Vec<_>>(),
+            (0..12).rev().collect::<Vec<_>>()
+        );
+        assert_eq!(features[0].dependencies, [features[1].id.clone()]);
+        assert!(features[11].dependencies.is_empty());
     }
 
     #[test]
@@ -9085,16 +9109,16 @@ mod tests {
             FeatureSketchDatumCsysBlockRelation, FeatureSketchPointUse, OffsetStoreNamedPoint,
         };
 
-        let label = |id: &str, ordinal| FeatureOperationLabel {
+        let label = |id: &str, value: &str, ordinal| FeatureOperationLabel {
             id: id.to_string(),
             section_link: "section".to_string(),
             ordinal,
-            value: if ordinal == 0 { "SKETCH" } else { "DATUM_CSYS" }.to_string(),
+            value: value.to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
             source_offset: 100 + u64::from(ordinal),
         };
-        let labels = [label("sketch", 0), label("csys", 1)];
+        let labels = [label("csys", "DATUM_CSYS", 0), label("sketch", "SKETCH", 1)];
         let point = OffsetStoreNamedPoint {
             id: "point".to_string(),
             name: "Point1".to_string(),
@@ -9225,7 +9249,7 @@ mod tests {
         )
         .is_empty());
 
-        let reversed_labels = [label("csys", 0), label("sketch", 1)];
+        let reversed_labels = [label("sketch", "SKETCH", 0), label("csys", "DATUM_CSYS", 1)];
         assert!(super::feature_sketch_datum_csys_dependencies(
             &reversed_labels,
             &[point],
@@ -10616,5 +10640,39 @@ mod tests {
         assert_eq!(operation_modifies_parasolid_data(state), Some(true));
         state[4] = 2;
         assert_eq!(operation_modifies_parasolid_data(state), None);
+    }
+
+    #[test]
+    fn operation_history_reverses_source_order_within_each_section() {
+        let label = |section: &str, ordinal, value: &str| super::FeatureOperationLabel {
+            id: format!("{section}-{ordinal}"),
+            section_link: section.to_string(),
+            ordinal,
+            value: value.to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: u64::from(ordinal),
+        };
+        let labels = [
+            label("first", 0, "newest-first"),
+            label("first", 1, "oldest-first"),
+            label("second", 0, "newest-second"),
+            label("second", 1, "oldest-second"),
+        ];
+
+        let values = super::feature_operation_chronological_labels(&labels)
+            .into_iter()
+            .map(|label| label.value.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            values,
+            [
+                "oldest-first",
+                "newest-first",
+                "oldest-second",
+                "newest-second"
+            ]
+        );
     }
 }

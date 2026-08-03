@@ -24,7 +24,7 @@
             "id": "nx:feature-history:feature#0000000000-0000000000",
             "name": "SKETCH",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000000",
-            "ordinal": 0,
+            "ordinal": 14,
             "source_properties": {
               "input_block.0": "nx:om-data-blocks-0:block#1",
               "object_index.0": "1",
@@ -50,10 +50,14 @@
               "definition": "sketch",
               "space": "unresolved"
             },
+            "dependencies": [
+              "nx:feature-history:feature#0000000000-0000000003",
+              "nx:feature-history:feature#0000000000-0000000002"
+            ],
             "id": "nx:feature-history:feature#0000000000-0000000001",
             "name": "SKETCH",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000001",
-            "ordinal": 1,
+            "ordinal": 13,
             "source_properties": {
               "datum_csys_block_use.0": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-0-0000000000-0000000001-0",
               "datum_csys_block_use.1": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-1-0000000000-0000000001-0",
@@ -91,12 +95,12 @@
               "definition": "datum_coordinate_system_unresolved"
             },
             "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000000"
+              "nx:feature-history:feature#0000000000-0000000003"
             ],
             "id": "nx:feature-history:feature#0000000000-0000000002",
             "name": "DATUM_CSYS",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000002",
-            "ordinal": 2,
+            "ordinal": 12,
             "source_properties": {
               "datum_csys_block_use.0": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-0-0000000000-0000000002-0",
               "datum_csys_block_use.1": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-1-0000000000-0000000002-0",
@@ -119,11 +123,7 @@
               "object_index.2": "null",
               "object_index.3": "null",
               "operation_record": "nx:feature-history:operation-record#0000000000-0000000002",
-              "operation_terminal_frame": "nx:feature-history:operation-terminal-frame#0000000000-0000000002",
-              "sketch_datum_csys_dependency": "nx:feature-history:sketch-datum-csys-dependency#0000000000-0000000002",
-              "sketch_point_dependency_construction_block": "nx:om-data-blocks-0:block#3",
-              "sketch_point_dependency_point_block": "nx:om-data-blocks-0:block#2",
-              "sketch_point_dependency_use": "nx:feature-history:sketch-point-use#0000000000-0000000000-0-0-1-0"
+              "operation_terminal_frame": "nx:feature-history:operation-terminal-frame#0000000000-0000000002"
             },
             "source_tag": "DATUM_CSYS",
             "suppressed": null
@@ -132,13 +132,10 @@
             "definition": {
               "definition": "datum_plane_unresolved"
             },
-            "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000002"
-            ],
             "id": "nx:feature-history:feature#0000000000-0000000003",
             "name": "DATUM_PLANE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000003",
-            "ordinal": 3,
+            "ordinal": 11,
             "source_properties": {
               "datum_csys_block_use.0": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-0-0000000000-0000000003-0",
               "datum_csys_block_use.1": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-1-0000000000-0000000003-0",
@@ -169,14 +166,10 @@
             "definition": {
               "definition": "datum_point_unresolved"
             },
-            "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000003",
-              "nx:feature-history:feature#0000000000-0000000002"
-            ],
             "id": "nx:feature-history:feature#0000000000-0000000004",
             "name": "POINT",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000004",
-            "ordinal": 4,
+            "ordinal": 10,
             "source_properties": {
               "datum_csys_block_use.0": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-0-0000000000-0000000004-0",
               "datum_csys_block_use.1": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-1-0000000000-0000000004-0",
@@ -205,14 +198,10 @@
             "definition": {
               "definition": "draft_unresolved"
             },
-            "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000003",
-              "nx:feature-history:feature#0000000000-0000000002"
-            ],
             "id": "nx:feature-history:feature#0000000000-0000000005",
             "name": "DRAFT",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000005",
-            "ordinal": 5,
+            "ordinal": 9,
             "source_properties": {
               "datum_csys_block_use.0": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-0-0000000000-0000000005-0",
               "datum_csys_block_use.1": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-1-0000000000-0000000005-0",
@@ -245,14 +234,10 @@
             "definition": {
               "definition": "loft_unresolved"
             },
-            "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000003",
-              "nx:feature-history:feature#0000000000-0000000002"
-            ],
             "id": "nx:feature-history:feature#0000000000-0000000006",
             "name": "SKIN",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000006",
-            "ordinal": 6,
+            "ordinal": 8,
             "source_properties": {
               "datum_csys_block_use.0": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-0-0000000000-0000000006-0",
               "datum_csys_block_use.1": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-1-0000000000-0000000006-0",
@@ -296,10 +281,6 @@
               },
               "seeds": []
             },
-            "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000003",
-              "nx:feature-history:feature#0000000000-0000000002"
-            ],
             "id": "nx:feature-history:feature#0000000000-0000000007",
             "name": "Geometry Instance",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000007",
@@ -334,14 +315,10 @@
               },
               "seeds": []
             },
-            "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000003",
-              "nx:feature-history:feature#0000000000-0000000002"
-            ],
             "id": "nx:feature-history:feature#0000000000-0000000008",
             "name": "Pattern Feature",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000008",
-            "ordinal": 8,
+            "ordinal": 6,
             "source_properties": {
               "datum_csys_block_use.0": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-0-0000000000-0000000008-0",
               "datum_csys_block_use.1": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-1-0000000000-0000000008-0",
@@ -387,14 +364,10 @@
                 "kind": "unresolved"
               }
             },
-            "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000003",
-              "nx:feature-history:feature#0000000000-0000000002"
-            ],
             "id": "nx:feature-history:feature#0000000000-0000000009",
             "name": "EXTRUDE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000009",
-            "ordinal": 9,
+            "ordinal": 5,
             "source_properties": {
               "datum_csys_block_use.0": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-0-0000000000-0000000009-0",
               "datum_csys_block_use.1": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-1-0000000000-0000000009-0",
@@ -441,14 +414,10 @@
                 "kind": "unresolved"
               }
             },
-            "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000003",
-              "nx:feature-history:feature#0000000000-0000000002"
-            ],
             "id": "nx:feature-history:feature#0000000000-0000000010",
             "name": "EXTRUDE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000010",
-            "ordinal": 10,
+            "ordinal": 4,
             "source_properties": {
               "datum_csys_block_use.0": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-0-0000000000-0000000010-0",
               "datum_csys_block_use.1": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-1-0000000000-0000000010-0",
@@ -494,14 +463,10 @@
                 "kind": "unresolved"
               }
             },
-            "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000003",
-              "nx:feature-history:feature#0000000000-0000000002"
-            ],
             "id": "nx:feature-history:feature#0000000000-0000000011",
             "name": "EXTRUDE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000011",
-            "ordinal": 11,
+            "ordinal": 3,
             "source_properties": {
               "datum_csys_block_use.0": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-0-0000000000-0000000011-0",
               "datum_csys_block_use.1": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-1-0000000000-0000000011-0",
@@ -531,14 +496,10 @@
               "op": "unresolved",
               "placement": null
             },
-            "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000003",
-              "nx:feature-history:feature#0000000000-0000000002"
-            ],
             "id": "nx:feature-history:feature#0000000000-0000000012",
             "name": "BLOCK",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000012",
-            "ordinal": 12,
+            "ordinal": 2,
             "source_properties": {
               "datum_csys_block_use.0": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-0-0000000000-0000000012-0",
               "datum_csys_block_use.1": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-1-0000000000-0000000012-0",
@@ -573,14 +534,10 @@
                 "kind": "unresolved"
               }
             },
-            "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000003",
-              "nx:feature-history:feature#0000000000-0000000002"
-            ],
             "id": "nx:feature-history:feature#0000000000-0000000013",
             "name": "CPROJ",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000013",
-            "ordinal": 13,
+            "ordinal": 1,
             "source_properties": {
               "datum_csys_block_use.0": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-0-0000000000-0000000013-0",
               "datum_csys_block_use.1": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-1-0000000000-0000000013-0",
@@ -621,14 +578,10 @@
                 "kind": "unresolved"
               }
             },
-            "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000003",
-              "nx:feature-history:feature#0000000000-0000000002"
-            ],
             "id": "nx:feature-history:feature#0000000000-0000000014",
             "name": "SIMPLE HOLE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000014",
-            "ordinal": 14,
+            "ordinal": 0,
             "source_content": [
               {
                 "kind": "text",
@@ -5012,22 +4965,6 @@
                 "sha256": "3f3e3ab754c47fce7c4cc9cd73022215c105555662a78cc76707ccc0bf0bf47c"
               }
             ],
-            "feature_sketch_datum_csys_dependencies": [
-              {
-                "block_relation": {
-                  "construction_data_block": "nx:om-data-blocks-0:block#3",
-                  "kind": "consecutive",
-                  "point_data_block": "nx:om-data-blocks-0:block#2"
-                },
-                "datum_csys_construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
-                "datum_csys_operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
-                "id": "nx:feature-history:sketch-datum-csys-dependency#0000000000-0000000002",
-                "scalar_aliases": [],
-                "sketch_operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
-                "sketch_point_use": "nx:feature-history:sketch-point-use#0000000000-0000000000-0-0-1-0",
-                "source_offset": 321
-              }
-            ],
             "feature_sketch_fixed_points": [
               {
                 "fixed_pair": "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000000",
@@ -6020,9 +5957,6 @@
           "nx:feature-history:sketch#0000000000-0000000000": {
             "entity": "derived"
           },
-          "nx:feature-history:sketch-datum-csys-dependency#0000000000-0000000002": {
-            "entity": "derived"
-          },
           "nx:feature-history:sketch-entity#point-0000000000-0000000000-0-0-1-0": {
             "entity": "derived"
           },
@@ -6379,11 +6313,6 @@
             "offset": 1594,
             "stream": 0,
             "tag": "FEATURE_SKETCH_FIXED_PAIR"
-          },
-          "nx:feature-history:sketch-datum-csys-dependency#0000000000-0000000002": {
-            "offset": 321,
-            "stream": 0,
-            "tag": "SKETCH_DATUM_CSYS_DEPENDENCY"
           },
           "nx:feature-history:sketch-entity#point-0000000000-0000000000-0-0-1-0": {
             "offset": 321,

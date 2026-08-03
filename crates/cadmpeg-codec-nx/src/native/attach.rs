@@ -986,7 +986,9 @@ fn attach_feature_operations(
             .or_default()
             .push(block_use);
     }
-    let operation_positions = labels
+    let chronological_labels =
+        crate::native::features::feature_operation_chronological_labels(labels);
+    let operation_positions = chronological_labels
         .iter()
         .enumerate()
         .map(|(position, label)| (label.id.as_str(), position))
@@ -1436,7 +1438,7 @@ fn attach_feature_operations(
         annotations.exactness(&annotation.id.0, Exactness::Derived);
         ir.model.semantic_annotations.push(annotation);
     }
-    for (ordinal, label) in labels.iter().enumerate() {
+    for (ordinal, label) in chronological_labels.into_iter().enumerate() {
         if !projects_neutral_feature(&label.value)
             || hole_packages.internal_operations.contains(&label.id)
         {
