@@ -2002,6 +2002,60 @@ fn deleted_profile_family_requires_one_complete_multi_face_carrier() {
 fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries() {
     use cadmpeg_ir::features::SketchProfileRegion;
 
+    let sketch_id = SketchId("sketch".into());
+    let mut profiles = Vec::new();
+    let mut entities = Vec::new();
+    for (profile_index, corners) in [
+        [[0.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]],
+        [[6.0, 0.0], [8.0, 0.0], [8.0, 2.0], [6.0, 2.0]],
+        [[1.0, 1.0], [2.0, 1.0], [2.0, 2.0], [1.0, 2.0]],
+        [[3.0, 1.0], [5.0, 1.0], [5.0, 3.0], [3.0, 3.0]],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut profile = Vec::new();
+        for edge_index in 0..corners.len() {
+            let id = SketchEntityId(format!("profile-{profile_index}-edge-{edge_index}"));
+            profile.push(SketchEntityUse {
+                entity: id.clone(),
+                reversed: false,
+            });
+            let [start_u, start_v] = corners[edge_index];
+            let [end_u, end_v] = corners[(edge_index + 1) % corners.len()];
+            entities.push(SketchEntity {
+                id,
+                sketch: sketch_id.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: Point2::new(start_u, start_v),
+                    end: Point2::new(end_u, end_v),
+                },
+            });
+        }
+        profiles.push(profile);
+    }
+    let sketch = Sketch {
+        id: sketch_id,
+        name: None,
+        configuration: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        profiles,
+        native_ref: None,
+    };
+    let transition_selection = |selections| {
+        crate::design::profile_select::transition_inserted_profile_selection(
+            &sketch, &entities, 1.0e-6, selections,
+        )
+    };
+
     assert_eq!(
         crate::design::profile_select::unique_resolved_selection([Some(3), Some(3), Some(3)]),
         Some(3)
@@ -2029,7 +2083,7 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
         },
     ]);
     assert_eq!(
-        crate::design::profile_select::transition_inserted_profile_selection([
+        transition_selection(vec![
             Some(region.clone()),
             Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![1])),
             Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0, 1])),
@@ -2037,14 +2091,14 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
         Some(region.clone())
     );
     assert_eq!(
-        crate::design::profile_select::transition_inserted_profile_selection([
+        transition_selection(vec![
             Some(region.clone()),
             Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![2])),
         ]),
         Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![2]))
     );
     assert_eq!(
-        crate::design::profile_select::transition_inserted_profile_selection([
+        transition_selection(vec![
             Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![1])),
             Some(crate::design::profile_select::ResolvedProfileSelection::Regions(Vec::new())),
             Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![1])),
@@ -2052,7 +2106,7 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
         Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![1]))
     );
     assert_eq!(
-        crate::design::profile_select::transition_inserted_profile_selection([Some(region)]),
+        transition_selection(vec![Some(region)]),
         Some(
             crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
                 SketchProfileRegion::Loops {
@@ -2062,6 +2116,29 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
             ])
         )
     );
+    assert_eq!(
+        transition_selection(vec![
+            Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0])),
+            Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![1])),
+            None,
+        ]),
+        Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0, 1]))
+    );
+    assert_eq!(
+        transition_selection(vec![
+            Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0])),
+            Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![2])),
+        ]),
+        None
+    );
+    assert_eq!(
+        transition_selection(vec![
+            Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0])),
+            Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![3])),
+        ]),
+        None
+    );
+    assert_eq!(transition_selection(vec![None]), None);
 }
 
 #[test]

@@ -7,7 +7,8 @@ use crate::design::edge_resolve::feature_input_topology_id;
 use crate::design::feature_project::spatial_sketch_entity_endpoints;
 use crate::design::geometry::{
     arrangement_region_containing_points, historical_member_points_in_state, point_in_polygon,
-    point_on_sketch_entity, point_segment_distance, project_to_sketch, region_containing_points,
+    point_on_sketch_entity, point_segment_distance, profile_loops_are_independent,
+    project_to_sketch, region_containing_points,
 };
 use crate::ids::{
     self, native_stream, neutral_sketch_curve_id, neutral_sketch_id, neutral_sketch_point_id,
@@ -859,10 +860,15 @@ fn transition_profile_selection(
     let topology = state.topology.as_ref()?;
     let inserted_faces = &state.transition.as_ref()?.topology.faces.inserted;
     let tolerance = linear_tolerance.max(1.0e-7);
-    let inserted = transition_inserted_profile_selection(inserted_faces.iter().map(|face| {
-        let points = historical_face_points(*face, topology)?;
-        selection_containing_points(sketch, entities, &points, tolerance)
-    }));
+    let inserted = transition_inserted_profile_selection(
+        sketch,
+        entities,
+        tolerance,
+        inserted_faces.iter().map(|face| {
+            let points = historical_face_points(*face, topology)?;
+            selection_containing_points(sketch, entities, &points, tolerance)
+        }),
+    );
     if inserted.is_some() {
         return inserted;
     }
@@ -1210,6 +1216,9 @@ pub(crate) fn unique_resolved_selection<T: PartialEq>(
 }
 
 pub(crate) fn transition_inserted_profile_selection(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
     selections: impl IntoIterator<Item = Option<ResolvedProfileSelection>>,
 ) -> Option<ResolvedProfileSelection> {
     use cadmpeg_ir::features::SketchProfileRegion;
@@ -1228,6 +1237,20 @@ pub(crate) fn transition_inserted_profile_selection(
     if let Some(first) = loop_selections.first() {
         if loop_selections.iter().all(|candidate| candidate == first) {
             return Some(ResolvedProfileSelection::Loops(first.to_vec()));
+        }
+    }
+    if loop_selections.len() == selections.len() {
+        let loops = loop_selections
+            .iter()
+            .flat_map(|selection| selection.iter().copied())
+            .fold(Vec::new(), |mut loops, profile| {
+                if !loops.contains(&profile) {
+                    loops.push(profile);
+                }
+                loops
+            });
+        if !loops.is_empty() && profile_loops_are_independent(sketch, entities, &loops, tolerance) {
+            return Some(ResolvedProfileSelection::Loops(loops));
         }
     }
     let mut regions = selections.iter().filter_map(|selection| match selection {
