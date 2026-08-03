@@ -18204,6 +18204,23 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             (80, 169, 180, [4.0, 5.0, 6.0]),
         ]
     );
+    let mut compact_bytes = assembly_bytes[..627].to_vec();
+    compact_bytes.extend_from_slice(&3_u32.to_le_bytes());
+    compact_bytes.extend_from_slice(b"264");
+    compact_bytes.extend_from_slice(&scope_record_index.to_le_bytes());
+    let mut compact_scope = scope.clone();
+    compact_scope.class_tag = "459".into();
+    compact_scope.frame_length = 627;
+    compact_scope.paired_byte_offset = 627;
+    compact_scope.paired_class_tag = "264".into();
+    assert!(exact_assembly_alignment(
+        &compact_bytes,
+        &IndexedRecordOffsets::build(&compact_bytes),
+        &compact_scope,
+        &rectangular_owners,
+    )
+    .is_some_and(|alignment| alignment.operand_frames.is_some()));
+
     let push_path = |bytes: &mut Vec<u8>, record_index: u32, guids: &[&str]| {
         bytes.extend_from_slice(&3_u32.to_le_bytes());
         bytes.extend_from_slice(b"329");
@@ -18216,6 +18233,64 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
         }
     };
+    let push_identity_path =
+        |bytes: &mut Vec<u8>, record_index: u32, path: &[&str], identities: &[&str; 4]| {
+            bytes.extend_from_slice(&3_u32.to_le_bytes());
+            bytes.extend_from_slice(b"390");
+            bytes.extend_from_slice(&u64::from(record_index).to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+            bytes.extend_from_slice(&(path.len() as u32).to_le_bytes());
+            for guid in path.iter().chain(&identities[..2]) {
+                let encoded = guid.encode_utf16().collect::<Vec<_>>();
+                bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+                bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
+            }
+            bytes.extend_from_slice(&2_u64.to_le_bytes());
+            for guid in &identities[2..] {
+                let encoded = guid.encode_utf16().collect::<Vec<_>>();
+                bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+                bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
+            }
+            bytes.extend_from_slice(&2_u32.to_le_bytes());
+            bytes.extend_from_slice(&[0; 8]);
+        };
+    let identities = [
+        "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        "cccccccc-cccc-cccc-cccc-cccccccccccc",
+        "dddddddd-dddd-dddd-dddd-dddddddddddd",
+    ];
+    let mut identity_path_bytes = assembly_bytes.clone();
+    push_identity_path(
+        &mut identity_path_bytes,
+        65,
+        &[
+            "11111111-1111-1111-1111-111111111111",
+            "22222222-2222-2222-2222-222222222222",
+        ],
+        &identities,
+    );
+    push_identity_path(
+        &mut identity_path_bytes,
+        68,
+        &["33333333-3333-3333-3333-333333333333"],
+        &identities,
+    );
+    identity_path_bytes.extend_from_slice(&3_u32.to_le_bytes());
+    identity_path_bytes.extend_from_slice(b"396");
+    identity_path_bytes.extend_from_slice(&70_u32.to_le_bytes());
+    let identity_paths = exact_assembly_alignment(
+        &identity_path_bytes,
+        &IndexedRecordOffsets::build(&identity_path_bytes),
+        &scope,
+        &rectangular_owners,
+    )
+    .and_then(|alignment| alignment.operand_paths)
+    .expect("identity-qualified assembly occurrence paths");
+    assert_eq!(identity_paths[0].class_tag, "390");
+    assert_eq!(identity_paths[0].occurrence_guids.len(), 2);
+    assert_eq!(identity_paths[0].identity_guids, identities);
+
     push_path(
         &mut assembly_bytes,
         65,

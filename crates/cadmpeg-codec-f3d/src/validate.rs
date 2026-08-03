@@ -1006,6 +1006,25 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 !path.occurrence_guids.is_empty()
                                     && path.occurrence_guids.len()
                                         == path.occurrence_guid_offsets.len()
+                                    && matches!(path.class_tag.as_str(), "329" | "390")
+                                    && path.identity_guids.len() == path.identity_guid_offsets.len()
+                                    && if path.class_tag == "390" {
+                                        path.identity_guids.len() == 4
+                                    } else {
+                                        path.identity_guids.is_empty()
+                                    }
+                                    && path
+                                        .identity_guids
+                                        .iter()
+                                        .all(|guid| crate::bytes::is_guid_relaxed(guid))
+                                    && path
+                                        .identity_guid_offsets
+                                        .windows(2)
+                                        .all(|offsets| offsets[0] < offsets[1])
+                                    && path
+                                        .identity_guid_offsets
+                                        .iter()
+                                        .all(|offset| *offset > path.byte_offset)
                                     && path
                                         .occurrence_guid_offsets
                                         .windows(2)
@@ -1411,10 +1430,11 @@ fn validate_component_occurrences(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && occurrence.component_guid_offset == occurrence.byte_offset + 48
             && occurrence.occurrence_guid_offset == occurrence.byte_offset + 124
             && occurrence.occurrence_ordinal > 0
+            && matches!(occurrence.class_tag.as_str(), "256" | "327")
             && match (occurrence.transform, occurrence.transform_offset) {
                 (None, None) => occurrence.occurrence_ordinal == 1,
                 (Some(transform), Some(offset)) => {
-                    occurrence.occurrence_ordinal > 1
+                    (occurrence.class_tag == "327" || occurrence.occurrence_ordinal > 1)
                         && offset == occurrence.byte_offset + 209
                         && design::decode::sketch::valid_sketch_transform(&transform)
                 }

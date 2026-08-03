@@ -1216,14 +1216,22 @@ pub struct DesignAssemblyAlignment {
 /// Counted occurrence path qualifying one assembly operand construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignAssemblyOperandPath {
-    /// Class-329 path record.
+    /// Path-record index.
     pub record_index: u32,
-    /// Byte offset of the class-329 indexed header.
+    /// Indexed-record class carrying this path.
+    pub class_tag: String,
+    /// Byte offset of the indexed header.
     pub byte_offset: u64,
     /// Ordered occurrence GUIDs from the outermost occurrence to the selected occurrence.
     pub occurrence_guids: Vec<String>,
     /// Byte offsets of the UTF-16 GUID code units parallel to `occurrence_guids`.
     pub occurrence_guid_offsets: Vec<u64>,
+    /// Four ordered identity GUIDs following a class-390 occurrence path.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub identity_guids: Vec<String>,
+    /// Byte offsets parallel to `identity_guids`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub identity_guid_offsets: Vec<u64>,
 }
 
 /// One operand frame embedded by an assembly-operation scope.
@@ -1263,6 +1271,8 @@ pub struct DesignComponentInsertConstruction {
 pub struct DesignComponentOccurrence {
     /// Stable native record identity.
     pub id: String,
+    /// Indexed-record class carrying this occurrence.
+    pub class_tag: String,
     /// Indexed carrier record.
     pub record_index: u32,
     /// Byte offset of the indexed header.
@@ -1279,7 +1289,7 @@ pub struct DesignComponentOccurrence {
     pub occurrence_guid_offset: u64,
     /// One-based occurrence ordinal within the component definition.
     pub occurrence_ordinal: u32,
-    /// Explicit local-to-model placement for generated occurrences.
+    /// Explicit local-to-model placement for placed occurrences.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transform: Option<[[f64; 4]; 4]>,
     /// Byte offset of the explicit placement.

@@ -657,8 +657,15 @@ fn exact_assembly_operand_frames(
     scope: &DesignParameterScope,
 ) -> Option<[DesignAssemblyOperandFrame; 2]> {
     let start = usize::try_from(scope.byte_offset).ok()?;
-    if !matches!(scope.frame_length, 637 | 692)
-        || scope.paired_class_tag != "259"
+    let frame_variant = matches!(
+        (
+            scope.class_tag.as_str(),
+            scope.paired_class_tag.as_str(),
+            scope.frame_length
+        ),
+        (_, "259", 637 | 692) | ("459", "264", 627)
+    );
+    if !frame_variant
         || usize::try_from(scope.paired_byte_offset).ok()?
             != start.checked_add(usize::try_from(scope.frame_length).ok()?)?
         || bytes.get(start + 11..start + 20)? != [0; 9]
@@ -722,8 +729,7 @@ fn exact_assembly_operand_path(
     limit: usize,
 ) -> Option<DesignAssemblyOperandPath> {
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 1..=8, u8::is_ascii_digit)?;
-    if class_tag != "329"
-        || read_u64(bytes, after_tag)? != u64::from(record_index)
+    if read_u64(bytes, after_tag)? != u64::from(record_index)
         || bytes.get(after_tag + 8..after_tag + 14)? != [0; 6]
     {
         return None;
@@ -744,11 +750,53 @@ fn exact_assembly_operand_path(
         occurrence_guids.push(guid);
         position = after_guid;
     }
+    let mut identity_guids = Vec::new();
+    let mut identity_guid_offsets = Vec::new();
+    match class_tag.as_str() {
+        "329" => {}
+        "390" => {
+            let end = next_indexed_record_offset(bytes, start + 1)?;
+            if end > limit {
+                return None;
+            }
+            for _ in 0..2 {
+                let (guid, after_guid) = lp_utf16_bounded(bytes.get(..end)?, position, 36..=36)?;
+                if !crate::bytes::is_guid_relaxed(&guid) {
+                    return None;
+                }
+                identity_guid_offsets.push(u64::try_from(position + 4).ok()?);
+                identity_guids.push(guid);
+                position = after_guid;
+            }
+            if read_u64(bytes, position)? != 2 {
+                return None;
+            }
+            position += 8;
+            for _ in 0..2 {
+                let (guid, after_guid) = lp_utf16_bounded(bytes.get(..end)?, position, 36..=36)?;
+                if !crate::bytes::is_guid_relaxed(&guid) {
+                    return None;
+                }
+                identity_guid_offsets.push(u64::try_from(position + 4).ok()?);
+                identity_guids.push(guid);
+                position = after_guid;
+            }
+            if u32_at(bytes, position)? != 2
+                || !bytes.get(position + 4..end)?.iter().all(|byte| *byte == 0)
+            {
+                return None;
+            }
+        }
+        _ => return None,
+    }
     Some(DesignAssemblyOperandPath {
         record_index,
+        class_tag,
         byte_offset: u64::try_from(start).ok()?,
         occurrence_guids,
         occurrence_guid_offsets,
+        identity_guids,
+        identity_guid_offsets,
     })
 }
 
