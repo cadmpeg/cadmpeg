@@ -9,6 +9,127 @@ use cadmpeg_ir::Exactness;
 use crate::container::ContainerScan;
 use crate::records::PmiDimension;
 
+fn exact_count(value: f64) -> Option<i64> {
+    let count = value as i64;
+    (count >= 0 && count as f64 == value).then_some(count)
+}
+
+fn dimension_subtype(
+    record: &PmiDimension,
+    empty_subtype_is_count: bool,
+) -> cadmpeg_ir::features::PmiDimensionSubtype {
+    use cadmpeg_ir::features::PmiDimensionSubtype;
+
+    match record.subtype.as_str() {
+        "Linear" => PmiDimensionSubtype::Linear,
+        "Angle" => PmiDimensionSubtype::Angle,
+        "Diameter" => PmiDimensionSubtype::Diameter,
+        "Radial" => PmiDimensionSubtype::Radial,
+        "Ordinate" => PmiDimensionSubtype::Ordinate,
+        "" if empty_subtype_is_count && exact_count(record.value).is_some() => {
+            PmiDimensionSubtype::Count
+        }
+        other => PmiDimensionSubtype::Native(other.to_string()),
+    }
+}
+
+fn neutral_parameter_is_count(
+    feature: &cadmpeg_ir::features::Feature,
+    name: &str,
+    value: Option<&cadmpeg_ir::features::ParameterValue>,
+) -> bool {
+    use cadmpeg_ir::features::{FeatureDefinition, ParameterValue, PatternKind};
+
+    matches!(value, Some(ParameterValue::Integer(_)))
+        || (matches!(name, "D1" | "D2")
+            && matches!(
+                &feature.definition,
+                FeatureDefinition::Pattern {
+                    pattern: PatternKind::Linear { .. } | PatternKind::LinearOffsets { .. },
+                    ..
+                }
+            ))
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::features::PmiDimensionSubtype;
+
+    use super::*;
+
+    fn dimension(subtype: &str, value: f64) -> PmiDimension {
+        PmiDimension {
+            id: "dimension".into(),
+            parent: "block".into(),
+            offset: 0,
+            guid: "guid".into(),
+            cad_text: "D1@Pattern1".into(),
+            subtype: subtype.into(),
+            value,
+            value_offset: 0,
+            precision: 0,
+            precision_offset: 0,
+            display_text: None,
+            display_text_offset: None,
+            basic: false,
+            basic_offset: 0,
+            inspection: false,
+            inspection_offset: 0,
+            reference_only: false,
+            reference_only_offset: 0,
+        }
+    }
+
+    #[test]
+    fn empty_subtype_requires_established_count_semantics() {
+        let record = dimension("", 2.0);
+        assert_eq!(
+            dimension_subtype(&record, false),
+            PmiDimensionSubtype::Native(String::new())
+        );
+        assert_eq!(dimension_subtype(&record, true), PmiDimensionSubtype::Count);
+        assert_eq!(
+            dimension_subtype(&dimension("", 2.5), true),
+            PmiDimensionSubtype::Native(String::new())
+        );
+    }
+
+    #[test]
+    fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
+        use std::collections::BTreeMap;
+
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, Length, PatternKind};
+
+        let feature = Feature {
+            id: FeatureId("pattern".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::Linear {
+                    direction: None,
+                    spacing: Length(10.0),
+                    count: 2,
+                    second: None,
+                },
+            },
+            native_ref: None,
+        };
+
+        assert!(neutral_parameter_is_count(&feature, "D1", None));
+        assert!(neutral_parameter_is_count(&feature, "D2", None));
+        assert!(!neutral_parameter_is_count(&feature, "D3", None));
+    }
+}
+
 /// Return whether two retained records encode the same semantic dimension.
 ///
 /// Record identity and byte locations are intentionally excluded. `SolidWorks`
@@ -70,12 +191,30 @@ pub(crate) fn enrich_history_parameters(
             continue;
         };
         let millimetres = record.value * 1000.0;
-        let expression = match record.subtype.as_str() {
-            "Linear" => format!("{millimetres}mm"),
-            "Angle" => record.value.to_string(),
-            "Diameter" => format!("<MOD-DIAM>{millimetres}mm"),
-            "Radial" => format!("R{millimetres}mm"),
-            _ => continue,
+        let feature = &histories[*history_index].features[*feature_index];
+        let empty_subtype_is_count = feature.parameters.get(name).is_some_and(|expression| {
+            matches!(
+                crate::history::parse_native_parameter_literal(feature, name, expression),
+                Some(cadmpeg_ir::features::ParameterValue::Integer(_))
+            )
+        });
+        let expression = match dimension_subtype(record, empty_subtype_is_count) {
+            cadmpeg_ir::features::PmiDimensionSubtype::Linear
+            | cadmpeg_ir::features::PmiDimensionSubtype::Ordinate => {
+                format!("{millimetres}mm")
+            }
+            cadmpeg_ir::features::PmiDimensionSubtype::Angle => record.value.to_string(),
+            cadmpeg_ir::features::PmiDimensionSubtype::Diameter => {
+                format!("<MOD-DIAM>{millimetres}mm")
+            }
+            cadmpeg_ir::features::PmiDimensionSubtype::Radial => {
+                format!("R{millimetres}mm")
+            }
+            cadmpeg_ir::features::PmiDimensionSubtype::Count => match exact_count(record.value) {
+                Some(count) => count.to_string(),
+                None => continue,
+            },
+            cadmpeg_ir::features::PmiDimensionSubtype::Native(_) => continue,
         };
         candidates
             .entry((*history_index, *feature_index, name.to_string()))
@@ -136,13 +275,8 @@ pub(crate) fn patch_payload(
             )));
         }
         let semantic = parameter.pmi.as_ref().expect("filtered above");
-        let subtype = match record.subtype.as_str() {
-            "Linear" => PmiDimensionSubtype::Linear,
-            "Angle" => PmiDimensionSubtype::Angle,
-            "Diameter" => PmiDimensionSubtype::Diameter,
-            "Radial" => PmiDimensionSubtype::Radial,
-            other => PmiDimensionSubtype::Native(other.to_string()),
-        };
+        let empty_subtype_is_count = semantic.subtype == PmiDimensionSubtype::Count;
+        let subtype = dimension_subtype(record, empty_subtype_is_count);
         if semantic.subtype != subtype {
             return Err(cadmpeg_codec_core::CodecError::NotImplemented(format!(
                 "SLDPRT PMI record {} changes dimension subtype",
@@ -154,9 +288,11 @@ pub(crate) fn patch_payload(
             (
                 PmiDimensionSubtype::Linear
                 | PmiDimensionSubtype::Diameter
-                | PmiDimensionSubtype::Radial,
+                | PmiDimensionSubtype::Radial
+                | PmiDimensionSubtype::Ordinate,
                 Some(ParameterValue::Length(length)),
             ) => length.0 / 1000.0,
+            (PmiDimensionSubtype::Count, Some(ParameterValue::Integer(count))) => *count as f64,
             _ => {
                 return Err(cadmpeg_codec_core::CodecError::NotImplemented(format!(
                     "SLDPRT PMI record {} has a value incompatible with its dimension subtype",
@@ -265,13 +401,13 @@ pub(crate) fn apply_to_parameters(
         let Some([owner]) = feature_names.get(owner_name).map(Vec::as_slice) else {
             continue;
         };
-        let subtype = match record.subtype.as_str() {
-            "Linear" => PmiDimensionSubtype::Linear,
-            "Angle" => PmiDimensionSubtype::Angle,
-            "Diameter" => PmiDimensionSubtype::Diameter,
-            "Radial" => PmiDimensionSubtype::Radial,
-            other => PmiDimensionSubtype::Native(other.to_string()),
-        };
+        let existing_parameter = parameters.iter().position(|parameter| {
+            parameter.owner.as_ref() == Some(&owner.id) && parameter.name == name
+        });
+        let empty_subtype_is_count = existing_parameter.is_some_and(|index| {
+            neutral_parameter_is_count(owner, name, parameters[index].value.as_ref())
+        });
+        let subtype = dimension_subtype(record, empty_subtype_is_count);
         let millimetres = record.value * 1000.0;
         let (expression, display, value) = match subtype {
             PmiDimensionSubtype::Linear => (
@@ -296,6 +432,21 @@ pub(crate) fn apply_to_parameters(
                 Some(DimensionDisplay::Radius),
                 Some(ParameterValue::Length(Length(millimetres))),
             ),
+            PmiDimensionSubtype::Ordinate => (
+                format!("{millimetres}mm"),
+                None,
+                Some(ParameterValue::Length(Length(millimetres))),
+            ),
+            PmiDimensionSubtype::Count => {
+                let Some(count) = exact_count(record.value) else {
+                    continue;
+                };
+                (
+                    count.to_string(),
+                    None,
+                    Some(ParameterValue::Integer(count)),
+                )
+            }
             PmiDimensionSubtype::Native(_) => (record.value.to_string(), None, None),
         };
         let semantic = ParameterPmi {
@@ -307,10 +458,7 @@ pub(crate) fn apply_to_parameters(
             reference_only: record.reference_only,
             native_ref: record.id.clone(),
         };
-        if let Some(parameter) = parameters
-            .iter_mut()
-            .find(|parameter| parameter.owner.as_ref() == Some(&owner.id) && parameter.name == name)
-        {
+        if let Some(parameter) = existing_parameter.map(|index| &mut parameters[index]) {
             parameter.expression = expression;
             parameter.display = display;
             parameter.value = value;
