@@ -1933,6 +1933,17 @@ fn compact_geometry_locus_point_coordinates(payload: &[u8], offset: usize) -> Op
 }
 
 fn terminal_wide_geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
+    let identity = |relative| {
+        payload
+            .get(offset + relative..offset + relative + 4)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+            .is_some_and(|identity| !matches!(identity, 0 | u32::MAX))
+    };
+    let trailer = payload.get(offset + 96..offset + 138) == Some(&[0; 42])
+        || payload.get(offset + 96..offset + 134) == Some(&[0; 38])
+            && identity(134)
+            && identity(138);
     matches!(
         payload.get(offset..offset + SKETCH_MARKER.len()),
         Some(prefix)
@@ -1950,7 +1961,7 @@ fn terminal_wide_geometry_locus_profile_vertex(payload: &[u8], offset: usize) ->
         && payload.get(offset + 64..offset + 66) == Some(&[0x1e, 0x00])
         && finite_coordinate_pair(payload, offset.saturating_add(66)).is_some()
         && payload.get(offset + 92..offset + 96) == Some(&[0xfe, 0xff, 0xff, 0xff])
-        && payload.get(offset + 96..offset + 138) == Some(&[0; 42])
+        && trailer
         && sketch_marker_prefix_at(payload, offset.saturating_add(142))
 }
 
@@ -6337,7 +6348,12 @@ mod marker_tests {
             assert_eq!(entity.kind, SketchInputKind::Point);
             assert_eq!(entity.coordinates_m, Some([0.025, -0.004]));
 
-            payload[137] = 1;
+            payload[134..138].copy_from_slice(&6u32.to_le_bytes());
+            assert_eq!(
+                sketch_input_entities(&payload, "lane")[0].kind,
+                SketchInputKind::Point
+            );
+            payload[133] = 1;
             assert!(!super::terminal_wide_geometry_locus_profile_vertex(
                 &payload, 0
             ));
