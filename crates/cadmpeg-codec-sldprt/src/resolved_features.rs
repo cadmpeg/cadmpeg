@@ -618,7 +618,7 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
                 || current_compact_104_profile_line(payload, offset)
                 || current_direct_92_profile_line_endpoint_indices(payload, offset).is_some()
                 || extended_terminal_profile_line(payload, offset)
-                || extended_identity_inline_profile_line(payload, offset)
+                || extended_identity_inline_line_record(payload, offset)
                 || legacy_compact_profile_line(payload, offset)
                 || coordinates_m.is_none()
                     && (marker_is_selected_construction_line(payload, offset)
@@ -7412,6 +7412,15 @@ mod marker_tests {
             extended_identity_inline_line_endpoints(&payload, &curve, &[&point, &curve]),
             Some([[0.007, 0.0075], [0.01, 0.012]])
         );
+        let chained_curve = SketchInputEntity {
+            id: "chained-curve".into(),
+            kind: SketchInputKind::Arc,
+            ..point.clone()
+        };
+        assert_eq!(
+            extended_identity_inline_line_endpoints(&payload, &curve, &[&chained_curve, &curve],),
+            Some([[0.007, 0.0075], [0.01, 0.012]])
+        );
         payload[17..21].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(
             extended_identity_inline_line_endpoints(&payload, &curve, &[&point, &curve]),
@@ -7421,6 +7430,35 @@ mod marker_tests {
             sketch_input_entities(&payload, "lane")[0].kind,
             SketchInputKind::LineOrCircle
         );
+        payload[74..84]
+            .copy_from_slice(&[0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        payload[126..130].copy_from_slice(&4u32.to_le_bytes());
+        let direct_curve = SketchInputEntity {
+            kind: SketchInputKind::Arc,
+            ..curve.clone()
+        };
+        assert_eq!(
+            extended_identity_inline_line_endpoints(
+                &payload,
+                &direct_curve,
+                &[&chained_curve, &direct_curve],
+            ),
+            Some([[0.007, 0.0075], [0.01, 0.012]])
+        );
+        assert_eq!(
+            sketch_input_entities(&payload, "lane")[0].kind,
+            SketchInputKind::LineOrCircle
+        );
+        payload[126..130].fill(0);
+        assert_eq!(
+            extended_identity_inline_line_endpoints(
+                &payload,
+                &direct_curve,
+                &[&chained_curve, &direct_curve],
+            ),
+            None
+        );
+        payload[126..130].copy_from_slice(&4u32.to_le_bytes());
         let duplicate = SketchInputEntity {
             id: "duplicate".into(),
             ..point.clone()
@@ -43388,17 +43426,21 @@ fn extended_identity_inline_line_endpoints(
     markers: &[&SketchInputEntity],
 ) -> Option<[[f64; 2]; 2]> {
     let offset = usize::try_from(curve.offset).ok()?;
-    if !extended_identity_inline_profile_line(payload, offset) {
+    if !extended_identity_inline_line_record(payload, offset) {
         return None;
     }
     let identity = u32::from_le_bytes(payload.get(offset + 130..offset + 134)?.try_into().ok()?);
     let mut candidates = markers.iter().copied().filter(|marker| {
         marker.feature_ref == curve.feature_ref
+            && marker.id != curve.id
             && marker.object_index == Some(identity)
             && marker.coordinates_m.is_some()
             && matches!(
                 marker.kind,
-                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                SketchInputKind::Point
+                    | SketchInputKind::ConstrainedPoint
+                    | SketchInputKind::LineOrCircle
+                    | SketchInputKind::Arc
             )
     });
     let endpoint = candidates.next()?;
@@ -43408,7 +43450,20 @@ fn extended_identity_inline_line_endpoints(
     ])
 }
 
-fn extended_identity_inline_profile_line(payload: &[u8], offset: usize) -> bool {
+fn extended_identity_inline_line_record(payload: &[u8], offset: usize) -> bool {
+    let counted_state = payload.get(offset + 29..offset + 31) == Some(&[0; 2])
+        && payload.get(offset + 74..offset + 84)
+            == Some(&[0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00])
+        && payload.get(offset + 88..offset + 130) == Some(&[0; 42]);
+    let direct_state = payload.get(offset + 29..offset + 31) == Some(&[0; 2])
+        && payload.get(offset + 74..offset + 84)
+            == Some(&[0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+        && payload.get(offset + 88..offset + 126) == Some(&[0; 38])
+        && payload
+            .get(offset + 126..offset + 130)
+            .and_then(|identity| identity.try_into().ok())
+            .map(u32::from_le_bytes)
+            .is_some_and(|identity| !matches!(identity, 0 | u32::MAX));
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
@@ -43416,16 +43471,12 @@ fn extended_identity_inline_profile_line(payload: &[u8], offset: usize) -> bool 
         || !matches!(marker_native_code(payload, offset), Some(1 | 2))
         || !marker_is_geometry_locus(payload, offset)
         || marker_profile_curve_role(payload, offset) != Some(1)
-        || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
         || payload.get(offset + 31..offset + 39)
             != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
         || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
         || payload.get(offset + 56..offset + 58) != Some(&[0x1e, 0x00])
-        || payload.get(offset + 74..offset + 78) != Some(&[0x00, 0x00, 0x01, 0x00])
-        || payload.get(offset + 78..offset + 82) != Some(&[0; 4])
-        || payload.get(offset + 82..offset + 84) != Some(&1u16.to_le_bytes())
+        || !(counted_state || direct_state)
         || payload.get(offset + 84..offset + 88) != Some(&(-2i32).to_le_bytes())
-        || payload.get(offset + 88..offset + 130) != Some(&[0; 42])
         || !offset
             .checked_add(134)
             .is_some_and(|next| sketch_marker_prefix_at(payload, next))
