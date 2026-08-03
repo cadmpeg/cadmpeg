@@ -1501,12 +1501,15 @@ fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[
         && payload.get(offset + 84..offset + 96) == Some(b"sgLineHandle");
     let line_handle_id =
         u16::from_le_bytes(payload.get(offset + 96..offset + 98)?.try_into().ok()?);
-    let valid_line_handle_id = matches!(
+    let current_line_handle_variant =
+        current_prefix && matches!((code, handle_state, line_handle_id), (2, 2, 1));
+    let valid_line_handle_id = (matches!(
         (code, handle_state, line_handle_id),
         (0, 2, 1) | (0, 3, 3) | (1, 2 | 3, 0 | 3) | (2, 2, 0 | 3)
-    ) && (payload.get(offset + 23..offset + 27)
-        == Some(&[0x04, 0x00, 0x02, 0x00])
-        || matches!((code, handle_state, line_handle_id), (1, 2, 0)));
+    ) || current_line_handle_variant)
+        && (payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
+            || matches!((code, handle_state, line_handle_id), (1, 2, 0))
+            || current_line_handle_variant);
     let identity_bearing_tail = payload.get(offset + 124..offset + 162) == Some(&[0; 38])
         && matches!(
             (
@@ -9008,6 +9011,22 @@ mod marker_tests {
             sketch_input_entities(&payload, "lane")[0].kind,
             SketchInputKind::Point
         );
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        payload[76..78].copy_from_slice(&2u16.to_le_bytes());
+        payload[96..98].copy_from_slice(&1u16.to_le_bytes());
+        assert_eq!(
+            legacy_declared_handle_coordinates(&payload, 0),
+            Some([0.045, -0.0225])
+        );
+        assert_eq!(
+            sketch_input_entities(&payload, "lane")[0].kind,
+            SketchInputKind::Point
+        );
+        payload[17..21].fill(0);
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[76..78].copy_from_slice(&3u16.to_le_bytes());
+        payload[96..98].copy_from_slice(&3u16.to_le_bytes());
         payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
         payload[170..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
