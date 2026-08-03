@@ -1241,43 +1241,65 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 ) => {
                     operation_offset == scope.byte_offset.saturating_add(27)
                         && matches!(direction_face_extend_values[0], 1..=3)
-                        && match (
-                            direction_face_extend_values[0],
-                            side_extent_discriminators,
-                            extent,
-                        ) {
-                            (1, [1, 0], Some(records::DesignExtrudeExtent::OneSidedDistance))
-                            | (1, [2, 0], Some(records::DesignExtrudeExtent::OneSidedToFace))
-                            | (
+                        && matches!(
+                            (
+                                direction_face_extend_values[0],
+                                side_extent_discriminators,
+                                extent,
+                            ),
+                            (
+                                1,
+                                [1, 0],
+                                Some(records::DesignExtrudeExtent::OneSidedDistance)
+                            ) | (
+                                1,
+                                [2, 0],
+                                Some(records::DesignExtrudeExtent::OneSidedToFace)
+                            ) | (
                                 1,
                                 [3, 0],
                                 Some(records::DesignExtrudeExtent::OneSidedThroughNext),
+                            ) | (
+                                1,
+                                [4, 0],
+                                Some(records::DesignExtrudeExtent::OneSidedThroughAll)
+                            ) | (
+                                2,
+                                [1, 1],
+                                Some(records::DesignExtrudeExtent::TwoSidedDistance)
+                            ) | (
+                                3,
+                                [1, 0],
+                                Some(records::DesignExtrudeExtent::SymmetricDistance)
                             )
-                            | (1, [4, 0], Some(records::DesignExtrudeExtent::OneSidedThroughAll))
-                            | (2, [1, 1], Some(records::DesignExtrudeExtent::TwoSidedDistance))
-                            | (3, [1, 0], Some(records::DesignExtrudeExtent::SymmetricDistance)) => {
-                                true
-                            }
-                            (_, _, None) => !matches!(
-                                (direction_face_extend_values[0], side_extent_discriminators),
-                                (1, [1..=4, 0]) | (2, [1, 1]) | (3, [1, 0])
-                            ),
-                            _ => false,
-                        }
+                        )
                         && side_extent_discriminator_offsets
                             == if direction_face_extend_values[0] == 2 {
                                 [
                                     scope.byte_offset.saturating_add(155),
                                     scope.byte_offset.saturating_add(178),
                                 ]
+                            } else if side_extent_discriminators[0] == 2 {
+                                let first_offset = side_extent_discriminator_offsets[0];
+                                if matches!(
+                                    first_offset.checked_sub(scope.byte_offset),
+                                    Some(106 | 116)
+                                ) {
+                                    [first_offset, scope.reference_count_offset.saturating_sub(4)]
+                                } else {
+                                    [0, 0]
+                                }
+                            } else if side_extent_discriminator_offsets[0]
+                                == scope.byte_offset.saturating_add(116)
+                            {
+                                [
+                                    scope.byte_offset.saturating_add(116),
+                                    scope.byte_offset.saturating_add(130),
+                                ]
                             } else {
                                 [
                                     scope.byte_offset.saturating_add(106),
-                                    if side_extent_discriminators[0] == 2 {
-                                        scope.reference_count_offset.saturating_sub(4)
-                                    } else {
-                                        scope.byte_offset.saturating_add(110)
-                                    },
+                                    scope.byte_offset.saturating_add(110),
                                 ]
                             }
                         && direction_face_extend_offsets

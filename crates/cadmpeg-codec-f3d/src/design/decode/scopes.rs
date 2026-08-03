@@ -3513,31 +3513,51 @@ fn exact_legacy_shifted_extrude_prologue(
         }
         Some([first_side_extent_offset, second_side_extent_offset])
     };
-    let side_extent_discriminator_offsets = if direction_face_extend_values[0] == 2 {
-        two_sided_offsets()?
-    } else {
-        let first_side_extent_offset = start.checked_add(106)?;
+    let extent_for =
+        |discriminators: [u32; 2]| match (direction_face_extend_values[0], discriminators) {
+            (1, [1, 0]) => Some(DesignExtrudeExtent::OneSidedDistance),
+            (1, [2, 0]) => Some(DesignExtrudeExtent::OneSidedToFace),
+            (1, [3, 0]) => Some(DesignExtrudeExtent::OneSidedThroughNext),
+            (1, [4, 0]) => Some(DesignExtrudeExtent::OneSidedThroughAll),
+            (2, [1, 1]) => Some(DesignExtrudeExtent::TwoSidedDistance),
+            (3, [1, 0]) => Some(DesignExtrudeExtent::SymmetricDistance),
+            _ => None,
+        };
+    let candidate = |first_side_extent_offset: usize, default_second_offset: usize| {
+        if first_side_extent_offset.checked_add(4)? > reference_count_at {
+            return None;
+        }
         let first_side_extent = u32_at(bytes, first_side_extent_offset)?;
         let second_side_extent_offset = if first_side_extent == 2 {
             reference_count_at.checked_sub(4)?
         } else {
-            start.checked_add(110)?
+            default_second_offset
         };
-        [first_side_extent_offset, second_side_extent_offset]
+        if second_side_extent_offset.checked_add(4)? > reference_count_at {
+            return None;
+        }
+        let offsets = [first_side_extent_offset, second_side_extent_offset];
+        let discriminators = [u32_at(bytes, offsets[0])?, u32_at(bytes, offsets[1])?];
+        extent_for(discriminators).map(|extent| (offsets, discriminators, extent))
     };
-    let side_extent_discriminators = [
-        u32_at(bytes, side_extent_discriminator_offsets[0])?,
-        u32_at(bytes, side_extent_discriminator_offsets[1])?,
-    ];
-    let extent = match (direction_face_extend_values[0], side_extent_discriminators) {
-        (1, [1, 0]) => Some(DesignExtrudeExtent::OneSidedDistance),
-        (1, [2, 0]) => Some(DesignExtrudeExtent::OneSidedToFace),
-        (1, [3, 0]) => Some(DesignExtrudeExtent::OneSidedThroughNext),
-        (1, [4, 0]) => Some(DesignExtrudeExtent::OneSidedThroughAll),
-        (2, [1, 1]) => Some(DesignExtrudeExtent::TwoSidedDistance),
-        (3, [1, 0]) => Some(DesignExtrudeExtent::SymmetricDistance),
-        _ => None,
-    };
+    let (side_extent_discriminator_offsets, side_extent_discriminators, extent) =
+        if direction_face_extend_values[0] == 2 {
+            let offsets = two_sided_offsets()?;
+            let discriminators = [u32_at(bytes, offsets[0])?, u32_at(bytes, offsets[1])?];
+            (offsets, discriminators, extent_for(discriminators)?)
+        } else {
+            let candidates = [
+                candidate(start.checked_add(106)?, start.checked_add(110)?),
+                candidate(start.checked_add(116)?, start.checked_add(130)?),
+            ]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+            let [candidate] = candidates.as_slice() else {
+                return None;
+            };
+            *candidate
+        };
     let direction_reversed_offset = operation_offset.checked_add(12)?;
     let direction_reversed = match bytes.get(direction_reversed_offset)? {
         0 => false,
@@ -3566,7 +3586,7 @@ fn exact_legacy_shifted_extrude_prologue(
             side_extent_discriminator_offsets[0] as u64,
             side_extent_discriminator_offsets[1] as u64,
         ],
-        extent,
+        extent: Some(extent),
         direction_face_extend_offsets: [first_extent_offset as u64, second_extent_offset as u64],
         direction_reversed,
         direction_reversed_offset: direction_reversed_offset as u64,
