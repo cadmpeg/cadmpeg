@@ -55,6 +55,10 @@ const COMPACT_SCALAR_HEADER: &[u8] = &[
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00,
 ];
+const PADDED_COMPACT_SCALAR_HEADER: &[u8] = &[
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+];
 const VALUE_ONLY_SCALAR_HEADER: &[u8] = &[
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00,
 ];
@@ -6058,6 +6062,30 @@ mod marker_tests {
                 (FeatureInputOperandKind::Native(0x8152), 9),
             ]
         );
+    }
+
+    #[test]
+    fn padded_compact_scalar_header_ends_after_its_padding() {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(NAME_MARKER);
+        payload.push(2);
+        for unit in "D1".encode_utf16() {
+            payload.extend_from_slice(&unit.to_le_bytes());
+        }
+        payload.extend_from_slice(super::PADDED_COMPACT_SCALAR_HEADER);
+        payload.extend_from_slice(&0.2f64.to_le_bytes());
+        let trailer = payload.len();
+        payload.resize(trailer + 12, 0);
+        payload[trailer + 3..trailer + 7].copy_from_slice(&16u32.to_le_bytes());
+
+        let names = object_names(&payload, "lane");
+        let scalars = named_scalars(&payload, "lane", &names);
+        let [scalar] = scalars.as_slice() else {
+            panic!("expected one scalar");
+        };
+        assert_eq!(scalar.value, 0.2);
+        assert_eq!(scalar.object_id, 16);
+        assert_eq!(usize::try_from(scalar.offset).ok(), Some(trailer - 8));
     }
 
     #[test]
@@ -15903,6 +15931,7 @@ fn scalar_value_offset(payload: &[u8], name_offset: usize, name: &str) -> Option
         .checked_add(name.encode_utf16().count().checked_mul(2)?)?;
     [
         SCALAR_HEADER,
+        PADDED_COMPACT_SCALAR_HEADER,
         COMPACT_SCALAR_HEADER,
         VALUE_ONLY_SCALAR_HEADER,
     ]
