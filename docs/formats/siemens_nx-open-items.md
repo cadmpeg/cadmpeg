@@ -483,7 +483,7 @@ placement, UUID, and state fields.
 does an `On` or `Off` member control feature suppression, visibility, or another
 state domain?
 
-**Known.** `siemens_nx.md` §2.2 "`/Root/UG_PART/LastSavedToggleInfoStream` is one atomic payload:" defines the complete counted stream envelope and retains each 32-hex-digit identity and `On`/`Off` state exactly. The toggle identities have no proven join to feature-operation records.
+**Known.** `siemens_nx.md` §2.2 "`/Root/UG_PART/LastSavedToggleInfoStream` is one atomic payload:" defines the complete counted stream envelope and retains each 32-hex-digit identity and `On`/`Off` state exactly. The member count is independent of the feature-operation-label count. The toggle identities have no proven join to feature-operation records.
 
 **Need.** We must identify the addressed object namespace before projecting any
 member as a neutral suppression or visibility state.
