@@ -419,6 +419,13 @@ impl Container<'_> {
             let Some(raw_ids) = bytes.get(count_offset + 4..count_offset + 4 + count * 4) else {
                 continue;
             };
+            if !raw_ids.chunks_exact(4).all(|word| {
+                let raw = <[u8; 4]>::try_from(word)
+                    .expect("invariant: chunks_exact(4) yields four-byte slices");
+                (1..70_000).contains(&u32::from_le_bytes(raw))
+            }) {
+                continue;
+            }
             let object_ids: Vec<_> = raw_ids
                 .chunks_exact(4)
                 .enumerate()
@@ -432,21 +439,16 @@ impl Container<'_> {
                     }
                 })
                 .collect();
-            if object_ids
-                .iter()
-                .all(|object_id| (1..70_000).contains(&object_id.value))
-            {
-                let raw_count = bytes.get(count_offset..count_offset + 4)?.try_into().ok()?;
-                return Some((
-                    entry,
-                    RmFastLoadObjectIdTable {
-                        registry_offset,
-                        count_offset,
-                        raw_count,
-                        object_ids,
-                    },
-                ));
-            }
+            let raw_count = bytes.get(count_offset..count_offset + 4)?.try_into().ok()?;
+            return Some((
+                entry,
+                RmFastLoadObjectIdTable {
+                    registry_offset,
+                    count_offset,
+                    raw_count,
+                    object_ids,
+                },
+            ));
         }
         None
     }

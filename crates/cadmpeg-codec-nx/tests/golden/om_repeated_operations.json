@@ -14,6 +14,104 @@
         "drawings": [],
         "edges": [],
         "faces": [],
+        "feature_result_topologies": [
+          {
+            "bodies": [
+              "nx:feature-history:body-reference#0000000000-0000000000"
+            ],
+            "id": "nx:feature-history:result-topology#0000000000-0000000000",
+            "native_ref": "nx:feature-history:body-reference#0000000000-0000000000",
+            "output_of": "nx:feature-history:feature#0000000000-0000000000"
+          },
+          {
+            "bodies": [
+              "nx:feature-history:body-reference#0000000000-0000000001"
+            ],
+            "id": "nx:feature-history:result-topology#0000000000-0000000001",
+            "native_ref": "nx:feature-history:body-reference#0000000000-0000000001",
+            "output_of": "nx:feature-history:feature#0000000000-0000000001"
+          },
+          {
+            "bodies": [
+              "nx:feature-history:body-reference#0000000000-0000000002"
+            ],
+            "id": "nx:feature-history:result-topology#0000000000-0000000002",
+            "native_ref": "nx:feature-history:body-reference#0000000000-0000000002",
+            "output_of": "nx:feature-history:feature#0000000000-0000000002"
+          },
+          {
+            "bodies": [
+              "nx:feature-history:body-reference#0000000000-0000000003"
+            ],
+            "id": "nx:feature-history:result-topology#0000000000-0000000003",
+            "native_ref": "nx:feature-history:body-reference#0000000000-0000000003",
+            "output_of": "nx:feature-history:feature#0000000000-0000000003"
+          },
+          {
+            "bodies": [
+              "nx:feature-history:body-reference#0000000000-0000000004"
+            ],
+            "id": "nx:feature-history:result-topology#0000000000-0000000004",
+            "native_ref": "nx:feature-history:body-reference#0000000000-0000000004",
+            "output_of": "nx:feature-history:feature#0000000000-0000000004"
+          },
+          {
+            "bodies": [
+              "nx:feature-history:body-reference#0000000000-0000000005"
+            ],
+            "id": "nx:feature-history:result-topology#0000000000-0000000005",
+            "native_ref": "nx:feature-history:body-reference#0000000000-0000000005",
+            "output_of": "nx:feature-history:feature#0000000000-0000000005"
+          },
+          {
+            "bodies": [
+              "nx:feature-history:body-reference#0000000000-0000000006"
+            ],
+            "id": "nx:feature-history:result-topology#0000000000-0000000006",
+            "native_ref": "nx:feature-history:body-reference#0000000000-0000000006",
+            "output_of": "nx:feature-history:feature#0000000000-0000000006"
+          },
+          {
+            "bodies": [
+              "nx:feature-history:body-reference#0000000000-0000000007"
+            ],
+            "id": "nx:feature-history:result-topology#0000000000-0000000007",
+            "native_ref": "nx:feature-history:body-reference#0000000000-0000000007",
+            "output_of": "nx:feature-history:feature#0000000000-0000000007"
+          },
+          {
+            "bodies": [
+              "nx:feature-history:body-reference#0000000000-0000000008"
+            ],
+            "id": "nx:feature-history:result-topology#0000000000-0000000008",
+            "native_ref": "nx:feature-history:body-reference#0000000000-0000000008",
+            "output_of": "nx:feature-history:feature#0000000000-0000000008"
+          },
+          {
+            "bodies": [
+              "nx:feature-history:body-reference#0000000000-0000000009"
+            ],
+            "id": "nx:feature-history:result-topology#0000000000-0000000009",
+            "native_ref": "nx:feature-history:body-reference#0000000000-0000000009",
+            "output_of": "nx:feature-history:feature#0000000000-0000000009"
+          },
+          {
+            "bodies": [
+              "nx:feature-history:body-reference#0000000000-0000000010"
+            ],
+            "id": "nx:feature-history:result-topology#0000000000-0000000010",
+            "native_ref": "nx:feature-history:body-reference#0000000000-0000000010",
+            "output_of": "nx:feature-history:feature#0000000000-0000000010"
+          },
+          {
+            "bodies": [
+              "nx:feature-history:body-reference#0000000000-0000000011"
+            ],
+            "id": "nx:feature-history:result-topology#0000000000-0000000011",
+            "native_ref": "nx:feature-history:body-reference#0000000000-0000000011",
+            "output_of": "nx:feature-history:feature#0000000000-0000000011"
+          }
+        ],
         "features": [
           {
             "definition": {
@@ -28,10 +126,13 @@
                 "value": "nx:om-object-indices#6476,127"
               }
             },
+            "dependencies": [
+              "nx:feature-history:feature#0000000000-0000000001"
+            ],
             "id": "nx:feature-history:feature#0000000000-0000000000",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000000",
-            "ordinal": 0,
+            "ordinal": 11,
             "source_properties": {
               "body_reference.0": "6466",
               "object_index.0": "1",
@@ -58,12 +159,12 @@
               }
             },
             "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000000"
+              "nx:feature-history:feature#0000000000-0000000002"
             ],
             "id": "nx:feature-history:feature#0000000000-0000000001",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000001",
-            "ordinal": 1,
+            "ordinal": 10,
             "source_properties": {
               "body_reference.0": "6466",
               "object_index.0": "1",
@@ -90,12 +191,12 @@
               }
             },
             "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000001"
+              "nx:feature-history:feature#0000000000-0000000003"
             ],
             "id": "nx:feature-history:feature#0000000000-0000000002",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000002",
-            "ordinal": 2,
+            "ordinal": 9,
             "source_properties": {
               "body_reference.0": "6466",
               "object_index.0": "1",
@@ -122,12 +223,12 @@
               }
             },
             "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000002"
+              "nx:feature-history:feature#0000000000-0000000004"
             ],
             "id": "nx:feature-history:feature#0000000000-0000000003",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000003",
-            "ordinal": 3,
+            "ordinal": 8,
             "source_properties": {
               "body_reference.0": "6466",
               "object_index.0": "1",
@@ -154,12 +255,12 @@
               }
             },
             "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000003"
+              "nx:feature-history:feature#0000000000-0000000005"
             ],
             "id": "nx:feature-history:feature#0000000000-0000000004",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000004",
-            "ordinal": 4,
+            "ordinal": 7,
             "source_properties": {
               "body_reference.0": "6466",
               "object_index.0": "1",
@@ -186,12 +287,12 @@
               }
             },
             "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000004"
+              "nx:feature-history:feature#0000000000-0000000006"
             ],
             "id": "nx:feature-history:feature#0000000000-0000000005",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000005",
-            "ordinal": 5,
+            "ordinal": 6,
             "source_properties": {
               "body_reference.0": "6466",
               "object_index.0": "1",
@@ -218,12 +319,12 @@
               }
             },
             "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000005"
+              "nx:feature-history:feature#0000000000-0000000007"
             ],
             "id": "nx:feature-history:feature#0000000000-0000000006",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000006",
-            "ordinal": 6,
+            "ordinal": 5,
             "source_properties": {
               "body_reference.0": "6466",
               "object_index.0": "1",
@@ -250,12 +351,12 @@
               }
             },
             "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000006"
+              "nx:feature-history:feature#0000000000-0000000008"
             ],
             "id": "nx:feature-history:feature#0000000000-0000000007",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000007",
-            "ordinal": 7,
+            "ordinal": 4,
             "source_properties": {
               "body_reference.0": "6466",
               "object_index.0": "1",
@@ -282,12 +383,12 @@
               }
             },
             "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000007"
+              "nx:feature-history:feature#0000000000-0000000009"
             ],
             "id": "nx:feature-history:feature#0000000000-0000000008",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000008",
-            "ordinal": 8,
+            "ordinal": 3,
             "source_properties": {
               "body_reference.0": "6466",
               "object_index.0": "1",
@@ -314,12 +415,12 @@
               }
             },
             "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000008"
+              "nx:feature-history:feature#0000000000-0000000010"
             ],
             "id": "nx:feature-history:feature#0000000000-0000000009",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000009",
-            "ordinal": 9,
+            "ordinal": 2,
             "source_properties": {
               "body_reference.0": "6466",
               "object_index.0": "1",
@@ -346,12 +447,12 @@
               }
             },
             "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000009"
+              "nx:feature-history:feature#0000000000-0000000011"
             ],
             "id": "nx:feature-history:feature#0000000000-0000000010",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000010",
-            "ordinal": 10,
+            "ordinal": 1,
             "source_properties": {
               "body_reference.0": "6466",
               "object_index.0": "1",
@@ -377,13 +478,10 @@
                 "value": "nx:om-object-indices#6476,127"
               }
             },
-            "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000010"
-            ],
             "id": "nx:feature-history:feature#0000000000-0000000011",
             "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000011",
-            "ordinal": 11,
+            "ordinal": 0,
             "source_properties": {
               "body_reference.0": "6466",
               "object_index.0": "1",
@@ -1720,7 +1818,7 @@
             ],
             "unknowns": []
           },
-          "version": 181
+          "version": 189
         }
       },
       "source": {

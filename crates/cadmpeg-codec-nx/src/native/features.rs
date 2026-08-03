@@ -29,6 +29,20 @@ pub struct FeatureOperationLabel {
     pub source_offset: u64,
 }
 
+/// Return operation labels in neutral construction-history order.
+///
+/// Each feature-history section stores its operation records newest first. The
+/// native label arena retains that source order, but neutral dependencies and
+/// feature ordinals use oldest-first construction order within each section.
+pub(crate) fn feature_operation_chronological_labels(
+    labels: &[FeatureOperationLabel],
+) -> Vec<&FeatureOperationLabel> {
+    labels
+        .chunk_by(|first, second| first.section_link == second.section_link)
+        .flat_map(|section| section.iter().rev())
+        .collect()
+}
+
 /// Exactly bounded feature-history operation record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureOperationRecord {
@@ -69,6 +83,18 @@ pub struct FeatureOperationCommonFrame {
     pub marker: [u8; 3],
     /// Exact eight-byte state lane following the fixed state marker.
     pub state: [u8; 8],
+    /// Whether legacy operation modules are inactive, when the stored field is boolean.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legacy_inactive_modules: Option<bool>,
+    /// Whether the operation modifies Parasolid data, when the stored field is boolean.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modifies_parasolid_data: Option<bool>,
+    /// Exact two-byte `m_splitTrackingData` representation.
+    #[serde(default)]
+    pub split_tracking_data: [u8; 2],
+    /// Serialized operation group count.
+    #[serde(default)]
+    pub group_count: u8,
     /// Duplicated frame-local ordinal.
     pub local_ordinal: u32,
     /// Exact canonical token repeated for the local ordinal.
@@ -179,6 +205,12 @@ pub struct FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
     pub first_data_blocks: [String; 2],
     /// Ordered blocks following the repeated scalar lane.
     pub second_data_blocks: [String; 2],
+    /// Exact optional wrapper before the first reference pair.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_reference_prefix: Option<[u8; 8]>,
+    /// Exact optional wrapper before the repeated reference pair.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub second_reference_prefix: Option<[u8; 8]>,
     /// Absolute offsets of the first pair of tagged-index tokens.
     pub first_reference_offsets: [u64; 2],
     /// Absolute offsets of the repeated pair of tagged-index tokens.
@@ -530,6 +562,34 @@ pub struct FeatureDatumCsysConstruction {
     pub data_blocks: [String; 8],
     /// Absolute offsets of the eight canonical reference markers.
     pub source_offsets: [u64; 8],
+}
+
+/// Exact reuse of one datum-CSYS construction block by a column-row slot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDatumCsysColumnRowUse {
+    /// Globally unique use identity.
+    pub id: String,
+    /// Owning datum-CSYS construction.
+    pub construction: String,
+    /// Owning `DATUM_CSYS` operation label.
+    pub operation_label: String,
+    /// Zero-based slot in the construction's eight-block lane.
+    pub construction_slot: u8,
+    /// Serialized grammar of the referenced column row.
+    pub row_kind: ColumnIndexRowKind,
+    /// Native row identity in its grammar-specific arena.
+    pub column_row: String,
+    /// Unique complete composite table containing the row, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column_table: Option<String>,
+    /// Zero-based slot in the row's four-block lane.
+    pub row_slot: u8,
+    /// Exact shared target in the native `data_blocks` arena.
+    pub data_block: String,
+    /// Absolute file offset of the construction's object-index token.
+    pub construction_source_offset: u64,
+    /// Absolute file offset of the row's compact block index.
+    pub row_source_offset: u64,
 }
 
 /// Exact logical payload reconstructed from the two leading datum-CSYS blocks.
@@ -2838,6 +2898,10 @@ pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOper
                     raw_indices: frame.raw_indices,
                     marker: frame.marker,
                     state: frame.state,
+                    legacy_inactive_modules: operation_legacy_inactive_modules(frame.state),
+                    modifies_parasolid_data: operation_modifies_parasolid_data(frame.state),
+                    split_tracking_data: operation_split_tracking_data(frame.state),
+                    group_count: frame.state[7],
                     local_ordinal: frame.local_ordinal,
                     raw_local_ordinal: frame.raw_local_ordinal,
                     object_index: frame.object_index,
@@ -2856,6 +2920,26 @@ pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOper
         }
     }
     frames
+}
+
+fn operation_legacy_inactive_modules(state: [u8; 8]) -> Option<bool> {
+    match state[3] {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
+}
+
+fn operation_modifies_parasolid_data(state: [u8; 8]) -> Option<bool> {
+    match state[4] {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
+}
+
+fn operation_split_tracking_data(state: [u8; 8]) -> [u8; 2] {
+    [state[5], state[6]]
 }
 
 /// Decode canonical terminal common-frame suffixes from bounded operations.
@@ -3122,6 +3206,8 @@ pub fn feature_simple_hole_repeated_scalar_lane_block_references(
                 operation_label,
                 first_data_blocks,
                 second_data_blocks,
+                first_reference_prefix: decoded.prefixes[0],
+                second_reference_prefix: decoded.prefixes[1],
                 first_reference_offsets: decoded.offsets[0].map(|offset| entry_offset + offset as u64),
                 second_reference_offsets: decoded.offsets[1].map(|offset| entry_offset + offset as u64),
             });
@@ -3600,15 +3686,16 @@ pub fn feature_input_block_identity_groups(
         .collect()
 }
 
-/// Join feature inputs to every column-row slot addressing the same block.
-pub fn feature_input_column_row_uses(
-    inputs: &[FeatureInputBlock],
-    index_rows: &[DataBlockIndexRow],
-    linked_rows: &[DataBlockLinkedIndexRow],
-    target_rows: &[DataBlockTargetIndexRow],
-    tables: &[DataBlockColumnIndexTable],
-) -> Vec<FeatureInputColumnRowUse> {
-    let mut table_by_row = BTreeMap::<&str, Option<&str>>::new();
+type ColumnTableByRow<'a> = BTreeMap<&'a str, Option<&'a str>>;
+type ColumnSlotsByBlock<'a> = BTreeMap<&'a str, Vec<(&'a str, ColumnIndexRowKind, usize, u64)>>;
+
+fn column_relations_by_block<'a>(
+    index_rows: &'a [DataBlockIndexRow],
+    linked_rows: &'a [DataBlockLinkedIndexRow],
+    target_rows: &'a [DataBlockTargetIndexRow],
+    tables: &'a [DataBlockColumnIndexTable],
+) -> (ColumnTableByRow<'a>, ColumnSlotsByBlock<'a>) {
+    let mut table_by_row = ColumnTableByRow::new();
     for table in tables {
         for row in std::iter::once(table.opening_linked_row.as_str())
             .chain(table.target_rows.iter().map(String::as_str))
@@ -3620,7 +3707,7 @@ pub fn feature_input_column_row_uses(
                 .or_insert(Some(table.id.as_str()));
         }
     }
-    let mut slots_by_block = BTreeMap::<&str, Vec<(&str, ColumnIndexRowKind, usize, u64)>>::new();
+    let mut slots_by_block = ColumnSlotsByBlock::new();
     for row in index_rows {
         for (slot, data_block) in row.data_blocks.iter().enumerate() {
             slots_by_block.entry(data_block).or_default().push((
@@ -3659,6 +3746,19 @@ pub fn feature_input_column_row_uses(
             ));
         }
     }
+    (table_by_row, slots_by_block)
+}
+
+/// Join feature inputs to every column-row slot addressing the same block.
+pub fn feature_input_column_row_uses(
+    inputs: &[FeatureInputBlock],
+    index_rows: &[DataBlockIndexRow],
+    linked_rows: &[DataBlockLinkedIndexRow],
+    target_rows: &[DataBlockTargetIndexRow],
+    tables: &[DataBlockColumnIndexTable],
+) -> Vec<FeatureInputColumnRowUse> {
+    let (table_by_row, slots_by_block) =
+        column_relations_by_block(index_rows, linked_rows, target_rows, tables);
     inputs
         .iter()
         .flat_map(|input| {
@@ -3688,6 +3788,64 @@ pub fn feature_input_column_row_uses(
                         source_offset: *source_offset,
                     },
                 )
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// Join every datum-CSYS construction lane to column-row slots addressing the
+/// same block. The relation assigns no geometric role to either lane.
+pub fn feature_datum_csys_column_row_uses(
+    constructions: &[FeatureDatumCsysConstruction],
+    index_rows: &[DataBlockIndexRow],
+    linked_rows: &[DataBlockLinkedIndexRow],
+    target_rows: &[DataBlockTargetIndexRow],
+    tables: &[DataBlockColumnIndexTable],
+) -> Vec<FeatureDatumCsysColumnRowUse> {
+    let (table_by_row, slots_by_block) =
+        column_relations_by_block(index_rows, linked_rows, target_rows, tables);
+    let table_by_row = &table_by_row;
+    let slots_by_block = &slots_by_block;
+    constructions
+        .iter()
+        .flat_map(|construction| {
+            construction
+                .data_blocks
+                .iter()
+                .enumerate()
+                .flat_map(|(construction_slot, data_block)| {
+                    slots_by_block
+                        .get(data_block.as_str())
+                        .into_iter()
+                        .flatten()
+                        .enumerate()
+                        .map(move |(ordinal, (row, row_kind, row_slot, row_source_offset))| {
+                            FeatureDatumCsysColumnRowUse {
+                                id: format!(
+                                    "nx:feature-history:datum-csys-column-row-use#{}-{construction_slot:010}-{}-{ordinal:010}",
+                                    construction
+                                        .id
+                                        .rsplit_once('#')
+                                        .map_or("unknown", |(_, key)| key),
+                                    row_kind.id_component(),
+                                ),
+                                construction: construction.id.clone(),
+                                operation_label: construction.operation_label.clone(),
+                                construction_slot: construction_slot as u8,
+                                row_kind: *row_kind,
+                                column_row: (*row).to_string(),
+                                column_table: table_by_row
+                                    .get(row)
+                                    .and_then(|table| *table)
+                                    .map(str::to_string),
+                                row_slot: *row_slot as u8,
+                                data_block: data_block.clone(),
+                                construction_source_offset: construction.source_offsets
+                                    [construction_slot],
+                                row_source_offset: *row_source_offset,
+                            }
+                        })
+                })
                 .collect::<Vec<_>>()
         })
         .collect()
@@ -4984,7 +5142,16 @@ pub fn feature_sketch_fixed_points(
             if !record.scalar_fields.is_empty() || !record.mixed_pairs.is_empty() {
                 return None;
             }
-            let [fixed_pair_id] = record.fixed_pairs.as_slice() else {
+            let point_pairs = record
+                .fixed_pairs
+                .iter()
+                .filter(|fixed_pair_id| {
+                    fixed_pairs
+                        .get(fixed_pair_id.as_str())
+                        .is_some_and(|pair| matches!(pair.discriminator.first(), Some(0x04 | 0x08)))
+                })
+                .collect::<Vec<_>>();
+            let [fixed_pair_id] = point_pairs.as_slice() else {
                 return None;
             };
             let name = names.get(record.name_field.as_str())?;
@@ -5318,8 +5485,8 @@ pub fn feature_sketch_datum_csys_dependencies(
         Some((store, ordinal.parse().ok()?))
     }
 
-    let positions = labels
-        .iter()
+    let positions = feature_operation_chronological_labels(labels)
+        .into_iter()
         .enumerate()
         .map(|(position, label)| (label.id.as_str(), position))
         .collect::<BTreeMap<_, _>>();
@@ -8891,7 +9058,7 @@ mod tests {
     }
 
     #[test]
-    fn decoded_feature_ids_preserve_double_digit_operation_order() {
+    fn decoded_feature_ids_preserve_source_order_and_ordinals_reverse_history() {
         let section = size_framed_om_section_with_repeated_operations(12);
         let mut payload = Vec::new();
         for word in [24_u32, 9, 11, 1, 1, 24] {
@@ -8917,6 +9084,16 @@ mod tests {
         assert!(labels
             .windows(2)
             .all(|pair| pair[0].id.as_str() < pair[1].id.as_str()));
+        let features = &result.ir.model.features;
+        assert_eq!(
+            features
+                .iter()
+                .map(|feature| feature.ordinal)
+                .collect::<Vec<_>>(),
+            (0..12).rev().collect::<Vec<_>>()
+        );
+        assert_eq!(features[0].dependencies, [features[1].id.clone()]);
+        assert!(features[11].dependencies.is_empty());
     }
 
     #[test]
@@ -9065,16 +9242,16 @@ mod tests {
             FeatureSketchDatumCsysBlockRelation, FeatureSketchPointUse, OffsetStoreNamedPoint,
         };
 
-        let label = |id: &str, ordinal| FeatureOperationLabel {
+        let label = |id: &str, value: &str, ordinal| FeatureOperationLabel {
             id: id.to_string(),
             section_link: "section".to_string(),
             ordinal,
-            value: if ordinal == 0 { "SKETCH" } else { "DATUM_CSYS" }.to_string(),
+            value: value.to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
             source_offset: 100 + u64::from(ordinal),
         };
-        let labels = [label("sketch", 0), label("csys", 1)];
+        let labels = [label("csys", "DATUM_CSYS", 0), label("sketch", "SKETCH", 1)];
         let point = OffsetStoreNamedPoint {
             id: "point".to_string(),
             name: "Point1".to_string(),
@@ -9205,7 +9382,7 @@ mod tests {
         )
         .is_empty());
 
-        let reversed_labels = [label("csys", 0), label("sketch", 1)];
+        let reversed_labels = [label("sketch", "SKETCH", 0), label("csys", "DATUM_CSYS", 1)];
         assert!(super::feature_sketch_datum_csys_dependencies(
             &reversed_labels,
             &[point],
@@ -9872,6 +10049,72 @@ mod tests {
     }
 
     #[test]
+    fn datum_csys_column_row_uses_preserve_both_lane_offsets() {
+        use super::{
+            feature_datum_csys_column_row_uses, ColumnIndexRowKind, FeatureDatumCsysConstruction,
+        };
+        use crate::native::om::{DataBlockColumnIndexTable, DataBlockTargetIndexRow};
+
+        let construction = FeatureDatumCsysConstruction {
+            id: "construction#1".into(),
+            operation_label: "operation#1".into(),
+            control: 0x16,
+            object_indices: std::array::from_fn(|slot| slot as u32),
+            raw_object_indices: std::array::from_fn(|slot| vec![slot as u8]),
+            data_blocks: std::array::from_fn(|slot| format!("block#{slot}")),
+            source_offsets: std::array::from_fn(|slot| 200 + slot as u64),
+        };
+        let row = DataBlockTargetIndexRow {
+            id: "target-row#3".into(),
+            section_ordinal: 0,
+            ordinal: 3,
+            target_index: 5,
+            raw_target_index: vec![5],
+            indices: [6, 7, 5],
+            raw_indices: [vec![6], vec![7], vec![5]],
+            data_blocks: [
+                "block#5".into(),
+                "block#6".into(),
+                "block#7".into(),
+                "block#5".into(),
+            ],
+            mode: 7,
+            source_entry: "entry".into(),
+            opening_data_block: "opening-block".into(),
+            opening_block_offset: 8,
+            source_offset: 100,
+            target_index_source_offset: 105,
+            index_source_offsets: [110, 111, 112],
+        };
+        let table = DataBlockColumnIndexTable {
+            id: "column-table".into(),
+            section_ordinal: 0,
+            opening_linked_row: "opening-row".into(),
+            target_rows: vec![row.id.clone()],
+            linked_rows: vec![],
+            first_target_index: 5,
+            last_target_index: 3,
+            source_entry: "entry".into(),
+            source_offset: 50,
+        };
+
+        let uses = feature_datum_csys_column_row_uses(&[construction], &[], &[], &[row], &[table]);
+        assert_eq!(uses.len(), 4);
+        assert_eq!(
+            uses.iter()
+                .map(|use_| (use_.construction_slot, use_.row_slot))
+                .collect::<Vec<_>>(),
+            [(5, 0), (5, 3), (6, 1), (7, 2)]
+        );
+        assert_eq!(uses[0].row_kind, ColumnIndexRowKind::TargetIndex);
+        assert_eq!(uses[0].column_table.as_deref(), Some("column-table"));
+        assert_eq!(uses[0].construction_source_offset, 205);
+        assert_eq!(uses[0].row_source_offset, 105);
+        assert_eq!(uses[1].construction_source_offset, 205);
+        assert_eq!(uses[1].row_source_offset, 112);
+    }
+
+    #[test]
     fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
         use super::{
             feature_sketch_fixed_points, feature_sketch_payload_named_records,
@@ -9918,9 +10161,19 @@ mod tests {
         };
 
         let names = [name("first", 0, 10), name("second", 1, 50)];
-        let pairs = [pair];
+        let auxiliary_pair = FeatureSketchPayloadFixedPair {
+            id: "auxiliary-pair".to_string(),
+            ordinal: 1,
+            discriminator: vec![0x0b],
+            payload_offset: 40,
+            source_offset: 1040,
+            value_payload_offsets: [55, 64],
+            value_source_offsets: [1055, 1064],
+            ..pair.clone()
+        };
+        let pairs = [pair, auxiliary_pair];
         let records = feature_sketch_payload_named_records(&[payload], &names, &[], &pairs, &[]);
-        assert_eq!(records[0].fixed_pairs, ["pair"]);
+        assert_eq!(records[0].fixed_pairs, ["pair", "auxiliary-pair"]);
         assert!(records[1].fixed_pairs.is_empty());
         let points = feature_sketch_fixed_points(&records, &names, &pairs);
         assert_eq!(points.len(), 1);
@@ -10400,6 +10653,8 @@ mod tests {
                 operation_label: operation.into(),
                 first_data_blocks: ["block-1".into(), "block-2".into()],
                 second_data_blocks: ["block-3".into(), last.into()],
+                first_reference_prefix: None,
+                second_reference_prefix: None,
                 first_reference_offsets: [3, 4],
                 second_reference_offsets: [5, 6],
             };
@@ -10584,5 +10839,67 @@ mod tests {
         let mut malformed = name;
         malformed.value = "Point0".to_string();
         assert!(feature_block_payload_points(&[record], &[malformed], &scalars).is_empty());
+    }
+
+    #[test]
+    fn operation_common_frame_types_the_parasolid_modification_field() {
+        let mut state = [0; 8];
+        assert_eq!(operation_modifies_parasolid_data(state), Some(false));
+        state[4] = 1;
+        assert_eq!(operation_modifies_parasolid_data(state), Some(true));
+        state[4] = 2;
+        assert_eq!(operation_modifies_parasolid_data(state), None);
+    }
+
+    #[test]
+    fn operation_common_frame_retains_the_split_tracking_data_field() {
+        assert_eq!(
+            operation_split_tracking_data([1, 2, 3, 0, 1, 0x56, 0xa9, 7]),
+            [0x56, 0xa9]
+        );
+    }
+
+    #[test]
+    fn operation_history_reverses_source_order_within_each_section() {
+        let label = |section: &str, ordinal, value: &str| super::FeatureOperationLabel {
+            id: format!("{section}-{ordinal}"),
+            section_link: section.to_string(),
+            ordinal,
+            value: value.to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: u64::from(ordinal),
+        };
+        let labels = [
+            label("first", 0, "newest-first"),
+            label("first", 1, "oldest-first"),
+            label("second", 0, "newest-second"),
+            label("second", 1, "oldest-second"),
+        ];
+
+        let values = super::feature_operation_chronological_labels(&labels)
+            .into_iter()
+            .map(|label| label.value.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            values,
+            [
+                "oldest-first",
+                "newest-first",
+                "oldest-second",
+                "newest-second"
+            ]
+        );
+    }
+
+    #[test]
+    fn operation_common_frame_types_the_legacy_inactive_modules_field() {
+        let mut state = [0; 8];
+        assert_eq!(operation_legacy_inactive_modules(state), Some(false));
+        state[3] = 1;
+        assert_eq!(operation_legacy_inactive_modules(state), Some(true));
+        state[3] = 2;
+        assert_eq!(operation_legacy_inactive_modules(state), None);
     }
 }
