@@ -37302,6 +37302,19 @@ pub(crate) fn project_dissected_sketches(
             Some((feature.id.clone(), sketch.clone()))
         })
         .collect::<HashMap<_, _>>();
+    let planar_features = features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.definition,
+                FeatureDefinition::Sketch {
+                    space: cadmpeg_ir::features::SketchSpace::Planar,
+                    ..
+                }
+            )
+        })
+        .map(|feature| feature.id.clone())
+        .collect::<HashSet<_>>();
     let aliases = features
         .iter()
         .filter(|feature| {
@@ -37315,20 +37328,25 @@ pub(crate) fn project_dissected_sketches(
                 .is_some_and(|native| is_dissected_profile_feature(native))
         })
         .filter_map(|feature| {
-            let mut candidates = feature.dependencies.iter().filter_map(|dependency| {
-                resolved.get(dependency).map(|sketch| (dependency, sketch))
-            });
-            let (owner, sketch) = candidates.next()?;
+            let mut candidates = feature
+                .dependencies
+                .iter()
+                .filter(|dependency| planar_features.contains(*dependency));
+            let owner = candidates.next()?;
             candidates
                 .next()
                 .is_none()
-                .then(|| (feature.id.clone(), (owner.clone(), sketch.clone())))
+                .then(|| (feature.id.clone(), owner.clone()))
         })
         .collect::<HashMap<_, _>>();
     let profile_aliases = aliases
         .iter()
-        .filter(|(_, (_, sketch))| single_profile_sketches.contains(sketch))
-        .map(|(child, owner)| (child.clone(), owner.clone()))
+        .filter_map(|(child, owner)| {
+            let sketch = resolved.get(owner)?;
+            single_profile_sketches
+                .contains(sketch)
+                .then(|| (child.clone(), (owner.clone(), sketch.clone())))
+        })
         .collect::<HashMap<_, _>>();
 
     for feature in features {

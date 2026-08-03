@@ -4999,9 +4999,8 @@ mod history_reference_tests {
     }
 
     #[test]
-    fn dissected_sketch_alias_inherits_an_omitted_profile_class() {
+    fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
         use cadmpeg_ir::features::{Feature as NeutralFeature, FeatureDefinition};
-        use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
         let mut owner = feature("owner-native", Some("63"), 0);
         owner.xml_tag = "Sketch".into();
@@ -5049,31 +5048,14 @@ mod history_reference_tests {
             neutral("owner", "Sketch1", "owner-native", 0),
             neutral("alias", "Sketch1<3>", "alias-native", 1),
         ];
-        let sketch_id = SketchId("sketch".into());
-        let sketches = vec![Sketch {
-            id: sketch_id.clone(),
-            name: Some("Sketch1".into()),
-            configuration: None,
-            placement: SketchPlacement::Resolved {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            },
-            profiles: Vec::new(),
-            native_ref: None,
-        }];
-
-        bind_unique_sketch_feature(&mut features, &sketches, std::slice::from_ref(&history));
+        bind_unique_sketch_feature(&mut features, &[], std::slice::from_ref(&history));
         assert!(matches!(
             features[0].definition,
-            FeatureDefinition::Sketch {
-                sketch: Some(ref sketch),
-                ..
-            } if sketch == &sketch_id
+            FeatureDefinition::Sketch { sketch: None, .. }
         ));
         assert_eq!(features[1].dependencies, [features[0].id.clone()]);
 
-        crate::resolved_features::project_dissected_sketches(&mut features, &sketches, &[history]);
+        crate::resolved_features::project_dissected_sketches(&mut features, &[], &[history]);
         assert!(matches!(
             features[1].definition,
             FeatureDefinition::TreeNode {
@@ -5508,7 +5490,7 @@ mod history_reference_tests {
     }
 }
 
-/// Bind a uniquely identified native sketch history node to solved sketch geometry.
+/// Bind uniquely identified sketch geometry and exact dissected-profile ownership.
 pub fn bind_unique_sketch_feature(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
@@ -5586,15 +5568,18 @@ pub fn bind_unique_sketch_feature(
         else {
             continue;
         };
-        let candidates = bindings
+        let candidates = feature_indices
             .iter()
-            .filter(|(base_index, _, base_native_ref, _, _)| {
+            .filter(|base_index| {
                 let alias_native = features[*index]
                     .native_ref
                     .as_deref()
                     .and_then(|native_ref| native_features.get(native_ref));
-                let base_native = native_features.get(base_native_ref.as_str());
-                features[*base_index].name.as_deref() == Some(base_name)
+                let base_native = features[**base_index]
+                    .native_ref
+                    .as_deref()
+                    .and_then(|native_ref| native_features.get(native_ref));
+                features[**base_index].name.as_deref() == Some(base_name)
                     && alias_native.zip(base_native).is_some_and(|(alias, base)| {
                         let compatible_class = alias.input_class == base.input_class
                             || (alias.input_class.is_none()
@@ -5607,22 +5592,28 @@ pub fn bind_unique_sketch_feature(
                     })
             })
             .collect::<Vec<_>>();
-        let [(base_index, base_dependency, _, sketch, has_profile)] = candidates.as_slice() else {
+        let [base_index] = candidates.as_slice() else {
             continue;
         };
+        let base_index = **base_index;
+        let base_dependency = features[base_index].id.clone();
         let Some(native_ref) = features[*index].native_ref.clone() else {
             continue;
         };
-        if !features[*index].dependencies.contains(base_dependency) {
-            features[*index]
-                .dependencies
-                .push((*base_dependency).clone());
+        if !features[*index].dependencies.contains(&base_dependency) {
+            features[*index].dependencies.push(base_dependency.clone());
         }
+        let Some((_, _, _, sketch, has_profile)) = bindings
+            .iter()
+            .find(|(bound_index, _, _, _, _)| *bound_index == base_index)
+        else {
+            continue;
+        };
         aliases.push((
-            *base_index,
-            (*base_dependency).clone(),
+            base_index,
+            base_dependency,
             native_ref,
-            (*sketch).clone(),
+            sketch.clone(),
             *has_profile,
         ));
     }
