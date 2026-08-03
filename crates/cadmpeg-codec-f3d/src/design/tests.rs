@@ -4222,6 +4222,50 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(decoded.transform_offset, (compact_450_at + 50) as u64);
     assert_eq!(decoded.reference, None);
 
+    let compact_409_short_at = bytes.len();
+    let mut compact_409_short = compact_450.clone();
+    compact_409_short[4..7].copy_from_slice(b"409");
+    compact_409_short[7..11].copy_from_slice(&64u32.to_le_bytes());
+    compact_409_short[330..333].copy_from_slice(b"258");
+    compact_409_short[333..337].copy_from_slice(&64u32.to_le_bytes());
+    bytes.extend_from_slice(&compact_409_short);
+    let mut compact_409_short_scope = scope.clone();
+    compact_409_short_scope.reference_members = vec![64];
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &compact_409_short_scope,
+    )
+    .expect("short class-409 compact direct WorkPlane frame");
+    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform_offset, (compact_409_short_at + 50) as u64);
+    assert_eq!(decoded.reference, None);
+
+    let compact_409_at = bytes.len();
+    let mut compact_409 = vec![0; 337];
+    compact_409[0..4].copy_from_slice(&3u32.to_le_bytes());
+    compact_409[4..7].copy_from_slice(b"409");
+    compact_409[7..11].copy_from_slice(&63u32.to_le_bytes());
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = 50 + ordinal * 8;
+        compact_409[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    compact_409.extend_from_slice(&3u32.to_le_bytes());
+    compact_409.extend_from_slice(b"258");
+    compact_409.extend_from_slice(&63u32.to_le_bytes());
+    bytes.extend_from_slice(&compact_409);
+    let mut compact_409_scope = scope.clone();
+    compact_409_scope.reference_members = vec![63];
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &compact_409_scope,
+    )
+    .expect("class-409 compact direct WorkPlane frame");
+    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform_offset, (compact_409_at + 50) as u64);
+    assert_eq!(decoded.reference, None);
+
     let joint_origin_at = bytes.len();
     let mut joint_origin = vec![0; 336];
     joint_origin[0..4].copy_from_slice(&3u32.to_le_bytes());
