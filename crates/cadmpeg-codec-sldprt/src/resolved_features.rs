@@ -19794,7 +19794,7 @@ pub(crate) fn project_profiled_hole_constructions(
     }
 }
 
-/// Materialize Hole Wizard placements from the operation's typed position-sketch reference.
+/// Materialize Hole Wizard placements from exact position-sketch ownership.
 pub(crate) fn project_hole_position_sketches(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[Sketch],
@@ -19807,7 +19807,7 @@ pub(crate) fn project_hole_position_sketches(
         .flat_map(|history| &history.features)
         .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
-    let model_sketches = features
+    let model_sketch_features = features
         .iter()
         .filter_map(|feature| {
             let FeatureDefinition::Sketch {
@@ -19818,8 +19818,15 @@ pub(crate) fn project_hole_position_sketches(
             else {
                 return None;
             };
-            Some((feature.native_ref.clone()?, sketch.clone()))
+            Some((
+                feature.native_ref.clone()?,
+                (feature.id.clone(), sketch.clone()),
+            ))
         })
+        .collect::<HashMap<_, _>>();
+    let model_sketches = model_sketch_features
+        .iter()
+        .map(|(native, (_, sketch))| (native.clone(), sketch.clone()))
         .collect::<HashMap<_, _>>();
     for feature in features.iter_mut() {
         if feature.suppressed == Some(true) {
@@ -19838,10 +19845,16 @@ pub(crate) fn project_hole_position_sketches(
         else {
             continue;
         };
-        let Some(position_feature) = hole_position_feature(native, histories, lanes) else {
+        let Some(position_feature) =
+            hole_position_feature(native, histories, lanes).or_else(|| {
+                direct_hole_position_feature(native, histories, &model_sketches, sketch_entities)
+            })
+        else {
             continue;
         };
-        let Some(sketch_id) = model_sketches.get(position_feature.id.as_str()) else {
+        let Some((position_dependency, sketch_id)) =
+            model_sketch_features.get(position_feature.id.as_str())
+        else {
             continue;
         };
         let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
@@ -19897,6 +19910,9 @@ pub(crate) fn project_hole_position_sketches(
         }
         if resolved.len() == authored_markers.len() {
             *placements = resolved;
+            if !feature.dependencies.contains(position_dependency) {
+                feature.dependencies.push(position_dependency.clone());
+            }
         }
     }
 }
@@ -20165,12 +20181,13 @@ fn direct_hole_position_feature<'a>(
     model_sketches: &HashMap<String, cadmpeg_ir::sketches::SketchId>,
     sketch_entities: &[SketchEntity],
 ) -> Option<&'a crate::records::Feature> {
-    let children = hole.properties.get("DissectableChildren")?;
+    let children = hole.properties.get("DissectableChildren");
     let history = histories
         .iter()
         .find(|history| history.features.iter().any(|feature| feature.id == hole.id))?;
     let mut direct_sketches = children
-        .split(',')
+        .into_iter()
+        .flat_map(|children| children.split(','))
         .map(str::trim)
         .filter(|source| !source.is_empty())
         .filter_map(|source| {
@@ -20184,17 +20201,37 @@ fn direct_hole_position_feature<'a>(
         .collect::<Vec<_>>();
     direct_sketches.sort_by_key(|child| child.id.as_str());
     direct_sketches.dedup_by_key(|child| child.id.as_str());
-    let [first, second] = direct_sketches.as_slice() else {
-        return None;
-    };
-    let is_axial_profile = |child: &&crate::records::Feature| {
+    let is_axial_profile = |child: &crate::records::Feature| {
         model_sketches.get(&child.id).is_some_and(|sketch| {
             profiled_hole_construction(child, sketch, sketch_entities).is_some()
         })
     };
-    match (is_axial_profile(first), is_axial_profile(second)) {
-        (true, false) => Some(second),
-        (false, true) => Some(first),
+    let adjacent_position = || {
+        let position_ordinal = hole.ordinal.checked_add(1)?;
+        let profile_ordinal = hole.ordinal.checked_add(2)?;
+        let unique_at = |ordinal| {
+            let mut candidates = history.features.iter().filter(|candidate| {
+                candidate.ordinal == ordinal
+                    && classify(candidate) == Some(FeatureClass::Sketch)
+                    && model_sketches.contains_key(&candidate.id)
+            });
+            let candidate = candidates.next()?;
+            candidates.next().is_none().then_some(candidate)
+        };
+        let position = unique_at(position_ordinal)?;
+        let profile = unique_at(profile_ordinal)?;
+        (!is_axial_profile(position) && is_axial_profile(profile)).then_some((position, profile))
+    };
+    match direct_sketches.as_slice() {
+        [first, second] => match (is_axial_profile(first), is_axial_profile(second)) {
+            (true, false) => Some(second),
+            (false, true) => Some(first),
+            _ => None,
+        },
+        [profile] => adjacent_position()
+            .filter(|(_, adjacent_profile)| adjacent_profile.id == profile.id)
+            .map(|(position, _)| position),
+        [] => adjacent_position().map(|(position, _)| position),
         _ => None,
     }
 }
@@ -22414,6 +22451,36 @@ mod hole_axis_tests {
             Some("native-position")
         );
 
+        let mut single_child_history = history.clone();
+        single_child_history.features[0]
+            .properties
+            .insert("DissectableChildren".into(), "9".into());
+        single_child_history.features[1].ordinal = 2;
+        single_child_history.features[2].ordinal = 1;
+        assert_eq!(
+            direct_hole_position_feature(
+                &single_child_history.features[0],
+                std::slice::from_ref(&single_child_history),
+                &model_sketches,
+                &entities,
+            )
+            .map(|feature| feature.id.as_str()),
+            Some("native-position")
+        );
+        single_child_history.features[0]
+            .properties
+            .remove("DissectableChildren");
+        assert_eq!(
+            direct_hole_position_feature(
+                &single_child_history.features[0],
+                std::slice::from_ref(&single_child_history),
+                &model_sketches,
+                &entities,
+            )
+            .map(|feature| feature.id.as_str()),
+            Some("native-position")
+        );
+
         project_profiled_hole_constructions(&mut features, &entities, &[history], &[lane]);
 
         assert!(matches!(
@@ -22873,6 +22940,10 @@ mod hole_axis_tests {
                 },
             }
         ));
+        assert_eq!(
+            features[0].dependencies,
+            [FeatureId("position-sketch".into())]
+        );
     }
 
     #[test]
