@@ -13423,16 +13423,7 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
         },
         &[],
     );
-    assert!(matches!(
-        retained.as_slice(),
-        [cadmpeg_ir::sketches::SketchConstraint {
-            definition: SketchConstraintDefinition::Native { operands, .. },
-            ..
-        }] if matches!(operands.as_slice(), [cadmpeg_ir::sketches::SketchNativeOperand {
-            native_field: Some(field),
-            ..
-        }] if field == "companion")
-    ));
+    assert!(retained.is_empty());
 
     let line = SketchEntity {
         id: SketchEntityId("measured-line".into()),

@@ -575,11 +575,90 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             .count(),
         unprojected_dimensions: {
             let container_only = container_only_dimension_parameters(native);
+            let relation_bearing_companions = native
+                .design_parameter_companions
+                .iter()
+                .filter(|companion| companion.payload_byte_length > 0)
+                .filter_map(|companion| {
+                    Some((
+                        crate::ids::native_stream(&companion.id)?.to_owned(),
+                        companion.record_index,
+                    ))
+                })
+                .chain(
+                    native
+                        .design_dimension_locus_pairs
+                        .iter()
+                        .filter_map(|pair| {
+                            Some((
+                                crate::ids::native_stream(&pair.id)?.to_owned(),
+                                pair.governing_companion_record_index,
+                            ))
+                        }),
+                )
+                .chain(
+                    native
+                        .design_dimension_null_locus_pairs
+                        .iter()
+                        .filter_map(|pair| {
+                            Some((
+                                crate::ids::native_stream(&pair.id)?.to_owned(),
+                                pair.governing_companion_record_index,
+                            ))
+                        }),
+                )
+                .chain(
+                    native
+                        .design_dimension_annotation_frames
+                        .iter()
+                        .filter_map(|frame| {
+                            Some((
+                                crate::ids::native_stream(&frame.id)?.to_owned(),
+                                frame.governing_companion_record_index,
+                            ))
+                        }),
+                )
+                .chain(
+                    native
+                        .design_dimension_locus_groups
+                        .iter()
+                        .filter_map(|group| {
+                            Some((
+                                crate::ids::native_stream(&group.id)?.to_owned(),
+                                group.companion_record_index,
+                            ))
+                        }),
+                )
+                .chain(
+                    native
+                        .design_dimension_recipe_records
+                        .iter()
+                        .filter_map(|record| {
+                            Some((
+                                crate::ids::native_stream(&record.id)?.to_owned(),
+                                record.companion_record_index,
+                            ))
+                        }),
+                )
+                .collect::<HashSet<_>>();
+            let relation_bearing_parameters = native
+                .design_parameter_owners
+                .iter()
+                .filter_map(|owner| {
+                    let stream = crate::ids::native_stream(&owner.id)?;
+                    relation_bearing_companions
+                        .contains(&(stream.to_owned(), owner.companion_record_index))
+                        .then_some((stream, owner.parameter_record_index))
+                })
+                .collect::<HashSet<_>>();
             native
                 .design_parameters
                 .iter()
                 .filter(|parameter| {
+                    let stream = crate::ids::native_stream(&parameter.id)
+                        .unwrap_or(crate::ids::DEFAULT_STREAM);
                     parameter.kind == crate::records::DesignParameterKind::Dimension
+                        && relation_bearing_parameters.contains(&(stream, parameter.record_index))
                         && !projected_dimension_parameters
                             .contains(&crate::ids::neutral_parameter_id(parameter))
                         && !container_only.contains(&crate::ids::neutral_parameter_id(parameter))
@@ -3882,7 +3961,7 @@ mod tests {
                 unprojected_sketch_surfaces: 0,
                 unprojected_sketch_texts: 0,
                 unprojected_sketch_relations: 0,
-                unprojected_dimensions: 1,
+                unprojected_dimensions: 0,
                 profile_selections: 2,
                 path_selections: 1,
                 face_selections: 1,
