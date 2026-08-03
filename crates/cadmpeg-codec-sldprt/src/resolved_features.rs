@@ -12972,6 +12972,12 @@ mod marker_tests {
             &extended_compact,
             0
         ));
+        extended_compact[17..21].copy_from_slice(&0u32.to_le_bytes());
+        extended_compact[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        assert!(current_undetailed_bounded_curve_is_line(
+            &extended_compact,
+            0
+        ));
         current_compact[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
         assert!(!indexed_arc_uses_coordinate_center(&current_compact, 0));
         let mut detailed = current.clone();
@@ -41660,7 +41666,6 @@ fn current_undetailed_bounded_curve_is_line(payload: &[u8], offset: usize) -> bo
     let profile_locus = payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00]);
     let extended_geometry_locus = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
-        && marker_native_code(payload, offset) == Some(2)
         && marker_is_geometry_locus(payload, offset);
     let distinct = |endpoints: [u32; 2]| endpoints[0] != endpoints[1];
     let compact_indexed_record = compact_indexed_curve_endpoint_indices(payload, offset)

@@ -154,7 +154,7 @@ An extended-prefix 134-byte value-2 profile-locus record carries `1e 00` at mark
 
 An extended-prefix kind `0` bounded curve in the 104-byte compact indexed layout carries a circular arc when exactly one coordinate-bearing geometry marker in the feature object is equidistant from its two distinct endpoints. The selected marker is the arc center, and the angle order represents the minor arc between the endpoints. Zero or multiple admissible centers leave the curve unresolved.
 
-An extended-prefix compact indexed profile-locus bounded curve that ends at marker +84 or marker +96 carries the straight chord between its two distinct endpoints when no complete role-2 tangent record follows it.
+An extended-prefix compact indexed profile-locus or geometry-locus bounded curve that ends at marker +84 or marker +96 carries the straight chord between its two distinct endpoints when no complete role-2 tangent record follows it.
 
 A current-prefix compact indexed profile-locus bounded curve that ends at marker +84, marker +96, or marker +104 carries the straight chord between its two distinct endpoints when no complete role-2 tangent record follows it. Equal endpoint indices do not carry a chord.
 
