@@ -738,35 +738,65 @@ pub struct PartColorDefinition {
     pub component_source_offsets: [u64; 3],
 }
 
-/// Explicit color assignment carried by one `RMFastLoad` linked row.
+/// Exact row encoding carrying one `RMFastLoad` display-color assignment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RmDisplayColorAssignmentEncoding {
+    /// Linked row with an unresolved leading object identity.
+    Linked {
+        /// Unresolved leading object identity.
+        object_index: u32,
+        /// Exact leading-object token.
+        raw_object_index: Vec<u8>,
+        /// Absolute leading-object token offset.
+        object_index_source_offset: u64,
+        /// Row discriminator.
+        discriminator: u8,
+        /// Target index.
+        target_index: u32,
+        /// Exact target-index token.
+        raw_target_index: Vec<u8>,
+        /// Absolute target-index token offset.
+        target_index_source_offset: u64,
+        /// Three post-marker indices.
+        indices: [u32; 3],
+        /// Exact post-marker index tokens.
+        raw_indices: [Vec<u8>; 3],
+        /// Absolute post-marker token offsets.
+        index_source_offsets: [u64; 3],
+        /// Row flag.
+        flag: u8,
+        /// Row mode.
+        mode: u8,
+    },
+    /// Target-index row without a leading object identity.
+    Target {
+        /// Target index.
+        target_index: u32,
+        /// Exact target-index token.
+        raw_target_index: Vec<u8>,
+        /// Absolute target-index token offset.
+        target_index_source_offset: u64,
+        /// Three post-marker indices.
+        indices: [u32; 3],
+        /// Exact post-marker index tokens.
+        raw_indices: [Vec<u8>; 3],
+        /// Absolute post-marker token offsets.
+        index_source_offsets: [u64; 3],
+        /// Row mode.
+        mode: u8,
+    },
+}
+
+/// Explicit color assignment carried by one complete `RMFastLoad` row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RmDisplayColorAssignment {
     /// Globally unique assignment identity.
     pub id: String,
     /// Zero-based source order.
     pub ordinal: u32,
-    /// Unresolved leading linked-row object identity.
-    pub object_index: u32,
-    /// Exact object-index token.
-    pub raw_object_index: Vec<u8>,
-    /// Linked-row discriminator.
-    pub discriminator: u8,
-    /// Linked-row target index.
-    pub target_index: u32,
-    /// Exact target-index token.
-    pub raw_target_index: Vec<u8>,
-    /// Absolute target-index token offset.
-    pub target_index_source_offset: u64,
-    /// Ordered post-marker indices with unresolved serialized roles.
-    pub indices: [u32; 3],
-    /// Exact post-marker index tokens.
-    pub raw_indices: [Vec<u8>; 3],
-    /// Absolute post-marker index token offsets.
-    pub index_source_offsets: [u64; 3],
-    /// Linked-row flag byte.
-    pub flag: u8,
-    /// Linked-row mode byte.
-    pub mode: u8,
+    /// Complete self-framed row carrying the color token.
+    pub encoding: RmDisplayColorAssignmentEncoding,
     /// One-based part palette index.
     pub color_index: u16,
     /// Target in `part_color_definitions`.
@@ -777,8 +807,6 @@ pub struct RmDisplayColorAssignment {
     pub source_entry: String,
     /// Absolute color-token offset.
     pub source_offset: u64,
-    /// Absolute object-token offset.
-    pub object_index_source_offset: u64,
     /// Absolute row-opener offset.
     pub row_source_offset: u64,
 }
@@ -3015,23 +3043,62 @@ pub fn rm_display_color_assignments(
             assignments.push(RmDisplayColorAssignment {
                 id: String::new(),
                 ordinal: 0,
-                object_index: row.first_index.0,
-                raw_object_index: row.raw_first_index,
-                discriminator: row.discriminator,
-                target_index: row.target_index.0,
-                raw_target_index: row.raw_target_index,
-                target_index_source_offset: source_base + row.target_index.1 as u64,
-                indices: row.indices.map(|(index, _)| index),
-                raw_indices: row.raw_indices,
-                index_source_offsets: row.indices.map(|(_, offset)| source_base + offset as u64),
-                flag: row.flag,
-                mode: row.mode,
+                encoding: RmDisplayColorAssignmentEncoding::Linked {
+                    object_index: row.first_index.0,
+                    raw_object_index: row.raw_first_index,
+                    object_index_source_offset: source_base + row.first_index.1 as u64,
+                    discriminator: row.discriminator,
+                    target_index: row.target_index.0,
+                    raw_target_index: row.raw_target_index,
+                    target_index_source_offset: source_base + row.target_index.1 as u64,
+                    indices: row.indices.map(|(index, _)| index),
+                    raw_indices: row.raw_indices,
+                    index_source_offsets: row
+                        .indices
+                        .map(|(_, offset)| source_base + offset as u64),
+                    flag: row.flag,
+                    mode: row.mode,
+                },
                 color_index: color.color_index,
                 color_definition: definition.id.clone(),
                 raw_color_index: color.raw_color_index,
                 source_entry: entry.name.clone(),
                 source_offset: source_base + color.offset as u64,
-                object_index_source_offset: source_base + row.first_index.1 as u64,
+                row_source_offset: source_base + row.offset as u64,
+            });
+        }
+        for row in crate::om::offset_store_target_index_rows(record_area) {
+            let Some(color) = crate::om::target_row_color_index(record_area, &row) else {
+                continue;
+            };
+            let mut matches = color_definitions
+                .iter()
+                .filter(|definition| definition.color_index == color.color_index);
+            let Some(definition) = matches.next() else {
+                continue;
+            };
+            if matches.next().is_some() {
+                continue;
+            }
+            assignments.push(RmDisplayColorAssignment {
+                id: String::new(),
+                ordinal: 0,
+                encoding: RmDisplayColorAssignmentEncoding::Target {
+                    target_index: row.target_index.0,
+                    raw_target_index: row.raw_target_index,
+                    target_index_source_offset: source_base + row.target_index.1 as u64,
+                    indices: row.indices.map(|(index, _)| index),
+                    raw_indices: row.raw_indices,
+                    index_source_offsets: row
+                        .indices
+                        .map(|(_, offset)| source_base + offset as u64),
+                    mode: row.mode,
+                },
+                color_index: color.color_index,
+                color_definition: definition.id.clone(),
+                raw_color_index: color.raw_color_index,
+                source_entry: entry.name.clone(),
+                source_offset: source_base + color.offset as u64,
                 row_source_offset: source_base + row.offset as u64,
             });
         }
@@ -4708,7 +4775,7 @@ mod tests {
                 .namespace("nx")
                 .expect("required invariant")
                 .version,
-            182
+            183
         );
         assert_eq!(expressions.len(), 1);
         assert_eq!(expressions[0].object_id, Some(0x102));

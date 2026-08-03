@@ -213,7 +213,7 @@ pub struct OffsetStoreLinkedIndexRow {
     pub mode: u8,
 }
 
-/// Canonical NX color-index token immediately preceding a linked row.
+/// Canonical NX color-index token immediately preceding a display row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkedRowColorIndex {
     /// One-based part palette index.
@@ -229,8 +229,20 @@ pub fn linked_row_color_index(
     bytes: &[u8],
     row: &OffsetStoreLinkedIndexRow,
 ) -> Option<LinkedRowColorIndex> {
+    row_color_index(bytes, row.offset)
+}
+
+/// Decode the color-index prefix of an `RMFastLoad` target-index row.
+pub fn target_row_color_index(
+    bytes: &[u8],
+    row: &OffsetStoreTargetIndexRow,
+) -> Option<LinkedRowColorIndex> {
+    row_color_index(bytes, row.offset)
+}
+
+fn row_color_index(bytes: &[u8], row_offset: usize) -> Option<LinkedRowColorIndex> {
     const PRECEDING_SUFFIX: [u8; 5] = [0x01, 0xc0, 0x44, 0x04, 0x00];
-    let direct_offset = row.offset.checked_sub(1)?;
+    let direct_offset = row_offset.checked_sub(1)?;
     let direct = *bytes.get(direct_offset)?;
     if (1..=127).contains(&direct)
         && bytes.get(direct_offset.checked_sub(PRECEDING_SUFFIX.len())?..direct_offset)
@@ -242,8 +254,8 @@ pub fn linked_row_color_index(
             offset: direct_offset,
         });
     }
-    let extended_offset = row.offset.checked_sub(2)?;
-    let token: [u8; 2] = bytes.get(extended_offset..row.offset)?.try_into().ok()?;
+    let extended_offset = row_offset.checked_sub(2)?;
+    let token: [u8; 2] = bytes.get(extended_offset..row_offset)?.try_into().ok()?;
     (token[0] == 0x80
         && (128..=216).contains(&token[1])
         && bytes.get(extended_offset.checked_sub(PRECEDING_SUFFIX.len())?..extended_offset)
@@ -274,6 +286,20 @@ mod linked_row_color_index_tests {
 
         bytes[1] = 0;
         assert_eq!(linked_row_color_index(&bytes, &rows[0]), None);
+    }
+
+    #[test]
+    fn accepts_the_same_prefix_for_a_target_index_row() {
+        let row_bytes = [
+            0x02, 0x01, 0x01, 0x01, 0x16, 2, 0xff, 0xff, 0x90, 0xfe, 3, 4, 5, 0, 0x47, 3, 4, 1,
+            0xc0, 0x44, 4, 0,
+        ];
+        let mut bytes = [1, 0xc0, 0x44, 4, 0, 0x80, 201].to_vec();
+        bytes.extend(row_bytes);
+        let rows = offset_store_target_index_rows(&bytes);
+        let color = target_row_color_index(&bytes, &rows[0]).expect("complete prefix");
+        assert_eq!(color.color_index, 201);
+        assert_eq!(color.raw_color_index, [0x80, 201]);
     }
 }
 

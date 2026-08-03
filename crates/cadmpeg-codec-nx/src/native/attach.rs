@@ -296,7 +296,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(182);
+    namespace.version = namespace.version.max(183);
     NATIVE_CATALOGUE.emit_all(model, namespace)?;
     Ok(())
 }
@@ -353,8 +353,13 @@ fn resolve_rm_face_colors(
 
     let mut colors_by_object = BTreeMap::<u32, BTreeSet<String>>::new();
     for assignment in assignments {
+        let crate::native::om::RmDisplayColorAssignmentEncoding::Linked { object_index, .. } =
+            &assignment.encoding
+        else {
+            continue;
+        };
         colors_by_object
-            .entry(assignment.object_index)
+            .entry(*object_index)
             .or_default()
             .insert(assignment.color_definition.clone());
     }
@@ -5812,23 +5817,25 @@ mod tests {
         let assignment = crate::native::om::RmDisplayColorAssignment {
             id: "nx:test:assignment#0".into(),
             ordinal: 0,
-            object_index: 42,
-            raw_object_index: vec![42],
-            discriminator: 0x16,
-            target_index: 7,
-            raw_target_index: vec![7],
-            target_index_source_offset: 23,
-            indices: [1, 2, 3],
-            raw_indices: [vec![1], vec![2], vec![3]],
-            index_source_offsets: [24, 25, 26],
-            flag: 3,
-            mode: 4,
+            encoding: crate::native::om::RmDisplayColorAssignmentEncoding::Linked {
+                object_index: 42,
+                raw_object_index: vec![42],
+                object_index_source_offset: 22,
+                discriminator: 0x16,
+                target_index: 7,
+                raw_target_index: vec![7],
+                target_index_source_offset: 23,
+                indices: [1, 2, 3],
+                raw_indices: [vec![1], vec![2], vec![3]],
+                index_source_offsets: [24, 25, 26],
+                flag: 3,
+                mode: 4,
+            },
             color_index: 201,
             color_definition: definition.id.clone(),
             raw_color_index: vec![0x80, 201],
             source_entry: "/Root/FastLoad/RMFastLoad".into(),
             source_offset: 20,
-            object_index_source_offset: 22,
             row_source_offset: 21,
         };
         let record = crate::native::parasolid::ParasolidDeltasRecord {
@@ -5849,6 +5856,35 @@ mod tests {
             resolve_rm_face_colors(
                 &face_ids,
                 std::slice::from_ref(&assignment),
+                std::slice::from_ref(&definition),
+                std::slice::from_ref(&record),
+                &pairs,
+            ),
+            vec![(
+                "nx:s0:face#99".into(),
+                Color {
+                    r: 0.25,
+                    g: 0.5,
+                    b: 0.75,
+                    a: 1.0,
+                },
+            )]
+        );
+
+        let mut target_assignment = assignment.clone();
+        target_assignment.encoding = crate::native::om::RmDisplayColorAssignmentEncoding::Target {
+            target_index: 7,
+            raw_target_index: vec![7],
+            target_index_source_offset: 23,
+            indices: [1, 2, 3],
+            raw_indices: [vec![1], vec![2], vec![3]],
+            index_source_offsets: [24, 25, 26],
+            mode: 4,
+        };
+        assert_eq!(
+            resolve_rm_face_colors(
+                &face_ids,
+                &[assignment.clone(), target_assignment],
                 std::slice::from_ref(&definition),
                 std::slice::from_ref(&record),
                 &pairs,
