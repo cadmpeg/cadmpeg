@@ -840,3 +840,401 @@ fn equal_scalars(first: &[f64], second: &[f64]) -> bool {
             .zip(second)
             .all(|(first, second)| scalar_close(*first, *second))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        exact_circular_pattern, exact_rectangular_pattern, exact_text_relation, scalar_close,
+        translated_sketch_geometry_matches,
+    };
+    use crate::records::{SketchConstraintKind, SketchRelation};
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchId,
+    };
+    #[test]
+    fn rectangular_pattern_instances_require_exact_translated_geometry() {
+        let source = SketchGeometry::Line {
+            start: Point2::new(1.0, 2.0),
+            end: Point2::new(4.0, 6.0),
+        };
+        let translated = SketchGeometry::Line {
+            start: Point2::new(11.0, -1.0),
+            end: Point2::new(14.0, 3.0),
+        };
+        assert!(translated_sketch_geometry_matches(
+            &source,
+            &translated,
+            Point2::new(10.0, -3.0),
+        ));
+        let reversed = SketchGeometry::Line {
+            start: Point2::new(14.0, 3.0),
+            end: Point2::new(11.0, -1.0),
+        };
+        assert!(!translated_sketch_geometry_matches(
+            &source,
+            &reversed,
+            Point2::new(10.0, -3.0),
+        ));
+        let resized = SketchGeometry::Circle {
+            center: Point2::new(12.0, 0.0),
+            radius: cadmpeg_ir::features::Length(3.1),
+        };
+        assert!(!translated_sketch_geometry_matches(
+            &SketchGeometry::Circle {
+                center: Point2::new(2.0, 3.0),
+                radius: cadmpeg_ir::features::Length(3.0),
+            },
+            &resized,
+            Point2::new(10.0, -3.0),
+        ));
+    }
+
+    #[test]
+    fn rectangular_pattern_derives_spacing_from_internal_span_scalars() {
+        let entity = |id: &str, u| cadmpeg_ir::sketches::SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: SketchId("generated:sketch#0".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(u, 4.0),
+            },
+        };
+        let seed = entity("generated:point#seed", 2.0);
+        let second = entity("generated:point#second", 17.0);
+        let third = entity("generated:point#third", 32.0);
+        let relation = SketchRelation {
+            id: "f3d:native:sketch-relation#rectangular".into(),
+            record_index: 10,
+            class_tag: "300".into(),
+            byte_offset: 0,
+            state_offset: 0,
+            owner_reference: 1,
+            owner_entity_id: "0_1".into(),
+            auxiliary_references: vec![20, 21, 22, 23],
+            auxiliary_reference_offsets: Vec::new(),
+            members: vec![1, 2, 3],
+            resolved_members: Vec::new(),
+            member_offsets: Vec::new(),
+            owner_reference_offset: 0,
+            state: 0x2000_0000,
+            constraint_kinds: vec![SketchConstraintKind::RectangularPattern],
+            unknown_constraint_bits: 0,
+            member_relation_ordinals: vec![1, 0, 0],
+            entity_genesis: None,
+            pattern: Some(crate::records::SketchPatternDefinition::Rectangular {
+                directions: [
+                    crate::records::SketchPatternDirection {
+                        count_parameter: 20,
+                        distance_parameter: 21,
+                        evaluated_count: 3,
+                        direction: [1.0, 0.0, 0.0],
+                        evaluated_distance: 3.0,
+                    },
+                    crate::records::SketchPatternDirection {
+                        count_parameter: 22,
+                        distance_parameter: 23,
+                        evaluated_count: 1,
+                        direction: [0.0, 1.0, 0.0],
+                        evaluated_distance: 0.0,
+                    },
+                ],
+            }),
+            return_members: vec![1, 2, 3],
+            resolved_return_members: Vec::new(),
+            return_member_offsets: Vec::new(),
+            raw_bytes: Vec::new(),
+        };
+        let Some(SketchConstraintDefinition::RectangularPattern {
+            directions,
+            instances,
+        }) = exact_rectangular_pattern(&relation, "native", &[], &[&seed, &second, &third])
+        else {
+            panic!("rectangular pattern did not resolve");
+        };
+        assert_eq!(directions[0].spacing.0, 15.0);
+        assert_eq!(directions[1].spacing.0, 0.0);
+        assert_eq!(directions[0].span_parameter, None);
+        assert_eq!(directions[0].count_parameter, None);
+        assert_eq!(
+            instances
+                .iter()
+                .map(|instance| instance.indices)
+                .collect::<Vec<_>>(),
+            [[0, 0], [1, 0], [2, 0]]
+        );
+    }
+
+    #[test]
+    fn circular_pattern_resolves_full_and_partial_instance_distributions() {
+        let entity = |id: &str, geometry| cadmpeg_ir::sketches::SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: SketchId("generated:sketch#0".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        };
+        let center = entity(
+            "generated:point#center",
+            SketchGeometry::Point {
+                position: Point2::new(2.0, -3.0),
+            },
+        );
+        let circle = |id: &str, angle: f64| {
+            entity(
+                id,
+                SketchGeometry::Circle {
+                    center: Point2::new(2.0 + 5.0 * angle.cos(), -3.0 + 5.0 * angle.sin()),
+                    radius: cadmpeg_ir::features::Length(0.75),
+                },
+            )
+        };
+        let seed = circle("generated:circle#seed", 0.0);
+        let middle = circle("generated:circle#middle", std::f64::consts::FRAC_PI_2);
+        let last = circle("generated:circle#last", std::f64::consts::PI);
+        let relation = |angle| SketchRelation {
+            id: "f3d:native:sketch-relation#circular".into(),
+            record_index: 10,
+            class_tag: "300".into(),
+            byte_offset: 0,
+            state_offset: 0,
+            owner_reference: 1,
+            owner_entity_id: "0_1".into(),
+            auxiliary_references: vec![20, 21],
+            auxiliary_reference_offsets: Vec::new(),
+            members: vec![1, 2, 3, 4],
+            resolved_members: Vec::new(),
+            member_offsets: Vec::new(),
+            owner_reference_offset: 0,
+            state: 0x1000_0000,
+            constraint_kinds: vec![SketchConstraintKind::CircularPattern],
+            unknown_constraint_bits: 0,
+            member_relation_ordinals: vec![1, 1, 0, 0],
+            entity_genesis: None,
+            pattern: Some(crate::records::SketchPatternDefinition::Circular {
+                angle_parameter: 20,
+                count_parameter: 21,
+                evaluated_angle: angle,
+                evaluated_count: 3,
+            }),
+            return_members: vec![2, 3, 4, 1],
+            resolved_return_members: Vec::new(),
+            return_member_offsets: Vec::new(),
+            raw_bytes: Vec::new(),
+        };
+        let members = [&center, &seed, &middle, &last];
+        let returned = [&seed, &middle, &last, &center];
+        let Some(SketchConstraintDefinition::CircularPattern {
+            center: actual_center,
+            angle,
+            count,
+            instances,
+            ..
+        }) = exact_circular_pattern(
+            &relation(std::f64::consts::PI),
+            "native",
+            &[],
+            &members,
+            &returned,
+        )
+        else {
+            panic!("partial circular pattern did not resolve");
+        };
+        assert_eq!(actual_center, center.id);
+        assert_eq!(angle.0, std::f64::consts::PI);
+        assert_eq!(count, 3);
+        assert_eq!(
+            instances
+                .iter()
+                .map(|instance| instance.angle.0)
+                .collect::<Vec<_>>(),
+            [0.0, std::f64::consts::FRAC_PI_2, std::f64::consts::PI]
+        );
+
+        let full_middle = circle("generated:circle#full-middle", std::f64::consts::TAU / 3.0);
+        let full_last = circle(
+            "generated:circle#full-last",
+            2.0 * std::f64::consts::TAU / 3.0,
+        );
+        let full_members = [&center, &seed, &full_middle, &full_last];
+        let full_returned = [&seed, &full_middle, &full_last, &center];
+        assert!(matches!(
+            exact_circular_pattern(
+                &relation(std::f64::consts::TAU),
+                "native",
+                &[],
+                &full_members,
+                &full_returned,
+            ),
+            Some(SketchConstraintDefinition::CircularPattern { ref instances, .. })
+                if scalar_close(instances[1].angle.0, std::f64::consts::TAU / 3.0)
+        ));
+    }
+
+    #[test]
+    fn circular_pattern_resolves_independently_of_member_role_values() {
+        let entity = |id: &str, geometry| cadmpeg_ir::sketches::SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: SketchId("generated:sketch#0".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        };
+        let center = entity(
+            "generated:point#center",
+            SketchGeometry::Point {
+                position: Point2::new(2.0, -3.0),
+            },
+        );
+        let circle = |id: &str, angle: f64| {
+            entity(
+                id,
+                SketchGeometry::Circle {
+                    center: Point2::new(2.0 + 5.0 * angle.cos(), -3.0 + 5.0 * angle.sin()),
+                    radius: cadmpeg_ir::features::Length(0.75),
+                },
+            )
+        };
+        let seed = circle("generated:circle#seed", 0.0);
+        let middle = circle("generated:circle#middle", std::f64::consts::TAU / 3.0);
+        let last = circle("generated:circle#last", 2.0 * std::f64::consts::TAU / 3.0);
+        // Role codes are deliberately uninformative here: all zero. The geometry
+        // must still resolve the center/seed/generated partition.
+        let relation = SketchRelation {
+            id: "f3d:native:sketch-relation#circular".into(),
+            record_index: 10,
+            class_tag: "300".into(),
+            byte_offset: 0,
+            state_offset: 0,
+            owner_reference: 1,
+            owner_entity_id: "0_1".into(),
+            auxiliary_references: vec![20, 21],
+            auxiliary_reference_offsets: Vec::new(),
+            members: vec![1, 2, 3, 4],
+            resolved_members: Vec::new(),
+            member_offsets: Vec::new(),
+            owner_reference_offset: 0,
+            state: 0x1000_0000,
+            constraint_kinds: vec![SketchConstraintKind::CircularPattern],
+            unknown_constraint_bits: 0,
+            member_relation_ordinals: vec![0, 0, 0, 0],
+            entity_genesis: None,
+            pattern: Some(crate::records::SketchPatternDefinition::Circular {
+                angle_parameter: 20,
+                count_parameter: 21,
+                evaluated_angle: std::f64::consts::TAU,
+                evaluated_count: 3,
+            }),
+            return_members: vec![2, 3, 4, 1],
+            resolved_return_members: Vec::new(),
+            return_member_offsets: Vec::new(),
+            raw_bytes: Vec::new(),
+        };
+        let members = [&center, &seed, &middle, &last];
+        let returned = [&seed, &middle, &last, &center];
+        let Some(SketchConstraintDefinition::CircularPattern {
+            center: actual_center,
+            count,
+            ..
+        }) = exact_circular_pattern(&relation, "native", &[], &members, &returned)
+        else {
+            panic!("role-agnostic circular pattern did not resolve");
+        };
+        assert_eq!(actual_center, center.id);
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn text_path_relation_projects_typed_entities_and_scaled_glyph_placements() {
+        use cadmpeg_ir::features::Length;
+        use cadmpeg_ir::math::Point2;
+        use cadmpeg_ir::sketches::{
+            SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
+        };
+
+        let sketch = SketchId("sketch".into());
+        let path = SketchEntity {
+            id: SketchEntityId("path".into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(10.0, 0.0),
+            },
+        };
+        let text = SketchEntity {
+            id: SketchEntityId("text".into()),
+            sketch,
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Text {
+                text: "A".into(),
+                font_family: "Arial".into(),
+                font_weight: 400,
+                height: Length(10.0),
+                width_factor: Some(0.8),
+                anchor: None,
+                rotation: None,
+            },
+        };
+        let mut glyph = [[0.0; 4]; 4];
+        for ordinal in 0..4 {
+            glyph[ordinal][ordinal] = 1.0;
+        }
+        glyph[0][3] = 0.5;
+        let relation = SketchRelation {
+            id: "f3d:Design/BulkStream.dat:sketch-relation#3".into(),
+            record_index: 3,
+            class_tag: "413".into(),
+            byte_offset: 0,
+            state_offset: 0,
+            owner_reference: 1,
+            owner_entity_id: String::new(),
+            auxiliary_references: vec![2],
+            auxiliary_reference_offsets: Vec::new(),
+            members: vec![1, 2],
+            resolved_members: Vec::new(),
+            member_offsets: Vec::new(),
+            owner_reference_offset: 0,
+            state: 0x200_0000_0000,
+            constraint_kinds: vec![SketchConstraintKind::TextPath],
+            unknown_constraint_bits: 0,
+            member_relation_ordinals: vec![1, 0],
+            entity_genesis: Some(2),
+            pattern: Some(crate::records::SketchPatternDefinition::TextPath {
+                text_reference: 2,
+                glyph_transforms: vec![glyph],
+            }),
+            return_members: vec![1],
+            resolved_return_members: Vec::new(),
+            return_member_offsets: Vec::new(),
+            raw_bytes: Vec::new(),
+        };
+        let projected =
+            std::collections::HashMap::from([(("scope", 1), &path), (("scope", 2), &text)]);
+        let definition =
+            exact_text_relation(&relation, "scope", &projected).expect("typed text path");
+        assert!(matches!(
+            definition,
+            SketchConstraintDefinition::TextPath {
+                text: ref text_id,
+                path: ref path_id,
+                ref glyph_transforms,
+            } if text_id == &text.id
+                && path_id == &path.id
+                && glyph_transforms[0].rows[0][3] == 5.0
+        ));
+    }
+}
