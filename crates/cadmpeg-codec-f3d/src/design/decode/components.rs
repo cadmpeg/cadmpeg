@@ -38,14 +38,14 @@ pub fn decode_component_occurrences(
     Ok(occurrences)
 }
 
-/// Decode one fixed class-256 component-occurrence carrier.
+/// Decode one fixed class-256 or class-327 component-occurrence carrier.
 pub(crate) fn exact_component_occurrence(
     bytes: &[u8],
     start: usize,
     stream: &str,
 ) -> Option<DesignComponentOccurrence> {
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
-    if class_tag != "256" || after_tag != start.checked_add(7)? {
+    if !matches!(class_tag.as_str(), "256" | "327") || after_tag != start.checked_add(7)? {
         return None;
     }
     let record_index = u32_at(bytes, after_tag)?;
@@ -93,7 +93,7 @@ pub(crate) fn exact_component_occurrence(
             (None, None)
         }
         PLACED_FRAME_LENGTH => {
-            if occurrence_ordinal < 2
+            if (class_tag == "256" && occurrence_ordinal < 2)
                 || bytes.get(start + 206..start + 209)? != [0; 3]
                 || bytes.get(start + 337..start + 346)? != [0; 9]
                 || bytes.get(start + 346) != Some(&1)
@@ -111,6 +111,7 @@ pub(crate) fn exact_component_occurrence(
     };
     Some(DesignComponentOccurrence {
         id: format!("{stream}:design-component-occurrence#{start}"),
+        class_tag,
         record_index,
         byte_offset: u64::try_from(start).ok()?,
         component_record_index,
@@ -190,5 +191,29 @@ mod tests {
         assert_eq!(generated.occurrence_ordinal, 2);
         assert_eq!(generated.transform, Some(transform));
         assert_eq!(generated.transform_offset, Some(209));
+
+        let mut legacy = common(229, 1);
+        legacy[4..7].copy_from_slice(b"327");
+        legacy[208] = 1;
+        legacy[218] = 1;
+        header(&mut legacy, b"333", 21);
+        let legacy = exact_component_occurrence(&legacy, 0, "f3d:Design/BulkStream.dat")
+            .expect("legacy occurrence");
+        assert_eq!(legacy.component_guid, COMPONENT);
+        assert_eq!(legacy.occurrence_guid, OCCURRENCE);
+
+        let mut legacy_placed = common(357, 1);
+        legacy_placed[4..7].copy_from_slice(b"327");
+        for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+            legacy_placed[209 + ordinal * 8..217 + ordinal * 8]
+                .copy_from_slice(&value.to_le_bytes());
+        }
+        legacy_placed[346] = 1;
+        header(&mut legacy_placed, b"325", 21);
+        let legacy_placed =
+            exact_component_occurrence(&legacy_placed, 0, "f3d:Design/BulkStream.dat")
+                .expect("legacy placed occurrence");
+        assert_eq!(legacy_placed.occurrence_ordinal, 1);
+        assert_eq!(legacy_placed.transform, Some(transform));
     }
 }

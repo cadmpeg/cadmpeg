@@ -5070,7 +5070,22 @@ pub(crate) fn native_procedural_curve(
                         "spring first-pcurve range requires a nullbs support".into(),
                     ));
                 }
-                native_nurbs_pcurve_block(bytes, pcurve)?;
+                let native = if let Some(surface_id) = &side.surface {
+                    let surface = target
+                        .model
+                        .surfaces
+                        .iter()
+                        .find(|surface| surface.id == *surface_id)
+                        .ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "spring references missing support {surface_id}"
+                            ))
+                        })?;
+                    native_support_pcurve(&surface.geometry, pcurve)?
+                } else {
+                    pcurve.clone()
+                };
+                native_nurbs_pcurve_block(bytes, &native)?;
             } else {
                 native_ident(bytes, "nullbs")?;
                 if side_index == 0 {
@@ -5138,7 +5153,8 @@ pub(crate) fn native_procedural_curve(
         native_intcurve_support_context(bytes, target, context)?;
         native_i64(bytes, *selector);
         native_embedded_surface(bytes, &surface.geometry)?;
-        native_nurbs_pcurve_block(bytes, pcurve)?;
+        let pcurve = native_support_pcurve(&surface.geometry, pcurve)?;
+        native_nurbs_pcurve_block(bytes, &pcurve)?;
         native_nurbs_curve(bytes, solved_cache)?;
         write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
@@ -5482,6 +5498,47 @@ fn native_embedded_surface(
     Ok(())
 }
 
+fn native_support_pcurve(
+    geometry: &SurfaceGeometry,
+    pcurve: &PcurveGeometry,
+) -> Result<PcurveGeometry, CodecError> {
+    let NativePcurveGeometry {
+        degree,
+        knots,
+        mut control_points,
+        weights,
+        periodic,
+    } = native_pcurve_geometry(pcurve, [0.0, 1.0])?;
+    match geometry {
+        SurfaceGeometry::Plane { .. } => {
+            for point in &mut control_points {
+                point.u /= LEN_TO_MM;
+                point.v /= -LEN_TO_MM;
+            }
+        }
+        SurfaceGeometry::Cylinder { radius, .. } | SurfaceGeometry::Cone { radius, .. } => {
+            if !radius.is_finite() || radius.abs() <= f64::EPSILON {
+                return Err(CodecError::Malformed(
+                    "intcurve support has an invalid cone parameter scale".into(),
+                ));
+            }
+            for point in &mut control_points {
+                let neutral = *point;
+                point.u = neutral.v / radius;
+                point.v = neutral.u;
+            }
+        }
+        _ => {}
+    }
+    Ok(PcurveGeometry::Nurbs {
+        degree,
+        knots,
+        control_points,
+        weights,
+        periodic,
+    })
+}
+
 fn native_intcurve_support_context(
     bytes: &mut Vec<u8>,
     target: &CadIr,
@@ -5516,7 +5573,22 @@ fn native_intcurve_support_context(
     }
     for side in &context.sides {
         if let Some(pcurve) = &side.pcurve {
-            native_nurbs_pcurve_block(bytes, pcurve)?;
+            let native = if let Some(surface_id) = &side.surface {
+                let surface = target
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == *surface_id)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "intcurve references missing support {surface_id}"
+                        ))
+                    })?;
+                native_support_pcurve(&surface.geometry, pcurve)?
+            } else {
+                pcurve.clone()
+            };
+            native_nurbs_pcurve_block(bytes, &native)?;
         } else {
             native_ident(bytes, "nullbs")?;
         }
@@ -5576,7 +5648,22 @@ fn native_law_version_context(
     }
     for side in &context.sides {
         if let Some(pcurve) = &side.pcurve {
-            native_nurbs_pcurve_block(bytes, pcurve)?;
+            let native = if let Some(surface_id) = &side.surface {
+                let surface = target
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == *surface_id)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "law intcurve references missing support {surface_id}"
+                        ))
+                    })?;
+                native_support_pcurve(&surface.geometry, pcurve)?
+            } else {
+                pcurve.clone()
+            };
+            native_nurbs_pcurve_block(bytes, &native)?;
         } else {
             native_ident(bytes, "nullbs")?;
         }
@@ -5823,7 +5910,22 @@ fn native_cache_first_curve_context(
     }
     for side in &context.sides {
         if let Some(pcurve) = &side.pcurve {
-            native_nurbs_pcurve_block(bytes, pcurve)?;
+            let native = if let Some(surface_id) = &side.surface {
+                let surface = target
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == *surface_id)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "cache-first intcurve references missing support {surface_id}"
+                        ))
+                    })?;
+                native_support_pcurve(&surface.geometry, pcurve)?
+            } else {
+                pcurve.clone()
+            };
+            native_nurbs_pcurve_block(bytes, &native)?;
         } else {
             native_ident(bytes, "nullbs")?;
         }

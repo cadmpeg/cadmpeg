@@ -504,6 +504,10 @@ fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) 
                         | FeatureDefinition::DatumOffsetPlane { .. } => stored_frame(feature),
                         _ => None,
                     },
+                    matches!(
+                        feature.definition,
+                        FeatureDefinition::DatumPrincipalPlane { .. }
+                    ),
                 ),
             )
         })
@@ -525,15 +529,25 @@ fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) 
         let reference_id = reference_id.clone();
         let invalid = match ordinals.get(&reference_id) {
             None => true,
-            Some((reference_ordinal, reference_frame)) => {
+            Some((reference_ordinal, reference_frame, is_principal)) => {
                 let geometrically_compatible =
                     reference_frame
                         .zip(result_frame)
                         .map(|(reference_frame, result_frame)| {
                             offset_frame_matches(reference_frame, result_frame, *distance)
                         });
+                let explicit_principal_identity_without_face_fallback = explicit_native_reference
+                    && *is_principal
+                    && !(feature
+                        .source_properties
+                        .contains_key("ReferenceFaceOrigin")
+                        || feature
+                            .source_properties
+                            .contains_key("ReferenceFaceNormal")
+                        || feature.source_properties.contains_key("ReferenceFaceUAxis"));
                 *reference_ordinal >= feature.ordinal
-                    && !(explicit_native_reference && geometrically_compatible == Some(true))
+                    && !(explicit_native_reference && geometrically_compatible == Some(true)
+                        || explicit_principal_identity_without_face_fallback)
             }
         };
         if invalid {
@@ -2653,6 +2667,42 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn explicit_principal_reference_survives_a_coincident_result_frame() {
+        let mut offset = feature("sldprt:history:feature#0:0", Some("35"), 0);
+        offset.input_class = Some("moRefPlane_c".into());
+        offset.parameters.insert("D1".into(), "6mm".into());
+        offset.properties.insert("Reference".into(), "2".into());
+        offset
+            .properties
+            .insert("Origin".into(), "0mm,0mm,0mm".into());
+        offset.properties.insert("Normal".into(), "0,0,1".into());
+        offset.properties.insert("UAxis".into(), "1,0,0".into());
+        let mut principal = feature("sldprt:history:feature#0:1", Some("2"), 1);
+        principal.name = "Front".into();
+        principal.input_class = Some("moRefPlane_c".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![offset, principal],
+        };
+
+        let mut projected = project_features(&[history]);
+        assert!(matches!(
+            &projected[0].definition,
+            FeatureDefinition::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Feature(reference)),
+                distance: Length(6.0),
+            } if reference == &projected[1].id
+        ));
+        assert!(order_features_for_regeneration(&mut projected));
+        assert_eq!(projected[1].ordinal, 0);
+        assert_eq!(projected[0].ordinal, 1);
+    }
+
+    #[test]
     fn incompatible_later_principal_falls_back_to_the_serialized_face_frame() {
         let mut offset = feature("sldprt:history:feature#0:0", Some("35"), 0);
         offset.input_class = Some("moRefPlane_c".into());
@@ -2738,6 +2788,60 @@ mod history_reference_tests {
         assert!(order_features_for_regeneration(&mut projected));
         assert_eq!(projected[1].ordinal, 0);
         assert_eq!(projected[0].ordinal, 1);
+    }
+
+    #[test]
+    fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![
+                feature("sldprt:history:feature#0:0", None, 0),
+                feature("sldprt:history:feature#0:1", None, 1),
+            ],
+        };
+        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.features = project_features(&[history]);
+        let predecessor = ir.model.features[1].id.clone();
+        let consumer = ir.model.features[0].id.clone();
+        ir.model
+            .configurations
+            .push(cadmpeg_ir::features::DesignConfiguration {
+                id: cadmpeg_ir::features::ConfigurationId("configuration".into()),
+                ordinal: 0,
+                active: true,
+                source_index: None,
+                name: "configuration".into(),
+                material: None,
+                properties: BTreeMap::new(),
+                parameter_overrides: BTreeMap::new(),
+                suppressed_features: Vec::new(),
+                bodies: cadmpeg_ir::features::ConfigurationBodies::Unresolved,
+                parameter_values: BTreeMap::new(),
+                feature_states: BTreeMap::from([(
+                    consumer.clone(),
+                    cadmpeg_ir::features::ConfigurationFeatureState {
+                        suppressed: false,
+                        dependencies: vec![predecessor.clone()],
+                        outputs: Vec::new(),
+                        definition: ir.model.features[0].definition.clone(),
+                    },
+                )]),
+                native_ref: None,
+            });
+
+        assert!(order_model_features_for_regeneration(&mut ir));
+        let ordinals = ir
+            .model
+            .features
+            .iter()
+            .map(|feature| (&feature.id, feature.ordinal))
+            .collect::<HashMap<_, _>>();
+        assert!(ordinals[&predecessor] < ordinals[&consumer]);
+        assert!(ir.model.features[0].dependencies.is_empty());
     }
 
     #[test]
@@ -4895,6 +4999,73 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
+        use cadmpeg_ir::features::{Feature as NeutralFeature, FeatureDefinition};
+
+        let mut owner = feature("owner-native", Some("63"), 0);
+        owner.xml_tag = "Sketch".into();
+        owner.name = "Sketch1".into();
+        owner.kind = "Sketch".into();
+        owner.input_class = Some("moProfileFeature_c".into());
+        owner.parameters.insert("D1".into(), "10".into());
+        owner.content.push(FeatureContent::Dimension("D1".into()));
+        let mut alias = feature("alias-native", Some("85"), 1);
+        alias.xml_tag = "Sketch".into();
+        alias.name = "Sketch1<3>".into();
+        alias.kind = alias.name.clone();
+        alias
+            .properties
+            .insert("Description".into(), alias.name.clone());
+        alias.parameters = owner.parameters.clone();
+        alias.content = owner.content.clone();
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![owner, alias],
+        };
+        let neutral = |id: &str, name: &str, native_ref: &str, ordinal| NeutralFeature {
+            id: cadmpeg_ir::features::FeatureId(id.into()),
+            ordinal,
+            name: Some(name.into()),
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("Sketch".into()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch: None,
+            },
+            native_ref: Some(native_ref.into()),
+        };
+        let mut features = vec![
+            neutral("owner", "Sketch1", "owner-native", 0),
+            neutral("alias", "Sketch1<3>", "alias-native", 1),
+        ];
+        bind_unique_sketch_feature(&mut features, &[], std::slice::from_ref(&history));
+        assert!(matches!(
+            features[0].definition,
+            FeatureDefinition::Sketch { sketch: None, .. }
+        ));
+        assert_eq!(features[1].dependencies, [features[0].id.clone()]);
+
+        crate::resolved_features::project_dissected_sketches(&mut features, &[], &[history]);
+        assert!(matches!(
+            features[1].definition,
+            FeatureDefinition::TreeNode {
+                role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn configuration_spatial_sketch_state_reuses_shared_geometry_across_lanes() {
         use cadmpeg_ir::features::{
             ConfigurationFeatureState, DesignConfiguration, Feature as NeutralFeature,
@@ -5235,6 +5406,7 @@ mod history_reference_tests {
 
         let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
         let parameter_id = ParameterId("test:model:parameter#depth".into());
+        let count_id = ParameterId("test:model:parameter#count".into());
         ir.model.parameters.push(DesignParameter {
             id: parameter_id.clone(),
             owner: Some(FeatureId("test:model:feature#extrude".into())),
@@ -5243,6 +5415,19 @@ mod history_reference_tests {
             expression: "7mm".into(),
             display: None,
             value: Some(ParameterValue::Length(Length(7.0))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+        ir.model.parameters.push(DesignParameter {
+            id: count_id.clone(),
+            owner: Some(FeatureId("test:model:feature#pattern".into())),
+            ordinal: 0,
+            name: "Count".into(),
+            expression: "7".into(),
+            display: None,
+            value: Some(ParameterValue::Integer(7)),
             dependencies: Vec::new(),
             properties: BTreeMap::new(),
             pmi: None,
@@ -5257,7 +5442,10 @@ mod history_reference_tests {
             material: None,
             properties: BTreeMap::new(),
             bodies: ConfigurationBodies::Resolved(Vec::new()),
-            parameter_values: BTreeMap::from([(parameter_id.clone(), ParameterValue::Integer(7))]),
+            parameter_values: BTreeMap::from([
+                (parameter_id.clone(), ParameterValue::Integer(7)),
+                (count_id.clone(), ParameterValue::Length(Length(0.007))),
+            ]),
             suppressed_features: Vec::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
@@ -5270,10 +5458,39 @@ mod history_reference_tests {
             ir.model.configurations[0].parameter_values[&parameter_id],
             ParameterValue::Length(Length(7.0))
         );
+        assert!(!ir.model.configurations[0]
+            .parameter_values
+            .contains_key(&count_id));
+
+        ir.model.configurations[0]
+            .parameter_values
+            .insert(count_id.clone(), ParameterValue::Length(Length(7.0)));
+        align_configuration_parameter_kinds(&mut ir);
+        assert_eq!(
+            ir.model.configurations[0].parameter_values[&count_id],
+            ParameterValue::Integer(7)
+        );
+
+        ir.model.configurations[0]
+            .parameter_values
+            .insert(count_id.clone(), ParameterValue::Real(7.0));
+        align_configuration_parameter_kinds(&mut ir);
+        assert_eq!(
+            ir.model.configurations[0].parameter_values[&count_id],
+            ParameterValue::Integer(7)
+        );
+
+        ir.model.configurations[0]
+            .parameter_values
+            .insert(count_id.clone(), ParameterValue::Real(7.5));
+        align_configuration_parameter_kinds(&mut ir);
+        assert!(!ir.model.configurations[0]
+            .parameter_values
+            .contains_key(&count_id));
     }
 }
 
-/// Bind a uniquely identified native sketch history node to solved sketch geometry.
+/// Bind uniquely identified sketch geometry and exact dissected-profile ownership.
 pub fn bind_unique_sketch_feature(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
@@ -5351,39 +5568,52 @@ pub fn bind_unique_sketch_feature(
         else {
             continue;
         };
-        let candidates = bindings
+        let candidates = feature_indices
             .iter()
-            .filter(|(base_index, _, base_native_ref, _, _)| {
+            .filter(|base_index| {
                 let alias_native = features[*index]
                     .native_ref
                     .as_deref()
                     .and_then(|native_ref| native_features.get(native_ref));
-                let base_native = native_features.get(base_native_ref.as_str());
-                features[*base_index].name.as_deref() == Some(base_name)
+                let base_native = features[**base_index]
+                    .native_ref
+                    .as_deref()
+                    .and_then(|native_ref| native_features.get(native_ref));
+                features[**base_index].name.as_deref() == Some(base_name)
                     && alias_native.zip(base_native).is_some_and(|(alias, base)| {
+                        let compatible_class = alias.input_class == base.input_class
+                            || (alias.input_class.is_none()
+                                && base.input_class.as_deref() == Some("moProfileFeature_c")
+                                && crate::resolved_features::is_dissected_profile_feature(alias));
                         alias.xml_tag == base.xml_tag
-                            && alias.input_class == base.input_class
+                            && compatible_class
                             && alias.parameters == base.parameters
                             && alias.content == base.content
                     })
             })
             .collect::<Vec<_>>();
-        let [(base_index, base_dependency, _, sketch, has_profile)] = candidates.as_slice() else {
+        let [base_index] = candidates.as_slice() else {
             continue;
         };
+        let base_index = **base_index;
+        let base_dependency = features[base_index].id.clone();
         let Some(native_ref) = features[*index].native_ref.clone() else {
             continue;
         };
-        if !features[*index].dependencies.contains(base_dependency) {
-            features[*index]
-                .dependencies
-                .push((*base_dependency).clone());
+        if !features[*index].dependencies.contains(&base_dependency) {
+            features[*index].dependencies.push(base_dependency.clone());
         }
+        let Some((_, _, _, sketch, has_profile)) = bindings
+            .iter()
+            .find(|(bound_index, _, _, _, _)| *bound_index == base_index)
+        else {
+            continue;
+        };
         aliases.push((
-            *base_index,
-            (*base_dependency).clone(),
+            base_index,
+            base_dependency,
             native_ref,
-            (*sketch).clone(),
+            sketch.clone(),
             *has_profile,
         ));
     }
@@ -5461,6 +5691,40 @@ pub fn order_features_for_regeneration(features: &mut [cadmpeg_ir::features::Fea
     }
     for (ordinal, index) in order.into_iter().enumerate() {
         features[index].ordinal = ordinal as u64;
+    }
+    true
+}
+
+/// Assign one regeneration order that satisfies the baseline feature graph and
+/// every configuration-local feature graph.
+pub fn order_model_features_for_regeneration(ir: &mut cadmpeg_ir::CadIr) -> bool {
+    let mut ordering_graph = ir.model.features.clone();
+    let by_id = ordering_graph
+        .iter()
+        .enumerate()
+        .map(|(index, feature)| (feature.id.clone(), index))
+        .collect::<HashMap<_, _>>();
+    for configuration in &ir.model.configurations {
+        for (feature_id, state) in &configuration.feature_states {
+            let Some(&index) = by_id.get(feature_id) else {
+                continue;
+            };
+            for dependency in &state.dependencies {
+                if !ordering_graph[index].dependencies.contains(dependency) {
+                    ordering_graph[index].dependencies.push(dependency.clone());
+                }
+            }
+        }
+    }
+    if !order_features_for_regeneration(&mut ordering_graph) {
+        return false;
+    }
+    let ordinals = ordering_graph
+        .into_iter()
+        .map(|feature| (feature.id, feature.ordinal))
+        .collect::<HashMap<_, _>>();
+    for feature in &mut ir.model.features {
+        feature.ordinal = ordinals[&feature.id];
     }
     true
 }
@@ -8224,6 +8488,9 @@ fn project_ruled_surface(feature: &Feature) -> Option<FeatureDefinition> {
         edges: EdgeSelection::Native(feature.properties.get("Edges")?.clone()),
         support_faces: FaceSelection::Native(feature.properties.get("SupportFaces")?.clone()),
         mode,
+        angle: None,
+        alternate_face: None,
+        corner: None,
     })
 }
 
@@ -9467,8 +9734,20 @@ pub(crate) fn project_configuration_design_states(
     {
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let mut projection = histories.to_vec();
+        // Seed PMI types before lane enrichment so dimension semantics reject
+        // incompatible native scalar candidates. Reapply afterward to add PMI
+        // parameters that the lane does not carry without replacing overrides.
+        crate::pmi::enrich_history_parameters_with_features(
+            &mut projection,
+            pmi_dimensions,
+            &ir.model.features,
+        );
         enrich_history_parameters_semantic(&mut projection, scoped_lanes);
-        crate::pmi::enrich_history_parameters(&mut projection, pmi_dimensions);
+        crate::pmi::enrich_history_parameters_with_features(
+            &mut projection,
+            pmi_dimensions,
+            &ir.model.features,
+        );
         ir.model.configurations[configuration_index].parameter_values =
             project_parameters(&projection)
                 .into_iter()
@@ -9763,6 +10042,15 @@ pub(crate) fn project_configuration_sketch_states(
         for (feature_id, state) in &mut configuration.feature_states {
             if let Some(base_definition) = base.get(feature_id) {
                 inherit_configuration_shared_semantics(&mut state.definition, base_definition);
+                if let FeatureDefinition::DatumOffsetPlane {
+                    reference: Some(DatumPlaneReference::Feature(reference)),
+                    ..
+                } = &state.definition
+                {
+                    if !state.dependencies.contains(reference) {
+                        state.dependencies.push(reference.clone());
+                    }
+                }
             }
         }
     }
@@ -9892,8 +10180,8 @@ fn configuration_surface_carriers(
         .collect()
 }
 
-/// Give configuration-local numeric overrides the dimensional kind established
-/// by their neutral parameter definition.
+/// Give configuration-local numeric overrides the kind established by their
+/// neutral parameter definition and discard incompatible native candidates.
 pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
     let parameter_kinds = ir
         .model
@@ -9927,11 +10215,33 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
             (ParameterValue::Real(_), ParameterValue::Integer(integer)) => {
                 exact_integer_f64(*integer).map(ParameterValue::Real)
             }
+            (ParameterValue::Integer(_), ParameterValue::Real(real)) => {
+                let integer = *real as i64;
+                (integer as f64 == *real).then_some(ParameterValue::Integer(integer))
+            }
+            // Configuration lanes can provisionally classify an untyped scalar
+            // as a length. The canonical integer wins only when the values agree.
+            (ParameterValue::Integer(expected), ParameterValue::Length(Length(candidate))) => {
+                exact_integer_f64(*expected)
+                    .filter(|expected_value| {
+                        (candidate - expected_value).abs()
+                            <= 1.0e-9 * candidate.abs().max(expected_value.abs()).max(1.0)
+                    })
+                    .map(|_| ParameterValue::Integer(*expected))
+            }
             _ => None,
         };
         if let Some(aligned) = aligned {
             *value = aligned;
         }
+    }
+    for configuration in &mut ir.model.configurations {
+        configuration.parameter_values.retain(|parameter, value| {
+            let Some(canonical) = parameter_kinds.get(parameter) else {
+                return true;
+            };
+            std::mem::discriminant(&**canonical) == std::mem::discriminant(value)
+        });
     }
 }
 
@@ -12232,7 +12542,16 @@ pub fn sync_neutral_features(
                 edges,
                 support_faces,
                 mode,
+                angle,
+                alternate_face,
+                corner,
             } => {
+                if angle.is_some() || alternate_face.is_some() || corner.is_some() {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} cannot encode ruled-surface angle, face-side, or corner semantics",
+                        feature.id
+                    )));
+                }
                 let edges = edge_selection_value(edges).ok_or_else(|| {
                     CodecError::Malformed(format!(
                         "SLDPRT feature {} has no ruled-surface boundary edges",
@@ -13072,6 +13391,12 @@ pub fn sync_neutral_features(
                     RadiusSpec::Chordal { .. } => {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} uses a chordal fillet law",
+                            feature.id
+                        )));
+                    }
+                    RadiusSpec::Asymmetric { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} uses an asymmetric fillet law",
                             feature.id
                         )));
                     }

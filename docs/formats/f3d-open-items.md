@@ -134,6 +134,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A form-`2` record that stores no curve block anywhere gives the context no parameter domain, so the decoder retains the record verbatim and the neutral model loses the curve. To read such a record the shared context and every carrier that builds it must accept a record with no solved curve. Whether the record then takes its domain from the interval the form stores, from the support surfaces, or from a curve outside the record is not established. **Blocked on a specimen:** a document holding a form-`2` record whose construction stores no curve block settles which of the three the domain comes from, and no such document is available to read.
 
+### GC-28. Parameter chart of a procedural spline support cache
+
+**Question.** How does a pcurve in a procedural spline support's construction chart map to the parameter chart of that support's solved NURBS cache?
+
+**Known.** A cache-first intcurve support can store `spline`, a subtype-table reference to a procedural spline-surface construction, and four optional bounds. The referenced construction supplies a solved NURBS cache. The intcurve pcurve uses the procedural construction's parameter chart. That chart is not necessarily the solved cache's chart. A `cl_loft_spl_sur` support can map one construction-chart isoline to a nonlinear curve in the solved cache chart. The intcurve and the cache therefore do not establish a direct pcurve-on-surface relation without a chart map.
+
+**Need.** The decoder currently attaches the construction-chart pcurve directly to the solved NURBS support. This relation is invalid when the charts differ. We must retain or derive the exact chart map before the neutral support relation can be complete. A fitted map is not sufficient because it does not preserve the stored construction semantics.
+
 ## 2. Container, header, and design records
 
 ### DR-03. ACT table trailing GUID run
@@ -158,13 +166,12 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 - the `EdgeFlange` extent discriminator
 - the `EdgeFlange` height-datum discriminator
-- the `EdgeFlange` bend-position discriminator
 - the `Hem` direction discriminator
 - the `Hem` hem-form discriminator
 
-**Known.** `f3d.md` §8.1 "An `EdgeFlange` scope with" and `f3d.md` §8.1 "A `Hem` scope has" give the offset and the width of each field. The decoder keeps every one of them as an uninterpreted value.
+**Known.** `f3d.md` §8.1 "An `EdgeFlange` scope with" and `f3d.md` §8.1 "A `Hem` scope has" give the offset and the width of each field. The decoder keeps every unresolved field as an uninterpreted value. Bend-position value `4` is typed as tangent to the side reference plane in both feature families; other bend-position values remain losslessly retained unknown values.
 
-**Need.** These two features have no neutral operation without the value meanings. We cannot rebuild the feature in a neutral model. **Blocked on a specimen:** no sheet-metal scope of any family is available to read. Settling it needs a base face, one edge flange cycled through each hem form, one flange whose height is measured to a plane and one to a point, and one flange per width mode and per bend position.
+**Need.** These two features have no neutral operation without the remaining value meanings. We cannot rebuild either feature in a neutral model. Available records contain one combination of the unresolved values. Settling them needs one edge flange per width mode, one flange whose height is measured to a plane and one to a point, and one hem of each form and direction.
 
 ### DR-10. `SpirePrimitive` and `CoilPrimitive` values
 
@@ -239,7 +246,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 - what the context UUID names
 - what the optional slot of the fixed member tail holds
 
-**Known.** `f3d.md` §8.1 "A nested entity-selection member" states that an identity absent from the preceding state gives no candidate. `f3d.md` §8.1 "An Extrude selection resolves" gives a fallback chain that ends in native retention. `f3d.md` §8.1 "The first record of a construction-operand" gives the presence encoding of the optional slot. The marker is zero when the slot is absent and one when the slot is present.
+**Known.** `f3d.md` §8.1 "A nested entity-selection member" states that an identity absent from the preceding state gives no candidate. `f3d.md` §8.1 "An Extrude selection resolves" gives a fallback chain that ends in native retention. `f3d.md` §8.1 "The first identity-wrapper record" gives the presence encoding of the optional slot. The marker is zero when the slot is absent and one when the slot is present.
 
 **Need.** Each unknown makes one Extrude selection fall back to native retention. The neutral model then has no selection.
 
@@ -260,6 +267,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Note.** The u32 word before `role` is zero in every record, so a reader that takes `role` as a u64 starting at that word and a reader that takes it as a u32 starting after it name the same value. The decoder takes the u64. Nothing separates the two readings.
 
 **Need.** We must know the field meanings to write a construction group from a neutral model. The role value `0x0000000500000000` in an Extrude scope is one case of an undefined role.
+
+### DR-19A. Entity-tracking path discriminators
+
+**Question.** What do the signed selector and kind fields of a construction-operand entity-tracking path select?
+
+**Known.** `f3d.md` §8.1 "A construction-operand entity-tracking path" gives the complete wrapper and carrier grammar. The selector is a signed i32, the kind is a u32, and the two optional related identities retain their ordered positions independently. The primary and related identities also occur as persistent Sketch-curve identities. Selector values `-1`, `1`, and `2` and kind values `1`, `2`, and `3` occur.
+
+**Need.** The decoder retains both discriminators and every identity. Their semantic meanings are required to generate an entity-tracking path from neutral selection intent.
 
 ### DR-20. Face-recipe node scalar fields
 
@@ -476,6 +491,14 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 **Known.** `f3d.md` §1.1.1 "Topology uses zero-based indices in record order." gives the field position and its finite-value invariant. The scalar is present on smooth and creased edges. It is usually near one, but it also takes exact binary fractions and other positive values. Crease membership is stored independently by the `ec` records, so the scalar is not the edge's crease flag. The decoder retains the complete `.tsm` entry but does not transfer this scalar to the neutral subdivision cage.
 
 **Need.** We must know the quantity and its endpoint convention before the decoder can assign it to `SubdEdge.sharpness`, `sector_coefficients`, or a new neutral field. Assigning it to sharpness without that distinction would mark smooth edges as sharp.
+
+### TS-04. `105plane` coefficient model
+
+**Question.** What geometric values do the twelve f64 operands of a `105plane` record encode, and which operands use the cage coordinate scale?
+
+**Known.** `f3d.md` §1.1.1 "A `105sym 0` record" gives the record arity and its relationship to the six symmetry correspondence maps. The maps identify the complete face, edge, and vertex involution without using the plane coefficients. Every coefficient is finite.
+
+**Need.** We must identify the coefficient grouping and coordinate scale before projecting the symmetry plane into a neutral geometric plane or writing a new symmetry block from neutral data.
 
 ## 6. Mesh geometry
 

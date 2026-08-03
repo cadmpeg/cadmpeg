@@ -122,6 +122,7 @@ pub mod records;
 pub mod sab;
 mod tsm;
 pub mod validate;
+mod value_tree;
 mod writer;
 pub mod xref;
 

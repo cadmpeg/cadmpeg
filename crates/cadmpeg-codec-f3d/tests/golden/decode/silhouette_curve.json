@@ -10,7 +10,7 @@
         "product_family": "Autodesk Neutron",
         "product_version": "ASM 231.6.3.65535 OSX",
         "save_date": "Tue Mar 31 16:16:19 2026",
-        "semantic_sha256": "619d2d6dbb475b127ec90c62cf8b15ff1d07be7b3253355e42b09bdbd96c7bf0",
+        "semantic_sha256": "ee79b68c52e8c5e5ef7d58fb9e8259ca8b24af5f9442ed1524eb8eb4a6fa76e9",
         "solved_record_len": "2428",
         "zip_entry_count": "2"
       }
@@ -316,12 +316,12 @@
                     ],
                     "control_points": [
                       {
-                        "u": 0.25,
-                        "v": 0.5
+                        "u": 0.5,
+                        "v": -3.125
                       },
                       {
-                        "u": 0.75,
-                        "v": 1.5
+                        "u": 1.5,
+                        "v": -9.375
                       }
                     ],
                     "periodic": false

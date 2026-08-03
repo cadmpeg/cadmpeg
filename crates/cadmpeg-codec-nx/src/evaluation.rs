@@ -921,10 +921,13 @@ fn apply_complete_body_pattern(
 
 fn explicit_body_selection(selection: &BodySelection) -> Option<&[BodyId]> {
     let bodies = match selection {
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies,
+        BodySelection::Bodies(bodies)
+        | BodySelection::Resolved { bodies, .. }
+        | BodySelection::ResolvedSet { bodies, .. } => bodies,
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
+        | BodySelection::HistoricalUnorderedSet { .. }
         | BodySelection::Generated { .. }
         | BodySelection::Local { .. }
         | BodySelection::Native(_)

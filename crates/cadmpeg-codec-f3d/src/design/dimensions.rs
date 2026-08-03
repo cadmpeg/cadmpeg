@@ -36,6 +36,82 @@ pub struct DimensionConstraintInputs<'a> {
     pub(crate) entities: &'a [cadmpeg_ir::sketches::SketchEntity],
 }
 
+pub(crate) fn container_only_dimension_companions(
+    pairs: &[DesignDimensionLocusPair],
+    null_pairs: &[DesignDimensionNullLocusPair],
+    annotation_frames: &[DesignDimensionAnnotationFrame],
+    groups: &[DesignDimensionLocusGroup],
+    recipe_records: &[DesignDimensionRecipeRecord],
+) -> HashSet<(String, u32)> {
+    let physical = pairs
+        .iter()
+        .filter_map(|pair| {
+            Some((
+                native_stream(&pair.id)?.to_owned(),
+                pair.companion_record_index,
+            ))
+        })
+        .chain(null_pairs.iter().filter_map(|pair| {
+            Some((
+                native_stream(&pair.id)?.to_owned(),
+                pair.companion_record_index,
+            ))
+        }))
+        .chain(annotation_frames.iter().filter_map(|frame| {
+            Some((
+                native_stream(&frame.id)?.to_owned(),
+                frame.companion_record_index?,
+            ))
+        }))
+        .chain(groups.iter().filter_map(|group| {
+            Some((
+                native_stream(&group.id)?.to_owned(),
+                group.companion_record_index,
+            ))
+        }))
+        .chain(recipe_records.iter().filter_map(|record| {
+            Some((
+                native_stream(&record.id)?.to_owned(),
+                record.companion_record_index,
+            ))
+        }))
+        .collect::<HashSet<_>>();
+    let governed = pairs
+        .iter()
+        .filter_map(|pair| {
+            Some((
+                native_stream(&pair.id)?.to_owned(),
+                pair.governing_companion_record_index,
+            ))
+        })
+        .chain(null_pairs.iter().filter_map(|pair| {
+            Some((
+                native_stream(&pair.id)?.to_owned(),
+                pair.governing_companion_record_index,
+            ))
+        }))
+        .chain(annotation_frames.iter().filter_map(|frame| {
+            Some((
+                native_stream(&frame.id)?.to_owned(),
+                frame.governing_companion_record_index,
+            ))
+        }))
+        .chain(groups.iter().filter_map(|group| {
+            Some((
+                native_stream(&group.id)?.to_owned(),
+                group.companion_record_index,
+            ))
+        }))
+        .chain(recipe_records.iter().filter_map(|record| {
+            Some((
+                native_stream(&record.id)?.to_owned(),
+                record.companion_record_index,
+            ))
+        }))
+        .collect::<HashSet<_>>();
+    physical.difference(&governed).cloned().collect()
+}
+
 /// Project dimensional parameter companions into parameter-backed sketch
 /// constraints. Solved linear measurements use the source kernel's absolute
 /// resolution. Two-locus dimensions have neutral semantics; aggregate and
@@ -755,12 +831,22 @@ fn project_all_dimension_constraints(
             let linear_candidates = if parameter.source_kind.starts_with("Linear Dimension")
                 && design_dimension_unit(parameter)
             {
-                recipe_linear_dimension_candidates(
+                let candidates = recipe_linear_dimension_candidates(
                     entities,
                     &sketch,
                     parameter.evaluated_value * 10.0,
                     &parameter_id,
-                )
+                );
+                if records.iter().all(|record| {
+                    record.recipe_kind == crate::records::ConstructionRecipeKind::Edge
+                }) {
+                    candidates
+                        .into_iter()
+                        .filter(|candidate| matches!(candidate, Definition::Distance { .. }))
+                        .collect()
+                } else {
+                    candidates
+                }
             } else {
                 Vec::default()
             };
@@ -820,6 +906,13 @@ fn project_all_dimension_constraints(
         .flat_map(|constraint| constraint_parameters(&constraint.definition))
         .cloned()
         .collect::<HashSet<_>>();
+    let container_only_payload_companions = container_only_dimension_companions(
+        pairs,
+        null_pairs,
+        annotation_frames,
+        groups,
+        recipe_records,
+    );
     constraints.extend(companions.iter().filter_map(|companion| {
         let scope = native_stream(&companion.id)?;
         let key = (scope.to_owned(), companion.record_index);
@@ -827,6 +920,7 @@ fn project_all_dimension_constraints(
         let (parameter, parameter_id) = parameter_for(scope, companion.record_index)?;
         if parameter.kind != DesignParameterKind::Dimension
             || projected_parameters.contains(&parameter_id)
+            || container_only_payload_companions.contains(&key)
         {
             return None;
         }
@@ -864,6 +958,9 @@ fn project_all_dimension_constraints(
             linear_tolerance,
         )
         .or_else(|| {
+            owner_scoped_angular_dimension_definition(entities, &sketch, parameter, &parameter_id)
+        })
+        .or_else(|| {
             owner_scoped_line_length_dimension_definition(
                 entities,
                 &sketch,
@@ -899,30 +996,25 @@ fn project_all_dimension_constraints(
         .or_else(|| {
             concentric_circle_dimension_definition(entities, &sketch, parameter, &parameter_id)
         });
-        let definition = parallel_axis_angle
-            .or(owner_scoped_definition)
-            .unwrap_or_else(|| Definition::Native {
-                native_kind: parameter.source_kind.clone(),
-                native_state: None,
-                native_flags: None,
-                native_properties: std::collections::BTreeMap::new(),
-                entities: Vec::new(),
-                parameter: Some(parameter_id.clone()),
-                operands: vec![SketchNativeOperand {
-                    native_kind: "dimension_companion".into(),
-                    native_field: Some(
-                        if companion.payload_byte_length == 0 {
-                            "companion"
-                        } else {
-                            "companion_payload"
-                        }
-                        .into(),
-                    ),
-                    native_role: None,
-                    object_index: companion.record_index,
-                    native_ref: Some(companion.id.clone()),
-                }],
-            });
+        let exact_definition = parallel_axis_angle.or(owner_scoped_definition);
+        if exact_definition.is_none() && companion.payload_byte_length == 0 {
+            return None;
+        }
+        let definition = exact_definition.unwrap_or_else(|| Definition::Native {
+            native_kind: parameter.source_kind.clone(),
+            native_state: None,
+            native_flags: None,
+            native_properties: std::collections::BTreeMap::new(),
+            entities: Vec::new(),
+            parameter: Some(parameter_id.clone()),
+            operands: vec![SketchNativeOperand {
+                native_kind: "dimension_companion".into(),
+                native_field: Some("companion_payload".into()),
+                native_role: None,
+                object_index: companion.record_index,
+                native_ref: Some(companion.id.clone()),
+            }],
+        });
         Some(SketchConstraint {
             id: neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
             sketch,
@@ -941,6 +1033,52 @@ fn project_all_dimension_constraints(
     }));
     constraints.sort_by_key(|constraint| constraint.id.clone());
     constraints
+}
+
+/// Resolve an angular parameter when exactly one unordered line pair in its
+/// owning sketch has the evaluated supporting-line angle.
+pub(crate) fn owner_scoped_angular_dimension_definition(
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    sketch: &cadmpeg_ir::sketches::SketchId,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+
+    if !parameter.source_kind.starts_with("Angular Dimension")
+        || !design_dimension_unit(parameter)
+        || !parameter.evaluated_value.is_finite()
+    {
+        return None;
+    }
+    let lines = entities
+        .iter()
+        .filter(|entity| {
+            &entity.sketch == sketch && matches!(entity.geometry, SketchGeometry::Line { .. })
+        })
+        .collect::<Vec<_>>();
+    let mut matched = None;
+    for first in 0..lines.len() {
+        for second in first + 1..lines.len() {
+            if !line_angle_matches(
+                &lines[first].geometry,
+                &lines[second].geometry,
+                parameter.evaluated_value,
+            ) {
+                continue;
+            }
+            if matched.is_some() {
+                return None;
+            }
+            matched = Some((lines[first], lines[second]));
+        }
+    }
+    let (first, second) = matched?;
+    Some(Definition::Angle {
+        first: first.id.clone(),
+        second: second.id.clone(),
+        parameter: parameter_id.clone(),
+    })
 }
 
 /// Bind an angular parameter to the common direction of one exact parallel
@@ -2747,7 +2885,7 @@ pub(crate) fn radial_locus_dimension_definition(
     evaluated_value: f64,
     parameter: &cadmpeg_ir::features::ParameterId,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
 
     let unique = |mut definitions: Vec<_>| {
         let definition = definitions.pop()?;
@@ -2760,7 +2898,40 @@ pub(crate) fn radial_locus_dimension_definition(
         })
         .collect::<Vec<_>>();
     if !direct.is_empty() {
-        return unique(direct);
+        let mut entity_ids = direct
+            .iter()
+            .filter_map(|definition| match definition {
+                Definition::Radius { entity, .. } | Definition::Diameter { entity, .. } => {
+                    Some(entity.clone())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let distinct = entity_ids.iter().collect::<HashSet<_>>().len() == entity_ids.len();
+        return match direct.as_slice() {
+            [definition] => Some(definition.clone()),
+            _ if distinct
+                && direct
+                    .iter()
+                    .all(|definition| matches!(definition, Definition::Radius { .. })) =>
+            {
+                Some(Definition::RepeatedRadius {
+                    entities: std::mem::take(&mut entity_ids),
+                    parameter: parameter.clone(),
+                })
+            }
+            _ if distinct
+                && direct
+                    .iter()
+                    .all(|definition| matches!(definition, Definition::Diameter { .. })) =>
+            {
+                Some(Definition::RepeatedDiameter {
+                    entities: entity_ids,
+                    parameter: parameter.clone(),
+                })
+            }
+            _ => None,
+        };
     }
 
     let sketch = loci.first()?.sketch.clone();
@@ -3399,6 +3570,8 @@ pub(crate) fn recipe_linear_dimension_candidates(
     evaluated_mm: f64,
     parameter: &cadmpeg_ir::features::ParameterId,
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+
     let sketch_entities = entities
         .iter()
         .filter(|entity| &entity.sketch == sketch)
@@ -3413,18 +3586,6 @@ pub(crate) fn recipe_linear_dimension_candidates(
             )
         })
         .collect::<Vec<_>>();
-    let mut candidates = Vec::new();
-    for first in 0..points.len() {
-        for second in first + 1..points.len() {
-            if let Some(definition) = directional_point_dimension(
-                &[points[first], points[second]],
-                evaluated_mm,
-                parameter.clone(),
-            ) {
-                candidates.push(definition);
-            }
-        }
-    }
     let lines = sketch_entities
         .iter()
         .copied()
@@ -3435,13 +3596,57 @@ pub(crate) fn recipe_linear_dimension_candidates(
             )
         })
         .collect::<Vec<_>>();
+    let mut line_pairs = Vec::new();
     for first in 0..lines.len() {
         for second in first + 1..lines.len() {
             if parallel_line_separation(lines[first], lines[second], evaluated_mm) {
-                candidates.push(cadmpeg_ir::sketches::SketchConstraintDefinition::Distance {
-                    entities: vec![lines[first].id.clone(), lines[second].id.clone()],
-                    parameter: parameter.clone(),
-                });
+                line_pairs.push((lines[first], lines[second]));
+            }
+        }
+    }
+    let same_point = |left: Point2, right: Point2| {
+        let scale = 1.0
+            + left
+                .u
+                .abs()
+                .max(left.v.abs())
+                .max(right.u.abs())
+                .max(right.v.abs());
+        (left.u - right.u).abs() <= 1.0e-9 * scale && (left.v - right.v).abs() <= 1.0e-9 * scale
+    };
+    let point_on_endpoint =
+        |point: &cadmpeg_ir::sketches::SketchEntity, line: &cadmpeg_ir::sketches::SketchEntity| {
+            let SketchGeometry::Point { position } = &point.geometry else {
+                unreachable!("point candidates contain only point entities")
+            };
+            sketch_entity_endpoints(line).is_some_and(|endpoints| {
+                endpoints.into_iter().any(|end| same_point(*position, end))
+            })
+        };
+    let mut candidates = line_pairs
+        .iter()
+        .map(|(first, second)| Definition::Distance {
+            entities: vec![first.id.clone(), second.id.clone()],
+            parameter: parameter.clone(),
+        })
+        .collect::<Vec<_>>();
+    for first in 0..points.len() {
+        for second in first + 1..points.len() {
+            let subsumed_by_line_pair = line_pairs.iter().any(|(first_line, second_line)| {
+                (point_on_endpoint(points[first], first_line)
+                    && point_on_endpoint(points[second], second_line))
+                    || (point_on_endpoint(points[first], second_line)
+                        && point_on_endpoint(points[second], first_line))
+            });
+            if subsumed_by_line_pair {
+                continue;
+            }
+            if let Some(definition) = directional_point_dimension(
+                &[points[first], points[second]],
+                evaluated_mm,
+                parameter.clone(),
+            ) {
+                candidates.push(definition);
             }
         }
     }

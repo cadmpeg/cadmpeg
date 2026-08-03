@@ -1754,7 +1754,10 @@ pub(crate) fn validate_body_native_key_edits(
             joined.extend(
                 baseline_body_visibilities
                     .iter()
-                    .filter(|visibility| visibility.body == before.body)
+                    .filter(|visibility| {
+                        visibility.body == before.body
+                            && before.asm_body_key == Some(visibility.asm_body_key)
+                    })
                     .map(|visibility| (visibility.stream.clone(), visibility.asm_body_key_offset)),
             );
             if let Some(old_key) = before.asm_body_key {

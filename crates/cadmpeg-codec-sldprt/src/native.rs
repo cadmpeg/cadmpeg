@@ -498,7 +498,7 @@ impl SldprtNative {
                     && record
                         .terminal_feature_ref
                         .as_deref()
-                        .is_none_or(|feature| !feature_ids.contains(feature)))
+                        .is_some_and(|feature| !feature_ids.contains(feature)))
         }) {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "feature-input surface selection {} has unresolved ownership",

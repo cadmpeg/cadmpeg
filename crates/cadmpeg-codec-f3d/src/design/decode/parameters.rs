@@ -8,8 +8,8 @@ use crate::design::decode::dimension_frames::companion_owned_interval;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::ids::{self, native_stream};
 use crate::records::{
-    ConstructionRecipe, DesignParameter, DesignParameterCompanion, DesignParameterKind,
-    DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
+    ConstructionRecipe, DesignEntityHeader, DesignParameter, DesignParameterCompanion,
+    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
 };
 use cadmpeg_codec_core::le::{f64_at, u32_at, u64_at as read_u64};
 use cadmpeg_codec_core::CodecError;
@@ -83,6 +83,9 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
         && payload.get(30) == Some(&1)
         && payload.get(35..41) == Some(&[0; 6]);
     let discriminated = !compact_owned && payload.get(30) == Some(&0);
+    if !compact_owned && !discriminated {
+        return parse_legacy_design_parameter(payload, class_tag, record_index);
+    }
     let (family_discriminator, source_ordinal, owner_record_index, expression_at, trailer_len) =
         if discriminated {
             let discriminator = read_u64(payload, 22)?;
@@ -190,6 +193,71 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
         kind,
         unit,
         unit_offset: unit_offset.map(|offset| offset as u64),
+        name,
+        name_offset: (name_at + 4) as u64,
+        evaluated_value,
+        evaluated_value_offset: name_end as u64,
+    })
+}
+
+fn parse_legacy_design_parameter(
+    payload: &[u8],
+    class_tag: String,
+    record_index: u32,
+) -> Option<DesignParameter> {
+    if payload.get(11..25)? != [0; 14]
+        || payload.get(29) != Some(&1)
+        || payload.get(34..40)? != [0; 6]
+    {
+        return None;
+    }
+    let source_ordinal = u32_at(payload, 25)?;
+    let owner_record_index = u32_at(payload, 30)?;
+    let expression_at = 40;
+    let (expression, expression_end) = lp_utf16_bounded(payload, expression_at, 1..=256)?;
+    if payload.get(expression_end..expression_end + 5)? != [0; 5] {
+        return None;
+    }
+    let source_kind_at = expression_end + 5;
+    let (source_kind, source_kind_end) = lp_utf16_bounded(payload, source_kind_at, 1..=256)?;
+    let unit_at = source_kind_end;
+    let (unit, unit_end) = lp_utf16_bounded(payload, unit_at, 1..=64)?;
+    let name_at = unit_end;
+    let (name, name_end) = lp_utf16_bounded(payload, name_at, 1..=256)?;
+    let evaluated_value = f64_at(payload, name_end)?;
+    let tail = payload.get(name_end + 8..)?;
+    if tail != [0, 1, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        || expression.is_empty()
+        || source_kind.is_empty()
+        || unit.is_empty()
+        || name.is_empty()
+        || !evaluated_value.is_finite()
+    {
+        return None;
+    }
+    let kind = if source_kind == "User Parameter" {
+        DesignParameterKind::User
+    } else if source_kind.contains("Dimension") {
+        DesignParameterKind::Dimension
+    } else {
+        DesignParameterKind::Feature
+    };
+    Some(DesignParameter {
+        id: String::new(),
+        byte_offset: 0,
+        class_tag,
+        record_index,
+        family_discriminator: None,
+        family_discriminator_offset: None,
+        source_ordinal,
+        owner_record_index: Some(owner_record_index),
+        expression,
+        expression_offset: (expression_at + 4) as u64,
+        source_kind,
+        source_kind_offset: (source_kind_at + 4) as u64,
+        kind,
+        unit: Some(unit),
+        unit_offset: Some((unit_at + 4) as u64),
         name,
         name_offset: (name_at + 4) as u64,
         evaluated_value,
@@ -549,11 +617,13 @@ pub(crate) fn parse_parameter_companion(prefix: &[u8]) -> Option<DesignParameter
 
 /// Bind each companion to its exact owned byte interval and the construction
 /// recipes nested in that interval.
+#[allow(clippy::too_many_arguments)] // Each argument is one independently decoded native arena.
 pub fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
     companions: &mut [DesignParameterCompanion],
     parameters: &[DesignParameter],
     owners: &[DesignParameterOwner],
     scopes: &[DesignParameterScope],
+    entities: &[DesignEntityHeader],
     headers: &[DesignRecordHeader],
     recipes: &[ConstructionRecipe],
     stream_lengths: &HashMap<String, usize, S>,
@@ -565,7 +635,7 @@ pub fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
         let Some(stream_length) = stream_lengths.get(stream).copied() else {
             continue;
         };
-        let Some((start, end)) = companion_owned_interval(
+        let Some((start, mut end)) = companion_owned_interval(
             companion,
             parameters.iter(),
             owners,
@@ -575,6 +645,32 @@ pub fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
         ) else {
             continue;
         };
+        // Entity headers precede their owning scope record. A parameter
+        // companion immediately before a new scope does not own that scope's
+        // preamble even though no indexed sibling separates the two records.
+        // Bind the preamble through the scope's entity identity, not by an
+        // assumed class-tag or byte length.
+        end = scopes
+            .iter()
+            .filter(|scope| {
+                native_stream(&scope.id) == Some(stream)
+                    && scope.byte_offset >= u64::try_from(end).unwrap_or(u64::MAX)
+                    && scope.entity_suffix.is_some()
+            })
+            .filter_map(|scope| {
+                entities
+                    .iter()
+                    .filter(|entity| {
+                        native_stream(&entity.id) == Some(stream)
+                            && Some(entity.entity_suffix) == scope.entity_suffix
+                            && usize::try_from(entity.byte_offset)
+                                .is_ok_and(|offset| offset >= start && offset < end)
+                    })
+                    .filter_map(|entity| usize::try_from(entity.byte_offset).ok())
+                    .min()
+            })
+            .min()
+            .unwrap_or(end);
         companion.payload_byte_offset = u64::try_from(start).unwrap_or(u64::MAX);
         companion.payload_byte_length = u64::try_from(end - start).unwrap_or(u64::MAX);
         let mut owned = recipes
