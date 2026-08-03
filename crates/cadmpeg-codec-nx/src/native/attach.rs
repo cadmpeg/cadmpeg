@@ -4869,14 +4869,23 @@ fn delete_body_feature_definition(
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Option<FeatureDefinition> {
     let body = body_object_index?;
+    let selection = feature_body_selection(
+        &[body],
+        body_alias_roots,
+        bodies_by_object_index,
+        format!("nx:om-object-index#{body}"),
+    )
+    .selection;
     Some(FeatureDefinition::DeleteBody {
-        bodies: feature_body_selection(
-            &[body],
-            body_alias_roots,
-            bodies_by_object_index,
-            format!("nx:om-object-index#{body}"),
-        )
-        .selection,
+        // A typed DELETE primary-body field names one exact feature input. It
+        // needs no cross-selection alias proof when it has no segment binding.
+        bodies: match selection {
+            BodySelection::Native(native) => BodySelection::Local {
+                bodies: vec![format!("nx:om-body-object#{body}")],
+                native,
+            },
+            selection => selection,
+        },
         mode: BodyRetentionMode::DeleteSelected,
     })
 }
@@ -6487,6 +6496,16 @@ mod tests {
                 bodies: BodySelection::Local {
                     bodies: vec!["nx:om-body-object#20".to_string()],
                     native: "nx:om-object-index#20".to_string(),
+                },
+                mode: BodyRetentionMode::DeleteSelected,
+            })
+        );
+        assert_eq!(
+            super::delete_body_feature_definition(Some(72), &roots, &BTreeMap::new()),
+            Some(FeatureDefinition::DeleteBody {
+                bodies: BodySelection::Local {
+                    bodies: vec!["nx:om-body-object#72".to_string()],
+                    native: "nx:om-object-index#72".to_string(),
                 },
                 mode: BodyRetentionMode::DeleteSelected,
             })

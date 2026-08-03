@@ -439,21 +439,32 @@ fn suppression_is_body_census_invariant(
     feature: &cadmpeg_ir::features::Feature,
     bodies: &BTreeSet<BodyId>,
 ) -> bool {
-    (feature.outputs.is_empty()
-        || (feature.outputs.len() == 1 && bodies.contains(&feature.outputs[0])))
-        && matches!(
-            feature.definition,
-            FeatureDefinition::TrimSurface { .. }
-                | FeatureDefinition::ExtendSurface { .. }
-                | FeatureDefinition::Hole { .. }
-                | FeatureDefinition::Chamfer { .. }
-                | FeatureDefinition::Fillet { .. }
-                | FeatureDefinition::FaceBlend { .. }
-                | FeatureDefinition::OffsetSurface { .. }
-                | FeatureDefinition::Thicken { .. }
-                | FeatureDefinition::Draft { .. }
-                | FeatureDefinition::ReplaceFace { .. }
-        )
+    let deletes_only_local_bodies = matches!(
+        &feature.definition,
+        FeatureDefinition::DeleteBody {
+            bodies: BodySelection::Local { bodies, native },
+            mode: BodyRetentionMode::DeleteSelected,
+        } if !native.trim().is_empty()
+            && !bodies.is_empty()
+            && bodies.iter().all(|body| !body.trim().is_empty())
+            && bodies.iter().collect::<BTreeSet<_>>().len() == bodies.len()
+    );
+    deletes_only_local_bodies
+        || ((feature.outputs.is_empty()
+            || (feature.outputs.len() == 1 && bodies.contains(&feature.outputs[0])))
+            && matches!(
+                feature.definition,
+                FeatureDefinition::TrimSurface { .. }
+                    | FeatureDefinition::ExtendSurface { .. }
+                    | FeatureDefinition::Hole { .. }
+                    | FeatureDefinition::Chamfer { .. }
+                    | FeatureDefinition::Fillet { .. }
+                    | FeatureDefinition::FaceBlend { .. }
+                    | FeatureDefinition::OffsetSurface { .. }
+                    | FeatureDefinition::Thicken { .. }
+                    | FeatureDefinition::Draft { .. }
+                    | FeatureDefinition::ReplaceFace { .. }
+            ))
 }
 
 /// Validate the exact body-identity effect of an in-place edit independently
@@ -622,6 +633,12 @@ fn apply_complete_body_retention(
             feature.id.clone(),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
+    }
+    if mode == BodyRetentionMode::DeleteSelected
+        && matches!(selection, BodySelection::Local { .. })
+        && feature.outputs.is_empty()
+    {
+        return Ok(());
     }
     let Some(selected) = explicit_body_selection(selection) else {
         return Err((
@@ -1467,6 +1484,70 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies: Vec::new() }
+        );
+    }
+
+    #[test]
+    fn delete_body_ignores_a_complete_feature_local_body() {
+        let mut ir = complete_block_ir();
+        ir.model.features.push(Feature {
+            id: FeatureId("delete-local".to_string()),
+            ordinal: 1,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::DeleteBody {
+                bodies: BodySelection::Local {
+                    bodies: vec!["input-body".to_string()],
+                    native: "native-selection".to_string(),
+                },
+                mode: BodyRetentionMode::DeleteSelected,
+            },
+            native_ref: None,
+        });
+
+        assert!(matches!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies }
+                if bodies == [BodyId("body".to_string())]
+        ));
+    }
+
+    #[test]
+    fn unresolved_suppression_of_a_resolved_delete_remains_a_boundary() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        ir.model.features.push(Feature {
+            id: FeatureId("delete".to_string()),
+            ordinal: 1,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::DeleteBody {
+                bodies: BodySelection::Bodies(vec![body]),
+                mode: BodyRetentionMode::DeleteSelected,
+            },
+            native_ref: None,
+        });
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Unsupported {
+                feature: Some(FeatureId("delete".to_string())),
+                reason: UnsupportedBodyCensusReason::UnresolvedSuppression,
+            }
         );
     }
 
