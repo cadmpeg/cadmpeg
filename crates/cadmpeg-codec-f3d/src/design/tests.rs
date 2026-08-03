@@ -7078,6 +7078,19 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
     );
     assert_eq!(scope.coil_clockwise, Some(false));
 
+    bytes[92..96].copy_from_slice(&2u32.to_le_bytes());
+    bytes[107..111].copy_from_slice(&1u32.to_le_bytes());
+    let centered = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+        .expect("centered internal-triangle Coil scope");
+    assert_eq!(
+        centered.coil_section,
+        Some(DesignCoilSection::InternalTriangle)
+    );
+    assert_eq!(
+        centered.coil_section_placement,
+        Some(DesignCoilSectionPlacement::Center)
+    );
+
     bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
     assert!(parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header).is_none());
 }

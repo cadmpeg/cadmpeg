@@ -3696,12 +3696,13 @@ pub(crate) fn parse_parameter_scope(
             ("SpirePrimitive", 0) => DesignCoilSection::Circular,
             ("SpirePrimitive", 1) => DesignCoilSection::Square,
             ("SpirePrimitive", 2) | ("CoilPrimitive", 1) => DesignCoilSection::ExternalTriangle,
-            ("SpirePrimitive", 3) => DesignCoilSection::InternalTriangle,
+            ("SpirePrimitive", 3) | ("CoilPrimitive", 2) => DesignCoilSection::InternalTriangle,
             _ => return None,
         };
         let section_placement_offset = start.checked_add(107)?;
         let section_placement = match (kind.as_str(), u32_at(bytes, section_placement_offset)?) {
             ("SpirePrimitive", 4) | ("CoilPrimitive", 3) => DesignCoilSectionPlacement::Inside,
+            ("CoilPrimitive", 1) => DesignCoilSectionPlacement::Center,
             _ => return None,
         };
         (
