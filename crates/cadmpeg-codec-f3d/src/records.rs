@@ -768,6 +768,8 @@ pub enum DesignExtrudeExtent {
     TwoSidedDistance,
     /// Travel one fixed total distance symmetrically around the profile plane.
     SymmetricDistance,
+    /// Travel symmetrically through all material on both sides of the profile plane.
+    SymmetricThroughAll,
     /// Travel on the first side until the next material region is exited.
     OneSidedThroughNext,
     /// Travel on the first side through all material.

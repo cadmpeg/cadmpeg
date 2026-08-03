@@ -4542,6 +4542,13 @@ pub(crate) fn project_extrude(
                 along.0 < 0.0,
             )
         }
+        (DesignExtrudeExtent::SymmetricThroughAll, None, None)
+            if !prologue.direction_reversed()
+                && termination_groups.is_empty()
+                && effective_side_one_offset.is_none() =>
+        {
+            (ExtentShape::Symmetric(Termination::ThroughAll), false)
+        }
         (DesignExtrudeExtent::OneSidedToFace, None, None) => {
             let offset = side_one_offset?;
             let [termination] = termination_groups.as_slice() else {

@@ -1063,7 +1063,13 @@ pub(crate) fn parse_construction_operand_group(
         match role {
             0x0000_0004_0000_0000 | 0x0000_0008_0000_0000 => Some(DesignExtrudeOperandRole::Bodies),
             0x0000_0041_0000_0000 => Some(DesignExtrudeOperandRole::Profile),
-            0x0000_0005_0000_0000 | 0x0000_0011_0000_0000 => Some(DesignExtrudeOperandRole::Faces),
+            0x0000_0011_0000_0000 => Some(DesignExtrudeOperandRole::Faces),
+            0x0000_0005_0000_0000
+                if scope.extrude_prologue.map(DesignExtrudePrologue::start)
+                    == Some(DesignExtrudeStart::FromFace) =>
+            {
+                Some(DesignExtrudeOperandRole::Faces)
+            }
             _ => None,
         }
     } else {

@@ -4030,6 +4030,7 @@ fn exact_legacy_shifted_extrude_prologue(
             (1, [4, 0]) => Some(DesignExtrudeExtent::OneSidedThroughAll),
             (2, [1, 1]) => Some(DesignExtrudeExtent::TwoSidedDistance),
             (3, [1, 0]) => Some(DesignExtrudeExtent::SymmetricDistance),
+            (3, [4, 4]) => Some(DesignExtrudeExtent::SymmetricThroughAll),
             _ => None,
         };
     let candidate = |first_side_extent_offset: usize, default_second_offset: usize| {
@@ -4058,6 +4059,7 @@ fn exact_legacy_shifted_extrude_prologue(
             let (first_offset, second_offset) = match reference_count_at.checked_sub(start)? {
                 252 | 262 | 263 => (106, 110),
                 272 => (116, 130),
+                294 => (116, 129),
                 _ => return None,
             };
             candidate(

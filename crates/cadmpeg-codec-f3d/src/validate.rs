@@ -1436,6 +1436,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 3,
                                 [1, 0],
                                 Some(records::DesignExtrudeExtent::SymmetricDistance)
+                            ) | (
+                                3,
+                                [4, 4],
+                                Some(records::DesignExtrudeExtent::SymmetricThroughAll)
                             )
                         )
                         && side_extent_discriminator_offsets
@@ -1454,6 +1458,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 } else {
                                     [0, 0]
                                 }
+                            } else if side_extent_discriminator_offsets
+                                == [
+                                    scope.byte_offset.saturating_add(116),
+                                    scope.byte_offset.saturating_add(129),
+                                ]
+                            {
+                                side_extent_discriminator_offsets
                             } else if side_extent_discriminator_offsets[0]
                                 == scope.byte_offset.saturating_add(116)
                             {
@@ -1971,10 +1982,22 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 })
                         }
                         Some(records::DesignExtrudeOperandRole::Faces) => {
-                            matches!(group.role, 0x0000_0005_0000_0000 | 0x0000_0011_0000_0000)
+                            (group.role == 0x0000_0011_0000_0000
+                                || group.role == 0x0000_0005_0000_0000
+                                    && scope
+                                        .extrude_prologue
+                                        .map(records::DesignExtrudePrologue::start)
+                                        == Some(records::DesignExtrudeStart::FromFace))
                                 && group.extrude_face_role.is_some()
                         }
-                        None => false,
+                        None => {
+                            group.role == 0x0000_0005_0000_0000
+                                && group.extrude_face_role.is_none()
+                                && scope
+                                    .extrude_prologue
+                                    .map(records::DesignExtrudePrologue::start)
+                                    != Some(records::DesignExtrudeStart::FromFace)
+                        }
                     },
                     Some(
                         design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer,
@@ -2516,6 +2539,13 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 }
                 records::DesignExtrudeExtent::SymmetricDistance => {
                     has_one_along_carrier
+                        && against_count == 0
+                        && side_one_offset_is_absent
+                        && !prologue.direction_reversed()
+                }
+                records::DesignExtrudeExtent::SymmetricThroughAll => {
+                    along_count == 0
+                        && !has_fixed_extrude_parameters
                         && against_count == 0
                         && side_one_offset_is_absent
                         && !prologue.direction_reversed()
