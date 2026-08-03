@@ -3111,7 +3111,7 @@ pub(crate) fn parse_parameter_scope(
         // The generic scope envelope is independently self-delimiting. An
         // unrecognized Extrude prologue therefore withholds only the typed
         // fields, not the scope and its ordered reference table.
-        exact_extrude_prologue(bytes, start)
+        exact_extrude_prologue(bytes, start, *reference_count_at)
     } else {
         None
     };
@@ -3264,9 +3264,13 @@ pub(crate) fn parse_parameter_scope(
     })
 }
 
-fn exact_extrude_prologue(bytes: &[u8], start: usize) -> Option<DesignExtrudePrologue> {
+fn exact_extrude_prologue(
+    bytes: &[u8],
+    start: usize,
+    reference_count_at: usize,
+) -> Option<DesignExtrudePrologue> {
     exact_current_extrude_prologue(bytes, start)
-        .or_else(|| exact_legacy_shifted_extrude_prologue(bytes, start))
+        .or_else(|| exact_legacy_shifted_extrude_prologue(bytes, start, reference_count_at))
 }
 
 fn exact_current_extrude_prologue(bytes: &[u8], start: usize) -> Option<DesignExtrudePrologue> {
@@ -3371,6 +3375,7 @@ fn exact_current_extrude_prologue(bytes: &[u8], start: usize) -> Option<DesignEx
 fn exact_legacy_shifted_extrude_prologue(
     bytes: &[u8],
     start: usize,
+    reference_count_at: usize,
 ) -> Option<DesignExtrudePrologue> {
     let operation_offset = start.checked_add(27)?;
     let operation = match u32_at(bytes, operation_offset)? {
@@ -3389,9 +3394,16 @@ fn exact_legacy_shifted_extrude_prologue(
     if !matches!(direction_face_extend_values[0], 1..=3) {
         return None;
     }
-    let side_extent_discriminator_offsets = [start.checked_add(106)?, start.checked_add(110)?];
+    let first_side_extent_offset = start.checked_add(106)?;
+    let first_side_extent = u32_at(bytes, first_side_extent_offset)?;
+    let second_side_extent_offset = if first_side_extent == 2 {
+        reference_count_at.checked_sub(4)?
+    } else {
+        start.checked_add(110)?
+    };
+    let side_extent_discriminator_offsets = [first_side_extent_offset, second_side_extent_offset];
     let side_extent_discriminators = [
-        u32_at(bytes, side_extent_discriminator_offsets[0])?,
+        first_side_extent,
         u32_at(bytes, side_extent_discriminator_offsets[1])?,
     ];
     let extent = match (direction_face_extend_values[0], side_extent_discriminators) {

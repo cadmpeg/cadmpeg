@@ -6170,7 +6170,9 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         bytes.extend_from_slice(&12u32.to_le_bytes());
         if let Some(side_extents) = legacy_side_extents {
             bytes[106..110].copy_from_slice(&side_extents.0.to_le_bytes());
-            bytes[110..114].copy_from_slice(&side_extents.1.to_le_bytes());
+            let second_extent_at = if side_extents.0 == 2 { 116 } else { 110 };
+            bytes[second_extent_at..second_extent_at + 4]
+                .copy_from_slice(&side_extents.1.to_le_bytes());
         }
         let header = DesignRecordHeader {
             id: "generated:scope-header#0".into(),
@@ -6263,6 +6265,13 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             .extrude_prologue
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::OneSidedThroughAll)
+    );
+    let shifted_to_face = scope("Extrude", 2, (1, 1), 1, 1, 0, None, Some((2, 0)));
+    assert_eq!(
+        shifted_to_face
+            .extrude_prologue
+            .and_then(DesignExtrudePrologue::extent),
+        Some(DesignExtrudeExtent::OneSidedToFace)
     );
 
     let legacy = scope("Extrude", 2, (3, 0), 0, 1, 0, None, Some((0, 0)));

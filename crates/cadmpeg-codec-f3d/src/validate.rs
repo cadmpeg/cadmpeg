@@ -1242,7 +1242,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && side_extent_discriminator_offsets
                             == [
                                 scope.byte_offset.saturating_add(106),
-                                scope.byte_offset.saturating_add(110),
+                                if side_extent_discriminators[0] == 2 {
+                                    scope.reference_count_offset.saturating_sub(4)
+                                } else {
+                                    scope.byte_offset.saturating_add(110)
+                                },
                             ]
                         && direction_face_extend_offsets
                             == [
