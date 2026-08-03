@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Validation for `SubD` cages and free-carrier source associations.
-#![allow(clippy::wildcard_imports)]
+#![allow(clippy::wildcard_imports, reason = "Split check modules share a private orchestration prelude via wildcard import.")]
 
 use super::*;
 use crate::math::Point3;

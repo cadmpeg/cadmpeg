@@ -3860,7 +3860,7 @@ fn blend_surface_frame_with_index(
     Some((center, tangent, first, second, radius))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 fn spine_contact_direction_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     support: &SurfaceId,
@@ -6946,7 +6946,7 @@ fn normalize_pcurve_parameters(
 
 // The parameters are the per-stream lookup tables produced by the decode pass;
 // bundling them into a struct would only rename the same lookup tables.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 fn emit_topology(
     ir: &mut CadIr,
     stream_index: usize,
@@ -9121,7 +9121,7 @@ fn boundary_curve_speed_bound(
 
 // The transfer contract needs both support charts, their shared carrier, and
 // the reusable model index; grouping them would hide rather than reduce state.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 fn transfer_intersection_pcurve(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     ir: &CadIr,
@@ -9197,7 +9197,7 @@ fn transfer_intersection_pcurve(
 
 type TransferredPcurveSample = (f64, Point2, Point3);
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 fn transferred_pcurve_sample(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     ir: &CadIr,
@@ -9317,7 +9317,7 @@ fn blend_boundary_spine_geometry_matches(
     (radial.x * tangent.x + radial.y * tangent.y + radial.z * tangent.z).abs() <= angular_tolerance
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 fn append_transferred_pcurve_segment(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     ir: &CadIr,
@@ -9683,7 +9683,7 @@ fn pcurve_matches_edge_range_with_index(
             && point_distance(coincident_surface[1], start) <= allowance)
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 fn retain_unresolved_topology_carriers(
     ir: &mut CadIr,
     stream_index: usize,
@@ -9792,7 +9792,7 @@ pub(crate) fn decoded_tolerance(value: f64) -> Option<f64> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 fn synthesize_closed_edge_vertex(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -13412,7 +13412,7 @@ mod tests {
                 8.0 - parameter,
             )
             .unwrap();
-            let actual = cadmpeg_ir::eval::pcurve_uv(&basis, parameter).unwrap();
+            let actual = cadmpeg_ir::eval::pcurve_uv(basis, parameter).unwrap();
             assert_eq!(actual, expected_basis);
             let expected = cadmpeg_ir::eval::pcurve_uv(&pcurve, 8.0 - parameter).unwrap();
             let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();

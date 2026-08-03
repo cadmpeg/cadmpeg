@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(test, allow(clippy::needless_range_loop))]
 //! Project sketch constraint relations.
 
 use crate::design::dimensions::{

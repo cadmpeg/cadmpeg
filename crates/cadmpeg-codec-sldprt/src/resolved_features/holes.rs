@@ -2650,7 +2650,7 @@ fn compact_position_loci(
     Some(solution.clone())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 fn compact_position_assignments(
     node_index: usize,
     nodes: &[u16],

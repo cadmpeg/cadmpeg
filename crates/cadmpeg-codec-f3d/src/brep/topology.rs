@@ -54,7 +54,7 @@ pub(crate) fn decode_analytic_carriers(records: &[Record]) -> (Carriers, HashSet
 
 /// Pass 2 (faces): keep every face whose surface reference resolves, decoding
 /// or classifying its carrier and recording surface reachability.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 pub(crate) fn keep_faces_and_carriers(
     out: &mut Brep,
     records: &[Record],
@@ -238,7 +238,7 @@ pub(crate) fn keep_faces_and_carriers(
 
 /// Pass 2 (topology): walk each kept face's loops and coedge rings, pulling in
 /// the supporting edge/vertex/point graph and decoding curve and pcurve carriers.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 pub(crate) fn walk_reachable_topology(
     out: &mut Brep,
     by_index: &HashMap<i64, &Record>,
@@ -561,7 +561,7 @@ pub(crate) fn walk_reachable_topology(
 
 /// Pass 2 (wires): collect shell wire edges and free vertices, decoding wire
 /// curve carriers and emitting wire topologies.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 pub(crate) fn collect_wire_topology(
     out: &mut Brep,
     records: &[Record],
@@ -698,7 +698,7 @@ pub(crate) fn collect_wire_topology(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 fn keep_wire_edge(
     out: &mut Brep,
     edge_index: i64,

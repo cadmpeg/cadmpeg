@@ -1064,7 +1064,7 @@ fn resolve_e5_ownership(topology: &crate::families::e5::graph::E5Topology) -> Op
 }
 
 /// Emits the boundary curve, intersection/surface-curve procedural, and edge layers.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 fn emit_e5_curves_and_edges(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,

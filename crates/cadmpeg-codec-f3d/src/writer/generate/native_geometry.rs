@@ -2565,7 +2565,7 @@ fn encode_native_net_surface(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 fn encode_native_sweep_surface(
     bytes: &mut Vec<u8>,
     target: &CadIr,
@@ -2979,7 +2979,7 @@ fn encode_native_sweep_surface(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 fn encode_native_loft(
     bytes: &mut Vec<u8>,
     target: &CadIr,
@@ -3080,7 +3080,7 @@ fn encode_native_loft(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 fn encode_native_extrusion(
     bytes: &mut Vec<u8>,
     target: &CadIr,
@@ -4131,7 +4131,7 @@ fn encode_complete_native_rolling_ball(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 fn encode_native_rolling_ball(
     bytes: &mut Vec<u8>,
     target: &CadIr,

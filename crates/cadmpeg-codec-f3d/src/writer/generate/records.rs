@@ -670,7 +670,7 @@ fn encode_f64_sequence(out: &mut Vec<u8>, values: &[f64]) -> Result<(), CodecErr
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 fn encode_sketch_nurbs(
     record: &mut Vec<u8>,
     carrier_reference: Option<u64>,

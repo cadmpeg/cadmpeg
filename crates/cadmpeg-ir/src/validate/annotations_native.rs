@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Focused validation checks for annotations native.
-#![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
+#![allow(clippy::wildcard_imports, reason = "Split checks share private orchestration context.")]
 
 use super::*;
 

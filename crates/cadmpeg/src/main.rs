@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(test, allow(clippy::default_trait_access, clippy::unwrap_used))]
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! The `cadmpeg` command-line interface.
 //!
 //! The CLI detects supported native CAD containers, decodes model data through

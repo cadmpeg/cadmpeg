@@ -1161,7 +1161,7 @@ fn parse_linetype(
     ))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 fn linetype_record(
     component: Component,
     fallback_id: Uuid,

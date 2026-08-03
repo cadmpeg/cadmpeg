@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(test, allow(clippy::cloned_ref_to_slice_refs))]
 //! Decode and project Design configuration records.
 
 use crate::container::{role, ContainerScan};

@@ -10,7 +10,7 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 pub(super) fn project_endpoint_constraints(
     sketch: &SketchId,
     entities: &[SketchEntity],

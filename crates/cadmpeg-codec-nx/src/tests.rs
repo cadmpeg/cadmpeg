@@ -8,6 +8,10 @@
 //! JT codec primitives live in `jt` / `jt_topology`. OM wire parsers live in
 //! `om`. Feature-completeness predicates live in `decode`.
 #![allow(clippy::unwrap_used)]
+#![allow(
+    clippy::default_trait_access,
+    reason = "Test fixtures use type-inferred defaults for compact record construction."
+)]
 
 use std::io::Cursor;
 

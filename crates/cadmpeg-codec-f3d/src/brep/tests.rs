@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![allow(clippy::default_trait_access)]
 //! Unit tests for B-rep topology decode, geometry recognition, and
 //! procedural carrier classification.
 use super::geometry::{

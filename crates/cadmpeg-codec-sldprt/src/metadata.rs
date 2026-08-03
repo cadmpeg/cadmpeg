@@ -182,7 +182,7 @@ fn xml_text(bytes: &[u8]) -> Option<String> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct.")]
 fn scan_vectors(
     section: Section<'_>,
     token: &[u8],

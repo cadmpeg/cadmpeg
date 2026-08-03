@@ -1,28 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(
-    test,
-    allow(
-        clippy::byte_char_slices,
-        clippy::cloned_ref_to_slice_refs,
-        clippy::default_trait_access,
-        clippy::doc_markdown,
-        clippy::field_reassign_with_default,
-        clippy::if_not_else,
-        clippy::items_after_test_module,
-        clippy::needless_borrow,
-        clippy::needless_pass_by_value,
-        clippy::needless_range_loop,
-        clippy::range_plus_one,
-        clippy::redundant_closure_for_method_calls,
-        clippy::redundant_field_names,
-        clippy::semicolon_if_nothing_returned,
-        clippy::trivially_copy_pass_by_ref,
-        clippy::uninlined_format_args,
-        clippy::unnested_or_patterns,
-        clippy::unreadable_literal,
-        clippy::unwrap_used
-    )
-)]
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Read and write Autodesk Fusion `.f3d` archives.
 //!
 //! [`F3dCodec`] implements [`Codec`] and [`Encoder`]. Decoding produces a

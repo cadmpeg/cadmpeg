@@ -1,12 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(
-    test,
-    allow(
-        clippy::default_trait_access,
-        clippy::doc_markdown,
-        clippy::unwrap_used
-    )
-)]
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Read and write ZIP-packaged `FreeCAD` `.FCStd` documents.
 //!
 //! [`FcstdCodec`] implements [`Codec`] and [`Encoder`]. Retained writes preserve

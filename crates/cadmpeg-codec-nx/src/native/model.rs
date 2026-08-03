@@ -10,7 +10,7 @@ use crate::container::Container;
 use crate::parasolid::Stream;
 use cadmpeg_codec_core::decode::{DecodeContext, View};
 
-#[allow(clippy::wildcard_imports)]
+#[allow(clippy::wildcard_imports, reason = "Split check modules share a private orchestration prelude via wildcard import.")]
 use super::{
     display_jt::*, features::*, om::*, parasolid::*, segments::*, structure::*, substrate::*,
     toggle::*,
