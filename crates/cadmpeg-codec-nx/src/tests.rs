@@ -2896,6 +2896,32 @@ fn datum_csys_fixed_pair_requires_its_exact_branch_discriminator() {
 }
 
 #[test]
+fn datum_csys_fixed_pair_accepts_the_continuation_branch() {
+    let discriminator = [
+        0x80, 0x8d, 0x00, 0xff, 0x80, 0x81, 0x01, 0x02, 0x01, 0x00, 0x00, 0x00, 0x87, 0xd7, 0x01,
+        0x01, 0x01, 0x01, 0x02, 0xa5, 0x30, 0x21, 0xa5, 0x30, 0x21, 0x01, 0x00, 0x01, 0xaf, 0xff,
+        0xdf, 0x02, 0x01, 0x02,
+    ];
+    let mut bytes = discriminator.to_vec();
+    bytes.push(0x30);
+    bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0x00, 0x30]);
+    bytes.extend_from_slice(&[0xc0, 0, 0, 0, 0, 0, 0]);
+
+    let pairs = crate::om::datum_csys_payload_fixed_pairs(&bytes);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].values, [0.5, -0.5]);
+    assert_eq!(
+        pairs[0].value_offsets,
+        [discriminator.len(), discriminator.len() + 9]
+    );
+    assert_eq!(pairs[0].discriminator, discriminator);
+
+    bytes[1] = 0x8c;
+    assert!(crate::om::datum_csys_payload_fixed_pairs(&bytes).is_empty());
+}
+
+#[test]
 fn om_datum_csys_scalar_field_uses_the_common_shifted_binary64_frame() {
     let mut shifted = 25.4_f64.to_be_bytes();
     shifted[0] -= 0x10;

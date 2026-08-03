@@ -4486,42 +4486,53 @@ pub fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
 
 /// Decode every exactly framed signed Q1.55 pair in a datum-CSYS payload.
 pub fn datum_csys_payload_fixed_pairs(bytes: &[u8]) -> Vec<DatumCsysPayloadFixedPair> {
-    const DISCRIMINATOR: [u8; 15] = [
-        0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
+    const DISCRIMINATORS: [&[u8]; 2] = [
+        &[
+            0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00,
+            0x03,
+        ],
+        &[
+            0x80, 0x8d, 0x00, 0xff, 0x80, 0x81, 0x01, 0x02, 0x01, 0x00, 0x00, 0x00, 0x87, 0xd7,
+            0x01, 0x01, 0x01, 0x01, 0x02, 0xa5, 0x30, 0x21, 0xa5, 0x30, 0x21, 0x01, 0x00, 0x01,
+            0xaf, 0xff, 0xdf, 0x02, 0x01, 0x02,
+        ],
     ];
     let mut pairs = Vec::new();
-    for (offset, window) in bytes.windows(DISCRIMINATOR.len()).enumerate() {
-        if window != DISCRIMINATOR {
-            continue;
+    for discriminator in DISCRIMINATORS {
+        for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
+            if window != discriminator {
+                continue;
+            }
+            let first = offset + discriminator.len();
+            let second = first + 9;
+            if bytes.get(first) != Some(&0x30)
+                || bytes.get(first + 8) != Some(&0x00)
+                || bytes.get(second) != Some(&0x30)
+            {
+                continue;
+            }
+            let Some(first_raw) = bytes
+                .get(first + 1..first + 8)
+                .and_then(|raw| raw.try_into().ok())
+            else {
+                continue;
+            };
+            let Some(second_raw) = bytes
+                .get(second + 1..second + 8)
+                .and_then(|raw| raw.try_into().ok())
+            else {
+                continue;
+            };
+            pairs.push(DatumCsysPayloadFixedPair {
+                offset,
+                values: [decode_q1_55(first_raw), decode_q1_55(second_raw)],
+                value_offsets: [first, second],
+                raw_values: [first_raw, second_raw],
+                discriminator: discriminator.to_vec(),
+            });
         }
-        let first = offset + DISCRIMINATOR.len();
-        let second = first + 9;
-        if bytes.get(first) != Some(&0x30)
-            || bytes.get(first + 8) != Some(&0x00)
-            || bytes.get(second) != Some(&0x30)
-        {
-            continue;
-        }
-        let Some(first_raw) = bytes
-            .get(first + 1..first + 8)
-            .and_then(|raw| raw.try_into().ok())
-        else {
-            continue;
-        };
-        let Some(second_raw) = bytes
-            .get(second + 1..second + 8)
-            .and_then(|raw| raw.try_into().ok())
-        else {
-            continue;
-        };
-        pairs.push(DatumCsysPayloadFixedPair {
-            offset,
-            values: [decode_q1_55(first_raw), decode_q1_55(second_raw)],
-            value_offsets: [first, second],
-            raw_values: [first_raw, second_raw],
-            discriminator: DISCRIMINATOR.to_vec(),
-        });
     }
+    pairs.sort_by_key(|pair| pair.offset);
     pairs
 }
 
