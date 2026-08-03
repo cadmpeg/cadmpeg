@@ -2855,6 +2855,27 @@ fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
 }
 
 #[test]
+fn sketch_fixed_pair_parser_accepts_the_three_member_branch() {
+    let discriminator = [
+        0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
+    ];
+    let mut bytes = discriminator.to_vec();
+    bytes.push(0x30);
+    bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0x00, 0x30]);
+    bytes.extend_from_slice(&[0xc0, 0, 0, 0, 0, 0, 0]);
+
+    let pairs = crate::om::sketch_payload_fixed_pairs(&bytes);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].values, [0.5, -0.5]);
+    assert_eq!(pairs[0].value_offsets, [15, 24]);
+    assert_eq!(pairs[0].discriminator, discriminator);
+
+    bytes[14] = 0x02;
+    assert!(crate::om::sketch_payload_fixed_pairs(&bytes).is_empty());
+}
+
+#[test]
 fn sketch_mixed_pair_parser_requires_q1_55_then_shifted_binary32() {
     let mut bytes = vec![0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84, 0x30];
     bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);

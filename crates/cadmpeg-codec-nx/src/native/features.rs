@@ -5118,7 +5118,16 @@ pub fn feature_sketch_fixed_points(
             if !record.scalar_fields.is_empty() || !record.mixed_pairs.is_empty() {
                 return None;
             }
-            let [fixed_pair_id] = record.fixed_pairs.as_slice() else {
+            let point_pairs = record
+                .fixed_pairs
+                .iter()
+                .filter(|fixed_pair_id| {
+                    fixed_pairs
+                        .get(fixed_pair_id.as_str())
+                        .is_some_and(|pair| matches!(pair.discriminator.first(), Some(0x04 | 0x08)))
+                })
+                .collect::<Vec<_>>();
+            let [fixed_pair_id] = point_pairs.as_slice() else {
                 return None;
             };
             let name = names.get(record.name_field.as_str())?;
@@ -10128,9 +10137,19 @@ mod tests {
         };
 
         let names = [name("first", 0, 10), name("second", 1, 50)];
-        let pairs = [pair];
+        let auxiliary_pair = FeatureSketchPayloadFixedPair {
+            id: "auxiliary-pair".to_string(),
+            ordinal: 1,
+            discriminator: vec![0x0b],
+            payload_offset: 40,
+            source_offset: 1040,
+            value_payload_offsets: [55, 64],
+            value_source_offsets: [1055, 1064],
+            ..pair.clone()
+        };
+        let pairs = [pair, auxiliary_pair];
         let records = feature_sketch_payload_named_records(&[payload], &names, &[], &pairs, &[]);
-        assert_eq!(records[0].fixed_pairs, ["pair"]);
+        assert_eq!(records[0].fixed_pairs, ["pair", "auxiliary-pair"]);
         assert!(records[1].fixed_pairs.is_empty());
         let points = feature_sketch_fixed_points(&records, &names, &pairs);
         assert_eq!(points.len(), 1);

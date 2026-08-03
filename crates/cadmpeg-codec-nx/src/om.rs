@@ -4398,11 +4398,15 @@ pub fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
         0x08, 0x02, 0x03, 0x01, 0xc0, 0x40, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02,
         0x00, 0x01,
     ];
+    const THREE_MEMBER: [u8; 15] = [
+        0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
+    ];
     let mut pairs = Vec::new();
     for (discriminator, separator_width) in [
         (LEGACY.as_slice(), 1usize),
         (SHORT.as_slice(), 0),
         (EXTENDED.as_slice(), 0),
+        (THREE_MEMBER.as_slice(), 1),
     ] {
         for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
             if window != discriminator {

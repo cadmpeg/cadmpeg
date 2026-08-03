@@ -80,6 +80,7 @@
               "sketch_coordinate_pair.0": "nx:feature-history:sketch-construction-payload#0000000000-0000000001-coordinate-pair-0000000000",
               "sketch_coordinate_pair.1": "nx:feature-history:sketch-construction-payload#0000000000-0000000001-coordinate-pair-0000000001",
               "sketch_fixed_pair.0": "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000000",
+              "sketch_fixed_pair.1": "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000001",
               "sketch_fixed_point.0": "nx:feature-history:sketch-fixed-point#0000000000-0000000001-0000000001",
               "sketch_point_group.0": "nx:feature-history:sketch-point-group#0000000000-0000000001-0000000000",
               "sketch_preceding_named_point_use.0": "nx:feature-history:sketch-preceding-named-point-use#0000000000-0000000001-0-1",
@@ -5171,6 +5172,63 @@
                   0.5,
                   -0.5
                 ]
+              },
+              {
+                "construction_payload": "nx:feature-history:sketch-construction-payload#0000000000-0000000001",
+                "discriminator": [
+                  11,
+                  2,
+                  3,
+                  1,
+                  3,
+                  1,
+                  192,
+                  69,
+                  4,
+                  0,
+                  128,
+                  134,
+                  2,
+                  0,
+                  3
+                ],
+                "id": "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000001",
+                "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
+                "ordinal": 1,
+                "payload_offset": 114,
+                "raw_values": [
+                  [
+                    64,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0
+                  ],
+                  [
+                    192,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0
+                  ]
+                ],
+                "source_offset": 1662,
+                "value_payload_offsets": [
+                  129,
+                  138
+                ],
+                "value_source_offsets": [
+                  1677,
+                  1686
+                ],
+                "values": [
+                  0.5,
+                  -0.5
+                ]
               }
             ],
             "feature_sketch_payload_named_records": [
@@ -5214,7 +5272,9 @@
               },
               {
                 "construction_payload": "nx:feature-history:sketch-construction-payload#0000000000-0000000001",
-                "fixed_pairs": [],
+                "fixed_pairs": [
+                  "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000001"
+                ],
                 "id": "nx:feature-history:sketch-payload-record#0000000000-0000000001-0000000002",
                 "name_field": "nx:feature-history:sketch-payload-name#0000000000-0000000001-0000000002",
                 "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
@@ -6311,6 +6371,11 @@
           },
           "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000000": {
             "offset": 1594,
+            "stream": 0,
+            "tag": "FEATURE_SKETCH_FIXED_PAIR"
+          },
+          "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000001": {
+            "offset": 1662,
             "stream": 0,
             "tag": "FEATURE_SKETCH_FIXED_PAIR"
           },
