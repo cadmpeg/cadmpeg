@@ -3049,26 +3049,37 @@ pub(crate) fn project_fixed_revolve_with_entities(
         })
         .collect::<Vec<_>>();
     let axis = if let [axis_operand] = matches.as_slice() {
-        RevolutionAxis {
+        Some(RevolutionAxis {
             origin: axis_operand.resolved_axis_origin?,
             direction: axis_operand.resolved_axis_direction?,
-        }
+        })
     } else if matches.is_empty() {
-        resolve_sketch_axis_selection(
+        let resolved = resolve_sketch_axis_selection(
             scope,
             axis_group,
             *axis_member,
             entity_selection_operands,
             placements,
             curve_identities,
-        )?
+        );
+        if resolved.is_none()
+            && !unresolved_historical_face_axis_selection(
+                scope,
+                axis_group,
+                *axis_member,
+                entity_selection_operands,
+            )
+        {
+            return None;
+        }
+        resolved
     } else {
         return None;
     };
     Some(FeatureDefinition::Revolve {
         construction: RevolutionConstruction {
             profile: Some(ProfileRef::Native(profile.id.clone())),
-            axis: Some(axis),
+            axis,
             extent: Some(RevolveExtent::OneSided {
                 termination: Termination::Angle {
                     angle: Angle(*angle),
@@ -3082,6 +3093,142 @@ pub(crate) fn project_fixed_revolve_with_entities(
         },
         op: fixed_boolean_operation(*operation),
     })
+}
+
+fn unresolved_historical_face_axis_selection(
+    scope: &DesignParameterScope,
+    axis_group: &DesignConstructionOperandGroup,
+    axis_member: u32,
+    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+) -> bool {
+    let stream = native_stream(&scope.id);
+    let selections = entity_selection_operands
+        .iter()
+        .filter(|operand| {
+            native_stream(&operand.id) == stream
+                && operand.scope_record_index == scope.record_index
+                && operand.group_record_index == axis_group.record_index
+                && operand.group_member_ordinal == 0
+                && operand.record_index == axis_member
+        })
+        .collect::<Vec<_>>();
+    matches!(selections.as_slice(), [selection] if !selection.historical_face_candidates.is_empty())
+}
+
+/// Resolve Revolve axes selected through history-qualified analytic faces.
+pub(crate) fn bind_revolve_face_axes(
+    features: &mut [cadmpeg_ir::features::Feature],
+    scopes: &[DesignParameterScope],
+    construction_groups: &[DesignConstructionOperandGroup],
+    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    faces: &[cadmpeg_ir::topology::Face],
+    surfaces: &[cadmpeg_ir::geometry::Surface],
+) {
+    use cadmpeg_ir::features::FeatureDefinition;
+
+    for feature in features {
+        let FeatureDefinition::Revolve { construction, .. } = &mut feature.definition else {
+            continue;
+        };
+        if construction.axis.is_some() {
+            continue;
+        }
+        let Some(scope) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
+        else {
+            continue;
+        };
+        let Some(stream) = native_stream(&scope.id) else {
+            continue;
+        };
+        let groups = construction_groups
+            .iter()
+            .filter(|group| {
+                native_stream(&group.id) == Some(stream)
+                    && group.scope_record_index == scope.record_index
+                    && group.role == 0x21_0000_0000
+            })
+            .collect::<Vec<_>>();
+        let [group] = groups.as_slice() else {
+            continue;
+        };
+        let [member] = group.members.as_slice() else {
+            continue;
+        };
+        let selections = entity_selection_operands
+            .iter()
+            .filter(|operand| {
+                native_stream(&operand.id) == Some(stream)
+                    && operand.scope_record_index == scope.record_index
+                    && operand.group_record_index == group.record_index
+                    && operand.group_member_ordinal == 0
+                    && operand.record_index == *member
+            })
+            .collect::<Vec<_>>();
+        let [selection] = selections.as_slice() else {
+            continue;
+        };
+        let Some(face_slot) = selection
+            .historical_face_candidates
+            .first()
+            .map(|candidate| candidate.face_slot)
+            .filter(|slot| {
+                selection
+                    .historical_face_candidates
+                    .iter()
+                    .all(|candidate| candidate.face_slot == *slot)
+            })
+        else {
+            continue;
+        };
+        let face_id = cadmpeg_ir::ids::FaceId(ids::brep_entity_id(face_slot));
+        let matching_faces = faces
+            .iter()
+            .filter(|face| face.id == face_id)
+            .collect::<Vec<_>>();
+        let [face] = matching_faces.as_slice() else {
+            continue;
+        };
+        let matching_surfaces = surfaces
+            .iter()
+            .filter(|surface| surface.id == face.surface)
+            .collect::<Vec<_>>();
+        let [surface] = matching_surfaces.as_slice() else {
+            continue;
+        };
+        construction.axis = analytic_surface_axis(&surface.geometry);
+    }
+}
+
+fn analytic_surface_axis(
+    geometry: &cadmpeg_ir::geometry::SurfaceGeometry,
+) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+
+    let (origin, direction) = match geometry {
+        SurfaceGeometry::Plane { origin, normal, .. } => (*origin, *normal),
+        SurfaceGeometry::Cylinder { origin, axis, .. }
+        | SurfaceGeometry::Cone { origin, axis, .. } => (*origin, *axis),
+        SurfaceGeometry::Torus { center, axis, .. } => (*center, *axis),
+        _ => return None,
+    };
+    let length =
+        (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z).sqrt();
+    (origin.x.is_finite()
+        && origin.y.is_finite()
+        && origin.z.is_finite()
+        && length.is_finite()
+        && length > 0.0)
+        .then_some(cadmpeg_ir::features::RevolutionAxis {
+            origin,
+            direction: Vector3::new(
+                direction.x / length,
+                direction.y / length,
+                direction.z / length,
+            ),
+        })
 }
 
 fn resolve_sketch_axis_selection(

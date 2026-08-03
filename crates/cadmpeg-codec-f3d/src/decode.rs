@@ -1481,6 +1481,14 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 &native.design_construction_operand_groups,
                 &native.design_entity_selection_operands,
             );
+            crate::design::feature_project::bind_revolve_face_axes(
+                &mut ir.model.features,
+                &native.design_parameter_scopes,
+                &native.design_construction_operand_groups,
+                &native.design_entity_selection_operands,
+                &ir.model.faces,
+                &ir.model.surfaces,
+            );
             (ir.model.sketches, ir.model.sketch_entities) =
                 crate::design::sketch_project::project_sketch_design(
                     &native.design_sketch_placements,
@@ -1891,6 +1899,14 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
         &native.design_entity_selection_operands,
+    );
+    crate::design::feature_project::bind_revolve_face_axes(
+        &mut ir.model.features,
+        &native.design_parameter_scopes,
+        &native.design_construction_operand_groups,
+        &native.design_entity_selection_operands,
+        &ir.model.faces,
+        &ir.model.surfaces,
     );
     (ir.model.sketches, ir.model.sketch_entities) =
         crate::design::sketch_project::project_sketch_design(

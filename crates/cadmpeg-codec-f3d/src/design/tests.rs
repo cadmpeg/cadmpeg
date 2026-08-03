@@ -5963,6 +5963,52 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             opposite_angle_offset: None,
         })
     );
+    let legacy_revolve_start = bytes.len();
+    let legacy_angle_record_index = 1_800u32;
+    let mut legacy_revolve = vec![0; 359];
+    legacy_revolve[20] = 1;
+    legacy_revolve[25..29].copy_from_slice(&4u32.to_le_bytes());
+    legacy_revolve[29..33].copy_from_slice(&2u32.to_le_bytes());
+    legacy_revolve[34..38].copy_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&legacy_revolve);
+    let mut legacy_revolve_scope = revolve_scope.clone();
+    legacy_revolve_scope.byte_offset = legacy_revolve_start as u64;
+    legacy_revolve_scope.class_tag = "409".into();
+    legacy_revolve_scope.paired_class_tag = "257".into();
+    legacy_revolve_scope.frame_length = 359;
+    legacy_revolve_scope.reference_members =
+        vec![200, 201, 202, 203, legacy_angle_record_index, 204];
+    let legacy_angle = DesignParameterOwner {
+        id: legacy_revolve_scope.id.clone(),
+        byte_offset: 0,
+        class_tag: "372".into(),
+        record_index: legacy_angle_record_index,
+        scope_record_index: legacy_revolve_scope.record_index,
+        local_ordinal: 0,
+        evaluated_value: std::f64::consts::TAU,
+        evaluated_value_offset: 55,
+        parameter_record_index: 1_801,
+        owned_ordinal: 8,
+        variant: None,
+        companion_record_index: 1_802,
+    };
+    assert_eq!(
+        exact_path_feature_construction(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &legacy_revolve_scope,
+            std::slice::from_ref(&legacy_angle),
+        ),
+        Some(DesignPathFeatureConstruction::Revolve {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: (legacy_revolve_start + 25) as u64,
+            angle: std::f64::consts::TAU,
+            angle_record_index: legacy_angle_record_index,
+            angle_offset: 55,
+            opposite_angle_record_index: None,
+            opposite_angle_offset: None,
+        })
+    );
     revolve_scope.id = "stream:scope".into();
     revolve_scope.path_feature_construction = revolve_construction;
     let mut revolve_profile = thicken_group.clone();
@@ -5999,7 +6045,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     indexed_bodies.id = "stream:indexed-bodies".into();
     indexed_bodies.record_index = 901;
     indexed_bodies.role = 0x0000_0004_0000_0000;
-    let axis_selection = crate::records::DesignEntitySelectionOperand {
+    let mut axis_selection = crate::records::DesignEntitySelectionOperand {
         id: "stream:indexed-axis-selection".into(),
         scope_record_index: indexed_revolve_scope.record_index,
         group_record_index: indexed_axis.record_index,
@@ -6062,9 +6108,13 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     };
     let projected = crate::design::feature_project::project_fixed_revolve_with_entities(
         &indexed_revolve_scope,
-        &[indexed_profile, indexed_axis, indexed_bodies],
+        &[
+            indexed_profile.clone(),
+            indexed_axis.clone(),
+            indexed_bodies.clone(),
+        ],
         &[],
-        &[axis_selection],
+        std::slice::from_ref(&axis_selection),
         &[axis_placement],
         &[axis_curve],
     );
@@ -6078,6 +6128,88 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             op: cadmpeg_ir::features::BooleanOp::Cut,
         }) if origin == Point3::new(1.0, 2.0, 3.0)
             && direction == Vector3::new(0.0, -1.0, 0.0)
+    ));
+    axis_selection.secondary_identity = None;
+    axis_selection.historical_face_candidates =
+        vec![crate::records::DesignEntitySelectionFaceCandidate {
+            history_id: "history".into(),
+            historical_entity_kind: crate::records::AsmHistoricalEntityKind::Face,
+            historical_entity_ref: 40,
+            historical_state_ids: vec![1],
+            face_slot: 40,
+        }];
+    let historical_definition =
+        crate::design::feature_project::project_fixed_revolve_with_entities(
+            &indexed_revolve_scope,
+            &[
+                indexed_profile.clone(),
+                indexed_axis.clone(),
+                indexed_bodies,
+            ],
+            &[],
+            std::slice::from_ref(&axis_selection),
+            &[],
+            &[],
+        )
+        .unwrap();
+    assert!(matches!(
+        historical_definition,
+        FeatureDefinition::Revolve {
+            construction: cadmpeg_ir::features::RevolutionConstruction { axis: None, .. },
+            ..
+        }
+    ));
+    let mut feature = cadmpeg_ir::features::Feature {
+        id: crate::ids::neutral_feature_id(&indexed_revolve_scope),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: historical_definition,
+        native_ref: Some(indexed_revolve_scope.id.clone()),
+    };
+    let surface_id = cadmpeg_ir::ids::SurfaceId("surface:53".into());
+    crate::design::feature_project::bind_revolve_face_axes(
+        std::slice::from_mut(&mut feature),
+        std::slice::from_ref(&indexed_revolve_scope),
+        &[indexed_profile, indexed_axis],
+        std::slice::from_ref(&axis_selection),
+        &[cadmpeg_ir::topology::Face {
+            id: cadmpeg_ir::ids::FaceId("f3d:brep:entity#40".into()),
+            shell: cadmpeg_ir::ids::ShellId("shell:1".into()),
+            surface: surface_id.clone(),
+            sense: cadmpeg_ir::topology::Sense::Forward,
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: None,
+        }],
+        &[cadmpeg_ir::geometry::Surface {
+            id: surface_id,
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+                origin: Point3::new(4.0, 5.0, 6.0),
+                normal: Vector3::new(0.0, 0.0, -2.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        }],
+    );
+    assert!(matches!(
+        feature.definition,
+        FeatureDefinition::Revolve {
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                axis: Some(cadmpeg_ir::features::RevolutionAxis { origin, direction }),
+                ..
+            },
+            ..
+        } if origin == Point3::new(4.0, 5.0, 6.0)
+            && direction == Vector3::new(0.0, 0.0, -1.0)
     ));
 
     let loft_start = bytes.len();

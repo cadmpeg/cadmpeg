@@ -2733,6 +2733,42 @@ pub(crate) fn exact_path_feature_construction(
     };
     match design_feature_family(&scope.kind)? {
         DesignFeatureFamily::Revolve
+            if scope.class_tag == "409"
+                && scope.paired_class_tag == "257"
+                && parameter_scope_payload_length(scope) == Some(345)
+                && scope.reference_members.len() == 6
+                && bytes.get(start + 20) == Some(&1)
+                && u32_at(bytes, start + 21) == Some(0)
+                && u32_at(bytes, start + 29) == Some(2)
+                && bytes.get(start + 33) == Some(&0)
+                && u32_at(bytes, start + 34) == Some(1) =>
+        {
+            let angle_record_index = *scope.reference_members.get(4)?;
+            let candidates = parameter_owners
+                .iter()
+                .filter(|owner| {
+                    native_stream(&owner.id) == native_stream(&scope.id)
+                        && owner.scope_record_index == scope.record_index
+                        && owner.record_index == angle_record_index
+                        && owner.local_ordinal == 0
+                        && owner.evaluated_value.is_finite()
+                        && owner.evaluated_value > 0.0
+                })
+                .collect::<Vec<_>>();
+            let [angle] = candidates.as_slice() else {
+                return None;
+            };
+            Some(DesignPathFeatureConstruction::Revolve {
+                operation: operation(start + 25)?,
+                operation_offset: u64::try_from(start + 25).ok()?,
+                angle: angle.evaluated_value,
+                angle_record_index,
+                angle_offset: angle.evaluated_value_offset,
+                opposite_angle_record_index: None,
+                opposite_angle_offset: None,
+            })
+        }
+        DesignFeatureFamily::Revolve
             if parameter_scope_payload_length(scope) == Some(372)
                 && scope.reference_members.len() == 7
                 && u32_at(bytes, start + 29) == Some(2)
