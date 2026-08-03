@@ -393,8 +393,9 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
     let mut unprojected_history_dependencies = 0;
     let mut ambiguous_history_dependencies = 0;
     for scope in &native.design_parameter_scopes {
-        let (Some(stream), Some(previous_state_id), Some(feature)) = (
+        let (Some(stream), Some(state_id), Some(previous_state_id), Some(feature)) = (
             crate::ids::native_stream(&scope.id),
+            scope.history_state_id,
             scope.previous_history_state_id,
             projected_features.get(scope.id.as_str()),
         ) else {
@@ -403,9 +404,51 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         let Some(predecessors) = state_scopes.get(&(stream, previous_state_id)) else {
             continue;
         };
-        let [predecessor_ref] = predecessors.as_slice() else {
-            ambiguous_history_dependencies += 1;
-            continue;
+        let predecessor_ref = if native.asm_histories.is_empty() {
+            let [predecessor_ref] = predecessors.as_slice() else {
+                ambiguous_history_dependencies += 1;
+                continue;
+            };
+            *predecessor_ref
+        } else {
+            let Some((history, _, _)) = crate::history::unique_history_state_pair(
+                &native.asm_histories,
+                state_id,
+                previous_state_id,
+            ) else {
+                ambiguous_history_dependencies += 1;
+                continue;
+            };
+            let predecessors = predecessors
+                .iter()
+                .filter(|predecessor_ref| {
+                    let Some(predecessor_scope) = native
+                        .design_parameter_scopes
+                        .iter()
+                        .find(|candidate| candidate.id == **predecessor_ref)
+                    else {
+                        return false;
+                    };
+                    let (Some(predecessor_state_id), Some(predecessor_previous_state_id)) = (
+                        predecessor_scope.history_state_id,
+                        predecessor_scope.previous_history_state_id,
+                    ) else {
+                        return false;
+                    };
+                    crate::history::unique_history_state_pair(
+                        &native.asm_histories,
+                        predecessor_state_id,
+                        predecessor_previous_state_id,
+                    )
+                    .is_some_and(|(predecessor_history, _, _)| predecessor_history.id == history.id)
+                })
+                .copied()
+                .collect::<Vec<_>>();
+            let [predecessor_ref] = predecessors.as_slice() else {
+                ambiguous_history_dependencies += 1;
+                continue;
+            };
+            *predecessor_ref
         };
         let Some(predecessor) = projected_features.get(predecessor_ref) else {
             unprojected_history_dependencies += 1;
@@ -1383,6 +1426,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                         face_operands: &native.design_face_operands,
                         placements: &native.design_sketch_placements,
                         body_bindings: &native.design_body_bindings,
+                        histories: &native.asm_histories,
                     },
                 );
             crate::design::feature_project::bind_form_cages(
@@ -1793,6 +1837,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 face_operands: &native.design_face_operands,
                 placements: &native.design_sketch_placements,
                 body_bindings: &native.design_body_bindings,
+                histories: &native.asm_histories,
             },
         );
     crate::design::feature_project::bind_form_cages(

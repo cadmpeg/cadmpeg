@@ -230,6 +230,7 @@ pub(crate) fn encode_design_bulkstream(
                 face_operands: &native.design_face_operands,
                 placements: &native.design_sketch_placements,
                 body_bindings: &native.design_body_bindings,
+                histories: &native.asm_histories,
             },
         );
     if target.model.parameters != projected_parameters {

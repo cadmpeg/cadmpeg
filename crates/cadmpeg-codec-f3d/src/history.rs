@@ -1685,34 +1685,56 @@ fn unique_history_state(
     matches.next().is_none().then_some(state)
 }
 
-fn unique_history_state_pair(
+pub(crate) fn unique_history_state_pair(
     histories: &[AsmHistory],
     state_id: i64,
     previous_state_id: i64,
 ) -> Option<(&AsmHistory, &AsmDeltaState, &AsmDeltaState)> {
-    let mut matches = histories.iter().filter_map(|history| {
-        let mut states = history
-            .states
-            .iter()
-            .filter(|state| state.state_id == state_id);
-        let state = states.next()?;
-        if states.next().is_some() {
-            return None;
-        }
-        let mut previous_states = history
-            .states
-            .iter()
-            .filter(|state| state.state_id == previous_state_id);
-        let previous = previous_states.next()?;
-        if previous_states.next().is_some()
-            || !history_state_reaches(history, state, previous_state_id)
-        {
-            return None;
-        }
-        Some((history, state, previous))
-    });
+    let mut direct = histories
+        .iter()
+        .filter_map(|history| history_state_pair(history, state_id, previous_state_id, true));
+    if let Some(pair) = direct.next() {
+        return direct.next().is_none().then_some(pair);
+    }
+    let mut matches = histories
+        .iter()
+        .filter_map(|history| history_state_pair(history, state_id, previous_state_id, false));
     let pair = matches.next()?;
     matches.next().is_none().then_some(pair)
+}
+
+fn history_state_pair(
+    history: &AsmHistory,
+    state_id: i64,
+    previous_state_id: i64,
+    require_direct: bool,
+) -> Option<(&AsmHistory, &AsmDeltaState, &AsmDeltaState)> {
+    let mut states = history
+        .states
+        .iter()
+        .filter(|state| state.state_id == state_id);
+    let state = states.next()?;
+    if states.next().is_some()
+        || (require_direct
+            && state
+                .transition
+                .as_ref()
+                .and_then(|transition| transition.previous_state_id)
+                != Some(previous_state_id))
+    {
+        return None;
+    }
+    let mut previous_states = history
+        .states
+        .iter()
+        .filter(|state| state.state_id == previous_state_id);
+    let previous = previous_states.next()?;
+    if previous_states.next().is_some()
+        || (!require_direct && !history_state_reaches(history, state, previous_state_id))
+    {
+        return None;
+    }
+    Some((history, state, previous))
 }
 
 fn history_state_reaches(
@@ -5738,6 +5760,25 @@ mod tests {
 
         let duplicate_pair = [history("first", 9), history("second", 9)];
         assert!(unique_history_state_pair(&duplicate_pair, 9, 2).is_none());
+
+        let indirect = AsmHistory {
+            id: "indirect".into(),
+            states: vec![
+                state("indirect", 23, Some(21)),
+                state("indirect", 21, Some(11)),
+                state("indirect", 11, None),
+            ],
+            ..history("indirect", 23)
+        };
+        let direct = AsmHistory {
+            id: "direct".into(),
+            states: vec![state("direct", 23, Some(11)), state("direct", 11, None)],
+            ..history("direct", 23)
+        };
+        let histories = [indirect, direct];
+        let (resolved, _, _) = unique_history_state_pair(&histories, 23, 11)
+            .expect("direct transition takes precedence over a reachable pair");
+        assert_eq!(resolved.id, "direct");
     }
 
     use crate::history_records::{

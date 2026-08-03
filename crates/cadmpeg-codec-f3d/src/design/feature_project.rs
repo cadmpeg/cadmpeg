@@ -48,6 +48,7 @@ pub struct ProjectInputs<'a> {
     pub(crate) face_operands: &'a [DesignFaceOperand],
     pub(crate) placements: &'a [DesignSketchPlacement],
     pub(crate) body_bindings: &'a [DesignBodyBinding],
+    pub(crate) histories: &'a [crate::history_records::AsmHistory],
 }
 
 /// Project parameter scopes and their document- or scope-owned parameters into
@@ -82,6 +83,7 @@ pub fn project_parameter_design(
         face_operands,
         placements,
         body_bindings: &[],
+        histories: &[],
     })
 }
 
@@ -110,6 +112,7 @@ pub fn project_parameter_design_with_edge_identities(
         face_operands,
         placements,
         body_bindings,
+        histories,
         ..
     } = inputs;
 
@@ -886,14 +889,29 @@ pub fn project_parameter_design_with_edge_identities(
             }
         })
         .collect::<Vec<_>>();
-    let mut state_features = HashMap::<(&str, i64), Option<cadmpeg_ir::features::FeatureId>>::new();
+    let scope_history = |scope: &DesignParameterScope| {
+        if histories.is_empty() {
+            return Some("");
+        }
+        crate::history::unique_history_state_pair(
+            histories,
+            scope.history_state_id?,
+            scope.previous_history_state_id?,
+        )
+        .map(|(history, _, _)| history.id.as_str())
+    };
+    let mut state_features =
+        HashMap::<(&str, &str, i64), Option<cadmpeg_ir::features::FeatureId>>::new();
     for scope in scopes {
         let (Some(stream), Some(state_id)) = (native_stream(&scope.id), scope.history_state_id)
         else {
             continue;
         };
+        let Some(history_id) = scope_history(scope) else {
+            continue;
+        };
         state_features
-            .entry((stream, state_id))
+            .entry((stream, history_id, state_id))
             .and_modify(|feature| *feature = None)
             .or_insert_with(|| scope_ids.get(&(stream, scope.record_index)).cloned());
     }
@@ -908,8 +926,12 @@ pub fn project_parameter_design_with_edge_identities(
         let Some(previous_state_id) = scope.previous_history_state_id else {
             continue;
         };
+        let Some(history_id) = scope_history(scope) else {
+            continue;
+        };
         if let Some(Some(predecessor)) = state_features.get(&(
             native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM),
+            history_id,
             previous_state_id,
         )) {
             if predecessor != &feature.id && !feature.dependencies.contains(predecessor) {
