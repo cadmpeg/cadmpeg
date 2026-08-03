@@ -5,15 +5,17 @@
 layouts used by CATPart files and decodes supported analytic surfaces, NURBS
 surfaces, curves, vertices, and B-rep topology.
 
-Support level: [L2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder) on the cadmpeg support ladder for the standard-nested layout; other layout bands remain L1 because their connected topology support is conditional rather than band-wide.
+Support level: [L2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+for the standard-nested layout; [L1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+for other layout bands.
 
-Add the codec and IR crates:
+## Install
 
 ```sh
 cargo add cadmpeg-codec-catia cadmpeg-ir
 ```
 
-Decode a part with the shared codec interface:
+## Decode
 
 ```rust,no_run
 use std::fs::File;
@@ -37,10 +39,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-The decode report is part of the result. Check it before assuming that every
-native relationship or attribute has an IR representation.
+The result holds the decoded `CadIr` and a `DecodeReport`. Read
+`report.losses` before trusting the IR. Use `CatiaCodec::inspect` to identify
+the storage variant and list catalogued logical streams without decoding
+entities. Set `DecodeOptions::container_only` when only source metadata and
+container diagnostics are needed.
 
-## Storage and model coverage
+## Storage model
 
 A CATPart starts with an outer `V5_CFV2` container. Most files also contain a
 nested `V5_CFV2` directory whose physical extents reconstruct logical streams
@@ -50,28 +55,17 @@ variant before selecting a record decoder.
 Standard nested parts have the broadest model coverage. The decoder emits
 analytic carrier surfaces and vertices, binds faces when stored senses resolve,
 and emits loops, coedges, edges, and endpoint assignments when the trim,
-support, and vertex tables form a complete unambiguous graph. FBB-only,
-zero-entity, E5, and object-stream layouts can yield analytic or NURBS carriers
-and selected edge bindings. Complete scalar formula graphs transfer typed
-parameters. Unresolved native bytes remain attached to the IR as unknown
-records, and the report describes missing geometry, topology, design intent, or
-attributes.
-
-Use `CatiaCodec::inspect` to identify the storage variant and list catalogued
-logical streams without decoding entities. Set `DecodeOptions::container_only`
-when only source metadata and container diagnostics are needed.
-
-The crate reads parts only. It does not write `.CATPart` files or decode
-assemblies, complete design history, tessellation, appearances, materials,
-persistent object tags, or general document metadata beyond the embedded JPEG
-preview. The [format support matrix][support] tracks coverage by model layer.
+support, and vertex tables form a complete unambiguous graph. Other layouts
+yield carriers and selected bindings where their tables resolve. Complete
+scalar formula graphs transfer typed parameters. Unresolved native bytes stay
+attached to the IR as unknown records.
 
 ## Reference
 
 - [API documentation][docs]
 - [CATIA format model][spec]
 - [CATIA coverage contract][coverage]
-- [Format support matrix][support]
+- [Format support][support]
 - [Clean-room and legal policy][legal]
 - [Repository][repo]
 

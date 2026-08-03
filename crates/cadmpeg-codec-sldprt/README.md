@@ -8,13 +8,13 @@ ResolvedFeatures sketch-entity records.
 
 Support level: [L4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder) on the cadmpeg support ladder.
 
-## Decode a part
+## Install
 
 ```sh
 cargo add cadmpeg-codec-sldprt cadmpeg-ir
 ```
 
-## Decode a part
+## Decode
 
 ```rust,no_run
 use std::fs::File;

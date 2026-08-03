@@ -4,7 +4,7 @@
 encodes supported `CadIr` documents back to `.f3d`. The codec covers ZIP
 container metadata, ASM B-rep topology, analytic and cached NURBS geometry,
 body transforms, design and sketch records, construction history, and
-appearances.
+appearances. Multi-document `.f3z` archives decode into one merged document.
 
 Support level: [L4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder) on the cadmpeg support ladder.
 
@@ -47,30 +47,37 @@ use std::fs::File;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = File::open("part.f3d")?;
-    let mut result = F3dCodec.decode(&mut input, &DecodeOptions::default())?;
+    let result = F3dCodec.decode(&mut input, &DecodeOptions::default())?;
 
     // Edit supported fields in result.ir.
 
     let mut output = File::create("part-edited.f3d")?;
-    F3dCodec.encode(&result.ir, &mut output)?;
+    F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &result.ir,
+            fidelity: Some(&result.source_fidelity),
+        })?
+        .write_to(&mut output)?;
     Ok(())
 }
 ```
 
-Decode retains the source archive and a semantic baseline. Encoding an
-unchanged result replays the original bytes. Supported edits patch the
-retained archive and keep unmodified entries. Encoding `CadIr` without
-retained F3D source data writes a canonical archive for the supported
-source-less profile.
+Decode retains the source archive and a semantic baseline. Encoding with the
+retained `source_fidelity` sidecar replays an unchanged archive byte for byte
+and patches supported edits in place. Encoding `CadIr` without that sidecar
+writes a canonical archive for the supported source-less profile.
 
 ## Data model
 
-The decoder selects the `.smbh` history stream, or the first `.smb` when no
-`.smbh` exists. The Design body map selects every B-rep blob that contributes
-bodies. The decoder frames their SAB slices and builds each topology chain
-from bodies through vertices and points. ASM model-space lengths become
-millimetres in `CadIr`. Directions, ratios, angles, knots, weights, and UV
-parameters keep their native scale.
+The Design body map selects every B-rep blob that contributes bodies.
+Extension does not choose the model: `.smb` and `.smbh` are both ASM streams.
+History streams are selected independently by the ASM header flag, and every
+selected history graph is decoded. Without body-map bindings, a unique
+history-bearing stream or a single BREP is the only fallback. The decoder
+frames each selected SAB slice and builds each topology chain from bodies
+through vertices and points. ASM model-space lengths become millimetres in
+`CadIr`. Directions, ratios, angles, knots, weights, and UV parameters keep
+their native scale.
 
 Typed transfer covers analytic carriers, cached NURBS, selected procedural
 definitions, design and sketch records, typed ASM history, source attributes,
