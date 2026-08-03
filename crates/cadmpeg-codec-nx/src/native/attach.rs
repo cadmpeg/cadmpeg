@@ -296,7 +296,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(181);
+    namespace.version = namespace.version.max(182);
     NATIVE_CATALOGUE.emit_all(model, namespace)?;
     Ok(())
 }
@@ -5814,6 +5814,15 @@ mod tests {
             ordinal: 0,
             object_index: 42,
             raw_object_index: vec![42],
+            discriminator: 0x16,
+            target_index: 7,
+            raw_target_index: vec![7],
+            target_index_source_offset: 23,
+            indices: [1, 2, 3],
+            raw_indices: [vec![1], vec![2], vec![3]],
+            index_source_offsets: [24, 25, 26],
+            flag: 3,
+            mode: 4,
             color_index: 201,
             color_definition: definition.id.clone(),
             raw_color_index: vec![0x80, 201],

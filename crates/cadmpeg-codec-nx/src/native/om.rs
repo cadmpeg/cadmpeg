@@ -749,6 +749,24 @@ pub struct RmDisplayColorAssignment {
     pub object_index: u32,
     /// Exact object-index token.
     pub raw_object_index: Vec<u8>,
+    /// Linked-row discriminator.
+    pub discriminator: u8,
+    /// Linked-row target index.
+    pub target_index: u32,
+    /// Exact target-index token.
+    pub raw_target_index: Vec<u8>,
+    /// Absolute target-index token offset.
+    pub target_index_source_offset: u64,
+    /// Ordered post-marker indices with unresolved serialized roles.
+    pub indices: [u32; 3],
+    /// Exact post-marker index tokens.
+    pub raw_indices: [Vec<u8>; 3],
+    /// Absolute post-marker index token offsets.
+    pub index_source_offsets: [u64; 3],
+    /// Linked-row flag byte.
+    pub flag: u8,
+    /// Linked-row mode byte.
+    pub mode: u8,
     /// One-based part palette index.
     pub color_index: u16,
     /// Target in `part_color_definitions`.
@@ -2999,6 +3017,15 @@ pub fn rm_display_color_assignments(
                 ordinal: 0,
                 object_index: row.first_index.0,
                 raw_object_index: row.raw_first_index,
+                discriminator: row.discriminator,
+                target_index: row.target_index.0,
+                raw_target_index: row.raw_target_index,
+                target_index_source_offset: source_base + row.target_index.1 as u64,
+                indices: row.indices.map(|(index, _)| index),
+                raw_indices: row.raw_indices,
+                index_source_offsets: row.indices.map(|(_, offset)| source_base + offset as u64),
+                flag: row.flag,
+                mode: row.mode,
                 color_index: color.color_index,
                 color_definition: definition.id.clone(),
                 raw_color_index: color.raw_color_index,
@@ -4681,7 +4708,7 @@ mod tests {
                 .namespace("nx")
                 .expect("required invariant")
                 .version,
-            181
+            182
         );
         assert_eq!(expressions.len(), 1);
         assert_eq!(expressions[0].object_id, Some(0x102));
