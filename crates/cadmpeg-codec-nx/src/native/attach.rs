@@ -33,7 +33,7 @@ use cadmpeg_ir::semantic_annotations::{
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchPlacement,
 };
-use cadmpeg_ir::topology::{BodyKind, Coedge, Face, Sense};
+use cadmpeg_ir::topology::{BodyKind, Coedge, Color, Face, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
@@ -92,6 +92,7 @@ pub(crate) fn attach(
     if model.is_empty() && object_sections.is_empty() {
         return Ok(());
     }
+    attach_rm_face_colors(ir, model, scan, annotations);
     let display_jt_tessellations = display_jt_tessellations(&DisplayJtTessellationInputs {
         meshes: &model.display_jt.display_jt_polygon_meshes,
         coordinates: &model.display_jt.display_jt_vertex_coordinates,
@@ -297,6 +298,108 @@ pub(crate) fn attach(
     namespace.version = namespace.version.max(181);
     NATIVE_CATALOGUE.emit_all(model, namespace)?;
     Ok(())
+}
+
+fn attach_rm_face_colors(
+    ir: &mut CadIr,
+    model: &crate::native::model::NativeModel,
+    scan: &Scan,
+    annotations: &mut AnnotationBuilder,
+) {
+    let face_indices = ir
+        .model
+        .faces
+        .iter()
+        .enumerate()
+        .map(|(index, face)| (face.id.0.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+    let face_ids = face_indices.keys().cloned().collect::<BTreeSet<_>>();
+    let bindings = resolve_rm_face_colors(
+        &face_ids,
+        &model.om.rm_display_color_assignments,
+        &model.om.part_color_definitions,
+        &model.parasolid.parasolid_deltas_records,
+        &super::substrate::paired_delta_streams(scan),
+    );
+    for (face_id, color) in bindings {
+        let Some(index) = face_indices.get(&face_id).copied() else {
+            continue;
+        };
+        let face = &mut ir.model.faces[index];
+        if face.color.is_none() || face.color == Some(color) {
+            face.color = Some(color);
+            annotations.derived(&face.id, "color");
+        }
+    }
+}
+
+fn resolve_rm_face_colors(
+    face_ids: &BTreeSet<String>,
+    assignments: &[super::om::RmDisplayColorAssignment],
+    definitions: &[super::om::PartColorDefinition],
+    records: &[super::parasolid::ParasolidDeltasRecord],
+    delta_pairs: &BTreeMap<usize, Vec<usize>>,
+) -> Vec<(String, Color)> {
+    let mut partitions_by_delta = BTreeMap::<u32, BTreeSet<u32>>::new();
+    for (partition, deltas) in delta_pairs {
+        for delta in deltas {
+            partitions_by_delta
+                .entry(*delta as u32)
+                .or_default()
+                .insert(*partition as u32);
+        }
+    }
+
+    let mut colors_by_object = BTreeMap::<u32, BTreeSet<String>>::new();
+    for assignment in assignments {
+        colors_by_object
+            .entry(assignment.object_index)
+            .or_default()
+            .insert(assignment.color_definition.clone());
+    }
+    let definitions_by_id = definitions
+        .iter()
+        .map(|definition| (definition.id.as_str(), definition))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut bindings = Vec::new();
+    for (object_index, definition_ids) in colors_by_object {
+        if definition_ids.len() != 1 {
+            continue;
+        }
+        let definition_id = definition_ids.first().expect("one definition id");
+        let Some(definition) = definitions_by_id.get(definition_id.as_str()) else {
+            continue;
+        };
+        let candidates = records
+            .iter()
+            .filter(|record| record.family == "FACE" && record.node_id == Some(object_index))
+            .filter_map(|record| {
+                let partitions = partitions_by_delta.get(&record.stream_ordinal)?;
+                if partitions.len() != 1 {
+                    return None;
+                }
+                let partition = partitions.first().expect("one partition");
+                let face_id = format!("nx:s{partition}:face#{}", record.xmt);
+                face_ids.contains(&face_id).then_some(face_id)
+            })
+            .collect::<BTreeSet<_>>();
+        if candidates.len() != 1 {
+            continue;
+        }
+        let face_id = candidates.first().expect("one face id");
+        bindings.push((
+            face_id.clone(),
+            Color {
+                r: definition.rgb[0],
+                g: definition.rgb[1],
+                b: definition.rgb[2],
+                a: 1.0,
+            },
+        ));
+    }
+    bindings.sort_by(|left, right| left.0.cmp(&right.0));
+    bindings
 }
 
 /// Transfer each independently validated JPEG preview with its exact bounded
@@ -5635,6 +5738,77 @@ mod tests {
     use crate::NxCodec;
 
     use super::*;
+
+    #[test]
+    fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
+        let definition = crate::native::om::PartColorDefinition {
+            id: "nx:test:color#201".into(),
+            color_table: "nx:test:table#0".into(),
+            color_index: 201,
+            name: "Iron Gray".into(),
+            rgb: [0.25, 0.5, 0.75],
+            raw_color_index: vec![0x80, 200],
+            raw_components: [vec![1], vec![1], vec![1]],
+            source_offset: 10,
+            component_source_offsets: [11, 12, 13],
+        };
+        let assignment = crate::native::om::RmDisplayColorAssignment {
+            id: "nx:test:assignment#0".into(),
+            ordinal: 0,
+            object_index: 42,
+            raw_object_index: vec![42],
+            color_index: 201,
+            color_definition: definition.id.clone(),
+            raw_color_index: vec![0x80, 201],
+            source_entry: "/Root/FastLoad/RMFastLoad".into(),
+            source_offset: 20,
+            object_index_source_offset: 22,
+            row_source_offset: 21,
+        };
+        let record = crate::native::parasolid::ParasolidDeltasRecord {
+            id: "nx:test:deltas#0".into(),
+            stream_ordinal: 1,
+            family: "FACE".into(),
+            kind: 14,
+            xmt: 99,
+            node_id: Some(42),
+            references: Vec::new(),
+            position: None,
+            byte_len: 1,
+            inflated_offset: 0,
+        };
+        let face_ids = BTreeSet::from(["nx:s0:face#99".to_string()]);
+        let pairs = BTreeMap::from([(0, vec![1])]);
+        assert_eq!(
+            resolve_rm_face_colors(
+                &face_ids,
+                std::slice::from_ref(&assignment),
+                std::slice::from_ref(&definition),
+                std::slice::from_ref(&record),
+                &pairs,
+            ),
+            vec![(
+                "nx:s0:face#99".into(),
+                Color {
+                    r: 0.25,
+                    g: 0.5,
+                    b: 0.75,
+                    a: 1.0,
+                },
+            )]
+        );
+
+        let mut conflicting = assignment;
+        conflicting.color_definition = "nx:test:color#other".into();
+        assert!(resolve_rm_face_colors(
+            &face_ids,
+            &[conflicting],
+            &[definition],
+            &[record],
+            &pairs,
+        )
+        .is_empty());
+    }
 
     fn hole_diameters_for_operations(
         ir: &CadIr,
