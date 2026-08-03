@@ -1629,7 +1629,8 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 if scope.is_some_and(|scope| {
                     scope.kind == "SurfaceStitch"
                         || (scope.kind == "SplitFace" && group.role == 0x0000_0021_0000_0000)
-                        || (scope.kind == "Split" && group.role == 0x0000_0009_0000_0000)
+                        || (scope.kind == "Split"
+                            && matches!(group.role, 0x0000_0009_0000_0000 | 0x0000_0021_0000_0000))
                 }) {
                     88
                 } else {
@@ -1766,7 +1767,8 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 let role_is_valid = match design::design_feature_family(&scope.kind) {
                     Some(design::DesignFeatureFamily::Extrude) => match group.extrude_role {
                         Some(records::DesignExtrudeOperandRole::Bodies) => {
-                            group.role == 0x0000_0008_0000_0000 && group.extrude_face_role.is_none()
+                            matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0008_0000_0000)
+                                && group.extrude_face_role.is_none()
                         }
                         Some(records::DesignExtrudeOperandRole::Profile) => {
                             group.role == 0x0000_0041_0000_0000
@@ -1805,8 +1807,13 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && group.extrude_face_role.is_none()
                     }
                     Some(design::DesignFeatureFamily::Revolve) => {
-                        matches!(group.role, 0x0000_0021_0000_0000 | 0x0000_0041_0000_0000)
-                            && group.extrude_role.is_none()
+                        matches!(
+                            group.role,
+                            0x0000_0004_0000_0000
+                                | 0x0000_0008_0000_0000
+                                | 0x0000_0021_0000_0000
+                                | 0x0000_0041_0000_0000
+                        ) && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
                     Some(design::DesignFeatureFamily::Shell) => {
@@ -1845,21 +1852,19 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && group.extrude_face_role.is_none()
                     }
                     Some(design::DesignFeatureFamily::CircularPattern) => {
-                        group.role == 0x0000_0008_0000_0000
+                        matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0008_0000_0000)
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
                     Some(design::DesignFeatureFamily::Mirror) => {
-                        matches!(group.role, 0x0000_0005_0000_0000 | 0x0000_0008_0000_0000)
-                            && group.extrude_role.is_none()
+                        matches!(
+                            group.role,
+                            0x0000_0004_0000_0000 | 0x0000_0005_0000_0000 | 0x0000_0008_0000_0000
+                        ) && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
                     Some(design::DesignFeatureFamily::SurfacePatch) => {
-                        ((scope.reference_members.len() == 3
-                            && group.role == 0x0000_0041_0000_0000)
-                            || (scope.reference_members.len() > 3
-                                && (scope.reference_members.len() - 1).is_multiple_of(3)
-                                && group.role == 0x0000_0004_0000_0000))
+                        matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0041_0000_0000)
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }

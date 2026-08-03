@@ -7153,6 +7153,18 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert!(group.frame.variant);
     assert_eq!(group.paired_byte_offset, paired_at as u64);
 
+    let mut whole_body_bytes = bytes.clone();
+    whole_body_bytes[group.role_offset as usize..group.role_offset as usize + 8]
+        .copy_from_slice(&0x0000_0004_0000_0000u64.to_le_bytes());
+    let whole_body = parse_construction_operand_group(&whole_body_bytes, &scope, 0, &record)
+        .complete()
+        .expect("counted Extrude whole-body group");
+    assert_eq!(whole_body.role, 0x0000_0004_0000_0000);
+    assert_eq!(
+        whole_body.extrude_role,
+        Some(DesignExtrudeOperandRole::Bodies)
+    );
+
     let mut flagged = bytes[..11].to_vec();
     flagged.extend_from_slice(&[0; 9]);
     flagged.push(1);
