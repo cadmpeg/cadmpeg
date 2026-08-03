@@ -1439,8 +1439,10 @@ duplicated ordinal and object index use the terminal-suffix rules. Every exact
 common frame in a bounded operation payload is retained in source order with
 its layout marker, ordered indices, eight state bytes, duplicated ordinal,
 nullable object reference, exact tokens, byte length, and token offsets. The
-fifth state byte is `m_modifiesParasolidData`: `00` is false and `01` is true.
-Another value retains the state lane without a typed Boolean value. A terminal
+fourth state byte is the Boolean `m_legacyInactiveModules`, and the fifth state
+byte is the Boolean `m_modifiesParasolidData`. For either field, `00` is false,
+`01` is true, and another value retains the state lane without a typed Boolean
+value. Legacy module inactivity does not assign feature suppression. A terminal
 suffix links the common frame ending at that suffix. Absence of that link does
 not invalidate the terminal suffix because an outer terminal suffix may follow
 a nested common frame.

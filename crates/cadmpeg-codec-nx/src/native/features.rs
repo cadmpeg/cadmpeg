@@ -83,6 +83,9 @@ pub struct FeatureOperationCommonFrame {
     pub marker: [u8; 3],
     /// Exact eight-byte state lane following the fixed state marker.
     pub state: [u8; 8],
+    /// Whether legacy operation modules are inactive, when the stored field is boolean.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legacy_inactive_modules: Option<bool>,
     /// Whether the operation modifies Parasolid data, when the stored field is boolean.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modifies_parasolid_data: Option<bool>,
@@ -2889,6 +2892,7 @@ pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOper
                     raw_indices: frame.raw_indices,
                     marker: frame.marker,
                     state: frame.state,
+                    legacy_inactive_modules: operation_legacy_inactive_modules(frame.state),
                     modifies_parasolid_data: operation_modifies_parasolid_data(frame.state),
                     local_ordinal: frame.local_ordinal,
                     raw_local_ordinal: frame.raw_local_ordinal,
@@ -2908,6 +2912,14 @@ pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOper
         }
     }
     frames
+}
+
+fn operation_legacy_inactive_modules(state: [u8; 8]) -> Option<bool> {
+    match state[3] {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
 }
 
 fn operation_modifies_parasolid_data(state: [u8; 8]) -> Option<bool> {
@@ -10859,5 +10871,15 @@ mod tests {
                 "newest-second"
             ]
         );
+    }
+
+    #[test]
+    fn operation_common_frame_types_the_legacy_inactive_modules_field() {
+        let mut state = [0; 8];
+        assert_eq!(operation_legacy_inactive_modules(state), Some(false));
+        state[3] = 1;
+        assert_eq!(operation_legacy_inactive_modules(state), Some(true));
+        state[3] = 2;
+        assert_eq!(operation_legacy_inactive_modules(state), None);
     }
 }
