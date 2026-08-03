@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Project parameter-design features and dispatch per feature family.
 
+use crate::bytes::lp_utf16_bounded;
 use crate::container::ContainerScan;
+use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::design::dimensions::expression_identifiers;
 use crate::design::edge_resolve::{
     feature_input_topology_id, project_fixed_fillet, resolved_edge_group,
@@ -22,7 +24,7 @@ use crate::records::{
     DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeStart, DesignFaceOperand,
     DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignFixedExtrudeDistance, DesignParameter,
     DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
-    DesignRecordHeader, DesignSketchPlacement, DesignSolidPrimitive,
+    DesignSketchPlacement, DesignSolidPrimitive,
 };
 use cadmpeg_codec_core::le::{u32_at, u64_at as read_u64};
 use cadmpeg_codec_core::CodecError;
@@ -2041,104 +2043,228 @@ pub(crate) fn direct_face_selection(
 
 /// Replace a resolved Form scope's native definition with its committed cages.
 ///
-/// The Form's cage-list record owns an ordered list of cage-object references.
-/// Archive cage order is used only when one Form owns every active cage; a
-/// document with multiple Form scopes remains native until the object records
-/// can provide an identity join.
+/// The Form's cage-list record owns ordered cage-object references. Each object
+/// reaches a surface record, and the serializer naming that surface supplies
+/// the archive entry identity of the neutral cage.
 pub(crate) fn bind_form_cages(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
-    headers: &[DesignRecordHeader],
     features: &mut [cadmpeg_ir::features::Feature],
     cages: &[cadmpeg_ir::subd::SubdSurface],
 ) -> Result<(), CodecError> {
-    let form_scopes = scopes
-        .iter()
-        .filter(|scope| scope.kind == "Form")
-        .collect::<Vec<_>>();
-    let [scope] = form_scopes.as_slice() else {
-        return Ok(());
-    };
-    let Some(stream) =
-        native_stream(&scope.id).and_then(|stream| stream.strip_prefix(ids::SCHEME_PREFIX))
-    else {
-        return Ok(());
-    };
-    let bytes = scan.entry_bytes(stream)?;
-    let owned_count = scope
-        .reference_members
-        .iter()
-        .filter_map(|record_index| {
-            headers.iter().find(|header| {
-                native_stream(&header.id) == native_stream(&scope.id)
-                    && header.record_index == *record_index
-            })
-        })
-        .find_map(|header| {
-            form_cage_count(
-                bytes,
-                header.byte_offset as usize,
-                header.record_index,
-                scope.record_index,
-            )
-        });
-    if owned_count != Some(cages.len()) || cages.is_empty() {
+    if cages.is_empty() {
         return Ok(());
     }
-    let feature_id = neutral_feature_id(scope);
-    let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
-        return Ok(());
-    };
-    if matches!(
-        &feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind == "Form"
-    ) {
-        feature.definition = cadmpeg_ir::features::FeatureDefinition::Form {
-            cages: cages.iter().map(|cage| cage.id.clone()).collect(),
+    for scope in scopes.iter().filter(|scope| scope.kind == "Form") {
+        let Some(stream) =
+            native_stream(&scope.id).and_then(|stream| stream.strip_prefix(ids::SCHEME_PREFIX))
+        else {
+            continue;
         };
+        let bytes = scan.entry_bytes(stream)?;
+        let records = IndexedRecordOffsets::build(bytes);
+        let cage_lists = scope
+            .reference_members
+            .iter()
+            .filter_map(|record_index| {
+                form_cage_objects(bytes, &records, *record_index, scope.record_index)
+            })
+            .collect::<Vec<_>>();
+        let [cage_objects] = cage_lists.as_slice() else {
+            continue;
+        };
+        if cage_objects.is_empty() {
+            continue;
+        }
+        let surfaces = cage_objects
+            .iter()
+            .map(|object| form_cage_surface(bytes, &records, *object, scope.record_index))
+            .collect::<Option<Vec<_>>>();
+        let Some(surfaces) = surfaces else {
+            continue;
+        };
+        let serializers = form_cage_serializers(bytes, &records);
+        let resolved = surfaces
+            .iter()
+            .map(|surface| {
+                let entry_name = serializers.get(surface)?.as_ref()?;
+                let mut matches = cages.iter().filter(|cage| {
+                    cage.source_object
+                        .as_ref()
+                        .and_then(|source| source.object_id.rsplit('/').next())
+                        == Some(entry_name.as_str())
+                });
+                let cage = matches.next()?;
+                matches.next().is_none().then(|| cage.id.clone())
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(resolved) = resolved else {
+            continue;
+        };
+        if resolved.iter().collect::<HashSet<_>>().len() != resolved.len() {
+            continue;
+        }
+        let feature_id = neutral_feature_id(scope);
+        let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
+            continue;
+        };
+        if matches!(
+            &feature.definition,
+            cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind == "Form"
+        ) {
+            feature.definition = cadmpeg_ir::features::FeatureDefinition::Form { cages: resolved };
+        }
     }
     Ok(())
 }
 
-fn form_cage_count(
+fn form_cage_objects(
     bytes: &[u8],
-    offset: usize,
-    expected_record_index: u32,
+    records: &IndexedRecordOffsets,
+    record_index: u32,
     scope_record_index: u32,
-) -> Option<usize> {
-    let class_length = u32_at(bytes, offset)? as usize;
-    let class_start = offset.checked_add(4)?;
-    let class_end = class_start.checked_add(class_length)?;
-    bytes.get(class_start..class_end)?;
-    let record_index = read_u64(bytes, class_end)?;
-    let prefix = bytes.get(class_end + 8..class_end + 14)?;
-    if record_index != expected_record_index as u64
-        || prefix != [0; 6]
-        || bytes.get(class_end + 14) != Some(&1)
-        || read_u64(bytes, class_end + 15)? != scope_record_index as u64
-        || bytes.get(class_end + 23..class_end + 25)? != [0, 0]
+) -> Option<Vec<u32>> {
+    let frames = records
+        .frames(record_index)
+        .filter(|(_, paired)| bytes.get(paired + 4..paired + 7) == Some(b"264"))
+        .collect::<Vec<_>>();
+    let [(offset, paired)] = frames.as_slice() else {
+        return None;
+    };
+    if read_u64(bytes, offset + 7)? != record_index as u64
+        || bytes.get(offset + 15..offset + 21)? != [0; 6]
+        || bytes.get(offset + 21) != Some(&1)
+        || read_u64(bytes, offset + 22)? != scope_record_index as u64
+        || bytes.get(offset + 30..offset + 32)? != [0, 0]
     {
         return None;
     }
-    let count = u32_at(bytes, class_end + 25)? as usize;
-    let mut cursor = class_end.checked_add(29)?;
+    let count = usize::try_from(u32_at(bytes, offset + 32)?).ok()?;
+    if paired.checked_sub(*offset)? != 88usize.checked_add(11usize.checked_mul(count)?)? {
+        return None;
+    }
+    let mut cursor = offset.checked_add(36)?;
+    let mut objects = Vec::with_capacity(count);
     for _ in 0..count {
         if bytes.get(cursor) != Some(&1) {
             return None;
         }
-        read_u64(bytes, cursor + 1)?;
+        objects.push(u32::try_from(read_u64(bytes, cursor + 1)?).ok()?);
         if bytes.get(cursor + 9..cursor + 11)? != [0, 0] {
             return None;
         }
         cursor = cursor.checked_add(11)?;
     }
-    Some(count)
+    Some(objects)
+}
+
+fn form_cage_surface(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    object_record: u32,
+    scope_record: u32,
+) -> Option<u32> {
+    let [object_at] = records.offsets(object_record) else {
+        return None;
+    };
+    if bytes.get(object_at + 4..object_at + 7) != Some(b"301")
+        || next_indexed_record_offset(bytes, object_at + 1)? != object_at + 200
+        || bytes.get(object_at + 189) != Some(&1)
+    {
+        return None;
+    }
+    let first_wrapper = u32::try_from(read_u64(bytes, object_at + 190)?).ok()?;
+    let [first_at] = records.offsets(first_wrapper) else {
+        return None;
+    };
+    if bytes.get(first_at + 4..first_at + 7) != Some(b"373")
+        || next_indexed_record_offset(bytes, first_at + 1)? != first_at + 33
+        || bytes.get(first_at + 11..first_at + 21)? != [0; 10]
+        || bytes.get(first_at + 21) != Some(&1)
+        || bytes.get(first_at + 30..first_at + 33)? != [0; 3]
+    {
+        return None;
+    }
+    let second_wrapper = u32::try_from(read_u64(bytes, first_at + 22)?).ok()?;
+    let [second_at] = records.offsets(second_wrapper) else {
+        return None;
+    };
+    if bytes.get(second_at + 4..second_at + 7) != Some(b"362")
+        || next_indexed_record_offset(bytes, second_at + 1)? != second_at + 29
+        || bytes.get(second_at + 11..second_at + 21)? != [0; 10]
+    {
+        return None;
+    }
+    let carrier = u32::try_from(read_u64(bytes, second_at + 21)?).ok()?;
+    let carrier_frames = records.frames(carrier).collect::<Vec<_>>();
+    let [(carrier_at, carrier_paired)] = carrier_frames.as_slice() else {
+        return None;
+    };
+    if carrier_paired.checked_sub(*carrier_at)? != 665
+        || bytes.get(carrier_at + 4..carrier_at + 7) != Some(b"457")
+        || bytes.get(carrier_paired + 4..carrier_paired + 7) != Some(b"264")
+        || bytes.get(carrier_at + 317) != Some(&1)
+        || read_u64(bytes, carrier_at + 318)? != scope_record as u64
+        || bytes.get(carrier_at + 339) != Some(&1)
+    {
+        return None;
+    }
+    u32::try_from(read_u64(bytes, carrier_at + 340)?).ok()
+}
+
+fn form_cage_serializers(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+) -> HashMap<u32, Option<String>> {
+    let mut serializers = HashMap::new();
+    for (_, offsets) in records.records() {
+        for offset in offsets {
+            if bytes.get(offset + 4..offset + 7) != Some(b"446")
+                || next_indexed_record_offset(bytes, offset + 1) != Some(offset + 132)
+                || bytes.get(offset + 11..offset + 21) != Some(&[0; 10])
+            {
+                continue;
+            }
+            let Some((entry_name, after_name)) = lp_utf16_bounded(bytes, offset + 21, 1..=256)
+            else {
+                continue;
+            };
+            if !entry_name.starts_with("TSpline.")
+                || !std::path::Path::new(&entry_name)
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("tsm"))
+                || bytes.get(after_name) != Some(&1)
+                || bytes.get(after_name + 9..after_name + 11) != Some(&[0, 0])
+                || after_name + 11 != offset + 132
+            {
+                continue;
+            }
+            let Some(surface) =
+                read_u64(bytes, after_name + 1).and_then(|surface| u32::try_from(surface).ok())
+            else {
+                continue;
+            };
+            serializers
+                .entry(surface)
+                .and_modify(|candidate| *candidate = None)
+                .or_insert(Some(entry_name));
+        }
+    }
+    serializers
 }
 
 #[cfg(test)]
 mod form_tests {
+    fn indexed_frame(class: &[u8; 3], record_index: u32, length: usize) -> Vec<u8> {
+        let mut frame = vec![0; length];
+        frame[..4].copy_from_slice(&3u32.to_le_bytes());
+        frame[4..7].copy_from_slice(class);
+        frame[7..11].copy_from_slice(&record_index.to_le_bytes());
+        frame
+    }
+
     #[test]
-    fn reads_owned_cage_count() {
+    fn reads_owned_cage_objects() {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(b"402");
@@ -2153,7 +2279,79 @@ mod form_tests {
             bytes.extend_from_slice(&reference.to_le_bytes());
             bytes.extend_from_slice(&[0; 2]);
         }
-        assert_eq!(super::form_cage_count(&bytes, 0, 2196, 2190), Some(2));
+        bytes.resize(110, 0);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"264");
+        bytes.extend_from_slice(&2196u64.to_le_bytes());
+        assert_eq!(
+            super::form_cage_objects(
+                &bytes,
+                &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
+                2196,
+                2190,
+            ),
+            Some(vec![8300, 8303])
+        );
+    }
+
+    #[test]
+    fn resolves_cage_surface_through_owned_object_chain() {
+        let mut object = indexed_frame(b"301", 8300, 200);
+        object[189] = 1;
+        object[190..198].copy_from_slice(&8301u64.to_le_bytes());
+        let mut first_wrapper = indexed_frame(b"373", 8301, 33);
+        first_wrapper[21] = 1;
+        first_wrapper[22..30].copy_from_slice(&8302u64.to_le_bytes());
+        let mut second_wrapper = indexed_frame(b"362", 8302, 29);
+        second_wrapper[21..29].copy_from_slice(&8303u64.to_le_bytes());
+        let mut carrier = indexed_frame(b"457", 8303, 665);
+        carrier[317] = 1;
+        carrier[318..326].copy_from_slice(&2190u64.to_le_bytes());
+        carrier[339] = 1;
+        carrier[340..348].copy_from_slice(&8304u64.to_le_bytes());
+        let paired = indexed_frame(b"264", 8303, 15);
+        let bytes = [object, first_wrapper, second_wrapper, carrier, paired].concat();
+        assert_eq!(
+            super::form_cage_surface(
+                &bytes,
+                &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
+                8300,
+                2190,
+            ),
+            Some(8304)
+        );
+        assert_eq!(
+            super::form_cage_surface(
+                &bytes,
+                &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
+                8300,
+                2191,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn serializer_joins_surface_to_exact_cage_entry_name() {
+        let entry_name = "TSpline.00000000-0000-0000-0000-000000000000.tsm";
+        let mut serializer = indexed_frame(b"446", 8305, 132);
+        serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
+        for (ordinal, code_unit) in entry_name.encode_utf16().enumerate() {
+            let at = 25 + ordinal * 2;
+            serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
+        }
+        serializer[121] = 1;
+        serializer[122..130].copy_from_slice(&8304u64.to_le_bytes());
+        let following = indexed_frame(b"457", 8306, 15);
+        let bytes = [serializer, following].concat();
+        assert_eq!(
+            super::form_cage_serializers(
+                &bytes,
+                &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
+            )
+            .get(&8304),
+            Some(&Some(entry_name.into()))
+        );
     }
 }
 

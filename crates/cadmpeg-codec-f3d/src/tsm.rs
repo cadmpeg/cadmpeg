@@ -29,8 +29,8 @@ struct HalfEdge {
 ///
 /// A cage whose program is internally inconsistent degrades to an
 /// error-severity loss note instead of failing the document decode; its
-/// entry bytes remain retained in the container, and the count-gated Form
-/// join simply leaves the affected Form on native retention.
+/// entry bytes remain retained in the container, and the serializer-backed
+/// Form join leaves the affected Form on native retention.
 pub(crate) fn decode(
     scan: &ContainerScan,
 ) -> Result<(Vec<SubdSurface>, Vec<cadmpeg_ir::report::LossNote>), CodecError> {

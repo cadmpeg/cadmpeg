@@ -1240,7 +1240,6 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             crate::design::feature_project::bind_form_cages(
                 &scan,
                 &native.design_parameter_scopes,
-                &native.design_record_headers,
                 &mut ir.model.features,
                 &ir.model.subds,
             )?;
@@ -1642,7 +1641,6 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     crate::design::feature_project::bind_form_cages(
         &scan,
         &native.design_parameter_scopes,
-        &native.design_record_headers,
         &mut ir.model.features,
         &ir.model.subds,
     )?;
