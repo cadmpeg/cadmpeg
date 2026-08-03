@@ -2,7 +2,7 @@
 
 `cadmpeg` inspects native CAD containers, decodes supported model data into
 CADIR, validates and compares CADIR models, and exports CADIR or STEP AP214.
-It also writes supported `.FCStd`, `.f3d`, and `.sldprt` models.
+It also writes supported `.FCStd`, `.f3d`, `.sldprt`, and `.3dm` models.
 
 Native codecs transfer different subsets of geometry, topology, design intent,
 presentation, and metadata. Check [format support][support] before relying on a
@@ -37,9 +37,9 @@ cargo install cadmpeg
 cadmpeg convert bracket.f3d -o bracket.step
 ```
 
-The output extension selects `step`, `fcstd`, `f3d`, `sldprt`, or `cadir`. Pass
-`--format` when writing to standard output or when the filename does not
-identify the format:
+The output extension selects `step`, `fcstd`, `f3d`, `sldprt`, `rhino`, or
+`cadir`. Pass `--format` when writing to standard output or when the filename
+does not identify the format:
 
 ```sh
 cadmpeg convert bracket.f3d --format step > bracket.step
@@ -47,8 +47,8 @@ cadmpeg convert bracket.f3d --format step > bracket.step
 
 Conversion stops before export if validation finds errors. It also refuses
 geometry output when decoding transfers no geometry. `--allow-invalid` and
-`--allow-empty` override these checks. These flags permit output; they do not
-repair or add model data.
+`--allow-empty` write the current result anyway. They leave model data
+unchanged.
 
 ## Inspect, decode, and validate
 
@@ -88,10 +88,9 @@ geometry export.
 
 ## Read raw bytes
 
-`cadmpeg inspect` also carries byte tools that work on any file, decoded or not.
-They replace the ad-hoc `xxd`, `od`, `strings`, and `struct.unpack` one-liners
-that format work otherwise needs. Every offset and length argument accepts `0x`
-hexadecimal or decimal, and `_` between digits.
+`cadmpeg inspect` also carries byte tools that work on any file, decoded or
+not. Every offset and length argument accepts `0x` hexadecimal or decimal, and
+`_` between digits.
 
 ```sh
 cadmpeg inspect hex part.prt --offset 0x40 --len 0x80   # dump with an ASCII gutter
@@ -112,12 +111,12 @@ defaulting to the scalar width.
 
 `--layout` is a comma-separated record spec with no implicit alignment:
 
-| Field | Meaning |
-| --- | --- |
-| `u8`, `i8` | One byte. A byte-order suffix is rejected. |
+| Field                        | Meaning                                             |
+| ---------------------------- | --------------------------------------------------- |
+| `u8`, `i8`                   | One byte. A byte-order suffix is rejected.          |
 | `u16le`, `i32be`, `f64le`, … | A wide scalar. The `le` or `be` suffix is required. |
-| `bytesN` | `N` raw bytes, printed as hexadecimal. |
-| `padN` | `N` bytes skipped and not printed. Takes no name. |
+| `bytesN`                     | `N` raw bytes, printed as hexadecimal.              |
+| `padN`                       | `N` bytes skipped and not printed. Takes no name.   |
 
 Every field except `padN` accepts an optional `:name`; unnamed fields are called
 `f<index>`. `struct --count N` decodes `N` consecutive records and reports an
@@ -132,7 +131,7 @@ their codec.
 `inspect diff` compares byte `n` of one file with byte `n` of the other. It
 reports the first differing offset, the differing byte count, and the differing
 spans. `--gap` merges two spans separated by that many equal bytes or fewer.
-This is a byte comparison; `cadmpeg diff` compares decoded models instead.
+`cadmpeg diff` compares decoded models.
 
 A file whose name is also a subcommand name, such as `hex`, is read as the
 subcommand. Write `./hex` for such a file.
@@ -162,9 +161,9 @@ Output formats are:
 - `step` for ISO 10303-21 STEP AP214.
 - `fcstd`, `f3d`, `rhino`, and `sldprt` for the native writers' supported subsets.
 
-Native writing may depend on retained source data and rejects unsupported
-edits. The [format support page][support] defines each reader and writer's
-current semantic coverage.
+Native writers use retained source data where the format requires it, and reject
+unsupported edits. The [format support page][support] defines each reader and
+writer's current semantic coverage.
 
 File output is atomic. cadmpeg refuses to replace its input or an existing
 output unless `--force` is present. An explicit `--format` takes precedence
