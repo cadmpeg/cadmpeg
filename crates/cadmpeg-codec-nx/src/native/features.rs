@@ -89,6 +89,9 @@ pub struct FeatureOperationCommonFrame {
     /// Whether the operation modifies Parasolid data, when the stored field is boolean.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modifies_parasolid_data: Option<bool>,
+    /// Serialized operation group count.
+    #[serde(default)]
+    pub group_count: u8,
     /// Duplicated frame-local ordinal.
     pub local_ordinal: u32,
     /// Exact canonical token repeated for the local ordinal.
@@ -2894,6 +2897,7 @@ pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOper
                     state: frame.state,
                     legacy_inactive_modules: operation_legacy_inactive_modules(frame.state),
                     modifies_parasolid_data: operation_modifies_parasolid_data(frame.state),
+                    group_count: frame.state[7],
                     local_ordinal: frame.local_ordinal,
                     raw_local_ordinal: frame.raw_local_ordinal,
                     object_index: frame.object_index,

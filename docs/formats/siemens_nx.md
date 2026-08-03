@@ -1440,12 +1440,14 @@ common frame in a bounded operation payload is retained in source order with
 its layout marker, ordered indices, eight state bytes, duplicated ordinal,
 nullable object reference, exact tokens, byte length, and token offsets. The
 fourth state byte is the Boolean `m_legacyInactiveModules`, and the fifth state
-byte is the Boolean `m_modifiesParasolidData`. For either field, `00` is false,
-`01` is true, and another value retains the state lane without a typed Boolean
-value. Legacy module inactivity does not assign feature suppression. A terminal
-suffix links the common frame ending at that suffix. Absence of that link does
-not invalidate the terminal suffix because an outer terminal suffix may follow
-a nested common frame.
+byte is the Boolean `m_modifiesParasolidData`. For either Boolean field, `00` is
+false, `01` is true, and another value retains the state lane without a typed
+Boolean value. The eighth state byte is the unsigned `m_groupCount`. The sixth
+and seventh bytes retain the unresolved `m_splitTrackingData` representation.
+Legacy module inactivity does not assign feature suppression. A terminal suffix
+links the common frame ending at that suffix. Absence of that link does not
+invalidate the terminal suffix because an outer terminal suffix may follow a
+nested common frame.
 
 An object-ID-bounded record in a section declaring `UGS::EXP_expression` declares a parameter name as `04, declared_len:u8, name[declared_len-2], 00`. `name` is `p`, one or more decimal digits, and an optional underscore-prefixed qualifier composed of ASCII letters, digits, and underscores. A declaration record contains exactly one such name frame. The parameter index is the decimal integer after `p`. The record may contain one additional frame with the same framing whose text is a context-free constant numeric expression; this is the declaration-local literal. Multiple numeric-expression frames make the declaration literal ambiguous without invalidating the parameter declaration. An exact unique name match binds the declaration to the value record carrying `(Number [mm|degrees]) name: expression; `.
 

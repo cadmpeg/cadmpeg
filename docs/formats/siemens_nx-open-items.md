@@ -286,7 +286,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which operation owns each embedded common frame, and what do the state-lane fields other than `m_modifiesParasolidData` mean?
 
-**Known.** `siemens_nx.md` §7.1 "A bounded operation payload's terminal common-frame suffix is" and `siemens_nx.md` §7.1 "An exact common frame is" define the exact frame and state-lane boundaries for the admitted operation families. The fourth state byte is the Boolean `m_legacyInactiveModules` field. The fifth state byte is the Boolean `m_modifiesParasolidData` field. Legacy module inactivity is not feature suppression.
+**Known.** `siemens_nx.md` §7.1 "A bounded operation payload's terminal common-frame suffix is" and `siemens_nx.md` §7.1 "An exact common frame is" define the exact frame and state-lane boundaries for the admitted operation families. The fourth state byte is the Boolean `m_legacyInactiveModules` field. The fifth state byte is the Boolean `m_modifiesParasolidData` field. The eighth state byte is the unsigned `m_groupCount` field. The sixth and seventh bytes carry the unresolved `m_splitTrackingData` representation. Legacy module inactivity is not feature suppression.
 
 **Need.** We must know ownership and field roles to attach the state to the correct operation.
 
