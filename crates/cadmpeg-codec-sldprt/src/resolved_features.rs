@@ -2006,6 +2006,10 @@ fn linked_profile_point(payload: &[u8], offset: usize) -> Option<LinkedProfilePo
         && native_code == Some(1)
         && locus == Some(&[0x05, 0x00, 0x01, 0x00])
         && link_count == Some(&2u16.to_le_bytes());
+    let current_geometry_long_layout = marker == Some(SKETCH_MARKER)
+        && native_code == Some(2)
+        && locus == Some(&[0x05, 0x00, 0x01, 0x00])
+        && link_count == Some(&2u16.to_le_bytes());
     if !matches!(
         marker,
         Some(prefix)
@@ -2013,7 +2017,7 @@ fn linked_profile_point(payload: &[u8], offset: usize) -> Option<LinkedProfilePo
                 || prefix == LEGACY_SKETCH_MARKER
                 || prefix == LEGACY_EXTENDED_SKETCH_MARKER
     ) || !matches!(native_code, Some(0..=2))
-        || (!profile_layout && !legacy_geometry_long_layout)
+        || (!profile_layout && !legacy_geometry_long_layout && !current_geometry_long_layout)
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
         || payload.get(offset + 31..offset + 39)
@@ -2045,7 +2049,8 @@ fn linked_profile_point(payload: &[u8], offset: usize) -> Option<LinkedProfilePo
         && payload.get(offset + 152..offset + 154) == Some(&[0; 2])
         && payload.get(offset + 154..offset + 158) != Some(&0u32.to_le_bytes())
         && sketch_marker_prefix_at(payload, offset.checked_add(158)?);
-    let valid_tail = long_tail || (profile_layout && standard_tail);
+    let valid_tail =
+        long_tail || ((profile_layout || current_geometry_long_layout) && standard_tail);
     if !valid_tail {
         return None;
     }
@@ -6798,6 +6803,23 @@ mod marker_tests {
             assert_eq!(point.kind, SketchInputKind::Point);
             assert_eq!(point.coordinates_m, Some([1.25, -2.5]));
         }
+        payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[offset + 17..offset + 21].copy_from_slice(&2u32.to_le_bytes());
+        payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        payload[offset + 154..offset + 154 + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        assert_eq!(
+            linked_profile_point(&payload, offset),
+            Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
+        );
+        assert_eq!(
+            super::sketch_input_entities(&payload, "lane")[0].kind,
+            SketchInputKind::Point
+        );
+        payload[offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[offset + 23..offset + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[offset + 154..offset + 154 + LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
         payload[offset + 17..offset + 21].copy_from_slice(&2u32.to_le_bytes());
         payload[offset + 92..offset + 94].copy_from_slice(&4u16.to_le_bytes());
         assert_eq!(
