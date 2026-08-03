@@ -2421,6 +2421,20 @@ pub(crate) fn exact_work_plane_frame(
                 321 if bytes.get(start + 11..start + 49) == Some(&[0u8; 38][..]) => {
                     (start + 49, None)
                 }
+                321 if bytes.get(start + 4..start + 7) == Some(b"364")
+                    && bytes.get(paired + 4..paired + 7) == Some(b"264")
+                    && bytes.get(start + 11..start + 46) == Some(&[0u8; 35][..])
+                    && bytes.get(start + 46..start + 49) == Some(&[1, 0, 0][..]) =>
+                {
+                    (start + 49, None)
+                }
+                321 if bytes.get(start + 4..start + 7) == Some(b"364")
+                    && bytes.get(paired + 4..paired + 7) == Some(b"264")
+                    && bytes.get(start + 11..start + 45) == Some(&[0u8; 34][..])
+                    && bytes.get(start + 45..start + 49) == Some(&[0xcc, 0xcd, 0, 0][..]) =>
+                {
+                    (start + 49, None)
+                }
                 326 if matches!(
                     (
                         bytes.get(start + 4..start + 7),

@@ -4197,6 +4197,61 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(decoded.transform_offset, (compact_at + 49) as u64);
     assert_eq!(decoded.reference, None);
 
+    let compact_364_at = bytes.len();
+    let mut compact_364 = vec![0; 321];
+    compact_364[0..4].copy_from_slice(&3u32.to_le_bytes());
+    compact_364[4..7].copy_from_slice(b"364");
+    compact_364[7..11].copy_from_slice(&65u32.to_le_bytes());
+    compact_364[46] = 1;
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = 49 + ordinal * 8;
+        compact_364[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    compact_364.extend_from_slice(&3u32.to_le_bytes());
+    compact_364.extend_from_slice(b"264");
+    compact_364.extend_from_slice(&65u32.to_le_bytes());
+    bytes.extend_from_slice(&compact_364);
+    let mut compact_364_scope = scope.clone();
+    compact_364_scope.reference_members = vec![65];
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &compact_364_scope,
+    )
+    .expect("class-364 marked compact direct WorkPlane frame");
+    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform_offset, (compact_364_at + 49) as u64);
+    assert_eq!(decoded.reference, None);
+
+    let compact_364_variant_at = bytes.len();
+    let mut compact_364_variant = vec![0; 321];
+    compact_364_variant[0..4].copy_from_slice(&3u32.to_le_bytes());
+    compact_364_variant[4..7].copy_from_slice(b"364");
+    compact_364_variant[7..11].copy_from_slice(&66u32.to_le_bytes());
+    compact_364_variant[45..49].copy_from_slice(&[0xcc, 0xcd, 0, 0]);
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = 49 + ordinal * 8;
+        compact_364_variant[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    compact_364_variant.extend_from_slice(&3u32.to_le_bytes());
+    compact_364_variant.extend_from_slice(b"264");
+    compact_364_variant.extend_from_slice(&66u32.to_le_bytes());
+    bytes.extend_from_slice(&compact_364_variant);
+    let mut compact_364_variant_scope = scope.clone();
+    compact_364_variant_scope.reference_members = vec![66];
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &compact_364_variant_scope,
+    )
+    .expect("class-364 compact direct WorkPlane frame variant");
+    assert_eq!(decoded.transform, transform);
+    assert_eq!(
+        decoded.transform_offset,
+        (compact_364_variant_at + 49) as u64
+    );
+    assert_eq!(decoded.reference, None);
+
     let compact_450_at = bytes.len();
     let mut compact_450 = vec![0; 326];
     compact_450[0..4].copy_from_slice(&3u32.to_le_bytes());
