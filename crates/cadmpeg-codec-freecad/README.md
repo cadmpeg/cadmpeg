@@ -1,19 +1,99 @@
 # cadmpeg-codec-freecad
 
-Pure-Rust read/write support for ZIP-packaged FreeCAD `.FCStd` documents. The codec preserves
-format-native metadata in the `fcstd` namespace, applies checked semantic property and side-entry
-edits, and builds source-less schema-4/file-1 application graphs.
+`cadmpeg-codec-freecad` decodes FreeCAD `.FCStd` archives into `CadIr` and
+encodes supported `CadIr` documents back to `.FCStd`.
 
-The current typed transfer includes exact text and binary B-rep geometry/topology, persistent
-element-name bindings, sketches and constraints, attachments, datum frames, expressions and
-spreadsheets, and an expanding construction history. Neutral operations include extrusions,
-revolutions, dress-ups,
-analytic primitives, booleans, lofts, sweeps, thickness, draft, branch-complete holes, and
-datum-resolved linear, polar, or mirror patterns.
-Pattern configurations requiring nonuniform spacing or multiple linear directions remain linked
-native records until the neutral IR can express their complete transform sequence. The manifested
-public corpus establishes L9 tested for the documented schema-4/file-1 envelope. The generated
-support profile writes and decodes every fixture, verifies semantic equivalence, typed mutation,
-unsupported-record survival, deterministic source-less generation, and explicit target-version
-refusal. An independent FreeCAD interoperability check is provided in
-`tools/validate_fcstd_interop.py`.
+Support level: [L9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+for the schema-4/file-1 envelope.
+
+## Install
+
+```sh
+cargo add cadmpeg-codec-freecad cadmpeg-ir
+```
+
+## Decode
+
+```rust,no_run
+use cadmpeg_codec_freecad::FcstdCodec;
+use cadmpeg_ir::{Codec, DecodeOptions};
+use std::fs::File;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut input = File::open("part.FCStd")?;
+    let result = FcstdCodec.decode(&mut input, &DecodeOptions::default())?;
+
+    for loss in &result.report.losses {
+        eprintln!("{:?}: {}", loss.severity, loss.message);
+    }
+    println!("{} bodies", result.ir.model.bodies.len());
+    Ok(())
+}
+```
+
+The result holds the decoded `CadIr` and a `DecodeReport`. Read
+`report.losses` before trusting geometry. Set
+`DecodeOptions::container_only` for archive metadata without shape decoding.
+`FcstdCodec::inspect` returns ZIP entry structure and document version facts.
+Semantic decode targets `SchemaVersion=4` / `FileVersion=1` and refuses other
+persistence bands.
+
+## Encode
+
+```rust,no_run
+use cadmpeg_codec_freecad::FcstdCodec;
+use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
+use std::fs::File;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut input = File::open("part.FCStd")?;
+    let result = FcstdCodec.decode(&mut input, &DecodeOptions::default())?;
+
+    // Edit supported fields in result.ir.
+
+    let mut output = File::create("part-edited.FCStd")?;
+    FcstdCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &result.ir,
+            fidelity: Some(&result.source_fidelity),
+        })?
+        .write_to(&mut output)?;
+    Ok(())
+}
+```
+
+Retained schema-4/file-1 documents regenerate while preserving unedited XML
+records and named side entries. Checked leaf property edits and side-entry
+replacements update the native graph in place. `FcstdDocumentBuilder` builds
+source-less application graphs for the same write envelope. Unsupported
+schema or file targets are refused.
+
+## Data model
+
+An `.FCStd` archive is a ZIP package whose `Document.xml` carries an
+application object and property graph. Exact-shape payloads travel as text or
+binary side entries. The decoder frames those entries and builds topology from
+bodies through vertices. Coverage for the primary envelope lives in the
+[format-support profile][support].
+
+## Documentation
+
+- [API documentation][docs]
+- [Format support][support]
+- [Format notes][spec]
+- [Clean-room and legal policy][legal]
+- [Repository][repo]
+- FreeCAD interop check: `tools/validate_fcstd_interop.py`
+
+Requires Rust 1.88 or later. Licensed under Apache-2.0.
+
+FreeCAD and other product names are trademarks of their respective owners.
+cadmpeg uses them only to identify the file formats this codec targets and is
+not affiliated with, endorsed by, or sponsored by any CAD vendor. See the
+[clean-room and legal policy][legal].
+
+[docs]: https://docs.rs/cadmpeg-codec-freecad
+[legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md
+[repo]: https://github.com/cadmpeg/cadmpeg
+[spec]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/freecad_fcstd.md
+[support]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#freecad-fcstd
