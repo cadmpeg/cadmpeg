@@ -11023,6 +11023,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             member_count_offset: 420,
             auxiliary_record_indices: Vec::new(),
             auxiliary_record_offsets: Vec::new(),
+            auxiliary_paths: Vec::new(),
             trailing_record_indices: vec![31],
             trailing_record_offsets: vec![440],
             trailing_transforms: Vec::new(),

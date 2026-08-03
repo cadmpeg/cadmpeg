@@ -1668,7 +1668,53 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 .map(|transform| transform.record_index)
                 .collect::<HashSet<_>>()
                 .len()
-                == frame.trailing_transforms.len();
+                == frame.trailing_transforms.len()
+            && frame.auxiliary_paths.iter().all(|path| {
+                frame.auxiliary_record_indices.contains(&path.record_index)
+                    && records_by_index
+                        .get(&(native_stream, path.record_index))
+                        .is_some_and(|header| {
+                            header.byte_offset == path.byte_offset
+                                && header.class_tag == path.class_tag
+                        })
+                    && path.entity_ref_offset == path.byte_offset.saturating_add(22)
+                    && path.scope_record_index == group.scope_record_index
+                    && path.nested_record_index == path.record_index.saturating_add(2)
+                    && records_by_index.contains_key(&(native_stream, path.nested_record_index))
+                    && path.following_record_index == path.record_index.saturating_add(1)
+                    && records_by_index
+                        .get(&(native_stream, path.following_record_index))
+                        .is_some_and(|header| {
+                            header.byte_offset == path.following_byte_offset
+                                && header.class_tag == path.following_class_tag
+                        })
+                    && match (&path.transform, path.transform_offset, path.compact_variant) {
+                        (Some(transform), Some(offset), None) => {
+                            offset == path.byte_offset.saturating_add(33)
+                                && path.scope_record_index_offset
+                                    == path.byte_offset.saturating_add(163)
+                                && path.nested_record_index_offset
+                                    == path.byte_offset.saturating_add(174)
+                                && path.following_byte_offset
+                                    == path.byte_offset.saturating_add(190)
+                                && crate::design::decode::sketch::valid_sketch_transform(transform)
+                        }
+                        (None, None, Some(_)) => {
+                            path.scope_record_index_offset == path.byte_offset.saturating_add(35)
+                                && path.nested_record_index_offset
+                                    == path.byte_offset.saturating_add(46)
+                                && path.following_byte_offset == path.byte_offset.saturating_add(62)
+                        }
+                        _ => false,
+                    }
+            })
+            && frame
+                .auxiliary_paths
+                .iter()
+                .map(|path| path.record_index)
+                .collect::<HashSet<_>>()
+                .len()
+                == frame.auxiliary_paths.len();
         let valid = group.class_tag.len() == 3
             && group.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && group.paired_class_tag.len() == 3

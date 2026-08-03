@@ -2182,6 +2182,9 @@ pub struct DesignConstructionOperandGroupFrame {
     /// Byte offsets parallel to `auxiliary_record_indices`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub auxiliary_record_offsets: Vec<u64>,
+    /// Exact selection-path records selected by the optional references.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub auxiliary_paths: Vec<DesignConstructionOperandPath>,
     /// Indexed records named by the counted trailing-reference run. The target
     /// grammar is selected by the owning operand family: persistent-selection
     /// groups name identity wrappers and placed-selection groups name affine
@@ -2223,6 +2226,44 @@ pub struct DesignConstructionOperandTransform {
     /// Byte offset of the first matrix scalar.
     pub transform_offset: u64,
     /// Indexed record immediately following the transform.
+    pub following_record_index: u32,
+    /// Following-record header byte offset.
+    pub following_byte_offset: u64,
+    /// Per-file dynamic following-record class tag.
+    pub following_class_tag: String,
+}
+
+/// One persistent-entity step in a construction operand's selection path.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignConstructionOperandPath {
+    /// Indexed path-record identity.
+    pub record_index: u32,
+    /// Path-record header byte offset.
+    pub byte_offset: u64,
+    /// Per-file dynamic path-record class tag.
+    pub class_tag: String,
+    /// Persistent entity identity carried by this path step.
+    pub entity_ref: u64,
+    /// Byte offset of `entity_ref`.
+    pub entity_ref_offset: u64,
+    /// Optional row-major selection-path placement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform: Option<[[f64; 4]; 4]>,
+    /// Byte offset of the first transform scalar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform_offset: Option<u64>,
+    /// Compact-frame boolean; absent from the transform frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compact_variant: Option<bool>,
+    /// Owning feature-scope record.
+    pub scope_record_index: u32,
+    /// Byte offset of the owning-scope reference.
+    pub scope_record_index_offset: u64,
+    /// Nested record selected after the owning scope.
+    pub nested_record_index: u32,
+    /// Byte offset of the nested-record reference.
+    pub nested_record_index_offset: u64,
+    /// Indexed record immediately following this path frame.
     pub following_record_index: u32,
     /// Following-record header byte offset.
     pub following_byte_offset: u64,

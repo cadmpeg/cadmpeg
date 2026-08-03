@@ -2568,7 +2568,17 @@ fn extend_related_design_records(
                     .flat_map(|record_index| {
                         std::iter::once(*record_index).chain(record_index.checked_add(1))
                     })
-                    .chain(group.frame.auxiliary_record_indices.iter().copied())
+                    .chain(
+                        group
+                            .frame
+                            .auxiliary_record_indices
+                            .iter()
+                            .flat_map(|record_index| {
+                                std::iter::once(*record_index)
+                                    .chain(record_index.checked_add(1))
+                                    .chain(record_index.checked_add(2))
+                            }),
+                    )
                     .map(move |record_index| (stream.clone(), record_index))
             }),
     );
@@ -2595,6 +2605,11 @@ fn extend_related_design_records(
         .design_record_headers
         .sort_by_key(|record| record.id.clone());
     crate::design::decode::operands::bind_construction_operand_transforms(
+        scan,
+        &mut native.design_construction_operand_groups,
+        &native.design_record_headers,
+    )?;
+    crate::design::decode::operands::bind_construction_operand_paths(
         scan,
         &mut native.design_construction_operand_groups,
         &native.design_record_headers,

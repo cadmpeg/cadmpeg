@@ -1079,6 +1079,7 @@ pub(crate) fn parse_construction_operand_group(
             member_count_offset,
             auxiliary_record_indices,
             auxiliary_record_offsets,
+            auxiliary_paths: Vec::new(),
             trailing_record_indices,
             trailing_record_offsets,
             trailing_transforms: Vec::new(),
@@ -1130,6 +1131,117 @@ pub fn bind_construction_operand_transforms(
         }
     }
     Ok(())
+}
+
+/// Bind exact persistent-entity path records selected by construction groups.
+pub fn bind_construction_operand_paths(
+    scan: &ContainerScan,
+    groups: &mut [DesignConstructionOperandGroup],
+    headers: &[DesignRecordHeader],
+) -> Result<(), CodecError> {
+    let headers = headers
+        .iter()
+        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
+        .collect::<HashMap<_, _>>();
+    for group in groups {
+        group.frame.auxiliary_paths.clear();
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == ids::native_scope(&entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for record_index in &group.frame.auxiliary_record_indices {
+            let Some(header) = headers.get(&(stream, *record_index)) else {
+                continue;
+            };
+            if let Some(path) =
+                parse_construction_operand_path(bytes, group.scope_record_index, header)
+            {
+                group.frame.auxiliary_paths.push(path);
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn parse_construction_operand_path(
+    bytes: &[u8],
+    expected_scope_record_index: u32,
+    header: &DesignRecordHeader,
+) -> Option<crate::records::DesignConstructionOperandPath> {
+    use crate::design::decode::sketch::valid_sketch_transform;
+
+    let start = usize::try_from(header.byte_offset).ok()?;
+    if bytes.get(start + 11..start + 21)? != [0; 10] || bytes.get(start + 21) != Some(&1) {
+        return None;
+    }
+    let entity_ref = read_u64(bytes, start + 22)?;
+    let entity_ref_offset = u64::try_from(start + 22).ok()?;
+    let (transform, transform_offset, compact_variant, mut cursor) =
+        if bytes.get(start + 30..start + 33)? == [0; 3] {
+            let values = cadmpeg_codec_core::le::f64s_at(bytes, start + 33, 16)?;
+            let mut transform = [[0.0; 4]; 4];
+            for (ordinal, value) in values.iter().copied().enumerate() {
+                transform[ordinal / 4][ordinal % 4] = value;
+            }
+            if !valid_sketch_transform(&transform) || bytes.get(start + 161) != Some(&0) {
+                return None;
+            }
+            (
+                Some(transform),
+                Some(u64::try_from(start + 33).ok()?),
+                None,
+                start + 162,
+            )
+        } else {
+            let variant = match bytes.get(start + 30..start + 34)? {
+                [0, 0, variant @ (0 | 1), 0] => *variant != 0,
+                _ => return None,
+            };
+            (None, None, Some(variant), start + 34)
+        };
+    let (scope_record_index, scope_record_index_offset) =
+        take_record_reference(bytes, &mut cursor)?;
+    if scope_record_index != expected_scope_record_index {
+        return None;
+    }
+    let (nested_record_index, nested_record_index_offset) =
+        take_record_reference(bytes, &mut cursor)?;
+    if nested_record_index != header.record_index.checked_add(2)?
+        || bytes.get(cursor..cursor + 6)? != [0; 6]
+    {
+        return None;
+    }
+    let following_at = cursor.checked_add(6)?;
+    let (following_class_tag, after_tag) =
+        lp_ascii_filtered(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
+    let following_record_index = u32_at(bytes, after_tag)?;
+    if following_record_index != header.record_index.checked_add(1)? {
+        return None;
+    }
+    Some(crate::records::DesignConstructionOperandPath {
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        entity_ref,
+        entity_ref_offset,
+        transform,
+        transform_offset,
+        compact_variant,
+        scope_record_index,
+        scope_record_index_offset,
+        nested_record_index,
+        nested_record_index_offset,
+        following_record_index,
+        following_byte_offset: u64::try_from(following_at).ok()?,
+        following_class_tag,
+    })
 }
 
 pub(crate) fn parse_construction_operand_transform(
