@@ -2350,7 +2350,7 @@ mod marker_tests {
         current_direct_92_profile_line_endpoint_indices, current_geometry_locus_profile_vertex,
         current_indexed_arc_reverses_center_sweep, current_linked_semicircle_record,
         current_long_full_circle_radial_index, current_reverse_incidence_endpoint_offsets,
-        current_wide_arc_direct_markers, current_wide_undetailed_line,
+        current_undetailed_bounded_curve_is_line, current_wide_arc_direct_markers,
         direct_indexed_curve_endpoint_indices, enrich_history_revolution_inputs,
         equal_index_coordinate_roster_full_circle, explicit_reference_axis_frame,
         explicit_reference_plane_frame, extended_compact_84_construction_line_endpoint_indices,
@@ -12918,17 +12918,17 @@ mod marker_tests {
         current[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
         current[92..].copy_from_slice(SKETCH_MARKER);
         assert!(indexed_arc_uses_coordinate_center(&current, 0));
-        assert!(current_wide_undetailed_line(&current, 0));
+        assert!(current_undetailed_bounded_curve_is_line(&current, 0));
         let mut extended = current.clone();
         extended[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
         assert!(indexed_arc_uses_coordinate_center(&extended, 0));
-        assert!(current_wide_undetailed_line(&extended, 0));
+        assert!(current_undetailed_bounded_curve_is_line(&extended, 0));
         extended[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
         assert!(indexed_arc_uses_coordinate_center(&extended, 0));
-        assert!(current_wide_undetailed_line(&extended, 0));
+        assert!(current_undetailed_bounded_curve_is_line(&extended, 0));
         extended[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
-        assert!(!current_wide_undetailed_line(&extended, 0));
+        assert!(!current_undetailed_bounded_curve_is_line(&extended, 0));
         let mut current_compact = current[..84].to_vec();
         current_compact[29..31].copy_from_slice(&1u16.to_le_bytes());
         current_compact[56..58].copy_from_slice(&1u16.to_le_bytes());
@@ -12938,6 +12938,10 @@ mod marker_tests {
         current_compact[72..84].fill(0);
         current_compact.extend_from_slice(SKETCH_MARKER);
         assert!(indexed_arc_uses_coordinate_center(&current_compact, 0));
+        assert!(current_undetailed_bounded_curve_is_line(
+            &current_compact,
+            0
+        ));
         current_compact[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
         assert!(!indexed_arc_uses_coordinate_center(&current_compact, 0));
         let mut detailed = current.clone();
@@ -12949,7 +12953,7 @@ mod marker_tests {
         detailed[123..131].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
         detailed[140..148].copy_from_slice(&1.0f64.to_le_bytes());
         detailed[156..164].copy_from_slice(&(-1.0f64).to_le_bytes());
-        assert!(!current_wide_undetailed_line(&detailed, 0));
+        assert!(!current_undetailed_bounded_curve_is_line(&detailed, 0));
         assert!(!current_indexed_arc_reverses_center_sweep(&current, 0));
         current[80..84].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
         assert!(current_indexed_arc_reverses_center_sweep(&current, 0));
@@ -31395,11 +31399,13 @@ pub(crate) fn project_marker_backed_sketches(
                                             QUANTUM,
                                         );
                                     }
-                                    (current_wide_undetailed_line(&lane.native_payload, offset)
-                                        || legacy_undetailed_profile_line(
-                                            &lane.native_payload,
-                                            offset,
-                                        ))
+                                    (current_undetailed_bounded_curve_is_line(
+                                        &lane.native_payload,
+                                        offset,
+                                    ) || legacy_undetailed_profile_line(
+                                        &lane.native_payload,
+                                        offset,
+                                    ))
                                     .then_some(SketchGeometry::Line { start, end })
                                 })()
                                 .unwrap_or_else(|| {
@@ -39173,7 +39179,7 @@ pub(crate) fn project_relation_point_geometry(
             let marker_offset = usize::try_from(marker.offset).ok();
             let undetailed_arc_line = marker.kind == SketchInputKind::Arc
                 && marker_offset.is_some_and(|offset| {
-                    current_wide_undetailed_line(&lane.native_payload, offset)
+                    current_undetailed_bounded_curve_is_line(&lane.native_payload, offset)
                         || legacy_undetailed_profile_line(&lane.native_payload, offset)
                 });
             let self_linked_curve_handle = curve_operands.contains(marker.id.as_str())
@@ -41616,7 +41622,7 @@ fn inline_arc_endpoint_markers<'a>(
     (endpoints[0].id != endpoints[1].id).then_some(endpoints)
 }
 
-fn current_wide_undetailed_line(payload: &[u8], offset: usize) -> bool {
+fn current_undetailed_bounded_curve_is_line(payload: &[u8], offset: usize) -> bool {
     let supported_prefix = matches!(
         payload.get(offset..offset + SKETCH_MARKER.len()),
         Some(marker) if marker == SKETCH_MARKER || marker == LEGACY_EXTENDED_SKETCH_MARKER
@@ -41626,10 +41632,13 @@ fn current_wide_undetailed_line(payload: &[u8], offset: usize) -> bool {
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
         && marker_native_code(payload, offset) == Some(2)
         && marker_is_geometry_locus(payload, offset);
+    let complete_indexed_record = wide_indexed_curve_endpoint_indices(payload, offset).is_some()
+        && sketch_marker_prefix_at(payload, offset.saturating_add(92))
+        || compact_indexed_curve_endpoint_indices(payload, offset).is_some()
+            && sketch_marker_prefix_at(payload, offset.saturating_add(84));
     supported_prefix
         && (profile_locus || extended_geometry_locus)
-        && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
-        && sketch_marker_prefix_at(payload, offset.saturating_add(92))
+        && complete_indexed_record
         && compact_bounded_curve_tangent(payload, offset).is_none()
 }
 
