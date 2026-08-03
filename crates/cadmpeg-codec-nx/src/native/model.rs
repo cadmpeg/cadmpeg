@@ -264,6 +264,7 @@ pub(crate) struct OmRecords {
     pub(crate) rm_creation_display_data_relations: Vec<RmCreationDisplayDataRelation>,
     pub(crate) part_color_tables: Vec<PartColorTable>,
     pub(crate) part_color_definitions: Vec<PartColorDefinition>,
+    pub(crate) rm_display_color_assignments: Vec<RmDisplayColorAssignment>,
     pub(crate) data_block_column_index_tables: Vec<DataBlockColumnIndexTable>,
     pub(crate) store_headers: Vec<StoreHeader>,
     pub(crate) string_values: Vec<StringValue>,
@@ -784,6 +785,8 @@ impl NativeModel {
         let data_block_target_index_rows = data_block_target_index_rows(container);
         let rm_creation_display_data_relations = rm_creation_display_data_relations(container);
         let (part_color_tables, part_color_definitions) = part_color_tables(container);
+        let rm_display_color_assignments =
+            rm_display_color_assignments(container, &part_color_definitions);
         let data_block_column_index_tables = data_block_column_index_tables(
             &data_block_linked_index_rows,
             &data_block_target_index_rows,
@@ -1081,6 +1084,7 @@ impl NativeModel {
                 rm_creation_display_data_relations,
                 part_color_tables,
                 part_color_definitions,
+                rm_display_color_assignments,
                 data_block_column_index_tables,
                 store_headers,
                 string_values,

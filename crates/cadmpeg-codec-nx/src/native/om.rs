@@ -738,6 +738,33 @@ pub struct PartColorDefinition {
     pub component_source_offsets: [u64; 3],
 }
 
+/// Explicit color assignment carried by one `RMFastLoad` linked row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RmDisplayColorAssignment {
+    /// Globally unique assignment identity.
+    pub id: String,
+    /// Zero-based source order.
+    pub ordinal: u32,
+    /// Unresolved leading linked-row object identity.
+    pub object_index: u32,
+    /// Exact object-index token.
+    pub raw_object_index: Vec<u8>,
+    /// One-based part palette index.
+    pub color_index: u16,
+    /// Target in `part_color_definitions`.
+    pub color_definition: String,
+    /// Exact color-index token.
+    pub raw_color_index: Vec<u8>,
+    /// Owning directory entry.
+    pub source_entry: String,
+    /// Absolute color-token offset.
+    pub source_offset: u64,
+    /// Absolute object-token offset.
+    pub object_index_source_offset: u64,
+    /// Absolute row-opener offset.
+    pub row_source_offset: u64,
+}
+
 /// Complete composite table spanning linked and target-index row grammars.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataBlockColumnIndexTable {
@@ -2934,6 +2961,60 @@ pub fn part_color_tables(container: &Container) -> (Vec<PartColorTable>, Vec<Par
     }
 
     (tables, definitions)
+}
+
+/// Decode explicit display-color assignments from `RMFastLoad` linked rows.
+pub fn rm_display_color_assignments(
+    container: &Container,
+    color_definitions: &[PartColorDefinition],
+) -> Vec<RmDisplayColorAssignment> {
+    let mut assignments = Vec::new();
+    for (entry, section) in container
+        .om_sections()
+        .into_iter()
+        .filter(|(entry, _)| entry.name == "/Root/FastLoad/RMFastLoad")
+    {
+        let (Some(record_area), Some(record_area_offset)) =
+            (section.record_area, section.record_area_offset)
+        else {
+            continue;
+        };
+        let source_base =
+            entry.file_span.map_or(0, |(offset, _)| offset) + record_area_offset as u64;
+        for row in crate::om::offset_store_linked_index_rows(record_area) {
+            let Some(color) = crate::om::linked_row_color_index(record_area, &row) else {
+                continue;
+            };
+            let mut matches = color_definitions
+                .iter()
+                .filter(|definition| definition.color_index == color.color_index);
+            let Some(definition) = matches.next() else {
+                continue;
+            };
+            if matches.next().is_some() {
+                continue;
+            }
+            assignments.push(RmDisplayColorAssignment {
+                id: String::new(),
+                ordinal: 0,
+                object_index: row.first_index.0,
+                raw_object_index: row.raw_first_index,
+                color_index: color.color_index,
+                color_definition: definition.id.clone(),
+                raw_color_index: color.raw_color_index,
+                source_entry: entry.name.clone(),
+                source_offset: source_base + color.offset as u64,
+                object_index_source_offset: source_base + row.first_index.1 as u64,
+                row_source_offset: source_base + row.offset as u64,
+            });
+        }
+    }
+    assignments.sort_by_key(|assignment| assignment.source_offset);
+    for (ordinal, assignment) in assignments.iter_mut().enumerate() {
+        assignment.ordinal = ordinal as u32;
+        assignment.id = format!("nx:rm-display-color-assignments:assignment#{ordinal}");
+    }
+    assignments
 }
 
 /// Resolve complete composite column-index tables atomically by section.

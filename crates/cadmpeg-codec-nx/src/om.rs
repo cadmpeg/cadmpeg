@@ -213,6 +213,70 @@ pub struct OffsetStoreLinkedIndexRow {
     pub mode: u8,
 }
 
+/// Canonical NX color-index token immediately preceding a linked row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkedRowColorIndex {
+    /// One-based part palette index.
+    pub color_index: u16,
+    /// Exact serialized index token.
+    pub raw_color_index: Vec<u8>,
+    /// Color token's byte offset.
+    pub offset: usize,
+}
+
+/// Decode the color-index prefix of an `RMFastLoad` linked row.
+pub fn linked_row_color_index(
+    bytes: &[u8],
+    row: &OffsetStoreLinkedIndexRow,
+) -> Option<LinkedRowColorIndex> {
+    const PRECEDING_SUFFIX: [u8; 5] = [0x01, 0xc0, 0x44, 0x04, 0x00];
+    let direct_offset = row.offset.checked_sub(1)?;
+    let direct = *bytes.get(direct_offset)?;
+    if (1..=127).contains(&direct)
+        && bytes.get(direct_offset.checked_sub(PRECEDING_SUFFIX.len())?..direct_offset)
+            == Some(&PRECEDING_SUFFIX)
+    {
+        return Some(LinkedRowColorIndex {
+            color_index: u16::from(direct),
+            raw_color_index: vec![direct],
+            offset: direct_offset,
+        });
+    }
+    let extended_offset = row.offset.checked_sub(2)?;
+    let token: [u8; 2] = bytes.get(extended_offset..row.offset)?.try_into().ok()?;
+    (token[0] == 0x80
+        && (128..=216).contains(&token[1])
+        && bytes.get(extended_offset.checked_sub(PRECEDING_SUFFIX.len())?..extended_offset)
+            == Some(&PRECEDING_SUFFIX))
+    .then(|| LinkedRowColorIndex {
+        color_index: u16::from(token[1]),
+        raw_color_index: token.to_vec(),
+        offset: extended_offset,
+    })
+}
+
+#[cfg(test)]
+mod linked_row_color_index_tests {
+    use super::*;
+
+    #[test]
+    fn requires_the_complete_preceding_suffix() {
+        let row_bytes = [
+            0x02, 0x0b, 7, 0x93, 0x8c, 0x16, 2, 0xff, 0xff, 0x90, 0xfe, 3, 4, 5, 0, 0x47, 3, 4, 1,
+            0xc0, 0x44, 4, 0,
+        ];
+        let mut bytes = [1, 0xc0, 0x44, 4, 0, 0x80, 201].to_vec();
+        bytes.extend(row_bytes);
+        let rows = offset_store_linked_index_rows(&bytes);
+        let color = linked_row_color_index(&bytes, &rows[0]).expect("complete prefix");
+        assert_eq!(color.color_index, 201);
+        assert_eq!(color.raw_color_index, [0x80, 201]);
+
+        bytes[1] = 0;
+        assert_eq!(linked_row_color_index(&bytes, &rows[0]), None);
+    }
+}
+
 /// One self-framed target-index row in contiguous column storage.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OffsetStoreTargetIndexRow {

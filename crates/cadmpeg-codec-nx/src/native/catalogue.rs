@@ -3087,6 +3087,16 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: false,
     },
     CatalogueRow {
+        arena: "rm_display_color_assignments",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.om.rm_display_color_assignments, r, ns),
+        len: |m| m.om.rm_display_color_assignments.len(),
+        counts_toward_emptiness: false,
+    },
+    CatalogueRow {
         arena: "data_block_column_index_tables",
         tag: None,
         exactness: Exactness::ByteExact,
