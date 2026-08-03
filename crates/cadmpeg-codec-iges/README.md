@@ -1,0 +1,74 @@
+# cadmpeg-codec-iges
+
+`cadmpeg-codec-iges` inspects and decodes IGES 5.3 Fixed ASCII files into
+`CadIr`.
+
+Support level: [L8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+for the Fixed ASCII mechanical/document envelope.
+
+## Install
+
+```sh
+cargo add cadmpeg-codec-iges cadmpeg-ir
+```
+
+## Decode
+
+```rust,no_run
+use cadmpeg_codec_iges::IgesCodec;
+use cadmpeg_ir::{Codec, DecodeOptions};
+use std::fs::File;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut input = File::open("part.igs")?;
+    let result = IgesCodec.decode(&mut input, &DecodeOptions::default())?;
+
+    for loss in &result.report.losses {
+        eprintln!("{:?}: {}", loss.severity, loss.message);
+    }
+    println!("{} bodies", result.ir.model.bodies.len());
+    Ok(())
+}
+```
+
+The result holds the decoded `CadIr` and a `DecodeReport`. Read
+`report.losses` before trusting geometry. Set
+`DecodeOptions::container_only` for card and Global metadata without entity
+decode. `IgesCodec::inspect` returns section structure, Directory census, and
+reference findings.
+
+## Data model
+
+A Fixed ASCII IGES file is an 80-column card stream with Start, Global,
+Directory Entry, Parameter Data, and Terminate sections. The decoder frames
+those cards, resolves Directory and Parameter records, and transfers admitted
+geometry, topology, product, presentation, annotation, drawing, associativity,
+and property entities into `CadIr`. Lengths convert to millimetres from the
+Global unit system. Directions, ratios, angles, knots, weights, and UV
+parameters keep their native scale.
+
+Records that block faithful transfer land in `DecodeReport::losses`. Named
+opaque records retain identity and, within bounds, complete bytes or length
+plus SHA-256. Coverage for each envelope lives in the
+[format-support profile][support].
+
+## Documentation
+
+- [API documentation][docs]
+- [Format support][support]
+- [Format notes][spec]
+- [Clean-room and legal policy][legal]
+- [Repository][repo]
+
+Requires Rust 1.88 or later. Licensed under Apache-2.0.
+
+IGES and other product names are trademarks of their respective owners.
+cadmpeg uses them only to identify the file formats this codec targets and is
+not affiliated with, endorsed by, or sponsored by any CAD vendor. See the
+[clean-room and legal policy][legal].
+
+[docs]: https://docs.rs/cadmpeg-codec-iges
+[legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md
+[repo]: https://github.com/cadmpeg/cadmpeg
+[spec]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/iges.md
+[support]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges
