@@ -11093,6 +11093,112 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
 }
 
 #[test]
+fn validation_accepts_unindexed_construction_identity_terminal() {
+    use crate::records::{
+        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
+        DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
+        DesignRecordHeader,
+    };
+
+    let stream = "f3d:Design/BulkStream.dat";
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let group = DesignConstructionOperandGroup {
+        id: format!("{stream}:operand-group#100"),
+        scope_record_index: 10,
+        scope_reference_ordinal: 0,
+        record_index: 100,
+        byte_offset: 1_000,
+        class_tag: "271".into(),
+        members: Vec::new(),
+        lost_edge_references: Vec::new(),
+        member_offsets: Vec::new(),
+        frame: DesignConstructionOperandGroupFrame {
+            member_count_offset: 1_021,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            auxiliary_paths: Vec::new(),
+            trailing_record_indices: vec![101],
+            trailing_record_offsets: vec![1_025],
+            trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
+            opaque_index: 1,
+            opaque_index_offset: 1_029,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 1_033,
+            variant: false,
+        },
+        role: 0,
+        extrude_role: None,
+        extrude_face_role: None,
+        role_offset: 1_041,
+        paired_class_tag: "261".into(),
+        paired_byte_offset: 1_050,
+    };
+    let identity = DesignConstructionOperandIdentity {
+        id: format!("{stream}:operand-identity#1100"),
+        group_record_index: 100,
+        wrapper_record_indices: vec![101],
+        wrapper_byte_offsets: vec![1_100],
+        wrapper_class_tags: vec!["384".into()],
+        following_record_index: 102,
+        following_byte_offset: 1_124,
+        following_class_tag: "395".into(),
+        tracking_path: None,
+        persistent_identity: Some(DesignConstructionPersistentIdentity {
+            local_id: 167,
+            local_id_offset: 1_145,
+            asset_id: "2d0697b6-f6c5-4f86-bb58-4a2f413c99d3".into(),
+            asset_id_offset: 1_157,
+            context_id: "9dea94a1-729a-4032-930b-d4ba4eaadb0c".into(),
+            context_id_offset: 1_233,
+            tail_slot_present: false,
+            tail_slot_offset: 1_309,
+            next_record_index: 103,
+            next_byte_offset: 1_314,
+        }),
+    };
+    let wrapper = DesignRecordHeader {
+        id: format!("{stream}:record-header#1100"),
+        record_index: 101,
+        class_tag: "384".into(),
+        byte_offset: 1_100,
+    };
+    let following = DesignRecordHeader {
+        id: format!("{stream}:record-header#1124"),
+        record_index: 102,
+        class_tag: "395".into(),
+        byte_offset: 1_124,
+    };
+    let identity_id = identity.id.clone();
+    let mut native = crate::native::F3dNative::default();
+    native.design_construction_operand_groups.push(group);
+    native.design_construction_operand_identities.push(identity);
+    native.design_record_headers.extend([wrapper, following]);
+    native.store(ir.native.namespace_mut("f3d")).unwrap();
+
+    let invalid_identity = |finding: &cadmpeg_ir::Finding| {
+        finding.entity.as_deref() == Some(identity_id.as_str())
+            && finding.message.contains("invalid nested frame")
+    };
+    assert!(!crate::validate::validate_native(&ir)
+        .iter()
+        .any(invalid_identity));
+
+    let mut native = crate::native::F3dNative::load(ir.native.namespace("f3d").unwrap()).unwrap();
+    native.design_record_headers.push(DesignRecordHeader {
+        id: format!("{stream}:record-header#1315"),
+        record_index: 103,
+        class_tag: "301".into(),
+        byte_offset: 1_315,
+    });
+    native.store(ir.native.namespace_mut("f3d")).unwrap();
+    assert!(crate::validate::validate_native(&ir)
+        .iter()
+        .any(invalid_identity));
+}
+
+#[test]
 fn sketch_constraint_mask_decodes_equal_length_bit() {
     let (kinds, unknown) = crate::design::decode::sketch::decode_constraint_kinds(0x0000_0008);
     assert_eq!(kinds, [crate::records::SketchConstraintKind::EqualLength]);

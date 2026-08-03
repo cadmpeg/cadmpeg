@@ -3020,7 +3020,11 @@ fn validate_construction_operand_identities<'a>(
                     && persistent.next_record_index != 0
                     && records_by_index
                         .get(&(native_stream, persistent.next_record_index))
-                        .is_some_and(|header| header.byte_offset == persistent.next_byte_offset)
+                        // The header arena indexes records named by Design entity
+                        // reference lists. A nested identity can terminate at a
+                        // structurally parsed record that no entity names, so the
+                        // arena is not an exhaustive index of terminal records.
+                        .is_none_or(|header| header.byte_offset == persistent.next_byte_offset)
             });
         let valid = group.is_some_and(|group| {
             let trailing = group.frame.trailing_record_indices.first();
