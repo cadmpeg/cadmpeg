@@ -3400,6 +3400,18 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
         ),
         Some(SketchConstraintDefinition::Radius { entity, .. }) if entity == measured.id
     ));
+    let repeated = circle("repeated", 12.0, 3.0, 5.0);
+    assert!(matches!(
+        radial_locus_dimension_definition(
+            &[&measured, &annotation, &repeated],
+            &all,
+            "Diameter Dimension-3",
+            1.0,
+            &parameter,
+        ),
+        Some(SketchConstraintDefinition::RepeatedDiameter { entities, parameter: actual })
+            if entities == vec![measured.id.clone(), repeated.id] && actual == parameter
+    ));
     assert!(matches!(
         radial_locus_dimension_definition(
             &[&center],

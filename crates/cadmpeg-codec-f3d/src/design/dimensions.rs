@@ -2747,7 +2747,7 @@ pub(crate) fn radial_locus_dimension_definition(
     evaluated_value: f64,
     parameter: &cadmpeg_ir::features::ParameterId,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
 
     let unique = |mut definitions: Vec<_>| {
         let definition = definitions.pop()?;
@@ -2760,7 +2760,40 @@ pub(crate) fn radial_locus_dimension_definition(
         })
         .collect::<Vec<_>>();
     if !direct.is_empty() {
-        return unique(direct);
+        let mut entity_ids = direct
+            .iter()
+            .filter_map(|definition| match definition {
+                Definition::Radius { entity, .. } | Definition::Diameter { entity, .. } => {
+                    Some(entity.clone())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let distinct = entity_ids.iter().collect::<HashSet<_>>().len() == entity_ids.len();
+        return match direct.as_slice() {
+            [definition] => Some(definition.clone()),
+            _ if distinct
+                && direct
+                    .iter()
+                    .all(|definition| matches!(definition, Definition::Radius { .. })) =>
+            {
+                Some(Definition::RepeatedRadius {
+                    entities: std::mem::take(&mut entity_ids),
+                    parameter: parameter.clone(),
+                })
+            }
+            _ if distinct
+                && direct
+                    .iter()
+                    .all(|definition| matches!(definition, Definition::Diameter { .. })) =>
+            {
+                Some(Definition::RepeatedDiameter {
+                    entities: entity_ids,
+                    parameter: parameter.clone(),
+                })
+            }
+            _ => None,
+        };
     }
 
     let sketch = loci.first()?.sketch.clone();
