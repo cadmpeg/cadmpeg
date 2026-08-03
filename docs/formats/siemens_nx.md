@@ -1527,7 +1527,19 @@ One complete construction-identity group projects hole diameters when its operat
 
 A body partition containing exactly one hole operation and exactly one validated through-bore cylinder supplies one unoriented axis placement. The axis is normalized and sign-canonicalized so its first component exceeding the angular tolerance is positive. The origin is the point on the cylinder axis closest to the model origin: for normalized axis `a` and serialized cylinder origin `o`, `p = o - dot(o, a) a`. The origin is invariant under an arbitrary axial shift of `o`, and canonical axis sign is a serialization gauge only. A partition containing multiple operations or multiple bores has no operation-to-axis correspondence and supplies no placement. A missing or non-unitizable axis also leaves placement absent. An inferred axis placement does not populate the authored hole position or directed drilling vector.
 
-The complete set of `HOLE PACKAGE` operations uses the same output-body partition and through-bore bijection rule without requiring a simple-hole payload template. Every package operation receives the diameter of its body partition. A duplicate operation identity or any incomplete partition leaves all package diameters unresolved atomically.
+A `HOLE PACKAGE` operation related to one simple-hole construction group owns
+the group's `SIMPLE HOLE` operations as its internal per-location body
+operations. The package projects as one neutral hole feature only when every
+internal operation has one simple through-hole template, all internal
+operations resolve to the same single output body and diameter, and their end
+treatments resolve identically. The package receives that output, diameter,
+through-all extent, and common entry and exit treatments. When the output body
+contains exactly one validated through-bore cylinder per internal operation,
+the canonical unoriented axes of those cylinders define the package placements
+in deterministic order. The internal operations do not also project as neutral
+history features. An ambiguous package or group relation, incomplete child
+template, differing output, diameter, or treatment retains the operations
+independently.
 
 Entry and exit chamfer dimensions project when every typed through-hole operation requests both chamfers and has the same explicit-output or unique-connected-solid body resolution used for bore diameters. Operations are partitioned by output-body identity. In each partition, every owned matched bore cylinder has exactly two reversed coaxial conical faces and no additional owned candidate cone remains. Cones outside those output-body ownership graphs do not participate. Each conical face has two circular boundary carriers: the inner radius equals the partition's common bore radius bitwise and the outer radius is larger. All outer radii in one partition agree within the document linear tolerance and all cone half-angles in that partition agree within the document angular tolerance. Their arithmetic means define that partition's canonical outer radius and included angle. The neutral chamfer diameter is twice the canonical outer radius and its included angle is twice the canonical cone half-angle. Distinct output bodies may carry distinct treatments. Missing or ambiguous output ownership, an incomplete topology ownership graph or boundary, ambiguous bore axis, unequal treatment within one output partition, noncircular boundary, or unmatched owned cone rejects every chamfer dimension atomically.
 
@@ -1539,7 +1551,7 @@ Two or more `SIMPLE HOLE` operations belong to one construction-identity group w
 
 A `HOLE PACKAGE` payload contains at most one construction-group lane framed as `00 00 01 00 00, selector:u8, 00, branch:u8, 00 00 00 00, reference[2], branch, 00 00 00 00, reference[2], 00 00 ff`. `selector` and `branch` are nonzero. The repeated branch bytes are equal. References use the canonical `f0`/`f1` object-index form, retain their exact tokens and offsets, and resolve atomically through the unique offset-store rule. A missing fixed byte, zero selector or branch, unequal branch witness, null or noncanonical reference, unresolved reference, or multiple complete lanes rejects the lane atomically without rejecting the bounded operation record.
 
-One package lane relates to one simple-hole construction group when their four resolved block identities are equal in serialized order and that identity selects exactly one package lane and exactly one simple-hole group. The relation retains the package operation, package lane, and simple-hole group. Ambiguous or partial equality produces no relation. The equality assigns grouping only; it does not assign hole parameters, placement, output, suppression, feature hierarchy, or dependency direction.
+One package lane relates to one simple-hole construction group when their four resolved block identities are equal in serialized order and that identity selects exactly one package lane and exactly one simple-hole group. The relation retains the package operation, package lane, and simple-hole group. The package owns the group's simple-hole operations as internal per-location body operations. Ambiguous or partial equality produces no relation. The equality does not assign hole parameters, placement, output, suppression, or dependency direction.
 
 A `DATUM_CSYS` payload begins `control:u8, 00 00 01 00 00 01 01 00 01 00 00 00 00`, followed by exactly eight canonical `f0`/`f1` object indices and `01 01 00 01 00 00 00 00`. The control byte is retained independently. The eight indices retain their exact tokens and offsets and resolve atomically to blocks in the single offset store selected by the operation-header inputs. Their serialized order is retained. A missing, noncanonical, unresolved, differently stored, or incorrectly terminated reference rejects the complete coordinate-system construction lane.
 

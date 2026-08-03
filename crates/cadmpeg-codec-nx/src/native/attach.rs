@@ -867,20 +867,6 @@ fn attach_feature_operations(
         .enumerate()
         .map(|(position, label)| (label.id.as_str(), position))
         .collect::<BTreeMap<_, _>>();
-    let feature_ids_by_operation = labels
-        .iter()
-        .filter(|label| projects_neutral_feature(&label.value))
-        .map(|label| {
-            let key = label
-                .id
-                .strip_prefix("nx:feature-history:operation-label#")
-                .unwrap_or(label.id.as_str());
-            (
-                label.id.as_str(),
-                FeatureId(format!("nx:feature-history:feature#{key}")),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
     let sketch_datum_csys_dependencies = sketch_datum_csys_dependencies
         .iter()
         .map(|dependency| (dependency.datum_csys_operation_label.as_str(), dependency))
@@ -1234,29 +1220,33 @@ fn attach_feature_operations(
         };
     let simple_hole_placements =
         hole_axis_placements_for_operations(ir, &simple_hole_operations, &hole_outputs);
-    let hole_package_operations = labels
+    let simple_hole_chamfers = simple_hole_chamfers(ir, simple_hole_templates, &hole_outputs);
+    let hole_packages = hole_package_projection(
+        ir,
+        simple_hole_templates,
+        simple_hole_construction_groups,
+        hole_package_construction_group_uses,
+        &hole_outputs,
+        &simple_hole_diameters,
+        &simple_hole_chamfers,
+    );
+    let feature_ids_by_operation = labels
         .iter()
-        .filter(|label| label.value == "HOLE PACKAGE")
-        .map(|label| label.id.clone())
-        .collect::<Vec<_>>();
-    let explicit_hole_package_outputs = hole_package_operations
-        .iter()
-        .filter_map(|operation| {
-            let object_index = body_references.get(operation.as_str())?;
-            Some((
-                operation.clone(),
-                feature_body_outputs(*object_index, &bodies_by_object_index),
-            ))
+        .filter(|label| {
+            projects_neutral_feature(&label.value)
+                && !hole_packages.internal_operations.contains(&label.id)
+        })
+        .map(|label| {
+            let key = label
+                .id
+                .strip_prefix("nx:feature-history:operation-label#")
+                .unwrap_or(label.id.as_str());
+            (
+                label.id.as_str(),
+                FeatureId(format!("nx:feature-history:feature#{key}")),
+            )
         })
         .collect::<BTreeMap<_, _>>();
-    let (hole_package_outputs, hole_package_diameters) =
-        match hole_body_projection(ir, &hole_package_operations, &explicit_hole_package_outputs) {
-            Some(projection) => (projection.outputs, projection.diameters),
-            None => (explicit_hole_package_outputs, BTreeMap::new()),
-        };
-    let hole_package_placements =
-        hole_axis_placements_for_operations(ir, &hole_package_operations, &hole_package_outputs);
-    let simple_hole_chamfers = simple_hole_chamfers(ir, simple_hole_templates, &hole_outputs);
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureParameterBinding>>::new();
     for binding in parameter_bindings {
@@ -1323,7 +1313,9 @@ fn attach_feature_operations(
         ir.model.semantic_annotations.push(annotation);
     }
     for (ordinal, label) in labels.iter().enumerate() {
-        if !projects_neutral_feature(&label.value) {
+        if !projects_neutral_feature(&label.value)
+            || hole_packages.internal_operations.contains(&label.id)
+        {
             continue;
         }
         let id = feature_ids_by_operation
@@ -1493,7 +1485,7 @@ fn attach_feature_operations(
         if outputs.is_empty() {
             outputs = hole_outputs
                 .get(label.id.as_str())
-                .or_else(|| hole_package_outputs.get(label.id.as_str()))
+                .or_else(|| hole_packages.outputs.get(label.id.as_str()))
                 .cloned()
                 .unwrap_or_default();
         }
@@ -2432,15 +2424,29 @@ fn attach_feature_operations(
                             block_dimension_values,
                             block_placement,
                             HoleProjection {
-                                placement: simple_hole_placements
+                                placements: simple_hole_placements
                                     .get(label.id.as_str())
-                                    .or_else(|| hole_package_placements.get(label.id.as_str()))
-                                    .cloned(),
+                                    .cloned()
+                                    .into_iter()
+                                    .chain(
+                                        hole_packages
+                                            .placements
+                                            .get(label.id.as_str())
+                                            .cloned()
+                                            .unwrap_or_default(),
+                                    )
+                                    .collect(),
                                 diameter: simple_hole_diameters
                                     .get(label.id.as_str())
-                                    .or_else(|| hole_package_diameters.get(label.id.as_str()))
+                                    .or_else(|| hole_packages.diameters.get(label.id.as_str()))
                                     .copied(),
-                                chamfer: simple_hole_chamfers.get(label.id.as_str()).copied(),
+                                chamfer: simple_hole_chamfers
+                                    .get(label.id.as_str())
+                                    .or_else(|| hole_packages.chamfers.get(label.id.as_str()))
+                                    .copied(),
+                                grouped_simple_through: hole_packages
+                                    .outputs
+                                    .contains_key(label.id.as_str()),
                             },
                             native_parameters,
                         );
@@ -4067,9 +4073,10 @@ fn non_boolean_feature_definition(
 /// Permutation-invariant hole properties derived from one complete body partition.
 #[derive(Default)]
 struct HoleProjection {
-    pub(crate) placement: Option<HolePlacement>,
+    pub(crate) placements: Vec<HolePlacement>,
     pub(crate) diameter: Option<Length>,
     pub(crate) chamfer: Option<HoleKind>,
+    pub(crate) grouped_simple_through: bool,
 }
 
 fn non_boolean_feature_definition_with_parameters(
@@ -4162,7 +4169,7 @@ fn non_boolean_feature_definition_with_parameters(
             face: None,
             position: None,
             direction: None,
-            placements: hole.placement.into_iter().collect(),
+            placements: hole.placements,
             kind: hole.chamfer.unwrap_or_else(|| {
                 if simple_hole_template.is_some() {
                     HoleKind::Unresolved {
@@ -4202,17 +4209,26 @@ fn non_boolean_feature_definition_with_parameters(
             face: None,
             position: None,
             direction: None,
-            placements: hole.placement.into_iter().collect(),
-            kind: HoleKind::Unresolved {
-                form: None,
-                counterbore_diameter: None,
-                counterbore_depth: None,
-                countersink_diameter: None,
-                countersink_angle: None,
+            placements: hole.placements,
+            kind: if hole.grouped_simple_through {
+                hole.chamfer.unwrap_or(HoleKind::Simple)
+            } else {
+                HoleKind::Unresolved {
+                    form: None,
+                    counterbore_diameter: None,
+                    counterbore_depth: None,
+                    countersink_diameter: None,
+                    countersink_angle: None,
+                }
             },
-            exit_kind: None,
+            exit_kind: hole
+                .grouped_simple_through
+                .then_some(hole.chamfer)
+                .flatten(),
             diameter: hole.diameter,
-            extent: None,
+            extent: hole
+                .grouped_simple_through
+                .then_some(cadmpeg_ir::features::Termination::ThroughAll),
             bottom: None,
             taper_angle: None,
             specification: None,
@@ -4348,6 +4364,154 @@ fn simple_hole_operations(
     })
 }
 
+#[derive(Default)]
+struct HolePackageProjection {
+    internal_operations: BTreeSet<String>,
+    outputs: BTreeMap<String, Vec<BodyId>>,
+    diameters: BTreeMap<String, Length>,
+    chamfers: BTreeMap<String, HoleKind>,
+    placements: BTreeMap<String, Vec<HolePlacement>>,
+}
+
+fn hole_package_projection(
+    ir: &CadIr,
+    templates: &[crate::native::features::FeatureSimpleHoleTemplate],
+    groups: &[crate::native::features::FeatureSimpleHoleConstructionGroup],
+    uses: &[crate::native::features::FeatureHolePackageConstructionGroupUse],
+    outputs: &BTreeMap<String, Vec<BodyId>>,
+    diameters: &BTreeMap<String, Length>,
+    chamfers: &BTreeMap<String, HoleKind>,
+) -> HolePackageProjection {
+    let mut projection = HolePackageProjection::default();
+    let package_counts = uses
+        .iter()
+        .fold(BTreeMap::<&str, usize>::new(), |mut counts, use_| {
+            *counts.entry(use_.operation_label.as_str()).or_default() += 1;
+            counts
+        });
+    let group_counts = uses
+        .iter()
+        .fold(BTreeMap::<&str, usize>::new(), |mut counts, use_| {
+            *counts
+                .entry(use_.simple_hole_construction_group.as_str())
+                .or_default() += 1;
+            counts
+        });
+    for use_ in uses {
+        if package_counts.get(use_.operation_label.as_str()) != Some(&1)
+            || group_counts.get(use_.simple_hole_construction_group.as_str()) != Some(&1)
+        {
+            continue;
+        }
+        let Some(group) = groups
+            .iter()
+            .find(|group| group.id == use_.simple_hole_construction_group)
+        else {
+            continue;
+        };
+        if group.operation_labels.is_empty()
+            || group.operation_labels.iter().collect::<BTreeSet<_>>().len()
+                != group.operation_labels.len()
+            || group
+                .operation_labels
+                .iter()
+                .any(|operation| projection.internal_operations.contains(operation))
+        {
+            continue;
+        }
+        let child_templates = group
+            .operation_labels
+            .iter()
+            .map(|operation| {
+                templates
+                    .iter()
+                    .filter(|template| template.operation_label == *operation)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        if child_templates.iter().any(|matches| {
+            !matches!(matches.as_slice(), [template]
+                if template.form == crate::native::features::SimpleHoleForm::Simple
+                    && template.extent == crate::native::features::SimpleHoleExtent::Through)
+        }) {
+            continue;
+        }
+        let child_outputs = group
+            .operation_labels
+            .iter()
+            .filter_map(|operation| outputs.get(operation))
+            .collect::<Vec<_>>();
+        let Some([body]) = child_outputs.first().map(|bodies| bodies.as_slice()) else {
+            continue;
+        };
+        if child_outputs.len() != group.operation_labels.len()
+            || child_outputs
+                .iter()
+                .any(|candidate| candidate.as_slice() != [body.clone()])
+        {
+            continue;
+        }
+        let Some(diameter) = group
+            .operation_labels
+            .first()
+            .and_then(|operation| diameters.get(operation))
+            .copied()
+        else {
+            continue;
+        };
+        if group
+            .operation_labels
+            .iter()
+            .any(|operation| diameters.get(operation).copied() != Some(diameter))
+        {
+            continue;
+        }
+        let requests_chamfer = child_templates.iter().all(|matches| {
+            let template = matches[0];
+            template.start_treatment == crate::native::features::SimpleHoleEndTreatment::Chamfer
+                && template.end_treatment
+                    == crate::native::features::SimpleHoleEndTreatment::Chamfer
+        });
+        if !requests_chamfer {
+            continue;
+        }
+        let Some(chamfer) = group
+            .operation_labels
+            .first()
+            .and_then(|operation| chamfers.get(operation))
+            .copied()
+        else {
+            continue;
+        };
+        if group
+            .operation_labels
+            .iter()
+            .any(|operation| chamfers.get(operation).copied() != Some(chamfer))
+        {
+            continue;
+        }
+        projection
+            .internal_operations
+            .extend(group.operation_labels.iter().cloned());
+        projection
+            .outputs
+            .insert(use_.operation_label.clone(), vec![body.clone()]);
+        projection
+            .diameters
+            .insert(use_.operation_label.clone(), diameter);
+        projection
+            .chamfers
+            .insert(use_.operation_label.clone(), chamfer);
+        let placements = hole_axis_placements_for_body(ir, body);
+        if placements.len() == group.operation_labels.len() {
+            projection
+                .placements
+                .insert(use_.operation_label.clone(), placements);
+        }
+    }
+    projection
+}
+
 struct HoleBodyProjection {
     outputs: BTreeMap<String, Vec<BodyId>>,
     diameters: BTreeMap<String, Length>,
@@ -4409,29 +4573,38 @@ fn hole_axis_placements_for_operations(
         return BTreeMap::new();
     };
 
-    let angular_tolerance = ir.tolerances.angular.max(1e-12);
     let mut placements = BTreeMap::new();
     for (body, operations) in operations_by_body {
         let [operation] = operations.as_slice() else {
             continue;
         };
-        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+        let mut body_placements = hole_axis_placements_for_body(ir, &body);
+        if body_placements.len() != 1 {
             continue;
-        };
-        let Some(bores) = through_bore_cylinders(ir, &body_faces) else {
-            continue;
-        };
-        let [(origin, axis, _)] = bores.as_slice() else {
-            continue;
-        };
-        let Some(mut axis) = unit_vector(*axis) else {
-            continue;
+        }
+        placements.insert(operation.clone(), body_placements.remove(0));
+    }
+    placements
+}
+
+fn hole_axis_placements_for_body(ir: &CadIr, body: &BodyId) -> Vec<HolePlacement> {
+    let Some(body_faces) = connected_solid_body_faces(ir, body) else {
+        return Vec::new();
+    };
+    let Some(bores) = through_bore_cylinders(ir, &body_faces) else {
+        return Vec::new();
+    };
+    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let mut placements = Vec::new();
+    for (origin, axis, _) in bores {
+        let Some(mut axis) = unit_vector(axis) else {
+            return Vec::new();
         };
         let Some(leading) = [axis.x, axis.y, axis.z]
             .into_iter()
             .find(|component| component.abs() > angular_tolerance)
         else {
-            continue;
+            return Vec::new();
         };
         if leading < 0.0 {
             axis = Vector3::new(-axis.x, -axis.y, -axis.z);
@@ -4443,11 +4616,26 @@ fn hole_axis_placements_for_operations(
             origin.z - axial_offset * axis.z,
         );
         if !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite() {
-            continue;
+            return Vec::new();
         }
-        placements.insert(operation.clone(), HolePlacement::Axis { origin, axis });
+        placements.push(HolePlacement::Axis { origin, axis });
     }
+    placements.sort_by_key(hole_placement_key);
     placements
+}
+
+fn hole_placement_key(placement: &HolePlacement) -> [u64; 6] {
+    let HolePlacement::Axis { origin, axis } = placement else {
+        return [0; 6];
+    };
+    [
+        origin.x.to_bits(),
+        origin.y.to_bits(),
+        origin.z.to_bits(),
+        axis.x.to_bits(),
+        axis.y.to_bits(),
+        axis.z.to_bits(),
+    ]
 }
 
 /// Resolve hole operations to their explicit output bodies, or to the one
@@ -5447,6 +5635,81 @@ mod tests {
     }
 
     #[test]
+    fn exact_hole_package_owns_common_internal_simple_holes() {
+        use crate::native::features::{
+            FeatureHolePackageConstructionGroupUse, FeatureSimpleHoleConstructionGroup,
+            FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
+            SimpleHoleForm,
+        };
+        use cadmpeg_ir::features::{Angle, HoleKind, Length};
+        use cadmpeg_ir::ids::BodyId;
+
+        let operations = ["simple-a".to_string(), "simple-b".to_string()];
+        let templates = operations
+            .iter()
+            .map(|operation| FeatureSimpleHoleTemplate {
+                id: format!("template-{operation}"),
+                operation_label: operation.clone(),
+                payload_string: format!("string-{operation}"),
+                family: SimpleHoleFamily::GeneralHole,
+                form: SimpleHoleForm::Simple,
+                extent: SimpleHoleExtent::Through,
+                start_treatment: SimpleHoleEndTreatment::Chamfer,
+                end_treatment: SimpleHoleEndTreatment::Chamfer,
+            })
+            .collect::<Vec<_>>();
+        let group = FeatureSimpleHoleConstructionGroup {
+            id: "group".into(),
+            first_data_blocks: ["a".into(), "b".into()],
+            second_data_blocks: ["c".into(), "d".into()],
+            operation_labels: operations.to_vec(),
+            scalar_lanes: vec!["lane-a".into(), "lane-b".into()],
+            block_references: vec!["blocks-a".into(), "blocks-b".into()],
+        };
+        let use_ = FeatureHolePackageConstructionGroupUse {
+            id: "use".into(),
+            operation_label: "package".into(),
+            construction_group_lane: "package-lane".into(),
+            simple_hole_construction_group: group.id.clone(),
+            source_offset: 0,
+        };
+        let body = BodyId("body".into());
+        let outputs = operations
+            .iter()
+            .map(|operation| (operation.clone(), vec![body.clone()]))
+            .collect();
+        let diameters = operations
+            .iter()
+            .map(|operation| (operation.clone(), Length(5.1)))
+            .collect();
+        let chamfer = HoleKind::Chamfer {
+            diameter: Length(7.1),
+            angle: Angle(std::f64::consts::FRAC_PI_2),
+        };
+        let chamfers = operations
+            .iter()
+            .map(|operation| (operation.clone(), chamfer))
+            .collect();
+
+        let projection = super::hole_package_projection(
+            &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
+            &templates,
+            &[group],
+            &[use_],
+            &outputs,
+            &diameters,
+            &chamfers,
+        );
+        assert_eq!(
+            projection.internal_operations,
+            operations.into_iter().collect()
+        );
+        assert_eq!(projection.outputs["package"], [body]);
+        assert_eq!(projection.diameters["package"], Length(5.1));
+        assert_eq!(projection.chamfers["package"], chamfer);
+    }
+
+    #[test]
     fn active_configuration_retains_complete_evaluated_parameter_state() {
         let parameter =
             |id: &str, ordinal, value, dependencies: Vec<ParameterId>| DesignParameter {
@@ -6135,10 +6398,10 @@ mod tests {
                     None,
                     None,
                     super::HoleProjection {
-                        placement: Some(HolePlacement::Axis {
+                        placements: vec![HolePlacement::Axis {
                             origin: Point3::new(1.0, 2.0, 3.0),
                             axis: Vector3::new(0.0, 0.0, 1.0),
-                        }),
+                        }],
                         ..super::HoleProjection::default()
                     },
                     std::collections::BTreeMap::new(),
