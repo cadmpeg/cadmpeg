@@ -2176,6 +2176,16 @@ pub enum BodySelection {
         /// Ordered format-native selection members.
         native: Vec<String>,
     },
+    /// Bodies resolved collectively in the containing feature's input topology
+    /// when no body-to-native-member correspondence is established.
+    HistoricalUnorderedSet {
+        /// Input topology containing every selected body.
+        state: FeatureInputTopologyId,
+        /// State-local body identities in deterministic order.
+        bodies: Vec<HistoricalBodyId>,
+        /// Ordered format-native selection members retained for rewrite.
+        native: Vec<String>,
+    },
     /// Bodies in intermediate regenerated feature results, paired with the
     /// format-native selection required for rewrite.
     Generated {

@@ -196,6 +196,34 @@ mod tests {
         ];
         assert!(composite_composition_is_valid(&stages));
     }
+
+    #[test]
+    fn historical_body_overlap_ignores_set_ordering_form() {
+        use crate::ids::{FeatureInputTopologyId, HistoricalBodyId};
+
+        let state = FeatureInputTopologyId("test:input".into());
+        let target = BodySelection::Historical {
+            state: state.clone(),
+            bodies: vec![HistoricalBodyId("test:body:4".into())],
+            native: "target".into(),
+        };
+        let overlapping = BodySelection::HistoricalUnorderedSet {
+            state: state.clone(),
+            bodies: vec![
+                HistoricalBodyId("test:body:2".into()),
+                HistoricalBodyId("test:body:4".into()),
+            ],
+            native: vec!["tool-a".into(), "tool-b".into()],
+        };
+        let disjoint = BodySelection::HistoricalSet {
+            state,
+            bodies: vec![HistoricalBodyId("test:body:5".into())],
+            native: vec!["tool".into()],
+        };
+
+        assert!(body_selections_overlap(&target, &overlapping));
+        assert!(!body_selections_overlap(&target, &disjoint));
+    }
 }
 
 fn valid_increasing_locations(locations: impl Iterator<Item = f64>) -> bool {
@@ -2505,7 +2533,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     | BodySelection::Resolved { bodies, .. }
                     | BodySelection::ResolvedSet { bodies, .. } => Some(bodies.len()),
                     BodySelection::Historical { bodies, .. }
-                    | BodySelection::HistoricalSet { bodies, .. } => Some(bodies.len()),
+                    | BodySelection::HistoricalSet { bodies, .. }
+                    | BodySelection::HistoricalUnorderedSet { bodies, .. } => Some(bodies.len()),
                     BodySelection::Generated { bodies, .. } => Some(bodies.len()),
                     BodySelection::Local { bodies, .. } => Some(bodies.len()),
                     BodySelection::Unresolved
@@ -3262,7 +3291,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     | BodySelection::Resolved { bodies, .. }
                     | BodySelection::ResolvedSet { bodies, .. } => Some(bodies.len()),
                     BodySelection::Historical { bodies, .. }
-                    | BodySelection::HistoricalSet { bodies, .. } => Some(bodies.len()),
+                    | BodySelection::HistoricalSet { bodies, .. }
+                    | BodySelection::HistoricalUnorderedSet { bodies, .. } => Some(bodies.len()),
                     BodySelection::Generated { bodies, .. } => Some(bodies.len()),
                     BodySelection::Local { bodies, .. } => Some(bodies.len()),
                     BodySelection::Unresolved
@@ -4661,6 +4691,42 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         },
                     );
                 }
+                BodySelection::HistoricalUnorderedSet {
+                    state,
+                    bodies,
+                    native,
+                } => {
+                    let set_is_valid = bodies.len() == native.len()
+                        && !native.is_empty()
+                        && native.iter().all(|member| !member.trim().is_empty())
+                        && native.iter().collect::<HashSet<_>>().len() == native.len();
+                    if !set_is_valid {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "historical unordered body selection set is invalid",
+                        );
+                    }
+                    check_historical_selection(
+                        findings,
+                        &feature.id,
+                        (
+                            state,
+                            bodies.iter().map(crate::ids::HistoricalBodyId::as_str),
+                            native.first().map_or("", String::as_str),
+                        ),
+                        "body",
+                        false,
+                        &input_topologies,
+                        |topology| {
+                            topology
+                                .bodies
+                                .iter()
+                                .map(crate::ids::HistoricalBodyId::as_str)
+                                .collect()
+                        },
+                    );
+                }
                 BodySelection::Generated { bodies, native } => {
                     if bodies.is_empty()
                         || native.trim().is_empty()
@@ -5084,22 +5150,28 @@ fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> boo
             _ => None,
         }
     }
+    fn historical(
+        selection: &BodySelection,
+    ) -> Option<(
+        &crate::ids::FeatureInputTopologyId,
+        &[crate::ids::HistoricalBodyId],
+    )> {
+        match selection {
+            BodySelection::Historical { state, bodies, .. }
+            | BodySelection::HistoricalSet { state, bodies, .. }
+            | BodySelection::HistoricalUnorderedSet { state, bodies, .. } => Some((state, bodies)),
+            _ => None,
+        }
+    }
     if let Some((first, second)) = direct(first).zip(direct(second)) {
         return first.iter().any(|body| second.contains(body));
     }
+    if let Some(((first_state, first), (second_state, second))) =
+        historical(first).zip(historical(second))
+    {
+        return first_state == second_state && first.iter().any(|body| second.contains(body));
+    }
     match (first, second) {
-        (
-            BodySelection::Historical {
-                state: first_state,
-                bodies: first,
-                ..
-            },
-            BodySelection::Historical {
-                state: second_state,
-                bodies: second,
-                ..
-            },
-        ) => first_state == second_state && first.iter().any(|body| second.contains(body)),
         (
             BodySelection::Generated { bodies: first, .. },
             BodySelection::Generated { bodies: second, .. },

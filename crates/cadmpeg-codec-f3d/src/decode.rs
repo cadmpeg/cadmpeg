@@ -741,6 +741,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         | BodySelection::ResolvedSet { .. }
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
+        | BodySelection::HistoricalUnorderedSet { .. }
         | BodySelection::Generated { .. }
         | BodySelection::Local { .. } => 0,
     };

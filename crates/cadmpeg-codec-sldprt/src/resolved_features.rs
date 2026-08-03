@@ -14028,7 +14028,11 @@ mod marker_tests {
         let mut duplicate = face.clone();
         duplicate.id = FaceId("other-face".into());
         assert_eq!(
-            unique_cylindrical_face(4.0, &[face.clone(), duplicate.clone()], &[surface.clone()]),
+            unique_cylindrical_face(
+                4.0,
+                &[face.clone(), duplicate.clone()],
+                std::slice::from_ref(&surface),
+            ),
             None
         );
         assert_eq!(

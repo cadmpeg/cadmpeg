@@ -762,6 +762,38 @@ pub(crate) fn bind_feature_body_selections(
     let regions = inputs.regions;
     let shells = inputs.shells;
 
+    bind_pattern_body_selections(features, scopes, groups, body_recipe_operands);
+    let pattern_body_slots = features
+        .iter()
+        .filter_map(|feature| {
+            let FeatureDefinition::Pattern {
+                seeds,
+                pattern: cadmpeg_ir::features::PatternKind::Circular { count, .. },
+            } = &feature.definition
+            else {
+                return None;
+            };
+            let [cadmpeg_ir::features::PatternSeed::Bodies(BodySelection::Historical {
+                bodies: seed_bodies,
+                ..
+            })] = seeds.as_slice()
+            else {
+                return None;
+            };
+            let [seed_body] = seed_bodies.as_slice() else {
+                return None;
+            };
+            let expected_count = usize::try_from(*count).ok()?;
+            if feature.outputs.len().checked_add(1) != Some(expected_count) {
+                return None;
+            }
+            let slots = std::iter::once(historical_body_slot(&seed_body.0))
+                .chain(feature.outputs.iter().map(|body| stable_ref(&body.0)))
+                .collect::<Option<BTreeSet<_>>>()?;
+            (slots.len() == expected_count).then_some((feature.id.clone(), slots))
+        })
+        .collect::<HashMap<_, _>>();
+
     let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
     for state in histories.iter().flat_map(|history| &history.states) {
         states
@@ -781,47 +813,7 @@ pub(crate) fn bind_feature_body_selections(
             continue;
         }
         let feature_id = feature.id.clone();
-        if let FeatureDefinition::Pattern { seeds, .. } = &mut feature.definition {
-            let Some(previous_state_id) = scope.previous_history_state_id else {
-                continue;
-            };
-            let stream = crate::ids::native_stream(&scope.id);
-            let mut matching_groups = groups.iter().filter(|group| {
-                group.scope_record_index == scope.record_index
-                    && group.role == 0x0000_0008_0000_0000
-                    && !group.members.is_empty()
-                    && crate::ids::native_stream(&group.id) == stream
-            });
-            let Some(group) = matching_groups.next() else {
-                continue;
-            };
-            if matching_groups.next().is_some() {
-                continue;
-            }
-            let selection = if let [cadmpeg_ir::features::PatternSeed::Bodies(selection)] =
-                seeds.as_mut_slice()
-            {
-                selection
-            } else if seeds.is_empty() {
-                seeds.push(cadmpeg_ir::features::PatternSeed::Bodies(
-                    BodySelection::Native(group.id.clone()),
-                ));
-                let [cadmpeg_ir::features::PatternSeed::Bodies(selection)] = seeds.as_mut_slice()
-                else {
-                    unreachable!("the inserted pattern seed is a body selection")
-                };
-                selection
-            } else {
-                continue;
-            };
-            bind_body_recipe_body_selection(
-                selection,
-                &feature_id,
-                previous_state_id,
-                scope,
-                groups,
-                body_recipe_operands,
-            );
+        if matches!(feature.definition, FeatureDefinition::Pattern { .. }) {
             continue;
         }
         if let FeatureDefinition::BoundaryFill { tools, cells } = &mut feature.definition {
@@ -979,6 +971,26 @@ pub(crate) fn bind_feature_body_selections(
                         native: native_tools,
                     }
                 };
+            } else {
+                let dependency_sets = feature
+                    .dependencies
+                    .iter()
+                    .filter_map(|dependency| pattern_body_slots.get(dependency))
+                    .collect::<Vec<_>>();
+                if let [pattern_bodies] = dependency_sets.as_slice() {
+                    if let Some(tool_slots) =
+                        pattern_combine_tool_slots(pattern_bodies, body, native_tools.len())
+                    {
+                        *tools = BodySelection::HistoricalUnorderedSet {
+                            state: input_state,
+                            bodies: tool_slots
+                                .into_iter()
+                                .map(|slot| crate::ids::history_input_body_id(&prefix, slot))
+                                .collect(),
+                            native: native_tools,
+                        };
+                    }
+                }
             }
             continue;
         }
@@ -1038,6 +1050,84 @@ pub(crate) fn bind_feature_body_selections(
             bodies: vec![crate::ids::history_input_body_id(&prefix, body)],
             native: group_id.clone(),
         };
+    }
+}
+
+fn pattern_combine_tool_slots(
+    pattern_bodies: &BTreeSet<i64>,
+    target_body: i64,
+    native_tool_count: usize,
+) -> Option<Vec<i64>> {
+    let mut tool_bodies = pattern_bodies.clone();
+    tool_bodies.remove(&target_body).then_some(())?;
+    (tool_bodies.len() == native_tool_count).then(|| tool_bodies.into_iter().collect())
+}
+
+fn historical_body_slot(id: &str) -> Option<i64> {
+    id.strip_prefix("f3d:history-input:body#")?
+        .rsplit_once(':')?
+        .1
+        .parse()
+        .ok()
+}
+
+fn bind_pattern_body_selections(
+    features: &mut [cadmpeg_ir::features::Feature],
+    scopes: &[crate::records::DesignParameterScope],
+    groups: &[crate::records::DesignConstructionOperandGroup],
+    body_recipe_operands: &[crate::records::DesignBodyRecipeOperand],
+) {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, PatternSeed};
+
+    for feature in features {
+        let FeatureDefinition::Pattern { seeds, .. } = &mut feature.definition else {
+            continue;
+        };
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let matching_scopes = scopes
+            .iter()
+            .filter(|scope| scope.id == native_ref)
+            .collect::<Vec<_>>();
+        let [scope] = matching_scopes.as_slice() else {
+            continue;
+        };
+        let Some(previous_state_id) = scope.previous_history_state_id else {
+            continue;
+        };
+        let stream = crate::ids::native_stream(&scope.id);
+        let matching_groups = groups
+            .iter()
+            .filter(|group| {
+                group.scope_record_index == scope.record_index
+                    && group.role == 0x0000_0008_0000_0000
+                    && !group.members.is_empty()
+                    && crate::ids::native_stream(&group.id) == stream
+            })
+            .collect::<Vec<_>>();
+        let [group] = matching_groups.as_slice() else {
+            continue;
+        };
+        let selection = if let [PatternSeed::Bodies(selection)] = seeds.as_mut_slice() {
+            selection
+        } else if seeds.is_empty() {
+            seeds.push(PatternSeed::Bodies(BodySelection::Native(group.id.clone())));
+            let [PatternSeed::Bodies(selection)] = seeds.as_mut_slice() else {
+                unreachable!("the inserted pattern seed is a body selection")
+            };
+            selection
+        } else {
+            continue;
+        };
+        bind_body_recipe_body_selection(
+            selection,
+            &feature.id,
+            previous_state_id,
+            scope,
+            groups,
+            body_recipe_operands,
+        );
     }
 }
 
@@ -2414,13 +2504,12 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         let Some(source) = historical_brep_source(&previous.id) else {
             continue;
         };
-        let source_prefix = format!("f3d:brep/{source}/");
         for reference in &mut operand.references {
             reference.preceding_candidate_faces = faces_in_topology(
                 &reference
                     .candidate_faces
                     .iter()
-                    .filter(|face| face.0.starts_with(&source_prefix))
+                    .filter(|face| active_brep_face_matches_source(face, source))
                     .cloned()
                     .collect::<Vec<_>>(),
                 topology,
@@ -2510,6 +2599,10 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                 .flatten();
         }
     }
+}
+
+fn active_brep_face_matches_source(face: &cadmpeg_ir::ids::FaceId, source: &str) -> bool {
+    face.0.starts_with("f3d:brep:entity#") || face.0.starts_with(&format!("f3d:brep/{source}/"))
 }
 
 fn historical_brep_source(state_id: &str) -> Option<&str> {
@@ -7386,6 +7479,42 @@ mod tests {
             body_revision_without_topology_change(&topology_changing),
             None
         );
+    }
+
+    #[test]
+    fn pattern_combine_tool_set_requires_target_membership_and_exact_cardinality() {
+        let bodies = [2, 4, 5, 6, 7].into_iter().collect();
+
+        assert_eq!(
+            pattern_combine_tool_slots(&bodies, 4, 4),
+            Some(vec![2, 5, 6, 7])
+        );
+        assert_eq!(pattern_combine_tool_slots(&bodies, 3, 5), None);
+        assert_eq!(pattern_combine_tool_slots(&bodies, 4, 3), None);
+        assert_eq!(pattern_combine_tool_slots(&bodies, 4, 5), None);
+        assert_eq!(
+            historical_body_slot("f3d:history-input:body#80:escaped-feature:35:2"),
+            Some(2)
+        );
+        assert_eq!(historical_body_slot("f3d:brep:entity#2"), None);
+    }
+
+    #[test]
+    fn active_brep_face_namespace_accepts_default_or_matching_named_source() {
+        use cadmpeg_ir::ids::FaceId;
+
+        assert!(active_brep_face_matches_source(
+            &FaceId("f3d:brep:entity#17".into()),
+            "history"
+        ));
+        assert!(active_brep_face_matches_source(
+            &FaceId("f3d:brep/history/entity#17".into()),
+            "history"
+        ));
+        assert!(!active_brep_face_matches_source(
+            &FaceId("f3d:brep/other/entity#17".into()),
+            "history"
+        ));
     }
 
     #[test]

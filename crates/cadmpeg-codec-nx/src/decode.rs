@@ -11606,6 +11606,7 @@ pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
+        | BodySelection::HistoricalUnorderedSet { .. }
         | BodySelection::Generated { .. }
         | BodySelection::Native(_)
         | BodySelection::NativeSet(_) => true,
@@ -11633,6 +11634,7 @@ fn explicit_body_ids(selection: &BodySelection) -> Option<&[BodyId]> {
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
+        | BodySelection::HistoricalUnorderedSet { .. }
         | BodySelection::Generated { .. }
         | BodySelection::Local { .. }
         | BodySelection::Native(_)
@@ -11649,6 +11651,7 @@ fn resolved_body_selection_len(selection: &BodySelection) -> Option<usize> {
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
+        | BodySelection::HistoricalUnorderedSet { .. }
         | BodySelection::Generated { .. }
         | BodySelection::Native(_)
         | BodySelection::NativeSet(_) => None,

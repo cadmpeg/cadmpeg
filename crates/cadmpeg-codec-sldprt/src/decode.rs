@@ -951,9 +951,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         BodySelection::Bodies(bodies)
         | BodySelection::Resolved { bodies, .. }
         | BodySelection::ResolvedSet { bodies, .. } => bodies.is_empty(),
-        BodySelection::Historical { bodies, .. } | BodySelection::HistoricalSet { bodies, .. } => {
-            bodies.is_empty()
-        }
+        BodySelection::Historical { bodies, .. }
+        | BodySelection::HistoricalSet { bodies, .. }
+        | BodySelection::HistoricalUnorderedSet { bodies, .. } => bodies.is_empty(),
         BodySelection::Generated { bodies, .. } => bodies.is_empty(),
         BodySelection::Local { bodies, .. } => bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => true,
