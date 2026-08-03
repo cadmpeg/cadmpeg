@@ -3987,6 +3987,22 @@ pub(crate) fn bind_edge_identity_history(
     if projection_was_finalized(histories) {
         return;
     }
+    let mut compact_group_counts = HashMap::<(String, u32, u32), Option<usize>>::new();
+    for operand in operands.iter() {
+        let Some(stream) = crate::ids::native_stream(&operand.id) else {
+            continue;
+        };
+        compact_group_counts
+            .entry((
+                stream.to_owned(),
+                operand.scope_record_index,
+                operand.group_record_index,
+            ))
+            .and_modify(|count| {
+                *count = count.and_then(|count| operand.compact_layout.then_some(count + 1));
+            })
+            .or_insert(operand.compact_layout.then_some(1));
+    }
     let history_identities = HistoricalIdentityIndex::build(
         histories,
         operands
@@ -4086,13 +4102,39 @@ pub(crate) fn bind_edge_identity_history(
                         .copied()
                         .filter(|edge| !result_edges.contains(edge))
                         .collect::<Vec<_>>();
-                    let candidates = treatment_edge_candidates(
+                    let mut candidates = treatment_edge_candidates(
                         None,
                         &inserted_faces,
                         result,
                         topology,
                         &deleted_edges,
                     );
+                    let is_edge_treatment = scopes.iter().any(|scope| {
+                        crate::ids::native_stream(&scope.id) == Some(stream)
+                            && scope.record_index == operand.scope_record_index
+                            && matches!(
+                                crate::design::design_feature_family(&scope.kind),
+                                Some(
+                                    crate::design::DesignFeatureFamily::Fillet
+                                        | crate::design::DesignFeatureFamily::Chamfer
+                                )
+                            )
+                    });
+                    let compact_member_count = compact_group_counts
+                        .get(&(
+                            stream.to_owned(),
+                            operand.scope_record_index,
+                            operand.group_record_index,
+                        ))
+                        .copied()
+                        .flatten();
+                    if candidates.1.is_empty() {
+                        candidates.1 = complete_compact_edge_treatment_deletions(
+                            is_edge_treatment,
+                            compact_member_count,
+                            &deleted_edges,
+                        );
+                    }
                     operand
                         .treatment_radius_candidates
                         .clone_from(&candidates.0);
@@ -4132,6 +4174,21 @@ pub(crate) fn bind_edge_identity_history(
         }
         operand.resolved_edge_slot = Some(edge);
         operand.resolution_identity_id = Some(identity_id.to_owned());
+    }
+}
+
+fn complete_compact_edge_treatment_deletions(
+    is_edge_treatment: bool,
+    compact_member_count: Option<usize>,
+    deleted_edges: &[i64],
+) -> Vec<i64> {
+    if is_edge_treatment
+        && !deleted_edges.is_empty()
+        && compact_member_count == Some(deleted_edges.len())
+    {
+        deleted_edges.to_vec()
+    } else {
+        Vec::new()
     }
 }
 
@@ -6433,6 +6490,17 @@ mod tests {
                 face_slot: 30,
             }]
         );
+    }
+
+    #[test]
+    fn compact_edge_treatment_deletions_require_exact_cardinality() {
+        assert_eq!(
+            complete_compact_edge_treatment_deletions(true, Some(2), &[17, 19]),
+            [17, 19]
+        );
+        assert!(complete_compact_edge_treatment_deletions(true, Some(2), &[17, 18, 19]).is_empty());
+        assert!(complete_compact_edge_treatment_deletions(false, Some(2), &[17, 19]).is_empty());
+        assert!(complete_compact_edge_treatment_deletions(true, None, &[17, 19]).is_empty());
     }
 
     #[test]

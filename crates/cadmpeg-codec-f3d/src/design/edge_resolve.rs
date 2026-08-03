@@ -100,6 +100,24 @@ pub(crate) fn resolved_edge_group(
             (!edges.is_empty()).then_some(edges)
         })
         .flatten();
+    let identity_group_transition_slots = identity_matches.as_ref().and_then(|operands| {
+        let first = operands.first()?;
+        let mut edges = first.transition_edge_candidates.clone();
+        edges.sort_unstable();
+        edges.dedup();
+        (!edges.is_empty()
+            && edges.len() == group.members.len()
+            && operands.iter().all(|operand| {
+                if !operand.compact_layout {
+                    return false;
+                }
+                let mut candidate = operand.transition_edge_candidates.clone();
+                candidate.sort_unstable();
+                candidate.dedup();
+                candidate == edges
+            }))
+        .then_some(edges)
+    });
     let identity_radius_slots = treatment_radius.and_then(|radius| {
         radius_edge_identity_group_candidates(identity_matches.as_ref()?, radius)
     });
@@ -108,6 +126,7 @@ pub(crate) fn resolved_edge_group(
             && (operands.iter().all(|operand| {
                 operand.resolved_edge_slot.is_some() || !operand.resolved_edge_slots.is_empty()
             }) || identity_transition_slots.is_some()
+                || identity_group_transition_slots.is_some()
                 || identity_radius_slots.is_some())
     });
     let recipe_corroborates_identity_transition =
@@ -167,6 +186,21 @@ pub(crate) fn resolved_edge_group(
             };
         }
         if let Some(edges) = identity_radius_slots.as_ref() {
+            return EdgeSelection::Historical {
+                state,
+                edges: edges
+                    .iter()
+                    .map(|edge_slot| {
+                        ids::history_input_edge_id(
+                            &ids::history_input_prefix(feature_key, previous_state_id),
+                            *edge_slot,
+                        )
+                    })
+                    .collect(),
+                native: group.id.clone(),
+            };
+        }
+        if let Some(edges) = identity_group_transition_slots.as_ref() {
             return EdgeSelection::Historical {
                 state,
                 edges: edges
@@ -1428,7 +1462,7 @@ pub(crate) fn project_fixed_fillet(
 
 #[cfg(test)]
 mod radius_identity_tests {
-    use super::{project_fixed_fillet, radius_edge_identity_group_candidates};
+    use super::{project_fixed_fillet, radius_edge_identity_group_candidates, resolved_edge_group};
     use crate::records::{
         DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignParameterScope,
     };
@@ -1442,6 +1476,7 @@ mod radius_identity_tests {
             "record_index": record_index,
             "byte_offset": 0,
             "class_tag": "277",
+            "compact_layout": true,
             "local_id": record_index,
             "local_id_offset": 0,
             "asset_id": "asset",
@@ -1582,5 +1617,46 @@ mod radius_identity_tests {
             &[first_identity, second_identity],
         )
         .is_none());
+    }
+
+    #[test]
+    fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
+        let mut selection_group = group(2, 10);
+        selection_group.members = vec![10, 11];
+        selection_group.member_offsets = vec![0, 0];
+        let first = identity(10, &[(17, 5.0), (19, 5.0)]);
+        let mut second = identity(11, &[(17, 5.0), (19, 5.0)]);
+        second.group_member_ordinal = 1;
+        let feature_id = cadmpeg_ir::features::FeatureId("feature".into());
+
+        assert!(matches!(
+            resolved_edge_group(
+                &selection_group,
+                std::slice::from_ref(&selection_group),
+                &[],
+                &[first.clone(), second.clone()],
+                Some(7),
+                &feature_id,
+                Some(3.0),
+            ),
+            cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+                if edges.len() == 2
+        ));
+
+        let first = identity(10, &[(17, 5.0), (18, 5.0), (19, 5.0)]);
+        let mut second = identity(11, &[(17, 5.0), (18, 5.0), (19, 5.0)]);
+        second.group_member_ordinal = 1;
+        assert!(matches!(
+            resolved_edge_group(
+                &selection_group,
+                std::slice::from_ref(&selection_group),
+                &[],
+                &[first, second],
+                Some(7),
+                &feature_id,
+                Some(3.0),
+            ),
+            cadmpeg_ir::features::EdgeSelection::Native(_)
+        ));
     }
 }
