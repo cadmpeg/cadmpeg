@@ -11241,6 +11241,14 @@ mod marker_tests {
             ["first", "second"]
         );
 
+        payload[curve_offset + 17..curve_offset + 21].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+                .iter()
+                .map(|marker| marker.id.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
         payload = compact_104.clone();
         payload[curve_offset + 72..curve_offset + 104].fill(0);
         payload[curve_offset + 82..curve_offset + 84].copy_from_slice(&12u16.to_le_bytes());
@@ -43178,7 +43186,7 @@ fn coordinate_roster_curve_endpoint_markers<'a>(
     resolve(complete_entity_roster, one_based)
         .or_else(|| {
             (current_complete_roster
-                && marker_native_code(payload, offset) == Some(1)
+                && matches!(marker_native_code(payload, offset), Some(1 | 2))
                 && compact_indexed_curve_record_end(payload, offset)
                     == Some(CompactIndexedCurveRecordEnd::Marker84))
             .then(|| resolve(false, false))
