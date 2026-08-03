@@ -1513,9 +1513,10 @@ fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[
                 payload.get(offset + 166..offset + 170)
             ),
             (Some(identity), Some(next_object))
-                if identity == next_object
-                    && identity != [0; 4]
+                if identity != [0; 4]
                     && identity != [0xff; 4]
+                    && next_object != [0; 4]
+                    && next_object != [0xff; 4]
         );
     let line_handle = line_declaration
         && line_handle_id != u16::MAX
@@ -9143,7 +9144,10 @@ mod marker_tests {
             Some([0.045, -0.0225])
         );
         payload[166..170].copy_from_slice(&4u32.to_le_bytes());
-        assert_eq!(legacy_declared_handle_coordinates(&payload, 0), None);
+        assert_eq!(
+            legacy_declared_handle_coordinates(&payload, 0),
+            Some([0.045, -0.0225])
+        );
         payload[162..170].fill(0);
         payload[17..21].copy_from_slice(&1u32.to_le_bytes());
         payload.resize(177 + LEGACY_SKETCH_MARKER.len(), 0);
@@ -14191,7 +14195,11 @@ mod marker_tests {
         let mut duplicate = face.clone();
         duplicate.id = FaceId("other-face".into());
         assert_eq!(
-            unique_cylindrical_face(4.0, &[face.clone(), duplicate.clone()], &[surface.clone()]),
+            unique_cylindrical_face(
+                4.0,
+                &[face.clone(), duplicate.clone()],
+                std::slice::from_ref(&surface),
+            ),
             None
         );
         assert_eq!(
