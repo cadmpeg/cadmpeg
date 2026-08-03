@@ -25,6 +25,12 @@ struct HalfEdge {
     face: i64,
 }
 
+#[derive(Clone, Copy)]
+enum GripVertexMarker {
+    Primary(usize),
+    Secondary(Option<usize>),
+}
+
 /// Decode every active-asset T-spline control cage in archive order.
 ///
 /// A cage whose program is internally inconsistent degrades to an
@@ -127,6 +133,76 @@ struct ParsedCage {
     unknown_records: usize,
 }
 
+#[derive(Debug)]
+struct DerivedGripConnectivity {
+    vertex: usize,
+    grip_indices: Vec<i64>,
+}
+
+#[derive(Debug, Default)]
+struct SymmetryBlock {
+    plane: Option<[f64; 12]>,
+    map_kinds: BTreeSet<String>,
+    face_forward: BTreeMap<usize, usize>,
+    face_reverse: BTreeMap<usize, usize>,
+    edge_forward: BTreeMap<usize, usize>,
+    edge_reverse: BTreeMap<usize, usize>,
+    vertex_forward: BTreeMap<usize, usize>,
+    vertex_reverse: BTreeMap<usize, usize>,
+}
+
+fn parse_pairs<'a>(
+    name: &str,
+    fields: impl Iterator<Item = &'a str>,
+    record: &str,
+) -> Result<BTreeMap<usize, usize>, CodecError> {
+    let values = fields
+        .map(|value| parse_usize(name, Some(value), record))
+        .collect::<Result<Vec<_>, _>>()?;
+    if values.len() % 2 != 0 {
+        return Err(malformed(name, format!("{record} has an unpaired index")));
+    }
+    let mut pairs = BTreeMap::new();
+    for pair in values.chunks_exact(2) {
+        if pairs.insert(pair[0], pair[1]).is_some() {
+            return Err(malformed(name, format!("{record} repeats a source index")));
+        }
+    }
+    Ok(pairs)
+}
+
+fn validate_symmetry_map(
+    name: &str,
+    forward: &BTreeMap<usize, usize>,
+    reverse: &BTreeMap<usize, usize>,
+    slots: &[bool],
+    element: &str,
+) -> Result<(), CodecError> {
+    for (&source, &target) in forward {
+        if !slots.get(source).copied().unwrap_or(false)
+            || !slots.get(target).copied().unwrap_or(false)
+            || (source != target && reverse.get(&target) != Some(&source))
+        {
+            return Err(malformed(
+                name,
+                format!("{element} symmetry map is inconsistent"),
+            ));
+        }
+    }
+    for (&source, &target) in reverse {
+        if !slots.get(source).copied().unwrap_or(false)
+            || !slots.get(target).copied().unwrap_or(false)
+            || forward.get(&target) != Some(&source)
+        {
+            return Err(malformed(
+                name,
+                format!("{element} symmetry map is inconsistent"),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn parse(name: &str, bytes: &[u8]) -> Result<ParsedCage, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|error| malformed(name, format!("payload is not UTF-8: {error}")))?;
@@ -143,10 +219,17 @@ fn parse(name: &str, bytes: &[u8]) -> Result<ParsedCage, CodecError> {
     let mut vertex_live: Vec<bool> = Vec::new();
     let mut half_edges: Vec<Option<HalfEdge>> = Vec::new();
     let mut crease_edges = BTreeSet::new();
-    let mut grip_vertices: Vec<Option<usize>> = Vec::new();
+    let mut grip_vertices: Vec<GripVertexMarker> = Vec::new();
     let mut grip_points: Vec<Option<Point3>> = Vec::new();
     let mut in_grip_map = false;
     let mut declarations = BTreeSet::new();
+    let mut derived_grips = Vec::new();
+    let mut selected_edges = BTreeSet::new();
+    let mut selected_vertices = BTreeSet::new();
+    let mut editor_declarations = BTreeSet::new();
+    let mut symmetry_blocks = Vec::new();
+    let mut current_symmetry: Option<SymmetryBlock> = None;
+    let mut terminal_declarations = BTreeSet::new();
     let mut unknown_records = 0usize;
     for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
         let mut fields = line.split_ascii_whitespace();
@@ -236,7 +319,7 @@ fn parse(name: &str, bytes: &[u8]) -> Result<ParsedCage, CodecError> {
                     in_grip_map = true;
                 }
                 Some("gvp") if in_grip_map => {
-                    grip_vertices.push(Some(parse_usize(
+                    grip_vertices.push(GripVertexMarker::Primary(parse_usize(
                         name,
                         fields.next(),
                         "grip vertex index",
@@ -244,14 +327,42 @@ fn parse(name: &str, bytes: &[u8]) -> Result<ParsedCage, CodecError> {
                     require_end(name, fields, "primary grip map")?;
                 }
                 Some("gv") if in_grip_map => {
-                    // A deleted grip slot carries `0m gv -1`, so the operand is
-                    // signed. Either way the marker assigns no primary grip.
-                    parse_i64(name, fields.next(), "secondary grip vertex index")?;
-                    grip_vertices.push(None);
+                    let vertex = parse_i64(name, fields.next(), "secondary grip vertex index")?;
+                    if vertex < -1 {
+                        return Err(malformed(name, "secondary grip vertex is below -1"));
+                    }
+                    grip_vertices.push(GripVertexMarker::Secondary(
+                        (vertex >= 0).then_some(vertex as usize),
+                    ));
                     require_end(name, fields, "secondary grip map")?;
                 }
-                // TS-01 and TS-02 track the unresolved wedge partition and count.
-                Some("cg") if in_grip_map => {}
+                Some("cg") if in_grip_map => {
+                    let vertex = parse_usize(name, fields.next(), "derived-grip vertex")?;
+                    let wedges = parse_usize(name, fields.next(), "derived-grip wedge count")?;
+                    if wedges == 0 {
+                        return Err(malformed(name, "derived-grip wedge count is zero"));
+                    }
+                    let spoke_lengths = (0..wedges)
+                        .map(|_| parse_usize(name, fields.next(), "derived-grip spoke length"))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let grip_count = (0..wedges).try_fold(0usize, |count, wedge| {
+                        let cross = spoke_lengths[wedge]
+                            .checked_mul(spoke_lengths[(wedge + 1) % wedges])
+                            .ok_or_else(|| malformed(name, "derived-grip arity overflows"))?;
+                        count
+                            .checked_add(spoke_lengths[wedge])
+                            .and_then(|count| count.checked_add(cross))
+                            .ok_or_else(|| malformed(name, "derived-grip arity overflows"))
+                    })?;
+                    let grip_indices = (0..grip_count)
+                        .map(|_| parse_i64(name, fields.next(), "derived-grip index"))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    require_end(name, fields, "derived-grip connectivity")?;
+                    derived_grips.push(DerivedGripConnectivity {
+                        vertex,
+                        grip_indices,
+                    });
+                }
                 _ => return Err(malformed(name, "unknown odd-grip-map record")),
             },
             Some("0g") => match fields.next() {
@@ -269,8 +380,89 @@ fn parse(name: &str, bytes: &[u8]) -> Result<ParsedCage, CodecError> {
                     grip_points.push(Some(point));
                 }
             },
+            Some(selection @ ("100edges" | "100verts")) => {
+                if !editor_declarations.insert(selection) {
+                    return Err(malformed(name, format!("duplicate {selection} record")));
+                }
+                let values = fields
+                    .map(|value| parse_usize(name, Some(value), selection))
+                    .collect::<Result<BTreeSet<_>, _>>()?;
+                let target = if selection == "100edges" {
+                    &mut selected_edges
+                } else {
+                    &mut selected_vertices
+                };
+                *target = values;
+            }
+            Some("105sym") => {
+                if parse_i64(name, fields.next(), "symmetry flags")? != 0 {
+                    return Err(malformed(name, "unsupported symmetry flags"));
+                }
+                require_end(name, fields, "symmetry header")?;
+                if let Some(block) = current_symmetry.replace(SymmetryBlock::default()) {
+                    symmetry_blocks.push(block);
+                }
+            }
+            Some("105plane") => {
+                let block = current_symmetry
+                    .as_mut()
+                    .ok_or_else(|| malformed(name, "symmetry plane has no header"))?;
+                let values = fields
+                    .map(|value| parse_f64(name, Some(value), "symmetry plane coefficient"))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let plane: [f64; 12] = values
+                    .try_into()
+                    .map_err(|_| malformed(name, "symmetry plane must have 12 coefficients"))?;
+                if block.plane.replace(plane).is_some() {
+                    return Err(malformed(name, "duplicate symmetry plane"));
+                }
+            }
+            Some("105a") => {
+                let kind = fields
+                    .next()
+                    .ok_or_else(|| malformed(name, "missing symmetry map kind"))?;
+                let pairs = parse_pairs(name, fields, "symmetry map")?;
+                let block = current_symmetry
+                    .as_mut()
+                    .ok_or_else(|| malformed(name, "symmetry map has no header"))?;
+                if !block.map_kinds.insert(kind.into()) {
+                    return Err(malformed(name, format!("duplicate {kind} symmetry map")));
+                }
+                let target = match kind {
+                    "fr" => &mut block.face_forward,
+                    "f" => &mut block.face_reverse,
+                    "er" => &mut block.edge_forward,
+                    "e" => &mut block.edge_reverse,
+                    "vr" => &mut block.vertex_forward,
+                    "v" => &mut block.vertex_reverse,
+                    _ => return Err(malformed(name, "unknown symmetry map kind")),
+                };
+                *target = pairs;
+            }
+            Some(declaration @ ("tol" | "geom-tol")) => {
+                let tolerance = parse_f64(name, fields.next(), declaration)?;
+                if tolerance <= 0.0 {
+                    return Err(malformed(name, format!("{declaration} is not positive")));
+                }
+                require_end(name, fields, declaration)?;
+                if !terminal_declarations.insert(declaration) {
+                    return Err(malformed(name, format!("duplicate {declaration}")));
+                }
+            }
+            Some(declaration @ ("ver" | "behavior-version" | "compat-version")) => {
+                if fields.next().is_none() {
+                    return Err(malformed(name, format!("missing {declaration} value")));
+                }
+                require_end(name, fields, declaration)?;
+                if !terminal_declarations.insert(declaration) {
+                    return Err(malformed(name, format!("duplicate {declaration}")));
+                }
+            }
             _ => unknown_records += 1,
         }
+    }
+    if let Some(block) = current_symmetry {
+        symmetry_blocks.push(block);
     }
 
     let live_vertices = vertex_live.iter().filter(|live| **live).count();
@@ -284,6 +476,79 @@ fn parse(name: &str, bytes: &[u8]) -> Result<ParsedCage, CodecError> {
         return Err(malformed(name, "control cage is incomplete"));
     }
     let populated = |half: usize| half_edges.get(half).is_some_and(Option::is_some);
+
+    let face_live = face_roots.iter().map(Option::is_some).collect::<Vec<_>>();
+    let edge_live = edge_roots.iter().map(Option::is_some).collect::<Vec<_>>();
+    for edge in &selected_edges {
+        if !edge_live.get(*edge).copied().unwrap_or(false) {
+            return Err(malformed(name, "selected edge is out of range or deleted"));
+        }
+    }
+    for vertex in &selected_vertices {
+        if !vertex_live.get(*vertex).copied().unwrap_or(false) {
+            return Err(malformed(
+                name,
+                "selected vertex is out of range or deleted",
+            ));
+        }
+    }
+    for block in &symmetry_blocks {
+        if block.plane.is_none() {
+            return Err(malformed(name, "symmetry block has no plane"));
+        }
+        validate_symmetry_map(
+            name,
+            &block.face_forward,
+            &block.face_reverse,
+            &face_live,
+            "face",
+        )?;
+        validate_symmetry_map(
+            name,
+            &block.edge_forward,
+            &block.edge_reverse,
+            &edge_live,
+            "edge",
+        )?;
+        validate_symmetry_map(
+            name,
+            &block.vertex_forward,
+            &block.vertex_reverse,
+            &vertex_live,
+            "vertex",
+        )?;
+    }
+    for connectivity in &derived_grips {
+        if !vertex_live
+            .get(connectivity.vertex)
+            .copied()
+            .unwrap_or(false)
+            || connectivity.grip_indices.iter().any(|index| match *index {
+                -1 => false,
+                index if index >= 0 => !matches!(
+                    grip_vertices.get(index as usize),
+                    Some(GripVertexMarker::Secondary(Some(vertex)))
+                        if *vertex == connectivity.vertex
+                ),
+                _ => true,
+            })
+        {
+            return Err(malformed(name, "derived-grip connectivity is out of range"));
+        }
+    }
+    for (marker, point) in grip_vertices.iter().zip(&grip_points) {
+        match marker {
+            GripVertexMarker::Primary(vertex) | GripVertexMarker::Secondary(Some(vertex)) => {
+                if point.is_none() || !vertex_live.get(*vertex).copied().unwrap_or(false) {
+                    return Err(malformed(name, "grip vertex map is inconsistent"));
+                }
+            }
+            GripVertexMarker::Secondary(None) if point.is_some() => {
+                return Err(malformed(name, "deleted grip marker has a point"));
+            }
+            GripVertexMarker::Secondary(None) => {}
+        }
+    }
     for (index, half) in half_edges.iter().enumerate() {
         let Some(half) = half else { continue };
         if !populated(half.mate) || !populated(half.next) || !populated(half.previous) {
@@ -325,7 +590,7 @@ fn parse(name: &str, bytes: &[u8]) -> Result<ParsedCage, CodecError> {
         }
     } else {
         for (marker, point) in grip_vertices.into_iter().zip(grip_points) {
-            let (Some(slot), Some(point)) = (marker, point) else {
+            let (GripVertexMarker::Primary(slot), Some(point)) = (marker, point) else {
                 continue;
             };
             if vertex_points.insert(vertex_of(slot)?, point).is_some() {
@@ -505,6 +770,24 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         );
         let cage = super::parse("synthetic.tsm", source.as_bytes()).expect("quad cage");
         assert_eq!(cage.unknown_records, 1);
+        assert_quad(&cage.surface);
+    }
+
+    #[test]
+    fn parses_editor_metadata_and_derived_grip_connectivity() {
+        let source = format!(
+            "#TS0200\n{QUAD_TOPOLOGY}\
+             0m odd-grip-map\n0m gvp 0\n0m gvp 1\n0m gvp 2\n0m gvp 3\n\
+             0m cg 0 1 1 -1 -1\n\
+             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n\
+             100edges 0 2\n100verts 1\n\
+             105sym 0\n105plane 0 2 0 1 0 1 0 0 0 0 1 0\n\
+             105a fr 0 0\n105a er 0 0 1 2\n105a e 2 1\n\
+             105a vr 0 1\n105a v 1 0\n\
+             tol 0.00001\nver 6021\nbehavior-version 6.5.0\n"
+        );
+        let cage = super::parse("synthetic.tsm", source.as_bytes()).expect("typed metadata");
+        assert_eq!(cage.unknown_records, 0);
         assert_quad(&cage.surface);
     }
 
