@@ -674,8 +674,27 @@ pub(crate) fn bind_feature_outputs(
                 .iter()
                 .filter_map(|slot| active.get(slot).cloned())
                 .collect();
+            bind_base_feature_output_selection(feature);
         }
     }
+}
+
+fn bind_base_feature_output_selection(feature: &mut cadmpeg_ir::features::Feature) {
+    if feature.outputs.is_empty() {
+        return;
+    }
+    let cadmpeg_ir::features::FeatureDefinition::BaseFeature { bodies } = &mut feature.definition
+    else {
+        return;
+    };
+    let cadmpeg_ir::features::BodySelection::Native(native) = bodies else {
+        return;
+    };
+    let native = native.clone();
+    *bodies = cadmpeg_ir::features::BodySelection::Resolved {
+        bodies: feature.outputs.clone(),
+        native,
+    };
 }
 
 pub(crate) fn bind_sweep_result_modes(
@@ -4711,6 +4730,38 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn base_feature_body_selection_uses_active_transition_outputs() {
+        use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
+        use cadmpeg_ir::ids::BodyId;
+
+        let mut feature = Feature {
+            id: FeatureId("feature".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: Some("Base Feature".into()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: vec![BodyId("body:2".into()), BodyId("body:1".into())],
+            definition: FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Native("native:scope".into()),
+            },
+            native_ref: Some("native:scope".into()),
+        };
+        super::bind_base_feature_output_selection(&mut feature);
+        assert!(matches!(
+            feature.definition,
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Resolved { ref bodies, ref native }
+            } if bodies == &[BodyId("body:2".into()), BodyId("body:1".into())]
+                && native == "native:scope"
+        ));
+    }
+
     #[test]
     fn opaque_history_span_retains_the_precise_framing_error() {
         let records = super::decode_history_records(&[0x33], 0, None, "stream", "state", 8);

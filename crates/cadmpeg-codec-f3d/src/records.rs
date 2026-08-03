@@ -2024,8 +2024,8 @@ pub struct DesignBaseFeatureConstruction {
     pub metadata_record: u32,
     /// Byte offset of `metadata_record`.
     pub metadata_record_offset: u64,
-    /// Six-byte source field following `metadata_record`.
-    pub metadata_field: [u8; 6],
+    /// Variant-width source field following `metadata_record`.
+    pub metadata_field: Vec<u8>,
     /// Ordered result-body join records parallel to the body suffixes.
     pub result_records: Vec<u32>,
     /// Byte offsets parallel to `result_records`.

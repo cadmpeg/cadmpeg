@@ -1493,20 +1493,23 @@ pub(crate) fn exact_base_feature_construction(
             repeated_reference_fields: Vec::new(),
             metadata_record: u32_at(bytes, usize::try_from(scope.byte_offset).ok()? + 37)?,
             metadata_record_offset: scope.byte_offset + 37,
-            metadata_field: bytes.get(start + 45..start + 51)?.try_into().ok()?,
+            metadata_field: bytes.get(start + 45..start + 51)?.to_vec(),
             result_records: Vec::new(),
             result_record_offsets: Vec::new(),
             result_fields: Vec::new(),
         });
     }
-    let body_count = scope.frame_length.checked_sub(271)?.checked_div(52)?;
-    if body_count == 0 || body_count > 100_000 || scope.frame_length != 271 + body_count * 52 {
+    if bytes.get(start + 19) != Some(&1) {
         return None;
     }
-    let body_count = usize::try_from(body_count).ok()?;
-    if bytes.get(start + 19) != Some(&1)
-        || u32_at(bytes, start + 20)? != u32::try_from(body_count.checked_mul(2)?).ok()?
-    {
+    let combined_count = usize::try_from(u32_at(bytes, start + 20)?).ok()?;
+    if combined_count == 0 || combined_count > 200_000 || combined_count % 2 != 0 {
+        return None;
+    }
+    let body_count = combined_count / 2;
+    let expanded = scope.class_tag == "384" && scope.paired_class_tag == "264";
+    let base_length = if expanded { 262 } else { 271 };
+    if scope.frame_length != base_length + u64::try_from(body_count.checked_mul(52)?).ok()? {
         return None;
     }
     let mut cursor = start + 24;
@@ -1534,14 +1537,24 @@ pub(crate) fn exact_base_feature_construction(
         .map(u32::try_from)
         .collect::<Result<Vec<_>, _>>()
         .ok()?;
-    if bytes.get(cursor) != Some(&1) || bytes.get(cursor + 1..cursor + 11) != Some(&[0; 10]) {
-        return None;
+    if expanded {
+        if bytes.get(cursor) != Some(&1)
+            || bytes.get(cursor + 1..cursor + 7) != Some(&[0; 6])
+            || usize::try_from(u32_at(bytes, cursor + 7)?).ok()? != body_count
+        {
+            return None;
+        }
+        cursor += 11;
+    } else {
+        if bytes.get(cursor) != Some(&1) || bytes.get(cursor + 1..cursor + 11) != Some(&[0; 10]) {
+            return None;
+        }
+        cursor += 11;
+        if usize::try_from(u32_at(bytes, cursor)?).ok()? != body_count {
+            return None;
+        }
+        cursor += 4;
     }
-    cursor += 11;
-    if usize::try_from(u32_at(bytes, cursor)?).ok()? != body_count {
-        return None;
-    }
-    cursor += 4;
     let mut repeated_reference_fields = Vec::with_capacity(body_count);
     for expected in &body_reference_records {
         if bytes.get(cursor) != Some(&1) || u32_at(bytes, cursor + 1)? != *expected {
@@ -1559,8 +1572,11 @@ pub(crate) fn exact_base_feature_construction(
     }
     let metadata_record = u32::try_from(read_u64(bytes, cursor + 1)?).ok()?;
     let metadata_record_offset = u64::try_from(cursor + 1).ok()?;
-    let metadata_field = bytes.get(cursor + 9..cursor + 15)?.try_into().ok()?;
-    cursor += 15;
+    let metadata_field_width = if expanded { 2 } else { 6 };
+    let metadata_field = bytes
+        .get(cursor + 9..cursor + 9 + metadata_field_width)?
+        .to_vec();
+    cursor += 9 + metadata_field_width;
     if usize::try_from(u32_at(bytes, cursor)?).ok()? != body_count {
         return None;
     }

@@ -17712,6 +17712,27 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     assert_eq!(construction.metadata_record, 401);
     assert_eq!(construction.result_records, [501, 502]);
     assert_eq!(construction.body_entity_fields[0], [0, 0, 1, 0, 0, 0]);
+
+    let mut expanded_bytes = Vec::new();
+    expanded_bytes.extend_from_slice(&bytes[..84]);
+    expanded_bytes.push(1);
+    expanded_bytes.extend_from_slice(&[0; 6]);
+    expanded_bytes.extend_from_slice(&2u32.to_le_bytes());
+    expanded_bytes.extend_from_slice(&bytes[99..131]);
+    expanded_bytes.extend_from_slice(&bytes[131..133]);
+    expanded_bytes.extend_from_slice(&bytes[137..]);
+    expanded_bytes.resize(366, 0);
+    let mut expanded_scope = scope.clone();
+    expanded_scope.class_tag = "384".into();
+    expanded_scope.paired_class_tag = "264".into();
+    expanded_scope.frame_length = 366;
+    expanded_scope.kind_offset = 265;
+    expanded_scope.paired_byte_offset = 366;
+    let expanded = exact_base_feature_construction(&expanded_bytes, &expanded_scope)
+        .expect("expanded Base Feature frame is canonical");
+    assert_eq!(expanded.body_entity_suffixes, [101, 202]);
+    assert_eq!(expanded.result_records, [501, 502]);
+    assert_eq!(expanded.metadata_field, [0, 0]);
 }
 
 #[test]
