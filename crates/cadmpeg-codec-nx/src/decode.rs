@@ -7270,6 +7270,39 @@ fn emit_topology(
         })
         .flatten()
         .collect();
+    let valid_pcurve_fins = {
+        let index = cadmpeg_ir::index::ModelIndex::new(ir);
+        fin_ids
+            .keys()
+            .filter_map(|fin_xmt| {
+                let fields = graph.get(17, *fin_xmt)?.fin_fields()?;
+                let edge = edges.get(&fields.edge)?;
+                let support = graph
+                    .get(15, fields.loop_xmt)
+                    .and_then(Node::loop_fields)
+                    .and_then(|loop_| graph.get(14, loop_.face))
+                    .and_then(Node::face_fields)
+                    .and_then(|face| surfaces.get(&face.surface))?;
+                let carrier = pcurves
+                    .get(&fields.curve_xmt)
+                    .and_then(|id| ir.model.pcurves.iter().find(|carrier| &carrier.id == id))?;
+                let use_range = trim_ranges
+                    .get(&fields.curve_xmt)
+                    .copied()
+                    .and_then(ordered_parameter_range);
+                pcurve_matches_edge_range_with_index(
+                    ir,
+                    &index,
+                    edge,
+                    support,
+                    &carrier.geometry,
+                    use_range.or(carrier.parameter_range),
+                    carrier.fit_tolerance,
+                )
+                .then_some(*fin_xmt)
+            })
+            .collect::<BTreeSet<_>>()
+    };
     let mut serialized_branch_pcurves = BTreeSet::new();
     for &fin_xmt in fin_ids.keys() {
         let Some(node) = graph.get(17, fin_xmt) else {
@@ -7307,25 +7340,10 @@ fn emit_topology(
             .get(&fields.curve_xmt)
             .copied()
             .and_then(ordered_parameter_range);
-        let mut pcurve = pcurves.get(&fields.curve_xmt).cloned().filter(|id| {
-            let Some((carrier, support)) = ir
-                .model
-                .pcurves
-                .iter()
-                .find(|carrier| &carrier.id == id)
-                .zip(support.as_ref())
-            else {
-                return false;
-            };
-            pcurve_matches_edge_range(
-                ir,
-                &edge,
-                support,
-                &carrier.geometry,
-                pcurve_use_range.or(carrier.parameter_range),
-                carrier.fit_tolerance,
-            )
-        });
+        let mut pcurve = valid_pcurve_fins
+            .contains(&node.xmt)
+            .then(|| pcurves.get(&fields.curve_xmt).cloned())
+            .flatten();
         let edge_curve = ir
             .model
             .edges
@@ -9443,6 +9461,27 @@ fn pcurve_matches_edge_range(
     parameter_range: Option<[f64; 2]>,
     fit_tolerance: Option<f64>,
 ) -> bool {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    pcurve_matches_edge_range_with_index(
+        ir,
+        &index,
+        edge_id,
+        surface_id,
+        geometry,
+        parameter_range,
+        fit_tolerance,
+    )
+}
+
+fn pcurve_matches_edge_range_with_index(
+    ir: &CadIr,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    edge_id: &EdgeId,
+    surface_id: &SurfaceId,
+    geometry: &PcurveGeometry,
+    parameter_range: Option<[f64; 2]>,
+    fit_tolerance: Option<f64>,
+) -> bool {
     let Some(edge) = ir.model.edges.iter().find(|edge| &edge.id == edge_id) else {
         return false;
     };
@@ -9454,8 +9493,8 @@ fn pcurve_matches_edge_range(
         return false;
     };
     let (Some(first), Some(second)) = (
-        decoded_surface_point(ir, surface_id, first_uv.u, first_uv.v),
-        decoded_surface_point(ir, surface_id, second_uv.u, second_uv.v),
+        decoded_surface_point_inner(index, surface_id, first_uv.u, first_uv.v, 0),
+        decoded_surface_point_inner(index, surface_id, second_uv.u, second_uv.v, 0),
     ) else {
         return false;
     };

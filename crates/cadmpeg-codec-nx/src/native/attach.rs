@@ -361,6 +361,16 @@ fn resolve_rm_face_colors(
         .iter()
         .map(|definition| (definition.id.as_str(), definition))
         .collect::<BTreeMap<_, _>>();
+    let mut face_records_by_node = BTreeMap::<u32, Vec<_>>::new();
+    for record in records.iter().filter(|record| record.family == "FACE") {
+        let Some(node_id) = record.node_id else {
+            continue;
+        };
+        face_records_by_node
+            .entry(node_id)
+            .or_default()
+            .push(record);
+    }
 
     let mut bindings = Vec::new();
     for (object_index, definition_ids) in colors_by_object {
@@ -371,9 +381,10 @@ fn resolve_rm_face_colors(
         let Some(definition) = definitions_by_id.get(definition_id.as_str()) else {
             continue;
         };
-        let candidates = records
-            .iter()
-            .filter(|record| record.family == "FACE" && record.node_id == Some(object_index))
+        let candidates = face_records_by_node
+            .get(&object_index)
+            .into_iter()
+            .flatten()
             .filter_map(|record| {
                 let partitions = partitions_by_delta.get(&record.stream_ordinal)?;
                 if partitions.len() != 1 {
