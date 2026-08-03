@@ -68,11 +68,9 @@ toml = "1"
 encoding_rs = "0.8"
 
 [profile.dev]
-# Debug info is ~87% of a linked test binary here (303MB of 347MB for the NX
-# lib test), and the linker holds it all. Leaving DWARF in the object files
-# keeps every byte of it available to debuggers while taking it off the link
-# path. `test` inherits this, so dependency rlibs shrink too, which is where
-# most of the weight is.
+# Debug info dominates a linked test binary and the linker holds all of it.
+# Leaving DWARF in the object files keeps every byte available to debuggers
+# while taking it off the link path. Most of the weight is in dependency rlibs.
 split-debuginfo = "unpacked"
 
 [profile.test]
@@ -86,52 +84,43 @@ lto = "thin"
 # that silently changes which bytes a decoder reads.
 overflow-checks = true
 
-# The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
-lto = "thin"
+strip = "symbols"
 
-# Shared lint policy. Crates opt in with `[lints] workspace = true`.
-# CI escalates warnings to errors (`cargo clippy -- -D warnings -W missing-docs`);
-# missing_docs stays a visible warning until the documentation debt is paid down.
+# Crates opt in with `[lints] workspace = true`.
 [workspace.lints.rust]
 missing_docs = "warn"
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 
-# Byte-offset decoder reality: the codecs are wall-to-wall u32/usize/f64
-# conversions over file offsets and fixed-width records. Cast lints on this
-# codebase are noise, not signal.
+# The codecs are wall-to-wall u32/usize/f64 conversions over file offsets and
+# fixed-width records.
 cast_possible_truncation = "allow"
 cast_possible_wrap = "allow"
 cast_sign_loss = "allow"
 cast_precision_loss = "allow"
 cast_lossless = "allow"
 
-# Byte-exact roundtrip semantics: float equality against decoded values is
-# intentional, not a rounding hazard.
+# Roundtrip tests compare decoded floats for byte-exact equality.
 float_cmp = "allow"
 
-# Decoder ergonomics: long match-heavy decode functions and near-identical
-# field names are the domain, not smells.
+# Decode functions are long and match-heavy, and format field names are
+# near-identical.
 too_many_lines = "allow"
 similar_names = "allow"
 match_same_arms = "allow"
 single_match_else = "allow"
 
-# API-surface lints deferred alongside missing_docs.
 must_use_candidate = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 module_name_repetitions = "allow"
 
-# `clippy.toml` lists growth methods
-# (`Vec::with_capacity`, `reserve`, `resize`, `repeat_n`, ...) that a decoder
-# must not call on an unfloored, attacker-controlled count. The workspace
-# workspace setting stays `allow` because some encoders and decoders use
-# these methods with trusted counts. Hardened decoder modules re-enable the
-# lint with `#![deny(clippy::disallowed_methods)]`.
+# The workspace setting stays `allow` because some encoders and decoders call
+# the `clippy.toml` methods with trusted counts. Hardened decoder modules
+# re-enable the lint with `#![deny(clippy::disallowed_methods)]`.
 disallowed_methods = "allow"
 
 # Restriction picks: fail loudly instead of silently panicking or shipping
@@ -141,7 +130,3 @@ unwrap_used = "warn"
 dbg_macro = "warn"
 todo = "warn"
 unimplemented = "warn"
-
-# Decoder modules deny these allocation methods where counts originate in
-# untrusted payloads. Call sites must prove a physical byte floor before
-# reserving or growing storage from a declared count.
