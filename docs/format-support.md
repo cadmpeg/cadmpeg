@@ -8,7 +8,20 @@
 2. **Full pass.** A level passes when its requirements hold across mainstream files in the declared envelope. One fixture, an entity census, or an opaque record capture does not pass a level.
 3. **Inapplicable levels.** A format definition may mark a level inapplicable when its document kind cannot contain that category. Inapplicable levels pass. Missing fixtures do not establish inapplicability.
 4. **One score per envelope.** Version and layout bands each receive their own score. Discontinuous support is stated per band.
-5. **Evidence grade.** Every score is **claimed** when code exists, **tested** when fixtures exercise it, or **proven** when real files exercise the level through the [roadmap's](roadmap.md#progress-gates) round-trip and fuzzing gates.
+5. **Evidence grade.** Every score is **claimed** when code exists, **tested** when fixtures exercise it, or **proven** when real files satisfy the proof criteria below.
+
+### Proof criteria
+
+A **proven** score satisfies every criterion for the declared envelope:
+
+- Real files exercise the scored level.
+- Every source byte is typed, classified as structural, or preserved as a named opaque record.
+- Every unsupported semantic construct produces a machine-readable loss.
+- Decode, validation, write, and conversion results are deterministic.
+- Generated files re-decode to the expected semantic IR.
+- Geometry and topology satisfy declared tolerance and validity checks.
+- Fuzzing covers every parser and writer touched by the scored level.
+- This document matches the code and tests.
 
 ### Levels
 
@@ -400,19 +413,19 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 - **Presentation and metadata: Band-wide.** Layers, direct and overriding styles, colors on topology, exact geometry, tessellation, geometric sets, null styles, semantic dimensions/tolerances/datums, presentation annotations, validation properties, and limits-and-fits classes transfer. Unmodeled application records remain named opaque records with identity and references.
 - **Byte accounting: Band-wide.** Every input byte is structural, typed, or part of a named opaque record; unclassified bytes fail the accounting invariant.
 
-The evidence tier is tested. Proven status requires demonstrated coverage on real files for the declared envelope, sustained fuzz runs, and the roadmap's complete round-trip gates.
+The evidence tier is tested. Proven status requires the proof criteria above for the declared envelope.
 
 ### Write and round trip
 
 - **Native write: Semantic.** The writer selects AP203 edition 1 or 2, AP214, or AP242 edition 1, 2, or 3 and declares the exact target schema. It emits source-less documents and typed edits for analytic and NURBS geometry, connected solid/sheet/wire topology, pcurves, singular loops, rigid body placements, product occurrences, tessellation, visibility, layers, named colors, and semantic or presentation PMI where the selected application protocol carries them.
 - **Procedural geometry: Native where modeled.** Trimmed and spatial-offset curves, linear sweeps, axis revolutions, parallel offsets, and degenerate tori emit as their native STEP entities. Other definitions emit their solved carrier with a machine-readable loss. Curve-bounded surfaces lack the boundary-curve surface association required for valid native regeneration and therefore reduce in report mode or fail strict mode.
 - **Fidelity policy: Explicit and atomic.** Report mode writes the representable subset and returns every unsupported semantic fact. Strict mode rejects before writing any byte. Retained opaque records and opaque presentation targets take the refusal path; they are never silently discarded. AP-specific tessellation and PMI compatibility is checked against the selected target.
-- **Round trip: Tested.** Source-less, edited, schema-targeted, topology, geometry, product, tessellation, presentation, and PMI outputs re-decode to typed IR. The optional [`verify-step-occt.py`](../scripts/verify-step-occt.py) and [`verify-step-gmsh.py`](../scripts/verify-step-gmsh.py) checks accept and transfer generated shape files across all six targets. The evidence remains tested until real-file coverage and sustained fuzzing pass. Corpus availability is not a capability criterion.
+- **Round trip: Tested.** Source-less, edited, schema-targeted, topology, geometry, product, tessellation, presentation, and PMI outputs re-decode to typed IR. The optional [`verify-step-occt.py`](../scripts/verify-step-occt.py) and [`verify-step-gmsh.py`](../scripts/verify-step-gmsh.py) checks accept and transfer generated shape files across all six targets. The evidence remains tested until the proof criteria pass. Corpus availability is not a capability criterion.
 
 ## Maintaining these profiles
 
 Per-format specifications in [`formats/`](formats/) define byte semantics. Adjacent `*-open-items.md` files contain unresolved fields and structures.
 
-Support profiles describe repository behavior only. A profile changes when code and tests land, and every **Partial** domain must identify its remaining gates here or in the linked open-items document. Claims move to **Complete** only after satisfying the roadmap's corpus evidence and reliability gates.
+Support profiles describe repository behavior only. A profile changes when code and tests land, and every **Partial** domain must identify its remaining gates here or in the linked open-items document. Claims move to **Complete** only after satisfying the proof criteria.
 
-Ladder scores change only when a per-gate review confirms every gate at the new level and below. A score's headline names the failing gate of the next level. **Tested** requires fixtures exercising the scored gates.
+Ladder scores change only when a per-gate review confirms every gate at the new level and below. A score's headline names the failing gate of the next level. **Tested** requires fixtures exercising the scored gates. **Proven** requires the proof criteria.
