@@ -14,7 +14,7 @@ members = [
   "crates/cadmpeg-codec-nx",
   "crates/cadmpeg-codec-rhino",
   "crates/cadmpeg-codec-iges",
-  "crates/cadmpeg-step",
+  "crates/cadmpeg-codec-step",
 ]
 # cadmpeg-fuzz is intentionally excluded: cargo-fuzz targets link libFuzzer and
 # require a nightly toolchain, so keeping the crate out of the default workspace
@@ -42,7 +42,7 @@ cadmpeg-codec-creo = { path = "crates/cadmpeg-codec-creo", version = "0.3.0" }
 cadmpeg-codec-nx = { path = "crates/cadmpeg-codec-nx", version = "0.3.0" }
 cadmpeg-codec-rhino = { path = "crates/cadmpeg-codec-rhino", version = "0.3.0" }
 cadmpeg-codec-iges = { path = "crates/cadmpeg-codec-iges", version = "0.3.0" }
-cadmpeg-step = { path = "crates/cadmpeg-step", version = "0.3.0" }
+cadmpeg-codec-step = { path = "crates/cadmpeg-codec-step", version = "0.3.0" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }

@@ -15,7 +15,7 @@
 //!
 //! ```
 //! use cadmpeg_ir::examples::unit_cube;
-//! use cadmpeg_step::{write_step, StepWriteOptions};
+//! use cadmpeg_codec_step::{write_step, StepWriteOptions};
 //!
 //! let ir = unit_cube();
 //! let mut bytes = Vec::new();
@@ -23,7 +23,7 @@
 //!
 //! assert!(bytes.starts_with(b"ISO-10303-21;"));
 //! assert!(report.census.total() > 0);
-//! # Ok::<(), cadmpeg_step::StepError>(())
+//! # Ok::<(), cadmpeg_codec_step::StepError>(())
 //! ```
 //!
 //! Review [`cadmpeg_ir::ExportReport::losses`] before retaining report-mode

@@ -57,7 +57,7 @@ Every encoder returns an `ExportReport` with its format id, entity census, loss 
 | `cadmpeg-codec-nx`      | NX `.prt` `SPLMSSTR` extraction, Parasolid carriers, and conditional topology.                                                         |
 | `cadmpeg-codec-creo`    | Creo `.prt` section decode with partial placed geometry and conditional connected bodies (general analytic intersections and pcurves). |
 | `cadmpeg-codec-iges`    | Read-only IGES 5.3 Fixed ASCII for the mechanical/document envelope.                                                                   |
-| `cadmpeg-step`          | STEP Part 21 AP203, AP214, and AP242 read and write with export loss notes.                                                            |
+| `cadmpeg-codec-step`    | STEP Part 21 AP203, AP214, and AP242 read and write with export loss notes.                                                            |
 | `cadmpeg-fuzz`          | Nightly `cargo-fuzz` targets outside the default workspace.                                                                            |
 
 ## Codec interface

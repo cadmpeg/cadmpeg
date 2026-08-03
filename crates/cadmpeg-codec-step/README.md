@@ -1,6 +1,6 @@
-# cadmpeg-step
+# cadmpeg-codec-step
 
-`cadmpeg-step` reads and writes ISO 10303-21 Part 21 exchange structures for
+`cadmpeg-codec-step` reads and writes ISO 10303-21 Part 21 exchange structures for
 AP203 editions 1–2, AP214, and AP242 editions 1–3. Schema selection uses
 [`StepSchema`] through [`StepWriteOptions`]. [`StepCodec`] implements both
 [`Codec`] decode and [`Encoder`] write. The cadmpeg CLI uses the same model.
@@ -8,14 +8,14 @@ AP203 editions 1–2, AP214, and AP242 editions 1–3. Schema selection uses
 ## Install
 
 ```sh
-cargo add cadmpeg-step cadmpeg-ir
+cargo add cadmpeg-codec-step cadmpeg-ir
 ```
 
 ## Decode a Part 21 file
 
 ```rust,no_run
 use cadmpeg_ir::{CodecEntry, DecodeOptions};
-use cadmpeg_step::StepCodec;
+use cadmpeg_codec_step::StepCodec;
 use std::fs::File;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -44,7 +44,7 @@ use std::fs::File;
 use std::io::BufWriter;
 
 use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_step::{
+use cadmpeg_codec_step::{
     write_step, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
 };
 
@@ -137,7 +137,7 @@ Reject gate, an I/O failure can leave a partial file.
 Requires Rust 1.88 or later. Licensed under Apache-2.0.
 
 [architecture]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/architecture.md
-[docs]: https://docs.rs/cadmpeg-step
+[docs]: https://docs.rs/cadmpeg-codec-step
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md
 [repo]: https://github.com/cadmpeg/cadmpeg
 [support]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21
@@ -149,13 +149,13 @@ Requires Rust 1.88 or later. Licensed under Apache-2.0.
 [`ExportReport::census`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/report/struct.ExportReport.html#structfield.census
 [`ExportReport::error_count`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/report/struct.ExportReport.html#method.error_count
 [`ExportReport::losses`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/report/struct.ExportReport.html#structfield.losses
-[`StepCodec`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/struct.StepCodec.html
-[`StepError`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/enum.StepError.html
-[`StepError::Io`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/enum.StepError.html#variant.Io
-[`StepError::Unsupported`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/enum.StepError.html#variant.Unsupported
-[`StepSchema`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/enum.StepSchema.html
-[`StepUnsupportedPolicy::Reject`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/enum.StepUnsupportedPolicy.html#variant.Reject
-[`StepUnsupportedPolicy::Report`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/enum.StepUnsupportedPolicy.html#variant.Report
-[`StepWriteOptions`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/struct.StepWriteOptions.html
+[`StepCodec`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/struct.StepCodec.html
+[`StepError`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/enum.StepError.html
+[`StepError::Io`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/enum.StepError.html#variant.Io
+[`StepError::Unsupported`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/enum.StepError.html#variant.Unsupported
+[`StepSchema`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/enum.StepSchema.html
+[`StepUnsupportedPolicy::Reject`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/enum.StepUnsupportedPolicy.html#variant.Reject
+[`StepUnsupportedPolicy::Report`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/enum.StepUnsupportedPolicy.html#variant.Report
+[`StepWriteOptions`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/struct.StepWriteOptions.html
 [`std::io::Write`]: https://doc.rust-lang.org/std/io/trait.Write.html
-[`write_step`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/fn.write_step.html
+[`write_step`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/fn.write_step.html
