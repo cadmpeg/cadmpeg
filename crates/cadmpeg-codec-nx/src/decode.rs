@@ -11595,9 +11595,9 @@ pub(crate) fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
 
 pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {
     match selection {
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-            selection_ids_are_incomplete(bodies)
-        }
+        BodySelection::Bodies(bodies)
+        | BodySelection::Resolved { bodies, .. }
+        | BodySelection::ResolvedSet { bodies, .. } => selection_ids_are_incomplete(bodies),
         BodySelection::Local { bodies, native } => {
             native.trim().is_empty()
                 || selection_ids_are_incomplete(bodies)
@@ -11627,7 +11627,9 @@ pub(crate) fn body_selections_overlap(first: &BodySelection, second: &BodySelect
 
 fn explicit_body_ids(selection: &BodySelection) -> Option<&[BodyId]> {
     match selection {
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => Some(bodies),
+        BodySelection::Bodies(bodies)
+        | BodySelection::Resolved { bodies, .. }
+        | BodySelection::ResolvedSet { bodies, .. } => Some(bodies),
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
@@ -11640,9 +11642,9 @@ fn explicit_body_ids(selection: &BodySelection) -> Option<&[BodyId]> {
 
 fn resolved_body_selection_len(selection: &BodySelection) -> Option<usize> {
     match selection {
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-            Some(bodies.len())
-        }
+        BodySelection::Bodies(bodies)
+        | BodySelection::Resolved { bodies, .. }
+        | BodySelection::ResolvedSet { bodies, .. } => Some(bodies.len()),
         BodySelection::Local { bodies, .. } => Some(bodies.len()),
         BodySelection::Unresolved
         | BodySelection::Historical { .. }

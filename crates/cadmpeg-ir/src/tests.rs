@@ -5716,6 +5716,13 @@ fn body_selections_round_trip_through_json() {
             bodies: vec![BodyId("synthetic:test:body#0".into())],
             native: "body:17".into(),
         },
+        BodySelection::ResolvedSet {
+            bodies: vec![
+                BodyId("synthetic:test:body#0".into()),
+                BodyId("synthetic:test:body#1".into()),
+            ],
+            native: vec!["body:17".into(), "body:18".into()],
+        },
         BodySelection::Historical {
             state: FeatureInputTopologyId("synthetic:history-input:state#0".into()),
             bodies: vec![HistoricalBodyId("synthetic:history-input:body#0".into())],

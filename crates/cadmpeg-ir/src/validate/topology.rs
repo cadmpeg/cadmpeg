@@ -2501,9 +2501,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             } => {
                 body_selections.push(bodies);
                 let body_count = match bodies {
-                    BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-                        Some(bodies.len())
-                    }
+                    BodySelection::Bodies(bodies)
+                    | BodySelection::Resolved { bodies, .. }
+                    | BodySelection::ResolvedSet { bodies, .. } => Some(bodies.len()),
                     BodySelection::Historical { bodies, .. }
                     | BodySelection::HistoricalSet { bodies, .. } => Some(bodies.len()),
                     BodySelection::Generated { bodies, .. } => Some(bodies.len()),
@@ -3258,9 +3258,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     feature_geometry_error(findings, feature, "body combine operands overlap");
                 }
                 let target_count = match target {
-                    BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-                        Some(bodies.len())
-                    }
+                    BodySelection::Bodies(bodies)
+                    | BodySelection::Resolved { bodies, .. }
+                    | BodySelection::ResolvedSet { bodies, .. } => Some(bodies.len()),
                     BodySelection::Historical { bodies, .. }
                     | BodySelection::HistoricalSet { bodies, .. } => Some(bodies.len()),
                     BodySelection::Generated { bodies, .. } => Some(bodies.len()),
@@ -4579,6 +4579,27 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         |identity| ids.bodies(identity).is_some(),
                     );
                 }
+                BodySelection::ResolvedSet { bodies, native } => {
+                    check_ids(
+                        findings,
+                        &feature.id.0,
+                        "selected body",
+                        bodies.iter().map(|id| id.0.as_str()),
+                        |identity| ids.bodies(identity).is_some(),
+                    );
+                    if bodies.len() != native.len()
+                        || native.is_empty()
+                        || bodies.iter().collect::<HashSet<_>>().len() != bodies.len()
+                        || native.iter().any(|member| member.trim().is_empty())
+                        || native.iter().collect::<HashSet<_>>().len() != native.len()
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "resolved body selection set is invalid",
+                        );
+                    }
+                }
                 BodySelection::Historical {
                     state,
                     bodies,
@@ -5057,9 +5078,9 @@ fn face_selections_overlap(first: &FaceSelection, second: &FaceSelection) -> boo
 fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> bool {
     fn direct(selection: &BodySelection) -> Option<&[crate::ids::BodyId]> {
         match selection {
-            BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-                Some(bodies.as_slice())
-            }
+            BodySelection::Bodies(bodies)
+            | BodySelection::Resolved { bodies, .. }
+            | BodySelection::ResolvedSet { bodies, .. } => Some(bodies.as_slice()),
             _ => None,
         }
     }

@@ -948,7 +948,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         FaceSelection::Unresolved | FaceSelection::Native(_) => true,
     };
     let incomplete_body_selection = |selection: &BodySelection| match selection {
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies.is_empty(),
+        BodySelection::Bodies(bodies)
+        | BodySelection::Resolved { bodies, .. }
+        | BodySelection::ResolvedSet { bodies, .. } => bodies.is_empty(),
         BodySelection::Historical { bodies, .. } | BodySelection::HistoricalSet { bodies, .. } => {
             bodies.is_empty()
         }

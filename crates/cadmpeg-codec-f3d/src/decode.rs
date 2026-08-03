@@ -704,6 +704,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         BodySelection::NativeSet(members) => members.len(),
         BodySelection::Bodies(_)
         | BodySelection::Resolved { .. }
+        | BodySelection::ResolvedSet { .. }
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
@@ -1419,10 +1420,15 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             crate::history::bind_sweep_result_modes(&mut ir.model.features, &ir.model.bodies);
             crate::history::bind_feature_body_selections(
                 &mut ir.model.features,
-                &native.design_parameter_scopes,
-                &native.design_construction_operand_groups,
-                &native.design_body_recipe_operands,
-                &native.asm_histories,
+                &crate::history::FeatureBodySelectionInputs {
+                    scopes: &native.design_parameter_scopes,
+                    groups: &native.design_construction_operand_groups,
+                    body_recipe_operands: &native.design_body_recipe_operands,
+                    histories: &native.asm_histories,
+                    bodies: &ir.model.bodies,
+                    regions: &ir.model.regions,
+                    shells: &ir.model.shells,
+                },
             );
             crate::history::bind_feature_face_selections(
                 &mut ir.model.features,
@@ -1824,10 +1830,15 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     crate::history::bind_sweep_result_modes(&mut ir.model.features, &ir.model.bodies);
     crate::history::bind_feature_body_selections(
         &mut ir.model.features,
-        &native.design_parameter_scopes,
-        &native.design_construction_operand_groups,
-        &native.design_body_recipe_operands,
-        &native.asm_histories,
+        &crate::history::FeatureBodySelectionInputs {
+            scopes: &native.design_parameter_scopes,
+            groups: &native.design_construction_operand_groups,
+            body_recipe_operands: &native.design_body_recipe_operands,
+            histories: &native.asm_histories,
+            bodies: &ir.model.bodies,
+            regions: &ir.model.regions,
+            shells: &ir.model.shells,
+        },
     );
     crate::history::bind_feature_face_selections(
         &mut ir.model.features,

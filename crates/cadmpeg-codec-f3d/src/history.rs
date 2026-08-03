@@ -730,14 +730,37 @@ pub(crate) fn bind_sweep_result_modes(
     }
 }
 
+/// Native history and neutral topology used to resolve feature body operands.
+pub(crate) struct FeatureBodySelectionInputs<'a> {
+    /// Decoded Design feature scopes.
+    pub scopes: &'a [crate::records::DesignParameterScope],
+    /// Counted Design construction-operand groups.
+    pub groups: &'a [crate::records::DesignConstructionOperandGroup],
+    /// Whole-body recipe operands.
+    pub body_recipe_operands: &'a [crate::records::DesignBodyRecipeOperand],
+    /// Independent ASM history graphs.
+    pub histories: &'a [AsmHistory],
+    /// Neutral top-level bodies.
+    pub bodies: &'a [cadmpeg_ir::topology::Body],
+    /// Neutral body regions.
+    pub regions: &'a [cadmpeg_ir::topology::Region],
+    /// Neutral region shells.
+    pub shells: &'a [cadmpeg_ir::topology::Shell],
+}
+
 pub(crate) fn bind_feature_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
-    scopes: &[crate::records::DesignParameterScope],
-    groups: &[crate::records::DesignConstructionOperandGroup],
-    body_recipe_operands: &[crate::records::DesignBodyRecipeOperand],
-    histories: &[AsmHistory],
+    inputs: &FeatureBodySelectionInputs<'_>,
 ) {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+
+    let scopes = inputs.scopes;
+    let groups = inputs.groups;
+    let body_recipe_operands = inputs.body_recipe_operands;
+    let histories = inputs.histories;
+    let bodies = inputs.bodies;
+    let regions = inputs.regions;
+    let shells = inputs.shells;
 
     let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
     for state in histories.iter().flat_map(|history| &history.states) {
@@ -854,7 +877,7 @@ pub(crate) fn bind_feature_body_selections(
                 bodies: vec![crate::ids::history_input_body_id(&prefix, body)],
                 native: native.clone(),
             };
-            let native_tools = match tools {
+            let mut native_tools = match tools {
                 BodySelection::Native(native) => vec![native.clone()],
                 BodySelection::NativeSet(native) => native.clone(),
                 _ => continue,
@@ -862,19 +885,24 @@ pub(crate) fn bind_feature_body_selections(
             let Some(stream) = crate::ids::native_stream(&scope.id) else {
                 continue;
             };
-            let mut tool_bodies = Vec::with_capacity(native_tools.len());
+            let current_history_source = historical_brep_source(&state.id);
+            let mut historical_tool_bodies = Vec::with_capacity(native_tools.len());
+            let mut direct_tool_bodies = Vec::with_capacity(native_tools.len());
             for native in &native_tools {
                 let Some((native_stream, record_index)) = native.rsplit_once(":design-record#")
                 else {
-                    tool_bodies.clear();
+                    historical_tool_bodies.clear();
+                    direct_tool_bodies.clear();
                     break;
                 };
                 let Ok(record_index) = record_index.parse::<u32>() else {
-                    tool_bodies.clear();
+                    historical_tool_bodies.clear();
+                    direct_tool_bodies.clear();
                     break;
                 };
                 if native_stream != stream {
-                    tool_bodies.clear();
+                    historical_tool_bodies.clear();
+                    direct_tool_bodies.clear();
                     break;
                 }
                 let mut matching = body_recipe_operands.iter().filter(|operand| {
@@ -887,29 +915,60 @@ pub(crate) fn bind_feature_body_selections(
                         && operand.record_index == record_index
                 });
                 let Some(operand) = matching.next() else {
-                    tool_bodies.clear();
+                    historical_tool_bodies.clear();
+                    direct_tool_bodies.clear();
                     break;
                 };
                 if matching.next().is_some() {
-                    tool_bodies.clear();
+                    historical_tool_bodies.clear();
+                    direct_tool_bodies.clear();
                     break;
                 }
-                let Some(body) = operand.resolved_body_slot else {
-                    tool_bodies.clear();
+                if let Some(body) = operand.resolved_body_slot {
+                    let body = crate::ids::history_input_body_id(&prefix, body);
+                    if historical_tool_bodies.contains(&body) {
+                        historical_tool_bodies.clear();
+                        direct_tool_bodies.clear();
+                        break;
+                    }
+                    historical_tool_bodies.push(body);
+                    continue;
+                }
+                let Some(body) = unique_external_body_candidate(
+                    operand,
+                    current_history_source,
+                    bodies,
+                    regions,
+                    shells,
+                ) else {
+                    historical_tool_bodies.clear();
+                    direct_tool_bodies.clear();
                     break;
                 };
-                let body = crate::ids::history_input_body_id(&prefix, body);
-                if tool_bodies.contains(&body) {
-                    tool_bodies.clear();
+                if direct_tool_bodies.contains(&body) {
+                    historical_tool_bodies.clear();
+                    direct_tool_bodies.clear();
                     break;
                 }
-                tool_bodies.push(body);
+                direct_tool_bodies.push(body);
             }
-            if tool_bodies.len() == native_tools.len() {
+            if historical_tool_bodies.len() == native_tools.len() {
                 *tools = BodySelection::HistoricalSet {
                     state: input_state,
-                    bodies: tool_bodies,
+                    bodies: historical_tool_bodies,
                     native: native_tools,
+                };
+            } else if direct_tool_bodies.len() == native_tools.len() {
+                *tools = if native_tools.len() == 1 {
+                    BodySelection::Resolved {
+                        bodies: direct_tool_bodies,
+                        native: native_tools.remove(0),
+                    }
+                } else {
+                    BodySelection::ResolvedSet {
+                        bodies: direct_tool_bodies,
+                        native: native_tools,
+                    }
                 };
             }
             continue;
@@ -970,6 +1029,69 @@ pub(crate) fn bind_feature_body_selections(
             bodies: vec![crate::ids::history_input_body_id(&prefix, body)],
             native: group_id.clone(),
         };
+    }
+}
+
+fn unique_external_body_candidate(
+    operand: &crate::records::DesignBodyRecipeOperand,
+    current_history_source: Option<&str>,
+    bodies: &[cadmpeg_ir::topology::Body],
+    regions: &[cadmpeg_ir::topology::Region],
+    shells: &[cadmpeg_ir::topology::Shell],
+) -> Option<cadmpeg_ir::ids::BodyId> {
+    let body_by_region = regions
+        .iter()
+        .map(|region| (&region.id, &region.body))
+        .collect::<HashMap<_, _>>();
+    let body_by_face = shells
+        .iter()
+        .filter_map(|shell| {
+            let body = body_by_region.get(&shell.region)?;
+            Some(shell.faces.iter().map(move |face| (face, *body)))
+        })
+        .flatten()
+        .collect::<HashMap<_, _>>();
+    let body_metadata = bodies
+        .iter()
+        .map(|body| (&body.id, body))
+        .collect::<HashMap<_, _>>();
+    let current_prefix = current_history_source.map(|source| format!("f3d:brep/{source}/"));
+    let mut reference_candidates = operand.references.iter().map(|reference| {
+        reference
+            .candidate_faces
+            .iter()
+            .filter_map(|face| body_by_face.get(face).copied())
+            .filter(|body| {
+                current_prefix
+                    .as_ref()
+                    .is_none_or(|prefix| !body.0.starts_with(prefix))
+            })
+            .cloned()
+            .collect::<BTreeSet<_>>()
+    });
+    let mut candidates = reference_candidates.next()?;
+    for reference in reference_candidates {
+        if reference.is_empty() {
+            return None;
+        }
+        candidates.retain(|body| reference.contains(body));
+    }
+    let displayed = candidates
+        .iter()
+        .filter(|body| {
+            body_metadata
+                .get(body)
+                .is_some_and(|body| body.visible == Some(true))
+        })
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    if !displayed.is_empty() {
+        candidates = displayed;
+    }
+    if candidates.len() == 1 {
+        candidates.into_iter().next()
+    } else {
+        None
     }
 }
 
@@ -5232,6 +5354,126 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
+        use cadmpeg_ir::ids::{BodyId, FaceId, RegionId, ShellId};
+        use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
+
+        let reference = |faces: &[&str]| crate::records::DesignBodyRecipeReference {
+            design_reference: 1,
+            design_reference_offset: 0,
+            form: 3,
+            form_offset: 0,
+            candidate_faces: faces
+                .iter()
+                .map(|face| FaceId((*face).to_owned()))
+                .collect(),
+            preceding_candidate_faces: Vec::new(),
+            preceding_body_slots: Vec::new(),
+        };
+        let mut operand = crate::records::DesignBodyRecipeOperand {
+            id: "operand".into(),
+            scope_record_index: 1,
+            owner: crate::records::DesignBodyRecipeOperandOwner::ScopeReference {
+                scope_reference_ordinal: 0,
+            },
+            record_index: 2,
+            byte_offset: 0,
+            class_tag: "295".into(),
+            asset_id: "asset".into(),
+            asset_id_offset: 0,
+            context_id: "context".into(),
+            context_id_offset: 0,
+            references: vec![reference(&[
+                "f3d:brep/current/face#1",
+                "f3d:brep/external/face#1",
+                "f3d:brep/cache/face#1",
+            ])],
+            nested_record_index: 3,
+            nested_record_index_offset: 0,
+            recipe_id: "recipe".into(),
+            resolved_face_slot: None,
+            resolved_body_slot: None,
+            next_record_index: 4,
+            next_byte_offset: 0,
+        };
+        let body = |id: &str, region: &str, visible| Body {
+            id: BodyId(id.into()),
+            kind: BodyKind::Solid,
+            regions: vec![RegionId(region.into())],
+            transform: None,
+            name: None,
+            color: None,
+            visible,
+        };
+        let bodies = [
+            body("f3d:brep/current/body#1", "current-region", Some(true)),
+            body("f3d:brep/external/body#1", "external-region", Some(true)),
+            body("f3d:brep/cache/body#1", "cache-region", None),
+        ];
+        let regions = [
+            Region {
+                id: RegionId("current-region".into()),
+                body: bodies[0].id.clone(),
+                shells: vec![ShellId("current-shell".into())],
+            },
+            Region {
+                id: RegionId("external-region".into()),
+                body: bodies[1].id.clone(),
+                shells: vec![ShellId("external-shell".into())],
+            },
+            Region {
+                id: RegionId("cache-region".into()),
+                body: bodies[2].id.clone(),
+                shells: vec![ShellId("cache-shell".into())],
+            },
+        ];
+        let shell = |id: &str, region: &str, face: &str| Shell {
+            id: ShellId(id.into()),
+            region: RegionId(region.into()),
+            faces: vec![FaceId(face.into())],
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        };
+        let shells = [
+            shell("current-shell", "current-region", "f3d:brep/current/face#1"),
+            shell(
+                "external-shell",
+                "external-region",
+                "f3d:brep/external/face#1",
+            ),
+            shell("cache-shell", "cache-region", "f3d:brep/cache/face#1"),
+        ];
+
+        assert_eq!(
+            super::unique_external_body_candidate(
+                &operand,
+                Some("current"),
+                &bodies,
+                &regions,
+                &shells,
+            ),
+            Some(bodies[1].id.clone())
+        );
+
+        operand.references[0]
+            .candidate_faces
+            .retain(|face| !face.0.contains("/cache/"));
+        operand
+            .references
+            .push(reference(&["f3d:brep/cache/face#1"]));
+        assert_eq!(
+            super::unique_external_body_candidate(
+                &operand,
+                Some("current"),
+                &bodies,
+                &regions,
+                &shells,
+            ),
+            None
+        );
+    }
+
     #[test]
     fn base_feature_body_selection_uses_active_transition_outputs() {
         use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};

@@ -2150,6 +2150,13 @@ pub enum BodySelection {
         /// Format-native selection expression.
         native: String,
     },
+    /// Resolved bodies paired with independently retained native selection members.
+    ResolvedSet {
+        /// Resolved topological bodies in native member order.
+        bodies: Vec<BodyId>,
+        /// Ordered format-native selection members.
+        native: Vec<String>,
+    },
     /// Bodies resolved in the containing feature's input topology.
     Historical {
         /// Input topology containing every selected body.
