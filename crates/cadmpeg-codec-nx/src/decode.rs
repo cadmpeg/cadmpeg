@@ -2618,6 +2618,7 @@ fn pending_support_lanes_requiring_completion(
 fn complete_support_uv_wave(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
     let mut replacements = Vec::new();
     let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
+    let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
     for (procedural_id, points, parameters, fit_tolerance, _) in pending {
         let Some(procedural) = ir
             .model
@@ -2667,6 +2668,7 @@ fn complete_support_uv_wave(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
                             .zip(other_side.pcurve.as_ref())
                             .and_then(|(other_surface, other_pcurve)| {
                                 blend_boundary_parameter_from_support_pcurve(
+                                    &model_index,
                                     ir,
                                     surface_id,
                                     other_surface,
@@ -3161,7 +3163,7 @@ fn decoded_surface_point_inner(
 ) -> Option<Point3> {
     (depth < 32).then_some(())?;
     model_surface_point_by_id(index, surface, u, v)
-        .or_else(|| blend_surface_point_inner(index.ir(), surface, u, v, depth + 1))
+        .or_else(|| blend_surface_point_inner_with_index(index, surface, u, v, depth + 1))
 }
 
 #[cfg(test)]
@@ -3513,14 +3515,25 @@ fn blend_surface_point_inner(
     v: f64,
     depth: usize,
 ) -> Option<Point3> {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    blend_surface_point_inner_with_index(&index, surface, u, v, depth)
+}
+
+fn blend_surface_point_inner_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    u: f64,
+    v: f64,
+    depth: usize,
+) -> Option<Point3> {
     (depth < 32).then_some(())?;
     if v.to_bits() == 0.0f64.to_bits() {
-        return blend_boundary_point(ir, surface, u, 0, depth + 1);
+        return blend_boundary_point_with_index(index, surface, u, 0, depth + 1);
     }
     if v.to_bits() == 1.0f64.to_bits() {
-        return blend_boundary_point(ir, surface, u, 1, depth + 1);
+        return blend_boundary_point_with_index(index, surface, u, 1, depth + 1);
     }
-    let frame = blend_surface_frame(ir, surface, u, depth + 1)?;
+    let frame = blend_surface_frame_with_index(index, surface, u, depth + 1)?;
     Some(blend_surface_point_from_frame(frame, v))
 }
 
@@ -3715,19 +3728,51 @@ fn blend_surface_frame(
     u: f64,
     depth: usize,
 ) -> Option<BlendSurfaceFrame> {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    blend_surface_frame_with_index(&index, surface, u, depth)
+}
+
+fn blend_surface_frame_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    u: f64,
+    depth: usize,
+) -> Option<BlendSurfaceFrame> {
     (depth < 32).then_some(())?;
+    let ir = index.ir();
     let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
     let center = model_curve_point(ir, &spine, u)?;
     let tangent = model_curve_tangent(ir, &spine, u)?;
-    let first = spine_contact_direction(ir, &supports[0], &spine, u, center, radius, depth + 1)
-        .or_else(|| surface_contact_direction(ir, &supports[0], center, radius, depth + 1))?;
-    let second = spine_contact_direction(ir, &supports[1], &spine, u, center, radius, depth + 1)
-        .or_else(|| surface_contact_direction(ir, &supports[1], center, radius, depth + 1))?;
+    let first = spine_contact_direction_with_index(
+        index,
+        &supports[0],
+        &spine,
+        u,
+        center,
+        radius,
+        depth + 1,
+    )
+    .or_else(|| {
+        surface_contact_direction_with_index(index, &supports[0], center, radius, depth + 1)
+    })?;
+    let second = spine_contact_direction_with_index(
+        index,
+        &supports[1],
+        &spine,
+        u,
+        center,
+        radius,
+        depth + 1,
+    )
+    .or_else(|| {
+        surface_contact_direction_with_index(index, &supports[1], center, radius, depth + 1)
+    })?;
     Some((center, tangent, first, second, radius))
 }
 
-fn spine_contact_direction(
-    ir: &CadIr,
+#[allow(clippy::too_many_arguments)]
+fn spine_contact_direction_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     support: &SurfaceId,
     spine: &CurveId,
     parameter: f64,
@@ -3735,7 +3780,8 @@ fn spine_contact_direction(
     radius: f64,
     depth: usize,
 ) -> Option<Vector3> {
-    let contact = spine_contact_point(ir, support, spine, parameter, radius, depth + 1)?;
+    let contact =
+        spine_contact_point_with_index(index, support, spine, parameter, radius, depth + 1)?;
     unit_vector(Vector3::new(
         contact.x - center.x,
         contact.y - center.y,
@@ -3750,10 +3796,22 @@ fn blend_boundary_point(
     boundary: usize,
     depth: usize,
 ) -> Option<Point3> {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    blend_boundary_point_with_index(&index, surface, parameter, boundary, depth)
+}
+
+fn blend_boundary_point_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    parameter: f64,
+    boundary: usize,
+    depth: usize,
+) -> Option<Point3> {
     (depth < 32).then_some(())?;
+    let ir = index.ir();
     let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
-    spine_contact_point(
-        ir,
+    spine_contact_point_with_index(
+        index,
         supports.get(boundary)?,
         &spine,
         parameter,
@@ -3789,6 +3847,7 @@ struct BoundaryInverseTarget {
 }
 
 fn blend_boundary_parameter_from_support_pcurve(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     ir: &CadIr,
     blend: &SurfaceId,
     support: &SurfaceId,
@@ -3813,9 +3872,9 @@ fn blend_boundary_parameter_from_support_pcurve(
     closest_pcurve_parameters(contact_pcurve, support_uv, target.seed.map(|seed| seed.u))?
         .into_iter()
         .find(|parameter| {
-            blend_boundary_point(ir, blend, *parameter, boundary, 0).is_some_and(|candidate| {
-                point_distance(candidate, target.point) <= target.tolerance
-            })
+            blend_boundary_point_with_index(index, blend, *parameter, boundary, 0).is_some_and(
+                |candidate| point_distance(candidate, target.point) <= target.tolerance,
+            )
         })
         .map(|parameter| Point2::new(parameter, boundary as f64))
 }
@@ -4413,8 +4472,8 @@ fn lift_periodic_parameters(
     parameters
 }
 
-fn spine_contact_point(
-    ir: &CadIr,
+fn spine_contact_point_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     support: &SurfaceId,
     spine: &CurveId,
     parameter: f64,
@@ -4422,10 +4481,10 @@ fn spine_contact_point(
     depth: usize,
 ) -> Option<Point3> {
     (depth < 32).then_some(())?;
+    let ir = index.ir();
     let pcurve = spine_contact_pcurve(ir, support, spine, radius, depth + 1)?;
     let uv = pcurve_uv(pcurve, parameter)?;
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
-    decoded_surface_point_inner(&index, support, uv.u, uv.v, depth + 1)
+    decoded_surface_point_inner(index, support, uv.u, uv.v, depth + 1)
 }
 
 fn spine_contact_pcurve<'a>(
@@ -4760,6 +4819,7 @@ fn blend_surface_definition(
     })
 }
 
+#[cfg(test)]
 fn surface_contact_direction(
     ir: &CadIr,
     surface: &SurfaceId,
@@ -4767,8 +4827,20 @@ fn surface_contact_direction(
     radius: f64,
     depth: usize,
 ) -> Option<Vector3> {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    surface_contact_direction_with_index(&index, surface, center, radius, depth)
+}
+
+fn surface_contact_direction_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    center: Point3,
+    radius: f64,
+    depth: usize,
+) -> Option<Vector3> {
     (depth < 32).then_some(())?;
-    if let Some(direction) = blend_surface_contact_direction(ir, surface, center, depth + 1) {
+    let ir = index.ir();
+    if let Some(direction) = blend_surface_contact_direction(index, surface, center, depth + 1) {
         return Some(direction);
     }
     let carrier = ir
@@ -4814,9 +4886,8 @@ fn surface_contact_direction(
         }),
         geometry => analytic_surface_parameters(geometry, center),
     }?;
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
     let contact =
-        decoded_surface_point_inner(&index, surface, parameters.u, parameters.v, depth + 1)?;
+        decoded_surface_point_inner(index, surface, parameters.u, parameters.v, depth + 1)?;
     let offset = Vector3::new(
         contact.x - center.x,
         contact.y - center.y,
@@ -4828,15 +4899,16 @@ fn surface_contact_direction(
 }
 
 fn blend_surface_contact_direction(
-    ir: &CadIr,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
     depth: usize,
 ) -> Option<Vector3> {
     (depth < 32).then_some(())?;
+    let ir = index.ir();
     let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
     let u = closest_spine_parameter(ir, &spine, point, None)?;
-    let frame = blend_surface_frame(ir, surface, u, depth + 1)?;
+    let frame = blend_surface_frame_with_index(index, surface, u, depth + 1)?;
     let radial = unit_vector(Vector3::new(
         point.x - frame.0.x,
         point.y - frame.0.y,
@@ -8143,6 +8215,7 @@ pub(crate) fn complete_intersection_pcurves_from_opposite_charts(ir: &mut CadIr)
                 values
             },
         );
+    let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
     let replacements = ir
         .model
         .procedural_curves
@@ -8170,6 +8243,7 @@ pub(crate) fn complete_intersection_pcurves_from_opposite_charts(ir: &mut CadIr)
                 .or_else(|| edge_tolerances.get(&procedural.curve).copied())?;
             let tolerance = blend_spine_cache_fit_tolerance(ir, target_surface, tolerance);
             let pcurve = transfer_intersection_pcurve(
+                &model_index,
                 ir,
                 &procedural.curve,
                 source_surface,
@@ -8214,6 +8288,7 @@ pub(crate) fn complete_exact_boundary_intersection_pcurves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) {
+    let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
     let vertex_points = ir
         .model
         .vertices
@@ -8308,6 +8383,7 @@ pub(crate) fn complete_exact_boundary_intersection_pcurves(
                     } else {
                         let transferred = [
                             transfer_intersection_pcurve(
+                                &model_index,
                                 ir,
                                 &procedural.curve,
                                 first_surface,
@@ -8318,6 +8394,7 @@ pub(crate) fn complete_exact_boundary_intersection_pcurves(
                             )
                             .map(|transferred| [first.clone(), transferred]),
                             transfer_intersection_pcurve(
+                                &model_index,
                                 ir,
                                 &procedural.curve,
                                 second_surface,
@@ -8337,6 +8414,7 @@ pub(crate) fn complete_exact_boundary_intersection_pcurves(
                 [Some(first), None] => [
                     first.clone(),
                     transfer_intersection_pcurve(
+                        &model_index,
                         ir,
                         &procedural.curve,
                         first_surface,
@@ -8348,6 +8426,7 @@ pub(crate) fn complete_exact_boundary_intersection_pcurves(
                 ],
                 [None, Some(second)] => [
                     transfer_intersection_pcurve(
+                        &model_index,
                         ir,
                         &procedural.curve,
                         second_surface,
@@ -8910,7 +8989,11 @@ fn boundary_curve_speed_bound(
     }
 }
 
+// The transfer contract needs both support charts, their shared carrier, and
+// the reusable model index; grouping them would hide rather than reduce state.
+#[allow(clippy::too_many_arguments)]
 fn transfer_intersection_pcurve(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     ir: &CadIr,
     curve: &CurveId,
     source_surface: &SurfaceId,
@@ -8928,6 +9011,7 @@ fn transfer_intersection_pcurve(
         && tolerance >= 0.0)
         .then_some(())?;
     let first = transferred_pcurve_sample(
+        index,
         ir,
         curve,
         source_surface,
@@ -8939,10 +9023,12 @@ fn transfer_intersection_pcurve(
     )?;
     let mut coarse = Vec::with_capacity(CONTINUATION_STEPS + 1);
     coarse.push(first);
-    for index in 1..=CONTINUATION_STEPS {
+    for sample_index in 1..=CONTINUATION_STEPS {
         let parameter = parameter_range[0]
-            + (parameter_range[1] - parameter_range[0]) * index as f64 / CONTINUATION_STEPS as f64;
+            + (parameter_range[1] - parameter_range[0]) * sample_index as f64
+                / CONTINUATION_STEPS as f64;
         let sample = transferred_pcurve_sample(
+            index,
             ir,
             curve,
             source_surface,
@@ -8957,6 +9043,7 @@ fn transfer_intersection_pcurve(
     let mut samples = vec![first];
     for pair in coarse.windows(2) {
         append_transferred_pcurve_segment(
+            index,
             ir,
             curve,
             source_surface,
@@ -8982,6 +9069,7 @@ type TransferredPcurveSample = (f64, Point2, Point3);
 
 #[allow(clippy::too_many_arguments)]
 fn transferred_pcurve_sample(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     ir: &CadIr,
     curve: &CurveId,
     source_surface: &SurfaceId,
@@ -8992,9 +9080,10 @@ fn transferred_pcurve_sample(
     tolerance: f64,
 ) -> Option<TransferredPcurveSample> {
     let source_uv = pcurve_uv(source_pcurve, parameter)?;
-    let point = decoded_surface_point(ir, source_surface, source_uv.u, source_uv.v)
+    let point = decoded_surface_point_inner(index, source_surface, source_uv.u, source_uv.v, 0)
         .or_else(|| model_curve_point(ir, curve, parameter))?;
     let target_uv = blend_boundary_parameter_from_support_pcurve(
+        index,
         ir,
         target_surface,
         source_surface,
@@ -9017,7 +9106,7 @@ fn transferred_pcurve_sample(
         )
     })
     .or_else(|| surface_parameters_for_fit(ir, target_surface, point, seed, tolerance))?;
-    (decoded_surface_point(ir, target_surface, target_uv.u, target_uv.v)
+    (decoded_surface_point_inner(index, target_surface, target_uv.u, target_uv.v, 0)
         .is_some_and(|candidate| point_distance(candidate, point) <= tolerance)
         || blend_boundary_spine_geometry_matches(ir, target_surface, target_uv, point, tolerance))
     .then_some((parameter, target_uv, point))
@@ -9082,6 +9171,7 @@ fn blend_boundary_spine_geometry_matches(
 
 #[allow(clippy::too_many_arguments)]
 fn append_transferred_pcurve_segment(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     ir: &CadIr,
     curve: &CurveId,
     source_surface: &SurfaceId,
@@ -9099,6 +9189,7 @@ fn append_transferred_pcurve_segment(
         f64::midpoint(first.1.v, last.1.v),
     );
     let midpoint = transferred_pcurve_sample(
+        index,
         ir,
         curve,
         source_surface,
@@ -9118,12 +9209,12 @@ fn append_transferred_pcurve_segment(
             return false;
         };
         let Some(source_point) =
-            decoded_surface_point(ir, source_surface, source_uv.u, source_uv.v)
+            decoded_surface_point_inner(index, source_surface, source_uv.u, source_uv.v, 0)
                 .or_else(|| model_curve_point(ir, curve, parameter))
         else {
             return false;
         };
-        decoded_surface_point(ir, target_surface, uv.u, uv.v)
+        decoded_surface_point_inner(index, target_surface, uv.u, uv.v, 0)
             .is_some_and(|target_point| point_distance(source_point, target_point) <= tolerance)
             || blend_boundary_spine_geometry_matches(
                 ir,
@@ -9139,6 +9230,7 @@ fn append_transferred_pcurve_segment(
     }
     (depth < 16).then_some(())?;
     append_transferred_pcurve_segment(
+        index,
         ir,
         curve,
         source_surface,
@@ -9151,6 +9243,7 @@ fn append_transferred_pcurve_segment(
         samples,
     )?;
     append_transferred_pcurve_segment(
+        index,
         ir,
         curve,
         source_surface,
