@@ -2361,8 +2361,7 @@ mod marker_tests {
         current_direct_92_profile_line_endpoint_indices, current_geometry_locus_profile_vertex,
         current_identity_linked_wide_curve_uses_one_based_roster,
         current_indexed_arc_reverses_center_sweep, current_linked_semicircle_record,
-        current_long_full_circle_radial_index,
-        current_referenced_compact_104_curve_uses_marker_roster,
+        current_long_full_circle_radial_index, current_referenced_compact_curve_uses_marker_roster,
         current_reverse_incidence_endpoint_offsets, current_undetailed_bounded_curve_is_line,
         current_wide_arc_direct_markers, direct_indexed_curve_endpoint_indices,
         enrich_history_revolution_inputs, equal_index_coordinate_roster_full_circle,
@@ -11129,7 +11128,7 @@ mod marker_tests {
     }
 
     #[test]
-    fn current_referenced_compact_104_line_uses_complete_one_based_marker_roster() {
+    fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
         let curve_offset = 100;
         let mut payload = vec![0; curve_offset + 104 + SKETCH_MARKER.len()];
         payload[curve_offset..curve_offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
@@ -11182,7 +11181,7 @@ mod marker_tests {
         ];
         let markers = entities.iter().collect::<Vec<_>>();
 
-        assert!(current_referenced_compact_104_curve_uses_marker_roster(
+        assert!(current_referenced_compact_curve_uses_marker_roster(
             &payload,
             curve_offset
         ));
@@ -11194,8 +11193,61 @@ mod marker_tests {
             ["first", "second"]
         );
 
+        let compact_104 = payload.clone();
+        payload[curve_offset + 17..curve_offset + 21].copy_from_slice(&1u32.to_le_bytes());
+        payload[curve_offset + 72..curve_offset + 76].copy_from_slice(&(-1i32).to_le_bytes());
+        assert!(current_referenced_compact_curve_uses_marker_roster(
+            &payload,
+            curve_offset
+        ));
+        assert_eq!(
+            coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+                .iter()
+                .map(|marker| marker.id.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
+
+        payload = compact_104.clone();
+        payload[curve_offset + 72..curve_offset + 104].fill(0);
+        payload[curve_offset + 76..curve_offset + 80].copy_from_slice(&8u32.to_le_bytes());
+        payload[curve_offset + 80..curve_offset + 84].copy_from_slice(&7u32.to_le_bytes());
+        payload[curve_offset + 84..curve_offset + 84 + SKETCH_MARKER.len()]
+            .copy_from_slice(SKETCH_MARKER);
+        assert!(current_referenced_compact_curve_uses_marker_roster(
+            &payload,
+            curve_offset
+        ));
+        assert_eq!(
+            coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+                .iter()
+                .map(|marker| marker.id.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
+
+        payload = compact_104.clone();
+        payload[curve_offset + 72..curve_offset + 104].fill(0);
+        payload[curve_offset + 82..curve_offset + 84].copy_from_slice(&12u16.to_le_bytes());
+        payload[curve_offset + 88..curve_offset + 92].copy_from_slice(&19u32.to_le_bytes());
+        payload[curve_offset + 92..curve_offset + 96].copy_from_slice(&1u32.to_le_bytes());
+        payload[curve_offset + 96..curve_offset + 96 + SKETCH_MARKER.len()]
+            .copy_from_slice(SKETCH_MARKER);
+        assert!(current_referenced_compact_curve_uses_marker_roster(
+            &payload,
+            curve_offset
+        ));
+        assert_eq!(
+            coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+                .iter()
+                .map(|marker| marker.id.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
+
+        payload = compact_104;
         payload[curve_offset + 100..curve_offset + 104].copy_from_slice(&13u32.to_le_bytes());
-        assert!(!current_referenced_compact_104_curve_uses_marker_roster(
+        assert!(!current_referenced_compact_curve_uses_marker_roster(
             &payload,
             curve_offset
         ));
@@ -43047,7 +43099,7 @@ fn coordinate_roster_curve_endpoint_markers<'a>(
         return Vec::new();
     }
     let current_complete_roster =
-        current_referenced_compact_104_curve_uses_marker_roster(payload, offset);
+        current_referenced_compact_curve_uses_marker_roster(payload, offset);
     let complete_entity_roster = current_complete_roster
         || extended_marker84_line_uses_point_roster(payload, offset)
             && marker_profile_curve_role(payload, offset) == Some(2)
@@ -43119,26 +43171,38 @@ fn current_identity_linked_wide_curve_uses_one_based_roster(payload: &[u8], offs
         && current_direct_92_profile_line_endpoint_indices(payload, offset).is_none()
 }
 
-fn current_referenced_compact_104_curve_uses_marker_roster(payload: &[u8], offset: usize) -> bool {
-    let identities =
-        [96usize, 100].map(|relative| payload.get(offset + relative..offset + relative + 4));
+fn current_referenced_compact_curve_uses_marker_roster(payload: &[u8], offset: usize) -> bool {
+    let distinct_identities = |first: usize, second: usize| {
+        let identities =
+            [first, second].map(|relative| payload.get(offset + relative..offset + relative + 4));
+        matches!(identities, [Some(first), Some(second)] if first != [0; 4] && first != [0xff; 4] && second != [0; 4] && second != [0xff; 4] && first != second)
+    };
+    let referenced_ending = match compact_indexed_curve_record_end(payload, offset) {
+        Some(CompactIndexedCurveRecordEnd::Marker84) => {
+            payload.get(offset + 72..offset + 76) == Some(&[0; 4]) && distinct_identities(76, 80)
+        }
+        Some(CompactIndexedCurveRecordEnd::Marker96) => distinct_identities(88, 92),
+        Some(CompactIndexedCurveRecordEnd::Marker104) => {
+            payload
+                .get(offset + 76..offset + 78)
+                .is_some_and(|state| state != [0; 2] && state != [0xff; 2])
+                && distinct_identities(96, 100)
+        }
+        _ => false,
+    };
     payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
-        && marker_native_code(payload, offset) == Some(2)
+        && matches!(marker_native_code(payload, offset), Some(1 | 2))
         && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
         && marker_profile_curve_role(payload, offset) == Some(1)
         && payload.get(offset + 29..offset + 31) == Some(&1u16.to_le_bytes())
         && payload.get(offset + 31..offset + 39)
             == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
         && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
         && compact_indexed_curve_endpoint_indices(payload, offset)
             .is_some_and(|endpoints| endpoints[0] != endpoints[1])
-        && compact_indexed_curve_record_end(payload, offset)
-            == Some(CompactIndexedCurveRecordEnd::Marker104)
-        && payload.get(offset + 72..offset + 76) == Some(&1i32.to_le_bytes())
-        && payload
-            .get(offset + 76..offset + 78)
-            .is_some_and(|state| state != [0; 2] && state != [0xff; 2])
-        && matches!(identities, [Some(first), Some(second)] if first != [0; 4] && first != [0xff; 4] && second != [0; 4] && second != [0xff; 4] && first != second)
+        && referenced_ending
 }
 
 fn inferred_point_coordinates_by_index(
