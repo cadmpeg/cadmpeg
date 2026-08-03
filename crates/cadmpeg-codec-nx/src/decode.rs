@@ -11668,6 +11668,7 @@ pub(crate) fn sweep_mode_is_incomplete(mode: SweepMode) -> bool {
 pub(crate) fn sweep_orientation_is_incomplete(orientation: &SweepOrientation) -> bool {
     match orientation {
         SweepOrientation::Auxiliary { path, .. } => path_ref_is_incomplete(path),
+        SweepOrientation::GuideSurface { faces } => face_selection_is_incomplete(faces),
         SweepOrientation::Binormal { direction } => !valid_feature_direction(*direction),
         SweepOrientation::CorrectedFrenet | SweepOrientation::Fixed | SweepOrientation::Frenet => {
             false
@@ -11793,6 +11794,10 @@ pub(crate) fn radius_spec_is_incomplete(radius: &RadiusSpec) -> bool {
         RadiusSpec::Unresolved { .. } => true,
         RadiusSpec::Constant { radius } => !positive_feature_length(*radius),
         RadiusSpec::Chordal { chord_length } => !positive_feature_length(*chord_length),
+        RadiusSpec::Asymmetric {
+            offset_one,
+            offset_two,
+        } => !positive_feature_length(*offset_one) || !positive_feature_length(*offset_two),
         RadiusSpec::Variable { points } => {
             points.len() < 2
                 || points.iter().any(|point| {
@@ -11902,9 +11907,9 @@ pub(crate) fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
 
 pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {
     match selection {
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-            selection_ids_are_incomplete(bodies)
-        }
+        BodySelection::Bodies(bodies)
+        | BodySelection::Resolved { bodies, .. }
+        | BodySelection::ResolvedSet { bodies, .. } => selection_ids_are_incomplete(bodies),
         BodySelection::Local { bodies, native } => {
             native.trim().is_empty()
                 || selection_ids_are_incomplete(bodies)
@@ -11913,6 +11918,7 @@ pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
+        | BodySelection::HistoricalUnorderedSet { .. }
         | BodySelection::Generated { .. }
         | BodySelection::Native(_)
         | BodySelection::NativeSet(_) => true,
@@ -11934,10 +11940,13 @@ pub(crate) fn body_selections_overlap(first: &BodySelection, second: &BodySelect
 
 fn explicit_body_ids(selection: &BodySelection) -> Option<&[BodyId]> {
     match selection {
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => Some(bodies),
+        BodySelection::Bodies(bodies)
+        | BodySelection::Resolved { bodies, .. }
+        | BodySelection::ResolvedSet { bodies, .. } => Some(bodies),
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
+        | BodySelection::HistoricalUnorderedSet { .. }
         | BodySelection::Generated { .. }
         | BodySelection::Local { .. }
         | BodySelection::Native(_)
@@ -11947,13 +11956,14 @@ fn explicit_body_ids(selection: &BodySelection) -> Option<&[BodyId]> {
 
 fn resolved_body_selection_len(selection: &BodySelection) -> Option<usize> {
     match selection {
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-            Some(bodies.len())
-        }
+        BodySelection::Bodies(bodies)
+        | BodySelection::Resolved { bodies, .. }
+        | BodySelection::ResolvedSet { bodies, .. } => Some(bodies.len()),
         BodySelection::Local { bodies, .. } => Some(bodies.len()),
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
+        | BodySelection::HistoricalUnorderedSet { .. }
         | BodySelection::Generated { .. }
         | BodySelection::Native(_)
         | BodySelection::NativeSet(_) => None,

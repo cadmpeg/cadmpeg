@@ -29,8 +29,15 @@ fn allowance(tolerances: &[Option<f64>]) -> f64 {
         .fold(COINCIDENCE_TOLERANCE, f64::max)
 }
 
-/// Embedded support pcurves must map through their surfaces onto the solved
-/// procedural curve at both ends of the construction interval.
+/// Two independently evaluated procedural carriers can each consume the
+/// baseline coincidence allowance. The solved cache's explicit fit tolerance
+/// replaces, rather than supplements, its baseline when it is larger.
+fn procedural_support_allowance(cache_fit_tolerance: Option<f64>) -> f64 {
+    COINCIDENCE_TOLERANCE + allowance(&[cache_fit_tolerance])
+}
+
+/// Embedded support pcurves must map through their surfaces onto the curve
+/// they constrain at both ends of the construction interval.
 pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
     let index = crate::index::ModelIndex::new(ir);
     let curves = ir
@@ -80,12 +87,74 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             }
             continue;
         }
+        if let crate::geometry::ProceduralCurveDefinition::SurfaceOffset {
+            context,
+            base,
+            base_endpoints,
+            distance: offset,
+            ..
+        } = &procedural.definition
+        {
+            let Some(solved) = curves.get(procedural.curve.0.as_str()) else {
+                continue;
+            };
+            let solved = context
+                .parameter_range
+                .map(|parameter| curve_point(solved, parameter));
+            let [Some(solved_start), Some(solved_end)] = solved else {
+                continue;
+            };
+            let bound = procedural_support_allowance(procedural.cache_fit_tolerance);
+            let Some(base) = curves.get(base.0.as_str()) else {
+                continue;
+            };
+            let base = base_endpoints
+                .map(|parameter| parameter.and_then(|parameter| curve_point(base, parameter)));
+            let [Some(base_start), Some(base_end)] = base else {
+                check_support_sides(
+                    context,
+                    None,
+                    SupportEndpointContract::Offset {
+                        endpoints: [solved_start, solved_end],
+                        distance: offset.abs(),
+                    },
+                    &surfaces,
+                    bound,
+                    &procedural.id.0,
+                    findings,
+                );
+                continue;
+            };
+            let offset_mismatch = (distance(solved_start, base_start) - offset.abs())
+                .abs()
+                .max((distance(solved_end, base_end) - offset.abs()).abs());
+            if !offset_mismatch.is_finite() || offset_mismatch > bound {
+                findings.push(Finding {
+                    check: Check::GeometricConsistency,
+                    severity: Severity::Error,
+                    message: format!(
+                        "surface-offset solved curve misses its base offset distance by \
+                         {offset_mismatch:.6}"
+                    ),
+                    entity: Some(procedural.id.0.clone()),
+                });
+            }
+            check_support_sides(
+                context,
+                None,
+                SupportEndpointContract::Coincident([base_start, base_end]),
+                &surfaces,
+                bound,
+                &procedural.id.0,
+                findings,
+            );
+            continue;
+        }
         let (context, third) = match &procedural.definition {
             crate::geometry::ProceduralCurveDefinition::Law { context, .. }
             | crate::geometry::ProceduralCurveDefinition::Intersection { context, .. }
             | crate::geometry::ProceduralCurveDefinition::SurfaceCurve { context, .. }
             | crate::geometry::ProceduralCurveDefinition::Silhouette { context, .. }
-            | crate::geometry::ProceduralCurveDefinition::SurfaceOffset { context, .. }
             | crate::geometry::ProceduralCurveDefinition::Spring { context, .. }
             | crate::geometry::ProceduralCurveDefinition::Projection { context, .. }
             | crate::geometry::ProceduralCurveDefinition::TwoSidedOffset { context, .. } => {
@@ -107,35 +176,75 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
         let [Some(solved_start), Some(solved_end)] = solved else {
             continue;
         };
-        let bound = allowance(&[procedural.cache_fit_tolerance]);
-        for (side_index, side) in context.sides.iter().chain(third).enumerate() {
-            let (Some(surface_id), Some(pcurve)) = (&side.surface, &side.pcurve) else {
-                continue;
-            };
-            let Some(surface) = surfaces.get(surface_id.0.as_str()) else {
-                continue;
-            };
-            let support = context.parameter_range.map(|parameter| {
-                side.pcurve_parameter(context.parameter_range, parameter)
-                    .and_then(|parameter| pcurve_uv(pcurve, parameter))
-                    .and_then(|uv| surface_point(surface, uv.u, uv.v))
+        let bound = procedural_support_allowance(procedural.cache_fit_tolerance);
+        check_support_sides(
+            context,
+            third,
+            SupportEndpointContract::Coincident([solved_start, solved_end]),
+            &surfaces,
+            bound,
+            &procedural.id.0,
+            findings,
+        );
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SupportEndpointContract {
+    Coincident([Point3; 2]),
+    Offset {
+        endpoints: [Point3; 2],
+        distance: f64,
+    },
+}
+
+fn check_support_sides(
+    context: &crate::geometry::IntcurveSupportContext,
+    third: Option<&crate::geometry::IntcurveSupportSide>,
+    contract: SupportEndpointContract,
+    surfaces: &HashMap<&str, &crate::geometry::SurfaceGeometry>,
+    bound: f64,
+    entity: &str,
+    findings: &mut Vec<Finding>,
+) {
+    let (constrained, expected_distance) = match contract {
+        SupportEndpointContract::Coincident(endpoints) => (endpoints, None),
+        SupportEndpointContract::Offset {
+            endpoints,
+            distance,
+        } => (endpoints, Some(distance)),
+    };
+    for (side_index, side) in context.sides.iter().chain(third).enumerate() {
+        let (Some(surface_id), Some(pcurve)) = (&side.surface, &side.pcurve) else {
+            continue;
+        };
+        let Some(surface) = surfaces.get(surface_id.0.as_str()) else {
+            continue;
+        };
+        let support = context.parameter_range.map(|parameter| {
+            side.pcurve_parameter(context.parameter_range, parameter)
+                .and_then(|parameter| pcurve_uv(pcurve, parameter))
+                .and_then(|uv| surface_point(surface, uv.u, uv.v))
+        });
+        let [Some(support_start), Some(support_end)] = support else {
+            continue;
+        };
+        let endpoint_mismatch = |constrained, support| {
+            let distance = distance(constrained, support);
+            expected_distance.map_or(distance, |expected| (distance - expected).abs())
+        };
+        let mismatch = endpoint_mismatch(constrained[0], support_start)
+            .max(endpoint_mismatch(constrained[1], support_end));
+        if !mismatch.is_finite() || mismatch > bound {
+            findings.push(Finding {
+                check: Check::GeometricConsistency,
+                severity: Severity::Error,
+                message: format!(
+                    "procedural support side {side_index} misses its endpoint distance contract by \
+                     {mismatch:.6}"
+                ),
+                entity: Some(entity.to_owned()),
             });
-            let [Some(support_start), Some(support_end)] = support else {
-                continue;
-            };
-            let mismatch =
-                distance(solved_start, support_start).max(distance(solved_end, support_end));
-            if !mismatch.is_finite() || mismatch > bound {
-                findings.push(Finding {
-                    check: Check::GeometricConsistency,
-                    severity: Severity::Error,
-                    message: format!(
-                        "procedural support side {side_index} misses the solved curve endpoints by \
-                         {mismatch:.6}"
-                    ),
-                    entity: Some(procedural.id.0.clone()),
-                });
-            }
         }
     }
 }
@@ -548,6 +657,42 @@ mod tests {
         ir
     }
 
+    fn mapped_surface_offset() -> CadIr {
+        let mut ir = mapped_surface_curve([2.0, 3.0]);
+        let base = CurveId("base".to_string());
+        ir.model.curves[0].geometry = CurveGeometry::Line {
+            origin: Point3::new(2.0, 0.0, 25.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        };
+        ir.model.curves.push(Curve {
+            id: base.clone(),
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        let ProceduralCurveDefinition::SurfaceCurve { context, .. } =
+            &ir.model.procedural_curves[0].definition
+        else {
+            unreachable!();
+        };
+        ir.model.procedural_curves[0].definition = ProceduralCurveDefinition::SurfaceOffset {
+            context: context.clone(),
+            discontinuity_flag: false,
+            base_u_range: [0.0, 1.0],
+            base_v_range: [0.0, 1.0],
+            base,
+            base_range: [2.0, 3.0],
+            base_endpoints: [Some(2.0), Some(3.0)],
+            cache_first: None,
+            distance: 25.0,
+            shift: 0.0,
+            scale: 1.0,
+        };
+        ir
+    }
+
     #[test]
     fn procedural_support_endpoints_honor_the_per_side_parameter_mapping() {
         let mut findings = Vec::new();
@@ -557,5 +702,36 @@ mod tests {
         check_procedural_support_consistency(&mapped_surface_curve([3.0, 2.0]), &mut findings);
         assert_eq!(findings.len(), 1);
         assert!(findings[0].message.contains("support side 0"));
+    }
+
+    #[test]
+    fn surface_offset_support_constrains_the_embedded_base_curve() {
+        let mut findings = Vec::new();
+        check_procedural_support_consistency(&mapped_surface_offset(), &mut findings);
+        assert!(findings.is_empty());
+
+        let mut context_first = mapped_surface_offset();
+        let ProceduralCurveDefinition::SurfaceOffset { base_endpoints, .. } =
+            &mut context_first.model.procedural_curves[0].definition
+        else {
+            unreachable!();
+        };
+        *base_endpoints = [None, None];
+        check_procedural_support_consistency(&context_first, &mut findings);
+        assert!(findings.is_empty());
+
+        let mut ir = mapped_surface_offset();
+        let CurveGeometry::Line { origin, .. } = &mut ir.model.curves[1].geometry else {
+            unreachable!();
+        };
+        origin.y = 2.0;
+        check_procedural_support_consistency(&ir, &mut findings);
+        assert_eq!(findings.len(), 2);
+        assert!(findings
+            .iter()
+            .any(|finding| finding.message.contains("base offset distance")));
+        assert!(findings
+            .iter()
+            .any(|finding| finding.message.contains("support side 0")));
     }
 }

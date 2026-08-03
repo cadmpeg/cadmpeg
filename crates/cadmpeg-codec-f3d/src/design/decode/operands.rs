@@ -16,16 +16,17 @@ use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyRecipeOperand,
     DesignBodyRecipeOperandOwner, DesignBodyRecipeReference, DesignConstructionOperandGroup,
     DesignConstructionOperandGroupFrame, DesignConstructionOperandIdentity,
-    DesignConstructionPersistentIdentity, DesignEdgeIdentityOperand, DesignEdgeOperand,
-    DesignEntityHeader, DesignEntitySelectionOperand, DesignExtrudeFaceRole,
-    DesignExtrudeOperandRole, DesignExtrudePrologue, DesignExtrudeSelectionGroup,
-    DesignExtrudeSelectionMember, DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup,
-    DesignFilletRadiusLaw, DesignParameter, DesignParameterOwner, DesignParameterScope,
-    DesignRecordHeader, DesignSketchProfileOperand, DesignTopologyRecipeEntry,
-    DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, LostEdgeReference,
-    PersistentSubentityTag, SketchCurveIdentity, SketchPoint, SketchRelationOperand,
+    DesignConstructionPersistentIdentity, DesignConstructionTrackingPath,
+    DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
+    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudePrologue,
+    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
+    DesignFaceOperand, DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignParameter,
+    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchProfileOperand,
+    DesignTopologyRecipeEntry, DesignTopologyRecipeSide, DesignTopologyRecipeTriplet,
+    LostEdgeReference, PersistentSubentityTag, SketchCurveIdentity, SketchPoint,
+    SketchRelationOperand,
 };
-use cadmpeg_codec_core::le::{f64_at, u32_at, u64_at as read_u64};
+use cadmpeg_codec_core::le::{f64_at, i32_at, u32_at, u64_at as read_u64};
 use cadmpeg_codec_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -42,21 +43,10 @@ pub fn decode_edge_operands(
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
-    for scope in scopes.iter().filter(|scope| {
-        matches!(
-            design_feature_family(&scope.kind),
-            Some(
-                DesignFeatureFamily::Fillet
-                    | DesignFeatureFamily::Chamfer
-                    | DesignFeatureFamily::Revolve
-                    | DesignFeatureFamily::Loft
-                    | DesignFeatureFamily::Sweep
-                    | DesignFeatureFamily::Pipe
-                    | DesignFeatureFamily::SurfaceExtend
-                    | DesignFeatureFamily::SurfaceOffset
-            )
-        ) || matches!(scope.kind.as_str(), "EdgeFlange" | "Hem")
-    }) {
+    for scope in scopes
+        .iter()
+        .filter(|scope| has_edge_recipe_operands(&scope.kind))
+    {
         let mut member_indices = groups
             .iter()
             .filter(|group| {
@@ -100,6 +90,26 @@ pub fn decode_edge_operands(
     }
     out.sort_by_key(|operand| operand.id.clone());
     Ok(out)
+}
+
+/// Whether a feature family owns edge-recipe operands directly or through a
+/// counted construction-operand group.
+pub(crate) fn has_edge_recipe_operands(kind: &str) -> bool {
+    matches!(
+        design_feature_family(kind),
+        Some(
+            DesignFeatureFamily::Fillet
+                | DesignFeatureFamily::Chamfer
+                | DesignFeatureFamily::Revolve
+                | DesignFeatureFamily::Loft
+                | DesignFeatureFamily::Sweep
+                | DesignFeatureFamily::Pipe
+                | DesignFeatureFamily::SurfacePatch
+                | DesignFeatureFamily::SurfaceExtend
+                | DesignFeatureFamily::SurfaceOffset
+                | DesignFeatureFamily::SurfaceRuled
+        )
+    ) || matches!(kind, "EdgeFlange" | "Hem")
 }
 
 /// Decode persistent selection identities named by Fillet and Chamfer groups.
@@ -216,6 +226,9 @@ pub fn decode_face_operands(
             && group.role == 0x0000_0010_0000_0000;
         let is_loft_profile = design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Loft)
             && matches!(group.role, 0x0000_0041_0000_0000 | 0x0000_0043_0000_0000);
+        let is_sweep_guide_surface = design_feature_family(&scope.kind)
+            == Some(DesignFeatureFamily::Sweep)
+            && group.role == 0x0000_0011_0000_0000;
         let is_edge_treatment_support = matches!(
             design_feature_family(&scope.kind),
             Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
@@ -228,17 +241,20 @@ pub fn decode_face_operands(
             && group.role == 0x0000_0008_0000_0000;
         let is_split_face_operand = scope.kind == "SplitFace";
         let is_delete_face_operand = scope.kind == "DeleteFace";
+        let is_thread_face = scope.kind == "Thread" && group.role == 0x0000_0010_0000_0000;
         let is_draft_operand =
             design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Draft);
         if !is_extrude_operand
             && !is_offset_faces_operand
             && !is_shell_operand
             && !is_loft_profile
+            && !is_sweep_guide_surface
             && !is_edge_treatment_support
             && !is_circular_pattern_seed
             && !is_mirror_seed
             && !is_split_face_operand
             && !is_delete_face_operand
+            && !is_thread_face
             && !is_draft_operand
         {
             continue;
@@ -582,6 +598,7 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Thicken)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Move)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::SurfacePatch)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::SurfaceRuled)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::BoundaryFill)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Split)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Draft)
@@ -593,6 +610,7 @@ pub fn decode_construction_operand_groups(
             || scope.kind == "SurfaceStitch"
             || scope.kind == "DeleteFace"
             || scope.kind == "Decal"
+            || scope.kind == "Thread"
             || matches!(scope.kind.as_str(), "BaseFlange" | "EdgeFlange" | "Hem")
             || has_typed_edge_treatment_group(&scope.kind)
     }) {
@@ -761,6 +779,39 @@ pub fn decode_fillet_radius_groups(
             });
             continue;
         }
+        let asymmetric_offsets = |kind: &str| {
+            owned_parameters
+                .iter()
+                .filter_map(|(_, parameter)| {
+                    (parameter.source_kind == kind).then_some(parameter.record_index)
+                })
+                .collect::<Vec<_>>()
+        };
+        let (offset_one, offset_two) = (
+            asymmetric_offsets("EdgeOffset1"),
+            asymmetric_offsets("EdgeOffset2"),
+        );
+        if owned_parameters.len() == 3 {
+            if let ([offset_one], [offset_two], [weight]) = (
+                offset_one.as_slice(),
+                offset_two.as_slice(),
+                weights.as_slice(),
+            ) {
+                out.push(DesignFilletRadiusGroup {
+                    id: format!("{stream}:design-fillet-radius-group#{}", group.record_index),
+                    scope_record_index: scope.record_index,
+                    group_ordinal: 0,
+                    group_record_index: group.record_index,
+                    edge_operand_record_indices: group.members.clone(),
+                    law: DesignFilletRadiusLaw::Asymmetric {
+                        offset_one_parameter_record_index: *offset_one,
+                        offset_two_parameter_record_index: *offset_two,
+                    },
+                    tangency_weight_parameter_record_index: Some(weight.record_index),
+                });
+                continue;
+            }
+        }
         let records = |kind: &str| {
             owned_parameters
                 .iter()
@@ -853,7 +904,7 @@ impl ConstructionOperandGroupParse {
 ///
 /// The record's members are a leading-block presence byte, the property block
 /// its presence byte gates, the counted member run, two optional references,
-/// the counted identity run, a zero u32 and the u32 role, ten zero bytes, an
+/// the counted trailing-reference run, a zero u32 and the u32 role, ten zero bytes, an
 /// ordinal, a duration, and a repeat of the ordinal that one container
 /// generation omits. The tail is a reference to record `N + 2`, a flag block,
 /// a reference to record `N + 1`, a zero byte, the owning scope's reference,
@@ -913,21 +964,21 @@ pub(crate) fn parse_construction_operand_group(
         auxiliary_record_indices.push(record_index);
         auxiliary_record_offsets.push(offset);
     }
-    let Some(identity_count) = u32_at(bytes, cursor) else {
+    let Some(trailing_count) = u32_at(bytes, cursor) else {
         return NotAGroup;
     };
     cursor += 4;
-    if usize::try_from(identity_count).unwrap_or(usize::MAX) > bytes.len().saturating_sub(cursor) {
+    if usize::try_from(trailing_count).unwrap_or(usize::MAX) > bytes.len().saturating_sub(cursor) {
         return NotAGroup;
     }
-    let mut identity_record_indices = Vec::new();
-    let mut identity_record_offsets = Vec::new();
-    for _ in 0..identity_count {
+    let mut trailing_record_indices = Vec::new();
+    let mut trailing_record_offsets = Vec::new();
+    for _ in 0..trailing_count {
         let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;
         };
-        identity_record_indices.push(record_index);
-        identity_record_offsets.push(offset);
+        trailing_record_indices.push(record_index);
+        trailing_record_offsets.push(offset);
     }
     // The role occupies the high word of a u64 whose low word is zero.
     let role_at = cursor;
@@ -1010,9 +1061,15 @@ pub(crate) fn parse_construction_operand_group(
 
     let extrude_role = if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude) {
         match role {
-            0x0000_0008_0000_0000 => Some(DesignExtrudeOperandRole::Bodies),
+            0x0000_0004_0000_0000 | 0x0000_0008_0000_0000 => Some(DesignExtrudeOperandRole::Bodies),
             0x0000_0041_0000_0000 => Some(DesignExtrudeOperandRole::Profile),
             0x0000_0011_0000_0000 => Some(DesignExtrudeOperandRole::Faces),
+            0x0000_0005_0000_0000
+                if scope.extrude_prologue.map(DesignExtrudePrologue::start)
+                    == Some(DesignExtrudeStart::FromFace) =>
+            {
+                Some(DesignExtrudeOperandRole::Faces)
+            }
             _ => None,
         }
     } else {
@@ -1040,8 +1097,12 @@ pub(crate) fn parse_construction_operand_group(
             member_count_offset,
             auxiliary_record_indices,
             auxiliary_record_offsets,
-            identity_record_indices,
-            identity_record_offsets,
+            auxiliary_paths: Vec::new(),
+            trailing_record_indices,
+            trailing_record_offsets,
+            trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
             opaque_index,
             opaque_index_offset,
             opaque_scalar,
@@ -1055,6 +1116,245 @@ pub(crate) fn parse_construction_operand_group(
         paired_class_tag,
         paired_byte_offset,
     }))
+}
+
+/// Bind exact typed records selected by construction-group trailing runs.
+pub fn bind_construction_operand_trailing_records(
+    scan: &ContainerScan,
+    groups: &mut [DesignConstructionOperandGroup],
+    headers: &[DesignRecordHeader],
+) -> Result<(), CodecError> {
+    let headers = headers
+        .iter()
+        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
+        .collect::<HashMap<_, _>>();
+    for group in groups {
+        group.frame.trailing_transforms.clear();
+        group.frame.trailing_dual_transforms.clear();
+        group.frame.trailing_flags.clear();
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == ids::native_scope(&entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for record_index in &group.frame.trailing_record_indices {
+            let Some(header) = headers.get(&(stream, *record_index)) else {
+                continue;
+            };
+            if let Some(transform) = parse_construction_operand_transform(bytes, header) {
+                group.frame.trailing_transforms.push(transform);
+            } else if let Some(transform) = parse_construction_operand_dual_transform(bytes, header)
+            {
+                group.frame.trailing_dual_transforms.push(transform);
+            } else if let Some(flag) = parse_construction_operand_flag(bytes, header) {
+                group.frame.trailing_flags.push(flag);
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn parse_construction_operand_flag(
+    bytes: &[u8],
+    header: &DesignRecordHeader,
+) -> Option<crate::records::DesignConstructionOperandFlag> {
+    let start = usize::try_from(header.byte_offset).ok()?;
+    if bytes.get(start + 11..start + 21)? != [0; 10]
+        || bytes.get(start + 21) != Some(&1)
+        || bytes.get(start + 23) != Some(&0)
+    {
+        return None;
+    }
+    let value = match bytes.get(start + 22)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    Some(crate::records::DesignConstructionOperandFlag {
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        value,
+        value_offset: u64::try_from(start + 22).ok()?,
+    })
+}
+
+/// Bind exact persistent-entity path records selected by construction groups.
+pub fn bind_construction_operand_paths(
+    scan: &ContainerScan,
+    groups: &mut [DesignConstructionOperandGroup],
+    headers: &[DesignRecordHeader],
+) -> Result<(), CodecError> {
+    let headers = headers
+        .iter()
+        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
+        .collect::<HashMap<_, _>>();
+    for group in groups {
+        group.frame.auxiliary_paths.clear();
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == ids::native_scope(&entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for record_index in &group.frame.auxiliary_record_indices {
+            let Some(header) = headers.get(&(stream, *record_index)) else {
+                continue;
+            };
+            if let Some(path) =
+                parse_construction_operand_path(bytes, group.scope_record_index, header)
+            {
+                group.frame.auxiliary_paths.push(path);
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn parse_construction_operand_path(
+    bytes: &[u8],
+    expected_scope_record_index: u32,
+    header: &DesignRecordHeader,
+) -> Option<crate::records::DesignConstructionOperandPath> {
+    use crate::design::decode::sketch::valid_sketch_transform;
+
+    let start = usize::try_from(header.byte_offset).ok()?;
+    if bytes.get(start + 11..start + 21)? != [0; 10] || bytes.get(start + 21) != Some(&1) {
+        return None;
+    }
+    let entity_ref = read_u64(bytes, start + 22)?;
+    let entity_ref_offset = u64::try_from(start + 22).ok()?;
+    let (transform, transform_offset, compact_variant, mut cursor) =
+        if bytes.get(start + 30..start + 33)? == [0; 3] {
+            let values = cadmpeg_codec_core::le::f64s_at(bytes, start + 33, 16)?;
+            let mut transform = [[0.0; 4]; 4];
+            for (ordinal, value) in values.iter().copied().enumerate() {
+                transform[ordinal / 4][ordinal % 4] = value;
+            }
+            if !valid_sketch_transform(&transform) || bytes.get(start + 161) != Some(&0) {
+                return None;
+            }
+            (
+                Some(transform),
+                Some(u64::try_from(start + 33).ok()?),
+                None,
+                start + 162,
+            )
+        } else {
+            let variant = match bytes.get(start + 30..start + 34)? {
+                [0, 0, variant @ (0 | 1), 0] => *variant != 0,
+                _ => return None,
+            };
+            (None, None, Some(variant), start + 34)
+        };
+    let (scope_record_index, scope_record_index_offset) =
+        take_record_reference(bytes, &mut cursor)?;
+    if scope_record_index != expected_scope_record_index {
+        return None;
+    }
+    let (nested_record_index, nested_record_index_offset) =
+        take_record_reference(bytes, &mut cursor)?;
+    if nested_record_index != header.record_index.checked_add(2)?
+        || bytes.get(cursor..cursor + 6)? != [0; 6]
+    {
+        return None;
+    }
+    let following_at = cursor.checked_add(6)?;
+    let (following_class_tag, after_tag) =
+        lp_ascii_filtered(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
+    let following_record_index = u32_at(bytes, after_tag)?;
+    if following_record_index != header.record_index.checked_add(1)? {
+        return None;
+    }
+    Some(crate::records::DesignConstructionOperandPath {
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        entity_ref,
+        entity_ref_offset,
+        transform,
+        transform_offset,
+        compact_variant,
+        scope_record_index,
+        scope_record_index_offset,
+        nested_record_index,
+        nested_record_index_offset,
+        following_record_index,
+        following_byte_offset: u64::try_from(following_at).ok()?,
+        following_class_tag,
+    })
+}
+
+pub(crate) fn parse_construction_operand_transform(
+    bytes: &[u8],
+    header: &DesignRecordHeader,
+) -> Option<crate::records::DesignConstructionOperandTransform> {
+    let start = usize::try_from(header.byte_offset).ok()?;
+    if bytes.get(start + 11..start + 22)? != [0; 11]
+        || bytes.get(start + 150..start + 152)? != [1, 0]
+    {
+        return None;
+    }
+    let transform_at = start.checked_add(22)?;
+    let transform = rigid_transform_at(bytes, transform_at)?;
+    let following_at = start.checked_add(152)?;
+    let (following_class_tag, after_tag) =
+        lp_ascii_filtered(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
+    let following_record_index = u32_at(bytes, after_tag)?;
+    if following_record_index != header.record_index.checked_add(1)? {
+        return None;
+    }
+    Some(crate::records::DesignConstructionOperandTransform {
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        transform,
+        transform_offset: u64::try_from(transform_at).ok()?,
+        following_record_index,
+        following_byte_offset: u64::try_from(following_at).ok()?,
+        following_class_tag,
+    })
+}
+
+pub(crate) fn parse_construction_operand_dual_transform(
+    bytes: &[u8],
+    header: &DesignRecordHeader,
+) -> Option<crate::records::DesignConstructionOperandDualTransform> {
+    let start = usize::try_from(header.byte_offset).ok()?;
+    if bytes.get(start + 11..start + 21)? != [0; 10] || bytes.get(start + 277) != Some(&0) {
+        return None;
+    }
+    let first_at = start.checked_add(21)?;
+    let second_at = start.checked_add(149)?;
+    Some(crate::records::DesignConstructionOperandDualTransform {
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        first_transform: rigid_transform_at(bytes, first_at)?,
+        first_transform_offset: u64::try_from(first_at).ok()?,
+        second_transform: rigid_transform_at(bytes, second_at)?,
+        second_transform_offset: u64::try_from(second_at).ok()?,
+    })
+}
+
+fn rigid_transform_at(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
+    let values = cadmpeg_codec_core::le::f64s_at(bytes, at, 16)?;
+    let mut transform = [[0.0; 4]; 4];
+    for (ordinal, value) in values.iter().copied().enumerate() {
+        transform[ordinal / 4][ordinal % 4] = value;
+    }
+    crate::design::decode::sketch::valid_sketch_transform(&transform).then_some(transform)
 }
 
 /// Take one reference naming a record of the same segment, advancing `at` past
@@ -1094,10 +1394,10 @@ pub fn decode_construction_operand_identities(
         }) else {
             continue;
         };
-        let Some(identity_record_index) = group.frame.identity_record_indices.first() else {
+        let Some(trailing_record_index) = group.frame.trailing_record_indices.first() else {
             continue;
         };
-        let Some(wrapper_header) = headers.get(&(stream, *identity_record_index)) else {
+        let Some(wrapper_header) = headers.get(&(stream, *trailing_record_index)) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -1209,13 +1509,30 @@ pub(crate) fn parse_construction_operand_identity(
     let mut current_at = usize::try_from(wrapper_header.byte_offset).ok()?;
     let mut current_record_index = wrapper_header.record_index;
     let mut current_class_tag = wrapper_header.class_tag.clone();
+    let mut chain_started = false;
+    if let Some(transform) = parse_construction_operand_transform(bytes, wrapper_header) {
+        current_at = usize::try_from(transform.following_byte_offset).ok()?;
+        current_record_index = transform.following_record_index;
+        current_class_tag = transform.following_class_tag;
+        chain_started = true;
+    }
     let mut wrapper_record_indices = Vec::new();
     let mut wrapper_byte_offsets = Vec::new();
     let mut wrapper_class_tags = Vec::new();
     let mut seen = HashSet::new();
-    while bytes.get(current_at + 11..current_at + 21)? == [0; 10]
-        && bytes.get(current_at + 21..current_at + 24)? == [1, 1, 0]
-    {
+    loop {
+        if parse_construction_tracking_path(
+            bytes,
+            current_at,
+            current_record_index,
+            &current_class_tag,
+        )
+        .is_some()
+            || bytes.get(current_at + 11..current_at + 21)? != [0; 10]
+            || bytes.get(current_at + 21..current_at + 24)? != [1, 1, 0]
+        {
+            break;
+        }
         if !seen.insert((current_record_index, current_at)) {
             return None;
         }
@@ -1227,8 +1544,21 @@ pub(crate) fn parse_construction_operand_identity(
             lp_ascii_filtered(bytes, current_at, 0..=2000, u8::is_ascii_graphic)?;
         current_record_index = u32_at(bytes, after_next_tag)?;
         current_class_tag = next_class_tag;
+        chain_started = true;
     }
-    if wrapper_record_indices.is_empty() {
+    let tracking_path = parse_construction_tracking_path(
+        bytes,
+        current_at,
+        current_record_index,
+        &current_class_tag,
+    );
+    if let Some(path) = &tracking_path {
+        current_at = usize::try_from(path.following_byte_offset).ok()?;
+        current_record_index = path.following_record_index;
+        current_class_tag.clone_from(&path.following_class_tag);
+        chain_started = true;
+    }
+    if !chain_started {
         return None;
     }
     let persistent_identity = parse_extrude_identity_member(bytes, current_at).map(|member| {
@@ -1254,8 +1584,95 @@ pub(crate) fn parse_construction_operand_identity(
         following_record_index: current_record_index,
         following_byte_offset: u64::try_from(current_at).ok()?,
         following_class_tag: current_class_tag,
+        tracking_path,
         persistent_identity,
     })
+}
+
+pub(crate) fn parse_construction_tracking_path(
+    bytes: &[u8],
+    wrapper_at: usize,
+    wrapper_record_index: u32,
+    wrapper_class_tag: &str,
+) -> Option<DesignConstructionTrackingPath> {
+    if bytes.get(wrapper_at + 11..wrapper_at + 21)? != [0; 10]
+        || bytes.get(wrapper_at + 21) != Some(&1)
+        || read_u64(bytes, wrapper_at + 22)? != u64::from(wrapper_record_index.checked_add(1)?)
+        || bytes.get(wrapper_at + 30..wrapper_at + 33)? != [0; 3]
+    {
+        return None;
+    }
+    let carrier_at = wrapper_at.checked_add(33)?;
+    let (carrier_class_tag, after_carrier_tag) =
+        lp_ascii_filtered(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
+    let carrier_record_index = u32_at(bytes, after_carrier_tag)?;
+    if carrier_record_index != wrapper_record_index.checked_add(1)?
+        || bytes.get(carrier_at + 11..carrier_at + 21)? != [0; 10]
+        || u32_at(bytes, carrier_at + 21)? != 1
+        || u32_at(bytes, carrier_at + 25)? != 0
+        || u32_at(bytes, carrier_at + 29)? != 1
+        || u32_at(bytes, carrier_at + 33)? != 2
+        || read_u64(bytes, carrier_at + 45)? != 0
+        || u32_at(bytes, carrier_at + 53)? != 1
+        || read_u64(bytes, carrier_at + 65)? != 0
+    {
+        return None;
+    }
+    let primary_identity = read_u64(bytes, carrier_at + 37)?;
+    let selector = i32_at(bytes, carrier_at + 57)?;
+    let kind = u32_at(bytes, carrier_at + 61)?;
+    let mut cursor = carrier_at.checked_add(73)?;
+    let (first_related_identity, first_related_identity_offset) =
+        take_optional_tracking_identity(bytes, &mut cursor)?;
+    let (second_related_identity, second_related_identity_offset) =
+        take_optional_tracking_identity(bytes, &mut cursor)?;
+    let following_at = cursor;
+    let (following_class_tag, after_following_tag) =
+        lp_ascii_filtered(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
+    let following_record_index = u32_at(bytes, after_following_tag)?;
+    if following_record_index != carrier_record_index.checked_add(1)? {
+        return None;
+    }
+    Some(DesignConstructionTrackingPath {
+        wrapper_record_index,
+        wrapper_byte_offset: u64::try_from(wrapper_at).ok()?,
+        wrapper_class_tag: wrapper_class_tag.to_owned(),
+        carrier_record_index,
+        carrier_byte_offset: u64::try_from(carrier_at).ok()?,
+        carrier_class_tag,
+        primary_identity,
+        primary_identity_offset: u64::try_from(carrier_at + 37).ok()?,
+        selector,
+        selector_offset: u64::try_from(carrier_at + 57).ok()?,
+        kind,
+        kind_offset: u64::try_from(carrier_at + 61).ok()?,
+        first_related_identity,
+        first_related_identity_offset,
+        second_related_identity,
+        second_related_identity_offset,
+        following_record_index,
+        following_byte_offset: u64::try_from(following_at).ok()?,
+        following_class_tag,
+    })
+}
+
+fn take_optional_tracking_identity(
+    bytes: &[u8],
+    cursor: &mut usize,
+) -> Option<(Option<u64>, Option<u64>)> {
+    match u32_at(bytes, *cursor)? {
+        0 => {
+            *cursor = (*cursor).checked_add(4)?;
+            Some((None, None))
+        }
+        1 => {
+            let value_at = (*cursor).checked_add(4)?;
+            let value = read_u64(bytes, value_at)?;
+            *cursor = value_at.checked_add(8)?;
+            Some((Some(value), Some(u64::try_from(value_at).ok()?)))
+        }
+        _ => None,
+    }
 }
 
 pub(crate) fn parse_extrude_selection_group(
@@ -1453,28 +1870,34 @@ pub(crate) fn parse_entity_selection_operand(
         header.record_index.checked_add(1)?,
         header.record_index.checked_add(2)?,
         header.record_index.checked_add(3)?,
-        header.record_index.checked_add(4)?,
     ];
-    for (offset, expected) in [
-        paired_at,
-        nested_one_at,
-        nested_two_at,
-        identity_at,
-        next_at,
-    ]
-    .into_iter()
-    .zip(expected)
+    for (offset, expected) in [paired_at, nested_one_at, nested_two_at, identity_at]
+        .into_iter()
+        .zip(expected)
     {
         let (_, after_tag) = lp_ascii_filtered(bytes, offset, 0..=2000, u8::is_ascii_graphic)?;
         if u32_at(bytes, after_tag)? != expected {
             return None;
         }
     }
-    if bytes.get(identity_at + 11..identity_at + 29)? != [0; 18]
-        || identity_at.checked_add(45)? != next_at
-    {
-        return None;
-    }
+    let (_, after_next_tag) = lp_ascii_filtered(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
+    let next_record_index = u32_at(bytes, after_next_tag)?;
+    let (primary_identity_offset, secondary_identity_offset) =
+        if bytes.get(identity_at + 11..identity_at + 29)? == [0; 18]
+            && identity_at.checked_add(45)? == next_at
+            && next_record_index == header.record_index.checked_add(4)?
+        {
+            (
+                identity_at.checked_add(29)?,
+                Some(identity_at.checked_add(37)?),
+            )
+        } else if bytes.get(identity_at + 11..identity_at + 21)? == [0; 10]
+            && identity_at.checked_add(29)? == next_at
+        {
+            (identity_at.checked_add(21)?, None)
+        } else {
+            return None;
+        };
     Some(DesignEntitySelectionOperand {
         id: String::new(),
         scope_record_index: group.scope_record_index,
@@ -1489,13 +1912,15 @@ pub(crate) fn parse_entity_selection_operand(
         context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
         identity_record_index: header.record_index.checked_add(3)?,
         identity_record_offset: u64::try_from(identity_at).ok()?,
-        primary_identity: read_u64(bytes, identity_at + 29)?,
-        primary_identity_offset: u64::try_from(identity_at + 29).ok()?,
-        secondary_identity: read_u64(bytes, identity_at + 37)?,
-        secondary_identity_offset: u64::try_from(identity_at + 37).ok()?,
+        primary_identity: read_u64(bytes, primary_identity_offset)?,
+        primary_identity_offset: u64::try_from(primary_identity_offset).ok()?,
+        secondary_identity: secondary_identity_offset.and_then(|offset| read_u64(bytes, offset)),
+        secondary_identity_offset: secondary_identity_offset
+            .and_then(|offset| u64::try_from(offset).ok()),
         historical_edge_candidates: Vec::new(),
+        historical_face_candidates: Vec::new(),
         resolved_edge_slot: None,
-        next_record_index: header.record_index.checked_add(4)?,
+        next_record_index,
         next_byte_offset: u64::try_from(next_at).ok()?,
     })
 }
@@ -1819,32 +2244,22 @@ pub fn bind_body_recipe_operand_candidates(
             .or_insert(Some(recipe));
     }
     for operand in operands {
-        let derived_selector = recipes_by_id
+        let tag_selector = recipes_by_id
             .get(operand.recipe_id.as_str())
             .and_then(|recipe| *recipe)
             .and_then(|recipe| recipe.design_selector)
-            .map(|selector| u64::from(selector.value));
+            .map(|selector| i64::from(selector.value));
         for reference in &mut operand.references {
             reference.candidate_faces.clear();
             let Ok(design_reference) = i64::try_from(reference.design_reference) else {
                 continue;
-            };
-            let derived_reference = if reference.form == 3 {
-                derived_selector
-                    .and_then(|selector| reference.design_reference.checked_add(selector))
-            } else {
-                None
             };
             reference.candidate_faces = tags
                 .iter()
                 .filter(|tag| {
                     crate::ids::same_native_occurrence(&tag.id, &operand.id)
                         && tag.design_references.contains(&design_reference)
-                        && derived_reference.is_none_or(|derived| {
-                            i64::try_from(derived)
-                                .ok()
-                                .is_some_and(|derived| tag.design_references.contains(&derived))
-                        })
+                        && (reference.form != 3 || tag_selector == Some(tag.selector))
                 })
                 .filter_map(|tag| match &tag.target {
                     AttributeTarget::Face(face) => Some(face.clone()),
@@ -2019,12 +2434,26 @@ fn parse_extrude_identity_member(
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
         || u32_at(bytes, after_context_id)? != 2
-        || u32_at(bytes, tail_slot_offset + 1)? != 0
-        || after_context_id.checked_add(9)? != start.checked_add(190)?
     {
         return None;
     }
-    let next_at = start.checked_add(190)?;
+    let next_at = if u32_at(bytes, tail_slot_offset + 1) == Some(0)
+        && after_context_id.checked_add(9)? == start.checked_add(190)?
+    {
+        start.checked_add(190)?
+    } else if bytes.get(tail_slot_offset + 1..tail_slot_offset + 4)? == [0; 3] {
+        let mut cursor = tail_slot_offset.checked_add(4)?;
+        let (next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
+        let next_at = cursor;
+        let (_, after_next_tag) =
+            lp_ascii_filtered(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
+        if u32_at(bytes, after_next_tag)? != next_record_index {
+            return None;
+        }
+        next_at
+    } else {
+        return None;
+    };
     let (_, after_next_tag) = lp_ascii_filtered(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
     Some(ParsedExtrudeIdentityMember {
         local_id,
@@ -2058,6 +2487,8 @@ pub(crate) fn parse_edge_identity_member(
         (false, 23)
     } else if bytes.get(start + 11..start + 22) == Some(&[0; 11]) {
         (true, 22)
+    } else if bytes.get(start + 11..start + 21) == Some(&[0; 10]) {
+        (true, 21)
     } else {
         return None;
     };
@@ -2113,20 +2544,29 @@ pub(crate) fn parse_sketch_profile(
     let (paired_class_tag, after_paired_tag) =
         lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let tail_length = paired_at.checked_sub(after_entity_suffix)?;
-    if u32_at(bytes, after_paired_tag)? != header.record_index || !matches!(tail_length, 93 | 94) {
+    if u32_at(bytes, after_paired_tag)? != header.record_index
+        || !matches!(tail_length, 89 | 93 | 94)
+    {
         return None;
     }
-    if tail_length == 93 {
+    if matches!(tail_length, 89 | 93) {
         let tail = after_entity_suffix;
+        let (nested_two_at, nested_one_at, scope_at) = if tail_length == 89 {
+            (53, 66, 78)
+        } else {
+            (57, 70, 82)
+        };
         if bytes.get(tail..tail + 8) != Some(&[1, 0, 0, 0, 0, 0, 0, 0])
             || u32_at(bytes, tail + 8) != Some(1)
-            || marked_record_reference(bytes, tail + 57) != header.record_index.checked_add(2)
-            || bytes.get(tail + 68..tail + 70) != Some(&[0; 2])
-            || marked_record_reference(bytes, tail + 70) != header.record_index.checked_add(1)
-            || bytes.get(tail + 81) != Some(&0)
-            || marked_record_reference(bytes, tail + 82).is_none()
+            || marked_record_reference(bytes, tail + nested_two_at)
+                != header.record_index.checked_add(2)
+            || bytes.get(tail + nested_one_at - 2..tail + nested_one_at) != Some(&[0; 2])
+            || marked_record_reference(bytes, tail + nested_one_at)
+                != header.record_index.checked_add(1)
+            || bytes.get(tail + scope_at - 1) != Some(&0)
+            || marked_record_reference(bytes, tail + scope_at).is_none()
             || u32_at(bytes, tail + 41) == Some(0)
-            || u32_at(bytes, tail + 41) != u32_at(bytes, tail + 53)
+            || (tail_length == 93 && u32_at(bytes, tail + 41) != u32_at(bytes, tail + 53))
         {
             return None;
         }
@@ -2179,7 +2619,11 @@ pub(crate) fn parse_edge_operand(
         offsets.push(offset);
         position = offset.checked_add(11)?;
     }
-    offsets.push(next_indexed_record_offset(bytes, position)?);
+    offsets.push(next_indexed_record_offset_with_index(
+        bytes,
+        position,
+        header.record_index.checked_add(4)?,
+    )?);
     let mut indexed = Vec::with_capacity(offsets.len());
     for offset in &offsets {
         let (class_tag, after_tag) =
@@ -2189,10 +2633,12 @@ pub(crate) fn parse_edge_operand(
     let next_one = header.record_index.checked_add(1)?;
     let next_two = header.record_index.checked_add(2)?;
     let recipe_record_index = header.record_index.checked_add(3)?;
+    let next_record_index = header.record_index.checked_add(4)?;
     if indexed[0].1 != header.record_index
         || indexed[1].1 != next_one
         || indexed[2].1 != next_two
         || indexed[3].1 != recipe_record_index
+        || indexed[4].1 != next_record_index
     {
         return None;
     }

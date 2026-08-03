@@ -295,17 +295,18 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let edge_identity_records =
         validate_edge_identity_operands(&ctx, &mut findings, &expected_face_operands);
     let body_recipe_operand_records = validate_body_recipe_operands(&ctx, &mut findings);
-    validate_operand_group_identity_chains(
+    let edge_operand_records = validate_edge_operands(&ctx, &mut findings);
+    validate_operand_group_carriers(
         &ctx,
         &mut findings,
         &operand_identity_groups,
         &edge_identity_records,
         &body_recipe_operand_records,
+        &edge_operand_records,
     );
     validate_extrude_selection_members(&ctx, &mut findings);
     validate_entity_selection_operands(&ctx, &mut findings);
     validate_extrude_selection_group_members(&ctx, &mut findings);
-    let edge_operand_records = validate_edge_operands(&ctx, &mut findings);
     validate_edge_treatment_groups(
         &ctx,
         &mut findings,
@@ -313,7 +314,12 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         &edge_identity_records,
     );
     let face_operand_records = validate_face_operands(&ctx, &mut findings, &expected_face_operands);
-    validate_face_group_member_resolution(&mut findings, face_group_members, &face_operand_records);
+    validate_face_group_member_resolution(
+        &mut findings,
+        face_group_members,
+        &face_operand_records,
+        &native.design_entity_selection_operands,
+    );
     validate_sketch_placements(&ctx, &mut findings);
     validate_parameter_owners(&ctx, &mut findings);
     validate_parameter_companions(&ctx, &mut findings);
@@ -483,25 +489,26 @@ fn validate_body_bindings(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && binding.blob_name.starts_with("BREP.")
             && binding.blob_name_offset > binding.entity_suffix_offset
             && binding.body.as_ref().is_none_or(|body| {
-                let has_named_source = native
+                let has_named_source = native.body_native_keys.iter().any(|key| {
+                    ids::same_native_occurrence(&key.id, &binding.id)
+                        && key.source_brep.as_deref() == Some(binding.blob_name.as_str())
+                });
+                let source_keys = native
                     .body_native_keys
                     .iter()
-                    .any(|key| key.source_brep.as_deref() == Some(binding.blob_name.as_str()));
-                let source_keys = native.body_native_keys.iter().filter(|key| {
-                    if has_named_source {
-                        key.source_brep.as_deref() == Some(binding.blob_name.as_str())
-                    } else {
-                        key.source_brep.is_none()
-                    }
-                });
-                let ordinal_mode = source_keys.clone().all(|key| key.asm_body_key.is_none());
-                source_keys.filter(|key| &key.body == body).any(|key| {
-                    if ordinal_mode {
-                        u64::from(key.body_ordinal) == binding.asm_body_key
-                    } else {
-                        key.asm_body_key == Some(binding.asm_body_key)
-                    }
-                })
+                    .filter(|key| {
+                        ids::same_native_occurrence(&key.id, &binding.id)
+                            && if has_named_source {
+                                key.source_brep.as_deref() == Some(binding.blob_name.as_str())
+                            } else {
+                                key.source_brep.is_none()
+                            }
+                    })
+                    .collect::<Vec<_>>();
+                matches!(
+                    crate::brep::resolve_body_selector(&source_keys, binding.asm_body_key),
+                    Ok(Some(resolved)) if &resolved == body
+                )
             })
             && binding_offsets.insert((native_stream, binding.asm_body_key_offset));
         if !valid {
@@ -970,18 +977,50 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     != Some(design::DesignFeatureFamily::Assemble)
             }
             Some(alignment) => {
-                let values = [
-                    alignment.angle,
-                    alignment.offset[0],
-                    alignment.offset[1],
-                    alignment.offset[2],
-                ];
+                let values = if alignment.owner_record_indices.len() == 2 {
+                    vec![alignment.angle, alignment.offset[2]]
+                } else {
+                    vec![
+                        alignment.angle,
+                        alignment.offset[0],
+                        alignment.offset[1],
+                        alignment.offset[2],
+                    ]
+                };
+                let compact_frames = matches!(
+                    (scope.paired_class_tag.as_str(), scope.frame_length),
+                    ("258", 633 | 732)
+                );
+                let frame_reference_offsets = if scope.frame_length == 772 {
+                    [29, 168]
+                } else if compact_frames {
+                    [25, 165]
+                } else {
+                    [29, 169]
+                };
+                let frame_transform_offsets = if scope.frame_length == 772 {
+                    [39, 178]
+                } else if compact_frames {
+                    [36, 176]
+                } else {
+                    [40, 180]
+                };
+                let assembly_owner_count = native
+                    .design_parameter_owners
+                    .iter()
+                    .filter(|owner| {
+                        design_stream(&owner.id) == native_stream
+                            && owner.scope_record_index == scope.record_index
+                    })
+                    .count();
                 let operand_frames_link = alignment.operand_frames.as_ref().is_none_or(|frames| {
                     frames[0].reference_record_index != frames[1].reference_record_index
                         && frames.iter().enumerate().all(|(ordinal, frame)| {
                             design::decode::sketch::valid_sketch_transform(&frame.transform)
-                                && frame.reference_offset == scope.byte_offset + [29, 169][ordinal]
-                                && frame.transform_offset == scope.byte_offset + [40, 180][ordinal]
+                                && frame.reference_offset
+                                    == scope.byte_offset + frame_reference_offsets[ordinal]
+                                && frame.transform_offset
+                                    == scope.byte_offset + frame_transform_offsets[ordinal]
                                 && records_by_index
                                     .contains_key(&(native_stream, frame.reference_record_index))
                         })
@@ -991,16 +1030,44 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     alignment.operand_paths.as_ref(),
                 ) {
                     (None, None) => true,
+                    // The class-261 form stores exact connector frames but no
+                    // occurrence-path records that qualify them.
+                    (Some(_), None) => scope.frame_length == 772,
                     (Some(frames), Some(paths)) => {
-                        paths[0].record_index.checked_add(5)
-                            == Some(frames[0].reference_record_index)
-                            && paths[1].record_index.checked_add(2)
+                        let (first_delta, second_delta) = if scope.frame_length == 732 {
+                            (39, 36)
+                        } else {
+                            (5, 2)
+                        };
+                        scope.frame_length != 772
+                            && paths[0].record_index.checked_add(first_delta)
+                                == Some(frames[0].reference_record_index)
+                            && paths[1].record_index.checked_add(second_delta)
                                 == Some(frames[0].reference_record_index)
                             && paths[0].byte_offset < paths[1].byte_offset
                             && paths.iter().all(|path| {
                                 !path.occurrence_guids.is_empty()
                                     && path.occurrence_guids.len()
                                         == path.occurrence_guid_offsets.len()
+                                    && matches!(path.class_tag.as_str(), "329" | "386" | "390")
+                                    && path.identity_guids.len() == path.identity_guid_offsets.len()
+                                    && if matches!(path.class_tag.as_str(), "386" | "390") {
+                                        path.identity_guids.len() == 4
+                                    } else {
+                                        path.identity_guids.is_empty()
+                                    }
+                                    && path
+                                        .identity_guids
+                                        .iter()
+                                        .all(|guid| crate::bytes::is_guid_relaxed(guid))
+                                    && path
+                                        .identity_guid_offsets
+                                        .windows(2)
+                                        .all(|offsets| offsets[0] < offsets[1])
+                                    && path
+                                        .identity_guid_offsets
+                                        .iter()
+                                        .all(|offset| *offset > path.byte_offset)
                                     && path
                                         .occurrence_guid_offsets
                                         .windows(2)
@@ -1009,44 +1076,56 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                         .occurrence_guid_offsets
                                         .iter()
                                         .all(|offset| *offset > path.byte_offset)
-                                    && path.occurrence_guids.first().is_some_and(|guid| {
-                                        native
-                                            .design_component_occurrences
-                                            .iter()
-                                            .filter(|occurrence| {
-                                                design_stream(&occurrence.id) == native_stream
-                                                    && occurrence
-                                                        .occurrence_guid
-                                                        .eq_ignore_ascii_case(guid)
-                                            })
-                                            .count()
-                                            == 1
-                                    })
+                                    && (path.class_tag == "386"
+                                        || path.occurrence_guids.first().is_some_and(|guid| {
+                                            native
+                                                .design_component_occurrences
+                                                .iter()
+                                                .filter(|occurrence| {
+                                                    design_stream(&occurrence.id) == native_stream
+                                                        && occurrence
+                                                            .occurrence_guid
+                                                            .eq_ignore_ascii_case(guid)
+                                                })
+                                                .count()
+                                                == 1
+                                        }))
                             })
                     }
                     _ => false,
                 };
+                let joint_origin_envelope_link = alignment
+                    .joint_origin_scope_record_index
+                    .is_none_or(|record_index| {
+                        alignment.operand_frames.is_none()
+                            && alignment.operand_paths.is_none()
+                            && scope.class_tag == "276"
+                            && scope.paired_class_tag == "258"
+                            && scope.frame_length == 604
+                            && native.design_parameter_scopes.iter().any(|target| {
+                                design_stream(&target.id) == native_stream
+                                    && target.kind == "JointOrigin"
+                                    && target.record_index == record_index
+                                    && target.joint_origin_transform_offset
+                                        == Some(scope.byte_offset + 36)
+                            })
+                    });
                 design::design_feature_family(&scope.kind)
                     == Some(design::DesignFeatureFamily::Assemble)
                     && values.iter().all(|value| value.is_finite())
                     && operand_frames_link
                     && operand_paths_link
+                    && joint_origin_envelope_link
                     && scope
                         .reference_members
                         .ends_with(&alignment.owner_record_indices)
-                    && native
-                        .design_parameter_owners
-                        .iter()
-                        .filter(|owner| {
-                            design_stream(&owner.id) == native_stream
-                                && owner.scope_record_index == scope.record_index
-                        })
-                        .count()
-                        == 4
+                    && matches!(assembly_owner_count, 4 | 8 | 10)
+                    && matches!(alignment.owner_record_indices.len(), 2 | 4)
+                    && alignment.value_offsets.len() == alignment.owner_record_indices.len()
                     && alignment
                         .owner_record_indices
                         .iter()
-                        .zip(alignment.value_offsets)
+                        .zip(&alignment.value_offsets)
                         .zip(values)
                         .enumerate()
                         .all(|(ordinal, ((record_index, value_offset), value))| {
@@ -1054,9 +1133,15 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 design_stream(&owner.id) == native_stream
                                     && owner.record_index == *record_index
                                     && owner.scope_record_index == scope.record_index
-                                    && owner.local_ordinal == ordinal as u32
+                                    && owner.local_ordinal
+                                        == ordinal as u32
+                                            + match assembly_owner_count {
+                                                8 => 4,
+                                                10 => 8,
+                                                _ => 0,
+                                            }
                                     && owner.evaluated_value == value
-                                    && owner.evaluated_value_offset == value_offset
+                                    && owner.evaluated_value_offset == *value_offset
                             })
                         })
             }
@@ -1066,20 +1151,34 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             Some(construction) => {
                 let relation =
                     records_by_index.get(&(native_stream, construction.relation_record_index));
+                let frame_matches_transform =
+                    match (scope.frame_length, scope.paired_class_tag.as_str()) {
+                        (399, "259") => {
+                            construction.transform_offset == scope.byte_offset.saturating_add(50)
+                        }
+                        (381, "261") => {
+                            construction.transform_offset == scope.byte_offset.saturating_add(49)
+                        }
+                        (395, "258") => {
+                            construction.transform_offset == scope.byte_offset.saturating_add(46)
+                        }
+                        _ => false,
+                    };
                 scope.kind == "Component Insert"
                     && scope.reference_members == [construction.relation_record_index]
                     && construction.carrier_record_index != construction.relation_record_index
                     && crate::bytes::is_guid_relaxed(&construction.neutron_role)
                     && design::decode::sketch::valid_sketch_transform(&construction.transform)
-                    && construction.transform_offset == scope.byte_offset + 50
+                    && frame_matches_transform
                     && construction.neutron_role_offset < construction.carrier_transform_offset
                     && relation.is_some_and(|relation| {
                         construction.carrier_transform_offset < relation.byte_offset
                     })
-                    && native.xref_references.iter().any(|reference| {
-                        reference.neutron_role == construction.neutron_role
-                            && reference.transform == Some(construction.transform)
-                    })
+                    && (native.xref_references.is_empty()
+                        || native.xref_references.iter().any(|reference| {
+                            reference.neutron_role == construction.neutron_role
+                                && reference.transform == Some(construction.transform)
+                        }))
             }
         };
         let copy_paste_component_link = match &scope.copy_paste_component_operation {
@@ -1148,6 +1247,60 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .contains(&(native_stream, operation.opposite_angle_record_index))
             }
         };
+        let joint_origin_link = match (
+            scope.joint_origin_transform,
+            scope.joint_origin_transform_offset,
+            scope.joint_origin_reference,
+            scope.joint_origin_reference_offset,
+        ) {
+            (None, None, None, None) => true,
+            (Some(transform), Some(transform_offset), reference, reference_offset) => {
+                let inline = match (scope.frame_length, reference, reference_offset) {
+                    (385, None, None) => transform_offset == scope.byte_offset + 49,
+                    (336 | 347, Some(reference), Some(reference_offset)) => {
+                        transform_offset == scope.byte_offset + 60
+                            && reference_offset == scope.byte_offset + 46
+                            && scope.reference_members.contains(&reference)
+                    }
+                    _ => false,
+                };
+                let assembly_operand = native.design_parameter_scopes.iter().any(|assembly| {
+                    design_stream(&assembly.id) == native_stream
+                        && assembly.kind == "Assemble"
+                        && assembly
+                            .assembly_alignment
+                            .as_ref()
+                            .is_some_and(|alignment| {
+                                alignment.operand_frames.as_ref().is_some_and(|frames| {
+                                    frames.iter().any(|frame| {
+                                        frame.reference_record_index == scope.record_index
+                                            && frame.transform == transform
+                                            && frame.transform_offset == transform_offset
+                                    })
+                                })
+                            })
+                        && reference.is_none()
+                        && reference_offset.is_none()
+                });
+                let single_operand_assembly =
+                    native.design_parameter_scopes.iter().any(|assembly| {
+                        design_stream(&assembly.id) == native_stream
+                            && assembly.kind == "Assemble"
+                            && assembly.class_tag == "276"
+                            && assembly.paired_class_tag == "258"
+                            && assembly.frame_length == 604
+                            && transform_offset == assembly.byte_offset + 36
+                            && reference.is_some_and(|reference| {
+                                assembly.reference_members.contains(&reference)
+                            })
+                            && reference_offset == Some(assembly.byte_offset + 25)
+                    });
+                scope.kind == "JointOrigin"
+                    && design::decode::sketch::valid_sketch_transform(&transform)
+                    && (inline || assembly_operand || single_operand_assembly)
+            }
+            _ => false,
+        };
         let valid = scope.class_tag.len() == 3
             && scope.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && scope.paired_class_tag.len() == 3
@@ -1157,6 +1310,43 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .all(|byte| byte.is_ascii_digit())
             && !scope.kind.is_empty()
             && match (is_extrude, scope.extrude_prologue) {
+                (
+                    true,
+                    Some(records::DesignExtrudePrologue::LegacyDistance {
+                        prefix_value,
+                        prefix_value_offset,
+                        operation_offset,
+                        extent_discriminator,
+                        extent_discriminator_offset,
+                        direction_reversed_offset,
+                        geometry_kind,
+                        geometry_kind_offset,
+                        ..
+                    }),
+                ) => {
+                    let marker_offset = scope.byte_offset.saturating_add(20);
+                    let prefix_valid = match (prefix_value, prefix_value_offset) {
+                        (None, None) => {
+                            operation_offset == marker_offset.saturating_add(1)
+                                && scope.reference_count_offset
+                                    == scope.byte_offset.saturating_add(208)
+                        }
+                        (Some(0), Some(offset)) => {
+                            offset == marker_offset.saturating_add(1)
+                                && operation_offset == offset.saturating_add(4)
+                                && scope.reference_count_offset
+                                    == scope.byte_offset.saturating_add(212)
+                        }
+                        _ => false,
+                    };
+                    prefix_valid
+                        && extent_discriminator == 2
+                        && extent_discriminator_offset == operation_offset.saturating_add(4)
+                        && direction_reversed_offset
+                            == extent_discriminator_offset.saturating_add(4)
+                        && matches!(geometry_kind, 0 | 1)
+                        && geometry_kind_offset == direction_reversed_offset.saturating_add(1)
+                }
                 (
                     true,
                     Some(records::DesignExtrudePrologue::ReferenceAware {
@@ -1203,9 +1393,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     true,
                     Some(records::DesignExtrudePrologue::LegacyShifted {
                         operation_offset,
-                        extent_discriminators,
+                        direction_face_extend_values,
+                        side_extent_discriminators,
+                        side_extent_discriminator_offsets,
                         extent,
-                        extent_discriminator_offsets: extent_offsets,
+                        direction_face_extend_offsets,
                         direction_reversed_offset,
                         solid_operation_offset,
                         start_offset,
@@ -1213,22 +1405,80 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     }),
                 ) => {
                     operation_offset == scope.byte_offset.saturating_add(27)
-                        && match extent {
-                            Some(records::DesignExtrudeExtent::OneSidedToFace) => {
-                                extent_discriminators == [1, 1]
+                        && matches!(direction_face_extend_values[0], 1..=3)
+                        && matches!(
+                            (
+                                direction_face_extend_values[0],
+                                side_extent_discriminators,
+                                extent,
+                            ),
+                            (
+                                1,
+                                [1, 0],
+                                Some(records::DesignExtrudeExtent::OneSidedDistance)
+                            ) | (
+                                1,
+                                [2, 0],
+                                Some(records::DesignExtrudeExtent::OneSidedToFace)
+                            ) | (
+                                1,
+                                [3, 0],
+                                Some(records::DesignExtrudeExtent::OneSidedThroughNext),
+                            ) | (
+                                1,
+                                [4, 0],
+                                Some(records::DesignExtrudeExtent::OneSidedThroughAll)
+                            ) | (
+                                2,
+                                [1, 1],
+                                Some(records::DesignExtrudeExtent::TwoSidedDistance)
+                            ) | (
+                                3,
+                                [1, 0],
+                                Some(records::DesignExtrudeExtent::SymmetricDistance)
+                            ) | (
+                                3,
+                                [4, 4],
+                                Some(records::DesignExtrudeExtent::SymmetricThroughAll)
+                            )
+                        )
+                        && side_extent_discriminator_offsets
+                            == if direction_face_extend_values[0] == 2 {
+                                [
+                                    scope.byte_offset.saturating_add(155),
+                                    scope.byte_offset.saturating_add(178),
+                                ]
+                            } else if side_extent_discriminators[0] == 2 {
+                                let first_offset = side_extent_discriminator_offsets[0];
+                                if matches!(
+                                    first_offset.checked_sub(scope.byte_offset),
+                                    Some(106 | 116)
+                                ) {
+                                    [first_offset, scope.reference_count_offset.saturating_sub(4)]
+                                } else {
+                                    [0, 0]
+                                }
+                            } else if side_extent_discriminator_offsets
+                                == [
+                                    scope.byte_offset.saturating_add(116),
+                                    scope.byte_offset.saturating_add(129),
+                                ]
+                            {
+                                side_extent_discriminator_offsets
+                            } else if side_extent_discriminator_offsets[0]
+                                == scope.byte_offset.saturating_add(116)
+                            {
+                                [
+                                    scope.byte_offset.saturating_add(116),
+                                    scope.byte_offset.saturating_add(130),
+                                ]
+                            } else {
+                                [
+                                    scope.byte_offset.saturating_add(106),
+                                    scope.byte_offset.saturating_add(110),
+                                ]
                             }
-                            Some(records::DesignExtrudeExtent::OneSidedDistance) => {
-                                extent_discriminators == [1, 2]
-                            }
-                            Some(records::DesignExtrudeExtent::TwoSidedDistance) => {
-                                extent_discriminators == [2, 0]
-                            }
-                            Some(records::DesignExtrudeExtent::SymmetricDistance) => {
-                                extent_discriminators == [3, 2]
-                            }
-                            None => !matches!(extent_discriminators, [1, 1 | 2] | [2, 0] | [3, 2]),
-                        }
-                        && extent_offsets
+                        && direction_face_extend_offsets
                             == [
                                 operation_offset.saturating_add(4),
                                 operation_offset.saturating_add(8),
@@ -1236,7 +1486,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && start_offset == operation_offset.saturating_add(14)
                         && solid_operation_offset == operation_offset.saturating_add(13)
                         && direction_reversed_offset == operation_offset.saturating_add(12)
-                        && extent_offsets[1] < scope.reference_count_offset
+                        && direction_face_extend_offsets[1] < scope.reference_count_offset
                 }
                 (true | false, None) => true,
                 _ => false,
@@ -1253,6 +1503,36 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && scope.reference_members.last() == Some(&operation.settings_record_index)
                 }
                 ("SurfaceStitch", None) => false,
+                (_, None) => true,
+                (_, Some(_)) => false,
+            }
+            && match (scope.kind.as_str(), scope.ruled_surface_operation.as_ref()) {
+                ("SurfaceRuled", Some(operation)) => {
+                    operation.method_offset == scope.byte_offset.saturating_add(20)
+                        && operation.alternate_face_offset == scope.byte_offset.saturating_add(27)
+                        && operation.corner_offset == scope.byte_offset.saturating_add(50)
+                        && scope.reference_members.first()
+                            == Some(&operation.distance_owner_record_index)
+                        && scope.reference_members.get(1)
+                            == Some(&operation.angle_owner_record_index)
+                        && operation.distance_owner_record_index
+                            != operation.angle_owner_record_index
+                        && !operation.edge_group_record_indices.is_empty()
+                        && operation
+                            .edge_group_record_indices
+                            .iter()
+                            .all(|record_index| scope.reference_members.contains(record_index))
+                        && match operation.method {
+                            records::DesignRuledSurfaceMethod::Direction => {
+                                operation.direction_entity_id.is_some()
+                            }
+                            records::DesignRuledSurfaceMethod::Normal
+                            | records::DesignRuledSurfaceMethod::Tangent => {
+                                operation.direction_entity_id.is_none()
+                            }
+                        }
+                }
+                ("SurfaceRuled", None) => false,
                 (_, None) => true,
                 (_, Some(_)) => false,
             }
@@ -1322,6 +1602,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && component_insert_link
             && copy_paste_component_link
             && draft_link
+            && joint_origin_link
             && (scope.kind != "Sketch"
                 || placements_by_scope.contains_key(&(native_stream, scope.record_index)))
             && unique_index;
@@ -1349,10 +1630,11 @@ fn validate_component_occurrences(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && occurrence.component_guid_offset == occurrence.byte_offset + 48
             && occurrence.occurrence_guid_offset == occurrence.byte_offset + 124
             && occurrence.occurrence_ordinal > 0
+            && matches!(occurrence.class_tag.as_str(), "256" | "327")
             && match (occurrence.transform, occurrence.transform_offset) {
                 (None, None) => occurrence.occurrence_ordinal == 1,
                 (Some(transform), Some(offset)) => {
-                    occurrence.occurrence_ordinal > 1
+                    (occurrence.class_tag == "327" || occurrence.occurrence_ordinal > 1)
                         && offset == occurrence.byte_offset + 209
                         && design::decode::sketch::valid_sketch_transform(&transform)
                 }
@@ -1524,7 +1806,8 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 if scope.is_some_and(|scope| {
                     scope.kind == "SurfaceStitch"
                         || (scope.kind == "SplitFace" && group.role == 0x0000_0021_0000_0000)
-                        || (scope.kind == "Split" && group.role == 0x0000_0009_0000_0000)
+                        || (scope.kind == "Split"
+                            && matches!(group.role, 0x0000_0009_0000_0000 | 0x0000_0021_0000_0000))
                 }) {
                     88
                 } else {
@@ -1540,10 +1823,10 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 .windows(2)
                 .all(|offsets| offsets[1] >= offsets[0].saturating_add(11))
             && frame.auxiliary_record_offsets.len() == frame.auxiliary_record_indices.len()
-            && frame.identity_record_offsets.len() == frame.identity_record_indices.len()
-            && frame.identity_record_indices.len() <= 1
+            && frame.trailing_record_offsets.len() == frame.trailing_record_indices.len()
+            && frame.trailing_record_indices.len() <= 1
             && frame
-                .identity_record_offsets
+                .trailing_record_offsets
                 .first()
                 .is_none_or(|offset| *offset == group.role_offset.saturating_sub(10))
             && group.role_offset >= member_run_end
@@ -1557,8 +1840,126 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
             && frame
                 .auxiliary_record_indices
                 .iter()
-                .chain(&frame.identity_record_indices)
-                .all(|record_index| record_indices.contains(&(native_stream, *record_index)));
+                .chain(&frame.trailing_record_indices)
+                .all(|record_index| record_indices.contains(&(native_stream, *record_index)))
+            && frame.trailing_transforms.iter().all(|transform| {
+                frame
+                    .trailing_record_indices
+                    .contains(&transform.record_index)
+                    && records_by_index
+                        .get(&(native_stream, transform.record_index))
+                        .is_some_and(|header| {
+                            header.byte_offset == transform.byte_offset
+                                && header.class_tag == transform.class_tag
+                        })
+                    && crate::design::decode::sketch::valid_sketch_transform(&transform.transform)
+                    && transform.following_record_index == transform.record_index.saturating_add(1)
+                    && transform.transform_offset == transform.byte_offset.saturating_add(22)
+                    && transform.following_byte_offset == transform.byte_offset.saturating_add(152)
+                    && records_by_index
+                        .get(&(native_stream, transform.following_record_index))
+                        .is_some_and(|header| {
+                            header.byte_offset == transform.following_byte_offset
+                                && header.class_tag == transform.following_class_tag
+                        })
+            })
+            && frame
+                .trailing_transforms
+                .iter()
+                .map(|transform| transform.record_index)
+                .collect::<HashSet<_>>()
+                .len()
+                == frame.trailing_transforms.len()
+            && frame.trailing_dual_transforms.iter().all(|transform| {
+                frame
+                    .trailing_record_indices
+                    .contains(&transform.record_index)
+                    && records_by_index
+                        .get(&(native_stream, transform.record_index))
+                        .is_some_and(|header| {
+                            header.byte_offset == transform.byte_offset
+                                && header.class_tag == transform.class_tag
+                        })
+                    && transform.first_transform_offset == transform.byte_offset.saturating_add(21)
+                    && transform.second_transform_offset
+                        == transform.byte_offset.saturating_add(149)
+                    && crate::design::decode::sketch::valid_sketch_transform(
+                        &transform.first_transform,
+                    )
+                    && crate::design::decode::sketch::valid_sketch_transform(
+                        &transform.second_transform,
+                    )
+            })
+            && frame
+                .trailing_dual_transforms
+                .iter()
+                .map(|transform| transform.record_index)
+                .collect::<HashSet<_>>()
+                .len()
+                == frame.trailing_dual_transforms.len()
+            && frame.trailing_flags.iter().all(|flag| {
+                frame.trailing_record_indices.contains(&flag.record_index)
+                    && records_by_index
+                        .get(&(native_stream, flag.record_index))
+                        .is_some_and(|header| {
+                            header.byte_offset == flag.byte_offset
+                                && header.class_tag == flag.class_tag
+                        })
+                    && flag.value_offset == flag.byte_offset.saturating_add(22)
+            })
+            && frame
+                .trailing_flags
+                .iter()
+                .map(|flag| flag.record_index)
+                .collect::<HashSet<_>>()
+                .len()
+                == frame.trailing_flags.len()
+            && frame.auxiliary_paths.iter().all(|path| {
+                frame.auxiliary_record_indices.contains(&path.record_index)
+                    && records_by_index
+                        .get(&(native_stream, path.record_index))
+                        .is_some_and(|header| {
+                            header.byte_offset == path.byte_offset
+                                && header.class_tag == path.class_tag
+                        })
+                    && path.entity_ref_offset == path.byte_offset.saturating_add(22)
+                    && path.scope_record_index == group.scope_record_index
+                    && path.nested_record_index == path.record_index.saturating_add(2)
+                    && records_by_index.contains_key(&(native_stream, path.nested_record_index))
+                    && path.following_record_index == path.record_index.saturating_add(1)
+                    && records_by_index
+                        .get(&(native_stream, path.following_record_index))
+                        .is_some_and(|header| {
+                            header.byte_offset == path.following_byte_offset
+                                && header.class_tag == path.following_class_tag
+                        })
+                    && match (&path.transform, path.transform_offset, path.compact_variant) {
+                        (Some(transform), Some(offset), None) => {
+                            offset == path.byte_offset.saturating_add(33)
+                                && path.scope_record_index_offset
+                                    == path.byte_offset.saturating_add(163)
+                                && path.nested_record_index_offset
+                                    == path.byte_offset.saturating_add(174)
+                                && path.following_byte_offset
+                                    == path.byte_offset.saturating_add(190)
+                                && crate::design::decode::sketch::valid_sketch_transform(transform)
+                        }
+                        (None, None, Some(_)) => {
+                            path.scope_record_index_offset == path.byte_offset.saturating_add(35)
+                                && path.nested_record_index_offset
+                                    == path.byte_offset.saturating_add(46)
+                                && path.following_byte_offset == path.byte_offset.saturating_add(62)
+                        }
+                        _ => false,
+                    }
+            })
+            && frame
+                .auxiliary_paths
+                .iter()
+                .map(|path| path.record_index)
+                .collect::<HashSet<_>>()
+                .len()
+                == frame.auxiliary_paths.len();
         let valid = group.class_tag.len() == 3
             && group.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && group.paired_class_tag.len() == 3
@@ -1570,7 +1971,8 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 let role_is_valid = match design::design_feature_family(&scope.kind) {
                     Some(design::DesignFeatureFamily::Extrude) => match group.extrude_role {
                         Some(records::DesignExtrudeOperandRole::Bodies) => {
-                            group.role == 0x0000_0008_0000_0000 && group.extrude_face_role.is_none()
+                            matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0008_0000_0000)
+                                && group.extrude_face_role.is_none()
                         }
                         Some(records::DesignExtrudeOperandRole::Profile) => {
                             group.role == 0x0000_0041_0000_0000
@@ -1580,10 +1982,21 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 })
                         }
                         Some(records::DesignExtrudeOperandRole::Faces) => {
-                            group.role == 0x0000_0011_0000_0000 && group.extrude_face_role.is_some()
+                            (group.role == 0x0000_0011_0000_0000
+                                || group.role == 0x0000_0005_0000_0000
+                                    && scope
+                                        .extrude_prologue
+                                        .map(records::DesignExtrudePrologue::start)
+                                        == Some(records::DesignExtrudeStart::FromFace))
+                                && group.extrude_face_role.is_some()
                         }
                         None => {
-                            group.role == 0x0000_0005_0000_0000 && group.extrude_face_role.is_none()
+                            group.role == 0x0000_0005_0000_0000
+                                && group.extrude_face_role.is_none()
+                                && scope
+                                    .extrude_prologue
+                                    .map(records::DesignExtrudePrologue::start)
+                                    != Some(records::DesignExtrudeStart::FromFace)
                         }
                     },
                     Some(
@@ -1610,8 +2023,13 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && group.extrude_face_role.is_none()
                     }
                     Some(design::DesignFeatureFamily::Revolve) => {
-                        matches!(group.role, 0x0000_0021_0000_0000 | 0x0000_0041_0000_0000)
-                            && group.extrude_role.is_none()
+                        matches!(
+                            group.role,
+                            0x0000_0004_0000_0000
+                                | 0x0000_0008_0000_0000
+                                | 0x0000_0021_0000_0000
+                                | 0x0000_0041_0000_0000
+                        ) && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
                     Some(design::DesignFeatureFamily::Shell) => {
@@ -1643,29 +2061,41 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 group.role,
                                 0x0000_0004_0000_0000
                                     | 0x0000_0005_0000_0000
+                                    | 0x0000_0011_0000_0000
                                     | 0x0000_0041_0000_0000
                             ))
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
                     Some(design::DesignFeatureFamily::CircularPattern) => {
-                        group.role == 0x0000_0008_0000_0000
+                        matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0008_0000_0000)
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
                     Some(design::DesignFeatureFamily::Mirror) => {
-                        matches!(group.role, 0x0000_0005_0000_0000 | 0x0000_0008_0000_0000)
-                            && group.extrude_role.is_none()
+                        matches!(
+                            group.role,
+                            0x0000_0004_0000_0000 | 0x0000_0005_0000_0000 | 0x0000_0008_0000_0000
+                        ) && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
                     Some(design::DesignFeatureFamily::SurfacePatch) => {
-                        ((scope.reference_members.len() == 3
-                            && group.role == 0x0000_0041_0000_0000)
-                            || (scope.reference_members.len() > 3
-                                && (scope.reference_members.len() - 1).is_multiple_of(3)
-                                && group.role == 0x0000_0004_0000_0000))
+                        matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0041_0000_0000)
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
+                    }
+                    Some(design::DesignFeatureFamily::SurfaceRuled) => {
+                        group.role == 0x0000_0008_0000_0000
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                            && scope
+                                .ruled_surface_operation
+                                .as_ref()
+                                .is_some_and(|operation| {
+                                    operation
+                                        .edge_group_record_indices
+                                        .contains(&group.record_index)
+                                })
                     }
                     Some(design::DesignFeatureFamily::BoundaryFill) => {
                         matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0005_0000_0000)
@@ -1683,6 +2113,17 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         group.role == 0x0000_0004_0000_0000
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
+                    }
+                    Some(design::DesignFeatureFamily::Thread) => {
+                        group.role == 0x0000_0010_0000_0000
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                            && scope
+                                .thread_construction
+                                .as_ref()
+                                .is_some_and(|construction| {
+                                    construction.face_group_record_index == group.record_index
+                                })
                     }
                     Some(_) => false,
                     None if scope.kind == "RemoveBody" => {
@@ -1805,10 +2246,32 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .map(|(ordinal, _)| ordinal)
             .collect::<Vec<_>>();
         let valid = match scope.path_feature_construction.as_ref() {
-            Some(records::DesignPathFeatureConstruction::Revolve { .. }) => {
-                groups.len() == 2
+            Some(records::DesignPathFeatureConstruction::Revolve {
+                operation,
+                angle,
+                angle_record_index,
+                opposite_angle_record_index,
+                opposite_angle_offset,
+                ..
+            }) => {
+                let body_count =
+                    role_count(0x0000_0004_0000_0000) + role_count(0x0000_0008_0000_0000);
+                let expected_body_count =
+                    usize::from(*operation != records::DesignExtrudeOperation::NewBody);
+                let opposite_pair_valid = matches!(
+                    (opposite_angle_record_index, opposite_angle_offset),
+                    (Some(_), Some(_)) | (None, None)
+                );
+                angle.is_finite()
+                    && *angle > 0.0
+                    && scope.reference_members.contains(angle_record_index)
+                    && opposite_pair_valid
+                    && opposite_angle_record_index
+                        .is_none_or(|record| scope.reference_members.contains(&record))
+                    && groups.len() == 2 + expected_body_count
                     && role_count(0x0000_0021_0000_0000) == 1
                     && role_count(0x0000_0041_0000_0000) == 1
+                    && body_count == expected_body_count
             }
             Some(records::DesignPathFeatureConstruction::Loft { operation, .. }) => match operation
             {
@@ -1837,17 +2300,57 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
             },
             Some(records::DesignPathFeatureConstruction::Sweep { operation, .. }) => {
                 let path_count = role_count(0x0000_0005_0000_0000);
+                let profile_count = role_count(0x0000_0041_0000_0000);
+                let guide_surface_count = role_count(0x0000_0011_0000_0000);
+                let guide_profile_frame = scope.sweep_profile.as_ref().is_some_and(|profile| {
+                    let profile_groups = groups
+                        .iter()
+                        .filter(|group| group.role == 0x0000_0041_0000_0000)
+                        .collect::<Vec<_>>();
+                    profile_groups
+                        .iter()
+                        .filter(|group| group.members.as_slice() == [profile.record_index])
+                        .count()
+                        == 1
+                        && profile_groups
+                            .iter()
+                            .filter(|group| group.members.as_slice() != [profile.record_index])
+                            .filter(|group| {
+                                !group.members.is_empty()
+                                    && group.members.iter().all(|member| {
+                                        native.design_entity_selection_operands.iter().any(
+                                            |operand| {
+                                                design_stream(&operand.id) == native_stream
+                                                    && operand.scope_record_index
+                                                        == scope.record_index
+                                                    && operand.group_record_index
+                                                        == group.record_index
+                                                    && operand.record_index == *member
+                                            },
+                                        )
+                                    })
+                            })
+                            .count()
+                            == 1
+                });
                 let common_roles =
-                    role_count(0x0000_0041_0000_0000) == 1 && matches!(path_count, 1 | 2);
+                    (profile_count == 1 && guide_surface_count == 0 && matches!(path_count, 1 | 2))
+                        || (profile_count == 2
+                            && guide_surface_count == 1
+                            && path_count == 1
+                            && guide_profile_frame);
                 common_roles
                     && match operation {
                         records::DesignExtrudeOperation::NewBody => {
-                            groups.len() == path_count + 1 && role_count(0x0000_0004_0000_0000) == 0
+                            groups.len() == path_count + profile_count + guide_surface_count
+                                && role_count(0x0000_0004_0000_0000) == 0
                         }
                         records::DesignExtrudeOperation::Join
                         | records::DesignExtrudeOperation::Cut
                         | records::DesignExtrudeOperation::Intersect => {
-                            groups.len() == path_count + 2 && role_count(0x0000_0004_0000_0000) == 1
+                            guide_surface_count == 0
+                                && groups.len() == path_count + 2
+                                && role_count(0x0000_0004_0000_0000) == 1
                         }
                     }
             }
@@ -1887,29 +2390,27 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let native_stream = design_stream(&scope.id);
         if design::design_feature_family(&scope.kind) == Some(design::DesignFeatureFamily::Extrude)
         {
-            let mut profile_groups =
-                native
-                    .design_construction_operand_groups
-                    .iter()
-                    .filter(|group| {
-                        design_stream(&group.id) == native_stream
-                            && group.scope_record_index == scope.record_index
-                            && group.extrude_role
-                                == Some(records::DesignExtrudeOperandRole::Profile)
-                    });
-            let profile_group = profile_groups.next();
-            let profile_matches_operand = profile_groups.next().is_none()
-                && scope.extrude_profile.as_ref().is_none_or(|profile| {
-                    profile_group.map_or_else(
-                        || {
-                            usize::try_from(profile.scope_reference_ordinal)
-                                .ok()
-                                .and_then(|ordinal| scope.reference_members.get(ordinal))
-                                == Some(&profile.record_index)
-                        },
-                        |group| group.members.first() == Some(&profile.record_index),
-                    )
-                });
+            let profile_groups = native
+                .design_construction_operand_groups
+                .iter()
+                .filter(|group| {
+                    design_stream(&group.id) == native_stream
+                        && group.scope_record_index == scope.record_index
+                        && group.extrude_role == Some(records::DesignExtrudeOperandRole::Profile)
+                })
+                .collect::<Vec<_>>();
+            let profile_matches_operand = scope.extrude_profile.as_ref().is_none_or(|profile| {
+                match profile_groups.as_slice() {
+                    [] => {
+                        usize::try_from(profile.scope_reference_ordinal)
+                            .ok()
+                            .and_then(|ordinal| scope.reference_members.get(ordinal))
+                            == Some(&profile.record_index)
+                    }
+                    [group] => group.members.first() == Some(&profile.record_index),
+                    [_, _, ..] => false,
+                }
+            });
             if !profile_matches_operand {
                 findings.push(Finding {
                     check: Check::NativeLinks,
@@ -2041,6 +2542,20 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && against_count == 0
                         && side_one_offset_is_absent
                         && !prologue.direction_reversed()
+                }
+                records::DesignExtrudeExtent::SymmetricThroughAll => {
+                    along_count == 0
+                        && !has_fixed_extrude_parameters
+                        && against_count == 0
+                        && side_one_offset_is_absent
+                        && !prologue.direction_reversed()
+                }
+                records::DesignExtrudeExtent::OneSidedThroughNext
+                | records::DesignExtrudeExtent::OneSidedThroughAll => {
+                    along_count == 0
+                        && !has_fixed_extrude_parameters
+                        && against_count == 0
+                        && side_one_offset_is_absent
                 }
             };
             let extrude_start = prologue.start();
@@ -2191,6 +2706,25 @@ fn validate_fillet_radius_groups<'a>(
                             && parameter.evaluated_value.is_finite()
                     },
                 ),
+                records::DesignFilletRadiusLaw::Asymmetric {
+                    offset_one_parameter_record_index,
+                    offset_two_parameter_record_index,
+                } => [
+                    (*offset_one_parameter_record_index, "EdgeOffset1"),
+                    (*offset_two_parameter_record_index, "EdgeOffset2"),
+                ]
+                .into_iter()
+                .all(|(record_index, kind)| {
+                    assignment_parameter(record_index).is_some_and(|parameter| {
+                        parameter.source_kind == kind
+                            && parameter
+                                .unit
+                                .as_deref()
+                                .is_some_and(design::feature_project::design_length_unit)
+                            && parameter.evaluated_value > 0.0
+                            && parameter.evaluated_value.is_finite()
+                    })
+                }),
                 records::DesignFilletRadiusLaw::Variable {
                     start_radius_parameter_record_index,
                     end_radius_parameter_record_index,
@@ -2280,6 +2814,48 @@ fn validate_fillet_operand_groups<'a>(
         let is_fillet = scope.is_some_and(|scope| {
             design::design_feature_family(&scope.kind) == Some(design::DesignFeatureFamily::Fillet)
         });
+        let fixed_edge_groups = scope
+            .map(|scope| {
+                native
+                    .design_construction_operand_groups
+                    .iter()
+                    .filter(|candidate| {
+                        design_stream(&candidate.id) == native_stream
+                            && candidate.scope_record_index == scope.record_index
+                            && !candidate.members.is_empty()
+                            && candidate.members.iter().all(|member| {
+                                native.design_edge_operands.iter().any(|operand| {
+                                    design_stream(&operand.id) == native_stream
+                                        && operand.scope_record_index == scope.record_index
+                                        && operand.record_index == *member
+                                })
+                            })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let is_fixed_edge_group = fixed_edge_groups
+            .iter()
+            .any(|candidate| candidate.record_index == group.record_index);
+        let sole_compact_group_shape = scope.is_some_and(|scope| {
+            native
+                .design_construction_operand_groups
+                .iter()
+                .filter(|candidate| {
+                    design_stream(&candidate.id) == native_stream
+                        && candidate.scope_record_index == scope.record_index
+                })
+                .count()
+                == 1
+                && group.members.iter().all(|member| {
+                    native.design_edge_identity_operands.iter().any(|operand| {
+                        design_stream(&operand.id) == native_stream
+                            && operand.scope_record_index == scope.record_index
+                            && operand.group_record_index == group.record_index
+                            && operand.record_index == *member
+                    })
+                })
+        });
         let has_fixed_assignment = scope
             .and_then(|scope| {
                 scope
@@ -2337,17 +2913,11 @@ fn validate_fillet_operand_groups<'a>(
                             .count()
                             == 1
                     })
-                    && native
-                        .design_construction_operand_groups
-                        .iter()
-                        .filter(|candidate| {
-                            design_stream(&candidate.id) == native_stream
-                                && candidate.scope_record_index == scope.record_index
-                        })
-                        .count()
-                        == fixed.groups.len()
+                    && ((fixed_edge_groups.len() == fixed.groups.len() && is_fixed_edge_group)
+                        || (fixed.groups.len() == 1 && sole_compact_group_shape))
             });
         if is_fillet
+            && (group.role == 0x0000_0008_0000_0000 || sole_compact_group_shape)
             && !has_fixed_assignment
             && !fillet_radius_group_records.contains(&(native_stream, group.record_index))
         {
@@ -2377,8 +2947,8 @@ fn validate_construction_operand_identities<'a>(
         let selected_profile = group
             .and_then(|group| scopes_by_index.get(&(native_stream, group.scope_record_index)))
             .and_then(|scope| scope.extrude_profile.as_ref());
-        let wrapper_shape = !identity.wrapper_record_indices.is_empty()
-            && identity.wrapper_record_indices.len() == identity.wrapper_byte_offsets.len()
+        let wrapper_shape = identity.wrapper_record_indices.len()
+            == identity.wrapper_byte_offsets.len()
             && identity.wrapper_record_indices.len() == identity.wrapper_class_tags.len()
             && identity
                 .wrapper_record_indices
@@ -2405,15 +2975,91 @@ fn validate_construction_operand_identities<'a>(
                                 header.byte_offset == byte_offset && header.class_tag == *class_tag
                             })
                 });
+        let transform = group.and_then(|group| group.frame.trailing_transforms.first());
+        let tracking_shape = identity.tracking_path.as_ref().is_none_or(|path| {
+            let mut cursor = path.carrier_byte_offset.saturating_add(73);
+            let first_offset = path.first_related_identity.map(|_| {
+                let offset = cursor.saturating_add(4);
+                cursor = cursor.saturating_add(12);
+                offset
+            });
+            if path.first_related_identity.is_none() {
+                cursor = cursor.saturating_add(4);
+            }
+            let second_offset = path.second_related_identity.map(|_| {
+                let offset = cursor.saturating_add(4);
+                cursor = cursor.saturating_add(12);
+                offset
+            });
+            if path.second_related_identity.is_none() {
+                cursor = cursor.saturating_add(4);
+            }
+            path.carrier_record_index == path.wrapper_record_index.saturating_add(1)
+                && path.carrier_byte_offset == path.wrapper_byte_offset.saturating_add(33)
+                && records_by_index
+                    .get(&(native_stream, path.wrapper_record_index))
+                    .is_some_and(|header| {
+                        header.byte_offset == path.wrapper_byte_offset
+                            && header.class_tag == path.wrapper_class_tag
+                    })
+                && records_by_index
+                    .get(&(native_stream, path.carrier_record_index))
+                    .is_some_and(|header| {
+                        header.byte_offset == path.carrier_byte_offset
+                            && header.class_tag == path.carrier_class_tag
+                    })
+                && path.primary_identity_offset == path.carrier_byte_offset.saturating_add(37)
+                && path.selector_offset == path.carrier_byte_offset.saturating_add(57)
+                && path.kind_offset == path.carrier_byte_offset.saturating_add(61)
+                && path.first_related_identity_offset == first_offset
+                && path.second_related_identity_offset == second_offset
+                && path.following_record_index == path.carrier_record_index.saturating_add(1)
+                && path.following_byte_offset == cursor
+                && records_by_index
+                    .get(&(native_stream, path.following_record_index))
+                    .is_some_and(|header| {
+                        header.byte_offset == path.following_byte_offset
+                            && header.class_tag == path.following_class_tag
+                    })
+        });
+        let chain_entry_shape = if let Some(path) = &identity.tracking_path {
+            identity
+                .wrapper_byte_offsets
+                .last()
+                .is_some_and(|offset| path.wrapper_byte_offset == offset.saturating_add(24))
+                || (identity.wrapper_byte_offsets.is_empty()
+                    && transform.is_some_and(|transform| {
+                        path.wrapper_record_index == transform.following_record_index
+                            && path.wrapper_byte_offset == transform.following_byte_offset
+                            && path.wrapper_class_tag == transform.following_class_tag
+                    }))
+                || (identity.wrapper_byte_offsets.is_empty()
+                    && transform.is_none()
+                    && group.is_some_and(|group| {
+                        group.frame.trailing_record_indices.first()
+                            == Some(&path.wrapper_record_index)
+                    }))
+        } else {
+            true
+        };
         let following_shape = identity.following_class_tag.len() == 3
             && identity
                 .following_class_tag
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
-            && identity
-                .wrapper_byte_offsets
-                .last()
-                .is_some_and(|offset| identity.following_byte_offset == offset.saturating_add(24))
+            && if let Some(path) = &identity.tracking_path {
+                identity.following_record_index == path.following_record_index
+                    && identity.following_byte_offset == path.following_byte_offset
+                    && identity.following_class_tag == path.following_class_tag
+            } else if let Some(offset) = identity.wrapper_byte_offsets.last() {
+                identity.following_byte_offset == offset.saturating_add(24)
+            } else {
+                transform.is_some_and(|transform| {
+                    identity.following_record_index == transform.following_record_index
+                        && identity.following_byte_offset == transform.following_byte_offset
+                        && identity.following_class_tag == transform.following_class_tag
+                })
+            }
             && records_by_index
                 .get(&(native_stream, identity.following_record_index))
                 .is_some_and(|header| {
@@ -2432,13 +3078,43 @@ fn validate_construction_operand_identities<'a>(
                     && valid_design_guid(&persistent.context_id)
                     && selected_profile
                         .is_none_or(|profile| profile.asset_id == persistent.asset_id)
-                    && persistent.next_byte_offset
+                    && (persistent.next_byte_offset
                         == identity.following_byte_offset.saturating_add(190)
+                        || (persistent.tail_slot_offset
+                            == identity.following_byte_offset.saturating_add(185)
+                            && persistent.next_byte_offset
+                                == persistent.tail_slot_offset.saturating_add(15)))
                     && persistent.next_record_index != 0
+                    && records_by_index
+                        .get(&(native_stream, persistent.next_record_index))
+                        // The header arena indexes records named by Design entity
+                        // reference lists. A nested identity can terminate at a
+                        // structurally parsed record that no entity names, so the
+                        // arena is not an exhaustive index of terminal records.
+                        .is_none_or(|header| header.byte_offset == persistent.next_byte_offset)
             });
         let valid = group.is_some_and(|group| {
-            identity.wrapper_record_indices.first() == group.frame.identity_record_indices.first()
+            let trailing = group.frame.trailing_record_indices.first();
+            identity
+                .wrapper_record_indices
+                .first()
+                .or_else(|| {
+                    group
+                        .frame
+                        .trailing_transforms
+                        .first()
+                        .map(|transform| &transform.record_index)
+                })
+                .or_else(|| {
+                    identity
+                        .tracking_path
+                        .as_ref()
+                        .map(|path| &path.wrapper_record_index)
+                })
+                == trailing
         }) && wrapper_shape
+            && tracking_shape
+            && chain_entry_shape
             && following_shape
             && persistent_shape
             && operand_identity_groups.insert((native_stream, identity.group_record_index));
@@ -2466,11 +3142,17 @@ fn validate_edge_identity_operands<'a>(
     let scopes_by_index = &ctx.scopes_by_index;
     let operand_groups_by_index = &ctx.operand_groups_by_index;
     let mut expected_edge_identity_operands = native.design_edge_identity_operands.clone();
+    let scope_histories = history::bind_scope_histories(
+        &native.design_parameter_scopes,
+        &native.design_body_bindings,
+        &native.asm_histories,
+    );
     history::bind_edge_identity_history(
         &mut expected_edge_identity_operands,
         &native.design_construction_operand_identities,
         &native.design_parameter_scopes,
         &native.asm_histories,
+        &scope_histories,
     );
     history::bind_edge_identity_bounded_face_rules(
         &mut expected_edge_identity_operands,
@@ -2487,9 +3169,14 @@ fn validate_edge_identity_operands<'a>(
         let scope = scopes_by_index.get(&(native_stream, operand.scope_record_index));
         let group = operand_groups_by_index.get(&(native_stream, operand.group_record_index));
         let header = records_by_index.get(&(native_stream, operand.record_index));
-        let expected_local_id_offset = operand
-            .byte_offset
-            .saturating_add(if operand.compact_layout { 23 } else { 24 });
+        let local_id_offset_is_valid = if operand.compact_layout {
+            matches!(
+                operand.local_id_offset.checked_sub(operand.byte_offset),
+                Some(22 | 23)
+            )
+        } else {
+            operand.local_id_offset == operand.byte_offset.saturating_add(24)
+        };
         let valid = operand.class_tag.len() == 3
             && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && scope.is_some_and(|scope| {
@@ -2510,8 +3197,8 @@ fn validate_edge_identity_operands<'a>(
             && header.is_some_and(|header| {
                 header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
             })
-            && operand.local_id_offset == expected_local_id_offset
-            && operand.asset_id_offset == expected_local_id_offset.saturating_add(18)
+            && local_id_offset_is_valid
+            && operand.asset_id_offset == operand.local_id_offset.saturating_add(18)
             && operand.context_id_offset == operand.asset_id_offset.saturating_add(76)
             && valid_design_guid(&operand.asset_id)
             && valid_design_guid(&operand.context_id)
@@ -2641,9 +3328,19 @@ fn validate_body_recipe_operands<'a>(
                         return false;
                     };
                     u64::try_from(design_id.len()).ok().is_some_and(|length| {
-                        design_id_offset.checked_add(length) == Some(selector.byte_offset)
-                            && selector.byte_offset.checked_add(20) == Some(recipe.byte_offset)
+                        let selector_follows_id =
+                            design_id_offset.checked_add(length) == Some(selector.byte_offset);
+                        let prefix_frame =
+                            selector.byte_offset.checked_add(20) == Some(recipe.byte_offset);
+                        let body_suffix_frame = recipe
+                            .byte_offset
+                            .checked_add(b"body_recipe_data".len() as u64)
+                            .and_then(|offset| offset.checked_add(12))
+                            == Some(design_id_offset)
+                            && selector.value == operand.next_record_index;
+                        selector_follows_id
                             && selector.value != 0
+                            && (prefix_frame || body_suffix_frame)
                     })
                 });
                 design_stream(&recipe.id) == native_stream
@@ -2669,13 +3366,14 @@ fn validate_body_recipe_operands<'a>(
     operand_records
 }
 
-/// Report operand groups lacking an identity chain.
-fn validate_operand_group_identity_chains<'a>(
+/// Report operand groups lacking a typed member carrier.
+fn validate_operand_group_carriers<'a>(
     ctx: &Ctx<'a>,
     findings: &mut Vec<Finding>,
     operand_identity_groups: &HashSet<(&'a str, u32)>,
     edge_identity_records: &HashSet<(&'a str, u32)>,
     body_recipe_operand_records: &HashSet<(&'a str, u32)>,
+    edge_operand_records: &HashSet<(&'a str, u32)>,
 ) {
     let native = ctx.native;
     for group in &native.design_construction_operand_groups {
@@ -2752,16 +3450,90 @@ fn validate_operand_group_identity_chains<'a>(
                         })
                     })
                 });
-        if !operand_identity_groups.contains(&(native_stream, group.record_index))
-            && !has_exact_identity_members
-            && !has_exact_entity_selection_members
-            && !has_exact_face_members
-            && !has_exact_body_recipe_members
-        {
+        let has_exact_edge_recipe_members = !group.members.is_empty()
+            && group.members.iter().all(|record_index| {
+                edge_operand_records.contains(&(native_stream, *record_index))
+                    && native.design_edge_operands.iter().any(|operand| {
+                        design_stream(&operand.id) == native_stream
+                            && operand.scope_record_index == group.scope_record_index
+                            && operand.record_index == *record_index
+                    })
+            });
+        let has_exact_sketch_profile_member = group.members.len() == 1
+            && ctx
+                .scopes_by_index
+                .get(&(native_stream, group.scope_record_index))
+                .is_some_and(|scope| {
+                    scope
+                        .extrude_profile
+                        .as_ref()
+                        .or(scope.sweep_profile.as_ref())
+                        .or(scope.base_flange_profile.as_ref())
+                        .is_some_and(|profile| group.members == [profile.record_index])
+                });
+        let has_exact_group_members = !group.members.is_empty()
+            && group.members.iter().all(|record_index| {
+                native
+                    .design_construction_operand_groups
+                    .iter()
+                    .any(|member| {
+                        design_stream(&member.id) == native_stream
+                            && member.scope_record_index == group.scope_record_index
+                            && member.scope_reference_ordinal > group.scope_reference_ordinal
+                            && member.record_index == *record_index
+                    })
+            });
+        let has_exact_trailing_carrier = group.frame.trailing_record_indices.is_empty()
+            || operand_identity_groups.contains(&(native_stream, group.record_index))
+            || (group.frame.trailing_transforms.len()
+                + group.frame.trailing_dual_transforms.len()
+                + group.frame.trailing_flags.len()
+                == group.frame.trailing_record_indices.len()
+                && group
+                    .frame
+                    .trailing_record_indices
+                    .iter()
+                    .all(|record_index| {
+                        group
+                            .frame
+                            .trailing_transforms
+                            .iter()
+                            .any(|transform| transform.record_index == *record_index)
+                            || group
+                                .frame
+                                .trailing_dual_transforms
+                                .iter()
+                                .any(|transform| transform.record_index == *record_index)
+                            || group
+                                .frame
+                                .trailing_flags
+                                .iter()
+                                .any(|flag| flag.record_index == *record_index)
+                    }));
+        let has_exact_member_carrier = operand_identity_groups
+            .contains(&(native_stream, group.record_index))
+            || has_exact_identity_members
+            || has_exact_entity_selection_members
+            || has_exact_face_members
+            || has_exact_body_recipe_members
+            || has_exact_edge_recipe_members
+            || has_exact_sketch_profile_member
+            || has_exact_group_members;
+        if !has_exact_member_carrier {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
-                message: "Fusion Design construction operand group has no identity chain".into(),
+                message: "Fusion Design construction operand group has no exact typed member"
+                    .into(),
+                entity: Some(group.id.clone()),
+            });
+        }
+        if !has_exact_trailing_carrier {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design construction operand group has no exact trailing carrier"
+                    .into(),
                 entity: Some(group.id.clone()),
             });
         }
@@ -2836,17 +3608,34 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .collect::<Vec<_>>();
         let expected_history =
             history::historical_selection_identity_kind(&native.asm_histories, member.local_id);
-        let history_matches = expected_history.as_ref().map(|(kind, _, _)| *kind)
-            == member.historical_entity_kind
-            && expected_history
-                .as_ref()
-                .map(|(_, entity_ref, _)| *entity_ref)
-                == member.historical_entity_ref
-            && expected_history
-                .as_ref()
-                .map(|(_, _, states)| states.as_slice())
-                .unwrap_or_default()
-                == member.historical_state_ids.as_slice();
+        let history_matches = if history::projection_was_finalized(&native.asm_histories) {
+            member.historical_entity_kind.is_some() == member.historical_entity_ref.is_some()
+                && member
+                    .historical_state_ids
+                    .iter()
+                    .copied()
+                    .collect::<HashSet<_>>()
+                    .len()
+                    == member.historical_state_ids.len()
+                && member.historical_state_ids.iter().all(|state_id| {
+                    native
+                        .asm_histories
+                        .iter()
+                        .flat_map(|history| &history.states)
+                        .any(|state| state.state_id == *state_id)
+                })
+        } else {
+            expected_history.as_ref().map(|(kind, _, _)| *kind) == member.historical_entity_kind
+                && expected_history
+                    .as_ref()
+                    .map(|(_, entity_ref, _)| *entity_ref)
+                    == member.historical_entity_ref
+                && expected_history
+                    .as_ref()
+                    .map(|(_, _, states)| states.as_slice())
+                    .unwrap_or_default()
+                    == member.historical_state_ids.as_slice()
+        };
         let valid = member.class_tag.len() == 3
             && member.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && group.is_some_and(|group| {
@@ -2915,11 +3704,26 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && valid_design_guid(&operand.asset_id)
             && valid_design_guid(&operand.context_id)
             && operand.identity_record_index == operand.record_index.saturating_add(3)
-            && operand.primary_identity_offset == operand.identity_record_offset.saturating_add(29)
-            && operand.secondary_identity_offset
-                == operand.identity_record_offset.saturating_add(37)
-            && operand.next_record_index == operand.record_index.saturating_add(4)
-            && operand.next_byte_offset == operand.identity_record_offset.saturating_add(45)
+            && (matches!(
+                (operand.primary_identity_offset, operand.secondary_identity, operand.secondary_identity_offset),
+                (primary, Some(_), Some(secondary))
+                    if primary == operand.identity_record_offset.saturating_add(29)
+                        && secondary == operand.identity_record_offset.saturating_add(37)
+            ) || matches!(
+                (operand.primary_identity_offset, operand.secondary_identity, operand.secondary_identity_offset),
+                (primary, None, None)
+                    if primary == operand.identity_record_offset.saturating_add(21)
+            ))
+            && (operand.secondary_identity.is_none()
+                || operand.next_record_index == operand.record_index.saturating_add(4))
+            && operand.next_byte_offset
+                == operand.identity_record_offset.saturating_add(
+                    if operand.secondary_identity.is_some() {
+                        45
+                    } else {
+                        29
+                    },
+                )
             && entity_selection_slots.insert((
                 native_stream,
                 operand.group_record_index,
@@ -3002,10 +3806,16 @@ fn validate_edge_operands<'a>(
     let mut edge_operand_slots = HashSet::new();
     let mut edge_operand_records = HashSet::new();
     let mut expected_edge_operands = native.design_edge_operands.clone();
+    let scope_histories = history::bind_scope_histories(
+        &native.design_parameter_scopes,
+        &native.design_body_bindings,
+        &native.asm_histories,
+    );
     history::bind_edge_operand_history_candidates(
         &mut expected_edge_operands,
         &native.design_parameter_scopes,
         &native.asm_histories,
+        &scope_histories,
     );
     let expected_edge_operands = expected_edge_operands
         .iter()
@@ -3046,16 +3856,7 @@ fn validate_edge_operands<'a>(
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && scope.is_some_and(|scope| {
-                (matches!(
-                    design::design_feature_family(&scope.kind),
-                    Some(
-                        design::DesignFeatureFamily::Fillet
-                            | design::DesignFeatureFamily::Chamfer
-                            | design::DesignFeatureFamily::Revolve
-                            | design::DesignFeatureFamily::Loft
-                            | design::DesignFeatureFamily::Sweep
-                    )
-                ) || matches!(scope.kind.as_str(), "EdgeFlange" | "Hem"))
+                design::decode::operands::has_edge_recipe_operands(&scope.kind)
                     && usize::try_from(operand.scope_reference_ordinal)
                         .ok()
                         .and_then(|ordinal| scope.reference_members.get(ordinal))
@@ -3066,6 +3867,7 @@ fn validate_edge_operands<'a>(
             })
             && operand.paired_byte_offset > operand.byte_offset
             && operand.recipe_record_index == operand.record_index.saturating_add(3)
+            && operand.next_record_index == operand.record_index.saturating_add(4)
             && operand.recipe_record_byte_offset > operand.paired_byte_offset
             && operand.next_byte_offset > operand.recipe_record_byte_offset
             && operand.recipe_prefix_offset == operand.recipe_record_byte_offset.saturating_add(11)
@@ -3327,6 +4129,11 @@ fn validate_face_operands<'a>(
                                     }) && operand.recipe_kind
                                         == records::ConstructionRecipeKind::BoundedFace
                                 }
+                                Some(design::DesignFeatureFamily::Sweep) => {
+                                    group.is_some_and(|group| group.role == 0x0000_0011_0000_0000)
+                                        && operand.recipe_kind
+                                            == records::ConstructionRecipeKind::BoundedFace
+                                }
                                 Some(design::DesignFeatureFamily::Draft) => {
                                     group.is_some_and(|group| match group.role {
                                         0x0000_0010_0000_0000 => {
@@ -3350,6 +4157,18 @@ fn validate_face_operands<'a>(
                                         && operand.recipe_kind
                                             == records::ConstructionRecipeKind::Face
                                 }
+                                Some(design::DesignFeatureFamily::Thread) => {
+                                    group.is_some_and(|group| {
+                                        group.role == 0x0000_0010_0000_0000
+                                            && scope.thread_construction.as_ref().is_some_and(
+                                                |construction| {
+                                                    construction.face_group_record_index
+                                                        == group.record_index
+                                                },
+                                            )
+                                    }) && operand.recipe_kind
+                                        == records::ConstructionRecipeKind::BoundedFace
+                                }
                                 Some(
                                     design::DesignFeatureFamily::Fillet
                                     | design::DesignFeatureFamily::Chamfer,
@@ -3367,8 +4186,6 @@ fn validate_face_operands<'a>(
                                                         == group_member_ordinal
                                                     && identity.record_index == operand.record_index
                                                     && identity.class_tag == operand.class_tag
-                                                    && identity.local_id
-                                                        == u64::from(operand.recipe_record_index)
                                             },
                                         )
                                 }
@@ -3477,9 +4294,20 @@ fn validate_face_group_member_resolution(
     findings: &mut Vec<Finding>,
     face_group_members: HashSet<(&str, u32, u32)>,
     face_operand_records: &HashSet<(&str, u32, u32)>,
+    entity_selection_operands: &[records::DesignEntitySelectionOperand],
 ) {
+    let entity_selection_records = entity_selection_operands
+        .iter()
+        .map(|operand| {
+            (
+                design_stream(&operand.id),
+                operand.scope_record_index,
+                operand.record_index,
+            )
+        })
+        .collect::<HashSet<_>>();
     for member in face_group_members {
-        if !face_operand_records.contains(&member) {
+        if !face_operand_records.contains(&member) && !entity_selection_records.contains(&member) {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
@@ -3519,6 +4347,8 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
             placement.frame_length == 201 && placement.transform_offset.is_none() && identity;
         let explicit = placement.frame_length == 329
             && placement.transform_offset == Some(placement.byte_offset.saturating_add(55));
+        let legacy_explicit = matches!(placement.frame_length, 305 | 325)
+            && placement.transform_offset == Some(placement.byte_offset.saturating_add(48));
         let genesis_compact =
             placement.frame_length == 213 && placement.transform_offset.is_none() && identity;
         let genesis_explicit = placement.frame_length == 341
@@ -3539,7 +4369,7 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
         } else {
             placement.paired_byte_offset
                 == placement.byte_offset.saturating_add(placement.frame_length)
-                && (compact || explicit || genesis_compact || genesis_explicit)
+                && (compact || explicit || legacy_explicit || genesis_compact || genesis_explicit)
                 && scope.is_some_and(|scope| {
                     design::design_feature_family(&scope.kind)
                         == Some(design::DesignFeatureFamily::Sketch)
@@ -4217,11 +5047,9 @@ fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
     let owners_by_index = &ctx.owners_by_index;
     let mut parameter_indices = HashSet::new();
-    let mut parameter_ordinals = HashSet::new();
     for parameter in &native.design_parameters {
         let native_stream = design_stream(&parameter.id);
         let unique_index = parameter_indices.insert((native_stream, parameter.record_index));
-        let unique_ordinal = parameter_ordinals.insert((native_stream, parameter.source_ordinal));
         let expected_kind = if parameter.source_kind == "User Parameter" {
             records::DesignParameterKind::User
         } else if parameter.source_kind.contains("Dimension") {
@@ -4269,8 +5097,7 @@ fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && parameter.kind == expected_kind
             && owner_shape_valid
             && offsets_ordered
-            && unique_index
-            && unique_ordinal;
+            && unique_index;
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,

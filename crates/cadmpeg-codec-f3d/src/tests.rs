@@ -6607,8 +6607,8 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
     assert_eq!(
         decoded.ir.model.parameters[0].dependencies,
         [cadmpeg_ir::features::ParameterId(format!(
-            "f3d:model:parameter#{}:f3d:{stream}1",
-            format!("f3d:{stream}").len(),
+            "f3d:model:parameter#{}:f3d%3A{stream}701",
+            "f3d%3A".len() + stream.len(),
         ))]
     );
     assert_eq!(
@@ -10967,6 +10967,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         surface_stitch_operation: None,
         surface_extend_operation: None,
         surface_offset_operation: None,
+        ruled_surface_operation: None,
         surface_patch_boundaries: Vec::new(),
         base_flange_operation: None,
         edge_flange_operation: None,
@@ -10976,6 +10977,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
         combine_operation: None,
+        thread_construction: None,
         draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
@@ -11022,8 +11024,12 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             member_count_offset: 420,
             auxiliary_record_indices: Vec::new(),
             auxiliary_record_offsets: Vec::new(),
-            identity_record_indices: vec![31],
-            identity_record_offsets: vec![440],
+            auxiliary_paths: Vec::new(),
+            trailing_record_indices: vec![31],
+            trailing_record_offsets: vec![440],
+            trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
             opaque_index: 1,
             opaque_index_offset: 460,
             opaque_scalar: 0.5,
@@ -11061,6 +11067,14 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         .iter()
         .any(profile_message));
 
+    let profile = f3d_native_mut(&mut ir).design_parameter_scopes[0]
+        .extrude_profile
+        .take();
+    assert!(!crate::validate::validate_native(&ir)
+        .iter()
+        .any(profile_message));
+    f3d_native_mut(&mut ir).design_parameter_scopes[0].extrude_profile = profile;
+
     f3d_native_mut(&mut ir)
         .design_construction_operand_groups
         .clear();
@@ -11076,6 +11090,112 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
     assert!(crate::validate::validate_native(&ir)
         .iter()
         .any(profile_message));
+}
+
+#[test]
+fn validation_accepts_unindexed_construction_identity_terminal() {
+    use crate::records::{
+        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
+        DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
+        DesignRecordHeader,
+    };
+
+    let stream = "f3d:Design/BulkStream.dat";
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let group = DesignConstructionOperandGroup {
+        id: format!("{stream}:operand-group#100"),
+        scope_record_index: 10,
+        scope_reference_ordinal: 0,
+        record_index: 100,
+        byte_offset: 1_000,
+        class_tag: "271".into(),
+        members: Vec::new(),
+        lost_edge_references: Vec::new(),
+        member_offsets: Vec::new(),
+        frame: DesignConstructionOperandGroupFrame {
+            member_count_offset: 1_021,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            auxiliary_paths: Vec::new(),
+            trailing_record_indices: vec![101],
+            trailing_record_offsets: vec![1_025],
+            trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
+            opaque_index: 1,
+            opaque_index_offset: 1_029,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 1_033,
+            variant: false,
+        },
+        role: 0,
+        extrude_role: None,
+        extrude_face_role: None,
+        role_offset: 1_041,
+        paired_class_tag: "261".into(),
+        paired_byte_offset: 1_050,
+    };
+    let identity = DesignConstructionOperandIdentity {
+        id: format!("{stream}:operand-identity#1100"),
+        group_record_index: 100,
+        wrapper_record_indices: vec![101],
+        wrapper_byte_offsets: vec![1_100],
+        wrapper_class_tags: vec!["384".into()],
+        following_record_index: 102,
+        following_byte_offset: 1_124,
+        following_class_tag: "395".into(),
+        tracking_path: None,
+        persistent_identity: Some(DesignConstructionPersistentIdentity {
+            local_id: 167,
+            local_id_offset: 1_145,
+            asset_id: "2d0697b6-f6c5-4f86-bb58-4a2f413c99d3".into(),
+            asset_id_offset: 1_157,
+            context_id: "9dea94a1-729a-4032-930b-d4ba4eaadb0c".into(),
+            context_id_offset: 1_233,
+            tail_slot_present: false,
+            tail_slot_offset: 1_309,
+            next_record_index: 103,
+            next_byte_offset: 1_314,
+        }),
+    };
+    let wrapper = DesignRecordHeader {
+        id: format!("{stream}:record-header#1100"),
+        record_index: 101,
+        class_tag: "384".into(),
+        byte_offset: 1_100,
+    };
+    let following = DesignRecordHeader {
+        id: format!("{stream}:record-header#1124"),
+        record_index: 102,
+        class_tag: "395".into(),
+        byte_offset: 1_124,
+    };
+    let identity_id = identity.id.clone();
+    let mut native = crate::native::F3dNative::default();
+    native.design_construction_operand_groups.push(group);
+    native.design_construction_operand_identities.push(identity);
+    native.design_record_headers.extend([wrapper, following]);
+    native.store(ir.native.namespace_mut("f3d")).unwrap();
+
+    let invalid_identity = |finding: &cadmpeg_ir::Finding| {
+        finding.entity.as_deref() == Some(identity_id.as_str())
+            && finding.message.contains("invalid nested frame")
+    };
+    assert!(!crate::validate::validate_native(&ir)
+        .iter()
+        .any(invalid_identity));
+
+    let mut native = crate::native::F3dNative::load(ir.native.namespace("f3d").unwrap()).unwrap();
+    native.design_record_headers.push(DesignRecordHeader {
+        id: format!("{stream}:record-header#1315"),
+        record_index: 103,
+        class_tag: "301".into(),
+        byte_offset: 1_315,
+    });
+    native.store(ir.native.namespace_mut("f3d")).unwrap();
+    assert!(crate::validate::validate_native(&ir)
+        .iter()
+        .any(invalid_identity));
 }
 
 #[test]
@@ -11163,6 +11283,47 @@ fn generated_f3d_rewrites_body_transform() {
         f3d_native(&round_trip.ir).body_native_keys[0].asm_body_key,
         Some(84)
     );
+}
+
+#[test]
+fn body_key_edit_does_not_rewrite_ordinal_design_selector() {
+    let body = cadmpeg_ir::ids::BodyId("f3d:brep:entity#1".into());
+    let mut baseline = crate::native::F3dNative::default();
+    baseline
+        .body_native_keys
+        .push(crate::records::BodyNativeKey {
+            id: "f3d:asm:body-native-key#1".into(),
+            body: body.clone(),
+            record_index: 1,
+            body_ordinal: 0,
+            source_brep: Some("BREP.source.smb".into()),
+            asm_body_key: Some(436),
+        });
+    baseline
+        .body_visibilities
+        .push(crate::records::BodyVisibility {
+            id: "f3d:design:body-visibility#1".into(),
+            body,
+            stream: "Design1/BulkStream.dat".into(),
+            byte_offset: 20,
+            asm_body_key_offset: 40,
+            asm_body_key: 0,
+            entity_suffix: 1,
+            visible: true,
+        });
+    let mut target = baseline.clone();
+    target.body_native_keys[0].asm_body_key = Some(500);
+
+    let edits = crate::writer::patch::edits::validate_body_native_key_edits(
+        crate::writer::patch::edits::PatchNatives {
+            baseline: Some(&baseline),
+            target: Some(&target),
+        },
+    )
+    .expect("body-key edit");
+
+    assert_eq!(edits.asm.get(&1), Some(&500));
+    assert!(edits.design.is_empty());
 }
 
 #[test]
@@ -24586,6 +24747,46 @@ fn f3z_archive_merges_identity_occurrences() {
         .notes
         .iter()
         .any(|note| note == "source container regenerated from IR"));
+}
+
+#[test]
+fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
+    let component = f3d_with_smbh(&synthetic_mixed_smbh());
+    let component_alone = F3dCodec
+        .decode(
+            &mut Cursor::new(component.clone()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let component_unknowns = component_alone.ir.native_unknowns("f3d").unwrap();
+    assert!(!component_unknowns.is_empty());
+
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", root.as_slice()),
+            ("comp.f3d", component.as_slice()),
+        ],
+    );
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+
+    let prefix = format!("f3d:xref/{XREF_ROLE}/occurrence-0/");
+    let merged_unknowns = decoded.ir.native_unknowns("f3d").unwrap();
+    assert_eq!(merged_unknowns.len(), component_unknowns.len());
+    assert!(merged_unknowns
+        .iter()
+        .all(|record| record.id.0.starts_with(&prefix)));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(
+        !validation
+            .findings
+            .iter()
+            .any(|finding| { finding.check == cadmpeg_ir::report::Check::ReferentialIntegrity }),
+        "{validation:#?}"
+    );
 }
 
 #[test]

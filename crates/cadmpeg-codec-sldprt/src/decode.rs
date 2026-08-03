@@ -944,10 +944,12 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         FaceSelection::Unresolved | FaceSelection::Native(_) => true,
     };
     let incomplete_body_selection = |selection: &BodySelection| match selection {
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies.is_empty(),
-        BodySelection::Historical { bodies, .. } | BodySelection::HistoricalSet { bodies, .. } => {
-            bodies.is_empty()
-        }
+        BodySelection::Bodies(bodies)
+        | BodySelection::Resolved { bodies, .. }
+        | BodySelection::ResolvedSet { bodies, .. } => bodies.is_empty(),
+        BodySelection::Historical { bodies, .. }
+        | BodySelection::HistoricalSet { bodies, .. }
+        | BodySelection::HistoricalUnorderedSet { bodies, .. } => bodies.is_empty(),
         BodySelection::Generated { bodies, .. } => bodies.is_empty(),
         BodySelection::Local { bodies, .. } => bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => true,
@@ -1391,6 +1393,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 edges,
                 support_faces,
                 mode,
+                ..
             } => {
                 incomplete_edge_selection(edges)
                     || if matches!(mode, cadmpeg_ir::features::RuledSurfaceMode::Direction { .. }) {
@@ -4928,6 +4931,9 @@ mod design_loss_tests {
                         direction: Vector3::new(0.0, 0.0, 1.0),
                         distance: Length(1.0),
                     },
+                    angle: None,
+                    alternate_face: None,
+                    corner: None,
                 },
             ),
             feature(

@@ -457,27 +457,7 @@ pub fn decode_design_body_bindings(
                     )
                 })
                 .collect::<Vec<_>>();
-            let direct = source_bodies
-                .iter()
-                .filter(|key| key.asm_body_key == Some(binding.asm_key))
-                .map(|key| key.body.clone())
-                .collect::<Vec<_>>();
-            let body = match direct.as_slice() {
-                [body] => Some(body.clone()),
-                [] if source_bodies.iter().all(|key| key.asm_body_key.is_none()) => {
-                    let ordinal = u32::try_from(binding.asm_key).ok();
-                    let ordinal_matches = source_bodies
-                        .iter()
-                        .filter(|key| Some(key.body_ordinal) == ordinal)
-                        .map(|key| key.body.clone())
-                        .collect::<Vec<_>>();
-                    match ordinal_matches.as_slice() {
-                        [body] => Some(body.clone()),
-                        _ => None,
-                    }
-                }
-                _ => None,
-            };
+            let body = crate::brep::resolve_body_selector(&source_bodies, binding.asm_key)?;
             out.push(DesignBodyBinding {
                 id: ids::native_design_body_binding_id(&entry.name, binding.asm_key_offset),
                 stream: entry.name.clone(),

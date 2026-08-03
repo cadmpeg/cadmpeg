@@ -9,9 +9,10 @@
 //! `format!("f3d:...")` at the use site.
 //!
 //! The strings these builders produce are identity keys that are stored and
-//! compared, so each builder reproduces its historical byte layout exactly.
-//! Two sites that share a prefix but differ in tail structure get distinct
-//! builders rather than a single reshaped one.
+//! compared. Source strings are escaped at identity-component boundaries so
+//! arbitrary archive entry names cannot alter the three-part ID grammar. Two
+//! sites that share a prefix but differ in tail structure get distinct builders
+//! rather than a single reshaped one.
 
 use crate::records::{DesignParameter, DesignParameterScope, DesignSketchPlacement};
 
@@ -65,15 +66,13 @@ pub(crate) fn design_segment(id: &str) -> Option<&str> {
 /// The fixed key of the single source-image record a design carries.
 pub(crate) const FILE_SOURCE_IMAGE_ID: &str = "f3d:file:source-image#0";
 
-/// Percent-encode `#`, `%`, and whitespace so a value can occupy one
-/// `#{len}:{key}` identity-key segment without colliding with the separators
-/// or the reserved escape byte.
+/// Percent-encode identity separators, the escape byte, and whitespace.
 fn identity_key_component(value: &str) -> String {
     use std::fmt::Write as _;
 
     let mut encoded = String::with_capacity(value.len());
     for character in value.chars() {
-        if character == '#' || character == '%' || character.is_whitespace() {
+        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
             let mut bytes = [0; 4];
             for byte in character.encode_utf8(&mut bytes).as_bytes() {
                 write!(encoded, "%{byte:02X}").expect("writing to a String cannot fail");
@@ -83,6 +82,30 @@ fn identity_key_component(value: &str) -> String {
         }
     }
     encoded
+}
+
+/// Reverse [`identity_key_component`] for a complete encoded component.
+pub(crate) fn decode_identity_key_component(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] != b'%' {
+            decoded.push(bytes[at]);
+            at += 1;
+            continue;
+        }
+        let pair = bytes.get(at + 1..at + 3)?;
+        let digit = |byte: u8| match byte {
+            b'0'..=b'9' => Some(byte - b'0'),
+            b'a'..=b'f' => Some(byte - b'a' + 10),
+            b'A'..=b'F' => Some(byte - b'A' + 10),
+            _ => None,
+        };
+        decoded.push(digit(pair[0])? * 16 + digit(pair[1])?);
+        at += 3;
+    }
+    String::from_utf8(decoded).ok()
 }
 
 /// The neutral B-rep topology entity key for entity `index`.
@@ -131,7 +154,23 @@ pub(crate) fn neutral_assembly_joint_id(
 
 /// The Design configuration record key for the archive entry `entry_name`.
 pub(crate) fn configuration_entry_id(entry_name: &str) -> String {
-    format!("f3d:configuration:entry#{entry_name}")
+    format!(
+        "f3d:configuration:entry#{}",
+        identity_key_component(entry_name)
+    )
+}
+
+/// Neutral per-face appearance binding joined through two GUIDs and a face.
+pub(crate) fn neutral_face_appearance_binding_id(
+    face_guid: &str,
+    visual_guid: &str,
+    face: &cadmpeg_ir::ids::FaceId,
+) -> String {
+    let face = identity_key_component(&face.0);
+    format!(
+        "f3d:appearance:face#{face_guid}:{visual_guid}:{}:{face}",
+        face.len()
+    )
 }
 
 /// The neutral configuration key for `variant_name` under `entry_name`, with
@@ -140,6 +179,8 @@ pub(crate) fn neutral_configuration_id(
     entry_name: &str,
     variant_name: &str,
 ) -> cadmpeg_ir::features::ConfigurationId {
+    let entry_name = identity_key_component(entry_name);
+    let variant_name = identity_key_component(variant_name);
     cadmpeg_ir::features::ConfigurationId(format!(
         "f3d:configuration:variant#{}:{}{}:{}",
         entry_name.len(),
@@ -192,22 +233,22 @@ pub(crate) fn neutral_parameter_id(
 ) -> cadmpeg_ir::features::ParameterId {
     neutral_parameter_id_parts(
         native_stream(&parameter.id).unwrap_or(DEFAULT_STREAM),
-        parameter.source_ordinal,
+        parameter.record_index,
     )
 }
 
-/// The neutral parameter key from its `stream` and source ordinal, with
+/// The neutral parameter key from its `stream` and indexed-record identity, with
 /// `stream` length-prefixed into a `#{len}:{key}` segment.
 pub(crate) fn neutral_parameter_id_parts(
     stream: &str,
-    source_ordinal: u32,
+    record_index: u32,
 ) -> cadmpeg_ir::features::ParameterId {
     let stream = identity_key_component(stream);
     cadmpeg_ir::features::ParameterId(format!(
         "f3d:model:parameter#{}:{}{}",
         stream.len(),
         stream,
-        source_ordinal,
+        record_index,
     ))
 }
 
@@ -271,6 +312,20 @@ pub(crate) fn neutral_sketch_text_id(
         &sketch.0,
         't',
         persistent_id,
+    ))
+}
+
+/// The source-local neutral key for a planar sketch-text record that predates
+/// the persistent text-identity property.
+pub(crate) fn neutral_sketch_text_record_id(
+    sketch: &cadmpeg_ir::sketches::SketchId,
+    record_index: u32,
+) -> cadmpeg_ir::sketches::SketchEntityId {
+    cadmpeg_ir::sketches::SketchEntityId(sketch_entity_tagged(
+        "sketch-entity",
+        &sketch.0,
+        'x',
+        u64::from(record_index),
     ))
 }
 
@@ -362,6 +417,7 @@ pub(crate) fn neutral_dimension_constraint_id(
         .0
         .split_once('#')
         .map_or(parameter.0.as_str(), |(_, key)| key);
+    let form = identity_key_component(form);
     cadmpeg_ir::sketches::SketchConstraintId(format!(
         "f3d:model:sketch-constraint#dimension:{}:{}{}:{}",
         parameter_key.len(),
@@ -384,6 +440,7 @@ pub(crate) fn history_input_prefix(
     feature_key: &str,
     previous_state_id: impl std::fmt::Display,
 ) -> String {
+    let feature_key = identity_key_component(feature_key);
     format!("{}:{feature_key}:{previous_state_id}", feature_key.len())
 }
 
@@ -419,19 +476,22 @@ pub(crate) fn history_input_body_id(
 // --- native design-record keys ---------------------------------------------
 //
 // Native design records are keyed `f3d:{scope}:{kind}#{offset}`, where `scope`
-// is the archive stream name (`f3d:{entry_name}` without the scheme prefix, so
-// the stored key reads `f3d:{entry_name}:...`) and `offset` is the record's
-// byte offset or index within that stream.
+// is the escaped archive stream name and `offset` is the record's byte offset
+// or index within that stream.
 
-/// The native scope key `f3d:{name}` for an archive entry or stream `name`.
+/// The native scope key for an archive entry or stream `name`.
 pub(crate) fn native_scope(name: &str) -> String {
-    format!("f3d:{name}")
+    format!("f3d:{}", identity_key_component(name))
 }
 
-/// The native scope key with a trailing separator, `f3d:{name}:`, for prefix
-/// tests against keys owned by `name`.
+/// The escaped native scope key with a trailing separator for prefix tests.
 pub(crate) fn native_scope_prefix(name: &str) -> String {
-    format!("f3d:{name}:")
+    format!("{}:", native_scope(name))
+}
+
+/// Build one record ID in an archive-entry-qualified native scope.
+pub(crate) fn native_scoped_id(scope: &str, kind: &str, key: impl std::fmt::Display) -> String {
+    format!("{}:{kind}#{key}", native_scope(scope))
 }
 
 /// Macro defining one `f3d:{scope}:{kind}#{offset}` native-record builder.
@@ -439,7 +499,7 @@ macro_rules! native_record_id {
     ($(#[$meta:meta])* $name:ident, $kind:literal) => {
         $(#[$meta])*
         pub(crate) fn $name(scope: &str, offset: impl std::fmt::Display) -> String {
-            format!(concat!("f3d:{scope}:", $kind, "#{offset}"), scope = scope, offset = offset)
+            native_scoped_id(scope, $kind, offset)
         }
     };
 }
@@ -622,7 +682,11 @@ native_record_id!(
 
 #[cfg(test)]
 mod tests {
-    use super::{design_segment, same_native_occurrence};
+    use super::{
+        decode_identity_key_component, design_segment, native_design_type_id, native_scope,
+        neutral_face_appearance_binding_id, neutral_sketch_text_id, neutral_sketch_text_record_id,
+        same_native_occurrence, SCHEME_PREFIX,
+    };
 
     #[test]
     fn design_segment_joins_sibling_meta_and_bulk_stream_ids() {
@@ -634,6 +698,43 @@ mod tests {
             design_segment("f3d:Asset/Design1/Other.dat:record#20"),
             None
         );
+    }
+
+    #[test]
+    fn native_ids_escape_archive_names_without_losing_the_raw_stream() {
+        let entry = "Simulation Case/Design:1/MetaStream%20.dat";
+        let id = native_design_type_id(entry, 10);
+        assert_eq!(
+            id,
+            "f3d:Simulation%20Case/Design%3A1/MetaStream%2520.dat:design-type#10"
+        );
+        let encoded = native_scope(entry)
+            .strip_prefix(SCHEME_PREFIX)
+            .expect("native scheme")
+            .to_owned();
+        assert_eq!(
+            decode_identity_key_component(&encoded).as_deref(),
+            Some(entry)
+        );
+        assert_eq!(
+            crate::writer::patch::records::native_stream(&id, ":design-type#")
+                .expect("writer stream"),
+            entry
+        );
+    }
+
+    #[test]
+    fn face_appearance_binding_escapes_the_nested_face_identity() {
+        let id = neutral_face_appearance_binding_id(
+            "face-guid",
+            "visual-guid",
+            &cadmpeg_ir::ids::FaceId("f3d:brep/path:face#12".into()),
+        );
+        assert_eq!(
+            id,
+            "f3d:appearance:face#face-guid:visual-guid:27:f3d%3Abrep/path%3Aface%2312"
+        );
+        assert_eq!(id.matches('#').count(), 1);
     }
 
     #[test]
@@ -658,5 +759,15 @@ mod tests {
             "f3d:xref/root/occurrence-invalid/design:record#1",
             "f3d:design:persistent-subentity-tag#1",
         ));
+    }
+
+    #[test]
+    fn identityless_sketch_text_uses_a_disjoint_source_record_namespace() {
+        let sketch = cadmpeg_ir::sketches::SketchId("f3d:model:sketch#example".into());
+        let persistent = neutral_sketch_text_id(&sketch, 42);
+        let source_record = neutral_sketch_text_record_id(&sketch, 42);
+        assert_ne!(persistent, source_record);
+        assert_eq!(source_record, neutral_sketch_text_record_id(&sketch, 42));
+        assert_ne!(source_record, neutral_sketch_text_record_id(&sketch, 43));
     }
 }
