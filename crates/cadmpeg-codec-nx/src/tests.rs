@@ -1900,9 +1900,8 @@ fn nx_sketch_completeness_requires_planar_space() {
     let mut losses = Vec::new();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
     assert!(losses.iter().any(|loss| {
-        loss.message.contains(
-            "construction fields or output lineage remain unresolved or native-only: sketch (1)",
-        )
+        loss.message
+            .contains("incomplete neutral construction fields: sketch (1)")
     }));
 }
 
@@ -14063,7 +14062,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     let mut losses = Vec::new();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
-    assert_eq!(losses.len(), 6);
+    assert_eq!(losses.len(), 7);
     assert_eq!(losses[0].code.category(), LossCategory::DesignIntent);
     assert!(losses[0]
         .message
@@ -14079,12 +14078,13 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     assert!(losses[3].message.contains("loft (2)"));
     assert_eq!(losses[4].code.category(), LossCategory::DesignIntent);
     assert!(losses[4].message.contains("block (1)"));
-    assert!(losses[4].message.contains("delete body (1)"));
-    assert!(losses[4].message.contains("sketch (1)"));
     assert!(losses[4].message.contains("sweep (1)"));
     assert_eq!(losses[5].code.category(), LossCategory::DesignIntent);
-    assert!(losses[5].message.contains("1 NX sketch history feature"));
-    assert!(losses[5].message.contains("1 have no neutral sketch graph"));
+    assert!(losses[5].message.contains("delete body (1)"));
+    assert!(losses[5].message.contains("sketch (1)"));
+    assert_eq!(losses[6].code.category(), LossCategory::DesignIntent);
+    assert!(losses[6].message.contains("1 NX sketch history feature"));
+    assert!(losses[6].message.contains("1 have no neutral sketch graph"));
 
     let sketch_id = cadmpeg_ir::sketches::SketchId("test:sketch#0".into());
     ir.model.sketches.push(cadmpeg_ir::sketches::Sketch {
@@ -14106,8 +14106,9 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     losses.clear();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
-    assert_eq!(losses.len(), 5);
-    assert!(!losses[4].message.contains("sketch"));
+    assert_eq!(losses.len(), 6);
+    assert!(losses[4].message.contains("block (1)"));
+    assert!(!losses[5].message.contains("sketch"));
 }
 
 #[path = "integration_tests.rs"]

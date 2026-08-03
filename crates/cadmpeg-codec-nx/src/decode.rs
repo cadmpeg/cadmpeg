@@ -10348,7 +10348,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         });
     }
 
-    let mut incomplete_feature_families = BTreeMap::<&str, usize>::new();
+    let mut incomplete_feature_output_families = BTreeMap::<&str, usize>::new();
+    let mut incomplete_feature_construction_families = BTreeMap::<&str, usize>::new();
     for feature in &ir.model.features {
         let is_exact_empty_base = matches!(
             &feature.definition,
@@ -10366,7 +10367,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                         .iter()
                         .any(|output| !ir.model.bodies.iter().any(|body| body.id == *output))
             }) {
-                *incomplete_feature_families.entry(family).or_default() += 1;
+                *incomplete_feature_output_families
+                    .entry(family)
+                    .or_default() += 1;
                 continue;
             }
         }
@@ -10537,10 +10540,12 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             }
             _ => continue,
         };
-        *incomplete_feature_families.entry(family).or_default() += 1;
+        *incomplete_feature_construction_families
+            .entry(family)
+            .or_default() += 1;
     }
-    if !incomplete_feature_families.is_empty() {
-        let families = incomplete_feature_families
+    if !incomplete_feature_output_families.is_empty() {
+        let families = incomplete_feature_output_families
             .into_iter()
             .map(|(family, count)| format!("{family} ({count})"))
             .collect::<Vec<_>>()
@@ -10549,8 +10554,23 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             code: LossKind::FeatureHistoryRetained,
             severity: Severity::Warning,
             message: format!(
-                "NX feature families were transferred as typed neutral operations, but \
-                 construction fields or output lineage remain unresolved or native-only: \
+                "NX typed feature operation output lineage is missing, duplicated, or does not \
+                 resolve to a transferred body: {families}."
+            ),
+            provenance: None,
+        });
+    }
+    if !incomplete_feature_construction_families.is_empty() {
+        let families = incomplete_feature_construction_families
+            .into_iter()
+            .map(|(family, count)| format!("{family} ({count})"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        losses.push(LossNote {
+            code: LossKind::FeatureHistoryRetained,
+            severity: Severity::Warning,
+            message: format!(
+                "NX typed feature operations have incomplete neutral construction fields: \
                  {families}."
             ),
             provenance: None,

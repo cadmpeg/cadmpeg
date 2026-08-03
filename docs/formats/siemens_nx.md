@@ -1384,10 +1384,12 @@ The owning `BLOCK` feature links the complete typed dimension set and constructi
 The dimension and placement constructions do not by themselves identify the
 Boolean result operation. When the operation has no explicit transferred body
 relation and the unique-body placement form identifies the surviving solid,
-the block creates that body and its result operation is new-body. With an
-explicit output, the block is new-body only when that output and its native
-primary-body identity have no preceding writer. Other explicit-output forms
-leave the Boolean result operation unresolved.
+the block is new-body only when no preceding history operation writes that
+solid. The provisional segment-backed initial-body projection does not count as
+a history writer and is retracted for this form. With an explicit output, the
+block is new-body only when that output and its native primary-body identity
+have no preceding writer. Other forms leave the Boolean result operation
+unresolved.
 
 A `BLOCK` operation projects as a neutral rectangular block. A complete typed
 dimension set supplies its ordered local x, y, and z dimensions. The feature
