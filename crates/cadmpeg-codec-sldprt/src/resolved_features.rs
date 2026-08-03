@@ -7529,10 +7529,18 @@ mod marker_tests {
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
         payload[60..64].copy_from_slice(&1u32.to_le_bytes());
         assert!(!marker_is_selected_construction_line(&payload, 0));
+        payload[17..21].fill(0);
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[35..39].copy_from_slice(&[0x00, 0x00, 0x45, 0x00]);
+        assert_eq!(
+            super::extended_compact_indexed_curve_endpoint_indices(&payload, 0),
+            Some([7, 11])
+        );
+        assert!(current_undetailed_bounded_curve_is_line(&payload, 0));
+        payload[35..39].copy_from_slice(&[0x00, 0x00, 0x04, 0x00]);
         payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
         payload[60..64].fill(0);
 
-        payload[17..21].copy_from_slice(&0u32.to_le_bytes());
         assert_eq!(
             compact_indexed_curve_endpoint_indices(&payload, 0),
             Some([7, 11])
@@ -45593,15 +45601,19 @@ fn compact_indexed_curve_endpoint_indices_for_prefixes(
     prefixes: &[&[u8]],
 ) -> Option<[u32; 2]> {
     let code = u32::from_le_bytes(payload.get(offset + 17..offset + 21)?.try_into().ok()?);
-    if !payload
-        .get(offset..offset + SKETCH_MARKER.len())
-        .is_some_and(|prefix| prefixes.contains(&prefix))
+    let prefix = payload.get(offset..offset + SKETCH_MARKER.len())?;
+    let standard_selector =
+        payload.get(offset + 35..offset + 39) == Some(&[0x00, 0x00, 0x04, 0x00]);
+    let flagged_profile_selector = prefix == LEGACY_EXTENDED_SKETCH_MARKER
+        && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
+        && payload.get(offset + 35..offset + 39) == Some(&[0x00, 0x00, 0x45, 0x00]);
+    if !prefixes.contains(&prefix)
         || !matches!(code, 0..=2)
         || !(marker_is_geometry_locus(payload, offset)
             || payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00]))
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 31..offset + 35) != Some(&[0x00, 0x00, 0x80, 0xbf])
-        || payload.get(offset + 35..offset + 39) != Some(&[0x00, 0x00, 0x04, 0x00])
+        || !(standard_selector || flagged_profile_selector)
         || f64::from_le_bytes(payload.get(offset + 48..offset + 56)?.try_into().ok()?) != 1.0
         || compact_indexed_curve_record_end(payload, offset).is_none()
     {
