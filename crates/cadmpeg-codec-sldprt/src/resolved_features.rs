@@ -1482,7 +1482,7 @@ fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[
     let code = marker_native_code(payload, offset)?;
     let handle_state = u16::from_le_bytes(payload.get(offset + 76..offset + 78)?.try_into().ok()?);
     let current_prefix = payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER);
-    if !matches!((code, handle_state), (0 | 1, 2 | 3) | (2, 2)) {
+    if !matches!((code, handle_state), (0..=2, 2 | 3)) {
         return None;
     }
     if !matches!(
@@ -9074,6 +9074,11 @@ mod marker_tests {
         assert_eq!(
             sketch_input_entities(&payload, "lane")[0].kind,
             SketchInputKind::Point
+        );
+        payload[76..78].copy_from_slice(&3u16.to_le_bytes());
+        assert_eq!(
+            legacy_declared_handle_coordinates(&payload, 0),
+            Some([0.045, -0.0225])
         );
         payload[17..21].fill(0);
         payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
