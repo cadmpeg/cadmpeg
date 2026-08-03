@@ -3475,7 +3475,7 @@ pub(crate) fn project_mirror(
         .copied()
         .filter(|group| {
             group.record_index == construction.seed_group_record_index
-                && group.role == 0x0000_0008_0000_0000
+                && matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0008_0000_0000)
                 && !group.members.is_empty()
         })
         .collect::<Vec<_>>();
@@ -3503,6 +3503,10 @@ pub(crate) fn project_mirror(
             return None;
         };
         PatternSeed::Feature(neutral_feature_id(seed_scope))
+    } else if seed_group.role == 0x0000_0004_0000_0000 {
+        PatternSeed::Bodies(cadmpeg_ir::features::BodySelection::Native(
+            seed_group.id.clone(),
+        ))
     } else {
         PatternSeed::Faces(
             resolved_historical_face_group(scope, seed_group, face_operands).unwrap_or_else(|| {
@@ -3510,28 +3514,42 @@ pub(crate) fn project_mirror(
             }),
         )
     };
-    let matching_planes = scopes
-        .iter()
-        .filter(|candidate| {
-            native_stream(&candidate.id) == Some(stream)
-                && candidate.record_index == construction.plane_scope_record_index
-                && candidate.kind == "WorkPlane"
-                && candidate.work_plane_transform.is_some()
-        })
-        .collect::<Vec<_>>();
-    let [plane] = matching_planes.as_slice() else {
-        return None;
-    };
-    let transform = plane.work_plane_transform?;
+    let (plane_origin, plane_normal, scale_origin) =
+        match (construction.plane_origin, construction.plane_normal) {
+            (Some(origin), Some(normal)) => (origin, normal, false),
+            (None, None) => {
+                let plane_scope_record_index = construction.plane_scope_record_index?;
+                let matching_planes = scopes
+                    .iter()
+                    .filter(|candidate| {
+                        native_stream(&candidate.id) == Some(stream)
+                            && candidate.record_index == plane_scope_record_index
+                            && candidate.kind == "WorkPlane"
+                            && candidate.work_plane_transform.is_some()
+                    })
+                    .collect::<Vec<_>>();
+                let [plane] = matching_planes.as_slice() else {
+                    return None;
+                };
+                let transform = plane.work_plane_transform?;
+                (
+                    Point3::new(transform[0][3], transform[1][3], transform[2][3]),
+                    Vector3::new(transform[0][2], transform[1][2], transform[2][2]),
+                    true,
+                )
+            }
+            _ => return None,
+        };
+    let origin_scale = if scale_origin { 10.0 } else { 1.0 };
     Some(FeatureDefinition::Pattern {
         seeds: vec![seed],
         pattern: PatternKind::Mirror {
             plane_origin: Point3::new(
-                transform[0][3] * 10.0,
-                transform[1][3] * 10.0,
-                transform[2][3] * 10.0,
+                plane_origin.x * origin_scale,
+                plane_origin.y * origin_scale,
+                plane_origin.z * origin_scale,
             ),
-            plane_normal: Vector3::new(transform[0][2], transform[1][2], transform[2][2]),
+            plane_normal,
         },
     })
 }

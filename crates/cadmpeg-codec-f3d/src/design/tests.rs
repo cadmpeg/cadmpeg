@@ -8265,6 +8265,21 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     assert_eq!(persistent.next_record_index, 900);
     assert_eq!(persistent.next_byte_offset, 238);
 
+    let mut expanded_bytes = bytes[..233].to_vec();
+    expanded_bytes.extend_from_slice(&[0; 4]);
+    expanded_bytes.push(1);
+    expanded_bytes.extend_from_slice(&900u32.to_le_bytes());
+    expanded_bytes.extend_from_slice(&[0; 6]);
+    header(&mut expanded_bytes, *b"301", 900);
+    let expanded = parse_construction_operand_identity(&expanded_bytes, &group, &wrapper_header)
+        .expect("identity chain with expanded tail reference");
+    let persistent = expanded
+        .persistent_identity
+        .expect("expanded persistent identity leaf");
+    assert_eq!(persistent.tail_slot_offset, 233);
+    assert_eq!(persistent.next_record_index, 900);
+    assert_eq!(persistent.next_byte_offset, 248);
+
     let mut bound_group = group;
     let mut terminating_identity = identity;
     terminating_identity.id =

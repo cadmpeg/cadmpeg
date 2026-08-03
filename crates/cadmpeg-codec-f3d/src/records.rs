@@ -1339,7 +1339,7 @@ pub struct DesignMirrorConstruction {
     pub stitch_tolerance_record_index: u32,
     /// Byte offset of the evaluated stitch-tolerance scalar.
     pub stitch_tolerance_offset: u64,
-    /// Role-`0x8` seed group.
+    /// Seed group selected by the source operation.
     pub seed_group_record_index: u32,
     /// Role-`0x5` mirror-plane group.
     pub plane_group_record_index: u32,
@@ -1349,10 +1349,21 @@ pub struct DesignMirrorConstruction {
     /// Byte offset of the optional seed-feature reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seed_feature_reference_offset: Option<u64>,
-    /// Referenced `WorkPlane` scope.
-    pub plane_scope_record_index: u32,
-    /// Byte offset of the `WorkPlane` reference.
-    pub plane_reference_offset: u64,
+    /// Referenced `WorkPlane` scope, when the plane operand names one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plane_scope_record_index: Option<u32>,
+    /// Byte offset of the optional `WorkPlane` reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plane_reference_offset: Option<u64>,
+    /// Persistent entity-selection record used as the mirror plane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plane_selection_record_index: Option<u32>,
+    /// Proven selected-face mirror-plane origin in model-space millimetres.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plane_origin: Option<Point3>,
+    /// Proven unit mirror-plane normal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plane_normal: Option<Vector3>,
 }
 
 /// Exact fixed scalar lanes carried by a Chamfer scope.

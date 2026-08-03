@@ -2887,6 +2887,13 @@ fn extend_related_design_records(
         &native.design_parameter_scopes,
         &native.asm_histories,
     );
+    crate::history::bind_mirror_selection_planes(
+        &mut native.design_parameter_scopes,
+        &native.design_construction_operand_groups,
+        &native.design_entity_selection_operands,
+        &native.design_construction_operand_identities,
+        &native.asm_histories,
+    );
     native.design_body_recipe_operands =
         crate::design::decode::operands::decode_body_recipe_operands(
             scan,

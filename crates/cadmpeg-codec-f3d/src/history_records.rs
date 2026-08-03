@@ -90,6 +90,9 @@ pub(crate) struct AsmHistoricalTopology {
     /// Exact right-circular cylinder carriers in this historical state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub surface_cylinders: Vec<AsmHistoricalCylinder>,
+    /// Exact plane carriers in this historical state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub surface_planes: Vec<AsmHistoricalPlane>,
     pub curves: Vec<i64>,
     /// Model-space axes of axis-bearing curve carriers in this state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -147,6 +150,14 @@ pub(crate) struct AsmHistoricalCylinder {
     pub origin: Point3,
     pub axis: Vector3,
     pub radius: f64,
+}
+
+/// Stable geometry of one plane carrier.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct AsmHistoricalPlane {
+    pub surface: i64,
+    pub origin: Point3,
+    pub normal: Vector3,
 }
 
 /// Stable point-carrier value in one historical B-rep state.

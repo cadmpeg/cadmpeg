@@ -2994,9 +2994,16 @@ fn validate_construction_operand_identities<'a>(
                     && valid_design_guid(&persistent.context_id)
                     && selected_profile
                         .is_none_or(|profile| profile.asset_id == persistent.asset_id)
-                    && persistent.next_byte_offset
+                    && (persistent.next_byte_offset
                         == identity.following_byte_offset.saturating_add(190)
+                        || (persistent.tail_slot_offset
+                            == identity.following_byte_offset.saturating_add(185)
+                            && persistent.next_byte_offset
+                                == persistent.tail_slot_offset.saturating_add(15)))
                     && persistent.next_record_index != 0
+                    && records_by_index
+                        .get(&(native_stream, persistent.next_record_index))
+                        .is_some_and(|header| header.byte_offset == persistent.next_byte_offset)
             });
         let valid = group.is_some_and(|group| {
             let trailing = group.frame.trailing_record_indices.first();

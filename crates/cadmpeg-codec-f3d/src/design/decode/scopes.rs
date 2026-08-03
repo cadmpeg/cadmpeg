@@ -1439,8 +1439,8 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
     })
 }
 
-/// Join a Mirror scope's two operand groups, fixed parameters, compact feature
-/// reference, and `WorkPlane` reference into one exact construction.
+/// Join a Mirror scope's two operand groups and fixed parameters with either a
+/// referenced `WorkPlane` or a persistent plane-face selection.
 pub fn bind_mirror_constructions(
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
@@ -1478,7 +1478,7 @@ pub fn bind_mirror_constructions(
         let seed_groups = scope_groups
             .iter()
             .copied()
-            .filter(|group| group.role == 0x0000_0008_0000_0000)
+            .filter(|group| matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0008_0000_0000))
             .collect::<Vec<_>>();
         let plane_groups = scope_groups
             .iter()
@@ -1495,23 +1495,42 @@ pub fn bind_mirror_constructions(
         let Some(plane_header) = headers.get(&(stream, *plane_member)) else {
             continue;
         };
-        let Some((plane_reference, plane_reference_offset)) =
-            compact_feature_reference(bytes, plane_header)
-        else {
-            continue;
-        };
-        let plane_scope_record_index = plane_reference.checked_add(1);
-        let Some(plane_scope_record_index) = plane_scope_record_index.filter(|record_index| {
-            scopes.iter().any(|scope| {
-                native_stream(&scope.id) == Some(stream)
-                    && scope.record_index == *record_index
-                    && scope.kind == "WorkPlane"
-                    && scope.work_plane_transform.is_some()
-            })
-        }) else {
-            continue;
-        };
+        let work_plane = compact_feature_reference(bytes, plane_header).and_then(
+            |(plane_reference, plane_reference_offset)| {
+                plane_reference
+                    .checked_add(1)
+                    .filter(|record_index| {
+                        scopes.iter().any(|scope| {
+                            native_stream(&scope.id) == Some(stream)
+                                && scope.record_index == *record_index
+                                && scope.kind == "WorkPlane"
+                                && scope.work_plane_transform.is_some()
+                        })
+                    })
+                    .map(|record_index| (record_index, plane_reference_offset))
+            },
+        );
+        let (plane_scope_record_index, plane_reference_offset, plane_selection_record_index) =
+            if let Some((plane_scope_record_index, plane_reference_offset)) = work_plane {
+                (
+                    Some(plane_scope_record_index),
+                    Some(plane_reference_offset),
+                    None,
+                )
+            } else if crate::design::decode::operands::parse_entity_selection_operand(
+                bytes,
+                plane_group,
+                0,
+                plane_header,
+            )
+            .is_some()
+            {
+                (None, None, Some(*plane_member))
+            } else {
+                continue;
+            };
         let seed_feature = match seed_group.members.as_slice() {
+            _ if seed_group.role != 0x0000_0008_0000_0000 => None,
             [member] => headers
                 .get(&(stream, *member))
                 .and_then(|header| compact_feature_reference(bytes, header))
@@ -1564,6 +1583,9 @@ pub fn bind_mirror_constructions(
             seed_feature_reference_offset: seed_feature.map(|(_, offset)| offset),
             plane_scope_record_index,
             plane_reference_offset,
+            plane_selection_record_index,
+            plane_origin: None,
+            plane_normal: None,
         });
     }
     Ok(())

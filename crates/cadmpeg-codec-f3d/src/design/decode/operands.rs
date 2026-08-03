@@ -2438,12 +2438,26 @@ fn parse_extrude_identity_member(
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
         || u32_at(bytes, after_context_id)? != 2
-        || u32_at(bytes, tail_slot_offset + 1)? != 0
-        || after_context_id.checked_add(9)? != start.checked_add(190)?
     {
         return None;
     }
-    let next_at = start.checked_add(190)?;
+    let next_at = if u32_at(bytes, tail_slot_offset + 1) == Some(0)
+        && after_context_id.checked_add(9)? == start.checked_add(190)?
+    {
+        start.checked_add(190)?
+    } else if bytes.get(tail_slot_offset + 1..tail_slot_offset + 4)? == [0; 3] {
+        let mut cursor = tail_slot_offset.checked_add(4)?;
+        let (next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
+        let next_at = cursor;
+        let (_, after_next_tag) =
+            lp_ascii_filtered(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
+        if u32_at(bytes, after_next_tag)? != next_record_index {
+            return None;
+        }
+        next_at
+    } else {
+        return None;
+    };
     let (_, after_next_tag) = lp_ascii_filtered(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
     Some(ParsedExtrudeIdentityMember {
         local_id,
