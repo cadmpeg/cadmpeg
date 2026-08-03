@@ -1,5 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! CATIA-native ownership and design records retained outside the neutral model.
+//!
+//! This module is one closed native representation: [`CatiaNative`], its arena
+//! projection, the family catalogue, and the decode/load path that fills every
+//! arena together under one schema version. Byte parsers already live in
+//! `families/*`, `legacy_entity`, `object_graph`, `entity_table`, `catalog`, and
+//! `value_block`. The adapters here project those parses into arena rows and
+//! validate them; they are not independent native domains. Keep type,
+//! projection, and validation for each family adjacent inside this file rather
+//! than mirroring the family tree under `native/`.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
