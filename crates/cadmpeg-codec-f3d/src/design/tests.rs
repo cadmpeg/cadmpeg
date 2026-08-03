@@ -19136,6 +19136,126 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         construction.carrier_transform_offset,
         carrier_transform_at as u64
     );
+
+    for (frame_length, paired_class_tag, transform_at, relation_at, expanded_prologue) in [
+        (381_usize, "261", 49_usize, 38_usize, true),
+        (395, "258", 46, 34, false),
+    ] {
+        let mut legacy = bytes[..scope_at].to_vec();
+        legacy.resize(scope_at + frame_length, 0);
+        legacy[scope_at..scope_at + 4].copy_from_slice(&3_u32.to_le_bytes());
+        legacy[scope_at + 4..scope_at + 7].copy_from_slice(b"451");
+        legacy[scope_at + 7..scope_at + 11].copy_from_slice(&30_u32.to_le_bytes());
+        if expanded_prologue {
+            legacy[scope_at + 20] = 1;
+            legacy[scope_at + 37] = 1;
+            legacy[scope_at + 48] = 1;
+        } else {
+            legacy[scope_at + 33] = 1;
+        }
+        legacy[scope_at + relation_at..scope_at + relation_at + 4]
+            .copy_from_slice(&20_u32.to_le_bytes());
+        if !expanded_prologue {
+            legacy[scope_at + transform_at - 2] = 1;
+        }
+        for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+            let at = scope_at + transform_at + ordinal * 8;
+            legacy[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        header(
+            &mut legacy,
+            paired_class_tag
+                .as_bytes()
+                .try_into()
+                .expect("three-byte tag"),
+            30,
+        );
+        let legacy_scope = DesignParameterScope {
+            frame_length: frame_length as u64,
+            paired_class_tag: paired_class_tag.into(),
+            paired_byte_offset: (scope_at + frame_length) as u64,
+            ..scope.clone()
+        };
+        let construction = exact_component_insert_construction(
+            &legacy,
+            &IndexedRecordOffsets::build(&legacy),
+            &legacy_scope,
+        )
+        .unwrap_or_else(|| panic!("{frame_length}-byte component insert construction"));
+        assert_eq!(
+            construction.transform_offset,
+            (scope_at + transform_at) as u64
+        );
+        assert_eq!(construction.transform, transform);
+    }
+
+    let push_utf16 = |bytes: &mut Vec<u8>, value: &str| {
+        bytes.extend_from_slice(&(value.encode_utf16().count() as u32).to_le_bytes());
+        bytes.extend(value.encode_utf16().flat_map(u16::to_le_bytes));
+    };
+    let mut legacy = Vec::new();
+    header(&mut legacy, b"288", 10);
+    legacy.resize(30, 0);
+    push_utf16(&mut legacy, "95cc7c78-04aa-4ffc-a36d-a512f02e0dda");
+    let legacy_role_at = legacy.len();
+    push_utf16(&mut legacy, role);
+    legacy.extend_from_slice(&[1, 2, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]);
+    push_utf16(&mut legacy, "96e2c767-721c-4c81-bbbc-8cc143d323fb");
+    legacy.push(0);
+    let asset_identity = "864a8a41-7ed8-4c94-8871-ee9e87ab7648_urn:asset";
+    push_utf16(&mut legacy, asset_identity);
+    legacy.push(0);
+    let legacy_carrier_transform_at = legacy.len();
+    for value in transform.into_iter().flatten() {
+        legacy.extend_from_slice(&value.to_le_bytes());
+    }
+    legacy.extend_from_slice(&[0; 4]);
+    push_utf16(&mut legacy, asset_identity);
+    legacy.extend_from_slice(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let legacy_relation_at = legacy.len();
+    header(&mut legacy, b"325", 20);
+    legacy.extend_from_slice(&[0; 10]);
+    for (ordinal, reference) in [10_u32, 11, 30].into_iter().enumerate() {
+        legacy.push(1);
+        legacy.extend_from_slice(&reference.to_le_bytes());
+        legacy.extend(std::iter::repeat_n(0, [8, 7, 6][ordinal]));
+    }
+    let legacy_scope_at = legacy.len();
+    header(&mut legacy, b"346", 30);
+    legacy.resize(legacy_scope_at + 381, 0);
+    legacy[legacy_scope_at + 20] = 1;
+    legacy[legacy_scope_at + 37] = 1;
+    legacy[legacy_scope_at + 38..legacy_scope_at + 42].copy_from_slice(&20_u32.to_le_bytes());
+    legacy[legacy_scope_at + 48] = 1;
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = legacy_scope_at + 49 + ordinal * 8;
+        legacy[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    header(&mut legacy, b"261", 30);
+    let legacy_scope = DesignParameterScope {
+        byte_offset: legacy_scope_at as u64,
+        frame_length: 381,
+        paired_class_tag: "261".into(),
+        paired_byte_offset: (legacy_scope_at + 381) as u64,
+        ..scope
+    };
+    let construction = exact_component_insert_construction(
+        &legacy,
+        &IndexedRecordOffsets::build(&legacy),
+        &legacy_scope,
+    )
+    .expect("class-288 legacy component insert construction");
+    assert_eq!(construction.neutron_role, role);
+    assert_eq!(
+        construction.neutron_role_offset,
+        (legacy_role_at + 4) as u64
+    );
+    assert_eq!(
+        construction.carrier_transform_offset,
+        legacy_carrier_transform_at as u64
+    );
+    assert_eq!(construction.relation_record_index, 20);
+    assert_eq!(legacy_relation_at + 57, legacy_scope_at);
 }
 
 #[test]

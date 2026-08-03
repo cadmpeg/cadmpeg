@@ -1092,20 +1092,34 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             Some(construction) => {
                 let relation =
                     records_by_index.get(&(native_stream, construction.relation_record_index));
+                let frame_matches_transform =
+                    match (scope.frame_length, scope.paired_class_tag.as_str()) {
+                        (399, "259") => {
+                            construction.transform_offset == scope.byte_offset.saturating_add(50)
+                        }
+                        (381, "261") => {
+                            construction.transform_offset == scope.byte_offset.saturating_add(49)
+                        }
+                        (395, "258") => {
+                            construction.transform_offset == scope.byte_offset.saturating_add(46)
+                        }
+                        _ => false,
+                    };
                 scope.kind == "Component Insert"
                     && scope.reference_members == [construction.relation_record_index]
                     && construction.carrier_record_index != construction.relation_record_index
                     && crate::bytes::is_guid_relaxed(&construction.neutron_role)
                     && design::decode::sketch::valid_sketch_transform(&construction.transform)
-                    && construction.transform_offset == scope.byte_offset + 50
+                    && frame_matches_transform
                     && construction.neutron_role_offset < construction.carrier_transform_offset
                     && relation.is_some_and(|relation| {
                         construction.carrier_transform_offset < relation.byte_offset
                     })
-                    && native.xref_references.iter().any(|reference| {
-                        reference.neutron_role == construction.neutron_role
-                            && reference.transform == Some(construction.transform)
-                    })
+                    && (native.xref_references.is_empty()
+                        || native.xref_references.iter().any(|reference| {
+                            reference.neutron_role == construction.neutron_role
+                                && reference.transform == Some(construction.transform)
+                        }))
             }
         };
         let copy_paste_component_link = match &scope.copy_paste_component_operation {
