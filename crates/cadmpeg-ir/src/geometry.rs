@@ -3342,7 +3342,7 @@ pub struct Pcurve {
     /// Four native booleans following the inline subtype scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_tail_flags: Option<[bool; 4]>,
-    /// Native parameter interval on which this pcurve is evaluated.
+    /// Directed native parameter interval on which this pcurve is evaluated.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parameter_range: Option<[f64; 2]>,
     /// Parameter-space fit tolerance following the solved UV cache.
