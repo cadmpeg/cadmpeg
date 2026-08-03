@@ -11226,6 +11226,21 @@ mod marker_tests {
             ["first", "second"]
         );
 
+        payload[curve_offset + 17..curve_offset + 21].copy_from_slice(&1u32.to_le_bytes());
+        payload[curve_offset + 56..curve_offset + 58].copy_from_slice(&0u16.to_le_bytes());
+        payload[curve_offset + 58..curve_offset + 60].copy_from_slice(&1u16.to_le_bytes());
+        assert!(current_referenced_compact_curve_uses_marker_roster(
+            &payload,
+            curve_offset
+        ));
+        assert_eq!(
+            coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+                .iter()
+                .map(|marker| marker.id.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
+
         payload = compact_104.clone();
         payload[curve_offset + 72..curve_offset + 104].fill(0);
         payload[curve_offset + 82..curve_offset + 84].copy_from_slice(&12u16.to_le_bytes());
@@ -43104,23 +43119,6 @@ fn coordinate_roster_curve_endpoint_markers<'a>(
         || extended_marker84_line_uses_point_roster(payload, offset)
             && marker_profile_curve_role(payload, offset) == Some(2)
             && payload.get(offset + 72..offset + 76) == Some(&[0x00, 0x00, 0x01, 0x00]);
-    let mut coordinates = markers
-        .iter()
-        .copied()
-        .filter(|marker| {
-            marker.feature_ref == curve.feature_ref
-                && (complete_entity_roster
-                    || marker.coordinates_m.is_some()
-                        && matches!(
-                            marker.kind,
-                            SketchInputKind::Point
-                                | SketchInputKind::ConstrainedPoint
-                                | SketchInputKind::LineOrCircle
-                                | SketchInputKind::Arc
-                        ))
-        })
-        .collect::<Vec<_>>();
-    coordinates.sort_unstable_by_key(|marker| marker.offset);
     let Some(endpoint_offset) = coordinate_roster_endpoint_offset(payload, offset) else {
         return Vec::new();
     };
@@ -43129,35 +43127,63 @@ fn coordinate_roster_curve_endpoint_markers<'a>(
         && payload.get(offset + 72..offset + 76) == Some(&[0x00, 0x00, 0x02, 0x00]))
         || current_identity_linked_wide_curve_uses_one_based_roster(payload, offset)
         || current_complete_roster;
-    let endpoint = |relative: usize| {
-        let index = usize::from(u16::from_le_bytes(
-            payload
-                .get(offset + relative..offset + relative + 2)?
-                .try_into()
-                .ok()?,
-        ));
-        let index = if one_based {
-            index.checked_sub(1)?
-        } else {
-            index
+    let resolve = |complete_entity_roster: bool, one_based: bool| {
+        let mut coordinates = markers
+            .iter()
+            .copied()
+            .filter(|marker| {
+                marker.feature_ref == curve.feature_ref
+                    && (complete_entity_roster
+                        || marker.coordinates_m.is_some()
+                            && matches!(
+                                marker.kind,
+                                SketchInputKind::Point
+                                    | SketchInputKind::ConstrainedPoint
+                                    | SketchInputKind::LineOrCircle
+                                    | SketchInputKind::Arc
+                            ))
+            })
+            .collect::<Vec<_>>();
+        coordinates.sort_unstable_by_key(|marker| marker.offset);
+        let endpoint = |relative: usize| {
+            let index = usize::from(u16::from_le_bytes(
+                payload
+                    .get(offset + relative..offset + relative + 2)?
+                    .try_into()
+                    .ok()?,
+            ));
+            let index = if one_based {
+                index.checked_sub(1)?
+            } else {
+                index
+            };
+            coordinates.get(index).copied().filter(|marker| {
+                marker.coordinates_m.is_some()
+                    && matches!(
+                        marker.kind,
+                        SketchInputKind::Point
+                            | SketchInputKind::ConstrainedPoint
+                            | SketchInputKind::LineOrCircle
+                            | SketchInputKind::Arc
+                    )
+            })
         };
-        coordinates.get(index).copied().filter(|marker| {
-            marker.coordinates_m.is_some()
-                && matches!(
-                    marker.kind,
-                    SketchInputKind::Point
-                        | SketchInputKind::ConstrainedPoint
-                        | SketchInputKind::LineOrCircle
-                        | SketchInputKind::Arc
-                )
+        let (Some(first), Some(second)) =
+            (endpoint(endpoint_offset), endpoint(endpoint_offset + 2))
+        else {
+            return None;
+        };
+        (first.id != second.id).then_some(vec![first, second])
+    };
+    resolve(complete_entity_roster, one_based)
+        .or_else(|| {
+            (current_complete_roster
+                && marker_native_code(payload, offset) == Some(1)
+                && compact_indexed_curve_record_end(payload, offset)
+                    == Some(CompactIndexedCurveRecordEnd::Marker84))
+            .then(|| resolve(false, false))
+            .flatten()
         })
-    };
-    let (Some(first), Some(second)) = (endpoint(endpoint_offset), endpoint(endpoint_offset + 2))
-    else {
-        return Vec::new();
-    };
-    (first.id != second.id)
-        .then_some(vec![first, second])
         .unwrap_or_default()
 }
 
