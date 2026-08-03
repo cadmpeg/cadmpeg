@@ -1661,10 +1661,10 @@ pub struct DesignParameterScope {
     /// Exact two-point construction carried by a `WorkAxis` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_axis_construction: Option<DesignWorkAxisConstruction>,
-    /// Exact row-major local-to-model frame carried by a `JointOrigin` scope.
+    /// Exact row-major local-to-model frame owned by a `JointOrigin` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub joint_origin_transform: Option<[[f64; 4]; 4]>,
-    /// Byte offset of the `JointOrigin` frame's explicit 16-f64 matrix.
+    /// Byte offset of the explicit 16-f64 matrix that defines the joint origin.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub joint_origin_transform_offset: Option<u64>,
     /// Construction record referenced by the `JointOrigin` frame.

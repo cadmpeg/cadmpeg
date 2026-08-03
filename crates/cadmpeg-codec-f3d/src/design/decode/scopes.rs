@@ -51,6 +51,7 @@ pub fn decode_parameter_scopes(
         let records = IndexedRecordOffsets::build(bytes);
         let stream_types =
             crate::design::decode::sketch::stream_types_by_entity(types, &entry.name);
+        let stream_scope_start = out.len();
         for header in parameter_scope_candidate_headers(bytes, &records) {
             let Some(mut scope) = parse_parameter_scope(bytes, &records, &header) else {
                 continue;
@@ -160,10 +161,105 @@ pub fn decode_parameter_scopes(
             scope.base_feature_construction = exact_base_feature_construction(bytes, &scope);
             out.push(scope);
         }
+        bind_joint_origin_frames_from_assemblies(bytes, &mut out[stream_scope_start..]);
     }
     out.sort_by_key(|scope| scope.id.clone());
     out.dedup_by_key(|scope| scope.id.clone());
     Ok(out)
+}
+
+pub(crate) fn bind_joint_origin_frames_from_assemblies(
+    bytes: &[u8],
+    scopes: &mut [DesignParameterScope],
+) {
+    let mut candidates = Vec::new();
+    for scope in scopes.iter() {
+        if scope.kind != "Assemble" {
+            continue;
+        }
+        if let Some(frames) = scope
+            .assembly_alignment
+            .as_ref()
+            .and_then(|alignment| alignment.operand_frames.as_ref())
+        {
+            for frame in frames {
+                candidates.push((
+                    frame.reference_record_index,
+                    frame.transform,
+                    frame.transform_offset,
+                    None,
+                ));
+            }
+        }
+        if let Some((joint_origin, frame)) = exact_single_joint_origin_frame(bytes, scope) {
+            candidates.push((
+                joint_origin,
+                frame.transform,
+                frame.transform_offset,
+                frame.reference,
+            ));
+        }
+    }
+    for scope in scopes
+        .iter_mut()
+        .filter(|scope| scope.kind == "JointOrigin" && scope.joint_origin_transform.is_none())
+    {
+        let mut matches = candidates
+            .iter()
+            .filter(|(record_index, ..)| *record_index == scope.record_index);
+        let Some((_, transform, transform_offset, reference)) = matches.next() else {
+            continue;
+        };
+        if matches.any(|(_, other_transform, _, other_reference)| {
+            other_transform != transform
+                || other_reference.map(|(record_index, _)| record_index)
+                    != reference.map(|(record_index, _)| record_index)
+        }) {
+            continue;
+        }
+        scope.joint_origin_transform = Some(*transform);
+        scope.joint_origin_transform_offset = Some(*transform_offset);
+        if let Some((record_index, offset)) = reference {
+            scope.joint_origin_reference = Some(*record_index);
+            scope.joint_origin_reference_offset = Some(*offset);
+        }
+    }
+}
+
+fn exact_single_joint_origin_frame(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<(u32, ScopePlacementFrame)> {
+    if scope.kind != "Assemble"
+        || scope.class_tag != "276"
+        || scope.paired_class_tag != "258"
+        || scope.frame_length != 604
+    {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset).ok()?;
+    if usize::try_from(scope.paired_byte_offset).ok()? != start.checked_add(604)?
+        || bytes.get(start + 11..start + 24)? != [0; 13]
+        || bytes.get(start + 29..start + 36)? != [0; 7]
+        || bytes.get(start + 169..start + 175)? != [0; 6]
+        || u32_at(bytes, start + 175)? != 1
+    {
+        return None;
+    }
+    let reference_record_index = marked_record_reference(bytes, start + 24)?;
+    let joint_origin_record_index = marked_record_reference(bytes, start + 164)?;
+    if reference_record_index == joint_origin_record_index {
+        return None;
+    }
+    let transform = rigid_transform_at(bytes, start + 36)?;
+    Some((
+        joint_origin_record_index,
+        ScopePlacementFrame {
+            transform,
+            transform_offset: u64::try_from(start + 36).ok()?,
+            reference: Some((reference_record_index, u64::try_from(start + 25).ok()?)),
+        },
+    ))
 }
 
 pub(crate) fn exact_surface_extend_operation(

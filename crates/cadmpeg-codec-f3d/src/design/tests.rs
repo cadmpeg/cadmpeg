@@ -31,11 +31,11 @@ use crate::design::decode::parameters::{
     parse_parameter_companion, parse_parameter_owner,
 };
 use crate::design::decode::scopes::{
-    exact_assembly_alignment, exact_base_feature_construction,
-    exact_circular_pattern_construction_with_owners, exact_combine_operation,
-    exact_component_insert_construction, exact_direct_face_operation, exact_draft_operation,
-    exact_fixed_chamfer_parameters, exact_fixed_extrude_parameters, exact_fixed_fillet_parameters,
-    exact_joint_origin_frame, exact_path_feature_construction,
+    bind_joint_origin_frames_from_assemblies, exact_assembly_alignment,
+    exact_base_feature_construction, exact_circular_pattern_construction_with_owners,
+    exact_combine_operation, exact_component_insert_construction, exact_direct_face_operation,
+    exact_draft_operation, exact_fixed_chamfer_parameters, exact_fixed_extrude_parameters,
+    exact_fixed_fillet_parameters, exact_joint_origin_frame, exact_path_feature_construction,
     exact_rectangular_pattern_construction, exact_ruled_surface_operation, exact_scale_operation,
     exact_solid_primitive, exact_surface_extend_operation, exact_surface_offset_operation,
     exact_surface_stitch_operation, exact_work_axis_construction, exact_work_plane_frame,
@@ -18966,11 +18966,76 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     .expect("legacy assembly alignment and operand frames");
     assert_eq!(axial_alignment.angle, 0.5);
     assert_eq!(axial_alignment.offset, [0.0, 0.0, 2.0]);
-    let axial_frames = axial_alignment.operand_frames.unwrap();
+    let axial_frames = axial_alignment.operand_frames.as_ref().unwrap();
     assert_eq!(axial_frames[0].reference_offset, 29);
     assert_eq!(axial_frames[0].transform_offset, 39);
     assert_eq!(axial_frames[1].reference_offset, 168);
     assert_eq!(axial_frames[1].transform_offset, 178);
+
+    let mut first_joint_origin = scope.clone();
+    first_joint_origin.kind = "JointOrigin".into();
+    first_joint_origin.record_index = 70;
+    first_joint_origin.reference_members.clear();
+    let mut second_joint_origin = first_joint_origin.clone();
+    second_joint_origin.record_index = 80;
+    let mut linked_assembly = axial_assembly_scope.clone();
+    linked_assembly.assembly_alignment = Some(axial_alignment.clone());
+    let mut linked_scopes = [linked_assembly, first_joint_origin, second_joint_origin];
+    bind_joint_origin_frames_from_assemblies(&axial_assembly_bytes, &mut linked_scopes);
+    assert_eq!(linked_scopes[1].joint_origin_transform_offset, Some(39));
+    assert_eq!(
+        linked_scopes[1].joint_origin_transform,
+        Some(axial_frames[0].transform)
+    );
+    assert_eq!(linked_scopes[2].joint_origin_transform_offset, Some(178));
+    assert_eq!(
+        linked_scopes[2].joint_origin_transform,
+        Some(axial_frames[1].transform)
+    );
+
+    let mut single_frame_bytes = vec![0_u8; 604];
+    single_frame_bytes[..11].copy_from_slice(&assembly_bytes[..11]);
+    single_frame_bytes[24] = 1;
+    single_frame_bytes[25..29].copy_from_slice(&90_u32.to_le_bytes());
+    single_frame_bytes[36..164].copy_from_slice(&assembly_bytes[40..168]);
+    single_frame_bytes[164] = 1;
+    single_frame_bytes[165..169].copy_from_slice(&91_u32.to_le_bytes());
+    single_frame_bytes[175..179].copy_from_slice(&1_u32.to_le_bytes());
+    let mut single_frame_assembly = scope.clone();
+    single_frame_assembly.class_tag = "276".into();
+    single_frame_assembly.paired_class_tag = "258".into();
+    single_frame_assembly.frame_length = 604;
+    single_frame_assembly.paired_byte_offset = 604;
+    single_frame_assembly.assembly_alignment = None;
+    let mut single_frame_joint_origin = scope.clone();
+    single_frame_joint_origin.kind = "JointOrigin".into();
+    single_frame_joint_origin.record_index = 91;
+    single_frame_joint_origin.reference_members.clear();
+    let mut single_frame_scopes = [single_frame_assembly, single_frame_joint_origin];
+    bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut single_frame_scopes);
+    assert_eq!(
+        single_frame_scopes[1].joint_origin_transform_offset,
+        Some(36)
+    );
+    assert_eq!(
+        single_frame_scopes[1].joint_origin_transform,
+        Some(axial_frames[0].transform)
+    );
+    assert_eq!(single_frame_scopes[1].joint_origin_reference, Some(90));
+    assert_eq!(
+        single_frame_scopes[1].joint_origin_reference_offset,
+        Some(25)
+    );
+
+    single_frame_bytes[175..179].copy_from_slice(&2_u32.to_le_bytes());
+    let mut invalid_joint_origin = single_frame_scopes[1].clone();
+    invalid_joint_origin.joint_origin_transform = None;
+    invalid_joint_origin.joint_origin_transform_offset = None;
+    invalid_joint_origin.joint_origin_reference = None;
+    invalid_joint_origin.joint_origin_reference_offset = None;
+    let mut invalid_single_frame_scopes = [single_frame_scopes[0].clone(), invalid_joint_origin];
+    bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut invalid_single_frame_scopes);
+    assert_eq!(invalid_single_frame_scopes[1].joint_origin_transform, None);
 
     let mut compact_bytes = assembly_bytes[..627].to_vec();
     compact_bytes.extend_from_slice(&3_u32.to_le_bytes());

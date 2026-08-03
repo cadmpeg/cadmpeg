@@ -1230,6 +1230,60 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .contains(&(native_stream, operation.opposite_angle_record_index))
             }
         };
+        let joint_origin_link = match (
+            scope.joint_origin_transform,
+            scope.joint_origin_transform_offset,
+            scope.joint_origin_reference,
+            scope.joint_origin_reference_offset,
+        ) {
+            (None, None, None, None) => true,
+            (Some(transform), Some(transform_offset), reference, reference_offset) => {
+                let inline = match (scope.frame_length, reference, reference_offset) {
+                    (385, None, None) => transform_offset == scope.byte_offset + 49,
+                    (336 | 347, Some(reference), Some(reference_offset)) => {
+                        transform_offset == scope.byte_offset + 60
+                            && reference_offset == scope.byte_offset + 46
+                            && scope.reference_members.contains(&reference)
+                    }
+                    _ => false,
+                };
+                let assembly_operand = native.design_parameter_scopes.iter().any(|assembly| {
+                    design_stream(&assembly.id) == native_stream
+                        && assembly.kind == "Assemble"
+                        && assembly
+                            .assembly_alignment
+                            .as_ref()
+                            .is_some_and(|alignment| {
+                                alignment.operand_frames.as_ref().is_some_and(|frames| {
+                                    frames.iter().any(|frame| {
+                                        frame.reference_record_index == scope.record_index
+                                            && frame.transform == transform
+                                            && frame.transform_offset == transform_offset
+                                    })
+                                })
+                            })
+                        && reference.is_none()
+                        && reference_offset.is_none()
+                });
+                let single_operand_assembly =
+                    native.design_parameter_scopes.iter().any(|assembly| {
+                        design_stream(&assembly.id) == native_stream
+                            && assembly.kind == "Assemble"
+                            && assembly.class_tag == "276"
+                            && assembly.paired_class_tag == "258"
+                            && assembly.frame_length == 604
+                            && transform_offset == assembly.byte_offset + 36
+                            && reference.is_some_and(|reference| {
+                                assembly.reference_members.contains(&reference)
+                            })
+                            && reference_offset == Some(assembly.byte_offset + 25)
+                    });
+                scope.kind == "JointOrigin"
+                    && design::decode::sketch::valid_sketch_transform(&transform)
+                    && (inline || assembly_operand || single_operand_assembly)
+            }
+            _ => false,
+        };
         let valid = scope.class_tag.len() == 3
             && scope.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && scope.paired_class_tag.len() == 3
@@ -1483,6 +1537,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && component_insert_link
             && copy_paste_component_link
             && draft_link
+            && joint_origin_link
             && (scope.kind != "Sketch"
                 || placements_by_scope.contains_key(&(native_stream, scope.record_index)))
             && unique_index;
