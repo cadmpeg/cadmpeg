@@ -1843,6 +1843,7 @@ pub(crate) fn parse_entity_selection_operand(
         secondary_identity_offset: secondary_identity_offset
             .and_then(|offset| u64::try_from(offset).ok()),
         historical_edge_candidates: Vec::new(),
+        historical_face_candidates: Vec::new(),
         resolved_edge_slot: None,
         next_record_index,
         next_byte_offset: u64::try_from(next_at).ok()?,

@@ -1279,9 +1279,11 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             );
             crate::history::bind_feature_face_selections(
                 &mut ir.model.features,
+                &mut ir.model.feature_input_topologies,
                 &native.design_parameter_scopes,
                 &native.design_construction_operand_groups,
                 &native.design_face_operands,
+                &native.design_entity_selection_operands,
                 &native.design_body_recipe_operands,
                 &native.asm_histories,
             );
@@ -1680,9 +1682,11 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     );
     crate::history::bind_feature_face_selections(
         &mut ir.model.features,
+        &mut ir.model.feature_input_topologies,
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
         &native.design_face_operands,
+        &native.design_entity_selection_operands,
         &native.design_body_recipe_operands,
         &native.asm_histories,
     );

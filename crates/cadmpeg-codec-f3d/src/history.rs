@@ -1132,11 +1132,16 @@ fn body_revision_without_topology_change(
     Some(body)
 }
 
+// Each slice is a distinct decoded arena or mutable IR arena; grouping them
+// would hide the binding contract without reducing its state dependencies.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn bind_feature_face_selections(
     features: &mut [cadmpeg_ir::features::Feature],
+    input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
     scopes: &[crate::records::DesignParameterScope],
     groups: &[crate::records::DesignConstructionOperandGroup],
     operands: &[crate::records::DesignFaceOperand],
+    entity_operands: &[crate::records::DesignEntitySelectionOperand],
     body_recipe_operands: &[crate::records::DesignBodyRecipeOperand],
     histories: &[AsmHistory],
 ) {
@@ -1156,7 +1161,7 @@ pub(crate) fn bind_feature_face_selections(
         else {
             continue;
         };
-        let Some((_history, state, previous)) =
+        let Some((history, state, previous)) =
             unique_history_state_pair(histories, state_id, previous_state_id)
         else {
             continue;
@@ -1175,6 +1180,16 @@ pub(crate) fn bind_feature_face_selections(
             cadmpeg_ir::features::FeatureDefinition::Extrude { start, extent, .. } => {
                 if let cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } = start {
                     bind_face_selection(face, scope, groups, operands);
+                    bind_entity_face_selection(
+                        face,
+                        &feature_id,
+                        previous_state_id,
+                        &history.id,
+                        scope,
+                        groups,
+                        entity_operands,
+                        input_topologies,
+                    );
                 }
                 let sides = match extent {
                     cadmpeg_ir::features::ExtrudeExtent::OneSided { side }
@@ -1208,6 +1223,99 @@ pub(crate) fn bind_feature_face_selections(
             _ => {}
         }
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn bind_entity_face_selection(
+    selection: &mut cadmpeg_ir::features::FaceSelection,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+    previous_state_id: i64,
+    operation_history_id: &str,
+    scope: &crate::records::DesignParameterScope,
+    groups: &[crate::records::DesignConstructionOperandGroup],
+    operands: &[crate::records::DesignEntitySelectionOperand],
+    input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
+) {
+    use cadmpeg_ir::features::FaceSelection;
+
+    let FaceSelection::Native(group_id) = selection else {
+        return;
+    };
+    let stream = crate::ids::native_stream(&scope.id);
+    let mut matching_groups = groups.iter().filter(|group| {
+        group.id == *group_id
+            && group.scope_record_index == scope.record_index
+            && crate::ids::native_stream(&group.id) == stream
+    });
+    let Some(group) = matching_groups.next() else {
+        return;
+    };
+    if matching_groups.next().is_some() || group.members.is_empty() {
+        return;
+    }
+    let mut selected = Vec::<(&str, i64, bool)>::new();
+    for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+        let Ok(ordinal) = u32::try_from(ordinal) else {
+            return;
+        };
+        let mut matches = operands.iter().filter(|operand| {
+            operand.scope_record_index == scope.record_index
+                && operand.group_record_index == group.record_index
+                && operand.group_member_ordinal == ordinal
+                && operand.record_index == record_index
+                && crate::ids::native_stream(&operand.id) == stream
+        });
+        let Some(operand) = matches.next() else {
+            return;
+        };
+        let [candidate] = operand.historical_face_candidates.as_slice() else {
+            return;
+        };
+        if matches.next().is_some() {
+            return;
+        }
+        let local = candidate.history_id == operation_history_id
+            && candidate.historical_state_ids.contains(&previous_state_id);
+        let Some(source) = historical_brep_source(&candidate.history_id) else {
+            return;
+        };
+        if !selected.contains(&(source, candidate.face_slot, local)) {
+            selected.push((source, candidate.face_slot, local));
+        }
+    }
+    let state_id =
+        crate::design::edge_resolve::feature_input_topology_id(feature_id, previous_state_id);
+    let mut topologies = input_topologies
+        .iter_mut()
+        .filter(|topology| topology.id == state_id && topology.input_of == *feature_id);
+    let Some(topology) = topologies.next() else {
+        return;
+    };
+    if topologies.next().is_some() {
+        return;
+    }
+    let prefix = feature_input_prefix(feature_id, previous_state_id);
+    let faces = selected
+        .into_iter()
+        .map(|(source, face, local)| {
+            let discriminator = if local {
+                face.to_string()
+            } else {
+                format!("{}:{source}:{face}", source.len())
+            };
+            crate::ids::history_input_face_id(&prefix, discriminator)
+        })
+        .collect::<Vec<_>>();
+    for face in &faces {
+        if !topology.faces.contains(face) {
+            topology.faces.push(face.clone());
+        }
+    }
+    *selection = FaceSelection::Historical {
+        state: state_id,
+        faces,
+        native: group.id.clone(),
+    };
 }
 
 pub(crate) fn bind_feature_path_selections(
@@ -3740,7 +3848,10 @@ pub(crate) fn bind_entity_selection_history(
     );
     for operand in operands {
         operand.historical_edge_candidates.clear();
+        operand.historical_face_candidates.clear();
         operand.resolved_edge_slot = None;
+        operand.historical_face_candidates =
+            entity_selection_face_candidates(operand.primary_identity, histories);
         let stream = crate::ids::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
@@ -3780,6 +3891,47 @@ pub(crate) fn bind_entity_selection_history(
         operand.resolved_edge_slot =
             unique_entity_selection_edge(&operand.historical_edge_candidates);
     }
+}
+
+fn entity_selection_face_candidates(
+    local_id: u64,
+    histories: &[AsmHistory],
+) -> Vec<crate::records::DesignEntitySelectionFaceCandidate> {
+    use crate::records::DesignEntitySelectionFaceCandidate;
+
+    histories
+        .iter()
+        .filter_map(|history| {
+            let identities =
+                HistoricalIdentityIndex::build(std::slice::from_ref(history), [local_id]);
+            let (kind, entity_ref, state_ids) = identities.selection_identity_kind(local_id)?;
+            let mut face_slot = None;
+            for state_id in &state_ids {
+                let mut states = history
+                    .states
+                    .iter()
+                    .filter(|state| state.state_id == *state_id);
+                let state = states.next()?;
+                if states.next().is_some() {
+                    return None;
+                }
+                let topology = state.topology.as_ref()?;
+                let mut faces = historical_identity_faces(kind, entity_ref, topology).into_iter();
+                let state_face = faces.next()?;
+                if faces.next().is_some() || face_slot.is_some_and(|face| face != state_face) {
+                    return None;
+                }
+                face_slot = Some(state_face);
+            }
+            Some(DesignEntitySelectionFaceCandidate {
+                history_id: history.id.clone(),
+                historical_entity_kind: kind,
+                historical_entity_ref: entity_ref,
+                historical_state_ids: state_ids,
+                face_slot: face_slot?,
+            })
+        })
+        .collect()
 }
 
 fn entity_selection_edge_candidates(
@@ -4173,6 +4325,78 @@ fn historical_identity_edges(
         | AsmHistoricalEntityKind::Surface => {}
     }
     candidates
+}
+
+fn historical_identity_faces(
+    kind: AsmHistoricalEntityKind,
+    entity_ref: i64,
+    topology: &AsmHistoricalTopology,
+) -> HashSet<i64> {
+    let mut carriers = HashSet::new();
+    match kind {
+        AsmHistoricalEntityKind::Face => {
+            carriers.insert(entity_ref);
+            return carriers;
+        }
+        AsmHistoricalEntityKind::Loop => {
+            carriers.insert(entity_ref);
+        }
+        AsmHistoricalEntityKind::Coedge => {
+            carriers.extend(
+                topology
+                    .loop_coedges
+                    .iter()
+                    .filter(|relation| relation.member_refs.contains(&entity_ref))
+                    .map(|relation| relation.owner_ref),
+            );
+        }
+        AsmHistoricalEntityKind::Pcurve => {
+            let coedges = topology
+                .coedge_pcurves
+                .iter()
+                .filter(|binding| binding.carrier == Some(entity_ref))
+                .map(|binding| binding.entity)
+                .collect::<HashSet<_>>();
+            carriers.extend(
+                topology
+                    .loop_coedges
+                    .iter()
+                    .filter(|relation| {
+                        relation
+                            .member_refs
+                            .iter()
+                            .any(|coedge| coedges.contains(coedge))
+                    })
+                    .map(|relation| relation.owner_ref),
+            );
+        }
+        AsmHistoricalEntityKind::Surface => {
+            return topology
+                .face_surfaces
+                .iter()
+                .filter(|binding| binding.carrier == entity_ref)
+                .map(|binding| binding.entity)
+                .collect();
+        }
+        AsmHistoricalEntityKind::Body
+        | AsmHistoricalEntityKind::Region
+        | AsmHistoricalEntityKind::Shell
+        | AsmHistoricalEntityKind::Edge
+        | AsmHistoricalEntityKind::Vertex
+        | AsmHistoricalEntityKind::Point
+        | AsmHistoricalEntityKind::Curve => return HashSet::new(),
+    }
+    topology
+        .face_loops
+        .iter()
+        .filter(|relation| {
+            relation
+                .member_refs
+                .iter()
+                .any(|loop_| carriers.contains(loop_))
+        })
+        .map(|relation| relation.owner_ref)
+        .collect()
 }
 
 fn affected_body_refs(
@@ -6129,6 +6353,86 @@ mod tests {
             ]
         );
         assert_eq!(unique_entity_selection_edge(&candidates), Some(17));
+    }
+
+    #[test]
+    fn entity_selection_face_proofs_preserve_history_namespaces() {
+        let state = |parent: &str, state_id, topology| AsmDeltaState {
+            id: format!("{parent}-state-{state_id}"),
+            parent: parent.into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: state_id,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            entity_versions: Vec::new(),
+            record_table_complete: true,
+            topology: Some(topology),
+            transition: None,
+        };
+        let history = |id: &str, state| AsmHistory {
+            id: id.into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
+            states: vec![state],
+        };
+        let unrelated = history(
+            "unrelated",
+            state(
+                "unrelated",
+                1,
+                AsmHistoricalTopology {
+                    points: vec![18044],
+                    ..AsmHistoricalTopology::default()
+                },
+            ),
+        );
+        let selected = history(
+            "selected",
+            state(
+                "selected",
+                2,
+                AsmHistoricalTopology {
+                    faces: vec![30],
+                    loops: vec![20],
+                    coedges: vec![10],
+                    pcurves: vec![18044],
+                    face_loops: vec![AsmHistoricalRelation {
+                        owner_ref: 30,
+                        member_refs: vec![20],
+                    }],
+                    loop_coedges: vec![AsmHistoricalRelation {
+                        owner_ref: 20,
+                        member_refs: vec![10],
+                    }],
+                    coedge_pcurves: vec![AsmHistoricalOptionalCarrierBinding {
+                        entity: 10,
+                        carrier: Some(18044),
+                    }],
+                    ..AsmHistoricalTopology::default()
+                },
+            ),
+        );
+
+        assert_eq!(
+            entity_selection_face_candidates(18044, &[unrelated, selected]),
+            [crate::records::DesignEntitySelectionFaceCandidate {
+                history_id: "selected".into(),
+                historical_entity_kind: AsmHistoricalEntityKind::Pcurve,
+                historical_entity_ref: 18044,
+                historical_state_ids: vec![2],
+                face_slot: 30,
+            }]
+        );
     }
 
     #[test]

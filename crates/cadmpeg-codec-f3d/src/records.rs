@@ -2526,6 +2526,9 @@ pub struct DesignEntitySelectionOperand {
     /// Input-state edge proofs derived from the two serialized identities.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub historical_edge_candidates: Vec<DesignEntitySelectionEdgeCandidate>,
+    /// History-qualified face proofs derived from the primary identity.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub historical_face_candidates: Vec<DesignEntitySelectionFaceCandidate>,
     /// Unique input-state edge selected by every available identity proof.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_edge_slot: Option<i64>,
@@ -2533,6 +2536,21 @@ pub struct DesignEntitySelectionOperand {
     pub next_record_index: u32,
     /// Byte offset of the indexed record immediately following the identity record.
     pub next_byte_offset: u64,
+}
+
+/// Face proof for one persistent identity in one ASM history namespace.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignEntitySelectionFaceCandidate {
+    /// Native ASM history containing the selected identity.
+    pub history_id: String,
+    /// Stable ASM family containing the selected identity.
+    pub historical_entity_kind: AsmHistoricalEntityKind,
+    /// Stable ASM entity slot after record-revision normalization.
+    pub historical_entity_ref: i64,
+    /// States in this history that contain the selected identity revision.
+    pub historical_state_ids: Vec<i64>,
+    /// Face incident to the identity in every listed state.
+    pub face_slot: i64,
 }
 
 /// Historical edge proof carried by one nested entity-selection identity.

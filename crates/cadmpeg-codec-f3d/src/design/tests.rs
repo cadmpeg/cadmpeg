@@ -5869,6 +5869,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         secondary_identity: Some(164),
         secondary_identity_offset: Some(31_208),
         historical_edge_candidates: Vec::new(),
+        historical_face_candidates: Vec::new(),
         resolved_edge_slot: None,
         next_record_index: profile_carrier.record_index,
         next_byte_offset: profile_carrier.byte_offset,
