@@ -37261,7 +37261,7 @@ fn profile_owns_intervening_sketch_blocks<'a>(
     instance_count == 1 && definitions.len() == 1 && referenced_definitions == definitions
 }
 
-fn is_dissected_profile_feature(feature: &crate::records::Feature) -> bool {
+pub(crate) fn is_dissected_profile_feature(feature: &crate::records::Feature) -> bool {
     feature.properties.get("Description") == Some(&feature.name)
         && feature
             .name

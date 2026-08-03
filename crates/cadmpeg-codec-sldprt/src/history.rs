@@ -4999,6 +4999,91 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn dissected_sketch_alias_inherits_an_omitted_profile_class() {
+        use cadmpeg_ir::features::{Feature as NeutralFeature, FeatureDefinition};
+        use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
+
+        let mut owner = feature("owner-native", Some("63"), 0);
+        owner.xml_tag = "Sketch".into();
+        owner.name = "Sketch1".into();
+        owner.kind = "Sketch".into();
+        owner.input_class = Some("moProfileFeature_c".into());
+        owner.parameters.insert("D1".into(), "10".into());
+        owner.content.push(FeatureContent::Dimension("D1".into()));
+        let mut alias = feature("alias-native", Some("85"), 1);
+        alias.xml_tag = "Sketch".into();
+        alias.name = "Sketch1<3>".into();
+        alias.kind = alias.name.clone();
+        alias
+            .properties
+            .insert("Description".into(), alias.name.clone());
+        alias.parameters = owner.parameters.clone();
+        alias.content = owner.content.clone();
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![owner, alias],
+        };
+        let neutral = |id: &str, name: &str, native_ref: &str, ordinal| NeutralFeature {
+            id: cadmpeg_ir::features::FeatureId(id.into()),
+            ordinal,
+            name: Some(name.into()),
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("Sketch".into()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch: None,
+            },
+            native_ref: Some(native_ref.into()),
+        };
+        let mut features = vec![
+            neutral("owner", "Sketch1", "owner-native", 0),
+            neutral("alias", "Sketch1<3>", "alias-native", 1),
+        ];
+        let sketch_id = SketchId("sketch".into());
+        let sketches = vec![Sketch {
+            id: sketch_id.clone(),
+            name: Some("Sketch1".into()),
+            configuration: None,
+            placement: SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            profiles: Vec::new(),
+            native_ref: None,
+        }];
+
+        bind_unique_sketch_feature(&mut features, &sketches, std::slice::from_ref(&history));
+        assert!(matches!(
+            features[0].definition,
+            FeatureDefinition::Sketch {
+                sketch: Some(ref sketch),
+                ..
+            } if sketch == &sketch_id
+        ));
+        assert_eq!(features[1].dependencies, [features[0].id.clone()]);
+
+        crate::resolved_features::project_dissected_sketches(&mut features, &sketches, &[history]);
+        assert!(matches!(
+            features[1].definition,
+            FeatureDefinition::TreeNode {
+                role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn configuration_spatial_sketch_state_reuses_shared_geometry_across_lanes() {
         use cadmpeg_ir::features::{
             ConfigurationFeatureState, DesignConfiguration, Feature as NeutralFeature,
@@ -5511,8 +5596,12 @@ pub fn bind_unique_sketch_feature(
                 let base_native = native_features.get(base_native_ref.as_str());
                 features[*base_index].name.as_deref() == Some(base_name)
                     && alias_native.zip(base_native).is_some_and(|(alias, base)| {
+                        let compatible_class = alias.input_class == base.input_class
+                            || (alias.input_class.is_none()
+                                && base.input_class.as_deref() == Some("moProfileFeature_c")
+                                && crate::resolved_features::is_dissected_profile_feature(alias));
                         alias.xml_tag == base.xml_tag
-                            && alias.input_class == base.input_class
+                            && compatible_class
                             && alias.parameters == base.parameters
                             && alias.content == base.content
                     })
