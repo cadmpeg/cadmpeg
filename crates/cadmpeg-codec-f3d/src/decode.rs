@@ -2634,7 +2634,7 @@ fn extend_related_design_records(
     native
         .design_record_headers
         .sort_by_key(|record| record.id.clone());
-    crate::design::decode::operands::bind_construction_operand_transforms(
+    crate::design::decode::operands::bind_construction_operand_trailing_records(
         scan,
         &mut native.design_construction_operand_groups,
         &native.design_record_headers,

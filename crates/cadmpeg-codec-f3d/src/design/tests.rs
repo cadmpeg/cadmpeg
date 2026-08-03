@@ -19,7 +19,7 @@ use crate::design::decode::operands::{
     assign_extrude_face_roles, bind_edge_operand_candidates, bind_extrude_selection_geometry,
     bind_extrude_selection_identities, bind_face_operand_candidates, bind_lost_edge_groups,
     decode_fillet_radius_groups, face_recipe_program_kind, has_typed_edge_treatment_group,
-    parse_body_recipe_operand, parse_construction_operand_group,
+    parse_body_recipe_operand, parse_construction_operand_flag, parse_construction_operand_group,
     parse_construction_operand_identity, parse_construction_operand_path,
     parse_construction_operand_transform, parse_construction_tracking_path, parse_edge_operand,
     parse_entity_selection_operand, parse_extrude_selection_group, parse_extrude_selection_member,
@@ -4717,6 +4717,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             trailing_record_indices: vec![202],
             trailing_record_offsets: vec![0],
             trailing_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
             opaque_index: 1,
             opaque_index_offset: 0,
             opaque_scalar: 0.0,
@@ -7326,6 +7327,29 @@ fn construction_operand_trailing_transform_has_exact_affine_frame() {
 }
 
 #[test]
+fn construction_operand_trailing_flag_has_exact_compact_frame() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"374");
+    bytes.extend_from_slice(&33602u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&[1, 1, 0]);
+    let header = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:record#33602".into(),
+        byte_offset: 0,
+        class_tag: "374".into(),
+        record_index: 33602,
+    };
+
+    let flag = parse_construction_operand_flag(&bytes, &header).expect("compact trailing flag");
+    assert!(flag.value);
+    assert_eq!(flag.value_offset, 22);
+
+    bytes[22] = 2;
+    assert!(parse_construction_operand_flag(&bytes, &header).is_none());
+}
+
+#[test]
 fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
     fn header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
         bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -7578,6 +7602,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
             trailing_record_indices: vec![300],
             trailing_record_offsets: vec![1043],
             trailing_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
             opaque_index: 180,
             opaque_index_offset: 1071,
             opaque_scalar: 0.125,
@@ -7682,6 +7707,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
             trailing_record_indices: vec![200],
             trailing_record_offsets: vec![943],
             trailing_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
             opaque_index: 1,
             opaque_index_offset: 971,
             opaque_scalar: 0.0,
@@ -7773,6 +7799,7 @@ fn body_recipe_operand_decodes_counted_reference_table() {
             trailing_record_indices: vec![200],
             trailing_record_offsets: vec![943],
             trailing_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
             opaque_index: 1,
             opaque_index_offset: 971,
             opaque_scalar: 0.0,
@@ -8601,6 +8628,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             trailing_record_indices: vec![91],
             trailing_record_offsets: vec![950],
             trailing_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
             opaque_index: 1,
             opaque_index_offset: 968,
             opaque_scalar: 0.0,
@@ -9323,6 +9351,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             trailing_record_indices: vec![91],
             trailing_record_offsets: vec![935],
             trailing_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
             opaque_index: 1,
             opaque_index_offset: 954,
             opaque_scalar: 0.0,
@@ -14752,6 +14781,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             trailing_record_indices: vec![300],
             trailing_record_offsets: vec![1044],
             trailing_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
             opaque_index: 180,
             opaque_index_offset: 1072,
             opaque_scalar: 0.125,
@@ -15544,6 +15574,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                 trailing_record_indices: vec![record_index + 1],
                 trailing_record_offsets: vec![1_050 + u64::from(scope_reference_ordinal)],
                 trailing_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
                 opaque_index: 100,
                 opaque_index_offset: 1_068 + u64::from(scope_reference_ordinal),
                 opaque_scalar: 0.5,
@@ -16249,6 +16280,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             trailing_record_indices: vec![300 + ordinal],
             trailing_record_offsets: vec![1100 + u64::from(ordinal) * 200],
             trailing_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
             opaque_index: 100,
             opaque_index_offset: 1128 + u64::from(ordinal) * 200,
             opaque_scalar: 0.5,

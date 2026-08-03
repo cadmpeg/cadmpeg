@@ -11027,6 +11027,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             trailing_record_indices: vec![31],
             trailing_record_offsets: vec![440],
             trailing_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
             opaque_index: 1,
             opaque_index_offset: 460,
             opaque_scalar: 0.5,

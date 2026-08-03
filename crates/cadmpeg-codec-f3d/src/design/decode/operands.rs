@@ -1084,6 +1084,7 @@ pub(crate) fn parse_construction_operand_group(
             trailing_record_indices,
             trailing_record_offsets,
             trailing_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
             opaque_index,
             opaque_index_offset,
             opaque_scalar,
@@ -1099,8 +1100,8 @@ pub(crate) fn parse_construction_operand_group(
     }))
 }
 
-/// Bind exact affine-transform records selected by construction groups.
-pub fn bind_construction_operand_transforms(
+/// Bind exact typed records selected by construction-group trailing runs.
+pub fn bind_construction_operand_trailing_records(
     scan: &ContainerScan,
     groups: &mut [DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
@@ -1111,6 +1112,7 @@ pub fn bind_construction_operand_transforms(
         .collect::<HashMap<_, _>>();
     for group in groups {
         group.frame.trailing_transforms.clear();
+        group.frame.trailing_flags.clear();
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
@@ -1128,10 +1130,37 @@ pub fn bind_construction_operand_transforms(
             };
             if let Some(transform) = parse_construction_operand_transform(bytes, header) {
                 group.frame.trailing_transforms.push(transform);
+            } else if let Some(flag) = parse_construction_operand_flag(bytes, header) {
+                group.frame.trailing_flags.push(flag);
             }
         }
     }
     Ok(())
+}
+
+pub(crate) fn parse_construction_operand_flag(
+    bytes: &[u8],
+    header: &DesignRecordHeader,
+) -> Option<crate::records::DesignConstructionOperandFlag> {
+    let start = usize::try_from(header.byte_offset).ok()?;
+    if bytes.get(start + 11..start + 21)? != [0; 10]
+        || bytes.get(start + 21) != Some(&1)
+        || bytes.get(start + 23) != Some(&0)
+    {
+        return None;
+    }
+    let value = match bytes.get(start + 22)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    Some(crate::records::DesignConstructionOperandFlag {
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        value,
+        value_offset: u64::try_from(start + 22).ok()?,
+    })
 }
 
 /// Bind exact persistent-entity path records selected by construction groups.

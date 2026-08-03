@@ -2199,6 +2199,9 @@ pub struct DesignConstructionOperandGroupFrame {
     /// offsets and can select another typed grammar.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub trailing_transforms: Vec<DesignConstructionOperandTransform>,
+    /// Exact compact flag records selected from the trailing-reference run.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub trailing_flags: Vec<DesignConstructionOperandFlag>,
     /// Opaque ordinal: nonzero and below 256, repeated after `opaque_scalar` in
     /// every container generation but one.
     pub opaque_index: u32,
@@ -2210,6 +2213,21 @@ pub struct DesignConstructionOperandGroupFrame {
     pub opaque_scalar_offset: u64,
     /// Boolean tail variant.
     pub variant: bool,
+}
+
+/// Compact boolean record named by a construction-operand group's trailing run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignConstructionOperandFlag {
+    /// Indexed flag-record identity.
+    pub record_index: u32,
+    /// Flag-record header byte offset.
+    pub byte_offset: u64,
+    /// Per-file dynamic flag-record class tag.
+    pub class_tag: String,
+    /// Stored boolean value.
+    pub value: bool,
+    /// Byte offset of the stored boolean.
+    pub value_offset: u64,
 }
 
 /// Affine placement named by a construction-operand group's trailing run.

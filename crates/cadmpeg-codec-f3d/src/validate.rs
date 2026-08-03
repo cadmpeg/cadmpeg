@@ -488,19 +488,20 @@ fn validate_body_bindings(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && binding.blob_name.starts_with("BREP.")
             && binding.blob_name_offset > binding.entity_suffix_offset
             && binding.body.as_ref().is_none_or(|body| {
-                let has_named_source = native
-                    .body_native_keys
-                    .iter()
-                    .any(|key| key.source_brep.as_deref() == Some(binding.blob_name.as_str()));
+                let has_named_source = native.body_native_keys.iter().any(|key| {
+                    ids::same_native_occurrence(&key.id, &binding.id)
+                        && key.source_brep.as_deref() == Some(binding.blob_name.as_str())
+                });
                 let source_keys = native
                     .body_native_keys
                     .iter()
                     .filter(|key| {
-                        if has_named_source {
-                            key.source_brep.as_deref() == Some(binding.blob_name.as_str())
-                        } else {
-                            key.source_brep.is_none()
-                        }
+                        ids::same_native_occurrence(&key.id, &binding.id)
+                            && if has_named_source {
+                                key.source_brep.as_deref() == Some(binding.blob_name.as_str())
+                            } else {
+                                key.source_brep.is_none()
+                            }
                     })
                     .collect::<Vec<_>>();
                 matches!(
@@ -1669,6 +1670,23 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 .collect::<HashSet<_>>()
                 .len()
                 == frame.trailing_transforms.len()
+            && frame.trailing_flags.iter().all(|flag| {
+                frame.trailing_record_indices.contains(&flag.record_index)
+                    && records_by_index
+                        .get(&(native_stream, flag.record_index))
+                        .is_some_and(|header| {
+                            header.byte_offset == flag.byte_offset
+                                && header.class_tag == flag.class_tag
+                        })
+                    && flag.value_offset == flag.byte_offset.saturating_add(22)
+            })
+            && frame
+                .trailing_flags
+                .iter()
+                .map(|flag| flag.record_index)
+                .collect::<HashSet<_>>()
+                .len()
+                == frame.trailing_flags.len()
             && frame.auxiliary_paths.iter().all(|path| {
                 frame.auxiliary_record_indices.contains(&path.record_index)
                     && records_by_index
@@ -1736,16 +1754,8 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 })
                         }
                         Some(records::DesignExtrudeOperandRole::Faces) => {
-                            matches!(
-                                (group.role, group.extrude_face_role),
-                                (
-                                    0x0000_0005_0000_0000,
-                                    Some(records::DesignExtrudeFaceRole::Start),
-                                ) | (
-                                    0x0000_0011_0000_0000,
-                                    Some(records::DesignExtrudeFaceRole::Termination),
-                                )
-                            )
+                            matches!(group.role, 0x0000_0005_0000_0000 | 0x0000_0011_0000_0000)
+                                && group.extrude_face_role.is_some()
                         }
                         None => false,
                     },
@@ -3150,13 +3160,24 @@ fn validate_operand_group_carriers<'a>(
                 });
         let has_exact_trailing_carrier = group.frame.trailing_record_indices.is_empty()
             || operand_identity_groups.contains(&(native_stream, group.record_index))
-            || (group.frame.trailing_transforms.len() == group.frame.trailing_record_indices.len()
+            || (group.frame.trailing_transforms.len() + group.frame.trailing_flags.len()
+                == group.frame.trailing_record_indices.len()
                 && group
                     .frame
-                    .trailing_transforms
+                    .trailing_record_indices
                     .iter()
-                    .zip(&group.frame.trailing_record_indices)
-                    .all(|(transform, record_index)| transform.record_index == *record_index));
+                    .all(|record_index| {
+                        group
+                            .frame
+                            .trailing_transforms
+                            .iter()
+                            .any(|transform| transform.record_index == *record_index)
+                            || group
+                                .frame
+                                .trailing_flags
+                                .iter()
+                                .any(|flag| flag.record_index == *record_index)
+                    }));
         let has_exact_member_carrier = operand_identity_groups
             .contains(&(native_stream, group.record_index))
             || has_exact_identity_members
@@ -3353,7 +3374,6 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             ))
             && (operand.secondary_identity.is_none()
                 || operand.next_record_index == operand.record_index.saturating_add(4))
-            && records_by_index.contains_key(&(native_stream, operand.next_record_index))
             && operand.next_byte_offset
                 == operand.identity_record_offset.saturating_add(
                     if operand.secondary_identity.is_some() {
