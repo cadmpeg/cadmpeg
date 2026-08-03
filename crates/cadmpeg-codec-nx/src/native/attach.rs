@@ -108,6 +108,7 @@ pub(crate) fn attach(
         group_nodes: &model.display_jt.display_jt_group_node_data,
         instance_nodes: &model.display_jt.display_jt_instance_nodes,
         transforms: &model.display_jt.display_jt_geometric_transform_attributes,
+        materials: &model.display_jt.display_jt_material_attributes,
         compressed_elements: &model.display_jt.display_jt_compressed_elements,
     })
     .unwrap_or_default();

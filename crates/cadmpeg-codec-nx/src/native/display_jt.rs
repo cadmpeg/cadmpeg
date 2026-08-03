@@ -6,7 +6,7 @@ use std::io::Read as _;
 use cadmpeg_codec_core::decode::{DecodeContext, ExpandSpec, View};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
-use cadmpeg_ir::SourceObjectAssociation;
+use cadmpeg_ir::{topology::Color, SourceObjectAssociation};
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
@@ -662,6 +662,8 @@ pub struct DisplayJtMaterialAttribute {
     pub state_flags: u8,
     /// Base-attribute field-inhibit flags.
     pub field_inhibit_flags: u32,
+    /// Material-record version.
+    pub version: u16,
     /// Material blending and vertex-color override flags.
     pub data_flags: u16,
     /// Ambient RGBA components.
@@ -1299,7 +1301,7 @@ pub(crate) fn parse_jt9_geometric_transform_body(
     Some((state_flags, field_inhibit_flags, stored_values_mask, matrix))
 }
 
-type ParsedJt9Material = (u8, u32, u16, [[f32; 4]; 4], f32, Option<f32>);
+type ParsedJt9Material = (u8, u32, u16, u16, [[f32; 4]; 4], f32, Option<f32>);
 
 pub(crate) fn parse_jt9_material_body(body: &[u8]) -> Option<ParsedJt9Material> {
     let base_version = u16::from_le_bytes(body.get(0..2)?.try_into().ok()?);
@@ -1354,6 +1356,7 @@ pub(crate) fn parse_jt9_material_body(body: &[u8]) -> Option<ParsedJt9Material> 
     Some((
         state_flags,
         field_inhibit_flags,
+        version,
         data_flags,
         colors,
         shininess,
@@ -3164,6 +3167,7 @@ pub fn display_jt_material_attributes(
             let Some((
                 state_flags,
                 field_inhibit_flags,
+                version,
                 data_flags,
                 colors,
                 shininess,
@@ -3178,6 +3182,7 @@ pub fn display_jt_material_attributes(
                 object_id: element.object_id,
                 state_flags,
                 field_inhibit_flags,
+                version,
                 data_flags,
                 ambient: colors[0],
                 diffuse: colors[1],
@@ -3414,6 +3419,9 @@ type DisplayJtMatrix = [[f64; 4]; 4];
 struct DisplayJtPath {
     matrix: DisplayJtMatrix,
     final_transform: bool,
+    diffuse: [Option<f32>; 4],
+    override_vertex_colors: Option<bool>,
+    final_material: bool,
     node_path: Vec<u32>,
     instance_path: Vec<String>,
 }
@@ -3435,7 +3443,53 @@ pub(crate) struct DisplayJtTessellationInputs<'a> {
     pub(crate) group_nodes: &'a [DisplayJtGroupNodeData],
     pub(crate) instance_nodes: &'a [DisplayJtInstanceNode],
     pub(crate) transforms: &'a [DisplayJtGeometricTransformAttribute],
+    pub(crate) materials: &'a [DisplayJtMaterialAttribute],
     pub(crate) compressed_elements: &'a [DisplayJtCompressedElement],
+}
+
+fn accumulate_display_jt_material(
+    path: &mut DisplayJtPath,
+    attribute: &DisplayJtMaterialAttribute,
+) {
+    const LEGACY_DIFFUSE: u32 = 1 << 1;
+    const OVERRIDE_VERTEX_COLORS: u32 = 1 << 5;
+    const DIFFUSE_RGB: u32 = 1 << 7;
+    const DIFFUSE_ALPHA: u32 = 1 << 8;
+    if attribute.state_flags & 0x04 != 0 || path.final_material && attribute.state_flags & 0x02 == 0
+    {
+        return;
+    }
+    let rgb_inhibited = match attribute.version {
+        1 => attribute.field_inhibit_flags & LEGACY_DIFFUSE != 0,
+        2 => attribute.field_inhibit_flags & DIFFUSE_RGB != 0,
+        _ => true,
+    };
+    let alpha_inhibited = match attribute.version {
+        1 => attribute.field_inhibit_flags & LEGACY_DIFFUSE != 0,
+        2 => attribute.field_inhibit_flags & DIFFUSE_ALPHA != 0,
+        _ => true,
+    };
+    if !rgb_inhibited {
+        for (target, component) in path.diffuse[..3].iter_mut().zip(attribute.diffuse) {
+            *target = Some(component);
+        }
+    }
+    if !alpha_inhibited {
+        path.diffuse[3] = Some(attribute.diffuse[3]);
+    }
+    if attribute.field_inhibit_flags & OVERRIDE_VERTEX_COLORS == 0 {
+        path.override_vertex_colors = Some(attribute.data_flags & 0x20 != 0);
+    }
+    path.final_material |= attribute.state_flags & 0x01 != 0;
+}
+
+fn display_jt_path_color(path: &DisplayJtPath) -> Option<Color> {
+    Some(Color {
+        r: path.diffuse[0]?,
+        g: path.diffuse[1]?,
+        b: path.diffuse[2]?,
+        a: path.diffuse[3]?,
+    })
 }
 
 fn multiply_jt_matrices(left: DisplayJtMatrix, right: DisplayJtMatrix) -> Option<DisplayJtMatrix> {
@@ -3453,12 +3507,13 @@ fn multiply_jt_matrices(left: DisplayJtMatrix, right: DisplayJtMatrix) -> Option
     Some(product)
 }
 
-fn resolve_display_jt_node_transform(
+fn resolve_display_jt_node_paths(
     object_id: u32,
     by_object: &BTreeMap<u32, &DisplayJtBaseNodeData>,
     parents: &BTreeMap<u32, Vec<u32>>,
     instance_ids: &BTreeMap<u32, String>,
     transforms: &[&DisplayJtGeometricTransformAttribute],
+    materials: &[&DisplayJtMaterialAttribute],
     visiting: &mut BTreeSet<u32>,
 ) -> Option<Vec<DisplayJtPath>> {
     let base = by_object.get(&object_id)?;
@@ -3478,6 +3533,9 @@ fn resolve_display_jt_node_transform(
                     [0.0, 0.0, 0.0, 1.0],
                 ],
                 final_transform: false,
+                diffuse: [None; 4],
+                override_vertex_colors: None,
+                final_material: false,
                 node_path: Vec::new(),
                 instance_path: Vec::new(),
             }])
@@ -3485,12 +3543,13 @@ fn resolve_display_jt_node_transform(
         |ids| {
             ids.iter()
                 .map(|id| {
-                    resolve_display_jt_node_transform(
+                    resolve_display_jt_node_paths(
                         *id,
                         by_object,
                         parents,
                         instance_ids,
                         transforms,
+                        materials,
                         visiting,
                     )
                 })
@@ -3502,22 +3561,34 @@ fn resolve_display_jt_node_transform(
     let mut results = Vec::new();
     for mut path in parent_states {
         for attribute_id in &base.attribute_object_ids {
-            let mut matching = transforms
+            let matching_transforms = transforms
                 .iter()
-                .filter(|attribute| attribute.object_id == *attribute_id);
-            let attribute = matching.next()?;
-            if matching.next().is_some() {
+                .filter(|attribute| attribute.object_id == *attribute_id)
+                .copied()
+                .collect::<Vec<_>>();
+            let matching_materials = materials
+                .iter()
+                .filter(|attribute| attribute.object_id == *attribute_id)
+                .copied()
+                .collect::<Vec<_>>();
+            if matching_transforms.len() > 1
+                || matching_materials.len() > 1
+                || !matching_transforms.is_empty() && !matching_materials.is_empty()
+            {
                 return None;
             }
-            if attribute.state_flags & 0x04 != 0 {
-                continue;
+            if let Some(attribute) = matching_transforms.first() {
+                if attribute.state_flags & 0x04 == 0
+                    && (!path.final_transform || attribute.state_flags & 0x02 != 0)
+                {
+                    let local = attribute.matrix.map(|row| row.map(f64::from));
+                    path.matrix = multiply_jt_matrices(local, path.matrix)?;
+                    path.final_transform |= attribute.state_flags & 0x01 != 0;
+                }
             }
-            if path.final_transform && attribute.state_flags & 0x02 == 0 {
-                continue;
+            if let Some(attribute) = matching_materials.first() {
+                accumulate_display_jt_material(&mut path, attribute);
             }
-            let local = attribute.matrix.map(|row| row.map(f64::from));
-            path.matrix = multiply_jt_matrices(local, path.matrix)?;
-            path.final_transform |= attribute.state_flags & 0x01 != 0;
         }
         if let Some(instance_id) = instance_ids.get(&object_id) {
             path.instance_path.push(instance_id.clone());
@@ -3528,7 +3599,7 @@ fn resolve_display_jt_node_transform(
     Some(results)
 }
 
-fn display_jt_node_transform(
+fn display_jt_node_paths(
     scene_segment: &str,
     shape_object_id: u32,
     inputs: &DisplayJtTessellationInputs<'_>,
@@ -3553,6 +3624,17 @@ fn display_jt_node_transform(
     by_object.get(&shape_object_id)?;
     let scoped_transforms = inputs
         .transforms
+        .iter()
+        .filter(|attribute| {
+            inputs
+                .compressed_elements
+                .iter()
+                .find(|element| element.id == attribute.element)
+                .is_some_and(|element| element.segment == scene_segment)
+        })
+        .collect::<Vec<_>>();
+    let scoped_materials = inputs
+        .materials
         .iter()
         .filter(|attribute| {
             inputs
@@ -3601,12 +3683,13 @@ fn display_jt_node_transform(
             parents.entry(child).or_default().push(*object_id);
         }
     }
-    resolve_display_jt_node_transform(
+    resolve_display_jt_node_paths(
         shape_object_id,
         &by_object,
         &parents,
         &instance_ids,
         &scoped_transforms,
+        &scoped_materials,
         &mut BTreeSet::new(),
     )
 }
@@ -3722,8 +3805,7 @@ pub(crate) fn display_jt_tessellations(
         if matching_nodes.next().is_some() {
             return None;
         }
-        let paths =
-            display_jt_node_transform(&binding.scene_segment, shape_node.object_id, inputs)?;
+        let paths = display_jt_node_paths(&binding.scene_segment, shape_node.object_id, inputs)?;
         let mut rendered = Vec::new();
         for ((polygon, attributes), &group) in mesh
             .polygons
@@ -3785,6 +3867,11 @@ pub(crate) fn display_jt_tessellations(
         }
         for path in paths {
             let transform = path.matrix;
+            let color = if color_array.is_none() || path.override_vertex_colors == Some(true) {
+                display_jt_path_color(&path)
+            } else {
+                None
+            };
             let instance_path = path.instance_path;
             let node_path = path
                 .node_path
@@ -3917,7 +4004,7 @@ pub(crate) fn display_jt_tessellations(
                         format: "nx".to_string(),
                         object_id: shape_node.id.clone(),
                         name: None,
-                        color: None,
+                        color,
                         visible: None,
                         layer: None,
                         instance_path,
@@ -4341,7 +4428,7 @@ mod tests {
             object_id: 9,
             version: 1,
             flags: 0,
-            attribute_object_ids: vec![10],
+            attribute_object_ids: vec![10, 13],
             family_data_byte_len: 0,
             family_data_sha256: "00".repeat(32),
             source_offset: 120,
@@ -4481,6 +4568,35 @@ mod tests {
             ],
             source_offset: 121,
         };
+        let material_element = DisplayJtCompressedElement {
+            id: "material-element".into(),
+            segment: "scene-segment".into(),
+            segment_type: 1,
+            ordinal: 5,
+            object_type_id: vec![0; 16],
+            object_base_type: 3,
+            object_id: 13,
+            body_byte_len: 0,
+            body_sha256: "00".repeat(32),
+            inflated_offset: 0,
+            source_offset: 126,
+        };
+        let material = DisplayJtMaterialAttribute {
+            id: "material".into(),
+            element: "material-element".into(),
+            object_id: 13,
+            state_flags: 0,
+            field_inhibit_flags: 0,
+            version: 1,
+            data_flags: 0x20,
+            ambient: [0.1, 0.1, 0.1, 1.0],
+            diffuse: [0.2, 0.3, 0.4, 0.5],
+            specular: [0.0, 0.0, 0.0, 1.0],
+            emission: [0.0, 0.0, 0.0, 1.0],
+            shininess: 1.0,
+            reflectivity: None,
+            source_offset: 126,
+        };
         let node = DisplayJtTriStripShapeNode {
             id: "shape-node".into(),
             base_node: "base".into(),
@@ -4575,12 +4691,14 @@ mod tests {
             group_nodes: &[group, ignored_group],
             instance_nodes: &[instance, second_instance],
             transforms: &[transform],
+            materials: &[material],
             compressed_elements: &[
                 compressed,
                 instance_element,
                 second_instance_element,
                 group_element,
                 ignored_group_element,
+                material_element,
             ],
         })
         .expect("complete scene binding");
@@ -4609,6 +4727,20 @@ mod tests {
                 .expect("required invariant")
                 .instance_path,
             ["instance-node"]
+        );
+        assert_eq!(
+            tessellations[0]
+                .0
+                .source_object
+                .as_ref()
+                .expect("required invariant")
+                .color,
+            Some(Color {
+                r: 0.2,
+                g: 0.3,
+                b: 0.4,
+                a: 0.5,
+            })
         );
         assert_eq!(
             tessellations[1]
@@ -4861,10 +4993,11 @@ mod tests {
         }
         body.extend_from_slice(&64.0_f32.to_le_bytes());
         body.extend_from_slice(&0.25_f32.to_le_bytes());
-        let (state, inhibit, flags, colors, shininess, reflectivity) =
+        let (state, inhibit, version, flags, colors, shininess, reflectivity) =
             super::parse_jt9_material_body(&body).expect("required invariant");
         assert_eq!(state, 0x02);
         assert_eq!(inhibit, 0x41);
+        assert_eq!(version, 2);
         assert_eq!(flags, 0x3990);
         assert_eq!(colors[1], [0.4, 0.5, 0.6, 0.75]);
         assert_eq!(shininess, 64.0);
@@ -4881,6 +5014,62 @@ mod tests {
         assert!(super::parse_jt9_material_body(&invalid).is_none());
         body.pop();
         assert!(super::parse_jt9_material_body(&body).is_none());
+    }
+
+    #[test]
+    fn display_jt_material_accumulation_respects_inhibit_final_and_force() {
+        let material = |diffuse, state_flags, field_inhibit_flags| DisplayJtMaterialAttribute {
+            id: "material".into(),
+            element: "element".into(),
+            object_id: 1,
+            state_flags,
+            field_inhibit_flags,
+            version: 2,
+            data_flags: 0,
+            ambient: [0.0, 0.0, 0.0, 1.0],
+            diffuse,
+            specular: [0.0, 0.0, 0.0, 1.0],
+            emission: [0.0, 0.0, 0.0, 1.0],
+            shininess: 1.0,
+            reflectivity: None,
+            source_offset: 0,
+        };
+        let mut path = super::DisplayJtPath {
+            matrix: [[0.0; 4]; 4],
+            final_transform: false,
+            diffuse: [None; 4],
+            override_vertex_colors: None,
+            final_material: false,
+            node_path: Vec::new(),
+            instance_path: Vec::new(),
+        };
+        super::accumulate_display_jt_material(
+            &mut path,
+            &material([0.1, 0.2, 0.3, 0.4], 0x01, 1 << 8),
+        );
+        assert_eq!(path.diffuse, [Some(0.1), Some(0.2), Some(0.3), None]);
+        assert!(path.final_material);
+
+        super::accumulate_display_jt_material(&mut path, &material([0.5, 0.6, 0.7, 0.8], 0, 0));
+        assert_eq!(path.diffuse, [Some(0.1), Some(0.2), Some(0.3), None]);
+
+        super::accumulate_display_jt_material(
+            &mut path,
+            &material([0.5, 0.6, 0.7, 0.8], 0x02, 1 << 7),
+        );
+        assert_eq!(path.diffuse, [Some(0.1), Some(0.2), Some(0.3), Some(0.8)]);
+        assert_eq!(
+            super::display_jt_path_color(&path),
+            Some(Color {
+                r: 0.1,
+                g: 0.2,
+                b: 0.3,
+                a: 0.8,
+            })
+        );
+
+        super::accumulate_display_jt_material(&mut path, &material([1.0; 4], 0x06, 0));
+        assert_eq!(path.diffuse, [Some(0.1), Some(0.2), Some(0.3), Some(0.8)]);
     }
 
     #[test]
