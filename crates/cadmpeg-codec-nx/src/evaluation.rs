@@ -186,6 +186,8 @@ fn rederived_body_census(
                     && !feature
                         .source_properties
                         .contains_key("primary_body_object_index") => {}
+            FeatureDefinition::Native { kind, .. }
+                if kind == "FSET" && feature.outputs.is_empty() => {}
             FeatureDefinition::Block {
                 dimensions: Some(dimensions),
                 placement: Some(placement),
@@ -237,6 +239,13 @@ fn rederived_body_census(
                     crate::decode::loft_definition_is_incomplete(feature),
                 )?;
             }
+            FeatureDefinition::Extrude {
+                op: BooleanOp::Unresolved | BooleanOp::Join | BooleanOp::Cut | BooleanOp::Intersect,
+                ..
+            } if matches!(feature.outputs.as_slice(), [output] if bodies.contains(output)) => {
+                preserve_in_place_single_output(feature, &bodies)?;
+            }
+            FeatureDefinition::Extrude { .. } if output_free_local_body_construction(feature) => {}
             FeatureDefinition::Extrude { op, .. } => {
                 apply_complete_boolean_outputs(
                     feature,
@@ -245,6 +254,7 @@ fn rederived_body_census(
                     crate::decode::extrude_definition_is_incomplete(feature),
                 )?;
             }
+            FeatureDefinition::Revolve { .. } if output_free_local_body_construction(feature) => {}
             FeatureDefinition::Revolve { op, .. } => {
                 apply_complete_boolean_outputs(
                     feature,
@@ -253,6 +263,7 @@ fn rederived_body_census(
                     crate::decode::revolve_definition_is_incomplete(feature),
                 )?;
             }
+            FeatureDefinition::Rib { .. } if output_free_local_body_construction(feature) => {}
             FeatureDefinition::Rib { op, .. } => {
                 apply_complete_boolean_outputs(
                     feature,
@@ -261,6 +272,7 @@ fn rederived_body_census(
                     crate::decode::rib_definition_is_incomplete(feature),
                 )?;
             }
+            FeatureDefinition::Sweep { .. } if output_free_local_body_construction(feature) => {}
             FeatureDefinition::Sweep { mode, .. } => {
                 let op = match mode {
                     cadmpeg_ir::features::SweepMode::Solid { op } => *op,
@@ -274,6 +286,7 @@ fn rederived_body_census(
                     crate::decode::sweep_definition_is_incomplete(feature),
                 )?;
             }
+            FeatureDefinition::BaseFeature { .. } if output_free_native_snapshot(feature) => {}
             FeatureDefinition::BaseFeature { bodies: selection }
             | FeatureDefinition::InsertBodies { bodies: selection } => {
                 let Some(selected) = explicit_body_selection(selection) else {
@@ -342,9 +355,16 @@ fn rederived_body_census(
             FeatureDefinition::Draft { .. } => {
                 preserve_in_place_single_output(feature, &bodies)?;
             }
+            FeatureDefinition::DraftUnresolved if output_free_local_body_construction(feature) => {}
             FeatureDefinition::ReplaceFace { .. } => {
                 preserve_in_place_single_output(feature, &bodies)?;
             }
+            FeatureDefinition::Combine { target, tools, .. }
+                if feature.outputs.is_empty()
+                    && complete_local_or_native_body_selection(target)
+                    && complete_local_or_native_body_selection(tools) => {}
+            FeatureDefinition::Combine { target, tools, .. }
+                if local_tool_combine_is_census_invariant(feature, target, tools, &bodies) => {}
             FeatureDefinition::Combine {
                 target,
                 tools,
@@ -444,8 +464,9 @@ fn is_body_neutral_feature(feature: &cadmpeg_ir::features::Feature) -> bool {
         ) || matches!(
             &feature.definition,
             FeatureDefinition::Native { kind, .. }
-                if kind == "DELETE"
-                    && !feature.source_properties.contains_key("primary_body_object_index")
+                if (kind == "DELETE"
+                    && !feature.source_properties.contains_key("primary_body_object_index"))
+                    || kind == "FSET"
         ))
 }
 
@@ -478,11 +499,49 @@ fn suppression_is_body_census_invariant(
         && matches!(&feature.definition, FeatureDefinition::TrimBodies { .. });
     let output_free_pattern = feature.outputs.is_empty()
         && matches!(&feature.definition, FeatureDefinition::Pattern { .. });
+    let output_free_combine = feature.outputs.is_empty()
+        && matches!(
+            &feature.definition,
+            FeatureDefinition::Combine { target, tools, .. }
+                if complete_local_or_native_body_selection(target)
+                    && complete_local_or_native_body_selection(tools)
+        );
+    let local_tool_combine = matches!(
+        &feature.definition,
+        FeatureDefinition::Combine { target, tools, .. }
+            if local_tool_combine_is_census_invariant(feature, target, tools, bodies)
+    );
+    let output_free_boolean_construction = output_free_local_body_construction(feature)
+        && matches!(
+            &feature.definition,
+            FeatureDefinition::Extrude { .. }
+                | FeatureDefinition::Revolve { .. }
+                | FeatureDefinition::Rib { .. }
+                | FeatureDefinition::Sweep { .. }
+        );
+    let in_place_unresolved_extrude = feature.outputs.len() == 1
+        && bodies.contains(&feature.outputs[0])
+        && matches!(
+            &feature.definition,
+            FeatureDefinition::Extrude {
+                op: BooleanOp::Unresolved | BooleanOp::Join | BooleanOp::Cut | BooleanOp::Intersect,
+                ..
+            }
+        );
+    let output_free_local_in_place = output_free_local_body_construction(feature)
+        && matches!(&feature.definition, FeatureDefinition::DraftUnresolved);
+    let output_free_snapshot = output_free_native_snapshot(feature);
     deletes_only_local_bodies
         || extracts_only_local_bodies
         || sews_only_local_bodies
         || output_free_trim
         || output_free_pattern
+        || output_free_combine
+        || local_tool_combine
+        || output_free_boolean_construction
+        || in_place_unresolved_extrude
+        || output_free_local_in_place
+        || output_free_snapshot
         || ((feature.outputs.is_empty()
             || (feature.outputs.len() == 1 && bodies.contains(&feature.outputs[0])))
             && matches!(
@@ -500,6 +559,70 @@ fn suppression_is_body_census_invariant(
                     | FeatureDefinition::Draft { .. }
                     | FeatureDefinition::ReplaceFace { .. }
             ))
+}
+
+fn output_free_local_body_construction(feature: &cadmpeg_ir::features::Feature) -> bool {
+    feature.outputs.is_empty()
+        && feature
+            .source_properties
+            .iter()
+            .filter(|(key, _)| key.starts_with("body_reference."))
+            .try_fold(0usize, |count, (_, value)| {
+                value.parse::<u32>().ok().map(|_| count + 1)
+            })
+            .is_some_and(|count| count > 0)
+}
+
+fn output_free_native_snapshot(feature: &cadmpeg_ir::features::Feature) -> bool {
+    feature.outputs.is_empty()
+        && feature.name.as_deref() == Some("MASTER SNAPSHOT BODY")
+        && matches!(
+            &feature.definition,
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Unresolved
+            }
+        )
+        && feature
+            .source_properties
+            .get("operation_record")
+            .is_some_and(|record| !record.trim().is_empty())
+}
+
+fn complete_local_or_native_body_selection(selection: &BodySelection) -> bool {
+    match selection {
+        BodySelection::Local { .. } => complete_local_body_selection(selection),
+        BodySelection::Native(native) => !native.trim().is_empty(),
+        BodySelection::NativeSet(native) => {
+            !native.is_empty()
+                && native.iter().all(|body| !body.trim().is_empty())
+                && native.iter().collect::<BTreeSet<_>>().len() == native.len()
+        }
+        _ => false,
+    }
+}
+
+fn local_tool_combine_is_census_invariant(
+    feature: &cadmpeg_ir::features::Feature,
+    target: &BodySelection,
+    tools: &BodySelection,
+    bodies: &BTreeSet<BodyId>,
+) -> bool {
+    let Some([target]) = explicit_body_selection(target) else {
+        return false;
+    };
+    let BodySelection::Local {
+        bodies: local_tools,
+        native,
+    } = tools
+    else {
+        return false;
+    };
+    feature.outputs.as_slice() == std::slice::from_ref(target)
+        && bodies.contains(target)
+        && !native.trim().is_empty()
+        && !local_tools.is_empty()
+        && local_tools.iter().all(|tool| !tool.trim().is_empty())
+        && local_tools.iter().collect::<BTreeSet<_>>().len() == local_tools.len()
 }
 
 /// Validate the exact body-identity effect of an in-place edit independently
@@ -1242,6 +1365,27 @@ mod tests {
     }
 
     #[test]
+    fn unresolved_extrude_preserves_an_existing_output_without_construction_replay() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        let mut extrude = complete_extrude_feature(
+            "extrude",
+            1,
+            FeatureId("missing-profile".to_string()),
+            vec![body.clone()],
+            BooleanOp::Unresolved,
+        );
+        extrude.suppressed = None;
+        extrude.dependencies.clear();
+        ir.model.features.push(extrude);
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: vec![body] }
+        );
+    }
+
+    #[test]
     fn profile_driven_families_report_incomplete_construction_before_lineage() {
         let definitions = [
             FeatureDefinition::Loft {
@@ -1721,6 +1865,86 @@ mod tests {
             BodyCensusEvaluation::Verified {
                 bodies: vec![target, tool]
             }
+        );
+    }
+
+    #[test]
+    fn combine_with_exact_local_tools_preserves_its_retained_target() {
+        let mut ir = complete_block_ir();
+        let target = ir.model.bodies[0].id.clone();
+        let mut combine = body_preserving_feature(
+            "combine",
+            1,
+            target.clone(),
+            FeatureDefinition::Combine {
+                target: BodySelection::Bodies(vec![target.clone()]),
+                tools: BodySelection::Local {
+                    bodies: vec!["local-tool".to_string()],
+                    native: "native-tools".to_string(),
+                },
+                op: BooleanOp::Cut,
+                keep_tools: false,
+            },
+        );
+        combine.suppressed = None;
+        ir.model.features.push(combine);
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified {
+                bodies: vec![target]
+            }
+        );
+    }
+
+    #[test]
+    fn combine_with_invalid_local_tool_identity_is_not_admitted() {
+        let mut ir = complete_block_ir();
+        let target = ir.model.bodies[0].id.clone();
+        ir.model.features.push(body_preserving_feature(
+            "combine",
+            1,
+            target.clone(),
+            FeatureDefinition::Combine {
+                target: BodySelection::Bodies(vec![target]),
+                tools: BodySelection::Local {
+                    bodies: vec![String::new()],
+                    native: "native-tools".to_string(),
+                },
+                op: BooleanOp::Cut,
+                keep_tools: false,
+            },
+        ));
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Unsupported {
+                feature: Some(FeatureId("combine".to_string())),
+                reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+            }
+        );
+    }
+
+    #[test]
+    fn output_free_combine_with_exact_native_operands_is_local_to_history() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        let mut combine = body_neutral_feature(
+            "local-combine",
+            1,
+            FeatureDefinition::Combine {
+                target: BodySelection::Native("native-target".to_string()),
+                tools: BodySelection::NativeSet(vec!["native-tool".to_string()]),
+                op: BooleanOp::Intersect,
+                keep_tools: false,
+            },
+        );
+        combine.suppressed = None;
+        ir.model.features.push(combine);
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: vec![body] }
         );
     }
 
@@ -2347,6 +2571,76 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies: Vec::new() }
+        );
+    }
+
+    #[test]
+    fn output_free_boolean_construction_has_no_retained_body_effect() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        let mut extrude = complete_extrude_feature(
+            "transient-extrude",
+            1,
+            FeatureId("unresolved-profile".to_string()),
+            Vec::new(),
+            BooleanOp::NewBody,
+        );
+        extrude.suppressed = None;
+        extrude.dependencies.clear();
+        extrude
+            .source_properties
+            .insert("body_reference.0".to_string(), "42".to_string());
+        ir.model.features.push(extrude);
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: vec![body] }
+        );
+    }
+
+    #[test]
+    fn output_free_fset_is_body_census_neutral() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        let mut fset = body_neutral_feature(
+            "fset",
+            1,
+            FeatureDefinition::Native {
+                kind: "FSET".to_string(),
+                parameters: BTreeMap::new(),
+                properties: BTreeMap::new(),
+            },
+        );
+        fset.suppressed = None;
+        ir.model.features.push(fset);
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: vec![body] }
+        );
+    }
+
+    #[test]
+    fn output_free_native_snapshot_is_local_to_history() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        let mut snapshot = body_neutral_feature(
+            "snapshot",
+            1,
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Unresolved,
+            },
+        );
+        snapshot.name = Some("MASTER SNAPSHOT BODY".to_string());
+        snapshot.suppressed = None;
+        snapshot
+            .source_properties
+            .insert("operation_record".to_string(), "native-record".to_string());
+        ir.model.features.push(snapshot);
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: vec![body] }
         );
     }
 
