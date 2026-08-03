@@ -29,6 +29,13 @@ fn allowance(tolerances: &[Option<f64>]) -> f64 {
         .fold(COINCIDENCE_TOLERANCE, f64::max)
 }
 
+/// Two independently evaluated procedural carriers can each consume the
+/// baseline coincidence allowance. The solved cache's explicit fit tolerance
+/// replaces, rather than supplements, its baseline when it is larger.
+fn procedural_support_allowance(cache_fit_tolerance: Option<f64>) -> f64 {
+    COINCIDENCE_TOLERANCE + allowance(&[cache_fit_tolerance])
+}
+
 /// Embedded support pcurves must map through their surfaces onto the curve
 /// they constrain at both ends of the construction interval.
 pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
@@ -97,7 +104,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             let [Some(solved_start), Some(solved_end)] = solved else {
                 continue;
             };
-            let bound = allowance(&[procedural.cache_fit_tolerance]);
+            let bound = procedural_support_allowance(procedural.cache_fit_tolerance);
             let Some(base) = curves.get(base.0.as_str()) else {
                 continue;
             };
@@ -169,7 +176,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
         let [Some(solved_start), Some(solved_end)] = solved else {
             continue;
         };
-        let bound = allowance(&[procedural.cache_fit_tolerance]);
+        let bound = procedural_support_allowance(procedural.cache_fit_tolerance);
         check_support_sides(
             context,
             third,
@@ -717,7 +724,7 @@ mod tests {
         let CurveGeometry::Line { origin, .. } = &mut ir.model.curves[1].geometry else {
             unreachable!();
         };
-        origin.y = 1.0;
+        origin.y = 2.0;
         check_procedural_support_consistency(&ir, &mut findings);
         assert_eq!(findings.len(), 2);
         assert!(findings

@@ -312,7 +312,7 @@ Non-ASM (pure ACIS) and SpaceClaim SAB streams use version-gated padding absent 
 
 - Fusion model-space lengths are stored in centimetres in both widths.
 - Model-space points, radii, length-bearing vectors, 3D control points, and length tolerances convert to millimetres by ×10.
-- Unit vectors, ratios, angles, knot parameters, non-length enums, homogeneous weights, and UV pcurve coordinates are dimensionless.
+- Unit vectors, ratios, angles, knot parameters, non-length enums, and homogeneous weights are dimensionless. Pcurve coordinates use the parameter units of their support carrier.
 - The header `scale` field is metadata, not a coordinate multiplier (§3).
 
 An analytic surface is untrimmed; its extent is independent of the face's vertex hull.
@@ -497,6 +497,8 @@ All model-space lengths are cm→mm ×10; unit vectors/ratios/angles/knots are n
 Each layout is fixed-size. Offsets are record-relative from the `0x11` byte.
 
 **`plane`**: origin (`0x13`) + unit normal (`0x14`) + unit UV-reference direction (`0x14`). Evaluation `S(u,v) = origin + u·u_dir + v·v_dir`, `v_dir = normal × u_dir`.
+
+An embedded pcurve on a plane stores its first coordinate as a native length along `u_dir` and its second coordinate as a native length opposite `v_dir`. An embedded pcurve on a `cone` stores normalized axial distance first and azimuth angle second. Multiplying the first coordinate by `u_scale` gives signed axial distance along the native axis. Neutral projection converts plane coordinates to document length units and converts cone coordinates to `(azimuth, axial distance)`.
 
 **`cone` (161 B, covers cylinders)**: order: origin (`0x13`), axis (`0x14`), `ref × r_major` (`0x14`, magnitude = base major radius), `ratio = r_minor/r_major` (f64, 1.0 = circular), `0x0b 0x0b`, `sin(half_angle)` (f64, 0 ⇒ cylinder), `cos(half_angle)` (f64), `u_scale` u-parameter scale (f64), 5×`0x0b`. A non-unit ratio defines an elliptical cone whose minor radius is `r_major · ratio`; zero sine with a non-unit ratio is an elliptical cylinder. **Half-angle rule:** `half_angle = asin(|sine|)`. The angle is the acute branch even when both stored sine and cosine are negative. **Sign rules:** the base major radius is the major-axis vector's magnitude; `u_scale` usually equals it but diverges on offset-derived surfaces and is not a radius. The signed major-radius slope `sine / cosine` is the radius change per unit axis distance: `r_major(d) = r_base + d · sine / cosine` at signed distance `d` along the axis from the origin. A negative `cosine` points the surface normal toward the axis; face senses are stored relative to that inward normal.
 

@@ -57,6 +57,89 @@ pub(crate) struct EmbeddedIntersection {
     pub(crate) discontinuities: [Vec<f64>; 3],
 }
 
+#[derive(Clone, Copy)]
+enum NativeSupportChart {
+    Canonical,
+    PlaneLengths,
+    Cone { axial_scale: f64 },
+}
+
+fn native_support_chart(bytes: &[u8], position: usize) -> NativeSupportChart {
+    let mut position = position;
+    let Some(kind) = take_native_ident(bytes, &mut position) else {
+        return NativeSupportChart::Canonical;
+    };
+    match kind.as_str() {
+        "plane" => NativeSupportChart::PlaneLengths,
+        "cone" => {
+            let parsed = (|| {
+                take_native_vec3(bytes, &mut position, 0x13)?;
+                take_native_vec3(bytes, &mut position, 0x14)?;
+                take_native_vec3(bytes, &mut position, 0x14)?;
+                take_f64(bytes, &mut position)?;
+                take_bool(bytes, &mut position)?;
+                take_bool(bytes, &mut position)?;
+                let sine = take_f64(bytes, &mut position)?;
+                let cosine = take_f64(bytes, &mut position)?;
+                let u_scale = take_f64(bytes, &mut position)?;
+                let direction = if sine * cosine < 0.0 { -1.0 } else { 1.0 };
+                Some(NativeSupportChart::Cone {
+                    axial_scale: direction * u_scale * LEN_TO_MM,
+                })
+            })();
+            parsed.unwrap_or(NativeSupportChart::Canonical)
+        }
+        _ => NativeSupportChart::Canonical,
+    }
+}
+
+fn normalize_support_pcurve(chart: NativeSupportChart, pcurve: &mut NurbsPcurve) {
+    match chart {
+        NativeSupportChart::Canonical => {}
+        NativeSupportChart::PlaneLengths => {
+            for point in &mut pcurve.control_points {
+                point.u *= LEN_TO_MM;
+                point.v *= -LEN_TO_MM;
+            }
+        }
+        NativeSupportChart::Cone { axial_scale } => {
+            for point in &mut pcurve.control_points {
+                let native = *point;
+                point.u = native.v;
+                point.v = native.u * axial_scale;
+            }
+        }
+    }
+}
+
+fn decode_required_support_pair(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<([SurfaceGeometry; 2], [NurbsPcurve; 2])> {
+    let first_surface_start = *position;
+    let first_surface = decode_embedded_surface(bytes, position, int_width)?;
+    let second_surface_start = *position;
+    let second_surface = decode_embedded_surface(bytes, position, int_width)?;
+    let (mut first_pcurve, first_end) = decode_pcurve_block_with_end(bytes, *position, int_width)?;
+    *position = first_end;
+    let (mut second_pcurve, second_end) =
+        decode_pcurve_block_with_end(bytes, *position, int_width)?;
+    *position = second_end;
+    normalize_support_pcurve(
+        native_support_chart(bytes, first_surface_start),
+        &mut first_pcurve,
+    );
+    normalize_support_pcurve(
+        native_support_chart(bytes, second_surface_start),
+        &mut second_pcurve,
+    );
+    Some((
+        [first_surface, second_surface],
+        [first_pcurve, second_pcurve],
+    ))
+}
+
 /// Three ordered support carriers and selector of an `sss_int_cur`.
 pub(crate) struct EmbeddedThreeSurfaceIntersection {
     pub(crate) surfaces: [SurfaceGeometry; 3],
@@ -556,14 +639,23 @@ fn decode_embedded_law_curve(bytes: &[u8], int_width: usize) -> Option<EmbeddedL
     let solved = decode_curve_block(bytes, position, int_width)?;
     position = solved.end;
     take_f64(bytes, &mut position)?;
-    let surfaces = [
-        decode_nullable_law_surface(bytes, &mut position, int_width)?,
-        decode_nullable_law_surface(bytes, &mut position, int_width)?,
-    ];
-    let pcurves = [
+    let first_surface_start = position;
+    let first_surface = decode_nullable_law_surface(bytes, &mut position, int_width)?;
+    let second_surface_start = position;
+    let second_surface = decode_nullable_law_surface(bytes, &mut position, int_width)?;
+    let surfaces = [first_surface, second_surface];
+    let mut pcurves = [
         decode_nullable_embedded_pcurve(bytes, &mut position, int_width)?,
         decode_nullable_embedded_pcurve(bytes, &mut position, int_width)?,
     ];
+    for (pcurve, chart) in pcurves.iter_mut().zip([
+        native_support_chart(bytes, first_surface_start),
+        native_support_chart(bytes, second_surface_start),
+    ]) {
+        if let Some(pcurve) = pcurve {
+            normalize_support_pcurve(chart, pcurve);
+        }
+    }
     let (parameter_range, version) = if let Some((stamp, post_enum)) = stamp {
         let bounds = [
             take_law_version_bound(bytes, &mut position)?,
@@ -650,6 +742,7 @@ fn decode_embedded_spring(
         });
     }
     let mut surfaces = [None, None];
+    let mut surface_charts = [NativeSupportChart::Canonical; 2];
     let mut surface_parameter_ranges = [None, None];
     for side in 0..2 {
         let saved = position;
@@ -666,6 +759,7 @@ fn decode_embedded_spring(
             ]);
         } else {
             position = saved;
+            surface_charts[side] = native_support_chart(bytes, position);
             surfaces[side] = Some(decode_embedded_surface(bytes, &mut position, int_width)?);
         }
     }
@@ -694,6 +788,12 @@ fn decode_embedded_spring(
         position = end;
         Some(pcurve)
     };
+    let mut pcurves = [first_pcurve, second_pcurve];
+    for (pcurve, chart) in pcurves.iter_mut().zip(surface_charts) {
+        if let Some(pcurve) = pcurve {
+            normalize_support_pcurve(chart, pcurve);
+        }
+    }
     let parameter_range = [
         take_range_value(bytes, &mut position)?,
         take_range_value(bytes, &mut position)?,
@@ -707,7 +807,7 @@ fn decode_embedded_spring(
     let direction = take_tagged_int(bytes, &mut position, 0x15, int_width)?;
     Some(EmbeddedSpring {
         surfaces,
-        pcurves: [first_pcurve, second_pcurve],
+        pcurves,
         surface_parameter_ranges,
         first_pcurve_parameter_range,
         parameter_range,
@@ -1158,14 +1258,7 @@ fn decode_embedded_surface_offset(
             scale: take_f64(bytes, &mut position)?,
         });
     }
-    let surfaces = [
-        decode_embedded_surface(bytes, &mut position, int_width)?,
-        decode_embedded_surface(bytes, &mut position, int_width)?,
-    ];
-    let (first_pcurve, first_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
-    position = first_end;
-    let (second_pcurve, second_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
-    position = second_end;
+    let (surfaces, pcurves) = decode_required_support_pair(bytes, &mut position, int_width)?;
     let parameter_range = [
         take_range_value(bytes, &mut position)?,
         take_range_value(bytes, &mut position)?,
@@ -1193,7 +1286,7 @@ fn decode_embedded_surface_offset(
     Some(EmbeddedSurfaceOffset {
         context: EmbeddedIntersection {
             surfaces: surfaces.map(Some),
-            pcurves: [Some(first_pcurve), Some(second_pcurve)],
+            pcurves: pcurves.map(Some),
             parameter_range,
             discontinuities,
         },
@@ -1291,14 +1384,7 @@ fn decode_embedded_silhouette(bytes: &[u8], int_width: usize) -> Option<Embedded
         .iter()
         .find_map(|(candidate, silhouette)| (*candidate == name).then(|| silhouette.clone()))?;
     let mut position = marker + name.len() + 3;
-    let surfaces = [
-        decode_embedded_surface(bytes, &mut position, int_width)?,
-        decode_embedded_surface(bytes, &mut position, int_width)?,
-    ];
-    let (first_pcurve, first_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
-    position = first_end;
-    let (second_pcurve, second_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
-    position = second_end;
+    let (surfaces, pcurves) = decode_required_support_pair(bytes, &mut position, int_width)?;
     let parameter_range = [
         take_range_value(bytes, &mut position)?,
         take_range_value(bytes, &mut position)?,
@@ -1319,7 +1405,7 @@ fn decode_embedded_silhouette(bytes: &[u8], int_width: usize) -> Option<Embedded
     Some(EmbeddedSilhouette {
         context: EmbeddedIntersection {
             surfaces: surfaces.map(Some),
-            pcurves: [Some(first_pcurve), Some(second_pcurve)],
+            pcurves: pcurves.map(Some),
             parameter_range,
             discontinuities,
         },
@@ -1565,6 +1651,7 @@ fn decode_cache_first_curve_context(
         }),
         _ => return None,
     };
+    let first_surface_start = *position;
     let (first_surface, first_bounds) = decode_optional_embedded_surface_with_bounds(
         bytes,
         position,
@@ -1572,6 +1659,7 @@ fn decode_cache_first_curve_context(
         active_bytes,
         tables,
     )?;
+    let second_surface_start = *position;
     let (second_surface, second_bounds) = decode_optional_embedded_surface_with_bounds(
         bytes,
         position,
@@ -1579,10 +1667,16 @@ fn decode_cache_first_curve_context(
         active_bytes,
         tables,
     )?;
-    let pcurves = [
+    let mut pcurves = [
         decode_nullable_embedded_pcurve(bytes, position, int_width)?,
         decode_nullable_embedded_pcurve(bytes, position, int_width)?,
     ];
+    if let Some(pcurve) = &mut pcurves[0] {
+        normalize_support_pcurve(native_support_chart(bytes, first_surface_start), pcurve);
+    }
+    if let Some(pcurve) = &mut pcurves[1] {
+        normalize_support_pcurve(native_support_chart(bytes, second_surface_start), pcurve);
+    }
     let solved_range = [
         take_optional_range_value(bytes, position)?,
         take_optional_range_value(bytes, position)?,
@@ -1624,14 +1718,7 @@ fn decode_context_first_surface_curve(
     EmbeddedIntersection,
     Option<cadmpeg_ir::geometry::SurfaceCurveTail>,
 )> {
-    let surfaces = [
-        decode_embedded_surface(bytes, &mut position, int_width)?,
-        decode_embedded_surface(bytes, &mut position, int_width)?,
-    ];
-    let (first_pcurve, first_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
-    position = first_end;
-    let (second_pcurve, second_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
-    position = second_end;
+    let (surfaces, pcurves) = decode_required_support_pair(bytes, &mut position, int_width)?;
     let parameter_range = [
         take_range_value(bytes, &mut position)?,
         take_range_value(bytes, &mut position)?,
@@ -1645,7 +1732,7 @@ fn decode_context_first_surface_curve(
         family,
         EmbeddedIntersection {
             surfaces: surfaces.map(Some),
-            pcurves: [Some(first_pcurve), Some(second_pcurve)],
+            pcurves: pcurves.map(Some),
             parameter_range,
             discontinuities,
         },
@@ -1746,12 +1833,8 @@ fn decode_embedded_three_surface_intersection(
     let name = b"sss_int_cur";
     let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     let mut position = marker + name.len() + 3;
-    let first = decode_embedded_surface(bytes, &mut position, int_width)?;
-    let second = decode_embedded_surface(bytes, &mut position, int_width)?;
-    let (first_pcurve, first_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
-    position = first_end;
-    let (second_pcurve, second_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
-    position = second_end;
+    let ([first, second], [first_pcurve, second_pcurve]) =
+        decode_required_support_pair(bytes, &mut position, int_width)?;
     let parameter_range = [
         take_range_value(bytes, &mut position)?,
         take_range_value(bytes, &mut position)?,
@@ -1762,8 +1845,13 @@ fn decode_embedded_three_surface_intersection(
         take_float_array(bytes, &mut position, int_width)?,
     ];
     let selector = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+    let third_surface_start = position;
     let third = decode_embedded_surface(bytes, &mut position, int_width)?;
-    let (third_pcurve, _) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    let (mut third_pcurve, _) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    normalize_support_pcurve(
+        native_support_chart(bytes, third_surface_start),
+        &mut third_pcurve,
+    );
     Some(EmbeddedThreeSurfaceIntersection {
         surfaces: [first, second, third],
         pcurves: [first_pcurve, second_pcurve, third_pcurve],
@@ -1815,14 +1903,7 @@ fn decode_embedded_projection(bytes: &[u8], int_width: usize) -> Option<Embedded
     let name = b"proj_int_cur";
     let (marker, name_len) = find_owned_intcurve_subtype(bytes, name, int_width)?;
     let mut position = marker + name_len + 3;
-    let surfaces = [
-        decode_embedded_surface(bytes, &mut position, int_width)?,
-        decode_embedded_surface(bytes, &mut position, int_width)?,
-    ];
-    let (first_pcurve, first_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
-    position = first_end;
-    let (second_pcurve, second_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
-    position = second_end;
+    let (surfaces, pcurves) = decode_required_support_pair(bytes, &mut position, int_width)?;
     let parameter_range = [
         take_range_value(bytes, &mut position)?,
         take_range_value(bytes, &mut position)?,
@@ -1850,7 +1931,7 @@ fn decode_embedded_projection(bytes: &[u8], int_width: usize) -> Option<Embedded
     };
     Some(EmbeddedProjection {
         surfaces,
-        pcurves: [first_pcurve, second_pcurve],
+        pcurves,
         parameter_range,
         discontinuities,
         discontinuity_flag,
@@ -1949,14 +2030,7 @@ fn decode_context_first_intersection(
     mut position: usize,
     int_width: usize,
 ) -> Option<(EmbeddedIntersection, bool)> {
-    let surfaces = [
-        decode_embedded_surface(bytes, &mut position, int_width)?,
-        decode_embedded_surface(bytes, &mut position, int_width)?,
-    ];
-    let (first_pcurve, first_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
-    position = first_end;
-    let (second_pcurve, second_end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
-    position = second_end;
+    let (surfaces, pcurves) = decode_required_support_pair(bytes, &mut position, int_width)?;
     let parameter_range = [
         take_range_value(bytes, &mut position)?,
         take_range_value(bytes, &mut position)?,
@@ -1970,7 +2044,7 @@ fn decode_context_first_intersection(
     Some((
         EmbeddedIntersection {
             surfaces: surfaces.map(Some),
-            pcurves: [Some(first_pcurve), Some(second_pcurve)],
+            pcurves: pcurves.map(Some),
             parameter_range,
             discontinuities,
         },
@@ -1990,6 +2064,7 @@ fn decode_cache_first_intersection(
     (take_tagged_int(bytes, &mut position, 0x15, int_width)? == 0).then_some(())?;
     position = decode_curve_block(bytes, position, int_width)?.end;
     take_f64(bytes, &mut position)?;
+    let first_surface_start = position;
     let first_surface = decode_optional_embedded_surface_resolving_ref(
         bytes,
         &mut position,
@@ -1997,6 +2072,7 @@ fn decode_cache_first_intersection(
         active_bytes,
         tables,
     )?;
+    let second_surface_start = position;
     let second_surface = decode_optional_embedded_surface_resolving_ref(
         bytes,
         &mut position,
@@ -2005,10 +2081,16 @@ fn decode_cache_first_intersection(
         tables,
     )?;
     let surfaces = [first_surface, second_surface];
-    let pcurves = [
+    let mut pcurves = [
         decode_nullable_embedded_pcurve(bytes, &mut position, int_width)?,
         decode_nullable_embedded_pcurve(bytes, &mut position, int_width)?,
     ];
+    if let Some(pcurve) = &mut pcurves[0] {
+        normalize_support_pcurve(native_support_chart(bytes, first_surface_start), pcurve);
+    }
+    if let Some(pcurve) = &mut pcurves[1] {
+        normalize_support_pcurve(native_support_chart(bytes, second_surface_start), pcurve);
+    }
     let domain = nurbs_curve_parameter_domain(solved)?;
     let parameter_range = [
         take_optional_range_value(bytes, &mut position)?.unwrap_or(domain[0]),
@@ -2075,12 +2157,22 @@ fn decode_embedded_two_sided_offset(
     let name = b"off_int_cur";
     let (marker, name_len) = find_owned_intcurve_subtype(bytes, name, int_width)?;
     let mut position = marker + name_len + 3;
+    let first_surface_start = position;
     let first_surface = decode_optional_embedded_surface(bytes, &mut position, int_width)?.value();
+    let second_surface_start = position;
     let second_surface = decode_optional_embedded_surface(bytes, &mut position, int_width)?.value();
     let surfaces = [first_surface, second_surface];
     let first_pcurve = decode_optional_pcurve(bytes, &mut position, int_width)?.value();
     let second_pcurve = decode_optional_pcurve(bytes, &mut position, int_width)?.value();
-    let pcurves = [first_pcurve, second_pcurve];
+    let mut pcurves = [first_pcurve, second_pcurve];
+    for (pcurve, chart) in pcurves.iter_mut().zip([
+        native_support_chart(bytes, first_surface_start),
+        native_support_chart(bytes, second_surface_start),
+    ]) {
+        if let Some(pcurve) = pcurve {
+            normalize_support_pcurve(chart, pcurve);
+        }
+    }
     let parameter_range = [
         take_range_value(bytes, &mut position)?,
         take_range_value(bytes, &mut position)?,
@@ -2700,6 +2792,34 @@ fn nurbs_curve_parameter_domain(curve: &NurbsCurve) -> Option<[f64; 2]> {
 #[cfg(test)]
 mod cache_form_tests {
     use super::*;
+    use cadmpeg_ir::math::Point2;
+
+    fn linear_pcurve(points: [Point2; 2]) -> NurbsPcurve {
+        NurbsPcurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: points.into(),
+            weights: None,
+            periodic: false,
+        }
+    }
+
+    #[test]
+    fn analytic_support_charts_map_to_neutral_surface_parameters() {
+        let mut plane = linear_pcurve([Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)]);
+        normalize_support_pcurve(NativeSupportChart::PlaneLengths, &mut plane);
+        assert_eq!(
+            plane.control_points,
+            [Point2::new(10.0, -20.0), Point2::new(30.0, -40.0)]
+        );
+
+        let mut cone = linear_pcurve([Point2::new(2.0, 0.5), Point2::new(-3.0, -0.25)]);
+        normalize_support_pcurve(NativeSupportChart::Cone { axial_scale: 15.0 }, &mut cone);
+        assert_eq!(
+            cone.control_points,
+            [Point2::new(0.5, 30.0), Point2::new(-0.25, -45.0)]
+        );
+    }
 
     /// A tagged integer field.
     fn push_int(bytes: &mut Vec<u8>, tag: u8, value: i64, int_width: usize) {
