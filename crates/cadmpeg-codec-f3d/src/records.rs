@@ -801,6 +801,29 @@ pub struct DesignExtrudePrologueReference {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case", tag = "layout")]
 pub enum DesignExtrudePrologue {
+    /// Early distance-only layout with a nullable prefix field.
+    LegacyDistance {
+        /// Value of the nullable prefix field when its marker is present.
+        prefix_value: Option<u32>,
+        /// Byte offset of `prefix_value` when present.
+        prefix_value_offset: Option<u64>,
+        /// Boolean result operation.
+        operation: DesignExtrudeOperation,
+        /// Byte offset of `operation`.
+        operation_offset: u64,
+        /// Raw distance-extent discriminator.
+        extent_discriminator: u32,
+        /// Byte offset of `extent_discriminator`.
+        extent_discriminator_offset: u64,
+        /// Direction-reversal state.
+        direction_reversed: bool,
+        /// Byte offset of `direction_reversed`.
+        direction_reversed_offset: u64,
+        /// Raw geometry-kind discriminator (`0 = sheet`, `1 = solid`).
+        geometry_kind: u32,
+        /// Byte offset of `geometry_kind`.
+        geometry_kind_offset: u64,
+    },
     /// Reference-aware layout with an optional indexed-reference prefix.
     ReferenceAware {
         /// Indexed-record prefix, when present.
@@ -868,15 +891,16 @@ impl DesignExtrudePrologue {
     /// Boolean result operation.
     pub fn operation(self) -> DesignExtrudeOperation {
         match self {
-            Self::ReferenceAware { operation, .. } | Self::LegacyShifted { operation, .. } => {
-                operation
-            }
+            Self::LegacyDistance { operation, .. }
+            | Self::ReferenceAware { operation, .. }
+            | Self::LegacyShifted { operation, .. } => operation,
         }
     }
 
     /// Decoded extent form.
     pub fn extent(self) -> Option<DesignExtrudeExtent> {
         match self {
+            Self::LegacyDistance { .. } => Some(DesignExtrudeExtent::OneSidedDistance),
             Self::ReferenceAware { extent, .. } => Some(extent),
             Self::LegacyShifted { extent, .. } => extent,
         }
@@ -885,7 +909,10 @@ impl DesignExtrudePrologue {
     /// Direction-reversal state.
     pub fn direction_reversed(self) -> bool {
         match self {
-            Self::ReferenceAware {
+            Self::LegacyDistance {
+                direction_reversed, ..
+            }
+            | Self::ReferenceAware {
                 direction_reversed, ..
             }
             | Self::LegacyShifted {
@@ -897,6 +924,7 @@ impl DesignExtrudePrologue {
     /// Whether the operation creates solid rather than sheet geometry.
     pub fn solid_operation(self) -> bool {
         match self {
+            Self::LegacyDistance { geometry_kind, .. } => geometry_kind == 1,
             Self::ReferenceAware {
                 solid_operation, ..
             }
@@ -909,6 +937,7 @@ impl DesignExtrudePrologue {
     /// Starting support.
     pub fn start(self) -> DesignExtrudeStart {
         match self {
+            Self::LegacyDistance { .. } => DesignExtrudeStart::ProfilePlane,
             Self::ReferenceAware { start, .. } | Self::LegacyShifted { start, .. } => start,
         }
     }

@@ -144,7 +144,10 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 fn set_extrude_operation(scope: &mut DesignParameterScope, operation: DesignExtrudeOperation) {
     let Some(
-        DesignExtrudePrologue::ReferenceAware {
+        DesignExtrudePrologue::LegacyDistance {
+            operation: value, ..
+        }
+        | DesignExtrudePrologue::ReferenceAware {
             operation: value, ..
         }
         | DesignExtrudePrologue::LegacyShifted {
@@ -162,6 +165,9 @@ fn set_extrude_extent(scope: &mut DesignParameterScope, extent: DesignExtrudeExt
         panic!("test scope must carry an Extrude prologue");
     };
     match prologue {
+        DesignExtrudePrologue::LegacyDistance { .. } => {
+            assert_eq!(extent, DesignExtrudeExtent::OneSidedDistance);
+        }
         DesignExtrudePrologue::ReferenceAware {
             extent: value,
             extent_discriminators,
@@ -200,7 +206,10 @@ fn set_extrude_extent(scope: &mut DesignParameterScope, extent: DesignExtrudeExt
 
 fn set_extrude_direction_reversed(scope: &mut DesignParameterScope, reversed: bool) {
     let Some(
-        DesignExtrudePrologue::ReferenceAware {
+        DesignExtrudePrologue::LegacyDistance {
+            direction_reversed, ..
+        }
+        | DesignExtrudePrologue::ReferenceAware {
             direction_reversed, ..
         }
         | DesignExtrudePrologue::LegacyShifted {
@@ -7175,6 +7184,81 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         )
         .extrude_prologue,
         None
+    );
+}
+
+#[test]
+fn legacy_distance_extrude_scope_decodes_nullable_prefix_forms() {
+    let scope = |prefix_present: bool, operation: u32, geometry_kind: u32| {
+        let reference_count_offset = if prefix_present { 212 } else { 208 };
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"376");
+        bytes.extend_from_slice(&12u32.to_le_bytes());
+        bytes.resize(reference_count_offset, 0);
+        let operation_offset = if prefix_present {
+            bytes[20] = 1;
+            bytes[21..25].copy_from_slice(&0u32.to_le_bytes());
+            25
+        } else {
+            21
+        };
+        bytes[operation_offset..operation_offset + 4].copy_from_slice(&operation.to_le_bytes());
+        bytes[operation_offset + 4..operation_offset + 8].copy_from_slice(&2u32.to_le_bytes());
+        bytes[operation_offset + 8] = 1;
+        bytes[operation_offset + 9..operation_offset + 13]
+            .copy_from_slice(&geometry_kind.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&55u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&7u32.to_le_bytes());
+        lp_utf16(&mut bytes, "Extrude");
+        let mut tail = [0; 78];
+        tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+        tail[31..35].copy_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&tail);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"261");
+        bytes.extend_from_slice(&12u32.to_le_bytes());
+        let header = DesignRecordHeader {
+            id: "generated:scope-header#0".into(),
+            record_index: 12,
+            class_tag: "376".into(),
+            byte_offset: 0,
+        };
+        parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header).unwrap()
+    };
+
+    assert_eq!(
+        scope(false, 1, 1).extrude_prologue,
+        Some(DesignExtrudePrologue::LegacyDistance {
+            prefix_value: None,
+            prefix_value_offset: None,
+            operation: DesignExtrudeOperation::Join,
+            operation_offset: 21,
+            extent_discriminator: 2,
+            extent_discriminator_offset: 25,
+            direction_reversed: true,
+            direction_reversed_offset: 29,
+            geometry_kind: 1,
+            geometry_kind_offset: 30,
+        })
+    );
+    assert_eq!(
+        scope(true, 4, 0).extrude_prologue,
+        Some(DesignExtrudePrologue::LegacyDistance {
+            prefix_value: Some(0),
+            prefix_value_offset: Some(21),
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: 25,
+            extent_discriminator: 2,
+            extent_discriminator_offset: 29,
+            direction_reversed: true,
+            direction_reversed_offset: 33,
+            geometry_kind: 0,
+            geometry_kind_offset: 34,
+        })
     );
 }
 

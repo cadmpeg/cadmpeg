@@ -3806,8 +3806,79 @@ fn exact_extrude_prologue(
     reference_count_at: usize,
     reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
-    exact_current_extrude_prologue(bytes, start).or_else(|| {
-        exact_legacy_shifted_extrude_prologue(bytes, start, reference_count_at, reference_members)
+    exact_current_extrude_prologue(bytes, start)
+        .or_else(|| {
+            exact_legacy_shifted_extrude_prologue(
+                bytes,
+                start,
+                reference_count_at,
+                reference_members,
+            )
+        })
+        .or_else(|| exact_legacy_distance_extrude_prologue(bytes, start, reference_count_at))
+}
+
+fn exact_legacy_distance_extrude_prologue(
+    bytes: &[u8],
+    start: usize,
+    reference_count_at: usize,
+) -> Option<DesignExtrudePrologue> {
+    let marker_offset = start.checked_add(20)?;
+    let (prefix_value, prefix_value_offset, operation_offset, expected_reference_count_delta) =
+        match bytes.get(marker_offset)? {
+            0 => (None, None, marker_offset.checked_add(1)?, 208),
+            1 => {
+                let prefix_value_offset = marker_offset.checked_add(1)?;
+                let prefix_value = u32_at(bytes, prefix_value_offset)?;
+                if prefix_value != 0 {
+                    return None;
+                }
+                (
+                    Some(prefix_value),
+                    Some(prefix_value_offset),
+                    prefix_value_offset.checked_add(4)?,
+                    212,
+                )
+            }
+            _ => return None,
+        };
+    if reference_count_at.checked_sub(start)? != expected_reference_count_delta {
+        return None;
+    }
+    let operation = match u32_at(bytes, operation_offset)? {
+        1 => DesignExtrudeOperation::Join,
+        2 => DesignExtrudeOperation::Cut,
+        3 => DesignExtrudeOperation::Intersect,
+        4 => DesignExtrudeOperation::NewBody,
+        _ => return None,
+    };
+    let extent_discriminator_offset = operation_offset.checked_add(4)?;
+    let extent_discriminator = u32_at(bytes, extent_discriminator_offset)?;
+    if extent_discriminator != 2 {
+        return None;
+    }
+    let direction_reversed_offset = extent_discriminator_offset.checked_add(4)?;
+    let direction_reversed = match bytes.get(direction_reversed_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let geometry_kind_offset = direction_reversed_offset.checked_add(1)?;
+    let geometry_kind = u32_at(bytes, geometry_kind_offset)?;
+    if !matches!(geometry_kind, 0 | 1) {
+        return None;
+    }
+    Some(DesignExtrudePrologue::LegacyDistance {
+        prefix_value,
+        prefix_value_offset: prefix_value_offset.map(|offset| offset as u64),
+        operation,
+        operation_offset: operation_offset as u64,
+        extent_discriminator,
+        extent_discriminator_offset: extent_discriminator_offset as u64,
+        direction_reversed,
+        direction_reversed_offset: direction_reversed_offset as u64,
+        geometry_kind,
+        geometry_kind_offset: geometry_kind_offset as u64,
     })
 }
 
