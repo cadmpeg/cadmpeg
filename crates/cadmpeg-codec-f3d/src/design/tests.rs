@@ -19,7 +19,8 @@ use crate::design::decode::operands::{
     assign_extrude_face_roles, bind_edge_operand_candidates, bind_extrude_selection_geometry,
     bind_extrude_selection_identities, bind_face_operand_candidates, bind_lost_edge_groups,
     decode_fillet_radius_groups, face_recipe_program_kind, has_typed_edge_treatment_group,
-    parse_body_recipe_operand, parse_construction_operand_flag, parse_construction_operand_group,
+    parse_body_recipe_operand, parse_construction_operand_dual_transform,
+    parse_construction_operand_flag, parse_construction_operand_group,
     parse_construction_operand_identity, parse_construction_operand_path,
     parse_construction_operand_transform, parse_construction_tracking_path, parse_edge_operand,
     parse_entity_selection_operand, parse_extrude_selection_group, parse_extrude_selection_member,
@@ -4980,6 +4981,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             trailing_record_indices: vec![202],
             trailing_record_offsets: vec![0],
             trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
             opaque_index: 1,
             opaque_index_offset: 0,
@@ -6817,6 +6819,7 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     bytes.extend_from_slice(&1u32.to_le_bytes());
     lp_utf16(&mut bytes, "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b");
     lp_utf16(&mut bytes, "172");
+    let tail_at = bytes.len();
     bytes.extend_from_slice(&[0; 94]);
     let paired_at = bytes.len();
     bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -6892,6 +6895,34 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     .expect("compact sketch-profile operand");
     assert_eq!(compact.scope_reference_ordinal, 2);
     assert_eq!(compact.paired_byte_offset, compact_paired_at as u64);
+
+    bytes.truncate(tail_at);
+    let mut omitted_ordinal_tail = vec![0; 89];
+    omitted_ordinal_tail[0] = 1;
+    omitted_ordinal_tail[8..12].copy_from_slice(&1u32.to_le_bytes());
+    omitted_ordinal_tail[12] = 1;
+    omitted_ordinal_tail[13..17].copy_from_slice(&500u32.to_le_bytes());
+    omitted_ordinal_tail[41..45].copy_from_slice(&99u32.to_le_bytes());
+    omitted_ordinal_tail[53] = 1;
+    omitted_ordinal_tail[54..58].copy_from_slice(&102u32.to_le_bytes());
+    omitted_ordinal_tail[66] = 1;
+    omitted_ordinal_tail[67..71].copy_from_slice(&101u32.to_le_bytes());
+    omitted_ordinal_tail[78] = 1;
+    omitted_ordinal_tail[79..83].copy_from_slice(&777u32.to_le_bytes());
+    bytes.extend_from_slice(&omitted_ordinal_tail);
+    let omitted_paired_at = bytes.len();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"258");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    let omitted = parse_sketch_profile(
+        &bytes,
+        "f3d:Design/BulkStream.dat",
+        2,
+        &compact_header,
+        std::slice::from_ref(&entity),
+    )
+    .expect("omitted-ordinal sketch-profile operand");
+    assert_eq!(omitted.paired_byte_offset, omitted_paired_at as u64);
 }
 
 #[test]
@@ -7595,8 +7626,6 @@ fn construction_operand_trailing_transform_has_exact_affine_frame() {
         .expect("exact construction-operand transform");
     assert_eq!(parsed.transform, transform);
     assert_eq!(parsed.transform_offset, 22);
-    assert_eq!(parsed.secondary_transform, None);
-    assert_eq!(parsed.secondary_transform_offset, None);
     assert_eq!(parsed.following_record_index, 301);
     assert_eq!(parsed.following_byte_offset, following_at as u64);
     assert_eq!(parsed.following_class_tag, "432");
@@ -7622,13 +7651,13 @@ fn construction_operand_trailing_transform_has_exact_affine_frame() {
     dual.extend_from_slice(&3u32.to_le_bytes());
     dual.extend_from_slice(b"432");
     dual.extend_from_slice(&(record_index + 1).to_le_bytes());
-    let parsed = parse_construction_operand_transform(&dual, &header)
+    let parsed = parse_construction_operand_dual_transform(&dual, &header)
         .expect("exact dual construction-operand transform");
-    assert_eq!(parsed.transform, transform);
-    assert_eq!(parsed.transform_offset, 21);
-    assert_eq!(parsed.secondary_transform, Some(secondary));
-    assert_eq!(parsed.secondary_transform_offset, Some(149));
-    assert_eq!(parsed.following_byte_offset, dual_following_at as u64);
+    assert_eq!(parsed.first_transform, transform);
+    assert_eq!(parsed.first_transform_offset, 21);
+    assert_eq!(parsed.second_transform, secondary);
+    assert_eq!(parsed.second_transform_offset, 149);
+    assert_eq!(dual_following_at, 278);
 }
 
 #[test]
@@ -7907,6 +7936,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
             trailing_record_indices: vec![300],
             trailing_record_offsets: vec![1043],
             trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
             opaque_index: 180,
             opaque_index_offset: 1071,
@@ -8012,6 +8042,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
             trailing_record_indices: vec![200],
             trailing_record_offsets: vec![943],
             trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
             opaque_index: 1,
             opaque_index_offset: 971,
@@ -8104,6 +8135,7 @@ fn body_recipe_operand_decodes_counted_reference_table() {
             trailing_record_indices: vec![200],
             trailing_record_offsets: vec![943],
             trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
             opaque_index: 1,
             opaque_index_offset: 971,
@@ -8937,6 +8969,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             trailing_record_indices: vec![91],
             trailing_record_offsets: vec![950],
             trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
             opaque_index: 1,
             opaque_index_offset: 968,
@@ -9661,6 +9694,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             trailing_record_indices: vec![91],
             trailing_record_offsets: vec![935],
             trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
             opaque_index: 1,
             opaque_index_offset: 954,
@@ -15106,6 +15140,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             trailing_record_indices: vec![300],
             trailing_record_offsets: vec![1044],
             trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
             opaque_index: 180,
             opaque_index_offset: 1072,
@@ -15899,6 +15934,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                 trailing_record_indices: vec![record_index + 1],
                 trailing_record_offsets: vec![1_050 + u64::from(scope_reference_ordinal)],
                 trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
                 trailing_flags: Vec::new(),
                 opaque_index: 100,
                 opaque_index_offset: 1_068 + u64::from(scope_reference_ordinal),
@@ -16616,6 +16652,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             trailing_record_indices: vec![300 + ordinal],
             trailing_record_offsets: vec![1100 + u64::from(ordinal) * 200],
             trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
             opaque_index: 100,
             opaque_index_offset: 1128 + u64::from(ordinal) * 200,

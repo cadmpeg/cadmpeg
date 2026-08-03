@@ -11027,6 +11027,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             trailing_record_indices: vec![31],
             trailing_record_offsets: vec![440],
             trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
             opaque_index: 1,
             opaque_index_offset: 460,
@@ -11064,6 +11065,14 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
     assert!(crate::validate::validate_native(&ir)
         .iter()
         .any(profile_message));
+
+    let profile = f3d_native_mut(&mut ir).design_parameter_scopes[0]
+        .extrude_profile
+        .take();
+    assert!(!crate::validate::validate_native(&ir)
+        .iter()
+        .any(profile_message));
+    f3d_native_mut(&mut ir).design_parameter_scopes[0].extrude_profile = profile;
 
     f3d_native_mut(&mut ir)
         .design_construction_operand_groups

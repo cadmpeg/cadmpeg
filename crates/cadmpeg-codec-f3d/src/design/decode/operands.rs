@@ -1084,6 +1084,7 @@ pub(crate) fn parse_construction_operand_group(
             trailing_record_indices,
             trailing_record_offsets,
             trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
             opaque_index,
             opaque_index_offset,
@@ -1112,6 +1113,7 @@ pub fn bind_construction_operand_trailing_records(
         .collect::<HashMap<_, _>>();
     for group in groups {
         group.frame.trailing_transforms.clear();
+        group.frame.trailing_dual_transforms.clear();
         group.frame.trailing_flags.clear();
         let Some(stream) = native_stream(&group.id) else {
             continue;
@@ -1130,6 +1132,9 @@ pub fn bind_construction_operand_trailing_records(
             };
             if let Some(transform) = parse_construction_operand_transform(bytes, header) {
                 group.frame.trailing_transforms.push(transform);
+            } else if let Some(transform) = parse_construction_operand_dual_transform(bytes, header)
+            {
+                group.frame.trailing_dual_transforms.push(transform);
             } else if let Some(flag) = parse_construction_operand_flag(bytes, header) {
                 group.frame.trailing_flags.push(flag);
             }
@@ -1278,48 +1283,15 @@ pub(crate) fn parse_construction_operand_transform(
     bytes: &[u8],
     header: &DesignRecordHeader,
 ) -> Option<crate::records::DesignConstructionOperandTransform> {
-    use crate::design::decode::sketch::valid_sketch_transform;
-
     let start = usize::try_from(header.byte_offset).ok()?;
-    let matrix_at = |at| {
-        let values = cadmpeg_codec_core::le::f64s_at(bytes, at, 16)?;
-        let mut transform = [[0.0; 4]; 4];
-        for (ordinal, value) in values.iter().copied().enumerate() {
-            transform[ordinal / 4][ordinal % 4] = value;
-        }
-        valid_sketch_transform(&transform).then_some(transform)
-    };
-    let standard = || {
-        if bytes.get(start + 11..start + 22)? != [0; 11]
-            || bytes.get(start + 150..start + 152)? != [1, 0]
-        {
-            return None;
-        }
-        let transform_at = start.checked_add(22)?;
-        Some((
-            transform_at,
-            matrix_at(transform_at)?,
-            None,
-            None,
-            start.checked_add(152)?,
-        ))
-    };
-    let dual = || {
-        if bytes.get(start + 11..start + 21)? != [0; 10] || bytes.get(start + 277) != Some(&0) {
-            return None;
-        }
-        let transform_at = start.checked_add(21)?;
-        let secondary_transform_at = start.checked_add(149)?;
-        Some((
-            transform_at,
-            matrix_at(transform_at)?,
-            Some(secondary_transform_at),
-            Some(matrix_at(secondary_transform_at)?),
-            start.checked_add(278)?,
-        ))
-    };
-    let (transform_at, transform, secondary_transform_at, secondary_transform, following_at) =
-        standard().or_else(dual)?;
+    if bytes.get(start + 11..start + 22)? != [0; 11]
+        || bytes.get(start + 150..start + 152)? != [1, 0]
+    {
+        return None;
+    }
+    let transform_at = start.checked_add(22)?;
+    let transform = rigid_transform_at(bytes, transform_at)?;
+    let following_at = start.checked_add(152)?;
     let (following_class_tag, after_tag) =
         lp_ascii_filtered(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
     let following_record_index = u32_at(bytes, after_tag)?;
@@ -1332,12 +1304,40 @@ pub(crate) fn parse_construction_operand_transform(
         class_tag: header.class_tag.clone(),
         transform,
         transform_offset: u64::try_from(transform_at).ok()?,
-        secondary_transform,
-        secondary_transform_offset: secondary_transform_at.and_then(|at| u64::try_from(at).ok()),
         following_record_index,
         following_byte_offset: u64::try_from(following_at).ok()?,
         following_class_tag,
     })
+}
+
+pub(crate) fn parse_construction_operand_dual_transform(
+    bytes: &[u8],
+    header: &DesignRecordHeader,
+) -> Option<crate::records::DesignConstructionOperandDualTransform> {
+    let start = usize::try_from(header.byte_offset).ok()?;
+    if bytes.get(start + 11..start + 21)? != [0; 10] || bytes.get(start + 277) != Some(&0) {
+        return None;
+    }
+    let first_at = start.checked_add(21)?;
+    let second_at = start.checked_add(149)?;
+    Some(crate::records::DesignConstructionOperandDualTransform {
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        first_transform: rigid_transform_at(bytes, first_at)?,
+        first_transform_offset: u64::try_from(first_at).ok()?,
+        second_transform: rigid_transform_at(bytes, second_at)?,
+        second_transform_offset: u64::try_from(second_at).ok()?,
+    })
+}
+
+fn rigid_transform_at(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
+    let values = cadmpeg_codec_core::le::f64s_at(bytes, at, 16)?;
+    let mut transform = [[0.0; 4]; 4];
+    for (ordinal, value) in values.iter().copied().enumerate() {
+        transform[ordinal / 4][ordinal % 4] = value;
+    }
+    crate::design::decode::sketch::valid_sketch_transform(&transform).then_some(transform)
 }
 
 /// Take one reference naming a record of the same segment, advancing `at` past
@@ -2521,20 +2521,29 @@ pub(crate) fn parse_sketch_profile(
     let (paired_class_tag, after_paired_tag) =
         lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let tail_length = paired_at.checked_sub(after_entity_suffix)?;
-    if u32_at(bytes, after_paired_tag)? != header.record_index || !matches!(tail_length, 93 | 94) {
+    if u32_at(bytes, after_paired_tag)? != header.record_index
+        || !matches!(tail_length, 89 | 93 | 94)
+    {
         return None;
     }
-    if tail_length == 93 {
+    if matches!(tail_length, 89 | 93) {
         let tail = after_entity_suffix;
+        let (nested_two_at, nested_one_at, scope_at) = if tail_length == 89 {
+            (53, 66, 78)
+        } else {
+            (57, 70, 82)
+        };
         if bytes.get(tail..tail + 8) != Some(&[1, 0, 0, 0, 0, 0, 0, 0])
             || u32_at(bytes, tail + 8) != Some(1)
-            || marked_record_reference(bytes, tail + 57) != header.record_index.checked_add(2)
-            || bytes.get(tail + 68..tail + 70) != Some(&[0; 2])
-            || marked_record_reference(bytes, tail + 70) != header.record_index.checked_add(1)
-            || bytes.get(tail + 81) != Some(&0)
-            || marked_record_reference(bytes, tail + 82).is_none()
+            || marked_record_reference(bytes, tail + nested_two_at)
+                != header.record_index.checked_add(2)
+            || bytes.get(tail + nested_one_at - 2..tail + nested_one_at) != Some(&[0; 2])
+            || marked_record_reference(bytes, tail + nested_one_at)
+                != header.record_index.checked_add(1)
+            || bytes.get(tail + scope_at - 1) != Some(&0)
+            || marked_record_reference(bytes, tail + scope_at).is_none()
             || u32_at(bytes, tail + 41) == Some(0)
-            || u32_at(bytes, tail + 41) != u32_at(bytes, tail + 53)
+            || (tail_length == 93 && u32_at(bytes, tail + 41) != u32_at(bytes, tail + 53))
         {
             return None;
         }

@@ -1677,24 +1677,8 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         })
                     && crate::design::decode::sketch::valid_sketch_transform(&transform.transform)
                     && transform.following_record_index == transform.record_index.saturating_add(1)
-                    && match (
-                        &transform.secondary_transform,
-                        transform.secondary_transform_offset,
-                    ) {
-                        (None, None) => {
-                            transform.transform_offset == transform.byte_offset.saturating_add(22)
-                                && transform.following_byte_offset
-                                    == transform.byte_offset.saturating_add(152)
-                        }
-                        (Some(secondary), Some(secondary_offset)) => {
-                            transform.transform_offset == transform.byte_offset.saturating_add(21)
-                                && secondary_offset == transform.byte_offset.saturating_add(149)
-                                && transform.following_byte_offset
-                                    == transform.byte_offset.saturating_add(278)
-                                && crate::design::decode::sketch::valid_sketch_transform(secondary)
-                        }
-                        _ => false,
-                    }
+                    && transform.transform_offset == transform.byte_offset.saturating_add(22)
+                    && transform.following_byte_offset == transform.byte_offset.saturating_add(152)
                     && records_by_index
                         .get(&(native_stream, transform.following_record_index))
                         .is_some_and(|header| {
@@ -1709,6 +1693,33 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 .collect::<HashSet<_>>()
                 .len()
                 == frame.trailing_transforms.len()
+            && frame.trailing_dual_transforms.iter().all(|transform| {
+                frame
+                    .trailing_record_indices
+                    .contains(&transform.record_index)
+                    && records_by_index
+                        .get(&(native_stream, transform.record_index))
+                        .is_some_and(|header| {
+                            header.byte_offset == transform.byte_offset
+                                && header.class_tag == transform.class_tag
+                        })
+                    && transform.first_transform_offset == transform.byte_offset.saturating_add(21)
+                    && transform.second_transform_offset
+                        == transform.byte_offset.saturating_add(149)
+                    && crate::design::decode::sketch::valid_sketch_transform(
+                        &transform.first_transform,
+                    )
+                    && crate::design::decode::sketch::valid_sketch_transform(
+                        &transform.second_transform,
+                    )
+            })
+            && frame
+                .trailing_dual_transforms
+                .iter()
+                .map(|transform| transform.record_index)
+                .collect::<HashSet<_>>()
+                .len()
+                == frame.trailing_dual_transforms.len()
             && frame.trailing_flags.iter().all(|flag| {
                 frame.trailing_record_indices.contains(&flag.record_index)
                     && records_by_index
@@ -2157,29 +2168,27 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let native_stream = design_stream(&scope.id);
         if design::design_feature_family(&scope.kind) == Some(design::DesignFeatureFamily::Extrude)
         {
-            let mut profile_groups =
-                native
-                    .design_construction_operand_groups
-                    .iter()
-                    .filter(|group| {
-                        design_stream(&group.id) == native_stream
-                            && group.scope_record_index == scope.record_index
-                            && group.extrude_role
-                                == Some(records::DesignExtrudeOperandRole::Profile)
-                    });
-            let profile_group = profile_groups.next();
-            let profile_matches_operand = profile_groups.next().is_none()
-                && scope.extrude_profile.as_ref().is_none_or(|profile| {
-                    profile_group.map_or_else(
-                        || {
-                            usize::try_from(profile.scope_reference_ordinal)
-                                .ok()
-                                .and_then(|ordinal| scope.reference_members.get(ordinal))
-                                == Some(&profile.record_index)
-                        },
-                        |group| group.members.first() == Some(&profile.record_index),
-                    )
-                });
+            let profile_groups = native
+                .design_construction_operand_groups
+                .iter()
+                .filter(|group| {
+                    design_stream(&group.id) == native_stream
+                        && group.scope_record_index == scope.record_index
+                        && group.extrude_role == Some(records::DesignExtrudeOperandRole::Profile)
+                })
+                .collect::<Vec<_>>();
+            let profile_matches_operand = scope.extrude_profile.as_ref().is_none_or(|profile| {
+                match profile_groups.as_slice() {
+                    [] => {
+                        usize::try_from(profile.scope_reference_ordinal)
+                            .ok()
+                            .and_then(|ordinal| scope.reference_members.get(ordinal))
+                            == Some(&profile.record_index)
+                    }
+                    [group] => group.members.first() == Some(&profile.record_index),
+                    [_, _, ..] => false,
+                }
+            });
             if !profile_matches_operand {
                 findings.push(Finding {
                     check: Check::NativeLinks,
@@ -3201,9 +3210,23 @@ fn validate_operand_group_carriers<'a>(
                         .or(scope.base_flange_profile.as_ref())
                         .is_some_and(|profile| group.members == [profile.record_index])
                 });
+        let has_exact_group_members = !group.members.is_empty()
+            && group.members.iter().all(|record_index| {
+                native
+                    .design_construction_operand_groups
+                    .iter()
+                    .any(|member| {
+                        design_stream(&member.id) == native_stream
+                            && member.scope_record_index == group.scope_record_index
+                            && member.scope_reference_ordinal > group.scope_reference_ordinal
+                            && member.record_index == *record_index
+                    })
+            });
         let has_exact_trailing_carrier = group.frame.trailing_record_indices.is_empty()
             || operand_identity_groups.contains(&(native_stream, group.record_index))
-            || (group.frame.trailing_transforms.len() + group.frame.trailing_flags.len()
+            || (group.frame.trailing_transforms.len()
+                + group.frame.trailing_dual_transforms.len()
+                + group.frame.trailing_flags.len()
                 == group.frame.trailing_record_indices.len()
                 && group
                     .frame
@@ -3217,6 +3240,11 @@ fn validate_operand_group_carriers<'a>(
                             .any(|transform| transform.record_index == *record_index)
                             || group
                                 .frame
+                                .trailing_dual_transforms
+                                .iter()
+                                .any(|transform| transform.record_index == *record_index)
+                            || group
+                                .frame
                                 .trailing_flags
                                 .iter()
                                 .any(|flag| flag.record_index == *record_index)
@@ -3227,14 +3255,23 @@ fn validate_operand_group_carriers<'a>(
             || has_exact_entity_selection_members
             || has_exact_face_members
             || has_exact_body_recipe_members
-            || has_exact_sketch_profile_member;
-        if !has_exact_member_carrier || !has_exact_trailing_carrier {
+            || has_exact_sketch_profile_member
+            || has_exact_group_members;
+        if !has_exact_member_carrier {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
-                message:
-                    "Fusion Design construction operand group has no exact typed member and trailing carrier"
-                        .into(),
+                message: "Fusion Design construction operand group has no exact typed member"
+                    .into(),
+                entity: Some(group.id.clone()),
+            });
+        }
+        if !has_exact_trailing_carrier {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design construction operand group has no exact trailing carrier"
+                    .into(),
                 entity: Some(group.id.clone()),
             });
         }

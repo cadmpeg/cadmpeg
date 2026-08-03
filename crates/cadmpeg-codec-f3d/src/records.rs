@@ -2201,6 +2201,9 @@ pub struct DesignConstructionOperandGroupFrame {
     /// offsets and can select another typed grammar.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub trailing_transforms: Vec<DesignConstructionOperandTransform>,
+    /// Exact dual-transform records selected from the trailing-reference run.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub trailing_dual_transforms: Vec<DesignConstructionOperandDualTransform>,
     /// Exact compact flag records selected from the trailing-reference run.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub trailing_flags: Vec<DesignConstructionOperandFlag>,
@@ -2245,18 +2248,31 @@ pub struct DesignConstructionOperandTransform {
     pub transform: [[f64; 4]; 4],
     /// Byte offset of the first matrix scalar.
     pub transform_offset: u64,
-    /// Second ordered affine transform in the dual-matrix frame.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secondary_transform: Option<[[f64; 4]; 4]>,
-    /// Byte offset of the second matrix's first scalar.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secondary_transform_offset: Option<u64>,
     /// Indexed record immediately following the transform.
     pub following_record_index: u32,
     /// Following-record header byte offset.
     pub following_byte_offset: u64,
     /// Per-file dynamic following-record class tag.
     pub following_class_tag: String,
+}
+
+/// Two ordered affine placements named by an operand group's trailing run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignConstructionOperandDualTransform {
+    /// Indexed transform-record identity.
+    pub record_index: u32,
+    /// Transform-record header byte offset.
+    pub byte_offset: u64,
+    /// Per-file dynamic transform-record class tag.
+    pub class_tag: String,
+    /// First row-major affine transform.
+    pub first_transform: [[f64; 4]; 4],
+    /// Byte offset of the first matrix scalar.
+    pub first_transform_offset: u64,
+    /// Second row-major affine transform.
+    pub second_transform: [[f64; 4]; 4],
+    /// Byte offset of the second matrix scalar.
+    pub second_transform_offset: u64,
 }
 
 /// One persistent-entity step in a construction operand's selection path.
