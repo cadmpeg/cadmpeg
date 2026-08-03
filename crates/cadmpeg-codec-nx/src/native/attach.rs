@@ -4669,16 +4669,24 @@ fn unique_simple_hole_template(
 /// decoded body image. Retain the complete feature-input-local identities when
 /// current topology cannot represent a consumed historical body, and fall back
 /// to the native expression when even the alias namespace is incomplete.
+struct FeatureBodySelection {
+    selection: BodySelection,
+    alias_roots: Option<Vec<u32>>,
+}
+
 fn feature_body_selection(
     object_indices: &[u32],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
     native: String,
-) -> BodySelection {
+) -> FeatureBodySelection {
     let mut roots = Vec::new();
     for index in object_indices {
         let Some(root) = body_alias_roots.get(index) else {
-            return BodySelection::Native(native);
+            return FeatureBodySelection {
+                selection: BodySelection::Native(native),
+                alias_roots: None,
+            };
         };
         if !roots.contains(root) {
             roots.push(*root);
@@ -4696,31 +4704,35 @@ fn feature_body_selection(
     if let Some(bodies) =
         resolved.filter(|bodies| bodies.iter().collect::<BTreeSet<_>>().len() == bodies.len())
     {
-        return BodySelection::Resolved { bodies, native };
+        return FeatureBodySelection {
+            selection: BodySelection::Resolved { bodies, native },
+            alias_roots: Some(roots),
+        };
     }
-    BodySelection::Local {
-        bodies: roots
-            .into_iter()
-            .map(|root| format!("nx:om-body-object#{root}"))
-            .collect(),
-        native,
+    FeatureBodySelection {
+        selection: BodySelection::Local {
+            bodies: roots
+                .iter()
+                .map(|root| format!("nx:om-body-object#{root}"))
+                .collect(),
+            native,
+        },
+        alias_roots: Some(roots),
     }
 }
 
 fn atomic_disjoint_body_selections(
-    left: BodySelection,
-    right: BodySelection,
+    left: FeatureBodySelection,
+    right: FeatureBodySelection,
 ) -> (BodySelection, BodySelection) {
-    let complete = match (&left, &right) {
-        (
-            BodySelection::Resolved { bodies: left, .. },
-            BodySelection::Resolved { bodies: right, .. },
-        ) => !left.iter().any(|body| right.contains(body)),
-        (BodySelection::Local { bodies: left, .. }, BodySelection::Local { bodies: right, .. }) => {
-            !left.iter().any(|body| right.contains(body))
-        }
-        _ => false,
-    };
+    let complete = left.alias_roots.as_ref().is_some_and(|left| {
+        right
+            .alias_roots
+            .as_ref()
+            .is_some_and(|right| !left.iter().any(|root| right.contains(root)))
+    });
+    let left = left.selection;
+    let right = right.selection;
     if complete {
         return (left, right);
     }
@@ -4792,7 +4804,8 @@ fn delete_body_feature_definition(
             body_alias_roots,
             bodies_by_object_index,
             format!("nx:om-object-index#{body}"),
-        ),
+        )
+        .selection,
         mode: BodyRetentionMode::DeleteSelected,
     })
 }
@@ -4820,7 +4833,8 @@ fn sew_body_feature_definition(
                         .collect::<Vec<_>>()
                         .join(",")
                 ),
-            ),
+            )
+            .selection,
             gap_tolerance: None,
         }
     })
@@ -6133,7 +6147,8 @@ mod tests {
                 &roots,
                 &BTreeMap::new(),
                 "nx:om-object-indices#94,122".to_string(),
-            ),
+            )
+            .selection,
             BodySelection::Local {
                 bodies: vec![
                     "nx:om-body-object#94".to_string(),
@@ -6148,7 +6163,8 @@ mod tests {
                 &roots,
                 &BTreeMap::new(),
                 "nx:om-object-indices#94,123".to_string(),
-            ),
+            )
+            .selection,
             BodySelection::Native(_)
         ));
         let aliases = BTreeMap::from([(94, 94), (150, 94)]);
@@ -6158,7 +6174,8 @@ mod tests {
                 &aliases,
                 &BTreeMap::new(),
                 "nx:om-object-indices#94,150".to_string(),
-            ),
+            )
+            .selection,
             BodySelection::Local {
                 bodies: vec!["nx:om-body-object#94".to_string()],
                 native: "nx:om-object-indices#94,150".to_string(),
@@ -6171,7 +6188,8 @@ mod tests {
                 &roots,
                 &bindings,
                 "nx:om-object-index#94".to_string(),
-            ),
+            )
+            .selection,
             BodySelection::Resolved {
                 bodies: vec![first.clone()],
                 native: "nx:om-object-index#94".to_string(),
@@ -6179,6 +6197,66 @@ mod tests {
         );
         assert_eq!(super::feature_body_outputs(94, &bindings), vec![first]);
         assert!(super::feature_body_outputs(123, &bindings).is_empty());
+    }
+
+    #[test]
+    fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
+        use cadmpeg_ir::features::{
+            BodySelection, BooleanOp, Feature, FeatureDefinition, FeatureId,
+        };
+        use cadmpeg_ir::ids::BodyId;
+        use std::collections::BTreeMap;
+
+        let operation = crate::native::features::FeatureBooleanOperation {
+            id: "boolean#0".to_string(),
+            operation_label: "operation#0".to_string(),
+            kind: crate::native::features::FeatureBooleanKind::Subtract,
+            target_object_index: 94,
+            raw_target_object_index: vec![94],
+            target_source_offset: 0,
+            tool_object_indices: vec![122],
+            raw_tool_object_indices: vec![vec![122]],
+            tool_source_offsets: vec![1],
+            source_offset: 0,
+        };
+        let body = BodyId("nx:s18:body#3".to_string());
+        let definition = super::boolean_feature_definition(
+            &operation,
+            &BTreeMap::from([(94, 94), (122, 122)]),
+            &BTreeMap::from([(94, vec![body.clone()])]),
+        );
+
+        assert_eq!(
+            definition,
+            FeatureDefinition::Combine {
+                target: BodySelection::Resolved {
+                    bodies: vec![body.clone()],
+                    native: "nx:om-object-index#94".to_string(),
+                },
+                tools: BodySelection::Local {
+                    bodies: vec!["nx:om-body-object#122".to_string()],
+                    native: "nx:om-object-indices#122".to_string(),
+                },
+                op: BooleanOp::Cut,
+                keep_tools: false,
+            }
+        );
+        let feature = Feature {
+            id: FeatureId("feature".to_string()),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: vec![body],
+            definition,
+            native_ref: None,
+        };
+        assert!(!crate::decode::combine_definition_is_incomplete(&feature));
     }
 
     #[test]
