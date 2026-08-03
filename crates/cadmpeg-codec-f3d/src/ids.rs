@@ -315,6 +315,20 @@ pub(crate) fn neutral_sketch_text_id(
     ))
 }
 
+/// The source-local neutral key for a planar sketch-text record that predates
+/// the persistent text-identity property.
+pub(crate) fn neutral_sketch_text_record_id(
+    sketch: &cadmpeg_ir::sketches::SketchId,
+    record_index: u32,
+) -> cadmpeg_ir::sketches::SketchEntityId {
+    cadmpeg_ir::sketches::SketchEntityId(sketch_entity_tagged(
+        "sketch-entity",
+        &sketch.0,
+        'x',
+        u64::from(record_index),
+    ))
+}
+
 /// The neutral spatial-sketch curve-entity key under `sketch`.
 pub(crate) fn neutral_spatial_sketch_curve_id(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
@@ -670,7 +684,8 @@ native_record_id!(
 mod tests {
     use super::{
         decode_identity_key_component, design_segment, native_design_type_id, native_scope,
-        neutral_face_appearance_binding_id, same_native_occurrence, SCHEME_PREFIX,
+        neutral_face_appearance_binding_id, neutral_sketch_text_id, neutral_sketch_text_record_id,
+        same_native_occurrence, SCHEME_PREFIX,
     };
 
     #[test]
@@ -744,5 +759,15 @@ mod tests {
             "f3d:xref/root/occurrence-invalid/design:record#1",
             "f3d:design:persistent-subentity-tag#1",
         ));
+    }
+
+    #[test]
+    fn identityless_sketch_text_uses_a_disjoint_source_record_namespace() {
+        let sketch = cadmpeg_ir::sketches::SketchId("f3d:model:sketch#example".into());
+        let persistent = neutral_sketch_text_id(&sketch, 42);
+        let source_record = neutral_sketch_text_record_id(&sketch, 42);
+        assert_ne!(persistent, source_record);
+        assert_eq!(source_record, neutral_sketch_text_record_id(&sketch, 42));
+        assert_ne!(source_record, neutral_sketch_text_record_id(&sketch, 43));
     }
 }
