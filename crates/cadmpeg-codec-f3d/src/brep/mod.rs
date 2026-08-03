@@ -218,6 +218,29 @@ impl Brep {
             .collect()
     }
 
+    /// Resolve the Design selectors present for this blob. An exact native
+    /// body key has precedence. A selector absent from the native-key domain
+    /// selects the body with the same zero-based ordinal.
+    pub(crate) fn body_selectors_for(
+        &self,
+        selectors: &HashSet<u64>,
+    ) -> Result<HashMap<BodyId, u64>, cadmpeg_codec_core::CodecError> {
+        let body_keys = self.body_native_keys.iter().collect::<Vec<_>>();
+        let mut resolved = HashMap::new();
+        for selector in selectors {
+            let Some(body) = resolve_body_selector(&body_keys, *selector)? else {
+                continue;
+            };
+            if let Some(previous) = resolved.insert(body.clone(), *selector) {
+                return Err(cadmpeg_codec_core::CodecError::Malformed(format!(
+                    "F3D body {} is selected by both {previous} and {selector}",
+                    body.0
+                )));
+            }
+        }
+        Ok(resolved)
+    }
+
     /// Retain the connected entity graph rooted at the body-map keys selected
     /// for one BREP blob.
     pub fn retain_body_keys(
@@ -236,10 +259,9 @@ impl Brep {
             .map(|native| native.body.0.as_str())
             .collect::<HashSet<_>>();
         let mut roots = self
-            .body_selectors()
-            .into_iter()
-            .filter(|(_, selector)| selected_keys.contains(selector))
-            .map(|(body, _)| body.0)
+            .body_selectors_for(selected_keys)?
+            .into_keys()
+            .map(|body| body.0)
             .collect::<HashSet<_>>();
         // A Design body map selects native ASM body records. Neutral roots
         // projected from other saved top-level entities have no ASM body key
@@ -357,6 +379,43 @@ impl Brep {
         );
         self.body_keys.extend(other.body_keys);
         self.stats.merge(other.stats);
+    }
+}
+
+/// Resolve one Design body selector within one BREP blob. Exact native keys
+/// take precedence; an absent key falls back to the zero-based body ordinal.
+pub(crate) fn resolve_body_selector(
+    body_keys: &[&BodyNativeKey],
+    selector: u64,
+) -> Result<Option<BodyId>, cadmpeg_codec_core::CodecError> {
+    let direct = body_keys
+        .iter()
+        .filter(|body| body.asm_body_key == Some(selector))
+        .map(|body| body.body.clone())
+        .collect::<Vec<_>>();
+    match direct.as_slice() {
+        [body] => return Ok(Some(body.clone())),
+        [] => {}
+        _ => {
+            return Err(cadmpeg_codec_core::CodecError::Malformed(format!(
+                "F3D body selector {selector} matches multiple native body keys"
+            )));
+        }
+    }
+    let Some(ordinal) = u32::try_from(selector).ok() else {
+        return Ok(None);
+    };
+    let ordinal = body_keys
+        .iter()
+        .filter(|body| body.body_ordinal == ordinal)
+        .map(|body| body.body.clone())
+        .collect::<Vec<_>>();
+    match ordinal.as_slice() {
+        [body] => Ok(Some(body.clone())),
+        [] => Ok(None),
+        _ => Err(cadmpeg_codec_core::CodecError::Malformed(format!(
+            "F3D body selector {selector} matches multiple body ordinals"
+        ))),
     }
 }
 

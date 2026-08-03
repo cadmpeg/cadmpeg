@@ -196,6 +196,34 @@ mod tests {
         ];
         assert!(composite_composition_is_valid(&stages));
     }
+
+    #[test]
+    fn historical_body_overlap_ignores_set_ordering_form() {
+        use crate::ids::{FeatureInputTopologyId, HistoricalBodyId};
+
+        let state = FeatureInputTopologyId("test:input".into());
+        let target = BodySelection::Historical {
+            state: state.clone(),
+            bodies: vec![HistoricalBodyId("test:body:4".into())],
+            native: "target".into(),
+        };
+        let overlapping = BodySelection::HistoricalUnorderedSet {
+            state: state.clone(),
+            bodies: vec![
+                HistoricalBodyId("test:body:2".into()),
+                HistoricalBodyId("test:body:4".into()),
+            ],
+            native: vec!["tool-a".into(), "tool-b".into()],
+        };
+        let disjoint = BodySelection::HistoricalSet {
+            state,
+            bodies: vec![HistoricalBodyId("test:body:5".into())],
+            native: vec!["tool".into()],
+        };
+
+        assert!(body_selections_overlap(&target, &overlapping));
+        assert!(!body_selections_overlap(&target, &disjoint));
+    }
 }
 
 fn valid_increasing_locations(locations: impl Iterator<Item = f64>) -> bool {
@@ -2558,11 +2586,12 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             } => {
                 body_selections.push(bodies);
                 let body_count = match bodies {
-                    BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-                        Some(bodies.len())
-                    }
+                    BodySelection::Bodies(bodies)
+                    | BodySelection::Resolved { bodies, .. }
+                    | BodySelection::ResolvedSet { bodies, .. } => Some(bodies.len()),
                     BodySelection::Historical { bodies, .. }
-                    | BodySelection::HistoricalSet { bodies, .. } => Some(bodies.len()),
+                    | BodySelection::HistoricalSet { bodies, .. }
+                    | BodySelection::HistoricalUnorderedSet { bodies, .. } => Some(bodies.len()),
                     BodySelection::Generated { bodies, .. } => Some(bodies.len()),
                     BodySelection::Local { bodies, .. } => Some(bodies.len()),
                     BodySelection::Unresolved
@@ -2615,9 +2644,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 }
             }
             FeatureDefinition::Form { cages } => {
-                if cages.is_empty() {
-                    feature_geometry_error(findings, feature, "Form operation has no control cage");
-                }
                 check_ids(
                     findings,
                     &feature.id.0,
@@ -2874,6 +2900,10 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 {
                     paths.push(path);
                 }
+                if let Some(crate::features::SweepOrientation::GuideSurface { faces }) = orientation
+                {
+                    face_selections.push(faces);
+                }
                 if invalid_section
                     || twist.is_some_and(|value| !value.0.is_finite())
                     || taper.is_some_and(|value| !value.0.is_finite())
@@ -2974,6 +3004,13 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                 RadiusSpec::Constant { radius } => positive_feature_length(*radius),
                                 RadiusSpec::Chordal { chord_length } => {
                                     positive_feature_length(*chord_length)
+                                }
+                                RadiusSpec::Asymmetric {
+                                    offset_one,
+                                    offset_two,
+                                } => {
+                                    positive_feature_length(*offset_one)
+                                        && positive_feature_length(*offset_two)
                                 }
                                 RadiusSpec::Variable { points } => {
                                     points.len() >= 2
@@ -3121,6 +3158,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 edges,
                 support_faces,
                 mode,
+                angle,
+                ..
             } => {
                 edge_selections.push(edges);
                 face_selections.push(support_faces);
@@ -3134,7 +3173,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         distance,
                     } => valid_feature_direction(*direction) && positive_feature_length(*distance),
                 };
-                if !valid {
+                if !valid || angle.is_some_and(|value| !value.0.is_finite()) {
                     feature_geometry_error(findings, feature, "ruled surface is invalid");
                 }
             }
@@ -3305,11 +3344,12 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     feature_geometry_error(findings, feature, "body combine operands overlap");
                 }
                 let target_count = match target {
-                    BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-                        Some(bodies.len())
-                    }
+                    BodySelection::Bodies(bodies)
+                    | BodySelection::Resolved { bodies, .. }
+                    | BodySelection::ResolvedSet { bodies, .. } => Some(bodies.len()),
                     BodySelection::Historical { bodies, .. }
-                    | BodySelection::HistoricalSet { bodies, .. } => Some(bodies.len()),
+                    | BodySelection::HistoricalSet { bodies, .. }
+                    | BodySelection::HistoricalUnorderedSet { bodies, .. } => Some(bodies.len()),
                     BodySelection::Generated { bodies, .. } => Some(bodies.len()),
                     BodySelection::Local { bodies, .. } => Some(bodies.len()),
                     BodySelection::Unresolved
@@ -4635,6 +4675,27 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         |identity| ids.bodies(identity).is_some(),
                     );
                 }
+                BodySelection::ResolvedSet { bodies, native } => {
+                    check_ids(
+                        findings,
+                        &feature.id.0,
+                        "selected body",
+                        bodies.iter().map(|id| id.0.as_str()),
+                        |identity| ids.bodies(identity).is_some(),
+                    );
+                    if bodies.len() != native.len()
+                        || native.is_empty()
+                        || bodies.iter().collect::<HashSet<_>>().len() != bodies.len()
+                        || native.iter().any(|member| member.trim().is_empty())
+                        || native.iter().collect::<HashSet<_>>().len() != native.len()
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "resolved body selection set is invalid",
+                        );
+                    }
+                }
                 BodySelection::Historical {
                     state,
                     bodies,
@@ -4674,6 +4735,42 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             findings,
                             feature,
                             "historical body selection set is invalid",
+                        );
+                    }
+                    check_historical_selection(
+                        findings,
+                        &feature.id,
+                        (
+                            state,
+                            bodies.iter().map(crate::ids::HistoricalBodyId::as_str),
+                            native.first().map_or("", String::as_str),
+                        ),
+                        "body",
+                        false,
+                        &input_topologies,
+                        |topology| {
+                            topology
+                                .bodies
+                                .iter()
+                                .map(crate::ids::HistoricalBodyId::as_str)
+                                .collect()
+                        },
+                    );
+                }
+                BodySelection::HistoricalUnorderedSet {
+                    state,
+                    bodies,
+                    native,
+                } => {
+                    let set_is_valid = bodies.len() == native.len()
+                        && !native.is_empty()
+                        && native.iter().all(|member| !member.trim().is_empty())
+                        && native.iter().collect::<HashSet<_>>().len() == native.len();
+                    if !set_is_valid {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "historical unordered body selection set is invalid",
                         );
                     }
                     check_historical_selection(
@@ -4823,6 +4920,10 @@ fn radius_spec_is_valid(radius: &RadiusSpec) -> bool {
         RadiusSpec::Unresolved { .. } => true,
         RadiusSpec::Constant { radius } => positive_feature_length(*radius),
         RadiusSpec::Chordal { chord_length } => positive_feature_length(*chord_length),
+        RadiusSpec::Asymmetric {
+            offset_one,
+            offset_two,
+        } => positive_feature_length(*offset_one) && positive_feature_length(*offset_two),
         RadiusSpec::Variable { points } => {
             points.len() >= 2
                 && points.iter().all(|point| {
@@ -5112,28 +5213,34 @@ fn face_selections_overlap(first: &FaceSelection, second: &FaceSelection) -> boo
 fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> bool {
     fn direct(selection: &BodySelection) -> Option<&[crate::ids::BodyId]> {
         match selection {
-            BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-                Some(bodies.as_slice())
-            }
+            BodySelection::Bodies(bodies)
+            | BodySelection::Resolved { bodies, .. }
+            | BodySelection::ResolvedSet { bodies, .. } => Some(bodies.as_slice()),
+            _ => None,
+        }
+    }
+    fn historical(
+        selection: &BodySelection,
+    ) -> Option<(
+        &crate::ids::FeatureInputTopologyId,
+        &[crate::ids::HistoricalBodyId],
+    )> {
+        match selection {
+            BodySelection::Historical { state, bodies, .. }
+            | BodySelection::HistoricalSet { state, bodies, .. }
+            | BodySelection::HistoricalUnorderedSet { state, bodies, .. } => Some((state, bodies)),
             _ => None,
         }
     }
     if let Some((first, second)) = direct(first).zip(direct(second)) {
         return first.iter().any(|body| second.contains(body));
     }
+    if let Some(((first_state, first), (second_state, second))) =
+        historical(first).zip(historical(second))
+    {
+        return first_state == second_state && first.iter().any(|body| second.contains(body));
+    }
     match (first, second) {
-        (
-            BodySelection::Historical {
-                state: first_state,
-                bodies: first,
-                ..
-            },
-            BodySelection::Historical {
-                state: second_state,
-                bodies: second,
-                ..
-            },
-        ) => first_state == second_state && first.iter().any(|body| second.contains(body)),
         (
             BodySelection::Generated { bodies: first, .. },
             BodySelection::Generated { bodies: second, .. },

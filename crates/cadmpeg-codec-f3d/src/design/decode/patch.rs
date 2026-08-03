@@ -15,8 +15,9 @@ const PAYLOAD: usize = 19;
 /// reference order.
 ///
 /// The settings record occupies one fixed ordinal per boundary component in
-/// each of the two `SurfacePatch` scope forms, so every reference member is
-/// offered to the record grammar and only the members it closes are kept.
+/// each settings-bearing `SurfacePatch` scope form. Every reference member is
+/// offered to the record grammar and only the members it closes are kept. The
+/// single-group path form carries no settings record and therefore yields none.
 pub(crate) fn surface_patch_boundaries(
     bytes: &[u8],
     records: &IndexedRecordOffsets,

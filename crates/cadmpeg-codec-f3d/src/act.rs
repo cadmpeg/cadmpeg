@@ -31,7 +31,7 @@ pub fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
             by_key.insert(
                 (item.record_index, item.entity_id.clone()),
                 ActEntity {
-                    id: format!("f3d:{}:act-entity#{}", entry.name, item.record_index),
+                    id: crate::ids::native_scoped_id(&entry.name, "act-entity", item.record_index),
                     record_index: item.record_index,
                     table_record_index_offset: Some(item.record_index_offset as u64),
                     channel_record_index_offset: None,
@@ -48,7 +48,7 @@ pub fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
         for group in groups {
             let key = (group.record_index, group.entity_id.clone());
             let entity = by_key.entry(key).or_insert_with(|| ActEntity {
-                id: format!("f3d:{}:act-entity#{}", entry.name, group.record_index),
+                id: crate::ids::native_scoped_id(&entry.name, "act-entity", group.record_index),
                 record_index: group.record_index,
                 table_record_index_offset: None,
                 channel_record_index_offset: Some(group.record_index_offset as u64),
@@ -72,7 +72,7 @@ pub fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
                 .into_iter()
                 .enumerate()
                 .map(|(ordinal, (guid, offset))| ActGuid {
-                    id: format!("f3d:{}:act-guid#{offset}", entry.name),
+                    id: crate::ids::native_scoped_id(&entry.name, "act-guid", offset),
                     byte_offset: offset as u64,
                     guid_offset: (offset + 4) as u64,
                     ordinal: ordinal as u32,
@@ -152,7 +152,7 @@ fn decode_root_components(bytes: &[u8], stream: &str) -> Vec<ActRootComponent> {
             continue;
         };
         out.push(ActRootComponent {
-            id: format!("f3d:{stream}:act-root-component#{position}"),
+            id: crate::ids::native_scoped_id(stream, "act-root-component", position),
             byte_offset: position as u64,
             record_index: u32::from_le_bytes(record_raw.try_into().expect(
                 "invariant: record_raw is a 4-byte slice from bytes.get(range) of length 4",

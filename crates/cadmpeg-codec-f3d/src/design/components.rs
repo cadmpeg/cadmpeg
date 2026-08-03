@@ -40,7 +40,19 @@ pub(crate) fn project_local_components(
                 else {
                     continue;
                 };
-                project_component(&mut components, &root.component_guid);
+                project_occurrence(
+                    &mut components,
+                    &mut occurrences,
+                    &native_by_guid,
+                    &root.component_guid,
+                    &root.occurrence_guid,
+                    root.transform.unwrap_or([
+                        [1.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ]),
+                );
             }
         }
         if let Some(operation) = &scope.copy_paste_component_operation {

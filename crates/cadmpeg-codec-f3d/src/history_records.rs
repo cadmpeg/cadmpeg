@@ -20,6 +20,10 @@ pub(crate) struct AsmHistory {
     /// state-by-record work estimate exceeded the decoder safety budget.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub record_table_binding_budget_exceeded: bool,
+    /// Historical projection consumers finished and any temporary complete
+    /// topology snapshots were released.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub projection_finalized: bool,
     pub states: Vec<AsmDeltaState>,
 }
 
@@ -83,6 +87,15 @@ pub(crate) struct AsmHistoricalTopology {
     /// Characteristic radii of analytic or constant-radius blend carriers.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub surface_radii: Vec<AsmHistoricalSurfaceRadius>,
+    /// Exact right-circular cylinder carriers in this historical state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub surface_cylinders: Vec<AsmHistoricalCylinder>,
+    /// Exact plane carriers in this historical state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub surface_planes: Vec<AsmHistoricalPlane>,
+    /// Model-space axes of axis-bearing analytic surface carriers in this state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub surface_axes: Vec<AsmHistoricalSurfaceAxis>,
     pub curves: Vec<i64>,
     /// Model-space axes of axis-bearing curve carriers in this state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -127,10 +140,35 @@ pub(crate) struct AsmHistoricalCurveAxis {
     pub direction: Vector3,
 }
 
+/// Stable axis line of one cylinder, cone, or torus carrier.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct AsmHistoricalSurfaceAxis {
+    pub surface: i64,
+    pub origin: Point3,
+    pub direction: Vector3,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct AsmHistoricalSurfaceRadius {
     pub surface: i64,
     pub radius: f64,
+}
+
+/// Stable geometry of one right-circular cylinder carrier.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct AsmHistoricalCylinder {
+    pub surface: i64,
+    pub origin: Point3,
+    pub axis: Vector3,
+    pub radius: f64,
+}
+
+/// Stable geometry of one plane carrier.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct AsmHistoricalPlane {
+    pub surface: i64,
+    pub origin: Point3,
+    pub normal: Vector3,
 }
 
 /// Stable point-carrier value in one historical B-rep state.

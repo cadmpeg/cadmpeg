@@ -235,6 +235,7 @@ fn merge_references(
         if let Some(transform) = reference.transform {
             apply_occurrence_transform(&mut component_ir.model, transform);
         }
+        append_feature_history(&parent.ir.model, &mut component_ir.model)?;
         let mut scope = OccurrenceScope {
             occurrence: &occurrence,
         };
@@ -268,6 +269,43 @@ fn merge_references(
         ));
     }
     Ok(merged)
+}
+
+/// Places one component's feature history after every feature already merged.
+///
+/// Feature ordinals are document-global in CADIR. Source documents number their
+/// histories independently, so an assembly merge translates the component's
+/// minimum ordinal to the next available ordinal and preserves every relative
+/// ordinal difference within that history.
+fn append_feature_history(parent: &Model, component: &mut Model) -> Result<(), CodecError> {
+    let Some(component_minimum) = component
+        .features
+        .iter()
+        .map(|feature| feature.ordinal)
+        .min()
+    else {
+        return Ok(());
+    };
+    let next = parent
+        .features
+        .iter()
+        .map(|feature| feature.ordinal)
+        .max()
+        .map_or(Ok(0), |ordinal| {
+            ordinal.checked_add(1).ok_or_else(|| {
+                CodecError::Malformed("merged F3Z feature ordinal exceeds u64::MAX".into())
+            })
+        })?;
+    for feature in &mut component.features {
+        feature.ordinal = feature
+            .ordinal
+            .checked_sub(component_minimum)
+            .and_then(|ordinal| ordinal.checked_add(next))
+            .ok_or_else(|| {
+                CodecError::Malformed("merged F3Z feature ordinal exceeds u64::MAX".into())
+            })?;
+    }
+    Ok(())
 }
 
 fn merge_annotations(
@@ -423,8 +461,8 @@ fn remap_ids(value: &mut Value, occurrence: &str) {
     }
 }
 
-/// Append every `f3d` native arena of `component` onto the root's, rescoping
-/// each record into `occurrence`.
+/// Append every typed and reserved `f3d` native arena of `component` onto the
+/// root's, rescoping each record into `occurrence`.
 ///
 /// Records are moved across one at a time in their stored JSON form. The whole
 /// merged population is never held as a parsed value tree, and neither is the
@@ -434,14 +472,18 @@ fn extend_native(root: &mut Native, mut component: Native, occurrence: &str) {
         return;
     };
     let target = root.namespace_mut("f3d");
-    for name in crate::native::F3D_ARENA_NAMES {
-        let Some(records) = source.arenas.remove(*name) else {
+    for name in crate::native::F3D_ARENA_NAMES
+        .iter()
+        .copied()
+        .chain(std::iter::once("unknowns"))
+    {
+        let Some(records) = source.arenas.remove(name) else {
             continue;
         };
         if records.is_empty() {
             continue;
         }
-        let arena = target.arenas.entry((*name).to_string()).or_default();
+        let arena = target.arenas.entry(name.to_string()).or_default();
         arena.reserve(records.len());
         for record in records {
             arena.push(rescope_record(&record, occurrence));
@@ -495,10 +537,80 @@ fn rescope_json_fields(fields: &mut serde_json::Map<String, serde_json::Value>, 
 mod tests {
     use crate::records::DesignSketchPlacement;
     use cadmpeg_ir::document::Model;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
     use cadmpeg_ir::ids::{BodyId, RegionId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region};
     use cadmpeg_ir::transform::Transform;
     use cadmpeg_ir::{Native, NativeRecord};
+
+    fn feature(id: &str, ordinal: u64) -> Feature {
+        Feature {
+            id: FeatureId(id.into()),
+            ordinal,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "test".into(),
+                parameters: std::collections::BTreeMap::new(),
+                properties: std::collections::BTreeMap::new(),
+            },
+            native_ref: None,
+        }
+    }
+
+    #[test]
+    fn component_feature_history_follows_the_parent_without_losing_relative_order() {
+        let parent = Model {
+            features: vec![
+                feature("f3d:feature#parent-0", 4),
+                feature("f3d:feature#parent-1", 8),
+            ],
+            ..Model::default()
+        };
+        let mut component = Model {
+            features: vec![
+                feature("f3d:feature#component-0", 10),
+                feature("f3d:feature#component-1", 12),
+            ],
+            ..Model::default()
+        };
+
+        super::append_feature_history(&parent, &mut component).unwrap();
+
+        assert_eq!(
+            component
+                .features
+                .iter()
+                .map(|feature| feature.ordinal)
+                .collect::<Vec<_>>(),
+            vec![9, 11]
+        );
+    }
+
+    #[test]
+    fn component_feature_history_refuses_an_exhausted_ordinal_domain() {
+        let parent = Model {
+            features: vec![feature("f3d:feature#parent", u64::MAX)],
+            ..Model::default()
+        };
+        let mut component = Model {
+            features: vec![feature("f3d:feature#component", 0)],
+            ..Model::default()
+        };
+
+        let error = super::append_feature_history(&parent, &mut component).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("merged F3Z feature ordinal exceeds u64::MAX"));
+    }
 
     /// The rescoping round-trip carries an entity through an untyped value tree.
     /// A coordinate is an `f64`, and a decoded one is not guaranteed finite, so

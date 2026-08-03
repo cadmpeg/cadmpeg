@@ -5286,11 +5286,13 @@ fn atomic_disjoint_body_selections(
         BodySelection::Resolved { native, .. }
         | BodySelection::Local { native, .. }
         | BodySelection::Native(native) => BodySelection::Native(native),
+        BodySelection::ResolvedSet { native, .. } => BodySelection::NativeSet(native),
         BodySelection::NativeSet(members) => BodySelection::NativeSet(members),
         BodySelection::Bodies(bodies) => BodySelection::Bodies(bodies),
         BodySelection::Generated { .. }
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
+        | BodySelection::HistoricalUnorderedSet { .. }
         | BodySelection::Unresolved => BodySelection::Unresolved,
     };
     (native(left), native(right))

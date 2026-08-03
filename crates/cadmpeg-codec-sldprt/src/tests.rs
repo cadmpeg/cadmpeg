@@ -14681,6 +14681,7 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
                 direction: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
                 distance: Length(2.0),
             },
+            ..
         } if edges == std::slice::from_ref(&edge_id) && edge_native == &edge
             && faces == std::slice::from_ref(&face_id) && face_native == &face
     ));
@@ -14689,6 +14690,7 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
         edges,
         support_faces,
         mode,
+        ..
     } = &mut decoded.ir.model.features[0].definition
     else {
         panic!("typed ruled surface");

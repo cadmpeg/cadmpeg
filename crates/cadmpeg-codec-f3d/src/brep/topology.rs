@@ -584,6 +584,7 @@ pub(crate) fn collect_wire_topology(
             (1..limit).contains(&index) && is_edge_record(record)
         }) {
             let edge_index = edge.index as i64;
+            let already_owned = reach.edges.contains(&edge_index);
             keep_wire_edge(
                 out,
                 edge_index,
@@ -594,7 +595,7 @@ pub(crate) fn collect_wire_topology(
                 reach,
                 purpose,
             );
-            if reach.edges.contains(&edge_index) {
+            if !already_owned && reach.edges.contains(&edge_index) {
                 saved_free_edges.push(edge_index);
             }
         }

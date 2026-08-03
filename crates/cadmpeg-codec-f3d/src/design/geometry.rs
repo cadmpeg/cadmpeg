@@ -1248,6 +1248,32 @@ pub(crate) fn region_containing_points(
     })
 }
 
+/// Return true when every selected closed profile bounds a disjoint region.
+/// Nested or intersecting loops require explicit region semantics.
+pub(crate) fn profile_loops_are_independent(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    profiles: &[u32],
+    tolerance: f64,
+) -> bool {
+    let boundaries = profiles
+        .iter()
+        .map(|profile| {
+            let profile = usize::try_from(*profile).ok()?;
+            profile_boundary(sketch.profiles.get(profile)?, entities, tolerance)
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(boundaries) = boundaries else {
+        return false;
+    };
+    boundaries.iter().enumerate().all(|(left_index, left)| {
+        boundaries
+            .iter()
+            .skip(left_index + 1)
+            .all(|right| left.is_provably_disjoint(right))
+    })
+}
+
 fn immediate_containment_children(outer: usize, containment: &[Vec<bool>]) -> Vec<usize> {
     (0..containment.len())
         .filter(|candidate| {
@@ -1359,6 +1385,41 @@ impl ProfileBoundary {
                 .zip(inner.certified_loop())
                 .is_some_and(|(outer, inner)| outer.strictly_contains(&inner)),
         }
+    }
+
+    fn is_provably_disjoint(&self, other: &Self) -> bool {
+        let intersects = match (self, other) {
+            (Self::Polygon(left), Self::Polygon(right)) => polygon_edges(left).any(|left_edge| {
+                polygon_edges(right).any(|right_edge| segments_intersect(left_edge, right_edge))
+            }),
+            (
+                Self::Circle {
+                    center: left_center,
+                    radius: left_radius,
+                },
+                Self::Circle {
+                    center: right_center,
+                    radius: right_radius,
+                },
+            ) => point_distance(*left_center, *right_center) <= left_radius + right_radius,
+            (Self::Polygon(polygon), Self::Circle { center, radius })
+            | (Self::Circle { center, radius }, Self::Polygon(polygon)) => {
+                polygon_edges(polygon).any(|edge| point_segment_distance(*center, edge) <= *radius)
+            }
+            (Self::Polygon(polygon), Self::CircularArcLoop(arc_loop))
+            | (Self::CircularArcLoop(arc_loop), Self::Polygon(polygon)) => {
+                polygon_arc_loop_intersects(polygon, arc_loop)
+            }
+            (Self::CircularArcLoop(left), Self::CircularArcLoop(right)) => {
+                arc_loops_intersect(left, right)
+            }
+            (Self::CircularArcLoop(arc_loop), Self::Circle { center, radius })
+            | (Self::Circle { center, radius }, Self::CircularArcLoop(arc_loop)) => arc_loop
+                .iter()
+                .any(|segment| point_boundary_segment_distance(*center, segment) <= *radius),
+            (Self::CertifiedLoop(_), _) | (_, Self::CertifiedLoop(_)) => return false,
+        };
+        !intersects && !self.strictly_contains(other) && !other.strictly_contains(self)
     }
 
     fn certified_loop(&self) -> Option<CertifiedProfileLoop> {

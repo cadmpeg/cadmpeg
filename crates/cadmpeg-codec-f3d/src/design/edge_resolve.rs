@@ -100,6 +100,24 @@ pub(crate) fn resolved_edge_group(
             (!edges.is_empty()).then_some(edges)
         })
         .flatten();
+    let identity_group_transition_slots = identity_matches.as_ref().and_then(|operands| {
+        let first = operands.first()?;
+        let mut edges = first.transition_edge_candidates.clone();
+        edges.sort_unstable();
+        edges.dedup();
+        (!edges.is_empty()
+            && edges.len() == group.members.len()
+            && operands.iter().all(|operand| {
+                if !operand.compact_layout {
+                    return false;
+                }
+                let mut candidate = operand.transition_edge_candidates.clone();
+                candidate.sort_unstable();
+                candidate.dedup();
+                candidate == edges
+            }))
+        .then_some(edges)
+    });
     let identity_radius_slots = treatment_radius.and_then(|radius| {
         radius_edge_identity_group_candidates(identity_matches.as_ref()?, radius)
     });
@@ -108,6 +126,7 @@ pub(crate) fn resolved_edge_group(
             && (operands.iter().all(|operand| {
                 operand.resolved_edge_slot.is_some() || !operand.resolved_edge_slots.is_empty()
             }) || identity_transition_slots.is_some()
+                || identity_group_transition_slots.is_some()
                 || identity_radius_slots.is_some())
     });
     let recipe_corroborates_identity_transition =
@@ -167,6 +186,21 @@ pub(crate) fn resolved_edge_group(
             };
         }
         if let Some(edges) = identity_radius_slots.as_ref() {
+            return EdgeSelection::Historical {
+                state,
+                edges: edges
+                    .iter()
+                    .map(|edge_slot| {
+                        ids::history_input_edge_id(
+                            &ids::history_input_prefix(feature_key, previous_state_id),
+                            *edge_slot,
+                        )
+                    })
+                    .collect(),
+                native: group.id.clone(),
+            };
+        }
+        if let Some(edges) = identity_group_transition_slots.as_ref() {
             return EdgeSelection::Historical {
                 state,
                 edges: edges
@@ -1037,7 +1071,12 @@ pub(crate) fn resolved_edge_candidate_intersection<'a>(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<i64> {
-    resolved_edge_candidate_intersection_with_extra_proofs(selector_contexts, shared_edge_sets, [])
+    resolved_edge_candidate_intersection_with_extra_proofs(
+        selector_contexts,
+        shared_edge_sets,
+        [],
+        None,
+    )
 }
 
 pub(crate) fn unique_incidence_edge_shared_by_reference_faces<'a>(
@@ -1086,13 +1125,13 @@ pub(crate) fn resolved_edge_candidate_intersection_with_deleted_proofs<'a>(
     deleted_boundary_edges: &[i64],
     deleted_reference: Option<i64>,
 ) -> Option<i64> {
+    let deleted_triplet =
+        unique_deleted_triplet_candidate(selector_contexts, deleted_boundary_edges);
     resolved_edge_candidate_intersection_with_extra_proofs(
         selector_contexts,
         shared_edge_sets,
-        [
-            unique_deleted_triplet_candidate(selector_contexts, deleted_boundary_edges),
-            deleted_reference,
-        ],
+        [deleted_reference],
+        deleted_triplet,
     )
 }
 
@@ -1100,7 +1139,13 @@ fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
     extra_proofs: [Option<i64>; N],
+    disjoint_reference_proof: Option<i64>,
 ) -> Option<i64> {
+    let extra_proofs = extra_proofs
+        .into_iter()
+        .flatten()
+        .chain(disjoint_reference_proof)
+        .collect::<Vec<_>>();
     let ordered_edge_sets = shared_edge_sets.into_iter().collect::<Vec<_>>();
     let shared_edge_sets = ordered_edge_sets
         .iter()
@@ -1110,14 +1155,17 @@ fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
     let references_unavailable = !ordered_edge_sets.is_empty() && shared_edge_sets.is_empty();
     let reference_candidates =
         (shared_edge_sets.len() >= 2).then(|| edge_set_intersection(&shared_edge_sets));
-    // A disjoint adjacent-face reference set names no edge that every reference
-    // shares, so it identifies an unresolved edge-bearing operand: no other
-    // proof can select an edge outside the operand's own references.
+    // Disjoint contextual face references do not name a common edge. An exact
+    // recipe-clause/history proof remains independent of that context.
     if reference_candidates
         .as_deref()
         .is_some_and(<[i64]>::is_empty)
     {
-        return None;
+        let edge = disjoint_reference_proof?;
+        return extra_proofs
+            .iter()
+            .all(|proof| *proof == edge)
+            .then_some(edge);
     }
     let reference = match reference_candidates.as_deref() {
         Some(&[edge]) => Some(edge),
@@ -1141,8 +1189,8 @@ fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
         cross_clause_triplet,
     ]
     .into_iter()
-    .chain(extra_proofs)
     .flatten()
+    .chain(extra_proofs)
     .collect::<Vec<_>>();
     let edge = *proofs.first()?;
     proofs.iter().all(|proof| *proof == edge).then_some(edge)
@@ -1400,6 +1448,7 @@ pub(crate) fn project_fixed_fillet(
             let edge_radius = match radius {
                 RadiusSpec::Constant { radius } => Some(radius.0),
                 RadiusSpec::Chordal { .. }
+                | RadiusSpec::Asymmetric { .. }
                 | RadiusSpec::Variable { .. }
                 | RadiusSpec::Unresolved { .. } => None,
             };
@@ -1427,7 +1476,7 @@ pub(crate) fn project_fixed_fillet(
 
 #[cfg(test)]
 mod radius_identity_tests {
-    use super::{project_fixed_fillet, radius_edge_identity_group_candidates};
+    use super::{project_fixed_fillet, radius_edge_identity_group_candidates, resolved_edge_group};
     use crate::records::{
         DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignParameterScope,
     };
@@ -1441,6 +1490,7 @@ mod radius_identity_tests {
             "record_index": record_index,
             "byte_offset": 0,
             "class_tag": "277",
+            "compact_layout": true,
             "local_id": record_index,
             "local_id_offset": 0,
             "asset_id": "asset",
@@ -1581,5 +1631,46 @@ mod radius_identity_tests {
             &[first_identity, second_identity],
         )
         .is_none());
+    }
+
+    #[test]
+    fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
+        let mut selection_group = group(2, 10);
+        selection_group.members = vec![10, 11];
+        selection_group.member_offsets = vec![0, 0];
+        let first = identity(10, &[(17, 5.0), (19, 5.0)]);
+        let mut second = identity(11, &[(17, 5.0), (19, 5.0)]);
+        second.group_member_ordinal = 1;
+        let feature_id = cadmpeg_ir::features::FeatureId("feature".into());
+
+        assert!(matches!(
+            resolved_edge_group(
+                &selection_group,
+                std::slice::from_ref(&selection_group),
+                &[],
+                &[first.clone(), second.clone()],
+                Some(7),
+                &feature_id,
+                Some(3.0),
+            ),
+            cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+                if edges.len() == 2
+        ));
+
+        let first = identity(10, &[(17, 5.0), (18, 5.0), (19, 5.0)]);
+        let mut second = identity(11, &[(17, 5.0), (18, 5.0), (19, 5.0)]);
+        second.group_member_ordinal = 1;
+        assert!(matches!(
+            resolved_edge_group(
+                &selection_group,
+                std::slice::from_ref(&selection_group),
+                &[],
+                &[first, second],
+                Some(7),
+                &feature_id,
+                Some(3.0),
+            ),
+            cadmpeg_ir::features::EdgeSelection::Native(_)
+        ));
     }
 }

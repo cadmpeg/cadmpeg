@@ -46,10 +46,12 @@ pub(crate) enum DesignFeatureFamily {
     SurfacePatch,
     SurfaceExtend,
     SurfaceOffset,
+    SurfaceRuled,
     BoundaryFill,
     Hole,
     Split,
     Scale,
+    Thread,
 }
 
 /// Return the canonical operation family while preserving `kind` verbatim on
@@ -80,10 +82,12 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
         "SurfacePatch" => Some(DesignFeatureFamily::SurfacePatch),
         "SurfaceExtend" => Some(DesignFeatureFamily::SurfaceExtend),
         "SurfaceOffset" => Some(DesignFeatureFamily::SurfaceOffset),
+        "SurfaceRuled" => Some(DesignFeatureFamily::SurfaceRuled),
         "BoundaryFill" => Some(DesignFeatureFamily::BoundaryFill),
         "Hole" => Some(DesignFeatureFamily::Hole),
         "Split" => Some(DesignFeatureFamily::Split),
         "Scale" | "Maßstab" => Some(DesignFeatureFamily::Scale),
+        "Thread" => Some(DesignFeatureFamily::Thread),
         _ => None,
     }
 }

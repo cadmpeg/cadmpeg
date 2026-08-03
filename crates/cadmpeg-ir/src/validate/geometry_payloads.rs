@@ -2035,7 +2035,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         if pcurve
             .parameter_range
-            .is_some_and(|[start, end]| !start.is_finite() || !end.is_finite() || start > end)
+            .is_some_and(|range| range.into_iter().any(|value| !value.is_finite()))
         {
             bounds_err(findings, &pcurve.id.0, "pcurve parameter range is invalid");
         }
