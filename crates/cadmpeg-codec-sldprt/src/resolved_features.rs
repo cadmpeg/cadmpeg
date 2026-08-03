@@ -2331,8 +2331,8 @@ mod marker_tests {
         extended_profile_roster_construction_line_endpoint_indices, extended_radial_circle_index,
         extended_tagged_indexed_curve_endpoint_indices, extended_terminal_profile_line,
         extended_terminal_repeated_radial_circle_index,
-        extended_wide_construction_line_roster_indices, fixed_reference_plane_frame,
-        generated_surface_identities, geometry_locus_profile_vertex,
+        extended_wide_construction_line_roster_indices, extended_wide_selected_axis_endpoints,
+        fixed_reference_plane_frame, generated_surface_identities, geometry_locus_profile_vertex,
         history_features_with_object_sources, indexed_arc_uses_coordinate_center,
         indexed_profile_vertex, indexed_rectangle_from_line_cycle, inline_arc_coordinates,
         inline_surface_reference_at, legacy_compact_diameter_arc_center,
@@ -10231,6 +10231,65 @@ mod marker_tests {
         assert_eq!(
             extended_profile_roster_construction_line_endpoint_indices(&payload, 0),
             None
+        );
+    }
+
+    #[test]
+    fn extended_wide_selected_axis_uses_object_ids_then_one_based_point_roster() {
+        let mut payload = vec![0; 92 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+        payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..31].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x02, 0x00, 0x00, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[66..68].copy_from_slice(&2u16.to_le_bytes());
+        payload[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[80..84].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
+        payload[88..92].fill(0xff);
+        payload[92..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        let entity = |id: &str,
+                      offset: u64,
+                      object_index: Option<u32>,
+                      coordinates_m: Option<[f64; 2]>| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("sketch".into()),
+            ordinal: 0,
+            offset,
+            object_index,
+            local_id: None,
+            kind: if coordinates_m.is_some() {
+                SketchInputKind::Point
+            } else {
+                SketchInputKind::LineOrCircle
+            },
+            state_value: Some(1.0),
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let curve = entity("curve", 0, Some(8), None);
+        let first = entity("first", 10, Some(1), Some([0.0, 0.0]));
+        let second = entity("second", 20, Some(3), Some([1.0, 0.0]));
+        let third = entity("third", 30, Some(20), Some([2.0, 0.0]));
+        let markers = [&curve, &first, &second, &third];
+
+        assert_eq!(
+            extended_wide_selected_axis_endpoints(&payload, &curve, &markers)
+                .expect("object-index endpoints")
+                .map(|endpoint| endpoint.id.as_str()),
+            ["first", "second"]
+        );
+
+        payload[64..66].copy_from_slice(&3u16.to_le_bytes());
+        assert_eq!(
+            extended_wide_selected_axis_endpoints(&payload, &curve, &markers)
+                .expect("one-based roster endpoints")
+                .map(|endpoint| endpoint.id.as_str()),
+            ["third", "second"]
         );
     }
 
@@ -40777,6 +40836,9 @@ fn marker_curve_endpoint_markers<'a>(
     if let Some(endpoints) = compact_legacy_object_line_endpoints(payload, curve, markers) {
         return endpoints.to_vec();
     }
+    if let Some(endpoints) = extended_wide_selected_axis_endpoints(payload, curve, markers) {
+        return endpoints.to_vec();
+    }
     if let Some(endpoints) = inline_arc_endpoint_markers(payload, curve, markers) {
         return endpoints.to_vec();
     }
@@ -40866,6 +40928,86 @@ fn compact_legacy_object_line_endpoints<'a>(
         candidates.next().is_none().then_some(marker)
     };
     let endpoints = [resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?];
+    (endpoints[0].id != endpoints[1].id && endpoints[0].coordinates_m != endpoints[1].coordinates_m)
+        .then_some(endpoints)
+}
+
+fn extended_wide_selected_axis_endpoints<'a>(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+) -> Option<[&'a SketchInputEntity; 2]> {
+    let offset = usize::try_from(curve.offset).ok()?;
+    if curve.kind != SketchInputKind::LineOrCircle
+        || payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+            != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || marker_native_code(payload, offset) != Some(2)
+        || payload.get(offset + 23..offset + 31)
+            != Some(&[0x04, 0x00, 0x02, 0x00, 0x02, 0x00, 0x00, 0x00])
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00])
+        || payload.get(offset + 39..offset + 48) != Some(&[0; 9])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 56..offset + 64) != Some(&[0; 8])
+        || payload.get(offset + 68..offset + 72) != Some(&[0; 4])
+        || payload.get(offset + 72..offset + 80) != Some(&(-1.0f64).to_le_bytes())
+        || payload.get(offset + 80..offset + 84) != Some(&[0x00, 0x00, 0x02, 0x00])
+        || payload.get(offset + 84..offset + 88) != Some(&[0; 4])
+        || !sketch_marker_prefix_at(payload, offset.checked_add(92)?)
+    {
+        return None;
+    }
+    let endpoint = |relative| {
+        Some(u32::from(u16::from_le_bytes(
+            payload
+                .get(offset + relative..offset + relative + 2)?
+                .try_into()
+                .ok()?,
+        )))
+    };
+    let encoded = [endpoint(64)?, endpoint(66)?];
+    if encoded[0] == encoded[1] || encoded.contains(&u32::from(u16::MAX)) {
+        return None;
+    }
+    let resolve_object = |index| {
+        let mut candidates = markers.iter().copied().filter(|marker| {
+            marker.feature_ref == curve.feature_ref
+                && marker.object_index == Some(index)
+                && marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+        });
+        let candidate = candidates.next()?;
+        candidates.next().is_none().then_some(candidate)
+    };
+    let object_endpoints = encoded.map(|index| resolve_object(index + 1));
+    if let [Some(first), Some(second)] = object_endpoints {
+        if first.id != second.id && first.coordinates_m != second.coordinates_m {
+            return Some([first, second]);
+        }
+    }
+    let indices = encoded.map(|index| usize::try_from(index).ok()?.checked_sub(1));
+    let [Some(first_index), Some(second_index)] = indices else {
+        return None;
+    };
+    let mut points = markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            marker.feature_ref == curve.feature_ref
+                && marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+        })
+        .collect::<Vec<_>>();
+    points.sort_unstable_by_key(|marker| marker.offset);
+    let endpoints = [*points.get(first_index)?, *points.get(second_index)?];
     (endpoints[0].id != endpoints[1].id && endpoints[0].coordinates_m != endpoints[1].coordinates_m)
         .then_some(endpoints)
 }
