@@ -20,6 +20,10 @@ pub(crate) struct AsmHistory {
     /// state-by-record work estimate exceeded the decoder safety budget.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub record_table_binding_budget_exceeded: bool,
+    /// Historical projection consumers finished and any temporary complete
+    /// topology snapshots were released.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub projection_finalized: bool,
     pub states: Vec<AsmDeltaState>,
 }
 

@@ -193,6 +193,7 @@ pub(crate) fn decode(
         stream_size,
         history_entry_count,
         record_table_binding_budget_exceeded,
+        projection_finalized: false,
         states,
     })
 }
@@ -520,11 +521,18 @@ fn bind_historical_transitions(states: &mut [AsmDeltaState]) {
 /// Release complete historical snapshots after every projection consumer has
 /// finished. Raw history records and sparse transitions remain retained.
 pub(crate) fn discard_projection_caches(histories: &mut [AsmHistory]) {
-    for state in histories.iter_mut().flat_map(|history| &mut history.states) {
-        state.entity_versions.clear();
-        state.record_table_complete = false;
-        state.topology = None;
+    for history in histories {
+        history.projection_finalized = true;
+        for state in &mut history.states {
+            state.entity_versions.clear();
+            state.record_table_complete = false;
+            state.topology = None;
+        }
     }
+}
+
+pub(crate) fn projection_was_finalized(histories: &[AsmHistory]) -> bool {
+    !histories.is_empty() && histories.iter().all(|history| history.projection_finalized)
 }
 
 fn historical_transition(
@@ -1490,6 +1498,12 @@ pub(crate) fn bind_face_operand_history_candidates(
     operand_groups: &[crate::records::DesignConstructionOperandGroup],
     histories: &[AsmHistory],
 ) {
+    // These fields already contain the projection result after the complete
+    // historical snapshots have been released. Rebinding without those
+    // snapshots would erase that result rather than validate or refine it.
+    if projection_was_finalized(histories) {
+        return;
+    }
     for operand in &mut *operands {
         operand.preceding_candidate_faces.clear();
         operand.changed_candidate_faces.clear();
@@ -1861,6 +1875,9 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
     scopes: &[crate::records::DesignParameterScope],
     histories: &[AsmHistory],
 ) {
+    if projection_was_finalized(histories) {
+        return;
+    }
     let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
     for state in histories.iter().flat_map(|history| &history.states) {
         states
@@ -2575,6 +2592,9 @@ pub(crate) fn bind_edge_operand_history_candidates(
     scopes: &[crate::records::DesignParameterScope],
     histories: &[AsmHistory],
 ) {
+    if projection_was_finalized(histories) {
+        return;
+    }
     let mut scope_operand_counts = HashMap::<(String, u32), usize>::new();
     for operand in operands.iter() {
         let Some(stream) = crate::ids::native_stream(&operand.id) else {
@@ -3790,6 +3810,9 @@ pub(crate) fn bind_edge_identity_history(
     scopes: &[crate::records::DesignParameterScope],
     histories: &[AsmHistory],
 ) {
+    if projection_was_finalized(histories) {
+        return;
+    }
     let history_identities = HistoricalIdentityIndex::build(
         histories,
         operands
@@ -4848,16 +4871,27 @@ mod tests {
             stream_size: None,
             history_entry_count: None,
             record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
             states: vec![state],
         }];
 
         discard_projection_caches(&mut histories);
 
         let state = &histories[0].states[0];
+        assert!(histories[0].projection_finalized);
         assert!(state.entity_versions.is_empty());
         assert!(!state.record_table_complete);
         assert!(state.topology.is_none());
         assert_eq!(state.transition, Some(transition));
+
+        let mut native = crate::native::F3dNative {
+            asm_histories: histories.to_vec(),
+            ..Default::default()
+        };
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        native.store(&mut namespace).expect("store native history");
+        native = crate::native::F3dNative::load(&namespace).expect("load native history");
+        assert!(native.asm_histories[0].projection_finalized);
     }
 
     #[test]
@@ -4893,6 +4927,7 @@ mod tests {
             stream_size: None,
             history_entry_count: None,
             record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
             states: vec![state(id, current, Some(2)), state(id, 2, None)],
         };
         let histories = [history("first", 7), history("second", 9)];
@@ -5285,6 +5320,7 @@ mod tests {
             stream_size: None,
             history_entry_count: None,
             record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
             states: vec![state(3, 2), state(2, 1)],
         };
         let states = index(std::slice::from_ref(&history));
@@ -5393,6 +5429,7 @@ mod tests {
             stream_size: None,
             history_entry_count: None,
             record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
             states: vec![state(2, active.clone()), state(3, active)],
         };
         let preceding = AsmHistoricalTopology {
@@ -5843,6 +5880,7 @@ mod tests {
             stream_size: None,
             history_entry_count: None,
             record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
             states: vec![
                 state(
                     3,
@@ -5908,6 +5946,7 @@ mod tests {
             stream_size: None,
             history_entry_count: None,
             record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
             states: vec![state(
                 3,
                 AsmHistoricalTopology {
@@ -5938,6 +5977,7 @@ mod tests {
             stream_size: None,
             history_entry_count: None,
             record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
             states: vec![state(
                 7,
                 AsmHistoricalTopology {
@@ -5983,6 +6023,7 @@ mod tests {
             stream_size: None,
             history_entry_count: None,
             record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
             states: vec![AsmDeltaState {
                 id: "state-3".into(),
                 parent: "history".into(),

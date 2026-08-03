@@ -2836,17 +2836,34 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .collect::<Vec<_>>();
         let expected_history =
             history::historical_selection_identity_kind(&native.asm_histories, member.local_id);
-        let history_matches = expected_history.as_ref().map(|(kind, _, _)| *kind)
-            == member.historical_entity_kind
-            && expected_history
-                .as_ref()
-                .map(|(_, entity_ref, _)| *entity_ref)
-                == member.historical_entity_ref
-            && expected_history
-                .as_ref()
-                .map(|(_, _, states)| states.as_slice())
-                .unwrap_or_default()
-                == member.historical_state_ids.as_slice();
+        let history_matches = if history::projection_was_finalized(&native.asm_histories) {
+            member.historical_entity_kind.is_some() == member.historical_entity_ref.is_some()
+                && member
+                    .historical_state_ids
+                    .iter()
+                    .copied()
+                    .collect::<HashSet<_>>()
+                    .len()
+                    == member.historical_state_ids.len()
+                && member.historical_state_ids.iter().all(|state_id| {
+                    native
+                        .asm_histories
+                        .iter()
+                        .flat_map(|history| &history.states)
+                        .any(|state| state.state_id == *state_id)
+                })
+        } else {
+            expected_history.as_ref().map(|(kind, _, _)| *kind) == member.historical_entity_kind
+                && expected_history
+                    .as_ref()
+                    .map(|(_, entity_ref, _)| *entity_ref)
+                    == member.historical_entity_ref
+                && expected_history
+                    .as_ref()
+                    .map(|(_, _, states)| states.as_slice())
+                    .unwrap_or_default()
+                    == member.historical_state_ids.as_slice()
+        };
         let valid = member.class_tag.len() == 3
             && member.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && group.is_some_and(|group| {
