@@ -3815,17 +3815,15 @@ fn exact_legacy_shifted_extrude_prologue(
             let discriminators = [u32_at(bytes, offsets[0])?, u32_at(bytes, offsets[1])?];
             (offsets, discriminators, extent_for(discriminators)?)
         } else {
-            let candidates = [
-                candidate(start.checked_add(106)?, start.checked_add(110)?),
-                candidate(start.checked_add(116)?, start.checked_add(130)?),
-            ]
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
-            let [candidate] = candidates.as_slice() else {
-                return None;
+            let (first_offset, second_offset) = match reference_count_at.checked_sub(start)? {
+                252 => (106, 110),
+                272 => (116, 130),
+                _ => return None,
             };
-            *candidate
+            candidate(
+                start.checked_add(first_offset)?,
+                start.checked_add(second_offset)?,
+            )?
         };
     let direction_reversed_offset = operation_offset.checked_add(12)?;
     let direction_reversed = match bytes.get(direction_reversed_offset)? {

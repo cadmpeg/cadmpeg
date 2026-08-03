@@ -6554,10 +6554,18 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         bytes[operation_offset + 12] = direction_reversed;
         bytes[operation_offset + 13] = structural_constant;
         bytes[operation_offset + 14] = start;
+        if legacy_side_extents.is_some() {
+            let reference_count_offset =
+                if legacy_side_extents.is_some_and(|(_, widened)| widened) || extent.0 == 2 {
+                    272
+                } else {
+                    252
+                };
+            bytes.resize(reference_count_offset, 0);
+        }
         if legacy_side_extents.is_some_and(|(_, widened)| widened)
             || legacy_side_extents.is_some() && extent.0 == 2
         {
-            bytes.resize(272, 0);
             for reference_at in [139, 159, 182] {
                 bytes[reference_at] = 1;
                 bytes[reference_at + 1..reference_at + 5].copy_from_slice(&55u32.to_le_bytes());
@@ -6577,6 +6585,10 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         bytes.extend_from_slice(b"261");
         bytes.extend_from_slice(&12u32.to_le_bytes());
         if let Some((side_extents, widened)) = legacy_side_extents {
+            if widened && extent.0 != 2 {
+                bytes[106..110].copy_from_slice(&1u32.to_le_bytes());
+                bytes[110..114].copy_from_slice(&0u32.to_le_bytes());
+            }
             let (first_extent_at, second_extent_at) = if extent.0 == 2 {
                 (155, 178)
             } else if widened {
