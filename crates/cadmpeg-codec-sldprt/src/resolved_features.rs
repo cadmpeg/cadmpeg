@@ -588,7 +588,9 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
                 .or(compact_geometry_locus_point)
                 .or_else(|| inline_arc.map(|[center, _, _]| center))
                 .or_else(|| marker_coordinates(payload, offset));
-            let kind = if inline_arc.is_some() {
+            let kind = if slot_curve_and_center_indices(payload, offset).is_some() {
+                SketchInputKind::Native(code)
+            } else if inline_arc.is_some() {
                 SketchInputKind::Arc
             } else if marker_spatial_coordinates(payload, offset).is_some()
                 || legacy_declared_handle_coordinates(payload, offset).is_some()
@@ -13352,6 +13354,57 @@ mod marker_tests {
                 ..
             } if center == Point2::new(0.0, 0.0) && radius == 1.0
         ));
+    }
+
+    #[test]
+    fn packed_slot_descriptor_run_is_not_independent_geometry() {
+        let slot_offset = 22;
+        let mut payload = vec![0; slot_offset + 252];
+        let declaration = b"\xff\xff\x01\x00\x08\x00sgSlot_c\0\0\0\0\x01\0\0\0";
+        payload[..slot_offset].copy_from_slice(declaration);
+        payload[slot_offset..slot_offset + LEGACY_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[slot_offset + 5..slot_offset + 13].fill(0xff);
+        payload[slot_offset + 13..slot_offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[slot_offset + 17..slot_offset + 21].copy_from_slice(&0_u32.to_le_bytes());
+        payload[slot_offset + 23..slot_offset + 29]
+            .copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+        payload[slot_offset + 31..slot_offset + 39]
+            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[slot_offset + 48..slot_offset + 56].copy_from_slice(&1.0_f64.to_le_bytes());
+        for (index, (tag, id)) in [
+            (0x8156_u16, 0_u16),
+            (0x814c, 3),
+            (0x8156, 1),
+            (0x8156, 2),
+            (0x8294, 0),
+            (0x8294, 1),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let start = slot_offset + 64 + index * 8;
+            payload[start..start + 2].copy_from_slice(&tag.to_le_bytes());
+            payload[start + 2..start + 4].copy_from_slice(&id.to_le_bytes());
+            payload[start + 4..start + 8].fill(0xff);
+        }
+        payload.copy_within(slot_offset..slot_offset + 126, slot_offset + 126);
+
+        assert_eq!(
+            super::slot_curve_and_center_indices(&payload, slot_offset),
+            Some(([0, 3, 1, 2], [0, 1]))
+        );
+        assert_eq!(
+            super::slot_curve_and_center_indices(&payload, slot_offset + 126),
+            Some(([0, 3, 1, 2], [0, 1]))
+        );
+
+        let entities = sketch_input_entities(&payload, "lane");
+
+        assert_eq!(entities.len(), 2);
+        assert!(entities
+            .iter()
+            .all(|entity| entity.kind == SketchInputKind::Native(0)));
     }
 
     #[test]
@@ -32351,48 +32404,99 @@ fn slot_curve_and_center_indices(
     offset: usize,
 ) -> Option<([usize; 4], [usize; 2])> {
     const SLOT_DECLARATION: &[u8] = b"\xff\xff\x01\x00\x08\x00sgSlot_c\0\0\0\0\x01\0\0\0";
-    if payload.get(offset.checked_sub(SLOT_DECLARATION.len())?..offset) != Some(SLOT_DECLARATION)
-        || marker_native_code(payload, offset).is_none()
-        || payload.get(offset + 23..offset + 27) != Some(&[0x05, 0x00, 0x01, 0x00])
-        || marker_profile_curve_role(payload, offset) != Some(1)
+    let layout = slot_curve_reference_cells(payload, offset)?;
+    let declared = if payload.get(offset.checked_sub(SLOT_DECLARATION.len())?..offset)
+        == Some(SLOT_DECLARATION)
+    {
+        true
+    } else if let Some(stride) = layout.continuation_stride {
+        let mut cursor = offset;
+        loop {
+            cursor = cursor.checked_sub(stride)?;
+            if payload.get(cursor.checked_sub(SLOT_DECLARATION.len())?..cursor)
+                == Some(SLOT_DECLARATION)
+            {
+                break true;
+            }
+            if slot_curve_reference_cells(payload, cursor)
+                .is_none_or(|candidate| candidate.continuation_stride != Some(stride))
+            {
+                break false;
+            }
+        }
+    } else {
+        false
+    };
+    if !declared {
+        return None;
+    }
+    Some((
+        [
+            layout.cells[0].1,
+            layout.cells[1].1,
+            layout.cells[2].1,
+            layout.cells[3].1,
+        ],
+        [layout.cells[4].1, layout.cells[5].1],
+    ))
+}
+
+struct SlotReferenceLayout {
+    cells: [(u16, usize); 6],
+    continuation_stride: Option<usize>,
+}
+
+fn slot_curve_reference_cells(payload: &[u8], offset: usize) -> Option<SlotReferenceLayout> {
+    if marker_native_code(payload, offset).is_none()
+        || payload.get(offset + 23..offset + 29) != Some(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00])
         || payload.get(offset + 31..offset + 39)
             != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
         || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
     {
         return None;
     }
-    let cells_offset = match payload.get(offset..offset + SKETCH_MARKER.len()) {
-        Some(prefix) if prefix == SKETCH_MARKER => 72,
-        Some(prefix) if prefix == LEGACY_EXTENDED_SKETCH_MARKER => 64,
+    let layouts = match payload.get(offset..offset + SKETCH_MARKER.len()) {
+        Some(prefix) if prefix == SKETCH_MARKER => vec![(72, 12, None)],
+        Some(prefix) if prefix == LEGACY_SKETCH_MARKER => {
+            vec![(64, 8, Some(126))]
+        }
+        Some(prefix) if prefix == LEGACY_EXTENDED_SKETCH_MARKER => {
+            vec![(64, 8, Some(126)), (64, 12, None)]
+        }
         _ => return None,
     };
-    let cells = (0..6)
-        .map(|index| {
-            let start = offset.checked_add(cells_offset + index * 12)?;
-            let cell = payload.get(start..start + 12)?;
-            (cell[4..8] == [0xff; 4] && cell[8..12] == [0; 4]).then_some((
-                u16::from_le_bytes(cell[..2].try_into().ok()?),
-                usize::from(u16::from_le_bytes(cell[2..4].try_into().ok()?)),
-            ))
+    layouts
+        .into_iter()
+        .find_map(|(cells_offset, cell_size, continuation_stride)| {
+            let cells: [(u16, usize); 6] = (0..6)
+                .map(|index| {
+                    let start = offset.checked_add(cells_offset + index * cell_size)?;
+                    let cell = payload.get(start..start + cell_size)?;
+                    (cell[4..8] == [0xff; 4]
+                        && (cell_size == 8 || cell.get(8..12) == Some(&[0; 4])))
+                    .then_some((
+                        u16::from_le_bytes(cell[..2].try_into().ok()?),
+                        usize::from(u16::from_le_bytes(cell[2..4].try_into().ok()?)),
+                    ))
+                })
+                .collect::<Option<Vec<_>>>()?
+                .try_into()
+                .ok()?;
+            let component_tag = cells[0].0;
+            (component_tag != 0
+                && cells[1].0 != 0
+                && cells[1].0 != component_tag
+                && cells[2].0 == component_tag
+                && cells[3].0 == component_tag
+                && cells[4].0 != 0
+                && cells[4].0 != component_tag
+                && cells[4].0 != cells[1].0
+                && cells[5].0 == cells[4].0)
+                .then_some(SlotReferenceLayout {
+                    cells,
+                    continuation_stride,
+                })
         })
-        .collect::<Option<Vec<_>>>()?;
-    let component_tag = cells[0].0;
-    if component_tag == 0
-        || cells[1].0 == 0
-        || cells[1].0 == component_tag
-        || cells[2].0 != component_tag
-        || cells[3].0 != component_tag
-        || cells[4].0 == 0
-        || cells[4].0 == component_tag
-        || cells[4].0 == cells[1].0
-        || cells[5].0 != cells[4].0
-    {
-        return None;
-    }
-    Some((
-        [cells[0].1, cells[1].1, cells[2].1, cells[3].1],
-        [cells[4].1, cells[5].1],
-    ))
 }
 
 fn resolve_slot_marker_arcs(

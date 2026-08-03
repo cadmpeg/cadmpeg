@@ -252,7 +252,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which native field marks dimensioned circular geometry as construction geometry when it is absent from the selected profile stream?
 
-**Known.** `sldprt.md` §2 "A compact-legacy kind `2` bounded curve with locus `05 00 01 00` and the compact indexed" through `sldprt.md` §2 "An extended-prefix kind-`1` profile circle uses the same equal-index 104-byte or terminal" define ordinary and construction full-circle layouts. `sldprt.md` §2 "An `sgSlot_c` declaration may immediately precede a current- or extended-prefix slot record with" states when an auxiliary curve record defines construction geometry.
+**Known.** `sldprt.md` §2 "A compact-legacy kind `2` bounded curve with locus `05 00 01 00` and the compact indexed" through `sldprt.md` §2 "An extended-prefix kind-`1` profile circle uses the same equal-index 104-byte or terminal" define ordinary and construction full-circle layouts. `sldprt.md` §2 "An `sgSlot_c` declaration may immediately precede a current-, legacy-, or extended-prefix slot record with" distinguishes aggregate slot descriptors from independent curve geometry.
 
 **Need.** We must know the discriminator to prevent omitted construction circles from becoming profile geometry.
 
