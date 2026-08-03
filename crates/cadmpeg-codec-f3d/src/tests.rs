@@ -14103,8 +14103,8 @@ fn analytic_carrier_decode_covers_each_shape() {
         }
     ));
 
-    // cone with nonzero sine keeps the acute half-angle asin(|sine|). A
-    // both-negative sine/cosine pair has a positive slope (the radius still
+    // cone with nonzero sine keeps the acute half-angle atan2(|sine|, |cosine|).
+    // A both-negative sine/cosine pair has a positive slope (the radius still
     // grows along `+axis`, so the axis is kept), and the negative cosine
     // marks the inward native normal for the face-sense fold.
     let mut cone = base();
@@ -14126,7 +14126,7 @@ fn analytic_carrier_decode_covers_each_shape() {
             ref_direction,
             ..
         } => {
-            assert!((half_angle - 0.5f64.asin()).abs() < 1e-12);
+            assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1e-12);
             assert_eq!(axis.z, 1.0, "positive slope keeps the axis");
             assert_eq!(ref_direction, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
         }
@@ -14156,7 +14156,7 @@ fn analytic_carrier_decode_covers_each_shape() {
             radius,
             ..
         } => {
-            assert!((half_angle - 0.5f64.asin()).abs() < 1e-12);
+            assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1e-12);
             assert_eq!(axis.z, -1.0, "negative slope flips the axis");
             assert!((radius - 46.55).abs() < 1e-12);
         }
