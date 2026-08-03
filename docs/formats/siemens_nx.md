@@ -1330,7 +1330,11 @@ output. A uniquely bound body image resolves the selection; an ambiguous body
 binding retains the native selection. Without the primary-body field, the
 record does not identify a body target and remains a native operation.
 
-A `TEXT` operation with exactly two payload strings projects the first string as a text semantic annotation and the second as its font family. The owning ordered feature is a non-modeling annotation node and retains the operation record as its native identity.
+A `TEXT` operation is not a modeling feature. With exactly two payload strings,
+the operation projects one text semantic annotation. The first string is the
+visible text and the second string is the font family. The operation label is
+both the annotation object and its native identity. Any other payload
+cardinality remains native-only.
 
 Bodies named by validated segment binding tuples exist at the start of retained feature history. A `DELETE` primary-body field consumes the selected body image and never establishes a writer. A Boolean target list writes its selected body image. A `SEW` or `TRIM BODY` body operand consumes that body image when the body's latest decoded writer precedes the operation. Boolean tool operands follow the same ordering rule. A later writer supersedes earlier consumption. Terminal body selection is applied only when every emitted partition has one unambiguous terminal status and at least one, but not every, emitted body remains terminal.
 
@@ -1513,7 +1517,11 @@ The payload contains at most one counted branch group beginning `a0 5a, family, 
 
 The `Studio Surface` operation label identifies a freeform-surface construction. Its control geometry and construction controls remain unresolved until the corresponding parameter fields are assigned.
 
-A `TEXT` operation whose payload contains exactly two ordered strings projects one semantic text annotation. The first string is the visible text and the second string is the font family. The annotation object and native reference are the owning neutral feature and operation label. Any other payload cardinality remains native-only.
+A `TEXT` operation is not a modeling feature. A payload that contains exactly
+two ordered strings projects one semantic text annotation. The first string is
+the visible text and the second string is the font family. The operation label
+is both the annotation object and its native reference. Any other payload
+cardinality remains native-only.
 
 One complete construction-identity group projects hole diameters when its operation set equals the complete typed through-hole template set. Without a construction group, the complete set of distinct typed through-hole operations uses the same rule. Every operation either resolves through its primary-body field to exactly one transferred output body, or every operation lacks that relation and the document contains exactly one connected solid body. Mixed resolved and unresolved ownership or more than one candidate connected solid rejects the projection. Operations are partitioned by equal output-body identity. Each output body is solid and owns exactly one region containing exactly one shell. For each partition, that shell's complete face ownership graph contains exactly one reversed two-loop cylindrical face per operation. Every coedge in both loops resolves to a circular carrier whose radius equals the cylinder radius within the document linear tolerance, whose axis is parallel to the cylinder axis within the angular tolerance, and whose center lies on the cylinder axis within the linear tolerance. All carriers in one loop occupy one axial station within the linear tolerance, and the two loop stations differ by more than that tolerance. Every cylinder radius in the partition is finite, positive, and bitwise equal. Every operation in the partition receives twice that radius. When the unique-connected-solid form satisfies the complete rule, every operation also receives that solid as its output. Distinct output bodies may carry distinct diameters. This is permutation-invariant for operations sharing one output image. Multiple construction groups, unmatched templates or owned cylinders, a non-through template, duplicate operation identity, missing or ambiguous output ownership, a sheet or structurally disconnected output, an incomplete topology ownership graph, an empty, noncircular, off-axis, coincident, or differently bounded cylinder loop, or differing radii within one output partition leave every diameter absent atomically.
 

@@ -1295,6 +1295,33 @@ fn attach_feature_operations(
         .iter()
         .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
         .collect::<BTreeMap<_, _>>();
+    let annotation_base_order =
+        u32::try_from(ir.model.semantic_annotations.len()).unwrap_or(u32::MAX);
+    for (annotation_ordinal, label) in labels
+        .iter()
+        .filter(|label| label.value == "TEXT")
+        .enumerate()
+    {
+        let payload_strings = payload_strings_by_operation
+            .get(label.id.as_str())
+            .map_or([].as_slice(), Vec::as_slice)
+            .iter()
+            .map(|value| value.value.as_str())
+            .collect::<Vec<_>>();
+        let Some(annotation) = text_semantic_annotation(
+            &label.id,
+            annotation_base_order
+                .saturating_add(u32::try_from(annotation_ordinal).unwrap_or(u32::MAX)),
+            &payload_strings,
+        ) else {
+            continue;
+        };
+        annotations
+            .note(&annotation.id.0, stream, label.source_offset)
+            .tag("TEXT_SEMANTIC_ANNOTATION");
+        annotations.exactness(&annotation.id.0, Exactness::Derived);
+        ir.model.semantic_annotations.push(annotation);
+    }
     for (ordinal, label) in labels.iter().enumerate() {
         if !projects_neutral_feature(&label.value) {
             continue;
@@ -2452,19 +2479,6 @@ fn attach_feature_operations(
         if !source_content.is_empty() {
             annotations.derived(&id, "source_content");
         }
-        if let Some(annotation) = text_semantic_annotation(
-            &label.value,
-            &id,
-            &label.id,
-            u32::try_from(ir.model.semantic_annotations.len()).unwrap_or(u32::MAX),
-            &operation_payload_strings,
-        ) {
-            annotations
-                .note(&annotation.id.0, stream, label.source_offset)
-                .tag("TEXT_SEMANTIC_ANNOTATION");
-            annotations.exactness(&annotation.id.0, Exactness::Derived);
-            ir.model.semantic_annotations.push(annotation);
-        }
         let native_output = (!deletes_body).then_some(native_primary_body).flatten();
         body_writer_history.record_writer(native_output, &outputs, &id);
         ir.model.features.push(Feature {
@@ -3193,25 +3207,20 @@ fn preceding_operation_dependency(
 }
 
 fn projects_neutral_feature(label: &str) -> bool {
-    label != "Container"
+    !matches!(label, "Container" | "TEXT")
 }
 
 fn text_semantic_annotation(
-    operation_kind: &str,
-    feature: &FeatureId,
     native_ref: &str,
     order: u32,
     payload_strings: &[&str],
 ) -> Option<SemanticAnnotation> {
-    if operation_kind != "TEXT" {
-        return None;
-    }
     let [text, font_family] = payload_strings else {
         return None;
     };
     Some(SemanticAnnotation {
-        id: SemanticAnnotationId(format!("{}:semantic-text", feature.0)),
-        object: feature.0.clone(),
+        id: SemanticAnnotationId(format!("{native_ref}:semantic-text")),
+        object: native_ref.to_string(),
         kind: SemanticAnnotationKind::Text,
         runtime_type: "TEXT".to_string(),
         order,
@@ -4096,11 +4105,6 @@ fn non_boolean_feature_definition_with_parameters(
         "DATUM_PLANE" => FeatureDefinition::DatumPlaneUnresolved,
         "POINT" => FeatureDefinition::DatumPointUnresolved,
         "DATUM_CSYS" => FeatureDefinition::DatumCoordinateSystemUnresolved,
-        "TEXT" if matches!(payload_strings, [_, _]) => FeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::Annotations,
-            children: Vec::new(),
-            active_child: None,
-        },
         "BLOCK" => FeatureDefinition::Block {
             dimensions: None,
             placement: None,
@@ -6841,23 +6845,9 @@ mod tests {
                 None,
                 None,
             ),
-            cadmpeg_ir::features::FeatureDefinition::TreeNode {
-                role: cadmpeg_ir::features::FeatureTreeNodeRole::Annotations,
-                ref children,
-                active_child: None,
-            } if children.is_empty()
-        ));
-        assert!(matches!(
-            super::non_boolean_feature_definition("TEXT", &["annotation"], None, None, None),
             cadmpeg_ir::features::FeatureDefinition::Native { .. }
         ));
-        assert!(matches!(
-            super::non_boolean_feature_definition("TEXT", &["", ""], None, None, None),
-            cadmpeg_ir::features::FeatureDefinition::TreeNode {
-                role: cadmpeg_ir::features::FeatureTreeNodeRole::Annotations,
-                ..
-            }
-        ));
+        assert!(!super::projects_neutral_feature("TEXT"));
         assert!(matches!(
             super::non_boolean_feature_definition(
                 "BLOCK",
@@ -6888,16 +6878,9 @@ mod tests {
 
     #[test]
     fn nx_text_payload_projects_semantic_text_and_font_family() {
-        let feature = cadmpeg_ir::features::FeatureId("feature#text".to_string());
-        let annotation = super::text_semantic_annotation(
-            "TEXT",
-            &feature,
-            "nx:text#1",
-            7,
-            &["plate label", "Arial"],
-        )
-        .expect("valid text annotation");
-        assert_eq!(annotation.object, feature.0);
+        let annotation = super::text_semantic_annotation("nx:text#1", 7, &["plate label", "Arial"])
+            .expect("valid text annotation");
+        assert_eq!(annotation.object, "nx:text#1");
         assert_eq!(
             annotation.kind,
             cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text
@@ -6907,24 +6890,15 @@ mod tests {
         assert_eq!(annotation.native_ref, "nx:text#1");
         assert_eq!(annotation.order, 7);
 
-        let empty =
-            super::text_semantic_annotation("TEXT", &feature, "nx:text#empty", 8, &["", ""])
-                .expect("empty text fields remain a valid annotation");
+        let empty = super::text_semantic_annotation("nx:text#empty", 8, &["", ""])
+            .expect("empty text fields remain a valid annotation");
         assert_eq!(empty.text, [""]);
         assert_eq!(empty.parameters["font_family"], "");
 
         assert!(
-            super::text_semantic_annotation("BLOCK", &feature, "nx:block#1", 0, &["10", "20"],)
+            super::text_semantic_annotation("nx:text#2", 0, &["ambiguous", "Arial", "extra"],)
                 .is_none()
         );
-        assert!(super::text_semantic_annotation(
-            "TEXT",
-            &feature,
-            "nx:text#2",
-            0,
-            &["ambiguous", "Arial", "extra"],
-        )
-        .is_none());
     }
 
     #[test]
