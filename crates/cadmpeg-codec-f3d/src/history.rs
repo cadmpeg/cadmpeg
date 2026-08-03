@@ -1702,6 +1702,14 @@ pub(crate) fn bind_face_operand_history_candidates(
                     crate::design::face_resolve::resolve_face_operand_history_candidates(operand);
                 if let Some(direct) = direct {
                     vec![direct]
+                } else if scope.kind == "Shell" {
+                    crate::design::face_resolve::resolve_stable_bounded_face_history_set(operand)
+                        .or_else(|| {
+                            crate::design::face_resolve::resolve_bounded_face_history_candidates(
+                                operand,
+                            )
+                        })
+                        .unwrap_or_default()
                 } else if let Some(bounded) =
                     crate::design::face_resolve::resolve_bounded_face_history_candidates(operand)
                 {

@@ -192,6 +192,44 @@ pub(crate) fn resolve_bounded_face_history_candidates(
     )
 }
 
+pub(crate) fn resolve_stable_bounded_face_history_set(
+    operand: &DesignFaceOperand,
+) -> Option<Vec<i64>> {
+    complete_counted_face_recipe(operand)?;
+    let mut active_faces = Vec::with_capacity(operand.preceding_candidate_faces.len());
+    for face in &operand.preceding_candidate_faces {
+        let slot = face.0.rsplit_once('#')?.1.parse::<i64>().ok()?;
+        if active_faces.contains(&slot) {
+            return None;
+        }
+        active_faces.push(slot);
+    }
+    stable_face_support_set(&active_faces, &operand.historical_support_contexts)
+}
+
+fn stable_face_support_set(
+    active_faces: &[i64],
+    contexts: &[crate::records::DesignHistoricalFaceSupportContext],
+) -> Option<Vec<i64>> {
+    if active_faces.is_empty()
+        || contexts.len() != active_faces.len()
+        || active_faces.iter().collect::<HashSet<_>>().len() != active_faces.len()
+    {
+        return None;
+    }
+    let mut covered = HashSet::with_capacity(active_faces.len());
+    for context in contexts {
+        if !active_faces.contains(&context.active_face_slot)
+            || !covered.insert(context.active_face_slot)
+            || context.preceding_face_slots != [context.active_face_slot]
+            || !context.changed_preceding_face_slots.is_empty()
+        {
+            return None;
+        }
+    }
+    Some(active_faces.to_vec())
+}
+
 fn convergent_effective_face_support(operand: &DesignFaceOperand) -> Option<Vec<i64>> {
     let mut active_faces = face_operand_candidates(operand)
         .iter()
@@ -570,7 +608,10 @@ pub(crate) fn sketch_point_depth(point: &SketchPoint) -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{bounded_face_candidate_by_boundary_cardinality, convergent_face_support};
+    use super::{
+        bounded_face_candidate_by_boundary_cardinality, convergent_face_support,
+        stable_face_support_set,
+    };
     use crate::records::{
         DesignHistoricalFaceBoundaryContext, DesignHistoricalFaceLoopContext,
         DesignHistoricalFaceSupportContext,
@@ -644,5 +685,18 @@ mod tests {
 
         let conflicting = [support(10, &[(100, 4)]), support(11, &[(101, 4)])];
         assert_eq!(convergent_face_support(&[10, 11], &conflicting), None);
+    }
+
+    #[test]
+    fn stable_bounded_face_set_preserves_each_proven_predecessor() {
+        let active_faces = [10, 11];
+        let mut contexts = vec![support(10, &[(10, 4)]), support(11, &[(11, 4)])];
+
+        assert_eq!(
+            stable_face_support_set(&active_faces, &contexts),
+            Some(vec![10, 11])
+        );
+        contexts[1].preceding_face_slots = vec![12];
+        assert_eq!(stable_face_support_set(&active_faces, &contexts), None);
     }
 }
