@@ -1644,6 +1644,18 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
 }
 
 fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::SldprtNative) -> usize {
+    let sketch_feature_refs = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.definition,
+                cadmpeg_ir::features::FeatureDefinition::Sketch { .. }
+            )
+        })
+        .filter_map(|feature| feature.native_ref.as_deref())
+        .collect::<std::collections::HashSet<_>>();
     let projected = ir
         .model
         .sketch_constraints
@@ -1681,24 +1693,34 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
                 .relation_instances
                 .iter()
                 .filter(|relation| {
-                    owned_instances.contains_key(&relation.id) && !projected.contains(&relation.id)
+                    sketch_feature_refs.contains(relation.feature_ref.as_str())
+                        && owned_instances.contains_key(&relation.id)
+                        && !projected.contains(&relation.id)
                 })
                 .count();
             let bindings = lane
                 .relation_bindings
                 .iter()
                 .filter(|binding| {
-                    !lane.relation_instances.iter().any(|relation| {
-                        relation.class_ref == binding.class_ref
-                            && relation.scalar_refs.contains(&binding.scalar_ref)
-                    })
+                    binding
+                        .feature_ref
+                        .as_deref()
+                        .is_some_and(|feature_ref| sketch_feature_refs.contains(feature_ref))
+                        && !lane.relation_instances.iter().any(|relation| {
+                            relation.class_ref == binding.class_ref
+                                && relation.scalar_refs.contains(&binding.scalar_ref)
+                        })
                 })
                 .count();
             let markers = lane
                 .sketch_entities
                 .iter()
                 .filter(|marker| {
-                    crate::resolved_features::marker_owns_constraint(marker, &markers_by_id)
+                    marker
+                        .feature_ref
+                        .as_deref()
+                        .is_some_and(|feature_ref| sketch_feature_refs.contains(feature_ref))
+                        && crate::resolved_features::marker_owns_constraint(marker, &markers_by_id)
                         && !projected.contains(&marker.id)
                 })
                 .count();
@@ -5715,8 +5737,26 @@ mod design_loss_tests {
     }
 
     #[test]
-    fn retained_relation_records_without_constraints_are_counted() {
+    fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         let mut ir = CadIr::empty(Units::default());
+        ir.model.features.push(Feature {
+            id: FeatureId("sketch-feature".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::default(),
+                sketch: Some(SketchId("sketch".into())),
+            },
+            native_ref: Some("feature".into()),
+        });
         ir.model.sketch_entities.push(SketchEntity {
             id: SketchEntityId("represented-geometry".into()),
             sketch: SketchId("sketch".into()),
@@ -5812,6 +5852,13 @@ mod design_loss_tests {
         };
 
         assert_eq!(unprojected_sketch_relation_records(&ir, &native), 3);
+
+        ir.model.features[0].definition = FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::History,
+            children: Vec::new(),
+            active_child: None,
+        };
+        assert_eq!(unprojected_sketch_relation_records(&ir, &native), 0);
     }
 
     #[test]
