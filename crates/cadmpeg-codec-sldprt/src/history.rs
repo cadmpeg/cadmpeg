@@ -1,12 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `SolidWorks` Keywords XML feature history.
-//!
-//! This module owns the Keywords round-trip as one unit: XML decode, IR
-//! projection, topology and sketch binding, parameter evaluation, and neutral
-//! write-back. Feature-class property encodings are shared across those phases;
-//! splitting them by phase would leak the same layout knowledge into multiple
-//! modules. Byte-level `ResolvedFeatures` parsing lives in
-//! `crate::resolved_features`.
 
 use crate::classification::{
     classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
