@@ -686,6 +686,10 @@ pub struct RmCreationDisplayDataRelation {
     pub class_definition: String,
     /// Exact admitted row encoding.
     pub encoding: RmCreationDisplayDataEncoding,
+    /// Member addressed by the target index when the row carries one and the
+    /// index resolves in the `RMFastLoad` object-ID table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_object_id: Option<String>,
     /// Directory entry containing the relation.
     pub source_entry: String,
     /// Absolute file offset of the opening row discriminator.
@@ -797,6 +801,10 @@ pub struct RmDisplayColorAssignment {
     pub ordinal: u32,
     /// Complete self-framed row carrying the color token.
     pub encoding: RmDisplayColorAssignmentEncoding,
+    /// Member addressed by the row target index when it resolves in the
+    /// `RMFastLoad` object-ID table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_object_id: Option<String>,
     /// One-based part palette index.
     pub color_index: u16,
     /// Target in `part_color_definitions`.
@@ -2805,6 +2813,7 @@ pub fn data_block_target_index_rows(container: &Container) -> Vec<DataBlockTarge
 /// established independently.
 pub fn rm_creation_display_data_relations(
     container: &Container,
+    object_ids: &[RmFastLoadObjectId],
 ) -> Vec<RmCreationDisplayDataRelation> {
     const CLASS_NAME: &str = "UGS::RM_creation_display_data";
 
@@ -2860,6 +2869,7 @@ pub fn rm_creation_display_data_relations(
                         .indices
                         .map(|(_, offset)| source_base + offset as u64),
                 },
+                target_object_id: None,
                 source_entry: entry.name.clone(),
                 source_offset: source_base + row.offset as u64,
             });
@@ -2889,6 +2899,7 @@ pub fn rm_creation_display_data_relations(
                     flag: row.flag,
                     mode: row.mode,
                 },
+                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.0),
                 source_entry: entry.name.clone(),
                 source_offset: source_base + row.offset as u64,
             });
@@ -2916,6 +2927,7 @@ pub fn rm_creation_display_data_relations(
                         .map(|(_, offset)| source_base + offset as u64),
                     mode: row.mode,
                 },
+                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.0),
                 source_entry: entry.name.clone(),
                 source_offset: source_base + row.offset as u64,
             });
@@ -3013,6 +3025,7 @@ pub fn part_color_tables(container: &Container) -> (Vec<PartColorTable>, Vec<Par
 pub fn rm_display_color_assignments(
     container: &Container,
     color_definitions: &[PartColorDefinition],
+    object_ids: &[RmFastLoadObjectId],
 ) -> Vec<RmDisplayColorAssignment> {
     let mut assignments = Vec::new();
     for (entry, section) in container
@@ -3059,6 +3072,7 @@ pub fn rm_display_color_assignments(
                     flag: row.flag,
                     mode: row.mode,
                 },
+                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.0),
                 color_index: color.color_index,
                 color_definition: definition.id.clone(),
                 raw_color_index: color.raw_color_index,
@@ -3094,6 +3108,7 @@ pub fn rm_display_color_assignments(
                         .map(|(_, offset)| source_base + offset as u64),
                     mode: row.mode,
                 },
+                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.0),
                 color_index: color.color_index,
                 color_definition: definition.id.clone(),
                 raw_color_index: color.raw_color_index,
@@ -3109,6 +3124,11 @@ pub fn rm_display_color_assignments(
         assignment.id = format!("nx:rm-display-color-assignments:assignment#{ordinal}");
     }
     assignments
+}
+
+fn rmfastload_target_object_id(object_ids: &[RmFastLoadObjectId], target: u32) -> Option<String> {
+    let target = usize::try_from(target).ok()?;
+    object_ids.get(target).map(|object_id| object_id.id.clone())
 }
 
 /// Resolve complete composite column-index tables atomically by section.
@@ -4775,7 +4795,7 @@ mod tests {
                 .namespace("nx")
                 .expect("required invariant")
                 .version,
-            183
+            184
         );
         assert_eq!(expressions.len(), 1);
         assert_eq!(expressions[0].object_id, Some(0x102));
@@ -5447,6 +5467,15 @@ mod tests {
         assert_eq!(object_ids[49].value, 50);
         assert_eq!(object_ids[49].raw, 50u32.to_le_bytes());
         assert_eq!(table.members[49], object_ids[49].id);
+        assert_eq!(
+            super::rmfastload_target_object_id(&object_ids, 0),
+            Some(object_ids[0].id.clone())
+        );
+        assert_eq!(
+            super::rmfastload_target_object_id(&object_ids, 49),
+            Some(object_ids[49].id.clone())
+        );
+        assert_eq!(super::rmfastload_target_object_id(&object_ids, 50), None);
     }
 
     #[test]
