@@ -209,7 +209,17 @@ fn rederived_body_census(
                 placement: Some(placement),
                 op: BooleanOp::Join | BooleanOp::Cut | BooleanOp::Intersect,
             } if dimensions.iter().copied().all(positive_length) && placement.is_proper_rigid() => {
-                preserve_complete_single_output(feature, &bodies, false)?;
+                preserve_in_place_single_output(feature, &bodies)?;
+            }
+            FeatureDefinition::Block {
+                dimensions: Some(dimensions),
+                placement: Some(placement),
+                op: BooleanOp::Unresolved,
+            } if dimensions.iter().copied().all(positive_length)
+                && placement.is_proper_rigid()
+                && matches!(feature.outputs.as_slice(), [output] if bodies.contains(output)) =>
+            {
+                preserve_in_place_single_output(feature, &bodies)?;
             }
             FeatureDefinition::Block { .. } => {
                 return Err((
@@ -301,74 +311,34 @@ fn rederived_body_census(
                 bodies.extend(feature.outputs.iter().cloned());
             }
             FeatureDefinition::TrimSurface { .. } => {
-                preserve_complete_outputs(
-                    feature,
-                    &bodies,
-                    crate::decode::trim_surface_definition_is_incomplete(feature),
-                )?;
+                preserve_in_place_outputs(feature, &bodies)?;
             }
             FeatureDefinition::ExtendSurface { .. } => {
-                preserve_complete_outputs(
-                    feature,
-                    &bodies,
-                    crate::decode::extend_surface_definition_is_incomplete(feature),
-                )?;
+                preserve_in_place_outputs(feature, &bodies)?;
             }
             FeatureDefinition::Hole { .. } => {
-                preserve_complete_single_output(
-                    feature,
-                    &bodies,
-                    crate::decode::hole_definition_is_incomplete(feature),
-                )?;
+                preserve_in_place_single_output(feature, &bodies)?;
             }
             FeatureDefinition::Chamfer { .. } => {
-                preserve_complete_single_output(
-                    feature,
-                    &bodies,
-                    crate::decode::chamfer_definition_is_incomplete(feature),
-                )?;
+                preserve_in_place_single_output(feature, &bodies)?;
             }
             FeatureDefinition::Fillet { .. } => {
-                preserve_complete_single_output(
-                    feature,
-                    &bodies,
-                    crate::decode::fillet_definition_is_incomplete(feature),
-                )?;
+                preserve_in_place_single_output(feature, &bodies)?;
             }
             FeatureDefinition::FaceBlend { .. } => {
-                preserve_complete_single_output(
-                    feature,
-                    &bodies,
-                    crate::decode::face_blend_definition_is_incomplete(feature),
-                )?;
+                preserve_in_place_single_output(feature, &bodies)?;
             }
             FeatureDefinition::OffsetSurface { .. } => {
-                preserve_complete_single_output(
-                    feature,
-                    &bodies,
-                    crate::decode::offset_surface_definition_is_incomplete(feature),
-                )?;
+                preserve_in_place_single_output(feature, &bodies)?;
             }
             FeatureDefinition::Thicken { .. } => {
-                preserve_complete_single_output(
-                    feature,
-                    &bodies,
-                    crate::decode::thicken_definition_is_incomplete(feature),
-                )?;
+                preserve_in_place_single_output(feature, &bodies)?;
             }
             FeatureDefinition::Draft { .. } => {
-                preserve_complete_single_output(
-                    feature,
-                    &bodies,
-                    crate::decode::draft_definition_is_incomplete(feature),
-                )?;
+                preserve_in_place_single_output(feature, &bodies)?;
             }
             FeatureDefinition::ReplaceFace { .. } => {
-                preserve_complete_single_output(
-                    feature,
-                    &bodies,
-                    crate::decode::replace_face_definition_is_incomplete(feature),
-                )?;
+                preserve_in_place_single_output(feature, &bodies)?;
             }
             FeatureDefinition::Combine {
                 target,
@@ -486,13 +456,14 @@ fn suppression_is_body_census_invariant(
         )
 }
 
-fn preserve_complete_single_output(
+/// Validate the exact body-identity effect of an in-place edit independently
+/// of construction semantics that cannot alter that identity transition.
+fn preserve_in_place_single_output(
     feature: &cadmpeg_ir::features::Feature,
     bodies: &BTreeSet<BodyId>,
-    incomplete: bool,
 ) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
-    preserve_complete_outputs(feature, bodies, incomplete)?;
-    if feature.outputs.len() != 1 {
+    preserve_in_place_outputs(feature, bodies)?;
+    if feature.outputs.len() > 1 {
         return Err((
             feature.id.clone(),
             UnsupportedBodyCensusReason::InvalidOutputLineage,
@@ -501,19 +472,11 @@ fn preserve_complete_single_output(
     Ok(())
 }
 
-fn preserve_complete_outputs(
+fn preserve_in_place_outputs(
     feature: &cadmpeg_ir::features::Feature,
     bodies: &BTreeSet<BodyId>,
-    incomplete: bool,
 ) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
-    if incomplete {
-        return Err((
-            feature.id.clone(),
-            UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
-        ));
-    }
-    if feature.outputs.is_empty()
-        || feature.outputs.iter().collect::<BTreeSet<_>>().len() != feature.outputs.len()
+    if feature.outputs.iter().collect::<BTreeSet<_>>().len() != feature.outputs.len()
         || feature
             .outputs
             .iter()
@@ -1114,6 +1077,27 @@ mod tests {
     }
 
     #[test]
+    fn unresolved_block_mode_preserves_a_proven_existing_output() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        ir.model.features.push(body_preserving_feature(
+            "existing-block",
+            1,
+            body.clone(),
+            FeatureDefinition::Block {
+                dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
+                placement: Some(cadmpeg_ir::transform::Transform::identity()),
+                op: BooleanOp::Unresolved,
+            },
+        ));
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: vec![body] }
+        );
+    }
+
+    #[test]
     fn complete_extrudes_apply_new_body_and_boolean_output_lineage() {
         let mut ir = complete_block_ir();
         let existing = ir.model.bodies[0].id.clone();
@@ -1329,22 +1313,22 @@ mod tests {
     }
 
     #[test]
-    fn incomplete_hole_reports_the_feature_semantic_boundary() {
+    fn incomplete_hole_construction_does_not_change_its_body_identity_effect() {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
-        let mut hole = complete_hole(body);
+        let mut hole = complete_hole(body.clone());
         let FeatureDefinition::Hole { placements, .. } = &mut hole.definition else {
             unreachable!("hole fixture")
         };
         placements.clear();
         ir.model.features.push(hole);
 
+        assert!(crate::decode::hole_definition_is_incomplete(
+            &ir.model.features[1]
+        ));
         assert_eq!(
             evaluate_saved_body_census(&ir),
-            BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("hole".to_string())),
-                reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
-            }
+            BodyCensusEvaluation::Verified { bodies: vec![body] }
         );
     }
 
@@ -1397,7 +1381,7 @@ mod tests {
     fn replay_rejects_duplicate_feature_ordinals() {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
-        let mut hole = complete_hole(body);
+        let mut hole = complete_hole(body.clone());
         hole.ordinal = 0;
         ir.model.features.push(hole);
 
@@ -1810,13 +1794,13 @@ mod tests {
     }
 
     #[test]
-    fn incomplete_chamfer_stops_before_applying_its_body_effect() {
+    fn incomplete_chamfer_construction_does_not_change_its_body_identity_effect() {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
         ir.model.features.push(body_preserving_feature(
             "chamfer",
             1,
-            body,
+            body.clone(),
             FeatureDefinition::Chamfer {
                 groups: vec![ChamferGroup {
                     edges: EdgeSelection::Unresolved,
@@ -1828,12 +1812,12 @@ mod tests {
             },
         ));
 
+        assert!(crate::decode::chamfer_definition_is_incomplete(
+            &ir.model.features[1]
+        ));
         assert_eq!(
             evaluate_saved_body_census(&ir),
-            BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("chamfer".to_string())),
-                reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
-            }
+            BodyCensusEvaluation::Verified { bodies: vec![body] }
         );
     }
 
@@ -1929,7 +1913,7 @@ mod tests {
     }
 
     #[test]
-    fn surface_edits_reject_incomplete_construction_before_output_lineage() {
+    fn output_free_surface_edits_are_body_identity_neutral() {
         let definitions = [
             FeatureDefinition::TrimSurface {
                 faces: FaceSelection::Unresolved,
@@ -1949,11 +1933,19 @@ mod tests {
                 u64::try_from(ordinal).expect("two surface edit families") + 1,
                 definition,
             ));
+            assert!(match &ir.model.features[1].definition {
+                FeatureDefinition::TrimSurface { .. } => {
+                    crate::decode::trim_surface_definition_is_incomplete(&ir.model.features[1])
+                }
+                FeatureDefinition::ExtendSurface { .. } => {
+                    crate::decode::extend_surface_definition_is_incomplete(&ir.model.features[1])
+                }
+                _ => unreachable!("surface edit fixture"),
+            });
             assert_eq!(
                 evaluate_saved_body_census(&ir),
-                BodyCensusEvaluation::Unsupported {
-                    feature: Some(FeatureId("surface-edit".to_string())),
-                    reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+                BodyCensusEvaluation::Verified {
+                    bodies: vec![ir.model.bodies[0].id.clone()],
                 }
             );
         }
@@ -2072,10 +2064,10 @@ mod tests {
     }
 
     #[test]
-    fn suppression_invariance_does_not_hide_incomplete_edit_semantics() {
+    fn output_free_hole_is_body_identity_neutral_regardless_of_suppression() {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
-        let mut hole = complete_hole(body);
+        let mut hole = complete_hole(body.clone());
         hole.suppressed = None;
         if let FeatureDefinition::Hole { placements, .. } = &mut hole.definition {
             placements.clear();
@@ -2085,10 +2077,7 @@ mod tests {
 
         assert_eq!(
             evaluate_saved_body_census(&ir),
-            BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("hole".to_string())),
-                reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
-            }
+            BodyCensusEvaluation::Verified { bodies: vec![body] }
         );
     }
 
@@ -2190,26 +2179,26 @@ mod tests {
     }
 
     #[test]
-    fn overlapping_replace_face_operands_are_incomplete() {
+    fn overlapping_replace_face_operands_do_not_change_the_body_identity_effect() {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
         let faces = FaceSelection::Faces(vec![FaceId("face".to_string())]);
         ir.model.features.push(body_preserving_feature(
             "replace-face",
             1,
-            body,
+            body.clone(),
             FeatureDefinition::ReplaceFace {
                 targets: faces.clone(),
                 replacements: faces,
             },
         ));
 
+        assert!(crate::decode::replace_face_definition_is_incomplete(
+            &ir.model.features[1]
+        ));
         assert_eq!(
             evaluate_saved_body_census(&ir),
-            BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureId("replace-face".to_string())),
-                reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
-            }
+            BodyCensusEvaluation::Verified { bodies: vec![body] }
         );
     }
 }

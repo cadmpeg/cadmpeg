@@ -570,6 +570,70 @@ fn unique_active_configuration_index(configurations: &[DesignConfiguration]) -> 
     Some(*index)
 }
 
+/// Materialize the exact body set present when retained feature replay begins.
+fn attach_initial_segment_bodies(
+    ir: &mut CadIr,
+    body_bindings: &[crate::native::segments::SegmentBodyBinding],
+    annotations: &mut AnnotationBuilder,
+    stream: cadmpeg_ir::annotations::StreamHandle,
+) -> Option<FeatureId> {
+    let bindings_by_body = ir
+        .model
+        .bodies
+        .iter()
+        .filter_map(|body| {
+            let bindings = body_bindings
+                .iter()
+                .filter(|binding| {
+                    body.id
+                        .0
+                        .starts_with(&format!("nx:s{}:", binding.stream_ordinal))
+                })
+                .map(|binding| binding.id.clone())
+                .collect::<Vec<_>>();
+            (!bindings.is_empty()).then_some((body.id.clone(), bindings))
+        })
+        .collect::<BTreeMap<_, _>>();
+    if bindings_by_body.is_empty() {
+        return None;
+    }
+
+    let id = FeatureId("nx:feature-history:feature#initial-bodies".to_string());
+    let outputs = bindings_by_body.keys().cloned().collect::<Vec<_>>();
+    let source_properties = bindings_by_body
+        .values()
+        .flatten()
+        .enumerate()
+        .map(|(ordinal, binding)| (format!("segment_body_binding.{ordinal}"), binding.clone()))
+        .collect();
+    annotations
+        .note(&id, stream, 0)
+        .tag("FEATURE_HISTORY_INPUT");
+    annotations.derived(&id, "definition");
+    annotations.derived(&id, "outputs");
+    ir.model.features.push(Feature {
+        id: id.clone(),
+        ordinal: ir.model.features.len() as u64,
+        name: Some("Retained history input".to_string()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties,
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: outputs.clone(),
+        definition: FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Resolved {
+                bodies: outputs,
+                native: "nx:segment-body-bindings".to_string(),
+            },
+        },
+        native_ref: None,
+    });
+    Some(id)
+}
+
 fn attach_feature_operations(
     ir: &mut CadIr,
     features: &crate::native::model::FeatureRecords,
@@ -696,6 +760,7 @@ fn attach_feature_operations(
         .feature_hole_package_construction_group_uses
         .as_slice();
     let stream = annotations.stream("nx:container");
+    let initial_body_id = attach_initial_segment_bodies(ir, body_bindings, annotations, stream);
     let base_ordinal = ir.model.features.len() as u64;
     let booleans = booleans
         .iter()
@@ -724,6 +789,12 @@ fn attach_feature_operations(
             .push(reference);
     }
     let mut body_writer_history = BodyWriterHistory::default();
+    if let Some(feature) = initial_body_id
+        .as_ref()
+        .and_then(|id| ir.model.features.iter().find(|feature| feature.id == *id))
+    {
+        body_writer_history.record_writer(None, &feature.outputs, &feature.id);
+    }
     let body_alias_roots =
         crate::native::segments::body_alias_roots(body_bindings).unwrap_or_default();
     let canonical_body =
@@ -6197,6 +6268,74 @@ mod tests {
         );
         assert_eq!(super::feature_body_outputs(94, &bindings), vec![first]);
         assert!(super::feature_body_outputs(123, &bindings).is_empty());
+    }
+
+    #[test]
+    fn segment_bound_bodies_form_the_exact_retained_history_input() {
+        use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+        use cadmpeg_ir::ids::{BodyId, RegionId};
+        use cadmpeg_ir::topology::{Body, BodyKind};
+
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let bound = BodyId("nx:s2:body#3".to_string());
+        ir.model.bodies.extend([
+            Body {
+                id: bound.clone(),
+                kind: BodyKind::Solid,
+                regions: vec![RegionId("region-2".to_string())],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+            Body {
+                id: BodyId("nx:s3:body#4".to_string()),
+                kind: BodyKind::Solid,
+                regions: vec![RegionId("region-3".to_string())],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+        ]);
+        let binding = crate::native::segments::SegmentBodyBinding {
+            id: "nx:segment-body-bindings:binding#0".to_string(),
+            stream_link: "nx:segment-stream-links:link#0".to_string(),
+            stream_ordinal: 2,
+            stream_kind: "partition".to_string(),
+            body_object_index: 10,
+            body_alias_object_index: 11,
+            stream_role: 19,
+            source_offset: 100,
+        };
+        let mut annotations = AnnotationBuilder::new();
+        let stream = annotations.stream("nx:container");
+
+        let id =
+            super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, stream)
+                .expect("one emitted body has an exact segment binding");
+
+        assert_eq!(
+            id,
+            FeatureId("nx:feature-history:feature#initial-bodies".into())
+        );
+        assert_eq!(ir.model.features[0].outputs, std::slice::from_ref(&bound));
+        assert_eq!(
+            ir.model.features[0].definition,
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Resolved {
+                    bodies: vec![bound.clone()],
+                    native: "nx:segment-body-bindings".to_string(),
+                },
+            }
+        );
+        assert_eq!(
+            crate::evaluation::evaluate_saved_body_census(&ir),
+            crate::evaluation::BodyCensusEvaluation::Mismatch {
+                rederived: vec![bound],
+                saved: ir.model.bodies.iter().map(|body| body.id.clone()).collect(),
+            }
+        );
     }
 
     #[test]
