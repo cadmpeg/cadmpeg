@@ -34,7 +34,7 @@ Partitions: ZIP layout matrix; typed graph build/mutate/write; exact geometry/to
 
 ## SolidWorks SLDPRT
 
-Scope: native block, cache, directory, and compound-document framing; compressed Parasolid partition and delta streams; analytic and NURBS geometry; topology ownership and seam derivation; configurations; resolved feature history, sketches, equations, materials, display lists, and PMI; retained and source-less semantic writing.
+Scope: native block, cache, directory, and compound-document framing; compressed Parasolid partition and delta streams with richest-site selection and alternate-site merge; analytic and NURBS geometry plus swept/spun, constant-radius blend, and validated intersection carriers; topology ownership and seam derivation; configurations; resolved feature history, sketches, equations, materials, display lists, and PMI; retained and source-less semantic writing.
 
 Partitions: compound structures and metadata; Parasolid topology/geometry families; partition/delta/configuration merging; feature/sketch/constraint/dimension correlation; material/tessellation/PMI presentation; retained semantic regeneration; source-less fixed-point and refusal behavior.
 

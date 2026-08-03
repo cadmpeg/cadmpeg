@@ -2,11 +2,11 @@
 
 **One open pipeline for native CAD.**
 
-cadmpeg aims to do for CAD what FFmpeg does for media: provide a toolchain for reading, inspecting, converting, and building across formats. 
+cadmpeg aims to do for CAD what FFmpeg does for media: provide a toolchain for reading, inspecting, converting, and building across formats.
 As a CLI, it's a tool for convert and inspect CAD files.
 As a library, it's a building block for developers to add native vendor files support to their own applications.
 
-The end goal is to parse and semantically understand all aspects of a vendor CAD file, from preview meshes, to BREP geometry, to design intent and parametric history. Then, store the data in a rich IR and finally produce an export from that IR. 
+The end goal is to parse and semantically understand all aspects of a vendor CAD file, from preview meshes, to BREP geometry, to design intent and parametric history. Then, store the data in a rich IR and finally produce an export from that IR.
 
 Currently, the project is early phases. Some open formats like STEP and Rhino are supported quite well but proprietary formats are limited and in active development. We use a format-support ladder from l0 to l9 capabilty level system to track progress for each format.
 
@@ -73,7 +73,7 @@ Current format support includes:
 
 - **FreeCAD `.FCStd` — [L9](docs/format-support.md#support-ladder) for schema 4/file 1:** complete application graph read, deterministic retained writes, checked edits, and source-less generation.
 - **Autodesk Fusion `.f3d` — [L4](docs/format-support.md#support-ladder):** readable design records; partial B-rep and appearance decode; native replay, patching, and generation.
-- **SolidWorks `.sldprt` — [L4](docs/format-support.md#support-ladder):** connected model read; typed design records; native write and round-trip paths.
+- **SolidWorks `.sldprt` — [L4](docs/format-support.md#support-ladder):** connected model read; configurations; typed features, sketches, and parameters; retained replay/patching and source-less native write.
 - **Rhino `.3dm` — [L9](docs/format-support.md#support-ladder) for archive 50/60/70/80:** complete built-in model, product structure, presentation, annotations, application-data retention, and bounded semantic native writing; older bands have inspection and metadata support.
 - **Siemens NX `.prt` — [L4](docs/format-support.md#support-ladder) for single-body, `RMFastLoad`-selected, and terminal-feature-lineage-resolved body images; L2 for unresolved multi-partition history:** exact carriers, connected B-rep, ordered feature history, expressions, and typed sketch-point dependencies, with conservative retention when final-body membership remains inconclusive.
 - **CATIA V5 `.CATPart` — [L2](docs/format-support.md#support-ladder):** exact carriers with conditional topology on the standard-nested layout; other layouts at L1.

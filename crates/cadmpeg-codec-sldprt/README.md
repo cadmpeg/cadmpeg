@@ -53,32 +53,68 @@ CRC-32, a cache-cell grid, and a tail section directory. Blocks can contain
 Parasolid streams, XML, SW Objects records, previews, tessellation, or opaque
 payloads.
 
-The decoder selects related Parasolid `partition` and `deltas` body streams,
-resolves their attribute-id references, and builds the `CadIr` topology and
-geometry arenas. Parasolid model lengths use metres; `CadIr` geometry uses the
-document’s IR units and decoded coordinates are expressed in millimetres.
-Provenance and exactness annotations identify source streams, record offsets,
-and derived entities such as reconstructed pcurves and periodic seams.
+The decoder groups related Parasolid `partition` and `deltas` body streams by
+site, excluding ghost and ResolvedFeatures sections. It decodes each site,
+selects the richest result by face, body, and point counts, and merges
+alternate sites as configuration-specific bodies. Attribute-id references
+resolve into the `CadIr` topology and geometry arenas. Parasolid model lengths
+use metres; `CadIr` geometry uses the document’s IR units and decoded
+coordinates are expressed in millimetres. Provenance and exactness annotations
+identify source streams, record offsets, and derived entities such as
+reconstructed pcurves and periodic seams.
 
-The decode report records opaque carriers, synthetic body grouping, trim
-reconstruction limits, and appearance ambiguity.
+Typed transfer covers analytic carriers, NURBS, swept and spun surfaces that
+resolve to NURBS, constant-radius rolling-ball blends, and validated
+surface-intersection curves. Offset surfaces, variable-radius blends, and
+other unsupported families remain opaque. The decode report records opaque
+carriers, synthetic body grouping, trim reconstruction limits, and appearance
+ambiguity.
 
-## Write a part
+## Encode
 
-`SldprtCodec` implements `Encoder`; `encode` and `write_preserved` use the same
-writer. Unchanged decoded IR replays the retained source image byte for byte
-after an integrity check. Geometry-only changes may retain or patch the native
-Parasolid partition when the entity graph and provenance permit it. Other
-supported changes regenerate the container and semantic records.
+```rust,no_run
+use std::fs::File;
 
-Semantic regeneration accepts solid and sheet bodies with one region per body
-and one shell per region. It writes analytic and non-periodic NURBS geometry,
-body and face base colors, selected document attributes, sequential triangle
-strips, feature history, and retained feature-input payloads. Unsupported IR
-shapes return `CodecError::NotImplemented`; malformed references and invalid
-retained data return `CodecError::Malformed`. Body transforms must be
-right-handed and rigid because the writer bakes them into model-space
-geometry.
+use cadmpeg_codec_sldprt::SldprtCodec;
+use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut input = File::open("part.sldprt")?;
+    let decoded = SldprtCodec.decode(&mut input, &DecodeOptions::default())?;
+
+    // Edit supported fields in decoded.ir.
+
+    let mut output = File::create("part-edited.sldprt")?;
+    SldprtCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &decoded.ir,
+            fidelity: Some(&decoded.source_fidelity),
+        })?
+        .write_to(&mut output)?;
+    Ok(())
+}
+```
+
+`SldprtCodec` implements `Encoder` through `plan` → `write_to`. Encoding with
+the retained `source_fidelity` sidecar replays an unchanged source image byte
+for byte after an integrity check, and patches supported edits in place.
+Geometry-only changes may retain or patch the native Parasolid partition when
+the entity graph and provenance permit it. Encoding without that sidecar, or
+when the retained image cannot be replayed, regenerates the container and
+semantic records for the supported source-less profile.
+
+Retained writing can synchronize supported feature, sketch, parameter,
+configuration, active-configuration XML, and PMI edits while rejecting
+structural edits it cannot safely rewrite.
+
+Semantic regeneration accepts solid bodies with at most five regions and at
+most six shells per solid region. Sheet regions require exactly one shell. It
+writes analytic and non-periodic NURBS geometry, body and face base colors,
+selected document attributes, sequential triangle strips, feature history, and
+retained feature-input payloads. Unsupported IR shapes return
+`CodecError::NotImplemented`; malformed references and invalid retained data
+return `CodecError::Malformed`. Body transforms must be right-handed and rigid
+because the writer bakes them into model-space geometry.
 
 ## Links
 
