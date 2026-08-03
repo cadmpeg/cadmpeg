@@ -24,6 +24,7 @@ struct Profile {
     fixtures: Vec<FixtureEvidence>,
     totals: EntityCounts,
     loss_codes: BTreeMap<String, usize>,
+    loss_details: BTreeMap<String, usize>,
     rederivation_boundaries: Vec<RederivationBoundaryCount>,
     gates: Vec<Gate>,
     highest_passing_gate: Option<String>,
@@ -37,6 +38,7 @@ struct FixtureEvidence {
     entities: EntityCounts,
     losses: BTreeMap<LossCategory, usize>,
     loss_codes: BTreeMap<String, usize>,
+    loss_details: BTreeMap<String, usize>,
     validation_errors: usize,
     all_bodies_colored: bool,
     all_faces_colored: bool,
@@ -138,6 +140,7 @@ struct DecodedFixtureEvidence {
     entities: EntityCounts,
     losses: BTreeMap<LossCategory, usize>,
     loss_codes: BTreeMap<String, usize>,
+    loss_details: BTreeMap<String, usize>,
     validation_errors: usize,
     all_bodies_colored: bool,
     all_faces_colored: bool,
@@ -186,6 +189,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut fixtures = Vec::new();
     let mut totals = EntityCounts::default();
     let mut total_loss_codes = BTreeMap::new();
+    let mut total_loss_details = BTreeMap::new();
     for path in paths {
         let first = decode_fixture_in_worker(&path)?;
         let second = decode_fixture_in_worker(&path)?;
@@ -193,6 +197,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         totals.add(&entities);
         for (code, count) in &first.loss_codes {
             *total_loss_codes.entry(code.clone()).or_insert(0) += count;
+        }
+        for (detail, count) in &first.loss_details {
+            *total_loss_details.entry(detail.clone()).or_insert(0) += count;
         }
         fixtures.push(FixtureEvidence {
             filename: path
@@ -209,6 +216,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             entities,
             losses: first.losses,
             loss_codes: first.loss_codes,
+            loss_details: first.loss_details,
             validation_errors: first.validation_errors,
         });
     }
@@ -221,11 +229,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .last()
         .map(|gate| gate.level.clone());
     let profile = Profile {
-        version: 6,
+        version: 7,
         format: "nx",
         fixtures,
         totals,
         loss_codes: total_loss_codes,
+        loss_details: total_loss_details,
         rederivation_boundaries,
         gates,
         highest_passing_gate,
@@ -263,12 +272,14 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
     let decoded = NxCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default())?;
     let mut losses = BTreeMap::new();
     let mut loss_codes = BTreeMap::new();
+    let mut loss_details = BTreeMap::new();
     for loss in &decoded.report.losses {
         if loss.severity >= Severity::Warning {
             *losses.entry(loss.code.category()).or_insert(0) += 1;
             *loss_codes
                 .entry(loss.code.as_str().to_string())
                 .or_insert(0) += 1;
+            *loss_details.entry(loss.message.clone()).or_insert(0) += 1;
         }
     }
     let validation_errors = cadmpeg_ir::validate(&decoded.ir, Vec::new())
@@ -287,6 +298,7 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
         entities: EntityCounts::from_ir(&decoded.ir),
         losses,
         loss_codes,
+        loss_details,
         validation_errors,
         all_bodies_colored: !decoded.ir.model.bodies.is_empty()
             && decoded
@@ -569,6 +581,7 @@ mod tests {
             entities: EntityCounts::default(),
             losses: BTreeMap::new(),
             loss_codes: BTreeMap::new(),
+            loss_details: BTreeMap::new(),
             validation_errors: 0,
             all_bodies_colored: false,
             all_faces_colored: false,
