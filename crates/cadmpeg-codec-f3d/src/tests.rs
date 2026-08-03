@@ -24630,6 +24630,46 @@ fn f3z_archive_merges_identity_occurrences() {
 }
 
 #[test]
+fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
+    let component = f3d_with_smbh(&synthetic_mixed_smbh());
+    let component_alone = F3dCodec
+        .decode(
+            &mut Cursor::new(component.clone()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let component_unknowns = component_alone.ir.native_unknowns("f3d").unwrap();
+    assert!(!component_unknowns.is_empty());
+
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", root.as_slice()),
+            ("comp.f3d", component.as_slice()),
+        ],
+    );
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+
+    let prefix = format!("f3d:xref/{XREF_ROLE}/occurrence-0/");
+    let merged_unknowns = decoded.ir.native_unknowns("f3d").unwrap();
+    assert_eq!(merged_unknowns.len(), component_unknowns.len());
+    assert!(merged_unknowns
+        .iter()
+        .all(|record| record.id.0.starts_with(&prefix)));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(
+        !validation
+            .findings
+            .iter()
+            .any(|finding| { finding.check == cadmpeg_ir::report::Check::ReferentialIntegrity }),
+        "{validation:#?}"
+    );
+}
+
+#[test]
 fn f3z_archive_without_merged_components_preserves_root_replay() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
     let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);

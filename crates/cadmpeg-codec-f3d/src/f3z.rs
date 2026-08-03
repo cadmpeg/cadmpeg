@@ -423,8 +423,8 @@ fn remap_ids(value: &mut Value, occurrence: &str) {
     }
 }
 
-/// Append every `f3d` native arena of `component` onto the root's, rescoping
-/// each record into `occurrence`.
+/// Append every typed and reserved `f3d` native arena of `component` onto the
+/// root's, rescoping each record into `occurrence`.
 ///
 /// Records are moved across one at a time in their stored JSON form. The whole
 /// merged population is never held as a parsed value tree, and neither is the
@@ -434,14 +434,18 @@ fn extend_native(root: &mut Native, mut component: Native, occurrence: &str) {
         return;
     };
     let target = root.namespace_mut("f3d");
-    for name in crate::native::F3D_ARENA_NAMES {
-        let Some(records) = source.arenas.remove(*name) else {
+    for name in crate::native::F3D_ARENA_NAMES
+        .iter()
+        .copied()
+        .chain(std::iter::once("unknowns"))
+    {
+        let Some(records) = source.arenas.remove(name) else {
             continue;
         };
         if records.is_empty() {
             continue;
         }
-        let arena = target.arenas.entry((*name).to_string()).or_default();
+        let arena = target.arenas.entry(name.to_string()).or_default();
         arena.reserve(records.len());
         for record in records {
             arena.push(rescope_record(&record, occurrence));
