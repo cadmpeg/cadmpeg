@@ -986,6 +986,11 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
     if let Some([center, _, _]) = inline_arc_coordinates(payload, offset) {
         return Some(center);
     }
+    if geometry_locus_profile_vertex(payload, offset)
+        && payload.get(offset + 56..offset + 58) == Some(&[0x1e, 0x00])
+    {
+        return finite_coordinate_pair(payload, offset.checked_add(58)?);
+    }
     let indexed_endpoint_body = extended_tagged_indexed_curve_endpoint_indices(payload, offset)
         .is_some()
         || wide_indexed_curve_endpoint_indices(payload, offset).is_some()
@@ -1914,9 +1919,11 @@ fn terminal_wide_geometry_locus_profile_vertex(payload: &[u8], offset: usize) ->
 
 fn geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
     if !matches!(
-        payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()),
+        payload.get(offset..offset + SKETCH_MARKER.len()),
         Some(prefix)
-            if prefix == LEGACY_SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER
+            if prefix == SKETCH_MARKER
+                || prefix == LEGACY_SKETCH_MARKER
+                || prefix == LEGACY_EXTENDED_SKETCH_MARKER
     ) || !matches!(marker_native_code(payload, offset), Some(1 | 2))
         || !marker_is_geometry_locus(payload, offset)
         || marker_profile_curve_role(payload, offset) != Some(1)
@@ -9845,6 +9852,16 @@ mod marker_tests {
             sketch_input_entities(&payload, "lane")[0].kind,
             SketchInputKind::Point
         );
+        payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[134..].copy_from_slice(SKETCH_MARKER);
+        assert!(geometry_locus_profile_vertex(&payload, 0));
+        assert_eq!(
+            sketch_input_entities(&payload, "lane")[0].kind,
+            SketchInputKind::Point
+        );
+        payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[134..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
         payload[37] = 0x05;
         assert!(geometry_locus_profile_vertex(&payload, 0));
         payload[37] = 0x06;
