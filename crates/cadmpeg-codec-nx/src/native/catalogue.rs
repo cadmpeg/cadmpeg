@@ -288,11 +288,6 @@ impl ContainerNoted for FeatureSketchDatumCsysDependency {
         (&self.id, self.source_offset)
     }
 }
-impl ContainerNoted for FeatureDatumCsysSketchDependency {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
-    }
-}
 impl ContainerNoted for DataBlockAbrReferenceLane {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
@@ -1702,18 +1697,6 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         }),
         emit: |m, r, ns| emit_arena(&m.features.feature_sketch_datum_csys_dependencies, r, ns),
         len: |m| m.features.feature_sketch_datum_csys_dependencies.len(),
-        counts_toward_emptiness: true,
-    },
-    CatalogueRow {
-        arena: "feature_datum_csys_sketch_dependencies",
-        tag: Some("DATUM_CSYS_SKETCH_DEPENDENCY"),
-        exactness: Exactness::Derived,
-        phase: Phase::GroupA,
-        note: Some(|m, r, a| {
-            note_container(&m.features.feature_datum_csys_sketch_dependencies, r, a);
-        }),
-        emit: |m, r, ns| emit_arena(&m.features.feature_datum_csys_sketch_dependencies, r, ns),
-        len: |m| m.features.feature_datum_csys_sketch_dependencies.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
