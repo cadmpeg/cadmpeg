@@ -2257,21 +2257,24 @@ fn attach_feature_operations(
             .flatten();
         let trim_body_projection = (label.value == "TRIM BODY")
             .then(|| {
-                trim_body_feature_definition(
-                    *body_references.get(label.id.as_str())?,
-                    segment_body_operands_by_operation
-                        .get(label.id.as_str())?
-                        .as_slice(),
-                    &body_alias_roots,
-                    &bodies_by_object_index,
-                )
-                .or_else(|| {
-                    offset_store_trim_body_feature_definition(
-                        offset_store_bodies_by_operation
-                            .get(label.id.as_str())
-                            .map_or([].as_slice(), Vec::as_slice),
-                    )
-                })
+                body_references
+                    .get(label.id.as_str())
+                    .zip(segment_body_operands_by_operation.get(label.id.as_str()))
+                    .and_then(|(primary, operands)| {
+                        trim_body_feature_definition(
+                            *primary,
+                            operands.as_slice(),
+                            &body_alias_roots,
+                            &bodies_by_object_index,
+                        )
+                    })
+                    .or_else(|| {
+                        offset_store_trim_body_feature_definition(
+                            offset_store_bodies_by_operation
+                                .get(label.id.as_str())
+                                .map_or([].as_slice(), Vec::as_slice),
+                        )
+                    })
             })
             .flatten();
         let offset_projection = (label.value == "OFFSET")

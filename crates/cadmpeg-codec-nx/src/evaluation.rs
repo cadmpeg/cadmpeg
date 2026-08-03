@@ -374,7 +374,7 @@ fn rederived_body_census(
                 )?;
             }
             FeatureDefinition::TrimBodies { targets, tools, .. } => {
-                if feature.outputs.is_empty() && complete_local_body_selection(targets) {
+                if feature.outputs.is_empty() {
                     continue;
                 }
                 preserve_complete_body_targets(
@@ -398,6 +398,9 @@ fn rederived_body_census(
                 )?;
             }
             FeatureDefinition::Pattern { seeds, pattern } => {
+                if feature.outputs.is_empty() {
+                    continue;
+                }
                 apply_complete_body_pattern(
                     feature,
                     &mut bodies,
@@ -471,16 +474,15 @@ fn suppression_is_body_census_invariant(
         FeatureDefinition::SewBodies { bodies: selection, .. }
             if local_body_replacement_is_census_invariant(feature, selection, bodies)
     );
-    let trims_only_local_bodies = feature.outputs.is_empty()
-        && matches!(
-            &feature.definition,
-            FeatureDefinition::TrimBodies { targets, .. }
-                if complete_local_body_selection(targets)
-        );
+    let output_free_trim = feature.outputs.is_empty()
+        && matches!(&feature.definition, FeatureDefinition::TrimBodies { .. });
+    let output_free_pattern = feature.outputs.is_empty()
+        && matches!(&feature.definition, FeatureDefinition::Pattern { .. });
     deletes_only_local_bodies
         || extracts_only_local_bodies
         || sews_only_local_bodies
-        || trims_only_local_bodies
+        || output_free_trim
+        || output_free_pattern
         || ((feature.outputs.is_empty()
             || (feature.outputs.len() == 1 && bodies.contains(&feature.outputs[0])))
             && matches!(
@@ -1788,9 +1790,10 @@ mod tests {
     fn trim_bodies_requires_a_resolved_retained_side_before_lineage() {
         let mut ir = complete_block_ir();
         let target = ir.model.bodies[0].id.clone();
-        ir.model.features.push(body_neutral_feature(
+        ir.model.features.push(body_preserving_feature(
             "trim",
             1,
+            target.clone(),
             FeatureDefinition::TrimBodies {
                 targets: BodySelection::Bodies(vec![target]),
                 tools: BodySelection::Bodies(vec![BodyId("tool".to_string())]),
@@ -1808,7 +1811,7 @@ mod tests {
     }
 
     #[test]
-    fn output_free_trim_of_a_local_target_is_body_census_neutral() {
+    fn output_free_trim_is_body_census_neutral_without_resolved_roles() {
         let mut ir = complete_block_ir();
         ir.model.features.push(Feature {
             id: FeatureId("trim-local".to_string()),
@@ -1823,10 +1826,7 @@ mod tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::TrimBodies {
-                targets: BodySelection::Local {
-                    bodies: vec!["historical-target".to_string()],
-                    native: "native-target".to_string(),
-                },
+                targets: BodySelection::Unresolved,
                 tools: BodySelection::Unresolved,
                 keep: BodyTrimSide::Unresolved,
             },
@@ -2294,6 +2294,35 @@ mod tests {
                 bodies: vec![seed, first_copy, second_copy]
             }
         );
+    }
+
+    #[test]
+    fn output_free_unresolved_pattern_is_body_census_neutral() {
+        let mut ir = complete_block_ir();
+        ir.model.features.push(Feature {
+            id: FeatureId("pattern".to_string()),
+            ordinal: 1,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::Unresolved { form: None },
+            },
+            native_ref: None,
+        });
+
+        assert!(matches!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies }
+                if bodies == [BodyId("body".to_string())]
+        ));
     }
 
     #[test]
