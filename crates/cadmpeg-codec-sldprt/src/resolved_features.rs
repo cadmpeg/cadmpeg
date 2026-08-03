@@ -1476,6 +1476,7 @@ fn inline_arc_coordinates(payload: &[u8], offset: usize) -> Option<[[f64; 2]; 3]
 fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
     let code = marker_native_code(payload, offset)?;
     let handle_state = u16::from_le_bytes(payload.get(offset + 76..offset + 78)?.try_into().ok()?);
+    let current_prefix = payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER);
     if !matches!((code, handle_state), (0 | 1, 2 | 3) | (2, 2)) {
         return None;
     }
@@ -1546,8 +1547,9 @@ fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[
             .get(offset + 173..offset + 177)
             .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
         && sketch_marker_prefix_at(payload, offset.checked_add(177)?);
-    let arc_handle = code == 1
-        && handle_state == 2
+    let valid_arc_handle_state = matches!((code, handle_state), (1, 2))
+        || current_prefix && matches!((code, handle_state), (0, 3));
+    let arc_handle = valid_arc_handle_state
         && payload
             .get(offset + 78..offset + 82)
             .is_some_and(|reference| {
@@ -9144,6 +9146,23 @@ mod marker_tests {
             sketch_input_entities(&payload, "lane")[0].kind,
             SketchInputKind::Point
         );
+
+        payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[17..21].fill(0);
+        payload[76..78].copy_from_slice(&3u16.to_le_bytes());
+        payload[169..].copy_from_slice(SKETCH_MARKER);
+        assert_eq!(
+            legacy_declared_handle_coordinates(&payload, 0),
+            Some([0.352, 0.005])
+        );
+        assert_eq!(
+            sketch_input_entities(&payload, "lane")[0].kind,
+            SketchInputKind::Point
+        );
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+        payload[76..78].copy_from_slice(&2u16.to_le_bytes());
+        payload[169..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
         payload[80..82].fill(0);
         assert_eq!(legacy_declared_handle_coordinates(&payload, 0), None);
