@@ -504,6 +504,10 @@ fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) 
                         | FeatureDefinition::DatumOffsetPlane { .. } => stored_frame(feature),
                         _ => None,
                     },
+                    matches!(
+                        feature.definition,
+                        FeatureDefinition::DatumPrincipalPlane { .. }
+                    ),
                 ),
             )
         })
@@ -525,15 +529,25 @@ fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) 
         let reference_id = reference_id.clone();
         let invalid = match ordinals.get(&reference_id) {
             None => true,
-            Some((reference_ordinal, reference_frame)) => {
+            Some((reference_ordinal, reference_frame, is_principal)) => {
                 let geometrically_compatible =
                     reference_frame
                         .zip(result_frame)
                         .map(|(reference_frame, result_frame)| {
                             offset_frame_matches(reference_frame, result_frame, *distance)
                         });
+                let explicit_principal_identity_without_face_fallback = explicit_native_reference
+                    && *is_principal
+                    && !(feature
+                        .source_properties
+                        .contains_key("ReferenceFaceOrigin")
+                        || feature
+                            .source_properties
+                            .contains_key("ReferenceFaceNormal")
+                        || feature.source_properties.contains_key("ReferenceFaceUAxis"));
                 *reference_ordinal >= feature.ordinal
-                    && !(explicit_native_reference && geometrically_compatible == Some(true))
+                    && !(explicit_native_reference && geometrically_compatible == Some(true)
+                        || explicit_principal_identity_without_face_fallback)
             }
         };
         if invalid {
@@ -2647,6 +2661,42 @@ mod history_reference_tests {
             } if reference == &projected[1].id
         ));
         assert_eq!(projected[0].dependencies, [projected[1].id.clone()]);
+        assert!(order_features_for_regeneration(&mut projected));
+        assert_eq!(projected[1].ordinal, 0);
+        assert_eq!(projected[0].ordinal, 1);
+    }
+
+    #[test]
+    fn explicit_principal_reference_survives_a_coincident_result_frame() {
+        let mut offset = feature("sldprt:history:feature#0:0", Some("35"), 0);
+        offset.input_class = Some("moRefPlane_c".into());
+        offset.parameters.insert("D1".into(), "6mm".into());
+        offset.properties.insert("Reference".into(), "2".into());
+        offset
+            .properties
+            .insert("Origin".into(), "0mm,0mm,0mm".into());
+        offset.properties.insert("Normal".into(), "0,0,1".into());
+        offset.properties.insert("UAxis".into(), "1,0,0".into());
+        let mut principal = feature("sldprt:history:feature#0:1", Some("2"), 1);
+        principal.name = "Front".into();
+        principal.input_class = Some("moRefPlane_c".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![offset, principal],
+        };
+
+        let mut projected = project_features(&[history]);
+        assert!(matches!(
+            &projected[0].definition,
+            FeatureDefinition::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Feature(reference)),
+                distance: Length(6.0),
+            } if reference == &projected[1].id
+        ));
         assert!(order_features_for_regeneration(&mut projected));
         assert_eq!(projected[1].ordinal, 0);
         assert_eq!(projected[0].ordinal, 1);
