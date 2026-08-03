@@ -777,8 +777,7 @@ mod tests {
     }
 
     fn schema_archive(entries: &[(&str, &str)]) -> Vec<u8> {
-        let options = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored);
+        let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
         let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
         for (name, xml) in entries {
             archive.start_file(name, options).expect("start schema");

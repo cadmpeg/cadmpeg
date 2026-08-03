@@ -10,7 +10,6 @@ use cadmpeg_codec_core::decode::{DecodeArena, DecodeContext, DecodePolicy, Inspe
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
 use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 use cadmpeg_ir::report::{LossKind as LossCode, Severity};
-use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
 
 use crate::asm_header;
@@ -5718,7 +5717,7 @@ fn synthetic_mixed_smbh() -> Vec<u8> {
 /// Wrap an ASM stream byte blob into a `.f3d` ZIP as `Body1.smbh`.
 fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     zip.start_file("Manifest.dat", stored).unwrap();
     zip.write_all(b"synthetic-manifest").unwrap();
     zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
@@ -5730,7 +5729,7 @@ fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
 #[test]
 fn malformed_tspline_cage_degrades_to_a_loss_note() {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     zip.start_file("Manifest.dat", stored).unwrap();
     zip.write_all(b"synthetic-manifest").unwrap();
     zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
@@ -5761,7 +5760,7 @@ fn malformed_tspline_cage_degrades_to_a_loss_note() {
 #[test]
 fn malformed_paramesh_reports_its_entry_and_parser_failure() {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     zip.start_file("Manifest.dat", stored).unwrap();
     zip.write_all(b"synthetic-manifest").unwrap();
     let entry = "FusionAssetName[Active]/ParaMeshGeometry.BlobParts/broken.paramesh";
@@ -5782,8 +5781,8 @@ fn malformed_paramesh_reports_its_entry_and_parser_failure() {
 
 fn f3d_with_deflated_smbh(smbh: &[u8]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-    let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let deflated = crate::zip_write::file_options(CompressionMethod::Deflated);
     zip.start_file("Manifest.dat", stored).unwrap();
     zip.write_all(b"synthetic-manifest").unwrap();
     zip.start_file(
@@ -5842,7 +5841,7 @@ fn container_resource_limits_match_the_declared_f3d_profile() {
 fn oversized_nested_protein_entry_is_rejected_before_allocation() {
     let target = b"AssetData/InstanceProperties.bin";
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     zip.start_file(std::str::from_utf8(target).unwrap(), stored)
         .unwrap();
     zip.write_all(b"properties").unwrap();
@@ -5857,7 +5856,7 @@ fn oversized_nested_protein_entry_is_rejected_before_allocation() {
 
 fn f3d_with_configuration(smbh: &[u8], name: &str, payload: &[u8]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     zip.start_file("Manifest.dat", stored).unwrap();
     zip.write_all(b"synthetic-manifest").unwrap();
     zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
@@ -11894,7 +11893,7 @@ fn f3d_with_smbh_and_protein_guids(smbh: &[u8], guids: &[&str]) -> Vec<u8> {
 }
 
 fn f3d_with_smbh_and_instance_properties(smbh: &[u8], properties: &[Vec<u8>]) -> Vec<u8> {
-    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let proteins = properties
         .iter()
         .map(|properties| {
@@ -12441,8 +12440,8 @@ fn push_tagged_i64(b: &mut Vec<u8>, tag: u8, v: i64) {
 /// snapshot, and a few side entries, mirroring the spec's naming families.
 fn synthetic_f3d(include_smbh: bool) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-    let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let deflated = crate::zip_write::file_options(CompressionMethod::Deflated);
 
     let folder = "FusionAssetName[Active]";
     zip.start_file("Manifest.dat", stored).unwrap();
@@ -12479,7 +12478,7 @@ fn synthetic_f3d(include_smbh: bool) -> Vec<u8> {
 
 fn synthetic_legacy_multi_brep_f3d() -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let folder = "FusionAssetName[Active]";
     zip.start_file("Manifest.dat", stored).unwrap();
     zip.write_all(b"synthetic-manifest").unwrap();
@@ -13144,8 +13143,11 @@ fn detect_high_on_f3d_zip_low_on_bare_zip() {
 
     // A ZIP whose visible prefix has no f3d markers.
     let mut bare = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    bare.start_file("readme.txt", SimpleFileOptions::default())
-        .unwrap();
+    bare.start_file(
+        "readme.txt",
+        crate::zip_write::file_options(CompressionMethod::Stored),
+    )
+    .unwrap();
     bare.write_all(b"hello").unwrap();
     let bare = bare.finish().unwrap().into_inner();
     assert_eq!(codec.detect(&bare), Confidence::Low);
@@ -19594,7 +19596,7 @@ fn decode_carries_the_document_modeling_length_unit_into_source_metadata() {
         "inch",
     ]);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     zip.start_file("Manifest.dat", stored).unwrap();
     zip.write_all(b"synthetic-manifest").unwrap();
     zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
@@ -24353,7 +24355,7 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
         bulk.extend_from_slice(&member.to_le_bytes());
     }
 
-    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     zip.start_file("Manifest.dat", stored).unwrap();
     zip.write_all(b"synthetic-manifest").unwrap();
@@ -24561,7 +24563,7 @@ fn redirections_json(own_name: &str, targets: &[(&str, &str)]) -> String {
 /// table referencing `targets`.
 fn f3d_without_brep(doc_type: &str, own_name: &str, targets: &[(&str, &str)]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     zip.start_file("Manifest.dat", stored).unwrap();
     zip.write_all(b"synthetic-manifest").unwrap();
     zip.start_file("Properties.dat", stored).unwrap();
@@ -24583,7 +24585,7 @@ fn f3d_without_brep(doc_type: &str, own_name: &str, targets: &[(&str, &str)]) ->
 /// Wrap members into a `.f3z` archive with `Manifest.json` naming the root.
 fn f3z_archive(root_name: &str, members: &[(&str, &[u8])]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     for (name, bytes) in members {
         zip.start_file(*name, stored).unwrap();
         zip.write_all(bytes).unwrap();

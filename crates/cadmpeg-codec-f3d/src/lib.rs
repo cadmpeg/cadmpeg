@@ -125,6 +125,7 @@ pub mod validate;
 mod value_tree;
 mod writer;
 pub mod xref;
+mod zip_write;
 
 use cadmpeg_codec_core::decode::{DecodeContext, View};
 use cadmpeg_codec_core::{CodecError, ContainerSummary};

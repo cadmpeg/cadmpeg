@@ -428,9 +428,13 @@ fn compare_text(update: bool, path: &Path, actual: &str, failures: &mut Vec<Stri
         return;
     }
     match std::fs::read_to_string(path) {
-        Ok(expected) if expected == actual => {}
         Ok(expected) => {
-            let (line, expected_line, actual_line) = first_line_diff(&expected, actual);
+            let expected = expected.replace("\r\n", "\n");
+            let actual = actual.replace("\r\n", "\n");
+            if expected == actual {
+                return;
+            }
+            let (line, expected_line, actual_line) = first_line_diff(&expected, &actual);
             failures.push(format!(
                 "{}: diverged at line {line}\n    golden: {expected_line}\n    actual: {actual_line}",
                 path.display()
