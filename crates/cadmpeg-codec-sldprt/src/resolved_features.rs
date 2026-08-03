@@ -11544,6 +11544,19 @@ mod marker_tests {
             compact_indexed_curve_endpoint_indices(&compact_104, 0),
             None
         );
+        let mut current_compact_104 = valid_compact_104.clone();
+        current_compact_104[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        current_compact_104[17..21].copy_from_slice(&2u32.to_le_bytes());
+        current_compact_104[104..].copy_from_slice(SKETCH_MARKER);
+        assert!(current_undetailed_bounded_curve_is_line(
+            &current_compact_104,
+            0
+        ));
+        current_compact_104[58..60].copy_from_slice(&4u16.to_le_bytes());
+        assert!(!current_undetailed_bounded_curve_is_line(
+            &current_compact_104,
+            0
+        ));
 
         let extended = |mut payload: Vec<u8>| {
             payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
@@ -41649,15 +41662,19 @@ fn current_undetailed_bounded_curve_is_line(payload: &[u8], offset: usize) -> bo
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
         && marker_native_code(payload, offset) == Some(2)
         && marker_is_geometry_locus(payload, offset);
-    let compact_indexed_record = compact_indexed_curve_endpoint_indices(payload, offset).is_some()
-        || extended_compact_indexed_curve_endpoint_indices(payload, offset).is_some();
+    let distinct = |endpoints: [u32; 2]| endpoints[0] != endpoints[1];
+    let compact_indexed_record = compact_indexed_curve_endpoint_indices(payload, offset)
+        .is_some_and(distinct)
+        || extended_compact_indexed_curve_endpoint_indices(payload, offset).is_some_and(distinct);
     let complete_indexed_record = wide_indexed_curve_endpoint_indices(payload, offset).is_some()
         && sketch_marker_prefix_at(payload, offset.saturating_add(92))
         || compact_indexed_record
             && matches!(
                 compact_indexed_curve_record_end(payload, offset),
                 Some(
-                    CompactIndexedCurveRecordEnd::Marker84 | CompactIndexedCurveRecordEnd::Marker96
+                    CompactIndexedCurveRecordEnd::Marker84
+                        | CompactIndexedCurveRecordEnd::Marker96
+                        | CompactIndexedCurveRecordEnd::Marker104
                 )
             );
     supported_prefix
