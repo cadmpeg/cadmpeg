@@ -64,7 +64,7 @@
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_sldprt::SldprtCodec;
-//! use cadmpeg_ir::{Codec, DecodeOptions, Encoder};
+//! use cadmpeg_ir::{CodecEntry, DecodeOptions, Encoder};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.sldprt")?;
