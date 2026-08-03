@@ -287,6 +287,9 @@ fn rederived_body_census(
                 )?;
             }
             FeatureDefinition::BaseFeature { .. } if output_free_native_snapshot(feature) => {}
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Resolved { bodies, .. },
+            } if bodies.is_empty() && feature.outputs.is_empty() => {}
             FeatureDefinition::BaseFeature { bodies: selection }
             | FeatureDefinition::InsertBodies { bodies: selection } => {
                 let Some(selected) = explicit_body_selection(selection) else {
@@ -1173,6 +1176,42 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies: vec![body] }
+        );
+    }
+
+    #[test]
+    fn exact_empty_replay_input_precedes_a_new_body_construction() {
+        let mut ir = complete_block_ir();
+        ir.model.features[0].ordinal = 1;
+        ir.model.features.insert(
+            0,
+            Feature {
+                id: FeatureId("initial-bodies".to_string()),
+                ordinal: 0,
+                name: Some("Retained history input".to_string()),
+                suppressed: Some(false),
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition: FeatureDefinition::BaseFeature {
+                    bodies: BodySelection::Resolved {
+                        bodies: Vec::new(),
+                        native: "nx:segment-body-bindings".to_string(),
+                    },
+                },
+                native_ref: None,
+            },
+        );
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified {
+                bodies: vec![BodyId("body".to_string())],
+            }
         );
     }
 

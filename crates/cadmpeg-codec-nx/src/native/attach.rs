@@ -2252,13 +2252,35 @@ fn attach_feature_operations(
         }
         let block_op = if block_projection.is_some()
             && matches!(outputs.as_slice(), [_])
-            && (!block_has_explicit_output
-                || !body_writer_history.has_primary_writer(native_primary_body, &outputs))
-        {
+            && if block_has_explicit_output {
+                !body_writer_history.has_primary_writer(native_primary_body, &outputs)
+            } else {
+                !body_writer_history
+                    .has_output_writer_other_than(initial_body_id.as_ref(), &outputs)
+            } {
             BooleanOp::NewBody
         } else {
             BooleanOp::Unresolved
         };
+        if block_op == BooleanOp::NewBody && !block_has_explicit_output {
+            if let Some(initial_feature) = initial_body_id.as_ref().and_then(|id| {
+                ir.model
+                    .features
+                    .iter_mut()
+                    .find(|feature| feature.id == *id)
+            }) {
+                initial_feature
+                    .outputs
+                    .retain(|body| !outputs.contains(body));
+                if let FeatureDefinition::BaseFeature {
+                    bodies: BodySelection::Resolved { bodies, .. },
+                } = &mut initial_feature.definition
+                {
+                    bodies.retain(|body| !outputs.contains(body));
+                }
+                body_writer_history.retract_outputs(&initial_feature.id, &outputs);
+            }
+        }
         body_writer_history.extend_primary_dependencies(
             native_primary_body,
             &outputs,
