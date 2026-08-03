@@ -3,7 +3,7 @@
 `cadmpeg-codec-iges` inspects and decodes IGES 5.3 Fixed ASCII files into
 `CadIr`.
 
-Support level: [L8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+Support level: [L8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
 for the Fixed ASCII mechanical/document envelope.
 
 ## Install
@@ -16,7 +16,7 @@ cargo add cadmpeg-codec-iges cadmpeg-ir
 
 ```rust,no_run
 use cadmpeg_codec_iges::IgesCodec;
-use cadmpeg_ir::{Codec, DecodeOptions};
+use cadmpeg_ir::{CodecEntry, DecodeOptions};
 use std::fs::File;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -35,7 +35,8 @@ The result holds the decoded `CadIr` and a `DecodeReport`. Read
 `report.losses` before trusting geometry. Set
 `DecodeOptions::container_only` for card and Global metadata without entity
 decode. `IgesCodec::inspect` returns section structure, Directory census, and
-reference findings.
+reference findings. Compressed ASCII and Binary representations are detected
+and inspected by name and refused for semantic decode.
 
 ## Data model
 
@@ -47,9 +48,10 @@ and property entities into `CadIr`. Lengths convert to millimetres from the
 Global unit system. Directions, ratios, angles, knots, weights, and UV
 parameters keep their native scale.
 
-Records that block faithful transfer land in `DecodeReport::losses`. Named
-opaque records retain identity and, within bounds, complete bytes or length
-plus SHA-256. Coverage for each envelope lives in the
+Records that block faithful transfer land in `DecodeReport::losses`.
+`native.iges` retains physical cards and typed or generic entity data.
+`SourceFidelity` retained opaque byte records and `transfer_ledger` are not
+populated. Coverage for each envelope lives in the
 [format-support profile][support].
 
 ## Documentation

@@ -2,25 +2,17 @@
 
 **One open pipeline for native CAD.**
 
-cadmpeg aims to do for CAD what FFmpeg does for media: provide a toolchain for reading, inspecting, converting, and building across formats.
-As a CLI, it's a tool for convert and inspect CAD files.
-As a library, it's a building block for developers to add native vendor files support to their own applications.
+cadmpeg is a toolchain for reading, inspecting, converting, and writing native CAD files. The CLI converts and inspects documents. The libraries add vendor-file support to other applications.
 
-The end goal is to parse and semantically understand all aspects of a vendor CAD file, from preview meshes, to BREP geometry, to design intent and parametric history. Then, store the data in a rich IR and finally produce an export from that IR.
-
-Currently, the project is early phases. Some open formats like STEP and Rhino are supported quite well but proprietary formats are limited and in active development. We use a format-support ladder from l0 to l9 capabilty level system to track progress for each format.
+Decoders map vendor files into one documented IR: preview meshes, B-rep geometry, design intent, and parametric history where the format carries them. Validators, exporters, and downstream tools share that IR. Progress per format follows an [L0–L9 support ladder](docs/format-support.md#support-ladder).
 
 [Try it](#quick-start) · [Format support](docs/format-support.md) · [Donate a test file](corpus/README.md) · [Contribute](CONTRIBUTING.md)
 
 ## Why cadmpeg
 
-Native CAD formats are proprietary and sparsely documented. Neutral formats such as STEP make geometry portable but discard design data.
-
-Every decoder writes to one documented IR used by validators, exporters, and downstream tools. Values retain source byte offsets, inferred values are marked, and unsupported content is reported as loss.
+Native CAD formats are proprietary and sparsely documented. cadmpeg recovers geometry and design data into one IR. Values retain source byte offsets. Inferred values are marked. Unsupported content is reported as loss.
 
 Format knowledge comes from legally possessed CAD files and public documentation. Vendor SDKs, decompiled binaries, and confidential material are prohibited ([LEGAL.md](LEGAL.md)).
-
-The goal is high-fidelity conversion across formats, versions, and vendors, including parametric design history.
 
 ## Install
 
@@ -69,21 +61,17 @@ wrote part.step (2125 entities)
 
 ## Format support
 
-Current format support includes:
+- **FreeCAD `.FCStd`** — [L5](docs/format-support.md#support-ladder) (schema 4 / file 1)
+- **Autodesk Fusion `.f3d`** — [L4](docs/format-support.md#support-ladder)
+- **SolidWorks `.sldprt`** — [L4](docs/format-support.md#support-ladder)
+- **Rhino `.3dm`** — [L8](docs/format-support.md#support-ladder) (archive 50/60/70/80); older bands [L1](docs/format-support.md#support-ladder) / [L0](docs/format-support.md#support-ladder)
+- **Siemens NX `.prt`** — [L3](docs/format-support.md#support-ladder) (selected or terminal-lineage-resolved body images); [L2](docs/format-support.md#support-ladder) (unresolved multi-partition history)
+- **CATIA V5 `.CATPart`** — [L2](docs/format-support.md#support-ladder) (standard-nested); [L1](docs/format-support.md#support-ladder) (other layouts)
+- **Creo `.prt`** — [L1](docs/format-support.md#support-ladder)
+- **STEP Part 21 AP203/AP214/AP242** — [L9](docs/format-support.md#support-ladder)
+- **IGES 5.3 Fixed ASCII** — [L8](docs/format-support.md#support-ladder)
 
-- **FreeCAD `.FCStd` — [L5](docs/format-support.md#support-ladder) for schema 4/file 1:** shape-complete typed read for the primary envelope; deterministic retained writes, checked edits, and source-less generation as extras above L5.
-- **Autodesk Fusion `.f3d` — [L4](docs/format-support.md#support-ladder):** readable design records; partial B-rep and appearance decode; native replay, patching, and generation.
-- **SolidWorks `.sldprt` — [L4](docs/format-support.md#support-ladder):** connected model read; configurations; typed features, sketches, and parameters; retained replay/patching and source-less native write.
-- **Rhino `.3dm` — [L8](docs/format-support.md#support-ladder) for archive 50/60/70/80:** complete built-in model, product structure, presentation, annotations, and application-data retention, with bounded source-less native writing as an extra; older bands have inspection and metadata support.
-- **Siemens NX `.prt` — [L3](docs/format-support.md#support-ladder) claimed for selected or terminal-lineage-resolved body images; L2 claimed for unresolved multi-partition history:** exact carriers and connected B-rep in the cumulative validation envelope, with feature and history transfer as extras and conservative retention when final-body membership remains inconclusive.
-- **CATIA V5 `.CATPart` — [L2](docs/format-support.md#support-ladder):** exact carriers with conditional topology on the standard-nested layout; other layouts at L1.
-- **Creo `.prt` — [L1](docs/format-support.md#support-ladder):** structural decode with partial placed geometry, topology, sketches, and design records.
-- **STEP Part 21 AP203/AP214/AP242 — [L9](docs/format-support.md#support-ladder):** full-document read and semantic clear-text write with target-schema selection and strict fidelity checks.
-- **IGES 5.3 Fixed ASCII — [L8](docs/format-support.md#support-ladder):** complete mechanical and document read with `native.iges` card and entity retention; read only.
-
-The pure-Rust STEP writer re-decodes generated files and can reject every reported semantic loss before writing.
-
-[Format support profiles](docs/format-support.md) detail current capabilities. [`docs/formats/`](docs/formats/) defines byte semantics and tracks unresolved fields and structures.
+[Format support](docs/format-support.md) holds profiles and scoring rules. [`docs/formats/`](docs/formats/) holds byte semantics and open items.
 
 ## Pipeline
 
@@ -91,12 +79,12 @@ The pure-Rust STEP writer re-decodes generated files and can reject every report
 input file ──▶ container decoder ──▶ format decoder ──▶ IR ──▶ validator ──▶ exporter ──▶ output + reports
 ```
 
-The IR connects the pipeline. Decoders produce it, validators check it, and exporters consume it. Version 4 serializes a format-neutral model, the required `subds` control-cage arena, free-carrier source associations, sparse source annotations, independently versioned native namespaces, and opaque records as canonical JSON. Arena entries are ordered by ID after finalization, and carrier reachability follows topology links, procedural references, and source associations.
+Decoders produce the IR. Validators check it. Exporters consume it.
 
-- [CAD IR version 5](docs/cad-ir.md) defines byte semantics, canonical units and parameterization, identity, topology, directed SubD control cages, bounded procedural constructions, annotations, native opacity, and versioning.
-- [Architecture](docs/architecture.md) describes the pipeline, codec interface, and crate map.
-- [Format support](docs/format-support.md) records current capability by format.
-- [Roadmap](docs/roadmap.md) defines milestones and contributor entry points.
+- [CAD IR version 5](docs/cad-ir.md)
+- [Architecture](docs/architecture.md)
+- [Format support](docs/format-support.md)
+- [Roadmap](docs/roadmap.md)
 
 ## CLI
 
@@ -109,9 +97,9 @@ cadmpeg convert  part.f3d -f step -o part.step
 cadmpeg diff     a.cadir.json b.cadir.json
 ```
 
-Output formats are `cadir`, `step`, `fcstd`, `f3d`, and `sldprt`; `json` aliases `cadir`. `export` and `convert` infer omitted formats from the output extension. Use `--input-format` to override source detection.
+Output formats are `cadir`, `step`, `fcstd`, `f3d`, `sldprt`, and `rhino`; `json` aliases `cadir`. `export` and `convert` infer omitted formats from the output extension. Use `--input-format` to override source detection. Use `--step-target` and `--reject-step-losses` for STEP schema selection and strict loss refusal.
 
-Machine-readable output from `inspect --json`, `validate --json`, and `diff --json`, plus command report files, uses CLI `schema_version: 5`. This command-envelope version is independent of the CAD IR's `ir_version: "5"`.
+Machine-readable output from `inspect --json`, `validate --json`, and `diff --json`, plus command report files, uses CLI `schema_version: 5`. That envelope version is independent of CAD IR `ir_version: "5"`.
 
 ## Contributing
 

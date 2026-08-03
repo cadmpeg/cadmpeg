@@ -1,16 +1,41 @@
 # cadmpeg-step
 
-`cadmpeg-step` serializes a [`CadIr`] document as an ISO 10303-21 exchange file
-using the STEP AP214 `AUTOMOTIVE_DESIGN` schema. It is the library interface for
-STEP export; the cadmpeg CLI uses the same model and writer.
+`cadmpeg-step` reads and writes ISO 10303-21 Part 21 exchange structures for
+AP203 editions 1–2, AP214, and AP242 editions 1–3. Schema selection uses
+[`StepSchema`] through [`StepWriteOptions`]. [`StepCodec`] implements both
+[`Codec`] decode and [`Encoder`] write. The cadmpeg CLI uses the same model.
 
-## Export a document
-
-Add the writer and IR crates:
+## Install
 
 ```sh
 cargo add cadmpeg-step cadmpeg-ir
 ```
+
+## Decode a Part 21 file
+
+```rust,no_run
+use cadmpeg_ir::{CodecEntry, DecodeOptions};
+use cadmpeg_step::StepCodec;
+use std::fs::File;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut input = File::open("part.step")?;
+    let result = StepCodec::default().decode(&mut input, &DecodeOptions::default())?;
+
+    for loss in &result.report.losses {
+        eprintln!("{:?}: {}", loss.severity, loss.message);
+    }
+    println!("{} bodies", result.ir.model.bodies.len());
+    Ok(())
+}
+```
+
+Decode transfers millimeter-normalized analytic and NURBS geometry, connected
+solid, sheet, and wire topology with pcurves, product identity and occurrences,
+AP242 tessellation where present, layers, colors, visibility, and PMI. Named
+opaque application records retain identity and byte spans when retained.
+
+## Write a document
 
 Pass any [`std::io::Write`] sink to [`write_step`]:
 
@@ -46,14 +71,13 @@ if !report.losses.is_empty() {
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-`write_step` emits the complete Part 21 envelope, product-definition records,
-representation context, and reachable boundary-representation geometry. Each IR
-region becomes a `MANIFOLD_SOLID_BREP`; regions with additional shells become
-`BREP_WITH_VOIDS`. The topology walk continues through shells, faces, loops,
-coedges, edges, and vertices.
-
-Supported surface carriers are planes, cylinders, cones, spheres, tori, and
-rational or non-rational NURBS surfaces. Supported curve carriers are lines,
+`write_step` emits the Part 21 envelope for the selected schema, product and
+representation context, and reachable shape. Coverage includes solid, sheet,
+and wire bodies plus standalone geometry; coedge pcurves; rigid body placement;
+products and occurrences; AP242 tessellation; visibility; layers; named colors;
+and semantic or presentation PMI where the target application protocol carries
+them. Supported surface carriers are planes, cylinders, cones, spheres, tori,
+and rational or non-rational NURBS surfaces. Supported curve carriers are lines,
 circles, ellipses, parabolas, hyperbolas, and rational or non-rational NURBS
 curves. The writer preserves shared carriers by reusing STEP instances.
 
@@ -64,34 +88,42 @@ declares millimetres. Supply geometry in millimetres before export. The context
 uses the IR linear tolerance as its uncertainty value; plane and solid angles
 use radians and steradians.
 
-[`StepWriteOptions`] controls `FILE_NAME` metadata. An empty timestamp produces
-`1970-01-01T00:00:00`, which keeps default output deterministic. The first body
-name, when present, supplies the STEP product name. `product_name` supplies the
-`FILE_NAME` name instead.
+[`StepWriteOptions`] controls `FILE_NAME` metadata and the target
+[`StepSchema`]. An empty timestamp produces `1970-01-01T00:00:00`, which keeps
+default output deterministic. The first body name, when present, supplies the
+STEP product name. `product_name` supplies the `FILE_NAME` name instead.
 
 ## Losses and errors
 
 The writer exports representable geometry and records reductions in
-[`StepReport::losses`]. Review these notes before accepting the file. In
-particular:
+[`ExportReport::losses`]. Review these notes before accepting the file.
+[`StepUnsupportedPolicy::Report`] writes the representable subset.
+[`StepUnsupportedPolicy::Reject`] returns [`StepError::Unsupported`] before any
+output byte is written.
+
+In particular:
 
 - faces on unknown surfaces and edges without typed 3D curves are omitted;
-- body transforms are not applied, so affected coordinates remain in body-local
-  space;
-- coedge pcurves, colors, appearances, source attributes, passthrough records,
-  and parametric history are not emitted;
-- procedural geometry is reduced to its solved curve or surface carrier;
+- non-rigid body transforms and non-identity root occurrence placements report
+  losses;
+- coedge pcurves emit their geometry; native-only pcurve metadata is not
+  represented in STEP;
+- textures, shaders, source attributes, and retained opaque records report
+  losses or take the refusal path under Reject;
+- unsupported procedural definitions emit their solved carrier with a
+  machine-readable loss, or fail under Reject;
 - signed sphere radii and nonstandard torus minor radii are normalized where
   required by the emitted STEP entity.
 
 An empty or fully unrepresentable model still produces a syntactically complete
-file with an empty geometric representation and a warning. [`StepError`] reports
-only failures from the output sink. Because output is streamed, an I/O failure
-can leave a partial file.
+file with an empty geometric representation and a warning under Report policy.
+[`StepError`] covers [`StepError::Unsupported`] under Reject and
+[`StepError::Io`] from the output sink. Because output is streamed after the
+Reject gate, an I/O failure can leave a partial file.
 
-[`StepReport::entity_counts`] groups DATA instances by entity keyword, and
-[`StepReport::total_entities`] gives the complete DATA instance count.
-[`StepReport::error_count`] counts loss notes whose severity is at least
+[`ExportReport::census`] groups DATA instances by entity keyword, and
+[`EntityCensus::total`] gives the complete DATA instance count.
+[`ExportReport::error_count`] counts loss notes whose severity is at least
 `Error`; lower-severity losses still require caller review.
 
 ## References
@@ -108,13 +140,22 @@ Requires Rust 1.88 or later. Licensed under Apache-2.0.
 [docs]: https://docs.rs/cadmpeg-step
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md
 [repo]: https://github.com/cadmpeg/cadmpeg
-[support]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-ap214
-[`cadIr`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/struct.CadIr.html
-[`stepError`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/enum.StepError.html
-[`stepReport::entity_counts`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/struct.StepReport.html#structfield.entity_counts
-[`stepReport::error_count`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/struct.StepReport.html#method.error_count
-[`stepReport::losses`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/struct.StepReport.html#structfield.losses
-[`stepReport::total_entities`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/struct.StepReport.html#structfield.total_entities
-[`stepWriteOptions`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/struct.StepWriteOptions.html
+[support]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21
+[`CadIr`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/document/struct.CadIr.html
+[`Codec`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/codec/trait.Codec.html
+[`CodecEntry`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/codec/trait.CodecEntry.html
+[`Encoder`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/codec/trait.Encoder.html
+[`EntityCensus::total`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/report/struct.EntityCensus.html#method.total
+[`ExportReport::census`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/report/struct.ExportReport.html#structfield.census
+[`ExportReport::error_count`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/report/struct.ExportReport.html#method.error_count
+[`ExportReport::losses`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/report/struct.ExportReport.html#structfield.losses
+[`StepCodec`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/struct.StepCodec.html
+[`StepError`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/enum.StepError.html
+[`StepError::Io`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/enum.StepError.html#variant.Io
+[`StepError::Unsupported`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/enum.StepError.html#variant.Unsupported
+[`StepSchema`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/enum.StepSchema.html
+[`StepUnsupportedPolicy::Reject`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/enum.StepUnsupportedPolicy.html#variant.Reject
+[`StepUnsupportedPolicy::Report`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/enum.StepUnsupportedPolicy.html#variant.Report
+[`StepWriteOptions`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/struct.StepWriteOptions.html
 [`std::io::Write`]: https://doc.rust-lang.org/std/io/trait.Write.html
 [`write_step`]: https://docs.rs/cadmpeg-step/latest/cadmpeg_step/fn.write_step.html

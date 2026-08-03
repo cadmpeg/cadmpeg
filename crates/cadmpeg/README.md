@@ -1,8 +1,9 @@
 # cadmpeg
 
 `cadmpeg` inspects native CAD containers, decodes supported model data into
-CADIR, validates and compares CADIR models, and exports CADIR or STEP AP214.
-It also writes supported `.FCStd`, `.f3d`, `.sldprt`, and `.3dm` models.
+CADIR, validates and compares CADIR models, and exports CADIR or STEP Part 21
+(AP203, AP214, or AP242). It also writes supported `.FCStd`, `.f3d`, `.sldprt`,
+and `.3dm` models.
 
 Native codecs transfer different subsets of geometry, topology, design intent,
 presentation, and metadata. Check [format support][support] before relying on a
@@ -35,7 +36,14 @@ cargo install cadmpeg
 
 ```sh
 cadmpeg convert bracket.f3d -o bracket.step
+cadmpeg convert bracket.f3d -o bracket.ap242.step --step-target ap242e3
+cadmpeg convert bracket.f3d -o bracket.step --reject-step-losses
 ```
+
+`--step-target` selects the STEP application protocol and edition
+(`ap203e1`, `ap203e2`, `ap214` default, `ap242e1`, `ap242e2`, `ap242e3`).
+`--reject-step-losses` refuses STEP output before writing when any STEP loss
+note would be reported.
 
 The output extension selects `step`, `fcstd`, `f3d`, `sldprt`, `rhino`, or
 `cadir`. Pass `--format` when writing to standard output or when the filename
@@ -158,7 +166,8 @@ ambiguous or extensionless input.
 Output formats are:
 
 - `cadir` for canonical CADIR JSON; `json` is an alias.
-- `step` for ISO 10303-21 STEP AP214.
+- `step` for ISO 10303-21 Part 21; `--step-target` selects AP203 edition 1 or 2,
+  AP214, or AP242 edition 1, 2, or 3.
 - `fcstd`, `f3d`, `rhino`, and `sldprt` for the native writers' supported subsets.
 
 Native writers use retained source data where the format requires it, and reject

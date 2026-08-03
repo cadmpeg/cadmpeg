@@ -55,10 +55,12 @@ variant before selecting a record decoder.
 Standard nested parts have the broadest model coverage. The decoder emits
 analytic carrier surfaces and vertices, binds faces when stored senses resolve,
 and emits loops, coedges, edges, and endpoint assignments when the trim,
-support, and vertex tables form a complete unambiguous graph. Other layouts
-yield carriers and selected bindings where their tables resolve. Complete
-scalar formula graphs transfer typed parameters. Unresolved native bytes stay
-attached to the IR as unknown records.
+support, and vertex tables form a complete unambiguous graph. Reference-closed
+E5 graphs emit connected topology when refs close. Complete float-packed B5
+graphs emit connected topology when their reference graph closes. Zero-entity
+streams transfer face-local constructions. Inner-without-directory layouts
+transfer A8/B2 carriers. Complete scalar formula graphs transfer typed
+parameters. Unresolved native bytes stay attached to the IR as unknown records.
 
 ## Reference
 

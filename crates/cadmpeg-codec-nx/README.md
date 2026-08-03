@@ -5,9 +5,10 @@ into [`CadIr`][ir]. It detects the container by its `SPLMSSTR` signature,
 extracts zlib-compressed Parasolid neutral-binary streams from the canonical
 part payload, and decodes supported geometry and topology.
 
-Support level: [L4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#siemens-nx-prt)
-for single-body, `RMFastLoad`-selected, and terminal-lineage-resolved body images;
-L2 for unresolved multi-partition history.
+Support level: [L3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#siemens-nx-prt)
+for selected or terminal-lineage-resolved body images; L2 for unresolved
+multi-partition history. `RMFastLoad` body selection is a conservative
+membership heuristic, not a direct membership-to-image map.
 
 ## Install
 
@@ -19,7 +20,7 @@ cargo add cadmpeg-codec-nx cadmpeg-ir
 
 ```rust,no_run
 use cadmpeg_codec_nx::NxCodec;
-use cadmpeg_ir::{Codec, DecodeOptions};
+use cadmpeg_ir::{CodecEntry, DecodeOptions};
 use std::fs::File;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -61,15 +62,18 @@ connected topology when fixed-record references resolve. Geometry that cannot
 be attached remains available through derived free topology. Partition and
 adjacent equal-schema deltas streams are scanned together. Exactly keyed full
 records and tombstones use the last event for each key. Unmatched tombstones
-remain unresolved. Segment body aliases, primary-body writers, and Boolean tool
-operands select terminal partition images when the complete body lineage is
-unambiguous. Assembly files can contain only external child-part references and
-produce no inline geometry.
+remain unresolved. `RMFastLoad` intersects membership IDs with topology node
+IDs and requires a sufficient hit ratio or dominance before pruning inactive
+images; otherwise selection declines and complete primary-writer lineage falls
+back to terminal partition images. Assembly files can contain only external
+child-part references and produce no inline geometry.
 
-Ordered feature-operation records, body dependencies, Boolean operations,
-sketch record lanes, arrangements, part attributes, and numeric expressions
-transfer. Coverage detail lives in the [format-support profile][support]. Byte
-semantics live in the [format notes][spec].
+Embedded JT shape-LOD segments transfer as display tessellation. Ordered
+feature-operation records, body dependencies, Boolean operations, sketch record
+lanes, named arrangements and configurations, part attributes, external
+dependency inspection, and numeric expressions transfer. Coverage detail lives
+in the [format-support profile][support]. Byte semantics live in the
+[format notes][spec].
 
 The crate also exposes lower-level container, stream, geometry, NURBS, and
 topology modules for inspection and partial decoding. Most applications should
