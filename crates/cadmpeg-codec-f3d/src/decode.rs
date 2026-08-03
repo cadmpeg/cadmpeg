@@ -27,7 +27,7 @@ use crate::brep::{self, Brep};
 use crate::container::{self, BrepFacts, ContainerScan};
 use crate::{asm_header, materials, sab};
 
-fn unresolved_dimension_companion_count(native: &F3dNative) -> usize {
+fn unresolved_dimension_companion_count(native: &F3dNative, ir: &CadIr) -> usize {
     use std::collections::{HashMap, HashSet};
 
     let parameters = native
@@ -92,6 +92,25 @@ fn unresolved_dimension_companion_count(native: &F3dNative) -> usize {
             record.companion_record_index,
         ));
     }
+    for constraint in &ir.model.sketch_constraints {
+        if !matches!(
+            constraint.definition,
+            cadmpeg_ir::sketches::SketchConstraintDefinition::Native { .. }
+        ) {
+            if let Some(native_ref) = &constraint.native_ref {
+                if let Some(companion) = native
+                    .design_parameter_companions
+                    .iter()
+                    .find(|companion| companion.id == *native_ref)
+                {
+                    typed.insert((
+                        crate::ids::native_stream(native_ref).unwrap_or(crate::ids::DEFAULT_STREAM),
+                        companion.record_index,
+                    ));
+                }
+            }
+        }
+    }
     native
         .design_parameter_companions
         .iter()
@@ -105,8 +124,12 @@ fn unresolved_dimension_companion_count(native: &F3dNative) -> usize {
         .count()
 }
 
-fn report_unresolved_dimension_companions(report: &mut DecodeReport, native: &F3dNative) {
-    let count = unresolved_dimension_companion_count(native);
+fn report_unresolved_dimension_companions(
+    report: &mut DecodeReport,
+    native: &F3dNative,
+    ir: &CadIr,
+) {
+    let count = unresolved_dimension_companion_count(native, ir);
     if count != 0 {
         report.losses.push(LossNote {
             code: LossKind::RecordNotTyped,
@@ -1442,7 +1465,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             native.act_entities = act.entities;
             native.act_guids = act.guids;
             native.act_root_components = act.root_components;
-            report_unresolved_dimension_companions(&mut report, &native);
+            report_unresolved_dimension_companions(&mut report, &native, &ir);
             report_unresolved_configuration_rules(&mut report, &native, &ir);
             if !native.lost_edge_references.is_empty() {
                 report.losses.push(LossNote {
@@ -1877,7 +1900,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     if mesh_bodies > 0 {
         apply_mesh_body_classification(&mut report, &scan, mesh_bodies);
     }
-    report_unresolved_dimension_companions(&mut report, &native);
+    report_unresolved_dimension_companions(&mut report, &native, &ir);
     match &xref_table {
         Ok(Some(table)) => apply_assembly_classification(&mut report, &scan, table),
         Ok(None) => {}
@@ -4010,6 +4033,7 @@ mod tests {
     #[test]
     fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
         let stream = "f3d:test/BulkStream.dat";
+        let mut ir = cadmpeg_ir::examples::unit_cube();
         let mut native = F3dNative::default();
         native.design_parameters.push(DesignParameter {
             id: format!("{stream}:design-parameter#10"),
@@ -4060,7 +4084,22 @@ mod tests {
                 payload_byte_length: 100,
                 owned_recipe_ids: Vec::new(),
             });
-        assert_eq!(unresolved_dimension_companion_count(&native), 1);
+        assert_eq!(unresolved_dimension_companion_count(&native, &ir), 1);
+        ir.model.sketch_constraints.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "f3d:model:sketch-constraint#dimension",
+                "sketch": "f3d:model:sketch#1",
+                "definition": {
+                    "kind": "distance",
+                    "entities": [],
+                    "parameter": "f3d:model:parameter#1"
+                },
+                "native_ref": format!("{stream}:design-parameter-companion#30")
+            }))
+            .expect("neutral dimension constraint"),
+        );
+        assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
+        ir.model.sketch_constraints.clear();
 
         let mut recipe_backed = native.clone();
         recipe_backed
@@ -4081,7 +4120,7 @@ mod tests {
                 program: vec![-1],
                 matching_edge_operand_ids: Vec::new(),
             });
-        assert_eq!(unresolved_dimension_companion_count(&recipe_backed), 0);
+        assert_eq!(unresolved_dimension_companion_count(&recipe_backed, &ir), 0);
 
         native
             .design_dimension_locus_pairs
@@ -4106,10 +4145,10 @@ mod tests {
                 paired_class_tag: "259".into(),
                 paired_byte_offset: 378,
             });
-        assert_eq!(unresolved_dimension_companion_count(&native), 0);
+        assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
         native.design_dimension_locus_pairs[0].companion_record_index = 30;
         native.design_dimension_locus_pairs[0].governing_companion_record_index = 99;
-        assert_eq!(unresolved_dimension_companion_count(&native), 0);
+        assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
 
         native.design_dimension_locus_pairs.clear();
         native
@@ -4132,10 +4171,10 @@ mod tests {
                 paired_class_tag: "259".into(),
                 paired_byte_offset: 378,
             });
-        assert_eq!(unresolved_dimension_companion_count(&native), 0);
+        assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
         native.design_dimension_null_locus_pairs[0].companion_record_index = 30;
         native.design_dimension_null_locus_pairs[0].governing_companion_record_index = 99;
-        assert_eq!(unresolved_dimension_companion_count(&native), 0);
+        assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
     }
 
     #[test]
