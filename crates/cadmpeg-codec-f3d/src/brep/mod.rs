@@ -262,7 +262,7 @@ impl Brep {
             }
         }
         retain_root_entities(&mut value, &reachable);
-        let mut retained: Self = value.deserialize_into().map_err(|error| {
+        let mut retained: Self = crate::value_tree::from_value(value).map_err(|error| {
             cadmpeg_codec_core::CodecError::Malformed(format!(
                 "retained BREP graph is invalid: {error}"
             ))
@@ -298,7 +298,7 @@ impl Brep {
             })
             .collect::<HashMap<_, _>>();
         remap_owned_ids(&mut value, &replacements);
-        let mut qualified: Self = value.deserialize_into().map_err(|error| {
+        let mut qualified: Self = crate::value_tree::from_value(value).map_err(|error| {
             cadmpeg_codec_core::CodecError::Malformed(format!("qualified BREP is invalid: {error}"))
         })?;
         qualified.annotation_records = annotations

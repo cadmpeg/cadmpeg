@@ -391,7 +391,7 @@ impl EntityRewrite for OccurrenceScope<'_> {
             CodecError::Malformed(format!("model serialization failed: {error}"))
         })?;
         remap_ids(&mut value, self.occurrence);
-        value.deserialize_into().map_err(|error| {
+        crate::value_tree::from_value(value).map_err(|error| {
             CodecError::Malformed(format!("merged model round-trip failed: {error}"))
         })
     }
@@ -499,6 +499,38 @@ mod tests {
     use cadmpeg_ir::topology::{Body, BodyKind, Region};
     use cadmpeg_ir::transform::Transform;
     use cadmpeg_ir::{Native, NativeRecord};
+
+    /// The rescoping round-trip carries an entity through an untyped value tree.
+    /// A coordinate is an `f64`, and a decoded one is not guaranteed finite, so
+    /// the tree must hold the value itself rather than a decimal rendering of it.
+    #[test]
+    fn rescoping_a_model_entity_preserves_a_non_finite_coordinate() {
+        use cadmpeg_ir::document::EntityRewrite;
+        use cadmpeg_ir::ids::PointId;
+        use cadmpeg_ir::math::Point3;
+        use cadmpeg_ir::topology::Point;
+
+        let point = Point {
+            id: PointId("f3d:model:point#1".into()),
+            position: Point3 {
+                x: f64::NAN,
+                y: f64::INFINITY,
+                z: f64::NEG_INFINITY,
+            },
+            source_object: None,
+        };
+
+        let rescoped = super::OccurrenceScope {
+            occurrence: "role/occurrence-0",
+        }
+        .rewrite(point)
+        .expect("a model entity rescopes through the value tree");
+
+        assert_eq!(rescoped.id.0, "f3d:xref/role/occurrence-0/model:point#1");
+        assert!(rescoped.position.x.is_nan());
+        assert_eq!(rescoped.position.y, f64::INFINITY);
+        assert_eq!(rescoped.position.z, f64::NEG_INFINITY);
+    }
 
     #[test]
     fn occurrence_transform_composes_outside_existing_body_transform() {
