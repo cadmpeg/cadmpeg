@@ -8526,17 +8526,17 @@ fn body_recipe_operand_decodes_counted_reference_table() {
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
                 target: AttributeTarget::Face(FaceId("same-stream".into())),
-                selector: 0,
+                selector: 1,
                 token: String::new(),
-                design_references: vec![2265, 2266],
+                design_references: vec![2265],
                 ordinal: 0,
             },
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
-                target: AttributeTarget::Face(FaceId("base-only".into())),
-                selector: 0,
+                target: AttributeTarget::Face(FaceId("other-selector".into())),
+                selector: 2,
                 token: String::new(),
-                design_references: vec![2265],
+                design_references: vec![2265, 2266],
                 ordinal: 0,
             },
             PersistentSubentityTag {
