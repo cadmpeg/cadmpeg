@@ -12257,6 +12257,10 @@ pub fn summary_notes(scan: &Scan) -> Vec<String> {
 }
 
 #[cfg(test)]
+#[path = "feature_completeness_tests.rs"]
+mod feature_completeness_tests;
+
+#[cfg(test)]
 mod tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{

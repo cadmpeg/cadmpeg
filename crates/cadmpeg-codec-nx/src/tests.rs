@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Tests over synthetic byte fixtures. No real CAD file exists in this repo and
-//! none may be added, so every fixture is a hand-built `.prt` byte image whose
-//! bytes exercise the real SPLMSSTR container parse, the Parasolid zlib
-//! extraction/classification, and the analytic geometry decode, and fail if the
-//! code regresses.
+//! Crate-level tests over synthetic byte fixtures. No real CAD file exists in
+//! this repo and none may be added, so every fixture is a hand-built `.prt`
+//! byte image whose bytes exercise the real SPLMSSTR container parse, the
+//! Parasolid zlib extraction/classification, and the analytic geometry decode,
+//! and fail if the code regresses.
+//!
+//! JT codec primitives live in `jt` / `jt_topology`. OM wire parsers live in
+//! `om`. Feature-completeness predicates live in `decode`.
 #![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
@@ -45,1307 +48,6 @@ fn options_in(mode: DecodeMode, container_only: bool) -> DecodeOptions {
 }
 
 #[test]
-fn jt_int32_cdp2_decodes_empty_and_bitlength_packets() {
-    assert_eq!(
-        crate::jt::decode_int32_cdp2(&[0, 0, 0, 0], 0),
-        Some((vec![], 4))
-    );
-
-    let encode_packet = |bits: &[u8], value_count: u32| {
-        let mut code_words = Vec::new();
-        for chunk in bits.chunks(32) {
-            let mut word = 0u32;
-            for bit in chunk {
-                word = (word << 1) | u32::from(*bit);
-            }
-            word <<= 32 - chunk.len();
-            code_words.extend_from_slice(&word.to_le_bytes());
-        }
-        let mut packet = value_count.to_le_bytes().to_vec();
-        packet.push(1);
-        packet.extend_from_slice(&(bits.len() as u32).to_le_bytes());
-        packet.extend(code_words);
-        packet
-    };
-    let field = |bits: &mut Vec<u8>, value: u32, width: u8| {
-        bits.extend((0..width).rev().map(|shift| ((value >> shift) & 1) as u8));
-    };
-
-    // Fixed-width mode: range [-1, 1], followed by codes for 1 and -1.
-    let mut bits = vec![0];
-    field(&mut bits, 2, 6);
-    field(&mut bits, 2, 6);
-    field(&mut bits, 0b11, 2);
-    field(&mut bits, 0b01, 2);
-    field(&mut bits, 2, 2);
-    field(&mut bits, 0, 2);
-    let packet = encode_packet(&bits, 2);
-    assert_eq!(
-        crate::jt::decode_int32_cdp2(&packet, 0),
-        Some((vec![1, -1], packet.len()))
-    );
-
-    // Variable-width mode: mean 10, one two-bit run containing +1 and -1.
-    let mut bits = vec![1];
-    field(&mut bits, 10, 32);
-    field(&mut bits, 3, 3);
-    field(&mut bits, 3, 3);
-    field(&mut bits, 2, 3);
-    field(&mut bits, 2, 3);
-    field(&mut bits, 1, 2);
-    field(&mut bits, 3, 2);
-    let packet = encode_packet(&bits, 2);
-    assert_eq!(
-        crate::jt::decode_int32_cdp2(&packet, 0),
-        Some((vec![11, 9], packet.len()))
-    );
-}
-
-#[test]
-fn jt_int32_cdp2_decodes_arithmetic_context_with_zero_frequency_entry() {
-    let mut context_bits = Vec::<bool>::new();
-    let mut push = |value: u32, width: u8| {
-        for shift in (0..width).rev() {
-            context_bits.push((value >> shift) & 1 != 0);
-        }
-    };
-    push(2, 6);
-    push(1, 6);
-    push(1, 6);
-    push(7, 32);
-    push(0, 2);
-    push(0, 1);
-    push(0, 1);
-    push(1, 2);
-    push(1, 1);
-    push(0, 1);
-    let mut context = vec![0, 2];
-    for chunk in context_bits.chunks(8) {
-        let mut byte = 0u8;
-        for bit in chunk {
-            byte = (byte << 1) | u8::from(*bit);
-        }
-        byte <<= 8 - chunk.len();
-        context.push(byte);
-    }
-    let mut packet = Vec::new();
-    packet.extend_from_slice(&3_u32.to_le_bytes());
-    packet.push(3);
-    packet.extend_from_slice(&16_u32.to_le_bytes());
-    packet.extend_from_slice(&0_u32.to_le_bytes());
-    packet.extend_from_slice(&context);
-    packet.extend_from_slice(&0_u32.to_le_bytes());
-    assert_eq!(
-        crate::jt::decode_int32_cdp2(&packet, 0),
-        Some((vec![7, 7, 7], packet.len()))
-    );
-
-    packet.truncate(packet.len() - 4);
-    assert!(crate::jt::decode_int32_cdp2(&packet, 0).is_none());
-}
-
-#[test]
-fn jt_int32_cdp2_decodes_unsplit_and_split_chopper_packets() {
-    let nested = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
-    let low_bits = [2, 0, 0, 0, 1, 17, 0, 0, 0, 0x00, 0x80, 0x12, 0x04];
-    let mut unsplit = vec![2, 0, 0, 0, 4, 0];
-    unsplit.extend_from_slice(&nested);
-    assert_eq!(
-        crate::jt::decode_int32_cdp2(&unsplit, 0),
-        Some((vec![1, -1], unsplit.len()))
-    );
-
-    let mut split = vec![2, 0, 0, 0, 4, 2];
-    split.extend_from_slice(&10_i32.to_le_bytes());
-    split.push(4);
-    split.extend_from_slice(&nested);
-    split.extend_from_slice(&low_bits);
-    assert_eq!(
-        crate::jt::decode_int32_cdp2(&split, 0),
-        Some((vec![15, 7], split.len()))
-    );
-}
-
-#[test]
-fn jt_int32_cdp2_frames_zero_chop_nested_packet() {
-    let nested = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
-    let mut packet = vec![2, 0, 0, 0, 4, 0];
-    packet.extend_from_slice(&nested);
-    assert_eq!(
-        crate::jt::frame_int32_cdp2(&packet, 0),
-        Some((2, 4, packet.len()))
-    );
-
-    packet[6] = 3;
-    assert!(crate::jt::frame_int32_cdp2(&packet, 0).is_none());
-}
-
-#[test]
-fn jt_predictors_reconstruct_primal_integers() {
-    use crate::jt::{unpack_predictor_residuals, Predictor};
-
-    let primers = [10, 20, 30, 40];
-    let residuals = [10, 20, 30, 40, 5, -2];
-    assert_eq!(
-        unpack_predictor_residuals(&residuals, Predictor::Lag1),
-        [10, 20, 30, 40, 45, 43]
-    );
-    assert_eq!(
-        unpack_predictor_residuals(&residuals, Predictor::Lag2),
-        [10, 20, 30, 40, 35, 38]
-    );
-    assert_eq!(
-        unpack_predictor_residuals(&residuals, Predictor::Stride1),
-        [10, 20, 30, 40, 55, 68]
-    );
-    assert_eq!(
-        unpack_predictor_residuals(&residuals, Predictor::Stride2),
-        [10, 20, 30, 40, 55, 58]
-    );
-    assert_eq!(
-        unpack_predictor_residuals(&residuals, Predictor::StripIndex),
-        [10, 20, 30, 40, 37, 40]
-    );
-    assert_eq!(
-        unpack_predictor_residuals(&residuals, Predictor::Ramp),
-        [10, 20, 30, 40, 9, 3]
-    );
-    assert_eq!(
-        unpack_predictor_residuals(&[10, 20, 30, 40, 0x2d ^ 0x28], Predictor::Xor1),
-        [10, 20, 30, 40, 45]
-    );
-    assert_eq!(
-        unpack_predictor_residuals(&[10, 20, 30, 40, 0x23 ^ 0x1e], Predictor::Xor2),
-        [10, 20, 30, 40, 35]
-    );
-    assert_eq!(
-        unpack_predictor_residuals(&residuals, Predictor::Null),
-        residuals
-    );
-    assert_eq!(primers, residuals[..4]);
-}
-
-#[test]
-fn jt_predictors_use_wrapping_i32_arithmetic() {
-    use crate::jt::{unpack_predictor_residuals, Predictor};
-
-    assert_eq!(
-        unpack_predictor_residuals(&[0, 0, 0, i32::MAX, 1], Predictor::Lag1),
-        [0, 0, 0, i32::MAX, i32::MIN]
-    );
-}
-
-#[test]
-fn jt_topological_dual_mesh_reconstructs_closed_tetrahedron() {
-    let polygons = crate::jt_topology::decode(
-        [&[3, 3, 3], &[3], &[], &[], &[], &[], &[], &[]],
-        &[3, 3, 3, 3],
-        &[10, 12, 11, 13],
-        &[0, 0, 0, 0],
-        &[],
-        &[],
-        crate::jt_topology::AttributeMaskLanes {
-            small: [&[], &[1, 1, 1, 1], &[], &[], &[], &[], &[], &[]],
-            context_7_next_30: &[],
-            context_7_upper_4: &[],
-            large_words: &[],
-        },
-    )
-    .expect("valid closed dual mesh");
-
-    assert_eq!(
-        polygons
-            .iter()
-            .map(|polygon| polygon.vertex_indices.as_slice())
-            .collect::<Vec<_>>(),
-        vec![&[0, 1, 2], &[2, 1, 3], &[2, 3, 0], &[3, 1, 0]]
-    );
-    assert_eq!(
-        polygons
-            .iter()
-            .map(|polygon| polygon.group)
-            .collect::<Vec<_>>(),
-        vec![10, 12, 11, 13]
-    );
-    assert_eq!(
-        polygons[0].attribute_indices,
-        vec![Some(0), Some(1), Some(2)]
-    );
-}
-
-#[test]
-fn jt_uniform_dequantization_uses_the_full_unsigned_code_range() {
-    assert_eq!(
-        crate::jt::dequantize_uniform(0, [10.0, 20.0], 2),
-        Some(8.333_333)
-    );
-    assert_eq!(
-        crate::jt::dequantize_uniform(3, [10.0, 20.0], 2),
-        Some(18.333_334)
-    );
-    assert_eq!(crate::jt::dequantize_uniform(4, [10.0, 20.0], 2), None);
-    assert_eq!(crate::jt::dequantize_uniform(-1, [4.0, 4.0], 32), Some(4.0));
-}
-
-#[test]
-fn jt_quantized_coordinate_array_decodes_three_lag1_code_vectors() {
-    let mut code = Vec::new();
-    let mut push = |value: u32, width: u8| {
-        code.extend((0..width).rev().map(|shift| ((value >> shift) & 1) as u8));
-    };
-    push(0, 1);
-    push(0, 6);
-    push(3, 6);
-    push(3, 3);
-    for value in 0..4 {
-        push(value, 2);
-    }
-    let mut word = 0u32;
-    for bit in &code {
-        word = (word << 1) | u32::from(*bit);
-    }
-    word <<= 32 - code.len();
-    let mut packet = 4_u32.to_le_bytes().to_vec();
-    packet.push(1);
-    packet.extend_from_slice(&(code.len() as u32).to_le_bytes());
-    packet.extend_from_slice(&word.to_le_bytes());
-    let mut array = Vec::new();
-    for _ in 0..3 {
-        array.extend_from_slice(&packet);
-    }
-    array.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
-
-    let (points, hash, consumed) =
-        crate::jt::decode_vertex_coordinates(&array, 4, [[10.0, 20.0]; 3], [2; 3])
-            .expect("complete quantized coordinate array");
-    assert_eq!(hash, 0x1234_5678);
-    assert_eq!(consumed, array.len());
-    assert_eq!(points[0], [8.333_333; 3]);
-    assert_eq!(points[3], [18.333_334; 3]);
-}
-
-#[test]
-fn jt_deering_normal_applies_sextant_octant_and_code_bounds() {
-    let normal = crate::jt::deering_normal(1, 7, 8191, 0, 13).unwrap();
-    assert!(normal[0].abs() < 1e-3);
-    assert!(normal[1].abs() < 1e-6);
-    assert!((normal[2] - 1.0).abs() < 1e-6);
-    assert!(crate::jt::deering_normal(6, 7, 0, 0, 13).is_none());
-    assert!(crate::jt::deering_normal(0, 8, 0, 0, 13).is_none());
-    assert!(crate::jt::deering_normal(0, 7, 8192, 0, 13).is_none());
-}
-
-#[test]
-fn jt_quantized_texture_coordinates_decode_component_major_lag1_codes() {
-    let mut code = Vec::new();
-    let mut push = |value: u32, width: u8| {
-        code.extend((0..width).rev().map(|shift| ((value >> shift) & 1) as u8));
-    };
-    push(0, 1);
-    push(0, 6);
-    push(3, 6);
-    push(3, 3);
-    for value in 0..4 {
-        push(value, 2);
-    }
-    let mut word = 0u32;
-    for bit in &code {
-        word = (word << 1) | u32::from(*bit);
-    }
-    word <<= 32 - code.len();
-    let mut packet = 4_u32.to_le_bytes().to_vec();
-    packet.push(1);
-    packet.extend_from_slice(&(code.len() as u32).to_le_bytes());
-    packet.extend_from_slice(&word.to_le_bytes());
-
-    let mut array = 4_u32.to_le_bytes().to_vec();
-    array.extend_from_slice(&[2, 2]);
-    for _ in 0..2 {
-        array.extend_from_slice(&0_f32.to_le_bytes());
-        array.extend_from_slice(&3_f32.to_le_bytes());
-        array.push(2);
-    }
-    array.extend_from_slice(&packet);
-    array.extend_from_slice(&packet);
-    array.extend_from_slice(&0x8765_4321_u32.to_le_bytes());
-
-    let (values, hash, consumed) =
-        crate::jt::decode_vertex_texture_coordinates(&array, 4, 2).unwrap();
-    assert_eq!(hash, 0x8765_4321);
-    assert_eq!(consumed, array.len());
-    assert_eq!(values[0], vec![-0.5, -0.5]);
-    assert_eq!(values[3], vec![2.5, 2.5]);
-}
-
-#[test]
-fn jt_quantized_colors_decode_rgb_and_hsv_quantizers() {
-    let mut code = Vec::new();
-    let mut push = |value: u32, width: u8| {
-        code.extend((0..width).rev().map(|shift| ((value >> shift) & 1) as u8));
-    };
-    push(0, 1);
-    push(0, 6);
-    push(3, 6);
-    push(3, 3);
-    for value in 0..4 {
-        push(value, 2);
-    }
-    let mut word = 0u32;
-    for bit in &code {
-        word = (word << 1) | u32::from(*bit);
-    }
-    word <<= 32 - code.len();
-    let mut packet = 4_u32.to_le_bytes().to_vec();
-    packet.push(1);
-    packet.extend_from_slice(&(code.len() as u32).to_le_bytes());
-    packet.extend_from_slice(&word.to_le_bytes());
-
-    let mut rgb = 4_u32.to_le_bytes().to_vec();
-    rgb.extend_from_slice(&[3, 2, 0]);
-    for _ in 0..4 {
-        rgb.extend_from_slice(&0_f32.to_le_bytes());
-        rgb.extend_from_slice(&3_f32.to_le_bytes());
-        rgb.push(2);
-    }
-    for _ in 0..4 {
-        rgb.extend_from_slice(&packet);
-    }
-    rgb.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
-    let (colors, hash, consumed) = crate::jt::decode_vertex_colors(&rgb, 4, 2).unwrap();
-    assert_eq!(hash, 0x1234_5678);
-    assert_eq!(consumed, rgb.len());
-    assert_eq!(colors[0], [-0.5; 4]);
-    assert_eq!(colors[3], [2.5; 4]);
-
-    let mut hsv = 4_u32.to_le_bytes().to_vec();
-    hsv.extend_from_slice(&[4, 2, 1, 2, 2, 2, 2]);
-    for _ in 0..4 {
-        hsv.extend_from_slice(&packet);
-    }
-    hsv.extend_from_slice(&0x8765_4321_u32.to_le_bytes());
-    let (colors, hash, consumed) = crate::jt::decode_vertex_colors(&hsv, 4, 2).unwrap();
-    assert_eq!(hash, 0x8765_4321);
-    assert_eq!(consumed, hsv.len());
-    assert!(colors
-        .iter()
-        .flatten()
-        .all(|component| component.is_finite()));
-    assert!((colors[1][0] - 1.0 / 6.0).abs() < 1e-6);
-    assert!((colors[1][1] - 1.0 / 6.0).abs() < 1e-6);
-    assert!((colors[1][2] - 5.0 / 36.0).abs() < 1e-6);
-    assert!((colors[1][3] - 1.0 / 6.0).abs() < 1e-6);
-}
-
-#[test]
-fn jt_vertex_flags_require_a_complete_binary_value_packet() {
-    let mut bits = vec![0];
-    let mut field = |value: u32, width: u8| {
-        bits.extend((0..width).rev().map(|shift| ((value >> shift) & 1) as u8));
-    };
-    field(1, 6);
-    field(2, 6);
-    field(0, 1);
-    field(1, 2);
-    field(0, 1);
-    field(1, 1);
-    field(0, 1);
-    let mut word = 0u32;
-    for bit in &bits {
-        word = (word << 1) | u32::from(*bit);
-    }
-    word <<= 32 - bits.len();
-    let mut packet = 3_u32.to_le_bytes().to_vec();
-    packet.push(1);
-    packet.extend_from_slice(&(bits.len() as u32).to_le_bytes());
-    packet.extend_from_slice(&word.to_le_bytes());
-    let mut array = 3_u32.to_le_bytes().to_vec();
-    array.extend_from_slice(&packet);
-
-    assert_eq!(
-        crate::jt::decode_vertex_flags(&array, 3),
-        Some((vec![0, 1, 0], array.len()))
-    );
-    assert!(crate::jt::decode_vertex_flags(&array, 2).is_none());
-    let last = array.len() - 1;
-    array[last] |= 1;
-    assert!(crate::jt::decode_vertex_flags(&array, 3).is_none());
-}
-
-#[test]
-fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operands() {
-    use cadmpeg_ir::features::{
-        FaceSelection, HoleKind, HolePlacement, Length, ProfileRef, Termination,
-    };
-    use cadmpeg_ir::math::{Point3, Vector3};
-
-    assert!(!crate::decode::hole_feature_is_incomplete(
-        None,
-        None,
-        (
-            Some(Point3::new(1.0, 2.0, 3.0)),
-            Some(Vector3::new(0.0, 0.0, 1.0)),
-        ),
-        &[],
-        (&HoleKind::Simple, None),
-        Some(Length(5.0)),
-        Some(&Termination::ThroughAll),
-    ));
-    assert!(crate::decode::hole_feature_is_incomplete(
-        None,
-        None,
-        (
-            Some(Point3::new(f64::NAN, 2.0, 3.0)),
-            Some(Vector3::new(0.0, 0.0, 1.0)),
-        ),
-        &[],
-        (&HoleKind::Simple, None),
-        Some(Length(5.0)),
-        Some(&Termination::ThroughAll),
-    ));
-    let directed = HolePlacement::Directed {
-        position: Point3::new(1.0, 2.0, 3.0),
-        direction: Vector3::new(0.0, 0.0, 1.0),
-    };
-    assert!(!crate::decode::hole_feature_is_incomplete(
-        None,
-        None,
-        (None, None),
-        std::slice::from_ref(&directed),
-        (&HoleKind::Simple, None),
-        Some(Length(5.0)),
-        Some(&Termination::ThroughAll),
-    ));
-    let axis = HolePlacement::Axis {
-        origin: Point3::new(1.0, 2.0, 3.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-    };
-    assert!(!crate::decode::hole_feature_is_incomplete(
-        None,
-        None,
-        (None, None),
-        std::slice::from_ref(&axis),
-        (&HoleKind::Simple, None),
-        Some(Length(5.0)),
-        Some(&Termination::ThroughAll),
-    ));
-    for (placements, exit, extent) in [
-        (
-            vec![axis.clone()],
-            None,
-            Termination::Blind {
-                length: Length(10.0),
-            },
-        ),
-        (
-            vec![axis],
-            Some(HoleKind::Chamfer {
-                diameter: Length(7.0),
-                angle: cadmpeg_ir::features::Angle(0.5),
-            }),
-            Termination::ThroughAll,
-        ),
-        (
-            vec![directed.clone(), directed],
-            None,
-            Termination::ThroughAll,
-        ),
-    ] {
-        assert!(crate::decode::hole_feature_is_incomplete(
-            None,
-            None,
-            (None, None),
-            &placements,
-            (&HoleKind::Simple, exit.as_ref()),
-            Some(Length(5.0)),
-            Some(&extent),
-        ));
-    }
-    assert!(crate::decode::hole_feature_is_incomplete(
-        Some(&ProfileRef::Unresolved("hole".into())),
-        Some(&FaceSelection::Unresolved),
-        (None, None),
-        &[],
-        (&HoleKind::Simple, None),
-        Some(Length(5.0)),
-        Some(&Termination::ThroughAll),
-    ));
-    assert!(crate::decode::hole_feature_is_incomplete(
-        None,
-        None,
-        (
-            Some(Point3::new(1.0, 2.0, 3.0)),
-            Some(Vector3::new(0.0, 0.0, 1.0)),
-        ),
-        &[],
-        (&HoleKind::Simple, None),
-        Some(Length(5.0)),
-        Some(&Termination::Unresolved),
-    ));
-    assert!(crate::decode::hole_feature_is_incomplete(
-        None,
-        None,
-        (
-            Some(Point3::new(1.0, 2.0, 3.0)),
-            Some(Vector3::new(0.0, 0.0, 1.0)),
-        ),
-        &[],
-        (
-            &HoleKind::Simple,
-            Some(&HoleKind::Unresolved {
-                form: Some(cadmpeg_ir::features::HoleForm::Chamfer),
-                counterbore_diameter: None,
-                counterbore_depth: None,
-                countersink_diameter: None,
-                countersink_angle: None,
-            }),
-        ),
-        Some(Length(5.0)),
-        Some(&Termination::ThroughAll),
-    ));
-    assert!(crate::decode::hole_feature_is_incomplete(
-        None,
-        None,
-        (
-            Some(Point3::new(1.0, 2.0, 3.0)),
-            Some(Vector3::new(0.0, 0.0, 1.0)),
-        ),
-        &[],
-        (&HoleKind::Simple, None),
-        Some(Length(0.0)),
-        Some(&Termination::ThroughAll),
-    ));
-    assert!(crate::decode::hole_feature_is_incomplete(
-        None,
-        None,
-        (
-            Some(Point3::new(1.0, 2.0, 3.0)),
-            Some(Vector3::new(0.0, 0.0, 1.0)),
-        ),
-        &[],
-        (
-            &HoleKind::Chamfer {
-                diameter: Length(7.0),
-                angle: cadmpeg_ir::features::Angle(f64::NAN),
-            },
-            None,
-        ),
-        Some(Length(5.0)),
-        Some(&Termination::ThroughAll),
-    ));
-    for kind in [
-        HoleKind::Chamfer {
-            diameter: Length(5.0),
-            angle: cadmpeg_ir::features::Angle(0.5),
-        },
-        HoleKind::Counterbore {
-            diameter: Length(4.0),
-            depth: Length(2.0),
-        },
-        HoleKind::CounterboreDrilled {
-            diameter: Length(5.0),
-            depth: Length(2.0),
-            drill_point_angle: cadmpeg_ir::features::Angle(0.5),
-        },
-        HoleKind::Countersink {
-            diameter: Length(4.0),
-            angle: cadmpeg_ir::features::Angle(0.5),
-        },
-        HoleKind::Counterdrill {
-            diameter: Length(5.0),
-            entry_diameter: None,
-            depth: Length(2.0),
-            angle: cadmpeg_ir::features::Angle(0.5),
-        },
-    ] {
-        assert!(crate::decode::hole_feature_is_incomplete(
-            None,
-            None,
-            (
-                Some(Point3::new(1.0, 2.0, 3.0)),
-                Some(Vector3::new(0.0, 0.0, 1.0)),
-            ),
-            &[],
-            (&kind, None),
-            Some(Length(5.0)),
-            Some(&Termination::ThroughAll),
-        ));
-    }
-}
-
-#[test]
-fn nx_datum_completeness_requires_coherent_finite_frames() {
-    use cadmpeg_ir::math::{Point3, Vector3};
-
-    let origin = Point3::new(1.0, 2.0, 3.0);
-    let x_axis = Vector3::new(1.0, 0.0, 0.0);
-    let y_axis = Vector3::new(0.0, 1.0, 0.0);
-    let z_axis = Vector3::new(0.0, 0.0, 1.0);
-
-    assert!(!crate::decode::datum_plane_is_incomplete(
-        origin, z_axis, x_axis,
-    ));
-    assert!(crate::decode::datum_plane_is_incomplete(
-        origin,
-        z_axis,
-        Vector3::new(1.0, 0.0, 1.0),
-    ));
-    assert!(crate::decode::datum_plane_is_incomplete(
-        Point3::new(f64::NAN, 2.0, 3.0),
-        z_axis,
-        x_axis,
-    ));
-
-    assert!(!crate::decode::datum_coordinate_system_is_incomplete(
-        origin, x_axis, y_axis, z_axis,
-    ));
-    assert!(crate::decode::datum_coordinate_system_is_incomplete(
-        origin,
-        x_axis,
-        y_axis,
-        Vector3::new(0.0, 0.0, -1.0),
-    ));
-    assert!(crate::decode::datum_coordinate_system_is_incomplete(
-        origin,
-        Vector3::new(2.0, 0.0, 0.0),
-        y_axis,
-        z_axis,
-    ));
-    assert!(crate::decode::datum_coordinate_system_is_incomplete(
-        origin,
-        x_axis,
-        Vector3::new(1e-6, 1.0, 0.0),
-        z_axis,
-    ));
-}
-
-#[test]
-fn nx_hole_completeness_checks_nested_auxiliary_semantics() {
-    use cadmpeg_ir::features::{
-        Angle, HoleBottom, HoleProfileFilter, HoleSpecification, HoleThreadDepth, Length,
-        ThreadHand,
-    };
-
-    assert!(!crate::decode::hole_auxiliary_semantics_are_incomplete(
-        Some(&HoleProfileFilter {
-            points: true,
-            circles: false,
-            arcs: false,
-        }),
-        Some(&HoleBottom::Angled {
-            included_angle: Angle(0.5),
-            depth_to_tip: true,
-        }),
-        Some(Angle(0.1)),
-        None,
-    ));
-    assert!(crate::decode::hole_auxiliary_semantics_are_incomplete(
-        Some(&HoleProfileFilter {
-            points: false,
-            circles: false,
-            arcs: false,
-        }),
-        None,
-        None,
-        None,
-    ));
-    assert!(crate::decode::hole_auxiliary_semantics_are_incomplete(
-        None,
-        Some(&HoleBottom::Angled {
-            included_angle: Angle(f64::NAN),
-            depth_to_tip: false,
-        }),
-        None,
-        None,
-    ));
-    assert!(crate::decode::hole_auxiliary_semantics_are_incomplete(
-        None,
-        None,
-        Some(Angle(std::f64::consts::PI)),
-        None,
-    ));
-    let invalid_specification = HoleSpecification {
-        standard: " ".into(),
-        designation: None,
-        class: None,
-        fit: None,
-        threaded: true,
-        modeled: false,
-        cosmetic: true,
-        pitch: Some(Length(0.0)),
-        major_diameter: Some(Length(5.0)),
-        hand: ThreadHand::Right,
-        depth: HoleThreadDepth::Blind { depth: Length(0.0) },
-        clearance: None,
-    };
-    assert!(crate::decode::hole_auxiliary_semantics_are_incomplete(
-        None,
-        None,
-        None,
-        Some(&invalid_specification),
-    ));
-}
-
-#[test]
-fn nx_projected_curve_completeness_requires_a_valid_direction_law() {
-    use cadmpeg_ir::features::{CurveProjectionDirection, CurveProjectionDirectionState};
-    use cadmpeg_ir::math::Vector3;
-
-    assert!(!crate::decode::projected_curve_direction_is_incomplete(
-        CurveProjectionDirection::State(CurveProjectionDirectionState::TargetNormal),
-    ));
-    assert!(!crate::decode::projected_curve_direction_is_incomplete(
-        CurveProjectionDirection::Vector(Vector3::new(0.0, 0.0, 1.0)),
-    ));
-    assert!(crate::decode::projected_curve_direction_is_incomplete(
-        CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved),
-    ));
-    assert!(crate::decode::projected_curve_direction_is_incomplete(
-        CurveProjectionDirection::Vector(Vector3::new(0.0, 0.0, 0.0)),
-    ));
-    assert!(crate::decode::projected_curve_direction_is_incomplete(
-        CurveProjectionDirection::Vector(Vector3::new(f64::NAN, 0.0, 1.0)),
-    ));
-}
-
-#[test]
-fn nx_extent_completeness_checks_nested_and_face_termination() {
-    use cadmpeg_ir::features::FeatureId;
-    use cadmpeg_ir::features::{
-        ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, GeneratedVertexRef, Length,
-        Termination, VertexSelection,
-    };
-
-    let side = |termination: Termination| ExtrudeSide {
-        termination,
-        draft: None,
-        offset: None,
-    };
-
-    assert!(!crate::decode::extrude_extent_is_incomplete(
-        &ExtrudeExtent::TwoSided {
-            first: side(Termination::Blind {
-                length: Length(5.0),
-            }),
-            second: side(Termination::ThroughAll),
-        },
-        &[],
-    ));
-    assert!(crate::decode::extrude_extent_is_incomplete(
-        &ExtrudeExtent::Symmetric {
-            side: side(Termination::Unresolved),
-        },
-        &[],
-    ));
-    assert!(crate::decode::extrude_extent_is_incomplete(
-        &ExtrudeExtent::OneSided {
-            side: side(Termination::Blind {
-                length: Length(f64::NAN),
-            }),
-        },
-        &[],
-    ));
-    assert!(crate::decode::extrude_extent_is_incomplete(
-        &ExtrudeExtent::OneSided {
-            side: ExtrudeSide {
-                termination: Termination::ThroughAll,
-                draft: Some(cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2,)),
-                offset: None,
-            },
-        },
-        &[],
-    ));
-    assert!(crate::decode::termination_is_incomplete(
-        &Termination::ToFace {
-            face: FaceSelection::Native("nx:face-selection#0".to_string()),
-            offset: None,
-        }
-    ));
-    assert!(crate::decode::termination_is_incomplete(
-        &Termination::ToShape {
-            target: FaceSelection::Resolved {
-                faces: Vec::new(),
-                native: "nx:face-selection#1".to_string(),
-            },
-        }
-    ));
-    assert!(crate::decode::termination_is_incomplete(
-        &Termination::OffsetFromFace {
-            face: FaceSelection::Native("nx:face-selection#2".to_string()),
-            offset: Length(1.0),
-        }
-    ));
-    assert!(crate::decode::termination_is_incomplete(
-        &Termination::ToVertex {
-            vertex: VertexSelection::Native("nx:vertex-selection#0".to_string()),
-        }
-    ));
-    let vertex_feature = FeatureId("test:feature#0".into());
-    let generated_vertex = Termination::ToVertex {
-        vertex: VertexSelection::Generated {
-            vertex: GeneratedVertexRef {
-                feature: vertex_feature.clone(),
-                local_id: "vertex-0".into(),
-            },
-            native: "nx:vertex-selection#1".into(),
-        },
-    };
-    assert!(!crate::decode::termination_is_incomplete(&generated_vertex));
-    assert!(crate::decode::termination_dependency_is_incomplete(
-        &generated_vertex,
-        &[],
-    ));
-    assert!(!crate::decode::termination_dependency_is_incomplete(
-        &generated_vertex,
-        &[vertex_feature],
-    ));
-    assert!(crate::decode::extrude_start_is_incomplete(
-        &ExtrudeStart::FromFace {
-            face: FaceSelection::Native("nx:face-selection#3".to_string()),
-            offset: None,
-        }
-    ));
-    assert!(!crate::decode::extrude_start_is_incomplete(
-        &ExtrudeStart::FromFace {
-            face: FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId("test:face#start".into(),)]),
-            offset: None,
-        }
-    ));
-    assert!(crate::decode::extrude_start_is_incomplete(
-        &ExtrudeStart::OffsetProfilePlane {
-            offset: Length(f64::INFINITY),
-        }
-    ));
-}
-
-#[test]
-fn nx_rib_completeness_requires_a_resolved_profile() {
-    use cadmpeg_ir::features::{BooleanOp, Length, ProfileRef, RibConstruction, RibDraft, RibSide};
-    use cadmpeg_ir::math::Vector3;
-
-    let mut construction = RibConstruction {
-        profile: Some(ProfileRef::Native("nx:profile#0".to_string())),
-        direction: Some(Vector3::new(0.0, 0.0, 1.0)),
-        thickness: Some(Length(2.0)),
-        side: Some(RibSide::Centered),
-        draft: RibDraft::None,
-    };
-    assert!(crate::decode::rib_feature_is_incomplete(
-        &construction,
-        BooleanOp::Join,
-    ));
-    construction.profile = Some(ProfileRef::Faces(vec![cadmpeg_ir::ids::FaceId(
-        "face#0".to_string(),
-    )]));
-    assert!(!crate::decode::rib_feature_is_incomplete(
-        &construction,
-        BooleanOp::Join,
-    ));
-    construction.direction = Some(Vector3::new(0.0, 0.0, 0.0));
-    assert!(crate::decode::rib_feature_is_incomplete(
-        &construction,
-        BooleanOp::Join,
-    ));
-    construction.direction = Some(Vector3::new(0.0, 0.0, 1.0));
-    construction.thickness = Some(Length(0.0));
-    assert!(crate::decode::rib_feature_is_incomplete(
-        &construction,
-        BooleanOp::Join,
-    ));
-    construction.thickness = Some(Length(2.0));
-    construction.profile = Some(ProfileRef::Faces(Vec::new()));
-    assert!(crate::decode::rib_feature_is_incomplete(
-        &construction,
-        BooleanOp::Join,
-    ));
-    construction.profile = Some(ProfileRef::Faces(vec![cadmpeg_ir::ids::FaceId(
-        "face#0".to_string(),
-    )]));
-    construction.draft = RibDraft::Angle(cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2));
-    assert!(crate::decode::rib_feature_is_incomplete(
-        &construction,
-        BooleanOp::Join,
-    ));
-}
-
-#[test]
-fn nx_loft_completeness_validates_point_sections() {
-    use cadmpeg_ir::features::{LoftPointSection, LoftSection};
-    use cadmpeg_ir::ids::VertexId;
-    use cadmpeg_ir::math::Point3;
-
-    assert!(!crate::decode::loft_section_is_incomplete(
-        &LoftSection::Point(LoftPointSection::Point(Point3::new(1.0, 2.0, 3.0))),
-    ));
-    assert!(crate::decode::loft_section_is_incomplete(
-        &LoftSection::Point(LoftPointSection::Point(Point3::new(1.0, f64::NAN, 3.0,))),
-    ));
-    assert!(crate::decode::loft_section_is_incomplete(
-        &LoftSection::Point(LoftPointSection::Vertex(VertexId(" ".into()))),
-    ));
-}
-
-#[test]
-fn nx_sweep_completeness_checks_nested_mode_and_orientation_operands() {
-    use cadmpeg_ir::features::{BooleanOp, PathRef, SweepMode, SweepOrientation};
-
-    assert!(crate::decode::sweep_mode_is_incomplete(SweepMode::Solid {
-        op: BooleanOp::Unresolved,
-    }));
-    assert!(!crate::decode::sweep_mode_is_incomplete(SweepMode::Solid {
-        op: BooleanOp::NewBody,
-    }));
-    assert!(crate::decode::sweep_orientation_is_incomplete(
-        &SweepOrientation::Auxiliary {
-            path: PathRef::Native("nx:auxiliary-path#0".into()),
-            tangent: false,
-            curvilinear: false,
-        }
-    ));
-    assert!(!crate::decode::sweep_orientation_is_incomplete(
-        &SweepOrientation::Auxiliary {
-            path: PathRef::Curves(vec![cadmpeg_ir::ids::CurveId(
-                "test:curve#auxiliary".into(),
-            )]),
-            tangent: false,
-            curvilinear: false,
-        }
-    ));
-    assert!(crate::decode::sweep_orientation_is_incomplete(
-        &SweepOrientation::Binormal {
-            direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0),
-        }
-    ));
-}
-
-#[test]
-fn nx_pattern_completeness_requires_every_regeneration_operand() {
-    use cadmpeg_ir::features::{
-        Length, PathRef, PatternKind, PatternStage, PatternStageCombination,
-    };
-    use cadmpeg_ir::math::Vector3;
-
-    let linear = PatternKind::Linear {
-        direction: Some(Vector3::new(1.0, 0.0, 0.0)),
-        spacing: Length(10.0),
-        count: 3,
-        second: None,
-    };
-    assert!(!crate::decode::pattern_is_incomplete(&linear));
-    assert!(crate::decode::pattern_is_incomplete(&PatternKind::Linear {
-        direction: None,
-        spacing: Length(10.0),
-        count: 3,
-        second: None,
-    }));
-    assert!(crate::decode::pattern_is_incomplete(&PatternKind::Linear {
-        direction: Some(Vector3::new(1.0, 0.0, 0.0)),
-        spacing: Length(0.0),
-        count: 3,
-        second: None,
-    }));
-    assert!(crate::decode::pattern_is_incomplete(&PatternKind::Linear {
-        direction: Some(Vector3::new(0.0, 0.0, 0.0)),
-        spacing: Length(10.0),
-        count: 3,
-        second: None,
-    }));
-    assert!(crate::decode::pattern_is_incomplete(&PatternKind::Linear {
-        direction: Some(Vector3::new(1.0, 0.0, 0.0)),
-        spacing: Length(10.0),
-        count: 1,
-        second: None,
-    }));
-    assert!(crate::decode::pattern_is_incomplete(
-        &PatternKind::CurveDriven {
-            path: Some(PathRef::Native("nx:path".into())),
-            spacing: Length(10.0),
-            count: 3,
-        }
-    ));
-    assert!(crate::decode::pattern_is_incomplete(
-        &PatternKind::Composite {
-            stages: vec![PatternStage {
-                pattern: Box::new(PatternKind::Linear {
-                    direction: None,
-                    spacing: Length(10.0),
-                    count: 3,
-                    second: None,
-                }),
-                combination: PatternStageCombination::Initialize,
-            }],
-        }
-    ));
-    assert!(crate::decode::pattern_is_incomplete(
-        &PatternKind::Composite {
-            stages: vec![
-                PatternStage {
-                    pattern: Box::new(linear.clone()),
-                    combination: PatternStageCombination::Initialize,
-                },
-                PatternStage {
-                    pattern: Box::new(PatternKind::Scale {
-                        center: cadmpeg_ir::features::PatternScaleCenter::FirstSeedCentroid,
-                        final_factor: 2.0,
-                        count: 2,
-                    }),
-                    combination: PatternStageCombination::AlignedSlices,
-                },
-            ],
-        }
-    ));
-    let composite = PatternKind::Composite {
-        stages: vec![
-            PatternStage {
-                pattern: Box::new(linear),
-                combination: PatternStageCombination::Initialize,
-            },
-            PatternStage {
-                pattern: Box::new(PatternKind::Mirror {
-                    plane_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                    plane_normal: Vector3::new(1.0, 0.0, 0.0),
-                }),
-                combination: PatternStageCombination::CartesianProduct,
-            },
-        ],
-    };
-    assert!(!crate::decode::pattern_is_incomplete(&composite));
-    assert_eq!(crate::decode::pattern_occurrence_count(&composite), Some(6));
-}
-
-#[test]
-fn nx_variable_radius_completeness_requires_a_law_interval() {
-    use cadmpeg_ir::features::{Length, RadiusSpec, VariableRadius};
-
-    assert!(crate::decode::radius_spec_is_incomplete(
-        &RadiusSpec::Variable { points: Vec::new() }
-    ));
-    assert!(crate::decode::radius_spec_is_incomplete(
-        &RadiusSpec::Variable {
-            points: vec![VariableRadius {
-                parameter: 0.0,
-                radius: Length(2.0),
-            }],
-        }
-    ));
-    assert!(crate::decode::radius_spec_is_incomplete(
-        &RadiusSpec::Variable {
-            points: vec![
-                VariableRadius {
-                    parameter: 0.5,
-                    radius: Length(2.0),
-                },
-                VariableRadius {
-                    parameter: 0.5,
-                    radius: Length(3.0),
-                },
-            ],
-        }
-    ));
-    assert!(!crate::decode::radius_spec_is_incomplete(
-        &RadiusSpec::Variable {
-            points: vec![
-                VariableRadius {
-                    parameter: 0.0,
-                    radius: Length(2.0),
-                },
-                VariableRadius {
-                    parameter: 1.0,
-                    radius: Length(3.0),
-                },
-            ],
-        }
-    ));
-    assert!(!crate::decode::radius_spec_is_incomplete(
-        &RadiusSpec::Constant {
-            radius: Length(2.0),
-        }
-    ));
-    assert!(crate::decode::radius_spec_is_incomplete(
-        &RadiusSpec::Constant {
-            radius: Length(0.0),
-        }
-    ));
-}
-
-#[test]
-fn nx_selection_completeness_requires_nonempty_unique_identities() {
-    use cadmpeg_ir::features::{
-        BodySelection, EdgeSelection, FaceSelection, LoftPointSection, LoftSection, PathRef,
-        ProfileRef,
-    };
-
-    assert!(crate::decode::body_selection_is_incomplete(
-        &BodySelection::Bodies(Vec::new())
-    ));
-    assert!(!crate::decode::body_selection_is_incomplete(
-        &BodySelection::Local {
-            bodies: vec!["nx:om-body-object#12".into()],
-            native: "nx:om-object-index#12".into(),
-        }
-    ));
-    assert!(crate::decode::body_selection_is_incomplete(
-        &BodySelection::Local {
-            bodies: vec!["nx:om-body-object#12".into(), "nx:om-body-object#12".into()],
-            native: "nx:om-object-indices#12,13".into(),
-        }
-    ));
-    assert!(crate::decode::face_selection_is_incomplete(
-        &FaceSelection::Resolved {
-            faces: Vec::new(),
-            native: "nx:faces".into(),
-        }
-    ));
-    assert!(crate::decode::edge_selection_is_incomplete(
-        &EdgeSelection::Edges(Vec::new())
-    ));
-    assert!(!crate::decode::edge_selection_is_incomplete(
-        &EdgeSelection::All
-    ));
-    assert!(crate::decode::profile_ref_is_incomplete(
-        &ProfileRef::Faces(Vec::new())
-    ));
-    assert!(crate::decode::profile_ref_is_incomplete(
-        &ProfileRef::SketchSelection {
-            sketch: cadmpeg_ir::sketches::SketchId("test:sketch#0".into()),
-            selections: vec!["nx:sketch-selection#0".into()],
-        }
-    ));
-    assert!(crate::decode::profile_ref_is_incomplete(
-        &ProfileRef::SketchProfiles {
-            sketch: cadmpeg_ir::sketches::SketchId("test:sketch#0".into()),
-            profiles: Vec::new(),
-        }
-    ));
-    assert!(crate::decode::path_ref_is_incomplete(&PathRef::Curves(
-        Vec::new()
-    )));
-    assert!(crate::decode::path_ref_is_incomplete(
-        &PathRef::SpatialSketchSelection {
-            sketch: cadmpeg_ir::sketches::SpatialSketchId("test:spatial-sketch#0".into()),
-            selections: vec!["nx:path-selection#0".into()],
-        }
-    ));
-    let edge = cadmpeg_ir::ids::EdgeId("edge#0".into());
-    assert!(crate::decode::path_ref_is_incomplete(&PathRef::Edges(
-        vec![edge.clone(), edge]
-    )));
-    let curve = cadmpeg_ir::ids::CurveId("curve#0".into());
-    assert!(crate::decode::path_ref_is_incomplete(&PathRef::Curves(
-        vec![curve.clone(), curve]
-    )));
-    assert!(crate::decode::loft_section_is_incomplete(
-        &LoftSection::Point(LoftPointSection::Native("nx:point-selection#0".into(),))
-    ));
-    assert!(!crate::decode::loft_section_is_incomplete(
-        &LoftSection::Point(LoftPointSection::Point(cadmpeg_ir::math::Point3::new(
-            1.0, 2.0, 3.0
-        ),))
-    ));
-}
-
-#[test]
-fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
-    use cadmpeg_ir::features::{
-        BooleanOp, Feature, FeatureDefinition, FeatureId, LoftPointSection, LoftSection, PathRef,
-    };
-    use cadmpeg_ir::math::Point3;
-
-    let mut ir = cadmpeg_ir::examples::unit_cube();
-    let output = ir.model.bodies[0].id.clone();
-    let definition = |sections, centerline| FeatureDefinition::Loft {
-        sections,
-        centerline,
-        guides: Vec::new(),
-        op: BooleanOp::NewBody,
-        closed: false,
-        solid: true,
-        ruled: false,
-        max_degree: None,
-        check_compatibility: None,
-        allow_multi_profile_faces: None,
-    };
-    ir.model.features.push(Feature {
-        id: FeatureId("test:feature#loft".into()),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        parent: None,
-        dependencies: Vec::new(),
-        source_properties: Default::default(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: vec![output],
-        definition: definition(
-            vec![
-                LoftSection::Point(LoftPointSection::Point(Point3::new(0.0, 0.0, 0.0))),
-                LoftSection::Point(LoftPointSection::Point(Point3::new(0.0, 0.0, 1.0))),
-            ],
-            Some(PathRef::Native("nx:centerline#0".into())),
-        ),
-        native_ref: None,
-    });
-
-    let mut losses = Vec::new();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("loft (1)"));
-
-    ir.model.features[0].definition = definition(
-        vec![
-            LoftSection::Point(LoftPointSection::Native("nx:point#0".into())),
-            LoftSection::Point(LoftPointSection::Point(Point3::new(0.0, 0.0, 1.0))),
-        ],
-        None,
-    );
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("loft (1)"));
-
-    ir.model.features[0].definition = definition(
-        vec![
-            LoftSection::Point(LoftPointSection::Point(Point3::new(0.0, 0.0, 0.0))),
-            LoftSection::Point(LoftPointSection::Point(Point3::new(0.0, 0.0, 1.0))),
-        ],
-        None,
-    );
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert!(losses.is_empty());
-}
-
-#[test]
-fn om_index_pairs_object_ids_with_bounded_entity_records() {
-    let bytes = indexed_om_section();
-    let sections = crate::om::indexed_sections(&bytes);
-    assert_eq!(sections.len(), 1);
-    assert_eq!(sections[0].base, 8);
-    assert_eq!(sections[0].records.len(), 2);
-    assert_eq!(sections[0].records[0].object_id, Some(0x101));
-    assert_eq!(
-        sections[0].records[0].object_id_offset,
-        Some(sections[0].object_id_table_offset + 8)
-    );
-    assert_eq!(
-        sections[0].records[0].bytes,
-        b"\x04\x01\x0eNX 2027.3102\x00hostglobalvariables"
-    );
-    assert_eq!(sections[0].records[1].object_id, Some(0x102));
-    assert_eq!(
-        sections[0].records[1].object_id_offset,
-        Some(sections[0].object_id_table_offset + 12)
-    );
-    assert_eq!(sections[0].column_storage, None);
-    assert_eq!(sections[0].fields.len(), 1);
-    assert_eq!(sections[0].fields[0].name, "m_target");
-    assert_eq!(
-        sections[0].records[1].bytes,
-        b"\x04\x36p8_CircularPattern_pattern_Circular_Dir_offset_angle\x00\x04\x05120\x00\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00\x66\x32\x03\x0cSKETCH_001\0\xe0\x12\x34\x56\x78\xca\xbc\xde\xf0\x01\x02\x90\x00\x00"
-    );
-}
-
-#[test]
 fn ug_part_segment_index_uses_row_one_self_boundary() {
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
     let container = container::scan_bytes(file).unwrap();
@@ -1361,1114 +63,6 @@ fn ug_part_segment_index_uses_row_one_self_boundary() {
     assert_eq!(index.padding, &[0xaa, 0xbb, 0xcc, 0xdd]);
 }
 
-#[test]
-fn nx_pattern_completeness_requires_distinct_seeds() {
-    use cadmpeg_ir::features::{BodySelection, FaceSelection, PatternSeed};
-
-    let seed_id = cadmpeg_ir::features::FeatureId("test:feature#seed".into());
-    let seed = cadmpeg_ir::features::PatternSeed::Feature(seed_id.clone());
-    let pattern = cadmpeg_ir::features::PatternKind::Mirror {
-        plane_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-        plane_normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-    };
-
-    assert!(!crate::decode::pattern_feature_is_incomplete(
-        std::slice::from_ref(&seed),
-        &pattern,
-        std::slice::from_ref(&seed_id),
-    ));
-    assert!(crate::decode::pattern_feature_is_incomplete(
-        std::slice::from_ref(&seed),
-        &pattern,
-        &[],
-    ));
-    assert!(crate::decode::pattern_feature_is_incomplete(
-        &[seed.clone(), seed],
-        &pattern,
-        std::slice::from_ref(&seed_id),
-    ));
-    assert!(crate::decode::pattern_feature_is_incomplete(
-        &[PatternSeed::Faces(FaceSelection::Native(
-            "nx:pattern-face-selection#0".into(),
-        ))],
-        &pattern,
-        &[],
-    ));
-    assert!(crate::decode::pattern_feature_is_incomplete(
-        &[PatternSeed::Bodies(BodySelection::Unresolved)],
-        &pattern,
-        &[],
-    ));
-    assert!(!crate::decode::pattern_feature_is_incomplete(
-        &[PatternSeed::Bodies(BodySelection::Bodies(vec![
-            cadmpeg_ir::ids::BodyId("test:body#seed".into()),
-        ]))],
-        &pattern,
-        &[],
-    ));
-}
-
-#[test]
-fn nx_face_blend_completeness_requires_disjoint_supports() {
-    use cadmpeg_ir::features::FaceSelection;
-    use cadmpeg_ir::ids::FaceId;
-
-    let shared = FaceId("test:face#shared".into());
-    let distinct = FaceId("test:face#distinct".into());
-    let first = FaceSelection::Faces(vec![shared.clone()]);
-
-    assert!(crate::decode::face_selections_overlap(
-        &first,
-        &FaceSelection::Resolved {
-            faces: vec![shared],
-            native: "test:first-support".into(),
-        },
-    ));
-    assert!(!crate::decode::face_selections_overlap(
-        &first,
-        &FaceSelection::Faces(vec![distinct]),
-    ));
-    assert!(!crate::decode::face_selections_overlap(
-        &first,
-        &FaceSelection::Unresolved,
-    ));
-}
-
-#[test]
-fn nx_replace_face_completeness_requires_resolved_disjoint_operands() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
-    use cadmpeg_ir::ids::FaceId;
-
-    let target = FaceId("test:face#target".into());
-    let complete_targets = FaceSelection::Faces(vec![target.clone()]);
-    let complete_replacements = FaceSelection::Faces(vec![FaceId("test:face#replacement".into())]);
-    let overlapping_replacements = FaceSelection::Resolved {
-        faces: vec![target],
-        native: "test:replacement".into(),
-    };
-
-    assert_eq!(
-        FeatureDefinition::ReplaceFace {
-            targets: complete_targets.clone(),
-            replacements: complete_replacements.clone(),
-        }
-        .body_output_family(),
-        Some("replace face")
-    );
-    assert!(!crate::decode::face_selection_is_incomplete(
-        &complete_targets
-    ));
-    assert!(!crate::decode::face_selection_is_incomplete(
-        &complete_replacements
-    ));
-    assert!(!crate::decode::face_selections_overlap(
-        &complete_targets,
-        &complete_replacements
-    ));
-    assert!(crate::decode::face_selections_overlap(
-        &complete_targets,
-        &overlapping_replacements
-    ));
-}
-
-#[test]
-fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature,
-        FeatureDefinition, FeatureId, FeatureResultTopology, Length, ProfileRef, Termination,
-    };
-    use cadmpeg_ir::ids::FeatureResultTopologyId;
-
-    let mut ir = cadmpeg_ir::examples::unit_cube();
-    let output = ir.model.bodies[0].id.clone();
-    let definition = |direction, start, solid| FeatureDefinition::Extrude {
-        profile: ProfileRef::Sketch(cadmpeg_ir::sketches::SketchId("test:sketch#0".into())),
-        direction,
-        start,
-        extent: ExtrudeExtent::OneSided {
-            side: ExtrudeSide {
-                termination: Termination::Blind {
-                    length: Length(5.0),
-                },
-                draft: None,
-                offset: None,
-            },
-        },
-        op: BooleanOp::NewBody,
-        direction_source: None,
-        solid,
-        face_maker: None,
-        inner_wire_taper: None,
-        length_along_profile_normal: None,
-        allow_multi_profile_faces: None,
-    };
-    let complete = definition(
-        ExtrudeDirection::ProfileNormal,
-        ExtrudeStart::ProfilePlane,
-        Some(true),
-    );
-    ir.model.features.push(Feature {
-        id: FeatureId("test:feature#extrude".into()),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        parent: None,
-        dependencies: Vec::new(),
-        source_properties: Default::default(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: vec![output],
-        definition: complete.clone(),
-        native_ref: None,
-    });
-
-    let mut losses = Vec::new();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert!(losses.is_empty());
-
-    for incomplete in [
-        definition(
-            ExtrudeDirection::Unresolved,
-            ExtrudeStart::ProfilePlane,
-            Some(true),
-        ),
-        definition(
-            ExtrudeDirection::Explicit(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0)),
-            ExtrudeStart::ProfilePlane,
-            Some(true),
-        ),
-        definition(
-            ExtrudeDirection::ProfileNormal,
-            ExtrudeStart::Unresolved,
-            Some(true),
-        ),
-        definition(
-            ExtrudeDirection::ProfileNormal,
-            ExtrudeStart::ProfilePlane,
-            None,
-        ),
-    ] {
-        ir.model.features[0].definition = incomplete;
-        losses.clear();
-        crate::decode::append_design_intent_losses(&ir, &mut losses);
-        assert_eq!(losses.len(), 1);
-        assert!(losses[0].message.contains("extrude (1)"));
-    }
-
-    ir.model.features[0].definition = complete;
-    ir.model.features[0].outputs.clear();
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("extrude (1)"));
-
-    ir.model
-        .feature_result_topologies
-        .push(FeatureResultTopology {
-            id: FeatureResultTopologyId("test:feature-result#extrude".into()),
-            output_of: ir.model.features[0].id.clone(),
-            bodies: vec!["test:feature-local-body#0".into()],
-            faces: Vec::new(),
-            edges: Vec::new(),
-            vertices: Vec::new(),
-            native_ref: Some("test:native-body-writer#0".into()),
-        });
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert!(losses.is_empty());
-}
-
-#[test]
-fn nx_revolve_completeness_checks_construction_and_output_lineage() {
-    use cadmpeg_ir::features::{
-        Angle, BooleanOp, Feature, FeatureDefinition, FeatureId, GeneratedVertexRef, PathRef,
-        ProfileRef, RevolutionAxis, RevolutionConstruction, RevolveExtent, Termination,
-        VertexSelection,
-    };
-    use cadmpeg_ir::math::{Point3, Vector3};
-
-    let mut ir = cadmpeg_ir::examples::unit_cube();
-    let output = ir.model.bodies[0].id.clone();
-    let face = ir.model.faces[0].id.clone();
-    let complete = RevolutionConstruction {
-        profile: Some(ProfileRef::Faces(vec![face])),
-        axis: Some(RevolutionAxis {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(0.0, 0.0, 1.0),
-        }),
-        extent: Some(RevolveExtent::OneSided {
-            termination: Termination::Angle { angle: Angle(1.0) },
-        }),
-        axis_reference: None,
-        solid: Some(true),
-        face_maker_class: None,
-        fuse_order: None,
-        allow_multi_profile_faces: None,
-    };
-    assert!(!crate::decode::revolve_feature_is_incomplete(
-        &complete,
-        BooleanOp::NewBody,
-        &[],
-    ));
-    assert_eq!(
-        FeatureDefinition::Revolve {
-            construction: complete.clone(),
-            op: BooleanOp::NewBody,
-        }
-        .body_output_family(),
-        Some("revolve"),
-    );
-
-    let mut incomplete = complete.clone();
-    incomplete.profile = None;
-    assert!(crate::decode::revolve_feature_is_incomplete(
-        &incomplete,
-        BooleanOp::NewBody,
-        &[],
-    ));
-    incomplete = complete.clone();
-    incomplete.axis = None;
-    assert!(crate::decode::revolve_feature_is_incomplete(
-        &incomplete,
-        BooleanOp::NewBody,
-        &[],
-    ));
-    incomplete = complete.clone();
-    incomplete.axis.as_mut().unwrap().direction = Vector3::new(0.0, 0.0, 2.0);
-    assert!(crate::decode::revolve_feature_is_incomplete(
-        &incomplete,
-        BooleanOp::NewBody,
-        &[],
-    ));
-    incomplete = complete.clone();
-    incomplete.extent = None;
-    assert!(crate::decode::revolve_feature_is_incomplete(
-        &incomplete,
-        BooleanOp::NewBody,
-        &[],
-    ));
-    incomplete = complete.clone();
-    incomplete.extent = Some(RevolveExtent::OneSided {
-        termination: Termination::Angle { angle: Angle(0.0) },
-    });
-    assert!(crate::decode::revolve_feature_is_incomplete(
-        &incomplete,
-        BooleanOp::NewBody,
-        &[],
-    ));
-    incomplete = complete.clone();
-    incomplete.axis_reference = Some(PathRef::Native("test:axis".into()));
-    assert!(crate::decode::revolve_feature_is_incomplete(
-        &incomplete,
-        BooleanOp::NewBody,
-        &[],
-    ));
-    incomplete = complete.clone();
-    incomplete.solid = None;
-    assert!(crate::decode::revolve_feature_is_incomplete(
-        &incomplete,
-        BooleanOp::NewBody,
-        &[],
-    ));
-    incomplete = complete.clone();
-    incomplete.face_maker_class = Some(" ".into());
-    assert!(crate::decode::revolve_feature_is_incomplete(
-        &incomplete,
-        BooleanOp::NewBody,
-        &[],
-    ));
-    let source = FeatureId("test:feature#vertex-source".into());
-    incomplete = complete.clone();
-    incomplete.extent = Some(RevolveExtent::OneSided {
-        termination: Termination::ToVertex {
-            vertex: VertexSelection::Generated {
-                vertex: GeneratedVertexRef {
-                    feature: source.clone(),
-                    local_id: "vertex-0".into(),
-                },
-                native: "test:vertex-selection".into(),
-            },
-        },
-    });
-    assert!(crate::decode::revolve_feature_is_incomplete(
-        &incomplete,
-        BooleanOp::NewBody,
-        &[],
-    ));
-    assert!(!crate::decode::revolve_feature_is_incomplete(
-        &incomplete,
-        BooleanOp::NewBody,
-        &[source],
-    ));
-    assert!(crate::decode::revolve_feature_is_incomplete(
-        &complete,
-        BooleanOp::Unresolved,
-        &[],
-    ));
-
-    ir.model.features.push(Feature {
-        id: FeatureId("test:feature#revolve".into()),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        parent: None,
-        dependencies: Vec::new(),
-        source_properties: Default::default(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: vec![output],
-        definition: FeatureDefinition::Revolve {
-            construction: complete,
-            op: BooleanOp::NewBody,
-        },
-        native_ref: None,
-    });
-    let mut losses = Vec::new();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert!(losses.is_empty());
-
-    ir.model.features[0].outputs.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("revolve (1)"));
-}
-
-#[test]
-fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
-    use cadmpeg_ir::features::{
-        EdgeSelection, FaceSelection, FeatureId, GeneratedCurveRef, ProfileRef,
-    };
-    use cadmpeg_ir::ids::{EdgeId, FaceId};
-
-    let face = FaceId("test:face#repeated".into());
-    assert!(crate::decode::face_selection_is_incomplete(
-        &FaceSelection::Faces(vec![face.clone(), face]),
-    ));
-
-    let face = FaceId("test:profile-face#repeated".into());
-    assert!(crate::decode::profile_ref_is_incomplete(
-        &ProfileRef::Faces(vec![face.clone(), face]),
-    ));
-    let producer = FeatureId("test:feature#profile-producer".into());
-    let generated = ProfileRef::Generated {
-        curves: vec![GeneratedCurveRef {
-            feature: producer.clone(),
-            local_id: "curve-0".into(),
-        }],
-        native: "test:profile-selection".into(),
-    };
-    assert!(!crate::decode::profile_ref_is_incomplete(&generated));
-    assert!(crate::decode::profile_dependency_is_incomplete(
-        &generated,
-        &[],
-    ));
-    assert!(!crate::decode::profile_dependency_is_incomplete(
-        &generated,
-        std::slice::from_ref(&producer),
-    ));
-    let direct = ProfileRef::Feature(producer.clone());
-    assert!(crate::decode::profile_dependency_is_incomplete(
-        &direct,
-        &[],
-    ));
-    assert!(!crate::decode::profile_dependency_is_incomplete(
-        &direct,
-        &[producer],
-    ));
-
-    let edge = EdgeId("test:edge#repeated".into());
-    assert!(crate::decode::edge_selection_is_incomplete(
-        &EdgeSelection::Edges(vec![edge.clone(), edge]),
-    ));
-}
-
-#[test]
-fn nx_hole_completeness_rejects_opaque_supplied_operands() {
-    use cadmpeg_ir::features::{FaceSelection, HoleKind, Length, ProfileRef, Termination};
-    use cadmpeg_ir::math::{Point3, Vector3};
-
-    let incomplete = |profile, face| {
-        crate::decode::hole_feature_is_incomplete(
-            profile,
-            face,
-            (
-                Some(Point3::new(0.0, 0.0, 0.0)),
-                Some(Vector3::new(0.0, 0.0, 1.0)),
-            ),
-            &[],
-            (&HoleKind::Simple, None),
-            Some(Length(1.0)),
-            Some(&Termination::ThroughAll),
-        )
-    };
-
-    assert!(!incomplete(None, None));
-    let unresolved_profile = ProfileRef::Unresolved("hole".into());
-    assert!(incomplete(Some(&unresolved_profile), None));
-    assert!(incomplete(None, Some(&FaceSelection::Unresolved)));
-}
-
-#[test]
-fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, SketchSpace};
-    use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::sketches::{
-        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchGeometry, SketchId,
-    };
-
-    let mut ir = cadmpeg_ir::examples::unit_cube();
-    let sketch_id = SketchId("test:sketch#0".into());
-    ir.model.features.push(Feature {
-        id: FeatureId("test:feature#sketch".into()),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        parent: None,
-        dependencies: Vec::new(),
-        source_properties: Default::default(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
-            sketch: Some(sketch_id.clone()),
-        },
-        native_ref: None,
-    });
-    ir.model.sketches.push(Sketch {
-        id: sketch_id.clone(),
-        name: None,
-        configuration: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        },
-        profiles: Vec::new(),
-        native_ref: None,
-    });
-    let entity_id = SketchEntityId("test:sketch-entity#0".into());
-    ir.model.sketch_entities.push(SketchEntity {
-        id: entity_id.clone(),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Native {
-            native_kind: "test".into(),
-        },
-    });
-    ir.model.sketch_constraints.push(SketchConstraint {
-        id: SketchConstraintId("test:sketch-constraint#0".into()),
-        sketch: sketch_id,
-        definition: SketchConstraintDefinition::Native {
-            native_kind: "test".into(),
-            entities: vec![entity_id],
-            parameter: None,
-            operands: Vec::new(),
-            native_state: None,
-            native_flags: None,
-            native_properties: std::collections::BTreeMap::new(),
-        },
-        name: None,
-        driving: None,
-        active: None,
-        virtual_space: None,
-        visible: None,
-        orientation: None,
-        label_distance: None,
-        label_position: None,
-        metadata: None,
-        native_ref: None,
-    });
-
-    let mut losses = Vec::new();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0]
-        .message
-        .contains("1 NX sketch geometry record(s) and 1 sketch constraint"));
-}
-
-#[test]
-fn nx_sketch_completeness_requires_planar_space() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, SketchSpace};
-    use cadmpeg_ir::sketches::SketchId;
-
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-    ir.model.features.push(Feature {
-        id: FeatureId("test:feature#sketch".into()),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        parent: None,
-        dependencies: Vec::new(),
-        source_properties: Default::default(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            space: SketchSpace::Spatial,
-            sketch: Some(SketchId("test:sketch#0".into())),
-        },
-        native_ref: None,
-    });
-
-    let mut losses = Vec::new();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert!(losses.iter().any(|loss| {
-        loss.message
-            .contains("incomplete neutral construction fields: sketch (1)")
-    }));
-}
-
-#[test]
-fn nx_body_operation_completeness_requires_disjoint_roles() {
-    use cadmpeg_ir::features::BodySelection;
-    use cadmpeg_ir::ids::BodyId;
-
-    let shared = BodyId("test:body#shared".into());
-    let distinct = BodyId("test:body#distinct".into());
-    let target = BodySelection::Bodies(vec![shared.clone()]);
-
-    assert!(crate::decode::body_selection_is_incomplete(
-        &BodySelection::Bodies(vec![shared.clone(), shared.clone()]),
-    ));
-    assert!(!crate::decode::body_selection_is_incomplete(&target));
-
-    assert!(crate::decode::body_selections_overlap(
-        &target,
-        &BodySelection::Resolved {
-            bodies: vec![shared],
-            native: "test:tools".into(),
-        },
-    ));
-    assert!(!crate::decode::body_selections_overlap(
-        &target,
-        &BodySelection::Bodies(vec![distinct]),
-    ));
-    assert!(!crate::decode::body_selections_overlap(
-        &target,
-        &BodySelection::Unresolved,
-    ));
-    assert!(crate::decode::body_selections_overlap(
-        &BodySelection::Local {
-            bodies: vec!["nx:om-body-object#10".into()],
-            native: "nx:om-object-index#10".into(),
-        },
-        &BodySelection::Local {
-            bodies: vec!["nx:om-body-object#10".into()],
-            native: "nx:om-object-index#20".into(),
-        },
-    ));
-}
-
-#[test]
-fn nx_configuration_completeness_requires_one_active_full_body_set() {
-    use cadmpeg_ir::features::{
-        BodySelection, ConfigurationBodies, ConfigurationFeatureState, ConfigurationId,
-        DesignConfiguration, DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId,
-        ParameterValue,
-    };
-
-    let mut ir = cadmpeg_ir::examples::unit_cube();
-    let bodies = ir
-        .model
-        .bodies
-        .iter()
-        .map(|body| body.id.clone())
-        .collect::<Vec<_>>();
-    ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("test:configuration#0".into()),
-        ordinal: 0,
-        active: true,
-        source_index: Some(0),
-        name: "Model".into(),
-        material: None,
-        properties: Default::default(),
-        parameter_overrides: Default::default(),
-        suppressed_features: Vec::new(),
-        bodies: ConfigurationBodies::Resolved(Vec::new()),
-        parameter_values: Default::default(),
-        feature_states: Default::default(),
-        native_ref: None,
-    });
-
-    let mut losses = Vec::new();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("1 NX design configuration"));
-
-    ir.model.configurations[0].bodies = ConfigurationBodies::Resolved(bodies);
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert!(losses.is_empty());
-
-    ir.model.configurations[0].active = false;
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("1 NX design configuration"));
-
-    ir.model.configurations[0].active = true;
-    let output = ir.model.bodies[0].id.clone();
-    let feature = Feature {
-        id: FeatureId("test:feature#base".into()),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        parent: None,
-        dependencies: Vec::new(),
-        source_properties: Default::default(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: vec![output.clone()],
-        definition: FeatureDefinition::BaseFeature {
-            bodies: BodySelection::Bodies(vec![output]),
-        },
-        native_ref: None,
-    };
-    ir.model.features.push(feature.clone());
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("1 NX design configuration"));
-
-    ir.model.configurations[0].feature_states.insert(
-        feature.id.clone(),
-        ConfigurationFeatureState {
-            suppressed: false,
-            dependencies: feature.dependencies.clone(),
-            outputs: feature.outputs.clone(),
-            definition: feature.definition.clone(),
-        },
-    );
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert!(losses.is_empty());
-
-    let parameter = DesignParameter {
-        id: ParameterId("test:parameter#length".into()),
-        owner: Some(feature.id),
-        ordinal: 0,
-        name: "length".into(),
-        expression: "2".into(),
-        display: None,
-        value: Some(ParameterValue::Real(2.0)),
-        dependencies: Vec::new(),
-        properties: Default::default(),
-        pmi: None,
-        native_ref: None,
-    };
-    ir.model.parameters.push(parameter.clone());
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("1 NX design configuration"));
-
-    ir.model.configurations[0]
-        .parameter_values
-        .insert(parameter.id, parameter.value.expect("evaluated parameter"));
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert!(losses.is_empty());
-
-    let suppressed = Feature {
-        id: FeatureId("test:feature#suppressed".into()),
-        ordinal: 1,
-        name: None,
-        suppressed: Some(true),
-        parent: None,
-        dependencies: Vec::new(),
-        source_properties: Default::default(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::DatumPoint {
-            position: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-        },
-        native_ref: None,
-    };
-    ir.model.features.push(suppressed.clone());
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert!(losses
-        .iter()
-        .any(|loss| loss.message.contains("1 NX design configuration")));
-
-    ir.model.configurations[0]
-        .suppressed_features
-        .push(suppressed.id);
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert!(losses.is_empty());
-}
-
-#[test]
-fn nx_body_producing_feature_families_require_history_outputs() {
-    use cadmpeg_ir::features::{BooleanOp, Feature, FeatureDefinition, FeatureId, Length};
-    use std::collections::BTreeMap;
-
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-    ir.model.features.push(Feature {
-        id: FeatureId("test:feature#block".into()),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        parent: None,
-        dependencies: Vec::new(),
-        source_properties: BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Block {
-            dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
-            placement: Some(cadmpeg_ir::transform::Transform::identity()),
-            op: BooleanOp::NewBody,
-        },
-        native_ref: None,
-    });
-
-    let mut losses = Vec::new();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("block (1)"));
-
-    let output = cadmpeg_ir::ids::BodyId("test:body#output".into());
-    ir.model.features[0].outputs = vec![output.clone()];
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("block (1)"));
-
-    ir.model.features[0].outputs = vec![output.clone(), output.clone()];
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("block (1)"));
-
-    ir.model.features[0].suppressed = Some(true);
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert!(losses.is_empty());
-
-    for invalid_placement in [
-        {
-            let mut placement = cadmpeg_ir::transform::Transform::identity();
-            placement.rows[3][0] = 1.0;
-            placement
-        },
-        {
-            let mut placement = cadmpeg_ir::transform::Transform::identity();
-            placement.rows[0][0] = 2.0;
-            placement
-        },
-    ] {
-        ir.model.features[0].definition = FeatureDefinition::Block {
-            dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
-            placement: Some(invalid_placement),
-            op: BooleanOp::NewBody,
-        };
-        crate::decode::append_design_intent_losses(&ir, &mut losses);
-        assert_eq!(losses.len(), 1);
-        assert!(losses[0].message.contains("block (1)"));
-        losses.clear();
-    }
-
-    ir.model.features[0].definition = FeatureDefinition::Loft {
-        sections: Vec::new(),
-        centerline: None,
-        guides: Vec::new(),
-        op: cadmpeg_ir::features::BooleanOp::Unresolved,
-        closed: false,
-        solid: false,
-        ruled: false,
-        max_degree: None,
-        check_compatibility: None,
-        allow_multi_profile_faces: None,
-    };
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("loft (1)"));
-
-    ir.model.features[0].definition = FeatureDefinition::Draft {
-        faces: cadmpeg_ir::features::FaceSelection::Unresolved,
-        neutral_plane: cadmpeg_ir::features::FaceSelection::Unresolved,
-        pull_direction: Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
-        angle: Some(cadmpeg_ir::features::Angle(0.1)),
-        outward: Some(false),
-    };
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("draft (1)"));
-
-    let draft = |pull_direction, angle, outward| FeatureDefinition::Draft {
-        faces: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId(
-            "test:face#draft".into(),
-        )]),
-        neutral_plane: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId(
-            "test:face#neutral".into(),
-        )]),
-        pull_direction,
-        angle,
-        outward,
-    };
-    for incomplete in [
-        draft(None, Some(cadmpeg_ir::features::Angle(0.1)), Some(false)),
-        draft(
-            Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
-            None,
-            Some(false),
-        ),
-        draft(
-            Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
-            Some(cadmpeg_ir::features::Angle(0.1)),
-            None,
-        ),
-        draft(
-            Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
-            Some(cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2)),
-            Some(false),
-        ),
-    ] {
-        ir.model.features[0].definition = incomplete;
-        losses.clear();
-        crate::decode::append_design_intent_losses(&ir, &mut losses);
-        assert_eq!(losses.len(), 1);
-        assert!(losses[0].message.contains("draft (1)"));
-    }
-
-    ir.model.features[0].definition = FeatureDefinition::DatumOffsetPlane {
-        reference: None,
-        distance: Length(5.0),
-    };
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("datum plane (1)"));
-
-    let datum = FeatureId("test:feature#datum-source".into());
-    ir.model.features[0].definition = FeatureDefinition::DatumOffsetPlane {
-        reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature(
-            datum.clone(),
-        )),
-        distance: Length(5.0),
-    };
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("datum plane (1)"));
-
-    ir.model.features[0].ordinal = 1;
-    ir.model.features.push(Feature {
-        id: datum.clone(),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        parent: None,
-        dependencies: Vec::new(),
-        source_properties: BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::DatumPrincipalPlane {
-            plane: cadmpeg_ir::features::PrincipalPlane::Top,
-        },
-        native_ref: None,
-    });
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("datum plane (1)"));
-
-    ir.model.features[0].dependencies.push(datum);
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert!(losses.is_empty());
-
-    ir.model.features[0].definition = FeatureDefinition::SewBodies {
-        bodies: cadmpeg_ir::features::BodySelection::Bodies(vec![output.clone()]),
-        gap_tolerance: Some(Length(0.01)),
-    };
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("sew bodies (1)"));
-
-    ir.model.features[0].definition = FeatureDefinition::SewBodies {
-        bodies: cadmpeg_ir::features::BodySelection::Local {
-            bodies: vec![output.0.clone()],
-            native: "nx:body-selection#sew".into(),
-        },
-        gap_tolerance: Some(Length(0.01)),
-    };
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("sew bodies (1)"));
-
-    ir.model.features[0].definition = FeatureDefinition::Combine {
-        target: cadmpeg_ir::features::BodySelection::Local {
-            bodies: vec!["target-a".into(), "target-b".into()],
-            native: "nx:body-selection#targets".into(),
-        },
-        tools: cadmpeg_ir::features::BodySelection::Local {
-            bodies: vec!["tool".into()],
-            native: "nx:body-selection#tools".into(),
-        },
-        op: cadmpeg_ir::features::BooleanOp::Join,
-        keep_tools: false,
-    };
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("body combine (1)"));
-
-    ir.model.features[0].definition = FeatureDefinition::BaseFeature {
-        bodies: cadmpeg_ir::features::BodySelection::Unresolved,
-    };
-    losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("base feature (1)"));
-
-    assert_eq!(
-        FeatureDefinition::DatumPointUnresolved.body_output_family(),
-        None
-    );
-    assert_eq!(
-        FeatureDefinition::BaseFeature {
-            bodies: cadmpeg_ir::features::BodySelection::Unresolved,
-        }
-        .body_output_family(),
-        Some("base feature")
-    );
-    assert_eq!(
-        FeatureDefinition::Loft {
-            sections: Vec::new(),
-            centerline: None,
-            guides: Vec::new(),
-            op: cadmpeg_ir::features::BooleanOp::NewBody,
-            closed: false,
-            solid: false,
-            ruled: false,
-            max_degree: None,
-            check_compatibility: None,
-            allow_multi_profile_faces: None,
-        }
-        .body_output_family(),
-        Some("loft")
-    );
-    assert_eq!(
-        FeatureDefinition::Draft {
-            faces: cadmpeg_ir::features::FaceSelection::Unresolved,
-            neutral_plane: cadmpeg_ir::features::FaceSelection::Unresolved,
-            pull_direction: Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
-            angle: Some(cadmpeg_ir::features::Angle(0.1)),
-            outward: Some(false),
-        }
-        .body_output_family(),
-        Some("draft")
-    );
-    assert_eq!(
-        FeatureDefinition::DeleteBody {
-            bodies: cadmpeg_ir::features::BodySelection::Unresolved,
-            mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
-        }
-        .body_output_family(),
-        None
-    );
-}
-
-#[test]
-fn nx_exact_empty_base_feature_is_a_complete_replay_boundary() {
-    use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
-
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-    ir.model.features.push(Feature {
-        id: FeatureId("test:feature#initial-bodies".into()),
-        ordinal: 0,
-        name: Some("Retained history input".into()),
-        suppressed: Some(false),
-        parent: None,
-        dependencies: Vec::new(),
-        source_properties: Default::default(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::BaseFeature {
-            bodies: BodySelection::Resolved {
-                bodies: Vec::new(),
-                native: "nx:segment-body-bindings".into(),
-            },
-        },
-        native_ref: None,
-    });
-
-    let mut losses = Vec::new();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-
-    assert!(losses.is_empty());
-}
-
-#[test]
-fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
-    use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId, Length};
-
-    let mut ir = cadmpeg_ir::examples::unit_cube();
-    let first = ir.model.bodies[0].id.clone();
-    let mut second_body = ir.model.bodies[0].clone();
-    second_body.id = cadmpeg_ir::ids::BodyId("test:body#second".into());
-    let second = second_body.id.clone();
-    ir.model.bodies.push(second_body);
-    ir.model.features.push(Feature {
-        id: FeatureId("test:feature#sew".into()),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        parent: None,
-        dependencies: Vec::new(),
-        source_properties: Default::default(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: vec![first.clone()],
-        definition: FeatureDefinition::SewBodies {
-            bodies: BodySelection::Bodies(vec![first, second]),
-            gap_tolerance: None,
-        },
-        native_ref: None,
-    });
-
-    let mut losses = Vec::new();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert!(losses.is_empty());
-
-    for tolerance in [Length(0.0), Length(-0.01), Length(f64::NAN)] {
-        let FeatureDefinition::SewBodies { gap_tolerance, .. } =
-            &mut ir.model.features[0].definition
-        else {
-            unreachable!();
-        };
-        *gap_tolerance = Some(tolerance);
-        losses.clear();
-        crate::decode::append_design_intent_losses(&ir, &mut losses);
-        assert_eq!(losses.len(), 1);
-        assert!(losses[0].message.contains("sew bodies (1)"));
-    }
-}
 
 #[test]
 fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
@@ -2522,6 +116,7 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     assert!(crate::decode::analytic_surface_offset(&support, &elliptical).is_none());
 }
 
+
 #[test]
 fn nx_sphere_offset_lineage_follows_signed_radius_orientation() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -2547,6 +142,7 @@ fn nx_sphere_offset_lineage_follows_signed_radius_orientation() {
     );
     assert!(crate::decode::analytic_surface_offset(&sphere(4.0), &sphere(-6.5)).is_none());
 }
+
 
 #[test]
 fn nx_torus_offset_lineage_requires_one_ring_orientation() {
@@ -2576,3117 +172,6 @@ fn nx_torus_offset_lineage_requires_one_ring_orientation() {
     assert!(crate::decode::analytic_surface_offset(&torus(2.0), &torus(10.0)).is_none());
 }
 
-#[test]
-fn om_compact_index_lane_decodes_direct_extended_and_null_entries() {
-    use crate::om::CompactIndex::{Null, Value};
-
-    assert_eq!(
-        crate::om::compact_indices(&[0x00, 0x7f, 0x80, 0x80, 0x81, 0x00, 0xfe, 0xff, 0xff]),
-        Some(vec![
-            Value(0),
-            Value(127),
-            Value(128),
-            Value(256),
-            Value(32_511),
-            Null,
-        ])
-    );
-    assert_eq!(crate::om::compact_indices(&[0x80]), None);
-}
-
-#[test]
-fn om_data_block_object_frame_requires_complete_discriminator() {
-    let discriminator = [
-        0x00, 0x72, 0x01, 0xc0, 0x20, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x01,
-        0x02, 0x80, 0xa4,
-    ];
-    let mut bytes = vec![0xaa, 0x81, 0x72];
-    bytes.extend_from_slice(&discriminator);
-    bytes.push(0xff);
-
-    let references = crate::om::data_block_object_frames(&bytes);
-    assert_eq!(references.len(), 1);
-    assert_eq!(references[0].object_id, 370);
-    assert_eq!(references[0].raw_object_id, [0x81, 0x72]);
-    assert_eq!(references[0].offset, 1);
-
-    bytes.extend_from_slice(&[0x73]);
-    bytes.extend_from_slice(&discriminator);
-    let references = crate::om::data_block_object_frames(&bytes);
-    assert_eq!(references.len(), 2);
-    assert_eq!(references[1].object_id, 0x73);
-    assert_eq!(references[1].raw_object_id, [0x73]);
-    assert_eq!(references[1].offset, 22);
-
-    bytes[8] ^= 1;
-    let references = crate::om::data_block_object_frames(&bytes);
-    assert_eq!(references.len(), 1);
-    assert_eq!(references[0].object_id, 0x73);
-    let mut null = vec![0xff];
-    null.extend_from_slice(&discriminator);
-    assert!(crate::om::data_block_object_frames(&null).is_empty());
-}
-
-#[test]
-fn om_offset_store_counted_index_lane_requires_complete_non_null_members() {
-    let bytes = [
-        0xaa, 0x01, 0x06, 0x42, 0x62, 0x80, 0x48, 0x80, 0x50, 0x7c, 0x01, 0x11, 0xbb,
-    ];
-    let lanes = crate::om::offset_store_counted_index_lanes(&bytes);
-    assert_eq!(lanes.len(), 1);
-    assert_eq!(lanes[0].offset, 1);
-    assert_eq!(lanes[0].declared_count, 6);
-    assert_eq!(lanes[0].anchor, 0x42);
-    assert_eq!(lanes[0].raw_anchor, [0x42]);
-    assert_eq!(lanes[0].anchor_offset, 3);
-    assert_eq!(
-        lanes[0].members,
-        vec![(0x62, 4), (0x48, 5), (0x50, 7), (0x7c, 9)]
-    );
-    assert_eq!(
-        lanes[0].raw_members,
-        [vec![0x62], vec![0x80, 0x48], vec![0x80, 0x50], vec![0x7c]]
-    );
-
-    assert!(
-        crate::om::offset_store_counted_index_lanes(&[0x01, 0x03, 0x42, 0xff, 0x01, 0x11,])
-            .is_empty()
-    );
-    assert!(
-        crate::om::offset_store_counted_index_lanes(&[0x01, 0x03, 0x42, 0x80, 0x01, 0x11,])
-            .is_empty()
-    );
-    assert!(
-        crate::om::offset_store_counted_index_lanes(&[0x01, 0x03, 0x42, 0x62, 0x01, 0x10,])
-            .is_empty()
-    );
-}
-
-#[test]
-fn om_offset_store_abr_lane_requires_sixteen_slots_and_exact_terminator() {
-    let mut bytes = vec![0xaa, 0x11];
-    bytes.extend_from_slice(&[0xff; 6]);
-    bytes.extend_from_slice(&[0x82, 0x83]);
-    bytes.extend_from_slice(&[0xff; 9]);
-    bytes.extend_from_slice(&[0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03, 0xbb]);
-
-    let lanes = crate::om::offset_store_abr_reference_lanes(&bytes);
-    assert_eq!(lanes.len(), 1);
-    assert_eq!(lanes[0].offset, 1);
-    assert_eq!(lanes[0].slots.len(), 16);
-    assert_eq!(lanes[0].slots[6], (Some(643), 8));
-    assert_eq!(lanes[0].raw_slots[6], [0x82, 0x83]);
-    assert!(lanes[0]
-        .raw_slots
-        .iter()
-        .enumerate()
-        .all(|(slot, raw)| slot == 6 || raw == &[0xff]));
-    assert!(lanes[0]
-        .slots
-        .iter()
-        .enumerate()
-        .all(|(slot, (value, _))| slot == 6 || value.is_none()));
-
-    bytes[23] = b'X';
-    assert!(crate::om::offset_store_abr_reference_lanes(&bytes).is_empty());
-    bytes[23] = b'R';
-    bytes.remove(18);
-    assert!(crate::om::offset_store_abr_reference_lanes(&bytes).is_empty());
-}
-
-#[test]
-fn om_sketch_scalar_field_requires_exact_frame_and_finite_shifted_value() {
-    let bytes = [
-        0xaa, 0x50, 0x59, 0x66, 0x64, 0x00, 0x30, 0x43, 0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72, 0xbb,
-    ];
-    let fields = crate::om::construction_payload_scalar_fields(&bytes);
-    assert_eq!(fields.len(), 1);
-    assert_eq!(fields[0].offset, 1);
-    assert_eq!(fields[0].field_code, 0x64);
-    assert!((fields[0].value - 38.1).abs() < 2.0e-12);
-
-    let mut malformed = bytes;
-    malformed[5] = 1;
-    assert!(crate::om::construction_payload_scalar_fields(&malformed).is_empty());
-    malformed = bytes;
-    malformed[6] = 0x70;
-    assert!(crate::om::construction_payload_scalar_fields(&malformed).is_empty());
-}
-
-#[test]
-fn om_sketch_name_field_decodes_direct_and_extended_compact_type_codes() {
-    let bytes = [
-        0x66, 0x32, 0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00, 0xaa, 0x66, 0x80, 0x83,
-        0x03, 0x07, b'L', b'i', b'n', b'e', b'2', 0x00,
-    ];
-    let fields = crate::om::construction_payload_named_fields(&bytes);
-    assert_eq!(fields.len(), 2);
-    assert_eq!(
-        (fields[0].offset, fields[0].type_code, fields[0].value),
-        (0, Some(0x32), "Point1")
-    );
-    assert_eq!(fields[0].raw_type_code, Some(vec![0x32]));
-    assert_eq!(fields[0].type_code_offset, Some(1));
-    assert_eq!(
-        (fields[1].offset, fields[1].type_code, fields[1].value),
-        (12, Some(0x83), "Line2")
-    );
-    assert_eq!(fields[1].raw_type_code, Some(vec![0x80, 0x83]));
-    assert_eq!(fields[1].type_code_offset, Some(13));
-
-    assert!(crate::om::construction_payload_named_fields(&[
-        0x66, 0xff, 0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00,
-    ])
-    .is_empty());
-    assert!(crate::om::construction_payload_named_fields(&[
-        0x66, 0x32, 0x03, 0x08, b'P', b'o', b'i', b'n', b't',
-    ])
-    .is_empty());
-}
-
-#[test]
-fn om_sketch_name_field_decodes_type_free_payload_leading_form() {
-    let fields = crate::om::construction_payload_named_fields(&[
-        0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00, 0x04,
-    ]);
-    assert_eq!(fields.len(), 1);
-    assert_eq!(fields[0].offset, 0);
-    assert_eq!(fields[0].type_code, None);
-    assert_eq!(fields[0].raw_type_code, None);
-    assert_eq!(fields[0].type_code_offset, None);
-    assert!(fields[0].payload_leading);
-    assert_eq!(fields[0].value, "Point1");
-
-    assert!(crate::om::construction_payload_named_fields(&[
-        0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1',
-    ])
-    .is_empty());
-}
-
-#[test]
-fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
-    let first = [
-        0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'7', 0x00, 0x50, 0x59, 0x66, 0x58, 0x00, 0x30,
-        0x4c, 0x93, 0x33, 0x33, 0x33, 0x33, 0x07,
-    ];
-    let second = [
-        0x45, 0x04, 0x00, 0x50, 0x59, 0x66, 0x58, 0x00, 0x30, 0x4c, 0x93, 0x33, 0x33, 0x33, 0x33,
-        0x07,
-    ];
-    let point = crate::om::offset_store_named_point(&[&first, &second]).unwrap();
-    assert_eq!(point.name, "Point7");
-    assert!(point
-        .values
-        .iter()
-        .all(|value| (*value - 57.15).abs() < 1.0e-12));
-    let expected_raw: [[u8; 8]; 2] = [
-        first[14..22].try_into().unwrap(),
-        second[8..16].try_into().unwrap(),
-    ];
-    assert_eq!(point.raw_values, expected_raw);
-    assert_eq!(point.value_offsets, [9, first.len() + 3]);
-    assert_eq!(point.block_count, 2);
-
-    let mut same_block = first.to_vec();
-    same_block.extend_from_slice(&second);
-    assert_eq!(
-        crate::om::offset_store_named_point(&[&same_block])
-            .unwrap()
-            .block_count,
-        1
-    );
-    assert_eq!(
-        crate::om::offset_store_named_point(&[&first[..9], &first[9..], &second])
-            .unwrap()
-            .block_count,
-        3
-    );
-    let mut zero = first;
-    zero[7] = b'0';
-    assert!(crate::om::offset_store_named_point(&[&zero, &second]).is_none());
-}
-
-#[test]
-fn sketch_fixed_pair_parser_reads_signed_q1_55_atoms() {
-    let bytes = [
-        0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84, 0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    ];
-    let pairs = crate::om::sketch_payload_fixed_pairs(&bytes);
-    assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].values, [0.5, -0.5]);
-    assert_eq!(pairs[0].value_offsets, [8, 17]);
-    assert_eq!(pairs[0].raw_values[0], [0x40, 0, 0, 0, 0, 0, 0]);
-    assert_eq!(pairs[0].discriminator, bytes[..8]);
-
-    let mut malformed = bytes;
-    malformed[16] = 1;
-    assert!(crate::om::sketch_payload_fixed_pairs(&malformed).is_empty());
-}
-
-#[test]
-fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
-    let short = [
-        0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x01,
-        0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00,
-    ];
-    let extended = [
-        0x08, 0x02, 0x03, 0x01, 0xc0, 0x40, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02,
-        0x00, 0x01, 0x30, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xe0, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00,
-    ];
-
-    let short_pair = crate::om::sketch_payload_fixed_pairs(&short);
-    assert_eq!(short_pair.len(), 1);
-    assert_eq!(short_pair[0].values, [0.5, -0.5]);
-    assert_eq!(short_pair[0].value_offsets, [15, 23]);
-    assert_eq!(short_pair[0].discriminator, short[..15]);
-
-    let extended_pair = crate::om::sketch_payload_fixed_pairs(&extended);
-    assert_eq!(extended_pair.len(), 1);
-    assert_eq!(extended_pair[0].values, [0.25, -0.25]);
-    assert_eq!(extended_pair[0].value_offsets, [17, 25]);
-    assert_eq!(extended_pair[0].discriminator, extended[..17]);
-
-    let mut malformed = short;
-    malformed[23] = 0x31;
-    assert!(crate::om::sketch_payload_fixed_pairs(&malformed).is_empty());
-}
-
-#[test]
-fn sketch_fixed_pair_parser_accepts_the_three_member_branch() {
-    let discriminator = [
-        0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
-    ];
-    let mut bytes = discriminator.to_vec();
-    bytes.push(0x30);
-    bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);
-    bytes.extend_from_slice(&[0x00, 0x30]);
-    bytes.extend_from_slice(&[0xc0, 0, 0, 0, 0, 0, 0]);
-
-    let pairs = crate::om::sketch_payload_fixed_pairs(&bytes);
-    assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].values, [0.5, -0.5]);
-    assert_eq!(pairs[0].value_offsets, [15, 24]);
-    assert_eq!(pairs[0].discriminator, discriminator);
-
-    bytes[14] = 0x02;
-    assert!(crate::om::sketch_payload_fixed_pairs(&bytes).is_empty());
-}
-
-#[test]
-fn sketch_mixed_pair_parser_requires_q1_55_then_shifted_binary32() {
-    let mut bytes = vec![0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84, 0x30];
-    bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);
-    bytes.push(0x00);
-    let mut shifted = 3.25_f32.to_be_bytes();
-    shifted[0] += 0x10;
-    bytes.extend_from_slice(&shifted);
-
-    let pairs = crate::om::sketch_payload_mixed_pairs(&bytes);
-    assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].fixed_value, 0.5);
-    assert_eq!(pairs[0].binary32_value, 3.25);
-    assert_eq!(pairs[0].fixed_raw_value, [0x40, 0, 0, 0, 0, 0, 0]);
-    assert_eq!(pairs[0].binary32_raw_value, shifted);
-    assert_eq!(pairs[0].value_offsets, [8, 17]);
-
-    let mut malformed = bytes;
-    malformed[16] = 1;
-    assert!(crate::om::sketch_payload_mixed_pairs(&malformed).is_empty());
-}
-
-#[test]
-fn datum_csys_fixed_pair_requires_its_exact_branch_discriminator() {
-    let mut bytes = vec![
-        0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
-        0x30,
-    ];
-    bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);
-    bytes.extend_from_slice(&[0x00, 0x30]);
-    bytes.extend_from_slice(&[0xc0, 0, 0, 0, 0, 0, 0]);
-    let pairs = crate::om::datum_csys_payload_fixed_pairs(&bytes);
-    assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].values, [0.5, -0.5]);
-    assert_eq!(pairs[0].value_offsets, [15, 24]);
-    assert_eq!(pairs[0].raw_values[0], [0x40, 0, 0, 0, 0, 0, 0]);
-
-    bytes[0] = 0x08;
-    assert!(crate::om::datum_csys_payload_fixed_pairs(&bytes).is_empty());
-}
-
-#[test]
-fn datum_csys_fixed_pair_accepts_the_continuation_branch() {
-    let discriminator = [
-        0x80, 0x8d, 0x00, 0xff, 0x80, 0x81, 0x01, 0x02, 0x01, 0x00, 0x00, 0x00, 0x87, 0xd7, 0x01,
-        0x01, 0x01, 0x01, 0x02, 0xa5, 0x30, 0x21, 0xa5, 0x30, 0x21, 0x01, 0x00, 0x01, 0xaf, 0xff,
-        0xdf, 0x02, 0x01, 0x02,
-    ];
-    let mut bytes = discriminator.to_vec();
-    bytes.push(0x30);
-    bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);
-    bytes.extend_from_slice(&[0x00, 0x30]);
-    bytes.extend_from_slice(&[0xc0, 0, 0, 0, 0, 0, 0]);
-
-    let pairs = crate::om::datum_csys_payload_fixed_pairs(&bytes);
-    assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].values, [0.5, -0.5]);
-    assert_eq!(
-        pairs[0].value_offsets,
-        [discriminator.len(), discriminator.len() + 9]
-    );
-    assert_eq!(pairs[0].discriminator, discriminator);
-
-    bytes[1] = 0x8c;
-    assert!(crate::om::datum_csys_payload_fixed_pairs(&bytes).is_empty());
-}
-
-#[test]
-fn om_datum_csys_scalar_field_uses_the_common_shifted_binary64_frame() {
-    let mut shifted = 25.4_f64.to_be_bytes();
-    shifted[0] -= 0x10;
-    let mut payload = vec![0xaa, 0x50, 0x59, 0x66, 0x64, 0x00];
-    payload.extend_from_slice(&shifted);
-    payload.push(0xbb);
-
-    let fields = crate::om::construction_payload_scalar_fields(&payload);
-    assert_eq!(fields.len(), 1);
-    assert_eq!(fields[0].offset, 1);
-    assert_eq!(fields[0].field_code, 0x64);
-    assert_eq!(fields[0].value, 25.4);
-    assert_eq!(fields[0].raw_value, shifted);
-}
-
-#[test]
-fn om_simple_hole_lane_requires_two_identical_nonempty_scalar_runs() {
-    let shifted = |value: f64| {
-        let mut bytes = value.to_be_bytes();
-        bytes[0] -= 0x10;
-        bytes
-    };
-    let mut payload = Vec::new();
-    for value in [508.0, 38.1, 508.0, 38.1] {
-        payload.extend_from_slice(&shifted(value));
-        payload.push(0x7f);
-    }
-    payload.extend_from_slice(&[0x04, 0x08]);
-    payload.extend_from_slice(b"Hole_X");
-    payload.push(0x00);
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 120,
-        value: "SIMPLE HOLE",
-        object_indices: [None; 4],
-        object_index_offsets: [0; 4],
-    };
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: &payload,
-        payload_offset: 200,
-        payload: &payload,
-        label,
-    };
-    let lane = crate::om::simple_hole_repeated_scalar_lane(record).unwrap();
-    assert_eq!(lane.values[0], 508.0);
-    assert!((lane.values[1] - 38.1).abs() < 2.0e-12);
-    assert_eq!(lane.raw_values, [shifted(508.0), shifted(38.1)]);
-    assert_eq!(lane.witness_offsets, [vec![200, 209], vec![218, 227]]);
-
-    let mut mismatched = payload.clone();
-    mismatched[18 + 7] ^= 1;
-    assert!(
-        crate::om::simple_hole_repeated_scalar_lane(crate::om::OperationRecord {
-            bytes: &mismatched,
-            payload: &mismatched,
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_simple_hole_lane_accepts_one_repeated_scalar() {
-    let mut scalar = 25.4f64.to_be_bytes();
-    scalar[0] -= 0x10;
-    let mut payload = scalar.to_vec();
-    payload.push(0x7f);
-    payload.extend_from_slice(&scalar);
-    payload.extend_from_slice(&[0x04, 0x08]);
-    payload.extend_from_slice(b"Hole_X\0");
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: &payload,
-        payload_offset: 200,
-        payload: &payload,
-        label: crate::om::OperationLabel {
-            header_offset: 100,
-            offset: 120,
-            value: "SIMPLE HOLE",
-            object_indices: [None; 4],
-            object_index_offsets: [0; 4],
-        },
-    };
-    let lane = crate::om::simple_hole_repeated_scalar_lane(record).unwrap();
-    assert_eq!(lane.values, [25.4]);
-    assert_eq!(lane.raw_values, [scalar]);
-    assert_eq!(lane.witness_offsets, [vec![200], vec![209]]);
-}
-
-#[test]
-fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
-    let shifted = |value: f64| {
-        let mut bytes = value.to_be_bytes();
-        bytes[0] -= 0x10;
-        bytes
-    };
-    let mut payload = Vec::new();
-    payload.extend_from_slice(&shifted(508.0));
-    payload.extend_from_slice(&shifted(38.1));
-    payload.extend_from_slice(&[0xf0, 0xe7, 0xf0, 0xe8]);
-    payload.extend_from_slice(&shifted(508.0));
-    payload.extend_from_slice(&shifted(38.1));
-    payload.extend_from_slice(&[0xf0, 0xe9, 0xf0, 0xea]);
-    payload.extend_from_slice(&[0x04, 0x08]);
-    payload.extend_from_slice(b"Hole_X");
-    payload.push(0x00);
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 120,
-        value: "SIMPLE HOLE",
-        object_indices: [None; 4],
-        object_index_offsets: [0; 4],
-    };
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: &payload,
-        payload_offset: 200,
-        payload: &payload,
-        label,
-    };
-    let references = crate::om::simple_hole_repeated_scalar_lane_block_references(record).unwrap();
-    assert_eq!(references.first, [231, 232]);
-    assert_eq!(references.second, [233, 234]);
-    assert_eq!(references.offsets, [[216, 218], [236, 238]]);
-    assert_eq!(references.prefixes, [None, None]);
-
-    let first_prefix = [0x50, 0x10, 0x00, 0x04, 0x50, 0x49, 0x66, 0x2e];
-    let second_prefix = [0x50, 0x21, 0x66, 0x62, 0x50, 0x49, 0x66, 0x2e];
-    let mut wrapped = Vec::new();
-    wrapped.extend_from_slice(&shifted(508.0));
-    wrapped.extend_from_slice(&shifted(38.1));
-    wrapped.extend_from_slice(&first_prefix);
-    wrapped.extend_from_slice(&[0xf0, 0xe7, 0xf0, 0xe8]);
-    wrapped.extend_from_slice(&shifted(508.0));
-    wrapped.extend_from_slice(&shifted(38.1));
-    wrapped.extend_from_slice(&second_prefix);
-    wrapped.extend_from_slice(&[0xf0, 0xe9, 0xf0, 0xea]);
-    wrapped.extend_from_slice(&[0x04, 0x08]);
-    wrapped.extend_from_slice(b"Hole_X\0");
-    let wrapped_references =
-        crate::om::simple_hole_repeated_scalar_lane_block_references(crate::om::OperationRecord {
-            bytes: &wrapped,
-            payload: &wrapped,
-            ..record
-        })
-        .unwrap();
-    assert_eq!(wrapped_references.first, [231, 232]);
-    assert_eq!(wrapped_references.second, [233, 234]);
-    assert_eq!(wrapped_references.offsets, [[224, 226], [252, 254]]);
-    assert_eq!(
-        wrapped_references.prefixes,
-        [Some(first_prefix), Some(second_prefix)]
-    );
-    let mut malformed_wrapper = wrapped.clone();
-    malformed_wrapper[16] ^= 1;
-    assert!(
-        crate::om::simple_hole_repeated_scalar_lane_block_references(crate::om::OperationRecord {
-            bytes: &malformed_wrapper,
-            payload: &malformed_wrapper,
-            ..record
-        },)
-        .is_none()
-    );
-
-    let mut null = payload.clone();
-    null[16] = 0xff;
-    assert!(
-        crate::om::simple_hole_repeated_scalar_lane_block_references(crate::om::OperationRecord {
-            bytes: &null,
-            payload: &null,
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_hole_package_lane_retains_the_exact_four_block_group() {
-    let payload = [
-        0x7e, 0x00, 0x00, 0x01, 0x00, 0x00, 0x46, 0x00, 0x11, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xcd,
-        0xf0, 0xce, 0x11, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xcf, 0xf0, 0xd0, 0x00, 0x00, 0xff, 0x7f,
-    ];
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: &payload,
-        payload_offset: 200,
-        payload: &payload,
-        label: crate::om::OperationLabel {
-            header_offset: 100,
-            offset: 120,
-            value: "HOLE PACKAGE",
-            object_indices: [None; 4],
-            object_index_offsets: [0; 4],
-        },
-    };
-    let lane = crate::om::hole_package_construction_group_lane(record).unwrap();
-    assert_eq!(lane.offset, 1);
-    assert_eq!(lane.selector, 0x46);
-    assert_eq!(lane.branch, 0x11);
-    assert_eq!(
-        lane.references
-            .iter()
-            .map(|reference| reference.object_index)
-            .collect::<Vec<_>>(),
-        [205, 206, 207, 208]
-    );
-    assert_eq!(
-        lane.references
-            .iter()
-            .map(|reference| reference.offset)
-            .collect::<Vec<_>>(),
-        [213, 215, 222, 224]
-    );
-
-    let mut mismatched_branch = payload;
-    mismatched_branch[17] = 0x12;
-    assert!(
-        crate::om::hole_package_construction_group_lane(crate::om::OperationRecord {
-            bytes: &mismatched_branch,
-            payload: &mismatched_branch,
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_datum_csys_reference_lane_requires_eight_canonical_indices() {
-    let mut payload = vec![
-        0x13, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
-    ];
-    for value in 42..50 {
-        payload.extend_from_slice(&[0xf0, value]);
-    }
-    payload.extend_from_slice(&[0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00]);
-    let label = crate::om::OperationLabel {
-        header_offset: 10,
-        offset: 20,
-        value: "DATUM_CSYS",
-        object_indices: [None; 4],
-        object_index_offsets: [0; 4],
-    };
-    let record = crate::om::OperationRecord {
-        offset: 10,
-        bytes: &payload,
-        payload_offset: 100,
-        payload: &payload,
-        label,
-    };
-    let field = crate::om::datum_csys_references(record).unwrap();
-    assert_eq!(field.control, 0x13);
-    assert_eq!(
-        field
-            .references
-            .each_ref()
-            .map(|reference| reference.object_index),
-        [42, 43, 44, 45, 46, 47, 48, 49]
-    );
-    assert_eq!(
-        field
-            .references
-            .each_ref()
-            .map(|reference| reference.offset),
-        [114, 116, 118, 120, 122, 124, 126, 128]
-    );
-    assert_eq!(
-        field
-            .references
-            .iter()
-            .map(|reference| reference.raw_object_index.clone())
-            .collect::<Vec<_>>(),
-        (42..50).map(|value| vec![0xf0, value]).collect::<Vec<_>>()
-    );
-
-    let mut alternate_control = payload.clone();
-    alternate_control[0] = 0x1a;
-    assert_eq!(
-        crate::om::datum_csys_references(crate::om::OperationRecord {
-            bytes: &alternate_control,
-            payload: &alternate_control,
-            ..record
-        })
-        .unwrap()
-        .control,
-        0x1a
-    );
-
-    let mut malformed = payload.clone();
-    malformed[14] = 0x2a;
-    assert!(
-        crate::om::datum_csys_references(crate::om::OperationRecord {
-            bytes: &malformed,
-            payload: &malformed,
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
-    let payload = [
-        0x22, 0x00, 0x00, 0x01, 0x00, 0x01, 0x03, 0x29, 0x01, 0x02, 0xf1, 0x02, 0xcf,
-    ];
-    let label = crate::om::OperationLabel {
-        header_offset: 10,
-        offset: 20,
-        value: "DATUM_PLANE",
-        object_indices: [None; 4],
-        object_index_offsets: [0; 4],
-    };
-    let record = crate::om::OperationRecord {
-        offset: 10,
-        bytes: &payload,
-        payload_offset: 100,
-        payload: &payload,
-        label,
-    };
-    assert_eq!(
-        crate::om::datum_plane_payload_header(record),
-        Some(crate::om::DatumPlanePayloadHeader {
-            control: 0x22,
-            declared_count: 3,
-            branch_tag: 0x29,
-        })
-    );
-    let mut malformed = payload;
-    malformed[6] = 1;
-    assert!(
-        crate::om::datum_plane_payload_header(crate::om::OperationRecord {
-            bytes: &malformed,
-            payload: &malformed,
-            ..record
-        })
-        .is_none()
-    );
-
-    let branch_payload = [
-        0x22, 0x00, 0x00, 0x01, 0x00, 0x01, 0x02, 0x23, 0x01, 0x02, 0x80, 0x4c, 0x01, 0xf1, 0x02,
-        0xbb, 0x00, 0x14, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00,
-    ];
-    let branch = crate::om::datum_plane_single_reference_branch(crate::om::OperationRecord {
-        bytes: &branch_payload,
-        payload: &branch_payload,
-        ..record
-    })
-    .unwrap();
-    assert_eq!(branch.descriptor_index, 76);
-    assert_eq!(branch.raw_descriptor_index, [0x80, 0x4c]);
-    assert_eq!(branch.descriptor_offset, 110);
-    assert_eq!(branch.object_index, 699);
-    assert_eq!(branch.raw_object_index, [0xf1, 0x02, 0xbb]);
-    assert_eq!(branch.object_offset, 113);
-
-    let double_payload = [
-        0x22, 0x00, 0x00, 0x01, 0x00, 0x01, 0x02, 0x29, 0x01, 0x02, 0xf1, 0x02, 0x77, 0x01, 0x01,
-        0x18, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0xff, 0xf1, 0x02, 0x78, 0x01, 0xff, 0xff,
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x0d,
-    ];
-    let double = crate::om::datum_plane_double_reference_branch(crate::om::OperationRecord {
-        bytes: &double_payload,
-        payload: &double_payload,
-        ..record
-    })
-    .unwrap();
-    assert_eq!(
-        double
-            .references
-            .each_ref()
-            .map(|reference| reference.object_index),
-        [631, 632]
-    );
-    assert_eq!(
-        double
-            .references
-            .each_ref()
-            .map(|reference| reference.offset),
-        [110, 124]
-    );
-
-    let count_three_payload = [
-        0x22, 0x00, 0x00, 0x01, 0x00, 0x01, 0x03, 0x29, 0x01, 0x02, 0xf1, 0x02, 0xcf, 0x01, 0x01,
-        0x3a, 0x01, 0x02, 0xf1, 0x02, 0xd0, 0x01, 0x17, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
-        0xff, 0xff, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0d,
-    ];
-    let count_three = crate::om::datum_plane_double_reference_branch(crate::om::OperationRecord {
-        bytes: &count_three_payload,
-        payload: &count_three_payload,
-        ..record
-    })
-    .unwrap();
-    assert_eq!(
-        count_three
-            .references
-            .each_ref()
-            .map(|reference| reference.object_index),
-        [719, 720]
-    );
-    assert_eq!(
-        count_three
-            .references
-            .each_ref()
-            .map(|reference| reference.offset),
-        [110, 118]
-    );
-
-    let descriptor_count_three_payload = [
-        0x22, 0x00, 0x00, 0x01, 0x00, 0x01, 0x03, 0x28, 0x01, 0x02, 0x80, 0x4d, 0x01, 0x29, 0x01,
-        0x02, 0xf1, 0x02, 0xd1, 0x01, 0x01, 0x07, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff,
-        0xff, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0d,
-    ];
-    let descriptor_count_three =
-        crate::om::datum_plane_descriptor_reference_branch(crate::om::OperationRecord {
-            bytes: &descriptor_count_three_payload,
-            payload: &descriptor_count_three_payload,
-            ..record
-        })
-        .unwrap();
-    assert_eq!(descriptor_count_three.descriptor_index, 77);
-    assert_eq!(descriptor_count_three.raw_descriptor_index, [0x80, 0x4d]);
-    assert_eq!(descriptor_count_three.descriptor_offset, 110);
-    assert_eq!(descriptor_count_three.object_index, 721);
-    assert_eq!(descriptor_count_three.object_offset, 116);
-}
-
-#[test]
-fn om_datum_plane_object_index_lane_ends_at_logical_payload_boundary() {
-    let bytes = [
-        0x80, 0xab, 0x01, 0x04, 0x81, 0x01, 0x01, 0x01, 0x00, 0x12, 0x34, 0x56, 0x78,
-    ];
-    let lanes = crate::om::datum_plane_object_index_lanes(&bytes);
-    assert_eq!(lanes.len(), 1);
-    assert_eq!(lanes[0].offset, 2);
-    assert_eq!(lanes[0].declared_count, 4);
-    assert_eq!(lanes[0].indices, [(257, 4), (1, 6), (1, 7)]);
-    assert_eq!(lanes[0].raw_indices, [vec![0x81, 0x01], vec![1], vec![1]]);
-    assert_eq!(lanes[0].trailer, 0x1234_5678);
-
-    let mut trailing = bytes.to_vec();
-    trailing.push(0);
-    assert!(crate::om::datum_plane_object_index_lanes(&trailing).is_empty());
-}
-
-#[test]
-fn om_datum_plane_object_scalar_pairs_require_the_complete_discriminator() {
-    let mut bytes = vec![0x7f, 0x01, 0x01, 0xff];
-    bytes.extend_from_slice(&[
-        0x6d, 0x00, 0xf0, 0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86,
-        0x02, 0x00, 0x03,
-    ]);
-    bytes.extend_from_slice(&[0x30, 0x24, 0, 0, 0, 0, 0, 0]);
-    bytes.push(0);
-    bytes.extend_from_slice(&[0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
-    let pairs = crate::om::datum_plane_object_scalar_pairs(&bytes);
-    assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].offset, 4);
-    assert_eq!(pairs[0].value_offsets, [22, 31]);
-    assert_eq!(pairs[0].values, [10.0, -20.0]);
-    assert_eq!(pairs[0].raw_values[0], [0x30, 0x24, 0, 0, 0, 0, 0, 0]);
-    assert_eq!(pairs[0].raw_values[1], [0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
-    bytes[10] ^= 1;
-    assert!(crate::om::datum_plane_object_scalar_pairs(&bytes).is_empty());
-}
-
-#[test]
-fn om_datum_plane_descriptor_requires_complete_lowercase_hex_identity() {
-    let mut bytes = *b"793487222121a5474a9125451b8e31f5?A\xf0\x1e\xff\x02\x01\x33";
-    let descriptor = crate::om::datum_plane_descriptor_block(&bytes).unwrap();
-    assert_eq!(descriptor.identity, "793487222121a5474a9125451b8e31f5");
-    assert_eq!(descriptor.suffix, b"?A\xf0\x1e\xff\x02\x01\x33");
-    assert_eq!(descriptor.schema_index, 28_702);
-    assert_eq!(descriptor.label, "3");
-
-    let short_bytes = *b"a75c5f0ed880dd1443b3c5c57908aae?A\xf0\x1f\xff\x02\x01\x66\x33";
-    let short = crate::om::datum_plane_descriptor_block(&short_bytes).unwrap();
-    assert_eq!(short.identity.len(), 31);
-    assert_eq!(short.schema_index, 28_703);
-    assert_eq!(short.label, "f3");
-
-    bytes[0] = b'G';
-    assert!(crate::om::datum_plane_descriptor_block(&bytes).is_none());
-    assert!(crate::om::datum_plane_descriptor_block(&bytes[..39]).is_none());
-}
-
-#[test]
-fn om_datum_csys_scalar_pairs_require_discriminator_and_separator() {
-    let mut bytes = vec![0x2f, 0x2f, 0x41, 0x6d, 0x00, 0xf0];
-    bytes.extend_from_slice(&[
-        0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
-    ]);
-    bytes.extend_from_slice(&[0x30, 0x24, 0, 0, 0, 0, 0, 0]);
-    bytes.push(0);
-    bytes.extend_from_slice(&[0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
-    let pairs = crate::om::object_payload_scalar_pairs(&bytes);
-    assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].offset, 6);
-    assert_eq!(pairs[0].value_offsets, [21, 30]);
-    assert_eq!(pairs[0].values, [10.0, -20.0]);
-    assert_eq!(pairs[0].raw_values[0], [0x30, 0x24, 0, 0, 0, 0, 0, 0]);
-    assert_eq!(pairs[0].raw_values[1], [0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
-    assert_eq!(pairs[0].discriminator.len(), 15);
-
-    let mut extended = vec![
-        0x08, 0x02, 0x03, 0x01, 0x81, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00,
-        0x03,
-    ];
-    extended.extend_from_slice(&[0x30, 0x24, 0, 0, 0, 0, 0, 0]);
-    extended.push(0);
-    extended.extend_from_slice(&[0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
-    let extended_pairs = crate::om::object_payload_scalar_pairs(&extended);
-    assert_eq!(extended_pairs.len(), 1);
-    assert_eq!(extended_pairs[0].discriminator.len(), 16);
-    assert_eq!(extended_pairs[0].value_offsets, [16, 25]);
-    assert_eq!(
-        extended_pairs[0].raw_values[0],
-        [0x30, 0x24, 0, 0, 0, 0, 0, 0]
-    );
-
-    bytes[29] = 1;
-    assert!(crate::om::object_payload_scalar_pairs(&bytes).is_empty());
-}
-
-#[test]
-fn om_datum_csys_descriptor_requires_one_maximal_hex_identity() {
-    let bytes = b"\x02\x01ae166162820ea2d993e1fdf49091850e?A\x80\xa0\xf0\x26";
-    let descriptor = crate::om::datum_csys_descriptor_block(bytes).unwrap();
-    assert_eq!(descriptor.prefix, [0x02, 0x01]);
-    assert_eq!(descriptor.identity, "ae166162820ea2d993e1fdf49091850e");
-    assert_eq!(descriptor.identity_offset, 2);
-    assert_eq!(descriptor.suffix, b"?A\x80\xa0\xf0\x26");
-
-    let mut ambiguous = bytes.to_vec();
-    ambiguous.extend_from_slice(b"012345678901234567890123456789");
-    assert!(crate::om::datum_csys_descriptor_block(&ambiguous).is_none());
-}
-
-#[test]
-fn om_draft_identity_frames_require_complete_typed_framing() {
-    let bytes = b"\x00A\x81\x54\xf0\x38\x02\x01abc123?A\xf0\x27\xff\x02\x01def456?\x00";
-    let frames = crate::om::draft_construction_identity_frames(bytes);
-    assert_eq!(frames.len(), 2);
-    assert_eq!(frames[0].offset, 1);
-    assert_eq!(frames[0].prefix, b"A\x81\x54\xf0\x38\x02\x01");
-    assert_eq!(
-        frames[0].form,
-        crate::om::DraftConstructionIdentityFrameForm::IndexedBranch {
-            first_index: 340,
-            second_index: Some(56),
-            branch: 2,
-        }
-    );
-    assert_eq!(frames[0].identity, "abc123");
-    assert_eq!(frames[0].identity_offset, 8);
-    assert_eq!(frames[1].offset, 15);
-    assert_eq!(frames[1].prefix, b"A\xf0\x27\xff\x02\x01");
-    assert_eq!(
-        frames[1].form,
-        crate::om::DraftConstructionIdentityFrameForm::Tagged { index: Some(39) }
-    );
-    assert_eq!(frames[1].identity, "def456");
-
-    assert!(
-        crate::om::draft_construction_identity_frames(b"A\x81\x54\xf0\x38\x02\x01abc123")
-            .is_empty()
-    );
-    assert!(
-        crate::om::draft_construction_identity_frames(b"A\x81\x54\xf0\x38\x04\x01abc123?")
-            .is_empty()
-    );
-    assert!(
-        crate::om::draft_construction_identity_frames(b"A\xf0\x27\xff\x02\x01ABC123?").is_empty()
-    );
-}
-
-#[test]
-fn om_draft_fixed_lanes_require_complete_discriminator_atoms_and_terminator() {
-    let discriminator = [
-        0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86, 0x02,
-        0x00, 0x01, 0x00,
-    ];
-    let mut bytes = vec![0xff];
-    bytes.extend_from_slice(&discriminator);
-    bytes.extend_from_slice(&[0x30, 0x40, 0, 0, 0, 0, 0, 0]);
-    bytes.extend_from_slice(&[0xb0, 0xc0, 0, 0, 0, 0, 0, 0]);
-    bytes.push(0);
-    let lanes = crate::om::draft_construction_fixed_lanes(&bytes);
-    assert_eq!(lanes.len(), 1);
-    assert_eq!(lanes[0].offset, 1);
-    assert_eq!(lanes[0].values, [0.5, -0.5]);
-    assert_eq!(lanes[0].markers, [0x30, 0xb0]);
-    assert_eq!(lanes[0].value_offsets, [19, 27]);
-
-    bytes.pop();
-    assert!(crate::om::draft_construction_fixed_lanes(&bytes).is_empty());
-    bytes.truncate(22);
-    assert!(crate::om::draft_construction_fixed_lanes(&bytes).is_empty());
-    assert!(crate::om::draft_construction_fixed_lanes(&discriminator).is_empty());
-}
-
-#[test]
-fn om_draft_binary32_lanes_require_complete_typed_atoms_and_terminator() {
-    let discriminator = [
-        0x90, 0x18, 0x45, 0x01, 0x04, 0x01, 0x04, 0x01, 0xc0, 0x45, 0x04, 0x04, 0x80, 0x86, 0x02,
-        0x00, 0x03, 0x00,
-    ];
-    let mut bytes = vec![0xff];
-    bytes.extend_from_slice(&discriminator);
-    bytes.extend_from_slice(&[0x4f, 0x80, 0, 0]);
-    bytes.extend_from_slice(&[0xcf, 0x80, 0, 0]);
-    bytes.push(0);
-    let lanes = crate::om::draft_construction_binary32_lanes(&bytes);
-    assert_eq!(lanes.len(), 1);
-    assert_eq!(lanes[0].offset, 1);
-    assert_eq!(lanes[0].discriminator, discriminator);
-    assert_eq!(lanes[0].branch, 4);
-    assert_eq!(lanes[0].values, [1.0, -1.0]);
-    assert_eq!(lanes[0].value_offsets, [19, 23]);
-
-    bytes.pop();
-    assert!(crate::om::draft_construction_binary32_lanes(&bytes).is_empty());
-    bytes.truncate(21);
-    assert!(crate::om::draft_construction_binary32_lanes(&bytes).is_empty());
-    assert!(crate::om::draft_construction_binary32_lanes(&discriminator).is_empty());
-}
-
-#[test]
-fn om_operation_primary_body_reference_requires_one_complete_field() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 100,
-        value: "EXTRUDE",
-        object_indices: [None; 4],
-        object_index_offsets: [0; 4],
-    };
-    let bytes = [0x01, 0x02, 0x10, 0x90, 0x19, 0x42, 0xff];
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: &bytes,
-        payload_offset: 100,
-        payload: &bytes,
-        label,
-    };
-    assert_eq!(
-        crate::om::operation_body_reference(record),
-        Some(crate::om::OperationBodyReference {
-            offset: 103,
-            object_index: 6466,
-            raw_object_index: vec![0x90, 0x19, 0x42],
-        })
-    );
-
-    let duplicate = [bytes.as_slice(), bytes.as_slice()].concat();
-    assert_eq!(
-        crate::om::operation_body_references(crate::om::OperationRecord {
-            offset: 100,
-            bytes: &duplicate,
-            payload_offset: 100,
-            payload: &duplicate,
-            label,
-        }),
-        [
-            crate::om::OperationBodyReference {
-                offset: 103,
-                object_index: 6466,
-                raw_object_index: vec![0x90, 0x19, 0x42],
-            },
-            crate::om::OperationBodyReference {
-                offset: 110,
-                object_index: 6466,
-                raw_object_index: vec![0x90, 0x19, 0x42],
-            },
-        ]
-    );
-    assert!(
-        crate::om::operation_body_reference(crate::om::OperationRecord {
-            offset: 100,
-            bytes: &duplicate,
-            payload_offset: 100,
-            payload: &duplicate,
-            label,
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 100,
-        value: "FSET",
-        object_indices: [None; 4],
-        object_index_offsets: [0; 4],
-    };
-    let bytes = [
-        0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
-        0x00, 0x81, 0x23, 0x81, 0x23, 0xff, 0x00,
-    ];
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: &bytes,
-        payload_offset: 104,
-        payload: &bytes,
-        label,
-    };
-    assert_eq!(
-        crate::om::operation_terminal_frame(record),
-        Some(crate::om::OperationTerminalFrame {
-            immediate_common_frame_offset: Some(104),
-            local_ordinal: 0x0123,
-            raw_local_ordinal: vec![0x81, 0x23],
-            object_index: None,
-            raw_object_index: vec![0xff],
-            offset: 120,
-            object_index_offset: 124,
-        })
-    );
-
-    let direct = [
-        0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
-        0x00, 0x29, 0x29, 0x41, 0x00,
-    ];
-    assert_eq!(
-        crate::om::operation_terminal_frame(crate::om::OperationRecord {
-            offset: 0,
-            bytes: &direct,
-            payload_offset: 200,
-            payload: &direct,
-            label,
-        }),
-        Some(crate::om::OperationTerminalFrame {
-            immediate_common_frame_offset: Some(200),
-            local_ordinal: 41,
-            raw_local_ordinal: vec![0x29],
-            object_index: Some(65),
-            raw_object_index: vec![0x41],
-            offset: 216,
-            object_index_offset: 218,
-        })
-    );
-
-    let noncanonical = [
-        0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
-        0x00, 0x80, 0x01, 0x80, 0x01, 0xff, 0x00,
-    ];
-    assert!(
-        crate::om::operation_terminal_frame(crate::om::OperationRecord {
-            offset: 0,
-            bytes: &noncanonical,
-            payload_offset: 0,
-            payload: &noncanonical,
-            label,
-        })
-        .is_none()
-    );
-    let mismatched = [
-        0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
-        0x00, 0x23, 0x24, 0xff, 0x00,
-    ];
-    assert!(
-        crate::om::operation_terminal_frame(crate::om::OperationRecord {
-            offset: 0,
-            bytes: &mismatched,
-            payload_offset: 0,
-            payload: &mismatched,
-            label,
-        })
-        .is_none()
-    );
-
-    let delete = [
-        0x01, 0x00, 0x00, 0x01, 0x01, 0x01, 0x06, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x29,
-        0x29, 0x41, 0x00,
-    ];
-    let delete_frame = crate::om::operation_terminal_frame(crate::om::OperationRecord {
-        offset: 0,
-        bytes: &delete,
-        payload_offset: 300,
-        payload: &delete,
-        label: crate::om::OperationLabel {
-            value: "DELETE",
-            ..label
-        },
-    })
-    .expect("DELETE common-frame variant");
-    assert_eq!(delete_frame.immediate_common_frame_offset, Some(300));
-    let [delete_common] = crate::om::operation_common_frames(crate::om::OperationRecord {
-        offset: 0,
-        bytes: &delete,
-        payload_offset: 300,
-        payload: &delete,
-        label: crate::om::OperationLabel {
-            value: "DELETE",
-            ..label
-        },
-    })
-    .try_into()
-    .expect("one DELETE common frame");
-    assert_eq!(delete_common.indices, [1, 0, 0]);
-    assert_eq!(delete_common.marker, [1, 1, 1]);
-    assert_eq!(delete_common.state, [6, 1, 1, 0, 1, 0, 0, 0]);
-
-    let suffix_only = [0x02, 0x02, 0xff, 0x00];
-    let suffix = crate::om::operation_terminal_frame(crate::om::OperationRecord {
-        offset: 0,
-        bytes: &suffix_only,
-        payload_offset: 400,
-        payload: &suffix_only,
-        label,
-    })
-    .expect("canonical suffix without immediate state prefix");
-    assert!(suffix.immediate_common_frame_offset.is_none());
-    assert_eq!(suffix.local_ordinal, 2);
-    assert_eq!(suffix.offset, 400);
-
-    let mut embedded = direct.to_vec();
-    embedded.extend_from_slice(&[0xaa, 0x02, 0x02, 0xff, 0x00]);
-    let embedded_record = crate::om::OperationRecord {
-        offset: 0,
-        bytes: &embedded,
-        payload_offset: 500,
-        payload: &embedded,
-        label,
-    };
-    let [common] = crate::om::operation_common_frames(embedded_record)
-        .try_into()
-        .expect("one embedded common frame");
-    assert_eq!(common.offset, 500);
-    assert_eq!(common.end_offset, 520);
-    let outer = crate::om::operation_terminal_frame(embedded_record).expect("outer suffix");
-    assert_eq!(outer.offset, 521);
-    assert!(outer.immediate_common_frame_offset.is_none());
-}
-
-#[test]
-fn om_fset_reference_graph_requires_exact_groups_and_bounds() {
-    fn record(payload: &[u8]) -> crate::om::OperationRecord<'_> {
-        crate::om::OperationRecord {
-            offset: 0,
-            bytes: payload,
-            payload_offset: 100,
-            payload,
-            label: crate::om::OperationLabel {
-                header_offset: 0,
-                offset: 0,
-                value: "FSET",
-                object_indices: [None; 4],
-                object_index_offsets: [0; 4],
-            },
-        }
-    }
-
-    let payload = [
-        0x01, 0x13, 0x3c, b'T', b';', b':', b'S', b'5', b'6', b'7', b'R', b'8', b'9', b'3', 0x90,
-        0x19, 0x40, 0x90, 0x19, 0x41, 0x3e, 0x90, 0x19, 0x30, 0x90, 0x19, 0x31, 0x90, 0x19, 0x32,
-        0x00, 0x03, 0x00,
-    ];
-    let graph = crate::om::fset_payload_reference_graph(record(&payload)).unwrap();
-    assert_eq!(graph.selector, "T;:S567R893");
-    assert_eq!(graph.offset, 100);
-    assert_eq!(
-        graph
-            .first
-            .each_ref()
-            .map(|reference| reference.object_index),
-        [6464, 6465]
-    );
-    assert_eq!(
-        graph
-            .second
-            .each_ref()
-            .map(|reference| reference.object_index),
-        [6448, 6449, 6450]
-    );
-    assert_eq!(
-        graph
-            .first
-            .each_ref()
-            .map(|reference| reference.raw_object_index.as_slice()),
-        [[0x90, 0x19, 0x40].as_slice(), [0x90, 0x19, 0x41].as_slice(),]
-    );
-
-    let mut wrong_length = payload;
-    wrong_length[1] -= 1;
-    assert!(crate::om::fset_payload_reference_graph(record(&wrong_length)).is_none());
-    let mut wrong_suffix = payload;
-    wrong_suffix[31] = 0x04;
-    assert!(crate::om::fset_payload_reference_graph(record(&wrong_suffix)).is_none());
-    let mut wrong_reference_form = payload;
-    wrong_reference_form[14] = 0xf1;
-    assert!(crate::om::fset_payload_reference_graph(record(&wrong_reference_form)).is_none());
-    let duplicate = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(crate::om::fset_payload_reference_graph(record(&duplicate)).is_none());
-}
-
-#[test]
-fn om_delete_reference_field_requires_five_canonical_nullable_slots() {
-    fn record(payload: &[u8]) -> crate::om::OperationRecord<'_> {
-        crate::om::OperationRecord {
-            offset: 0,
-            bytes: payload,
-            payload_offset: 100,
-            payload,
-            label: crate::om::OperationLabel {
-                header_offset: 0,
-                offset: 0,
-                value: "DELETE",
-                object_indices: [None; 4],
-                object_index_offsets: [0; 4],
-            },
-        }
-    }
-
-    let payload = [
-        0x0c, 0x00, 0x00, 0x01, 0x00, 0x01, 0x06, 0xf0, 0x20, 0xff, 0xf1, 0x02, 0x08, 0xf1, 0x02,
-        0x09, 0xff, 0x00,
-    ];
-    let field = crate::om::delete_payload_references(record(&payload)).unwrap();
-    assert_eq!(field.control, 0x0c);
-    assert_eq!(field.offset, 100);
-    assert_eq!(
-        field
-            .references
-            .each_ref()
-            .map(|reference| reference.object_index),
-        [Some(0x20), None, Some(0x208), Some(0x209), None]
-    );
-    assert_eq!(
-        field
-            .references
-            .each_ref()
-            .map(|reference| reference.offset),
-        [107, 109, 110, 113, 116]
-    );
-
-    let mut noncanonical = payload;
-    noncanonical[11] = 0x00;
-    noncanonical[12] = 0x20;
-    assert!(crate::om::delete_payload_references(record(&noncanonical)).is_none());
-    let truncated = &payload[..payload.len() - 1];
-    assert!(crate::om::delete_payload_references(record(truncated)).is_none());
-    let mut wrong_count = payload;
-    wrong_count[6] = 0x05;
-    assert!(crate::om::delete_payload_references(record(&wrong_count)).is_none());
-}
-
-#[test]
-fn om_data_block_object_references_require_complete_field_frames() {
-    let bytes = [
-        0x04, 0x00, 0x2a, 0x02, 0x0b, 0xff, 0x04, 0x00, 0x80, 0xc9, 0x02, 0x0b, 0x04, 0x00, 0x90,
-        0x19, 0x42, 0x02, 0x0b,
-    ];
-    assert_eq!(
-        crate::om::data_block_object_references(&bytes),
-        [
-            crate::om::DataBlockObjectReference {
-                offset: 2,
-                object_index: 42,
-                raw_object_index: vec![0x2a],
-            },
-            crate::om::DataBlockObjectReference {
-                offset: 8,
-                object_index: 201,
-                raw_object_index: vec![0x80, 0xc9],
-            },
-            crate::om::DataBlockObjectReference {
-                offset: 14,
-                object_index: 6466,
-                raw_object_index: vec![0x90, 0x19, 0x42],
-            },
-        ]
-    );
-    assert_eq!(
-        crate::om::data_block_object_references(&bytes[..bytes.len() - 1]).len(),
-        2
-    );
-}
-
-#[test]
-fn om_size_frame_bounds_its_type_declarations() {
-    let bytes = size_framed_om_section();
-    let sections = crate::om::sections(&bytes);
-    assert_eq!(sections.len(), 1);
-    assert_eq!(sections[0].offset, 0);
-    assert_eq!(sections[0].byte_len, bytes.len());
-    assert_eq!(sections[0].types.len(), 2);
-    assert_eq!(sections[0].types[0].name, "UGS::FEATURE_RECORD");
-    assert_eq!(
-        sections[0].types[0].registry_suffix,
-        &[0x81, 0x21, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x06]
-    );
-    assert_eq!(sections[0].types[1].trailing_code, 0x65);
-    assert_eq!(sections[0].fields.len(), 2);
-    assert_eq!(sections[0].fields[0].name, "m_target");
-    assert_eq!(sections[0].fields[1].trailing_code, 0x81);
-    assert_eq!(sections[0].record_area, None);
-
-    let mut truncated = bytes;
-    truncated.pop();
-    assert!(crate::om::sections(&truncated).is_empty());
-}
-
-#[test]
-fn om_size_frame_accepts_exact_terminal_twelve_byte_envelope() {
-    let mut bytes = size_framed_om_section();
-    let payload_len = u32::try_from(bytes.len() - 12).expect("short OM fixture");
-    bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
-    let sections = crate::om::sections(&bytes);
-    assert_eq!(sections.len(), 1);
-    assert_eq!(sections[0].byte_len, bytes.len());
-    assert_eq!(sections[0].types[0].name, "UGS::FEATURE_RECORD");
-
-    bytes.push(0);
-    assert!(crate::om::sections(&bytes).is_empty());
-}
-
-#[test]
-fn om_size_frame_uses_validated_internal_record_area_pointer() {
-    let bytes = size_framed_om_section_with_record_area();
-    let section = crate::om::sections(&bytes).remove(0);
-    let offset = section.record_area_offset.expect("record area");
-    assert_eq!(offset, size_framed_om_section().len() + 20);
-    assert_eq!(section.record_area.unwrap(), &bytes[offset..]);
-    assert_eq!(&bytes[offset + 12..offset + 15], &[0x05, 0x01, 0x0e]);
-
-    let mut invalid = bytes;
-    invalid[offset + 12] = 1;
-    assert_eq!(crate::om::sections(&invalid)[0].record_area, None);
-}
-
-#[test]
-fn om_operation_labels_require_the_complete_frame() {
-    let bytes = b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\x01\x82\x40\x90\x17\xd3\xff\x03\x07UNITE\0\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\x02\x03\xff\xff\x03\x08SKETCH\0";
-    let labels = crate::om::operation_labels(bytes, 100);
-    assert_eq!(labels.len(), 2);
-    assert_eq!(labels[0].offset, 122);
-    assert_eq!(labels[0].header_offset, 100);
-    assert_eq!(labels[0].value, "UNITE");
-    assert_eq!(
-        labels[0].object_indices,
-        [Some(1), Some(576), Some(6099), None]
-    );
-    assert_eq!(labels[1].value, "SKETCH");
-    assert_eq!(labels[1].object_indices, [Some(2), Some(3), None, None]);
-
-    assert!(crate::om::operation_labels(b"\xff\xff\x03\x07UNITE\0", 0).is_empty());
-    let mut invalid = bytes.to_vec();
-    invalid[15] = 0x91;
-    assert_eq!(crate::om::operation_labels(&invalid, 0).len(), 1);
-}
-
-#[test]
-fn om_operation_records_use_consecutive_validated_headers() {
-    let bytes = b"prefix\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x07UNITE\0payload\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x08SKETCH\0tail";
-    let records = crate::om::operation_records(bytes, 10);
-    assert_eq!(records.len(), 2);
-    assert_eq!(records[0].offset, 16);
-    assert_eq!(records[0].label.value, "UNITE");
-    assert!(records[0].bytes.ends_with(b"payload"));
-    assert_eq!(records[0].payload, b"payload");
-    assert_eq!(records[0].payload_offset, 43);
-    assert_eq!(records[1].label.value, "SKETCH");
-    assert!(records[1].bytes.ends_with(b"tail"));
-    assert_eq!(records[1].payload, b"tail");
-}
-
-#[test]
-fn om_operation_payload_strings_require_complete_utf8_frames() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "SIMPLE HOLE",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let payload = b"\x00\x04\x07BLOCK\0\x04\x04\xc3\x97\0\x04\x07BROKEN";
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: payload,
-        payload_offset: 200,
-        payload,
-        label,
-    };
-    let strings = crate::om::operation_payload_strings(record);
-    assert_eq!(strings.len(), 2);
-    assert_eq!(strings[0].offset, 201);
-    assert_eq!(strings[0].value, "BLOCK");
-    assert_eq!(strings[1].value, "×");
-}
-
-#[test]
-fn om_surface_payload_strings_require_exact_length_utf8_and_terminator() {
-    let bytes = b"\x66\x1b\x03\x05Steel\0\xaa\x66\x1b\x03\x02\xc3\x97\0";
-    let strings = crate::om::surface_payload_strings(bytes);
-    assert_eq!(strings.len(), 2);
-    assert_eq!(strings[0].offset, 0);
-    assert_eq!(strings[0].value, "Steel");
-    assert_eq!(strings[1].offset, 11);
-    assert_eq!(strings[1].value, "×");
-
-    let truncated = b"\x66\x1b\x03\x05Steel";
-    assert!(crate::om::surface_payload_strings(truncated).is_empty());
-    let invalid_utf8 = b"\x66\x1b\x03\x01\xff\0";
-    assert!(crate::om::surface_payload_strings(invalid_utf8).is_empty());
-    let control = b"\x66\x1b\x03\x01\n\0";
-    assert!(crate::om::surface_payload_strings(control).is_empty());
-}
-
-#[test]
-fn om_projected_curve_references_require_one_complete_field() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "CPROJ",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let payload =
-        b"\0\x01\x02\xf1\x02\xc8\xf1\x02\xc9\x80\x57\x00\x02\x01\xf1\x02\xca\xff\x01\x02\x02\x7d\0";
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: payload,
-        payload_offset: 200,
-        payload,
-        label,
-    };
-    let field = crate::om::projected_curve_payload_references(record).expect("complete field");
-    assert_eq!(
-        field
-            .references
-            .iter()
-            .map(|reference| (reference.object_index, reference.offset))
-            .collect::<Vec<_>>(),
-        [(712, 203), (713, 206), (714, 214)]
-    );
-
-    let mut malformed = payload.to_vec();
-    malformed[17] = 0x00;
-    assert!(
-        crate::om::projected_curve_payload_references(crate::om::OperationRecord {
-            bytes: &malformed,
-            payload: &malformed,
-            ..record
-        })
-        .is_none()
-    );
-
-    let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(
-        crate::om::projected_curve_payload_references(crate::om::OperationRecord {
-            bytes: &ambiguous,
-            payload: &ambiguous,
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_combined_projected_curve_references_require_the_complete_graph() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "CPROJ_CMB",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let payload = b"\x3c\x32\x01\x02\x32\x01\x04\x36\x01\x33\xf1\x03\x18\x33\xf1\x03\x19\x00\xf1\x03\x1a\x00\x00\x00\x00\x00\x00\xf1\x03\x1b\x16\x01\x02\xf1\x03\x18\x01\x02\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x03\x1c\x00\x81\x5c\x16\x01\x02\xf1\x03\x19\x01\x02\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x03\x1d\x00\x81\x5c\xff\x01\xff\x01\xf1\x03\x1e\xf1\x03\x1f\x04\x02";
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: payload,
-        payload_offset: 200,
-        payload,
-        label,
-    };
-    let field = crate::om::projected_curve_payload_references(record).expect("complete graph");
-    assert_eq!(
-        field
-            .references
-            .iter()
-            .map(|reference| (reference.object_index, reference.offset))
-            .collect::<Vec<_>>(),
-        [
-            (792, 210),
-            (793, 214),
-            (794, 218),
-            (795, 227),
-            (796, 246),
-            (797, 268),
-            (798, 278),
-            (799, 281),
-        ]
-    );
-
-    let mut inconsistent = payload.to_vec();
-    inconsistent[35] = 0x19;
-    assert!(
-        crate::om::projected_curve_payload_references(crate::om::OperationRecord {
-            bytes: &inconsistent,
-            payload: &inconsistent,
-            ..record
-        })
-        .is_none()
-    );
-
-    let mut malformed = payload.to_vec();
-    malformed[84] = 0x00;
-    assert!(
-        crate::om::projected_curve_payload_references(crate::om::OperationRecord {
-            bytes: &malformed,
-            payload: &malformed,
-            ..record
-        })
-        .is_none()
-    );
-
-    let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(
-        crate::om::projected_curve_payload_references(crate::om::OperationRecord {
-            bytes: &ambiguous,
-            payload: &ambiguous,
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "Pattern Geometry",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let nullable = b"\x61\xf1\x1b\x08\xff\x00\xff\x01\xf1\x1b\x09\xf1\x1b\x0a\x61\xf1\x1b\x0b\xff\x00\xff\x01\xf1\x1b\x0c\xf1\x1b\x0d\xff\x62\xf1\x1b\x0e\xf1\x1b\x0f\xff\x00\x00\x01\xf1\x1b\x10\xff\xff\xff\x01";
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: nullable,
-        payload_offset: 200,
-        payload: nullable,
-        label,
-    };
-    let field = crate::om::pattern_payload_references(record).expect("complete graph");
-    assert_eq!(
-        field
-            .references
-            .iter()
-            .map(|reference| reference.object_index)
-            .collect::<Vec<_>>(),
-        (6920..=6928).collect::<Vec<_>>()
-    );
-
-    let populated = [&nullable[..nullable.len() - 4], b"\xf1\x1b\x11\xff\xff\x01"].concat();
-    let field = crate::om::pattern_payload_references(crate::om::OperationRecord {
-        label: crate::om::OperationLabel {
-            value: "Pattern Feature",
-            ..label
-        },
-        bytes: &populated,
-        payload: &populated,
-        ..record
-    })
-    .expect("populated terminal slot");
-    assert_eq!(field.references.len(), 10);
-    assert_eq!(field.references[9].object_index, 6929);
-
-    let mut malformed = nullable.to_vec();
-    malformed[18] = 0x60;
-    assert!(
-        crate::om::pattern_payload_references(crate::om::OperationRecord {
-            bytes: &malformed,
-            payload: &malformed,
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_pattern_transform_lanes_require_counted_family_rows() {
-    let feature_payload = b"\xaa\x01\x03\x60\x01\x00\x00\x50\x54\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\x60\x01\x00\x00\xd0\x54\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x9f\xfe\x01\x02\x00\x00\xff\x00\x00\x5f\x00\x00\x01";
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "Pattern Feature",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: feature_payload,
-        payload_offset: 200,
-        payload: feature_payload,
-        label,
-    };
-    let lane = crate::om::pattern_payload_transform_lane(record).expect("feature lane");
-    assert_eq!(lane.offset, 201);
-    assert_eq!(lane.row_schema_index, 0x60);
-    assert_eq!(lane.layout, crate::om::PatternTransformLayout::ScalarRows);
-    assert_eq!(lane.declared_count, 3);
-    assert_eq!(
-        lane.encodings,
-        [
-            crate::om::PatternTransformEncoding::Binary32,
-            crate::om::PatternTransformEncoding::Binary32,
-        ]
-    );
-    assert_eq!(lane.values, [3.3125, -3.3125]);
-    assert_eq!(lane.value_offsets, [207, 237]);
-    assert_eq!(lane.selectors, [2, 8190]);
-    assert_eq!(lane.raw_selectors, [vec![0x02], vec![0x9f, 0xfe]]);
-    assert_eq!(lane.selector_offsets, [225, 255]);
-
-    let geometry_payload = b"\x01\x03\x60\x01\x00\x00\x00\x00\x01\x00\x30\x60\x80\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\x60\x01\x00\x00\x00\x00\x01\x00\x30\x70\x80\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x03\x01\x02\x00\x00\xff\x00\x00\x5f\x00\x00\x01";
-    let geometry_record = crate::om::OperationRecord {
-        label: crate::om::OperationLabel {
-            value: "Pattern Geometry",
-            ..label
-        },
-        bytes: geometry_payload,
-        payload: geometry_payload,
-        ..record
-    };
-    let lane = crate::om::pattern_payload_transform_lane(geometry_record).expect("geometry lane");
-    assert_eq!(lane.row_schema_index, 0x60);
-    assert_eq!(lane.layout, crate::om::PatternTransformLayout::ScalarRows);
-    assert_eq!(
-        lane.encodings,
-        [
-            crate::om::PatternTransformEncoding::Binary64,
-            crate::om::PatternTransformEncoding::Binary64,
-        ]
-    );
-    assert_eq!(lane.values, [132.0, 264.0]);
-    assert_eq!(lane.selectors, [2, 3]);
-    assert_eq!(lane.raw_selectors, [vec![0x02], vec![0x03]]);
-    assert_eq!(lane.selector_offsets, [228, 262]);
-
-    let schema_relative_payload = b"\x01\x04\
-        \x3d\x01\x00\x00\x50\x9e\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\
-        \x3d\x01\x00\x00\x50\xae\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x03\x01\x02\x00\x00\xff\x00\x00\
-        \x3d\x01\x00\x00\x30\xb6\x80\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x04\x01\x03\x00\x00\xff\x00\x00\
-        \x3c\x00\x00\x01";
-    let relative_lane = crate::om::pattern_payload_transform_lane(crate::om::OperationRecord {
-        bytes: schema_relative_payload,
-        payload: schema_relative_payload,
-        ..record
-    })
-    .expect("schema-relative feature lane");
-    assert_eq!(relative_lane.row_schema_index, 0x3d);
-    assert_eq!(
-        relative_lane.layout,
-        crate::om::PatternTransformLayout::ScalarRows
-    );
-    assert_eq!(relative_lane.declared_count, 4);
-    assert_eq!(
-        relative_lane.encodings,
-        [
-            crate::om::PatternTransformEncoding::Binary32,
-            crate::om::PatternTransformEncoding::Binary32,
-            crate::om::PatternTransformEncoding::Binary64,
-        ]
-    );
-    assert_eq!(relative_lane.selectors, [2, 3, 4]);
-
-    let wide_payload = b"\x01\x03\
-        \x35\x2f\xf3\xc6\xef\x37\x2f\xe9\x60\xb0\x0e\x6f\x0e\x13\x44\x54\xfd\x00\x00\x30\x0e\x6f\x0e\x13\x44\x54\xfd\x2f\xf3\xc6\xef\x37\x2f\xe9\x60\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\
-        \x35\xb0\x09\xe3\x77\x9b\x97\xf4\xb9\x30\x02\xcf\x23\x04\x75\x5a\x46\x00\x00\xb0\x02\xcf\x23\x04\x75\x5a\x46\xb0\x09\xe3\x77\x9b\x97\xf4\xb9\x00\x00\x00\x00\x50\x0f\xff\xff\x00\x00\x00\x00\x01\x01\x03\x03\x01\x02\x00\x00\xff\x00\x00\
-        \x34\x00\x00\x02";
-    let wide_lane = crate::om::pattern_payload_transform_lane(crate::om::OperationRecord {
-        bytes: wide_payload,
-        payload: wide_payload,
-        ..record
-    })
-    .expect("wide feature lane");
-    assert_eq!(wide_lane.row_schema_index, 0x35);
-    assert_eq!(
-        wide_lane.layout,
-        crate::om::PatternTransformLayout::WideRows
-    );
-    assert_eq!(wide_lane.declared_count, 3);
-    assert_eq!(wide_lane.values.len(), 10);
-    assert_eq!(
-        wide_lane.encodings,
-        [
-            crate::om::PatternTransformEncoding::Binary64,
-            crate::om::PatternTransformEncoding::Binary64,
-            crate::om::PatternTransformEncoding::Binary64,
-            crate::om::PatternTransformEncoding::Binary64,
-            crate::om::PatternTransformEncoding::ExactOne,
-            crate::om::PatternTransformEncoding::Binary64,
-            crate::om::PatternTransformEncoding::Binary64,
-            crate::om::PatternTransformEncoding::Binary64,
-            crate::om::PatternTransformEncoding::Binary64,
-            crate::om::PatternTransformEncoding::Binary32,
-        ]
-    );
-    assert_eq!(wide_lane.selectors, [2, 3]);
-
-    let mut zero_terminal_value = wide_payload.to_vec();
-    let terminal_value = zero_terminal_value
-        .windows(12)
-        .position(|bytes| {
-            bytes
-                == [
-                    0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03,
-                ]
-        })
-        .expect("exact-one terminal value")
-        + 4;
-    zero_terminal_value[terminal_value] = 0x00;
-    assert!(
-        crate::om::pattern_payload_transform_lane(crate::om::OperationRecord {
-            bytes: &zero_terminal_value,
-            payload: &zero_terminal_value,
-            ..record
-        })
-        .is_none()
-    );
-
-    let mut changed_schema = feature_payload.to_vec();
-    let second_row = changed_schema
-        .windows(4)
-        .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == [0x60, 0x01, 0x00, 0x00]).then_some(offset))
-        .nth(1)
-        .expect("second row");
-    changed_schema[second_row] = 0x61;
-    assert!(
-        crate::om::pattern_payload_transform_lane(crate::om::OperationRecord {
-            bytes: &changed_schema,
-            payload: &changed_schema,
-            ..record
-        })
-        .is_none()
-    );
-
-    let mut wrong_ordinal = feature_payload.to_vec();
-    wrong_ordinal[29] = 2;
-    assert!(
-        crate::om::pattern_payload_transform_lane(crate::om::OperationRecord {
-            bytes: &wrong_ordinal,
-            payload: &wrong_ordinal,
-            ..record
-        })
-        .is_none()
-    );
-    assert!(
-        crate::om::pattern_payload_transform_lane(crate::om::OperationRecord {
-            bytes: &feature_payload[..feature_payload.len() - 1],
-            payload: &feature_payload[..feature_payload.len() - 1],
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_multi_instance_output_lane_requires_consistent_counts_and_groups() {
-    let mut payload = b"\xaa\x3a\x00\x00\x01\x00\x00\x00\x00\x25\x01\x07".to_vec();
-    let mut row_index = 2;
-    for selector in [2, 3, 4] {
-        for ordinal in 2..=3 {
-            payload.extend_from_slice(b"\x26\x27\x01\x02\x65\x01\x02");
-            payload.extend_from_slice(&[selector, 0x28, ordinal, row_index]);
-            row_index += 1;
-        }
-    }
-    payload.extend_from_slice(b"\x00\x3b\x90\x3d\xea\x90\x3d\xeb\x01\x03\xbb");
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "Multi Instance Output",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: &payload,
-        payload_offset: 200,
-        payload: &payload,
-        label,
-    };
-    let lane = crate::om::multi_instance_output_payload_lane(record).expect("complete output lane");
-    assert_eq!(lane.offset, 209);
-    assert_eq!(lane.declared_count, 7);
-    assert_eq!(lane.selectors, [2, 2, 3, 3, 4, 4]);
-    assert_eq!(lane.ordinals, [2, 3, 2, 3, 2, 3]);
-    assert_eq!(lane.row_indices, [2, 3, 4, 5, 6, 7]);
-    assert_eq!(lane.instance_count, 3);
-    assert_eq!(lane.selector_offsets, [219, 230, 241, 252, 263, 274]);
-    assert_eq!(
-        lane.trailing_references
-            .iter()
-            .map(|reference| reference.object_index)
-            .collect::<Vec<_>>(),
-        [15850, 15851]
-    );
-    assert_eq!(lane.trailing_references[0].offset, 280);
-    assert_eq!(
-        lane.trailing_references[0].raw_object_index,
-        [0x90, 0x3d, 0xea]
-    );
-
-    let mut incomplete_group = payload.clone();
-    incomplete_group[76] = 2;
-    assert!(
-        crate::om::multi_instance_output_payload_lane(crate::om::OperationRecord {
-            bytes: &incomplete_group,
-            payload: &incomplete_group,
-            ..record
-        })
-        .is_none()
-    );
-    let mut wrong_row_index = payload.clone();
-    wrong_row_index[77] = 6;
-    assert!(
-        crate::om::multi_instance_output_payload_lane(crate::om::OperationRecord {
-            bytes: &wrong_row_index,
-            payload: &wrong_row_index,
-            ..record
-        })
-        .is_none()
-    );
-    let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(
-        crate::om::multi_instance_output_payload_lane(crate::om::OperationRecord {
-            bytes: &ambiguous,
-            payload: &ambiguous,
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_identical_instance_output_lane_requires_complete_ordered_rows() {
-    let payload = b"\xaa\x34\x13\x01\x04\x14\x15\x01\x02\x16\x80\x20\x00\x02\
-          \x14\x15\x01\x02\x16\x0f\x00\x03\
-          \x14\x15\x01\x02\x16\x81\x23\x00\x04\
-          \x00\x05\xe0\x7f\xff\xff\xff\x00\x00\xbb";
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "IDENTICAL INSTANCE OUTPUT",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: payload,
-        payload_offset: 200,
-        payload,
-        label,
-    };
-    let lane = crate::om::identical_instance_output_payload_lane(record)
-        .expect("complete identical-instance lane");
-    assert_eq!(lane.offset, 201);
-    assert_eq!(lane.leading_schema_index, 0x34);
-    assert_eq!(lane.count_schema_index, 0x13);
-    assert_eq!(lane.row_schema_indices, [0x14, 0x15, 0x16]);
-    assert_eq!(lane.declared_count, 4);
-    assert_eq!(lane.selectors, [0x20, 0x0f, 0x123]);
-    assert_eq!(
-        lane.raw_selectors,
-        [vec![0x80, 0x20], vec![0x0f], vec![0x81, 0x23]]
-    );
-    assert_eq!(lane.selector_offsets, [210, 219, 227]);
-
-    let mut wrong_ordinal = payload.to_vec();
-    wrong_ordinal[21] = 4;
-    assert!(
-        crate::om::identical_instance_output_payload_lane(crate::om::OperationRecord {
-            bytes: &wrong_ordinal,
-            payload: &wrong_ordinal,
-            ..record
-        })
-        .is_none()
-    );
-    let mut wrong_terminal_count = payload.to_vec();
-    wrong_terminal_count[32] = 4;
-    assert!(
-        crate::om::identical_instance_output_payload_lane(crate::om::OperationRecord {
-            bytes: &wrong_terminal_count,
-            payload: &wrong_terminal_count,
-            ..record
-        })
-        .is_none()
-    );
-    let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(
-        crate::om::identical_instance_output_payload_lane(crate::om::OperationRecord {
-            bytes: &ambiguous,
-            payload: &ambiguous,
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_geometry_instance_reference_requires_one_complete_field() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "Geometry Instance",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let payload = b"\x44\x45\x00\xff\xff\xf1\x03\x21\x01\x02\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x01\x02";
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: payload,
-        payload_offset: 200,
-        payload,
-        label,
-    };
-    let field = crate::om::pattern_payload_references(record).expect("complete field");
-    assert_eq!(field.references[0].object_index, 801);
-    assert_eq!(field.references[0].offset, 205);
-
-    let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(
-        crate::om::pattern_payload_references(crate::om::OperationRecord {
-            bytes: &ambiguous,
-            payload: &ambiguous,
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_point_feature_header_requires_the_complete_leading_envelope() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "POINT",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let payload = b"\x72\x00\x00\x01\x00\x00\x00\xf1\x1c\x8f\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0d\x01\x02\x01\x00\x00\x00\x89\x02\x01\x01\x01\x00\xa5\x57\x95\x01\x00\x00\xff\x02\xc0\x1f\xff\xfd\x01\x00\x00\x01\x01\x01\x03\x02\x01\x01\x01\x00\x00\x00\x00\x00\xaa";
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: payload,
-        payload_offset: 200,
-        payload,
-        label,
-    };
-    let header = crate::om::point_feature_payload_header(record).expect("complete header");
-    assert_eq!(header.reference.object_index, 7311);
-    assert_eq!(header.reference.offset, 207);
-    assert_eq!(header.mode, 0x02);
-
-    let mut alternate_mode = payload.to_vec();
-    alternate_mode[52] = 0x03;
-    assert_eq!(
-        crate::om::point_feature_payload_header(crate::om::OperationRecord {
-            bytes: &alternate_mode,
-            payload: &alternate_mode,
-            ..record
-        })
-        .expect("alternate mode")
-        .mode,
-        0x03
-    );
-
-    for malformed_offset in [0, 10, 51, 72] {
-        let mut malformed = payload.to_vec();
-        malformed[malformed_offset] ^= 0x01;
-        assert!(
-            crate::om::point_feature_payload_header(crate::om::OperationRecord {
-                bytes: &malformed,
-                payload: &malformed,
-                ..record
-            })
-            .is_none()
-        );
-    }
-    let mut unsupported_mode = payload.to_vec();
-    unsupported_mode[52] = 0x04;
-    assert!(
-        crate::om::point_feature_payload_header(crate::om::OperationRecord {
-            bytes: &unsupported_mode,
-            payload: &unsupported_mode,
-            ..record
-        })
-        .is_none()
-    );
-    assert!(
-        crate::om::point_feature_payload_header(crate::om::OperationRecord {
-            bytes: &payload[..72],
-            payload: &payload[..72],
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_point_feature_scalar_lane_spans_the_preceding_block_atomically() {
-    let mut encoded = Vec::new();
-    for value in [1.0_f64, -2.0, 3.5, 4.0, 5.25, -6.0] {
-        let mut bytes = value.to_be_bytes();
-        bytes[0] -= 0x10;
-        encoded.extend_from_slice(&bytes);
-    }
-    let preceding = [vec![0xaa, 0xbb], encoded[..3].to_vec()].concat();
-    let mut target = encoded[3..].to_vec();
-    target.extend_from_slice(&[
-        0x00, 0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86,
-        0x02, 0x00, 0x01, 0x00,
-    ]);
-    target.push(0xcc);
-
-    let lane = crate::om::point_feature_scalar_lane(&preceding, &target).expect("complete lane");
-    assert_eq!(lane.values, [1.0, -2.0, 3.5, 4.0, 5.25, -6.0]);
-    assert_eq!(lane.raw_values.concat(), encoded);
-    assert_eq!(lane.value_offsets, [2, 10, 18, 26, 34, 42]);
-
-    let mut malformed = target.clone();
-    malformed[45] = 0x01;
-    assert!(crate::om::point_feature_scalar_lane(&preceding, &malformed).is_none());
-    assert!(crate::om::point_feature_scalar_lane(&preceding[..2], &target).is_none());
-    assert!(crate::om::point_feature_scalar_lane(&preceding, &target[..63]).is_none());
-
-    let mut nonfinite = target;
-    nonfinite[5..13].copy_from_slice(&[0x6f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-    assert!(crate::om::point_feature_scalar_lane(&preceding, &nonfinite).is_none());
-}
-
-#[test]
-fn om_draft_feature_references_require_one_complete_graph() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "DRAFT",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let prefix = b"\x67\x00\x00\x01\x00\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\xff\xff\xff\xff\xff\xff\xff\xff\x01\x03\x80\x94\x82\x49";
-    let graph = b"\x01\x02\xf1\x1b\x7c\x01\x02\xf1\x1b\x7d\x68\x2f\x70\x62\x4d\xd2\xf1\xa9\xfc\x03\x50\x44\x00\x00\x01\x46\x8a\x2a\x01\xa3\x60\x10\x01\x01\x01\x04\x02\x01\x02\x01\x00\x00\x00\x00\x01\xf1\x1b\x7e\xff\x00\x00\x00\xf1\x1b\x7f\xff";
-    let terminal = b"\x81\x5e\x80\xb8\x01\x03\x02\x01\x02\x01\x01\x01\x00\x00\x00\x29\x29\x0c\x00";
-    let payload = [prefix.as_slice(), graph.as_slice(), terminal.as_slice()].concat();
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: &payload,
-        payload_offset: 200,
-        payload: &payload,
-        label,
-    };
-    let field = crate::om::draft_feature_payload_references(record).expect("complete graph");
-    assert_eq!(
-        field
-            .references
-            .clone()
-            .map(|reference| reference.object_index),
-        [7036, 7037, 7038, 7039]
-    );
-    assert_eq!(
-        field.references.map(|reference| reference.offset),
-        [230, 235, 273, 280]
-    );
-    let lane = crate::om::draft_feature_leading_index_lane(record).expect("complete index lane");
-    assert_eq!(lane.declared_count, 3);
-    assert_eq!(lane.indices, vec![(148, 224), (585, 226)]);
-    assert_eq!(lane.raw_indices, vec![vec![0x80, 0x94], vec![0x82, 0x49]]);
-    let terminal_lane =
-        crate::om::draft_feature_terminal_lane(record).expect("complete terminal lane");
-    assert_eq!(terminal_lane.indices, [350, 184]);
-    assert_eq!(terminal_lane.raw_indices, [[0x81, 0x5e], [0x80, 0xb8]]);
-    assert_eq!(terminal_lane.index_offsets, [284, 286]);
-    assert_eq!(terminal_lane.tail, [0x29, 0x29, 0x0c]);
-    assert_eq!(terminal_lane.offset, 284);
-
-    let mut malformed = payload.clone();
-    malformed[53] = 0x00;
-    assert!(
-        crate::om::draft_feature_payload_references(crate::om::OperationRecord {
-            bytes: &malformed,
-            payload: &malformed,
-            ..record
-        })
-        .is_none()
-    );
-    let mut malformed_lane = payload.clone();
-    malformed_lane[23] = 4;
-    assert!(
-        crate::om::draft_feature_leading_index_lane(crate::om::OperationRecord {
-            bytes: &malformed_lane,
-            payload: &malformed_lane,
-            ..record
-        })
-        .is_none()
-    );
-    let ambiguous = [prefix.as_slice(), graph.as_slice(), graph.as_slice()].concat();
-    assert!(
-        crate::om::draft_feature_payload_references(crate::om::OperationRecord {
-            bytes: &ambiguous,
-            payload: &ambiguous,
-            ..record
-        })
-        .is_none()
-    );
-    assert!(
-        crate::om::draft_feature_payload_references(crate::om::OperationRecord {
-            bytes: &payload[..prefix.len() + graph.len() - 2],
-            payload: &payload[..prefix.len() + graph.len() - 2],
-            ..record
-        })
-        .is_none()
-    );
-    assert!(
-        crate::om::draft_feature_terminal_lane(crate::om::OperationRecord {
-            bytes: &payload[..payload.len() - 1],
-            payload: &payload[..payload.len() - 1],
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_surface_feature_references_require_the_complete_common_envelope() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "SKIN",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let payload = b"\x3f\x00\x00\x01\x00\xf1\x02\x46\xf1\x02\x47\xf1\x02\x48\x01\x09\x03\x03\x04\x05\x02\x01\x01\x01\x01\x09\xf1\x02\x49\xf1\x02\x4a\xf1\x02\x4b\xf1\x02\x4c\xf1\x02\x4d\xf1\x02\x4e\xf1\x02\x4f\xf1\x02\x50\x00\x03\x03\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xf1\x02\x56\xf1\x02\x57\xf1\x02\x58\x01\x01\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x01\x02";
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: payload,
-        payload_offset: 200,
-        payload,
-        label,
-    };
-    let field = crate::om::surface_feature_payload_references(record).expect("complete envelope");
-    assert_eq!(
-        field
-            .references
-            .iter()
-            .map(|reference| reference.object_index)
-            .collect::<Vec<_>>(),
-        [582, 583, 584, 585, 586, 587, 588, 589, 590, 591, 592, 598, 599, 600,]
-    );
-
-    let studio_payload = [&[0x14], &payload[1..]].concat();
-    let studio = crate::om::OperationRecord {
-        label: crate::om::OperationLabel {
-            value: "Studio Surface",
-            ..label
-        },
-        bytes: &studio_payload,
-        payload: &studio_payload,
-        ..record
-    };
-    assert!(crate::om::surface_feature_payload_references(studio).is_some());
-
-    let mut malformed = payload.to_vec();
-    let last = malformed.len() - 1;
-    malformed[last] = 0x00;
-    assert!(
-        crate::om::surface_feature_payload_references(crate::om::OperationRecord {
-            bytes: &malformed,
-            payload: &malformed,
-            ..record
-        })
-        .is_none()
-    );
-
-    let ambiguous = [payload.as_slice(), &payload[51..]].concat();
-    assert!(
-        crate::om::surface_feature_payload_references(crate::om::OperationRecord {
-            bytes: &ambiguous,
-            payload: &ambiguous,
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_surface_feature_branches_require_one_complete_counted_group() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "SKIN",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let payload = b"\xa0\x5a\x14\x13\x01\x02\x40\x01\x04\xf1\x1b\xf4\xf1\x1b\xf5\xf1\x1b\xf6\x01\x04\x00\x00\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x1b\xf7\x00\x81\x58\x01\x02\x40\x01\x05\xf1\x1b\xf8\xf1\x1b\xf9\xf1\x1b\xfa\xf1\x1b\xfb\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x1b\xfc\x00\x81\x1c\x00\x00\x00\x01\x03\x00\x00\x00\xff\xff\x01";
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: payload,
-        payload_offset: 200,
-        payload,
-        label,
-    };
-    let group = crate::om::surface_feature_payload_branches(record).expect("complete group");
-    assert_eq!(group.family, 0x14);
-    assert_eq!(group.header_code, 0x13);
-    assert_eq!(group.branches.len(), 2);
-    assert_eq!(group.branches[0].mode, 0x40);
-    assert_eq!(group.branches[0].declared_count, 4);
-    assert!(group.branches[0].witnessed);
-    assert_eq!(group.branches[0].members.len(), 3);
-    assert_eq!(group.branches[0].terminal.object_index, 7159);
-    assert_eq!(group.branches[0].suffix, [0x81, 0x58, 0x01, 0x02]);
-    assert_eq!(group.branches[1].declared_count, 5);
-    assert!(!group.branches[1].witnessed);
-    assert_eq!(group.branches[1].members.len(), 4);
-    assert_eq!(group.branches[1].terminal.object_index, 7164);
-    assert_eq!(group.branches[1].suffix, [0x81, 0x1c]);
-
-    let studio_payload = [
-        &payload[..payload.len() - 11],
-        &[0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x01],
-    ]
-    .concat();
-    let studio = crate::om::OperationRecord {
-        label: crate::om::OperationLabel {
-            value: "Studio Surface",
-            ..label
-        },
-        bytes: &studio_payload,
-        payload: &studio_payload,
-        ..record
-    };
-    assert!(crate::om::surface_feature_payload_branches(studio).is_some());
-
-    let mut malformed = payload.to_vec();
-    malformed[19] = 0x03;
-    assert!(
-        crate::om::surface_feature_payload_branches(crate::om::OperationRecord {
-            bytes: &malformed,
-            payload: &malformed,
-            ..record
-        })
-        .is_none()
-    );
-
-    let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(
-        crate::om::surface_feature_payload_branches(crate::om::OperationRecord {
-            bytes: &ambiguous,
-            payload: &ambiguous,
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "SKETCH",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let payload = b"\x01\x00\x01\x05\xf0\xff\xf1\x01\x00\xf1\x01\x01\xf1\x01\x02\x00\x00\xf1\x01\x03\x01\x00\x00\x00";
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: payload,
-        payload_offset: 200,
-        payload,
-        label,
-    };
-    let field = crate::om::sketch_payload_references(record).unwrap();
-    assert_eq!(field.declared_count, 5);
-    let references: [crate::om::PayloadObjectReference; 5] =
-        field.references.clone().try_into().unwrap();
-    assert_eq!(
-        references.clone().map(|reference| reference.object_index),
-        [255, 256, 257, 258, 259]
-    );
-    assert_eq!(
-        references.map(|reference| reference.offset),
-        [204, 206, 209, 212, 217]
-    );
-    assert_eq!(
-        field
-            .references
-            .iter()
-            .map(|reference| reference.raw_object_index.as_slice())
-            .collect::<Vec<_>>(),
-        [
-            &[0xf0, 0xff][..],
-            &[0xf1, 0x01, 0x00][..],
-            &[0xf1, 0x01, 0x01][..],
-            &[0xf1, 0x01, 0x02][..],
-            &[0xf1, 0x01, 0x03][..],
-        ]
-    );
-    let zero = b"\x01\x00\x00\x00\x00\xf0\x42\x01\x00\x00\x00";
-    let field = crate::om::sketch_payload_references(crate::om::OperationRecord {
-        payload: zero,
-        bytes: zero,
-        ..record
-    })
-    .unwrap();
-    assert_eq!(field.declared_count, 0);
-    assert_eq!(field.references.len(), 1);
-    assert_eq!(field.references[0].object_index, 0x42);
-    let two = b"\x01\x00\x01\x02\xf0\x41\x00\x00\xf0\x42\x01\x00\x00\x00";
-    let field = crate::om::sketch_payload_references(crate::om::OperationRecord {
-        payload: two,
-        bytes: two,
-        ..record
-    })
-    .unwrap();
-    assert_eq!(field.declared_count, 2);
-    assert_eq!(
-        field
-            .references
-            .iter()
-            .map(|reference| reference.object_index)
-            .collect::<Vec<_>>(),
-        [0x41, 0x42]
-    );
-
-    let mut noncanonical = payload.to_vec();
-    noncanonical[7] = 0;
-    assert!(
-        crate::om::sketch_payload_references(crate::om::OperationRecord {
-            payload: &noncanonical,
-            bytes: &noncanonical,
-            ..record
-        })
-        .is_none()
-    );
-    assert!(
-        crate::om::sketch_payload_references(crate::om::OperationRecord {
-            label: crate::om::OperationLabel {
-                value: "BLOCK",
-                ..label
-            },
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_extrude_profile_references_require_matching_witness_field() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "EXTRUDE",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let payload = b"\x01\x02\x16\x01\x03\xf0\xff\xf1\x01\x00\x01\x03\x79\xaa\x01\x03\xf0\xff\xf1\x01\x00\x00\x00";
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: payload,
-        payload_offset: 200,
-        payload,
-        label,
-    };
-    let field = crate::om::extrude_profile_references(record).unwrap();
-    assert!(field.witnessed);
-    let references = field.references;
-    assert_eq!(references.len(), 2);
-    assert_eq!(references[0].object_index, 255);
-    assert_eq!(references[0].raw_object_index, [0xf0, 0xff]);
-    assert_eq!(references[0].offset, 205);
-    assert_eq!(references[1].object_index, 256);
-    assert_eq!(references[1].raw_object_index, [0xf1, 0x01, 0x00]);
-    assert_eq!(references[1].offset, 207);
-
-    let without_witness = &payload[..14];
-    let field = crate::om::extrude_profile_references(crate::om::OperationRecord {
-        payload: without_witness,
-        bytes: without_witness,
-        ..record
-    })
-    .unwrap();
-    assert!(!field.witnessed);
-    assert_eq!(field.references.len(), 2);
-    assert!(
-        crate::om::extrude_profile_references(crate::om::OperationRecord {
-            label: crate::om::OperationLabel {
-                value: "SKETCH",
-                ..label
-            },
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_extrude_header_decodes_shifted_ieee_scalars() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "EXTRUDE",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let payload =
-        b"\x0f\x00\x00\x01\x00\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x2f\xa3\x74\xbc\x6a\x7e\xf9\xdb";
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: payload,
-        payload_offset: 200,
-        payload,
-        label,
-    };
-    let header = crate::om::extrude_payload_header(record).unwrap();
-    assert_eq!(header.offset, 205);
-    assert_eq!(header.scalars, [0.04, 0.038]);
-    assert_eq!(header.raw_scalars.concat(), payload[5..21]);
-
-    let mut invalid = payload.to_vec();
-    invalid[5] = 0xf0;
-    assert!(
-        crate::om::extrude_payload_header(crate::om::OperationRecord {
-            payload: &invalid,
-            bytes: &invalid,
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_operation_terminal_discriminator_requires_one_complete_lane() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "EXTRUDE",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let payload = b"\x01\x01\x02\x81\x5f\x80\xab\x01\x03\x02\x01\x01\x02\x01\x01\x00\x00\x00\x29\x29\x05\x80\xff\x00";
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: payload,
-        payload_offset: 200,
-        payload,
-        label,
-    };
-    let lane = crate::om::operation_terminal_discriminator(record).unwrap();
-    assert_eq!(lane.offset, 200);
-    assert_eq!(lane.type_indices, [351, 171]);
-    assert_eq!(lane.raw_type_indices, [vec![0x81, 0x5f], vec![0x80, 0xab]]);
-    assert_eq!(lane.type_index_offsets, [203, 205]);
-    assert_eq!(lane.flags, [1, 2, 1, 1]);
-    assert_eq!(lane.trailing_indices, [5, 255]);
-    assert_eq!(lane.raw_trailing_indices, [vec![0x05], vec![0x80, 0xff]]);
-    assert_eq!(lane.trailing_index_offsets, [220, 221]);
-
-    let subtract = crate::om::OperationRecord {
-        label: crate::om::OperationLabel {
-            value: "SUBTRACT",
-            ..label
-        },
-        ..record
-    };
-    assert_eq!(
-        crate::om::operation_terminal_discriminator(subtract),
-        Some(lane.clone())
-    );
-
-    let truncated = &payload[..payload.len() - 1];
-    assert!(
-        crate::om::operation_terminal_discriminator(crate::om::OperationRecord {
-            payload: truncated,
-            bytes: truncated,
-            ..record
-        })
-        .is_none()
-    );
-
-    let mut ambiguous = payload[..payload.len() - 1].to_vec();
-    ambiguous.extend_from_slice(payload);
-    assert!(
-        crate::om::operation_terminal_discriminator(crate::om::OperationRecord {
-            payload: &ambiguous,
-            bytes: &ambiguous,
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "TRIM BODY",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let bytes = b"\x01\x02\x10\x42\xff\x1c\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\xaa\x01\x02\x10\x43\xff\x11\x30\x00\x00\x00\x00\x00\x00\x00\x00\x00";
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes,
-        payload_offset: 100,
-        payload: bytes,
-        label,
-    };
-    let triples = crate::om::operation_body_scalar_triples(record);
-    assert_eq!(triples.len(), 2);
-    assert_eq!(triples[0].body_reference_ordinal, 0);
-    assert_eq!(triples[0].body_object_index, 66);
-    assert_eq!(triples[0].branch, 0x1c);
-    assert_eq!(
-        triples[0].scalars.each_ref().map(|scalar| scalar.value),
-        [0.0, 3.0, -170.0]
-    );
-    assert_eq!(
-        triples[0].scalars.each_ref().map(|scalar| scalar.encoding),
-        [
-            crate::om::PayloadScalarEncoding::Zero,
-            crate::om::PayloadScalarEncoding::Binary32,
-            crate::om::PayloadScalarEncoding::Binary64,
-        ]
-    );
-    assert_eq!(
-        triples[0].scalars.each_ref().map(|scalar| scalar.offset),
-        [106, 107, 111]
-    );
-    assert_eq!(
-        triples[0]
-            .scalars
-            .each_ref()
-            .map(|scalar| scalar.raw_value.as_slice()),
-        [&bytes[6..7], &bytes[7..11], &bytes[11..19]]
-    );
-    assert_eq!(triples[1].body_reference_ordinal, 1);
-    assert_eq!(triples[1].body_object_index, 67);
-    assert_eq!(triples[1].branch, 0x11);
-    assert_eq!(
-        triples[1].scalars.each_ref().map(|scalar| scalar.value),
-        [2.0, 0.0, 0.0]
-    );
-    let truncated = &bytes[..bytes.len() - 1];
-    let truncated_triples = crate::om::operation_body_scalar_triples(crate::om::OperationRecord {
-        bytes: truncated,
-        payload: truncated,
-        ..record
-    });
-    assert_eq!(truncated_triples.len(), 1);
-    assert_eq!(truncated_triples[0], triples[0]);
-}
-
-#[test]
-fn om_operation_body_branch_11_decodes_wrapped_member_lane_atomically() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "SEW",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let bytes = b"\x01\x02\x10\x42\xff\x11\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\x01\x03\x2e\x7f\x00\x2e\x80\x01\x00";
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes,
-        payload_offset: 100,
-        payload: bytes,
-        label,
-    };
-    let members = crate::om::operation_body_members(record);
-    assert_eq!(members.len(), 2);
-    assert_eq!(members[0].body_reference_ordinal, 0);
-    assert_eq!(members[0].body_object_index, 66);
-    assert_eq!(members[0].member_index, 127);
-    assert_eq!(members[0].raw_member_index, [0x7f]);
-    assert_eq!(members[0].offset, 122);
-    assert_eq!(members[1].member_index, 1);
-    assert_eq!(members[1].raw_member_index, [0x80, 0x01]);
-
-    let truncated = &bytes[..bytes.len() - 1];
-    assert!(
-        crate::om::operation_body_members(crate::om::OperationRecord {
-            bytes: truncated,
-            payload: truncated,
-            ..record
-        })
-        .is_empty()
-    );
-}
-
-#[test]
-fn om_trim_body_branch_11_decodes_terminal_continuation_atomically() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "TRIM BODY",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let bytes = b"\x01\x02\x10\x72\xff\x11\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\x01\x02\x2e\x41\x00\x01\x02\x80\x43\x00\x00\x01\x72\x00\x00";
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes,
-        payload_offset: 100,
-        payload: bytes,
-        label,
-    };
-    let continuations = crate::om::operation_body_11_continuations(record);
-    assert_eq!(continuations.len(), 1);
-    let continuation = &continuations[0];
-    assert_eq!(continuation.body_reference_ordinal, 0);
-    assert_eq!(continuation.body_object_index, 114);
-    assert_eq!(continuation.continuation_index, 67);
-    assert_eq!(continuation.raw_continuation_index, [0x80, 0x43]);
-    assert_eq!(continuation.continuation_offset, 126);
-    assert_eq!(continuation.terminal_object_index, 114);
-    assert_eq!(continuation.raw_terminal_object_index, [0x72]);
-    assert_eq!(continuation.terminal_offset, 131);
-
-    let mut distinct_terminal = bytes.to_vec();
-    distinct_terminal[31] = 0x71;
-    assert_eq!(
-        crate::om::operation_body_11_continuations(crate::om::OperationRecord {
-            bytes: &distinct_terminal,
-            payload: &distinct_terminal,
-            ..record
-        })[0]
-            .terminal_object_index,
-        113
-    );
-
-    let truncated = &bytes[..bytes.len() - 1];
-    assert!(
-        crate::om::operation_body_11_continuations(crate::om::OperationRecord {
-            bytes: truncated,
-            payload: truncated,
-            ..record
-        })
-        .is_empty()
-    );
-}
-
-#[test]
-fn om_operation_body_decodes_homogeneous_unwrapped_reference_lanes() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "OFFSET",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let compact = b"\x01\x02\x10\x6e\xff\x1c\x00\x00\x00\x01\x03\x80\x0d\x69\x00\x00\x0b\x00";
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: compact,
-        payload_offset: 100,
-        payload: compact,
-        label,
-    };
-    let lanes = crate::om::operation_body_reference_lanes(record);
-    assert_eq!(lanes.len(), 1);
-    assert_eq!(lanes[0].body_object_index, 110);
-    assert_eq!(
-        lanes[0].encoding,
-        crate::om::OperationBodyReferenceLaneEncoding::CompactIndex
-    );
-    assert_eq!(
-        lanes[0]
-            .values
-            .iter()
-            .map(|value| (value.object_index, value.offset))
-            .collect::<Vec<_>>(),
-        [(13, 111), (105, 113)]
-    );
-    assert_eq!(
-        lanes[0]
-            .values
-            .iter()
-            .map(|value| value.raw_value.as_slice())
-            .collect::<Vec<_>>(),
-        [b"\x80\x0d".as_slice(), b"\x69".as_slice()]
-    );
-
-    let objects =
-        b"\x01\x02\x10\x70\xff\x1c\x00\x00\x00\x01\x03\xf1\x02\x9e\xf0\x44\x00\x00\x0b\x00";
-    let object_record = crate::om::OperationRecord {
-        bytes: objects,
-        payload: objects,
-        ..record
-    };
-    let lanes = crate::om::operation_body_reference_lanes(object_record);
-    assert_eq!(
-        lanes[0].encoding,
-        crate::om::OperationBodyReferenceLaneEncoding::PayloadObjectIndex
-    );
-    assert_eq!(
-        lanes[0]
-            .values
-            .iter()
-            .map(|value| value.object_index)
-            .collect::<Vec<_>>(),
-        [670, 68]
-    );
-    assert_eq!(
-        lanes[0]
-            .values
-            .iter()
-            .map(|value| value.raw_value.as_slice())
-            .collect::<Vec<_>>(),
-        [b"\xf1\x02\x9e".as_slice(), b"\xf0\x44".as_slice()]
-    );
-
-    let truncated = &objects[..objects.len() - 1];
-    assert!(
-        crate::om::operation_body_reference_lanes(crate::om::OperationRecord {
-            bytes: truncated,
-            payload: truncated,
-            ..object_record
-        })
-        .is_empty()
-    );
-
-    let branch_11 =
-        b"\x01\x02\x10\x70\xff\x11\x00\x00\x00\x01\x03\xf1\x02\x9e\xf0\x44\x00\x00\x0b\x00";
-    let lanes = crate::om::operation_body_reference_lanes(crate::om::OperationRecord {
-        bytes: branch_11,
-        payload: branch_11,
-        ..record
-    });
-    assert_eq!(lanes.len(), 1);
-    assert_eq!(lanes[0].branch, 0x11);
-    assert_eq!(
-        lanes[0]
-            .values
-            .iter()
-            .map(|value| value.object_index)
-            .collect::<Vec<_>>(),
-        [670, 68]
-    );
-}
-
-#[test]
-fn om_extrude_body_32_branch_decodes_counted_lanes() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "EXTRUDE",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let bytes = b"\x01\x02\x10\x73\xff\x32\x00\x00\x30\x77\x7e\x14\x7a\xe1\x47\xb3\x01\x03\x3d\x82\x56\x00\x3d\x82\x57\x00\x01\x04\x80\x2b\x80\x2d\x80\x2c\x01\x03\x80\x2e\x80\x77\x00\x01\x73\x00\x00";
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes,
-        payload_offset: 100,
-        payload: bytes,
-        label,
-    };
-    let branch = crate::om::extrude_payload_32_branch(record).unwrap();
-    assert_eq!(branch.offset, 105);
-    assert_eq!(branch.body_object_index, 115);
-    assert!(branch.scalar.is_finite());
-    assert_eq!(branch.raw_scalar, bytes[8..16]);
-    assert_eq!(branch.atoms_be, [0x3d82_5600, 0x3d82_5700]);
-    assert_eq!(branch.atom_offsets, [118, 122]);
-    assert_eq!(branch.atom_indices, [598, 599]);
-    assert_eq!(branch.first_indices, [43, 45, 44]);
-    assert_eq!(
-        branch.raw_first_indices,
-        [vec![0x80, 0x2b], vec![0x80, 0x2d], vec![0x80, 0x2c]]
-    );
-    assert_eq!(branch.first_index_offsets, [128, 130, 132]);
-    assert_eq!(branch.second_indices, [46, 119]);
-    assert_eq!(
-        branch.raw_second_indices,
-        [vec![0x80, 0x2e], vec![0x80, 0x77]]
-    );
-    assert_eq!(branch.second_index_offsets, [136, 138]);
-    assert_eq!(branch.terminal_object_index, 115);
-    assert_eq!(branch.raw_terminal_object_index, [0x73]);
-    assert_eq!(branch.terminal_offset, 142);
-
-    let mut invalid = bytes.to_vec();
-    invalid[36] = 0xff;
-    assert!(
-        crate::om::extrude_payload_32_branch(crate::om::OperationRecord {
-            bytes: &invalid,
-            payload: &invalid,
-            ..record
-        })
-        .is_none()
-    );
-
-    let mut invalid_atom = bytes.to_vec();
-    invalid_atom[18] = 0x3c;
-    assert!(
-        crate::om::extrude_payload_32_branch(crate::om::OperationRecord {
-            bytes: &invalid_atom,
-            payload: &invalid_atom,
-            ..record
-        })
-        .is_none()
-    );
-
-    let mut wrong_terminal_body = bytes.to_vec();
-    wrong_terminal_body[43] = 0x72;
-    assert!(
-        crate::om::extrude_payload_32_branch(crate::om::OperationRecord {
-            bytes: &wrong_terminal_body,
-            payload: &wrong_terminal_body,
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_block_construction_field_decodes_ordered_canonical_references() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "BLOCK",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let mut payload = vec![0x26, 0, 0, 1, 0, 0];
-    for value in 1..=18u8 {
-        payload.extend([0xf0, value]);
-    }
-    payload.extend([0x01, 0xf1, 0x01, 0x00]);
-    payload.extend([0xff; 11]);
-    payload.extend([0; 4]);
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: &payload,
-        payload_offset: 200,
-        payload: &payload,
-        label,
-    };
-    let field = crate::om::block_construction_references(record).unwrap();
-    assert_eq!(field.control, 0x26);
-    assert_eq!(field.references.len(), 19);
-    assert_eq!(field.references[0].object_index, 1);
-    assert_eq!(field.references[0].raw_object_index, [0xf0, 0x01]);
-    assert_eq!(field.references[18].object_index, 256);
-    assert_eq!(field.references[18].raw_object_index, [0xf1, 0x01, 0x00]);
-    assert_eq!(field.references[0].offset, 206);
-
-    let mut invalid = payload.clone();
-    invalid[42] = 0xf0;
-    assert!(
-        crate::om::block_construction_references(crate::om::OperationRecord {
-            bytes: &invalid,
-            payload: &invalid,
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
-fn om_boolean_operations_decode_counted_target_and_tools() {
-    let bytes = b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x0aSUBTRACT\0\x31\x00\x00\x01\x00\x14\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\x00\x00\xe0\x7f\xff\xff\xff\x01\x01\x01\x02\x90\x19\x5e\x00\x01\x05\x90\x19\x5f\x90\x19\x44\x90\x19\x43\x90\x19\x60\x00";
-    let operations = crate::om::boolean_operations(bytes, 100);
-    assert_eq!(operations.len(), 1);
-    assert_eq!(
-        operations[0].kind,
-        crate::om::BooleanOperationKind::Subtract
-    );
-    assert_eq!(operations[0].target, 6494);
-    assert_eq!(operations[0].raw_target, [0x90, 0x19, 0x5e]);
-    assert_eq!(
-        operations[0].target_offset,
-        100 + bytes
-            .windows(3)
-            .position(|window| window == [0x90, 0x19, 0x5e])
-            .unwrap()
-    );
-    assert_eq!(operations[0].tools, [6495, 6468, 6467, 6496]);
-    assert_eq!(
-        operations[0].raw_tools,
-        [
-            vec![0x90, 0x19, 0x5f],
-            vec![0x90, 0x19, 0x44],
-            vec![0x90, 0x19, 0x43],
-            vec![0x90, 0x19, 0x60],
-        ]
-    );
-    assert_eq!(
-        operations[0].tool_offsets,
-        [0x5f, 0x44, 0x43, 0x60].map(|low| {
-            100 + bytes
-                .windows(3)
-                .position(|window| window == [0x90, 0x19, low])
-                .unwrap()
-        })
-    );
-
-    let mut invalid = bytes.to_vec();
-    *invalid.last_mut().unwrap() = 1;
-    assert!(crate::om::boolean_operations(&invalid, 0).is_empty());
-}
-
-#[test]
-fn om_index_accepts_length_framed_root_version_text() {
-    let mut bytes = indexed_om_section();
-    let marker = bytes
-        .windows(b"\x04\x01\x0eNX 2027.3102\0".len())
-        .position(|window| window == b"\x04\x01\x0eNX 2027.3102\0")
-        .expect("root record");
-    bytes[marker + 2] = 0x0f;
-    bytes.insert(marker + 3 + 12, b' ');
-    let index = bytes
-        .windows(4)
-        .position(|window| window == 0u32.to_le_bytes())
-        .expect("index");
-    for ordinal in 2..4 {
-        let at = index + ordinal * 4;
-        let value = u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) + 1;
-        bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
-    }
-    let sections = crate::om::indexed_sections(&bytes);
-    assert_eq!(sections.len(), 1);
-    assert!(sections[0].records[0]
-        .bytes
-        .starts_with(b"\x04\x01\x0fNX 2027.3102 \0"));
-}
-
-#[test]
-fn om_store_version_can_follow_control_prefix() {
-    let bytes = b"\xff\x00prefix\x04\x01\x0eNX 2027.3102\0tail";
-    let version = crate::om::store_version(bytes, 100).expect("store version");
-    assert_eq!(version.offset, 108);
-    assert_eq!(version.value, "NX 2027.3102");
-}
-
-#[test]
-fn om_offset_only_index_bounds_storage_blocks() {
-    let bytes = offset_only_indexed_om_section();
-    let sections = crate::om::indexed_sections(&bytes);
-    assert_eq!(sections.len(), 1);
-    assert_eq!(sections[0].base, 0);
-    assert_eq!(
-        sections[0].control.as_ref().unwrap().bytes,
-        &[0, 0, 0, 0, 0, 1, 0, 0]
-    );
-    assert_eq!(sections[0].records.len(), 2);
-    assert_eq!(
-        sections[0].column_storage.unwrap(),
-        [sections[0].records[0].bytes, sections[0].records[1].bytes].concat()
-    );
-    assert_eq!(sections[0].records[0].object_id, None);
-    assert!(sections[0].records[0].bytes.starts_with(b"\x04\x01\x0eNX "));
-    assert_eq!(sections[0].records[1].object_id, None);
-    assert!(sections[0].records[1].bytes.ends_with(b"\0"));
-    let expressions = sections[0].numeric_expressions();
-    assert_eq!(expressions.len(), 1);
-    assert_eq!(expressions[0].name, "length");
-    assert_eq!(expressions[0].value, Some(25.0));
-}
-
-#[test]
-fn om_offset_only_index_accepts_one_root_record_inside_control_block() {
-    let bytes = control_root_offset_only_indexed_om_section();
-    let sections = crate::om::indexed_sections(&bytes);
-
-    assert_eq!(sections.len(), 1);
-    assert!(sections[0]
-        .control
-        .as_ref()
-        .unwrap()
-        .bytes
-        .windows(b"NX 2027.3102".len())
-        .any(|window| window == b"NX 2027.3102"));
-    assert_eq!(sections[0].records.len(), 2);
-    assert_eq!(sections[0].records[0].bytes, &[0; 32]);
-    assert_eq!(sections[0].numeric_expressions()[0].name, "length");
-}
-
-#[test]
-fn om_offset_only_index_requires_one_supported_product_record() {
-    let mut duplicate = control_root_offset_only_indexed_om_section();
-    let first_column = duplicate
-        .windows(32)
-        .position(|window| window == [0; 32])
-        .expect("zero first column");
-    let duplicate_product = b"\x04\x01\x0eNX 2027.3102\0";
-    duplicate[first_column..first_column + duplicate_product.len()]
-        .copy_from_slice(duplicate_product);
-    assert!(crate::om::indexed_sections(&duplicate).is_empty());
-
-    let mut unsupported = control_root_offset_only_indexed_om_section();
-    let product = unsupported
-        .windows(b"\x05\x01\x0eNX 2027.3102\0".len())
-        .position(|window| window == b"\x05\x01\x0eNX 2027.3102\0")
-        .expect("product record");
-    unsupported[product] = 0x03;
-    assert!(crate::om::indexed_sections(&unsupported).is_empty());
-}
-
-#[test]
-fn om_offset_store_control_values_require_complete_zero_prefixed_words() {
-    assert_eq!(
-        crate::om::offset_store_control_values(&[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff]),
-        Some(vec![0x1234, 0x00ff_ffff])
-    );
-    assert!(crate::om::offset_store_control_values(&[]).is_none());
-    assert!(crate::om::offset_store_control_values(&[0, 1, 2]).is_none());
-    assert!(crate::om::offset_store_control_values(&[1, 1, 2, 3]).is_none());
-}
-
-#[test]
-fn om_offset_store_control_form_requires_one_complete_grammar() {
-    assert_eq!(
-        crate::om::offset_store_control_form(&[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff]),
-        Some(crate::om::OffsetStoreControlForm::ZeroPrefixed {
-            values: vec![0x1234, 0x00ff_ffff],
-        })
-    );
-
-    let mut product = vec![0, 0];
-    product.extend_from_slice(&7u32.to_le_bytes());
-    product.extend_from_slice(&0x1020u32.to_le_bytes());
-    product.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
-    assert_eq!(
-        crate::om::offset_store_control_form(&product),
-        Some(crate::om::OffsetStoreControlForm::ProductAnchored {
-            leading_value: Some((2, 0)),
-            values: vec![7, 0x1020],
-        })
-    );
-
-    product.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
-    assert!(crate::om::offset_store_control_form(&product).is_none());
-    assert!(crate::om::offset_store_control_form(&[1, 2, 3, 4]).is_none());
-}
 
 #[test]
 fn decode_reports_unclassified_bounded_offset_store_controls() {
@@ -5709,371 +194,6 @@ fn decode_reports_unclassified_bounded_offset_store_controls() {
     }));
 }
 
-#[test]
-fn om_offset_store_index_rows_require_complete_exact_frames() {
-    let first =
-        b"\x2d\x02\x0b\x2a\x93\x8a\x03\x80\x18\x20\x20\x41\x00\x47\x04\x04\x01\xc0\x44\x04\x00";
-    let second = b"\x2d\x02\x0b\x83\xb6\x93\x8a\x07\x80\x18\x20\x80\x4d\x41\x00\x47\x04\x04\x01\xc0\x44\x04\x00";
-    let mut bytes = b"prefix".to_vec();
-    bytes.extend_from_slice(first);
-    bytes.extend_from_slice(b"gap");
-    bytes.extend_from_slice(second);
-
-    let rows = crate::om::offset_store_index_rows(&bytes);
-    assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].offset, 6);
-    assert_eq!(rows[0].first_index, 42);
-    assert_eq!(rows[0].raw_first_index, [0x2a]);
-    assert_eq!(rows[0].flag, 3);
-    assert_eq!(rows[0].indices, [(24, 13), (32, 15), (32, 16), (65, 17)]);
-    assert_eq!(
-        rows[0].raw_indices,
-        [vec![0x80, 0x18], vec![0x20], vec![0x20], vec![0x41]]
-    );
-    assert_eq!(rows[1].first_index, 950);
-    assert_eq!(rows[1].raw_first_index, [0x83, 0xb6]);
-    assert_eq!(rows[1].flag, 7);
-    assert_eq!(rows[1].indices, [(24, 38), (32, 40), (77, 41), (65, 43)]);
-    assert_eq!(
-        rows[1].raw_indices,
-        [vec![0x80, 0x18], vec![0x20], vec![0x80, 0x4d], vec![0x41]]
-    );
-
-    let mut null = first.to_vec();
-    null[3] = 0xff;
-    assert!(crate::om::offset_store_index_rows(&null).is_empty());
-    let mut other_flag = first.to_vec();
-    other_flag[6] = 0x04;
-    assert!(crate::om::offset_store_index_rows(&other_flag).is_empty());
-    let mut overlong = first.to_vec();
-    overlong.insert(12, 0x01);
-    assert!(crate::om::offset_store_index_rows(&overlong).is_empty());
-    assert!(crate::om::offset_store_index_rows(&first[..first.len() - 1]).is_empty());
-}
-
-#[test]
-fn om_color_table_requires_complete_names_indices_and_rgb_atoms() {
-    let mut bytes = vec![0x02, 0x80, 0xd9, 0x01];
-    for ordinal in 0..=216 {
-        let name = if ordinal == 0 {
-            "Background".to_string()
-        } else {
-            format!("Color {ordinal}")
-        };
-        bytes.push(u8::try_from(name.len() + 2).unwrap());
-        bytes.extend_from_slice(name.as_bytes());
-        bytes.push(0);
-    }
-    bytes.extend_from_slice(&[
-        0x02, 0x14, 0xff, 0x06, 0x00, 0xf0, 0x02, 0x80, 0x9d, 0x80, 0xc7, 0x00, 0xc0, 0x13, 0x0a,
-        0xc6, 0x01, 0x80, 0xd9, 0x80, 0xc8, 0x01, 0x01, 0x01,
-    ]);
-    for color_index in 1u16..=216 {
-        bytes.push(0x05);
-        if color_index < 128 {
-            bytes.push(color_index as u8);
-        } else {
-            bytes.extend_from_slice(&[0x80, (color_index - 1) as u8]);
-        }
-        bytes.extend_from_slice(&[0x01, 0x80, 0xc8]);
-        if color_index == 2 {
-            bytes.extend_from_slice(&shifted_f64_bytes(2.0));
-            let mut binary32 = 1.0_f32.to_be_bytes();
-            binary32[0] += 0x10;
-            bytes.extend_from_slice(&binary32);
-            bytes.push(0x00);
-        } else {
-            bytes.extend_from_slice(&[0x01, 0x01, 0x01]);
-        }
-    }
-
-    let tables = crate::om::color_tables(&bytes);
-    assert_eq!(tables.len(), 1);
-    assert_eq!(tables[0].background_name, "Background");
-    assert_eq!(tables[0].background_rgb, [1.0, 1.0, 1.0]);
-    assert_eq!(tables[0].definitions.len(), 216);
-    assert_eq!(tables[0].definitions[0].name, "Color 1");
-    assert_eq!(tables[0].definitions[0].rgb, [1.0, 1.0, 1.0]);
-    assert_eq!(tables[0].definitions[1].rgb, [0.5, 0.25, 0.0]);
-    assert_eq!(tables[0].definitions[127].raw_color_index, [0x80, 0x7f]);
-
-    let mut malformed = bytes.clone();
-    *malformed.last_mut().unwrap() = 0x02;
-    assert!(crate::om::color_tables(&malformed).is_empty());
-    let truncated = &bytes[..bytes.len() - 1];
-    assert!(crate::om::color_tables(truncated).is_empty());
-}
-
-#[test]
-fn om_offset_store_linked_index_rows_require_complete_exact_frames() {
-    let row = b"\x02\x0b\x83\x93\x93\x8c\x16\x24\xff\xff\x90\xfe\x20\x20\x41\x00\x47\x03\x04\x01\xc0\x44\x04\x00";
-    let rows = crate::om::offset_store_linked_index_rows(row);
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].first_index, (915, 2));
-    assert_eq!(rows[0].raw_first_index, [0x83, 0x93]);
-    assert_eq!(rows[0].discriminator, 0x16);
-    assert_eq!(rows[0].target_index, (36, 7));
-    assert_eq!(rows[0].raw_target_index, [0x24]);
-    assert_eq!(rows[0].indices, [(32, 12), (32, 13), (65, 14)]);
-    assert_eq!(rows[0].raw_indices, [vec![0x20], vec![0x20], vec![0x41]]);
-    assert_eq!(rows[0].flag, 3);
-    assert_eq!(rows[0].mode, 4);
-
-    let mut null = row.to_vec();
-    null[7] = 0xff;
-    assert!(crate::om::offset_store_linked_index_rows(&null).is_empty());
-    let mut discriminator = row.to_vec();
-    discriminator[6] = 0x15;
-    assert!(crate::om::offset_store_linked_index_rows(&discriminator).is_empty());
-    let mut flag = row.to_vec();
-    flag[17] = 0x04;
-    assert!(crate::om::offset_store_linked_index_rows(&flag).is_empty());
-    let mut mode = row.to_vec();
-    mode[18] = 0x06;
-    assert!(crate::om::offset_store_linked_index_rows(&mode).is_empty());
-    let mut mode_seven = row.to_vec();
-    mode_seven[18] = 0x07;
-    assert_eq!(
-        crate::om::offset_store_linked_index_rows(&mode_seven)[0].mode,
-        7
-    );
-    assert!(crate::om::offset_store_linked_index_rows(&row[..row.len() - 1]).is_empty());
-}
-
-#[test]
-fn om_offset_store_target_index_rows_require_complete_exact_frames() {
-    let row =
-        b"\x02\x01\x01\x01\x16\x3e\xff\xff\x90\xfe\x1e\x20\x58\x00\x47\x03\x07\x01\xc0\x44\x04\x00";
-    let rows = crate::om::offset_store_target_index_rows(row);
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].target_index, (62, 5));
-    assert_eq!(rows[0].raw_target_index, [0x3e]);
-    assert_eq!(rows[0].indices, [(30, 10), (32, 11), (88, 12)]);
-    assert_eq!(rows[0].raw_indices, [vec![0x1e], vec![0x20], vec![0x58]]);
-    assert_eq!(rows[0].mode, 7);
-
-    let mut null = row.to_vec();
-    null[5] = 0xff;
-    assert!(crate::om::offset_store_target_index_rows(&null).is_empty());
-    let mut discriminator = row.to_vec();
-    discriminator[4] = 0x17;
-    assert!(crate::om::offset_store_target_index_rows(&discriminator).is_empty());
-    let mut suffix = row.to_vec();
-    suffix[16] = 0x03;
-    assert!(crate::om::offset_store_target_index_rows(&suffix).is_empty());
-    let mut mode_four = row.to_vec();
-    mode_four[16] = 0x04;
-    assert_eq!(
-        crate::om::offset_store_target_index_rows(&mode_four)[0].mode,
-        4
-    );
-    assert!(crate::om::offset_store_target_index_rows(&row[..row.len() - 1]).is_empty());
-}
-
-#[test]
-fn om_offset_store_control_class_lane_is_a_distinct_in_range_prefix() {
-    let encode = |values: &[u32]| {
-        values
-            .iter()
-            .flat_map(|value| {
-                let bytes = value.to_le_bytes();
-                [0, bytes[0], bytes[1], bytes[2]]
-            })
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(
-        crate::om::offset_store_control_class_ordinals(&encode(&[2, 0, 4, 8, 3])),
-        Some(vec![2, 0])
-    );
-    assert!(crate::om::offset_store_control_class_ordinals(&encode(&[2, 2, 4])).is_none());
-    assert!(crate::om::offset_store_control_class_ordinals(&encode(&[2, 4, 1])).is_none());
-    assert_eq!(
-        crate::om::offset_store_control_class_ordinals(&encode(&[4, 8])),
-        Some(vec![4])
-    );
-}
-
-#[test]
-fn om_registry_uses_length_framing_and_stays_outside_entity_payloads() {
-    let mut bytes = indexed_om_section();
-    bytes.extend_from_slice(b"\x10UGS::PayloadText");
-    let sections = crate::om::indexed_sections(&bytes);
-    assert_eq!(sections.len(), 1);
-    assert_eq!(sections[0].types.len(), 1);
-    assert_eq!(sections[0].types[0].name, "UGS::EXP_expression");
-    assert_eq!(sections[0].types[0].trailing_code, 0x81);
-    assert_eq!(sections[0].types[0].offset, 8);
-}
-
-#[test]
-fn om_numeric_expression_retains_identity_name_unit_and_value() {
-    let bytes = indexed_om_section();
-    let section = crate::om::indexed_sections(&bytes).remove(0);
-    let expression_records = section.numeric_expression_records();
-    assert_eq!(expression_records[0].0, 1);
-    let expressions = expression_records
-        .iter()
-        .map(|(_, expression)| expression)
-        .collect::<Vec<_>>();
-    assert_eq!(expressions.len(), 1);
-    assert_eq!(expressions[0].object_id, Some(0x102));
-    assert_eq!(
-        expressions[0].name,
-        "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
-    );
-    assert_eq!(expressions[0].parameter_index, Some(8));
-    assert_eq!(
-        expressions[0].qualifier,
-        Some("CircularPattern_pattern_Circular_Dir_offset_angle")
-    );
-    assert_eq!(expressions[0].unit, crate::om::ExpressionUnit::Degree);
-    assert_eq!(expressions[0].expression, "120");
-    assert_eq!(expressions[0].value, Some(120.0));
-    let declaration = crate::om::expression_declaration_name(section.records[1].bytes).unwrap();
-    assert_eq!(
-        declaration.value,
-        "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
-    );
-    assert_eq!(declaration.parameter_index, 8);
-    assert_eq!(
-        declaration.qualifier,
-        Some("CircularPattern_pattern_Circular_Dir_offset_angle")
-    );
-    assert_eq!(declaration.literal, Some("120"));
-    let declaration =
-        crate::om::expression_declaration_name(b"\x04\x04p1\0\x04\x0a-5.1 * 2\0").unwrap();
-    assert_eq!(declaration.value, "p1");
-    assert_eq!(declaration.literal, Some("-5.1 * 2"));
-    let declaration =
-        crate::om::expression_declaration_name(b"\x04\x04p1\0\x04\x055.1\0\x04\x05120\0").unwrap();
-    assert_eq!(declaration.literal, None);
-    assert!(crate::om::expression_declaration_name(b"\x04\x04p1\0\x04\x04p2\0").is_none());
-    assert!(crate::om::expression_declaration_name(b"\x04\x05p1-\0").is_none());
-}
-
-#[test]
-fn om_numeric_expression_types_only_canonical_parameter_names() {
-    for name in ["p12foo", "p12_", "p4294967296_radius"] {
-        let text = format!("(Number [mm]) {name}: 5; ");
-        let mut bytes = b"hostglobalvariables".to_vec();
-        bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
-        bytes.extend_from_slice(text.as_bytes());
-        bytes.push(0);
-
-        let expressions = crate::om::numeric_expressions(&bytes);
-        assert_eq!(expressions.len(), 1);
-        assert_eq!(expressions[0].name, name);
-        assert_eq!(expressions[0].parameter_index, None);
-        assert_eq!(expressions[0].qualifier, None);
-    }
-    assert!(crate::om::expression_declaration_name(b"\x04\x08p12foo\0").is_none());
-    assert!(crate::om::expression_declaration_name(b"\x04\x06p12_\0").is_none());
-}
-
-#[test]
-fn om_numeric_expression_evaluates_constant_arithmetic_formula() {
-    let text = b"(Number [mm]) p9: (193.94 - 6) / 2 + 1.5e1; ";
-    let mut bytes = b"hostglobalvariables".to_vec();
-    bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
-    bytes.extend_from_slice(text);
-    bytes.push(0);
-
-    let expressions = crate::om::numeric_expressions(&bytes);
-    assert_eq!(expressions.len(), 1);
-    assert_eq!(expressions[0].expression, "(193.94 - 6) / 2 + 1.5e1");
-    assert_eq!(expressions[0].value, Some(108.97));
-}
-
-#[test]
-fn om_numeric_expression_applies_power_before_unary_sign() {
-    for (formula, expected) in [
-        ("-2^2", -4.0),
-        ("(-2)^2", 4.0),
-        ("2^-2", 0.25),
-        ("2^3^2", 512.0),
-    ] {
-        assert_eq!(
-            crate::om::evaluate_constant_expression(formula),
-            Some(expected),
-            "{formula}"
-        );
-    }
-}
-
-#[test]
-fn om_string_value_requires_marker_length_printability_and_terminator() {
-    let bytes = b"\x66\x32\x03\x0cSKETCH_001\0\x66\x32\x03\x03A\0\x66\x32\x03\x03A\x01";
-    let values = crate::om::string_values(bytes, 100);
-    assert_eq!(values.len(), 2);
-    assert_eq!(values[0].offset, 100);
-    assert_eq!(values[0].value, "SKETCH_001");
-    assert_eq!(values[1].value, "A");
-}
-
-#[test]
-fn om_tagged_references_preserve_family_value_order_and_bounds() {
-    let bytes = b"\xe0\x12\x34\x56\x78\xca\xbc\xde\xf0\xe0\x01";
-    let references = crate::om::references(bytes, 20);
-    assert_eq!(references.len(), 2);
-    assert_eq!(references[0].offset, 20);
-    assert_eq!(
-        references[0].kind,
-        crate::om::ReferenceKind::PersistentHandle
-    );
-    assert_eq!(references[0].value, 0x1234_5678);
-    assert_eq!(references[1].offset, 25);
-    assert_eq!(references[1].kind, crate::om::ReferenceKind::Tagged28);
-    assert_eq!(references[1].value, 0x0abc_def0);
-}
-
-#[test]
-fn om_counted_record_references_require_a_complete_in_bounds_run() {
-    let bytes = b"\xff\x01\x03\x90\x00\x02\x90\x00\x04\x01\x02\x90\x00\x05";
-    let references = crate::om::counted_record_references(bytes, 100, 5);
-    assert_eq!(references.len(), 2);
-    assert_eq!(references[0].offset, 103);
-    assert_eq!(
-        references[0].kind,
-        crate::om::ReferenceKind::RecordOrdinal16
-    );
-    assert_eq!(references[0].value, 2);
-    assert_eq!(references[1].value, 4);
-}
-
-#[test]
-fn om_record_reference_stream_requires_dense_suffix() {
-    let mut dense = b"ordinary-prefix".to_vec();
-    for value in 1..=8u32 {
-        dense.push(0xe0);
-        dense.extend_from_slice(&value.to_be_bytes());
-        dense.extend_from_slice(&(0xc000_0000 | value).to_be_bytes());
-    }
-    let references = crate::om::dense_reference_suffix(&dense, 100);
-    assert_eq!(references.len(), 16);
-    assert_eq!(references[0].offset, 115);
-
-    let mut sparse = dense;
-    sparse.extend_from_slice(&[0x55; 9]);
-    assert!(crate::om::dense_reference_suffix(&sparse, 0).is_empty());
-}
-
-#[test]
-fn om_numeric_expression_table_is_independent_of_entity_indexing() {
-    let bytes = b"hostglobalvariables\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00";
-    let expressions = crate::om::numeric_expressions(bytes);
-    assert_eq!(expressions.len(), 1);
-    assert_eq!(expressions[0].object_id, None);
-    assert_eq!(
-        expressions[0].name,
-        "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
-    );
-    assert_eq!(expressions[0].parameter_index, Some(8));
-    assert_eq!(
-        expressions[0].qualifier,
-        Some("CircularPattern_pattern_Circular_Dir_offset_angle")
-    );
-    assert_eq!(expressions[0].value, Some(120.0));
-}
 
 #[test]
 fn parasolid_entity_51_records_retain_layout_selected_references() {
@@ -6103,6 +223,7 @@ fn parasolid_entity_51_records_retain_layout_selected_references() {
     assert!(crate::parasolid::entity_51_record_at(&bytes[..25], 0).is_none());
 }
 
+
 #[test]
 fn parasolid_entity_51_definition_uses_extended_xmt_framing() {
     let mut bytes = vec![0, 0x51];
@@ -6120,6 +241,7 @@ fn parasolid_entity_51_definition_uses_extended_xmt_framing() {
     assert_eq!(record.byte_len, 28);
     assert!(crate::parasolid::entity_51_record_at(&bytes[..27], 0).is_none());
 }
+
 
 #[test]
 fn parasolid_entity_51_reference_count_is_five_plus_flags() {
@@ -6162,6 +284,7 @@ fn parasolid_entity_51_reference_count_is_five_plus_flags() {
     }
 }
 
+
 #[test]
 fn parasolid_entity_51_rejects_nonzero_upper_flag_bytes() {
     let mut bytes = vec![0, 0x51];
@@ -6175,6 +298,7 @@ fn parasolid_entity_51_rejects_nonzero_upper_flag_bytes() {
 
     assert!(crate::parasolid::entity_51_record_at(&bytes, 0).is_none());
 }
+
 
 #[test]
 fn parasolid_entity_54_strings_require_exact_length_and_terminator() {
@@ -6203,6 +327,7 @@ fn parasolid_entity_54_strings_require_exact_length_and_terminator() {
     );
 }
 
+
 #[test]
 fn parasolid_entity_52_integers_require_complete_counted_values() {
     let mut bytes = vec![0xaa, 0x00, 0x52];
@@ -6225,6 +350,7 @@ fn parasolid_entity_52_integers_require_complete_counted_values() {
     assert!(crate::parasolid::entity_52_integer_record_at(&bytes[..bytes.len() - 1], 1).is_none());
 }
 
+
 #[test]
 fn parasolid_field_names_require_a_complete_nonempty_reference_lane() {
     let bytes = [
@@ -6242,6 +368,7 @@ fn parasolid_field_names_require_a_complete_nonempty_reference_lane() {
     let empty = [0x00, 0x63, 0, 0, 0, 0, 0, 25];
     assert!(crate::parasolid::field_names_records(&empty).is_empty());
 }
+
 
 #[test]
 fn parasolid_entity_53_doubles_require_complete_finite_values() {
@@ -6267,6 +394,7 @@ fn parasolid_entity_53_doubles_require_complete_finite_values() {
     assert!(crate::parasolid::entity_53_double_records(&bytes).is_empty());
     assert!(crate::parasolid::entity_53_double_record_at(&bytes, 1).is_none());
 }
+
 
 #[test]
 fn parasolid_transformable_attribute_values_preserve_vector_and_axis_grouping() {
@@ -6321,6 +449,7 @@ fn parasolid_transformable_attribute_values_preserve_vector_and_axis_grouping() 
     );
 }
 
+
 #[test]
 fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
     let tags = [
@@ -6352,6 +481,7 @@ fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
     assert!(crate::parasolid::entity_62_unicode_records(&invalid).is_empty());
 }
 
+
 #[test]
 fn topology_rejects_shell_with_broken_face_ownership_chain() {
     let valid = topology_partition_stream();
@@ -6382,6 +512,7 @@ fn topology_rejects_shell_with_broken_face_ownership_chain() {
     );
 }
 
+
 #[test]
 fn topology_retains_shell_body_identity_without_body_record() {
     let mut stream = topology_partition_stream();
@@ -6405,6 +536,7 @@ fn topology_retains_shell_body_identity_without_body_record() {
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
+
 
 #[test]
 fn topology_accepts_cached_last_face_and_implicit_region_identity() {
@@ -6446,6 +578,7 @@ fn topology_accepts_cached_last_face_and_implicit_region_identity() {
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
+
 #[test]
 fn topology_rejects_nonreciprocal_fin_ring() {
     let mut stream = topology_partition_stream();
@@ -6476,6 +609,7 @@ fn topology_rejects_nonreciprocal_fin_ring() {
         .is_none());
 }
 
+
 #[test]
 fn topology_accepts_fixed_record_envelope_escape() {
     let mut stream = topology_partition_stream();
@@ -6491,6 +625,7 @@ fn topology_accepts_fixed_record_envelope_escape() {
     );
     assert_eq!(graph.face_loop_rings(4).unwrap().len(), 1);
 }
+
 
 #[test]
 fn topology_iterates_each_record_family_in_physical_order() {
@@ -6508,6 +643,7 @@ fn topology_iterates_each_record_family_in_physical_order() {
         vec![77, 3]
     );
 }
+
 
 #[test]
 fn decode_synthesizes_vertex_for_closed_null_vertex_fin() {
@@ -6530,6 +666,7 @@ fn decode_synthesizes_vertex_for_closed_null_vertex_fin() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn topology_invalid_candidate_cannot_shadow_later_valid_record() {
     let mut stream = record(14, 39);
@@ -6541,6 +678,7 @@ fn topology_invalid_candidate_cannot_shadow_later_valid_record() {
     assert!(face.pos >= 39);
     assert!(face.face_fields().is_some());
 }
+
 
 #[test]
 fn decode_retains_topology_owned_point_at_origin() {
@@ -6572,6 +710,7 @@ fn decode_retains_topology_owned_point_at_origin() {
     );
 }
 
+
 #[test]
 fn decode_orders_graph_only_origin_before_later_nonzero_point() {
     let mut stream = topology_partition_stream();
@@ -6595,6 +734,7 @@ fn decode_orders_graph_only_origin_before_later_nonzero_point() {
     assert_eq!(points[1].1, cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0));
     assert_eq!(points[1].2.map(|node| node.xmt), Some(77));
 }
+
 
 #[test]
 fn decode_orders_graph_only_escaped_analytics_before_later_records() {
@@ -6641,6 +781,7 @@ fn decode_orders_graph_only_escaped_analytics_before_later_records() {
     assert_eq!(curves[1].2.map(|node| node.xmt), Some(78));
 }
 
+
 #[test]
 fn decode_does_not_attach_unreferenced_point_to_solid_topology() {
     let mut stream = topology_partition_stream();
@@ -6660,6 +801,7 @@ fn decode_does_not_attach_unreferenced_point_to_solid_topology() {
     assert_eq!(result.ir.model.bodies.len(), 1);
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn decode_retains_connected_topology_with_unknown_surface_carrier() {
@@ -6687,6 +829,7 @@ fn decode_retains_connected_topology_with_unknown_surface_carrier() {
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
+
 #[test]
 fn decode_retains_unknown_non_null_edge_curve_carrier() {
     let mut stream = topology_partition_stream();
@@ -6708,6 +851,7 @@ fn decode_retains_unknown_non_null_edge_curve_carrier() {
     assert!(matches!(curve.geometry, CurveGeometry::Unknown { .. }));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn decode_drops_unknown_carrier_outside_emitted_topology() {
@@ -6733,6 +877,7 @@ fn decode_drops_unknown_carrier_outside_emitted_topology() {
     assert_eq!(result.ir.model.edges.len(), 1);
 }
 
+
 #[test]
 fn decode_retains_native_carrierless_edge() {
     let mut stream = topology_partition_stream();
@@ -6756,6 +901,7 @@ fn decode_retains_native_carrierless_edge() {
     assert_eq!(edge.param_range, None);
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
@@ -6880,6 +1026,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
     assert_eq!(off_support_ir.model.edges[0].curve, None);
 }
 
+
 #[test]
 fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -6917,6 +1064,7 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
     assert_eq!(edge.param_range, None);
     assert!(ir.model.procedural_curves.is_empty());
 }
+
 
 #[test]
 fn intersection_support_completion_requires_one_unique_incident_complement() {
@@ -7031,6 +1179,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
     assert_eq!(context.sides[1].pcurve.as_ref(), Some(&pcurve_geometry));
 }
 
+
 #[test]
 fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
     use cadmpeg_ir::geometry::{
@@ -7131,6 +1280,7 @@ fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
         assert!(point.z.abs() < 0.01);
     }
 }
+
 
 #[test]
 fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluable() {
@@ -7264,6 +1414,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
     assert_eq!(control_points.first(), Some(&Point2::new(0.0, 0.0)));
     assert_eq!(control_points.last(), Some(&Point2::new(1.0, 0.0)));
 }
+
 
 #[test]
 fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
@@ -7443,6 +1594,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     .is_none());
 }
 
+
 #[test]
 fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
     let stream = pcurve_topology_partition_stream();
@@ -7490,6 +1642,7 @@ fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
     );
 }
 
+
 #[test]
 fn decode_assigns_descending_pcurve_trim_to_the_coedge_use() {
     let mut stream = pcurve_topology_partition_stream();
@@ -7519,6 +1672,7 @@ fn decode_assigns_descending_pcurve_trim_to_the_coedge_use() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_omits_surface_curve_missing_tolerance_sentinel() {
     let mut stream = pcurve_topology_partition_stream();
@@ -7540,6 +1694,7 @@ fn decode_omits_surface_curve_missing_tolerance_sentinel() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_rejects_overflowing_pcurve_parameter_conversion() {
     let mut stream = pcurve_topology_partition_stream();
@@ -7558,6 +1713,7 @@ fn decode_rejects_overflowing_pcurve_parameter_conversion() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_preserves_multiple_shells_in_one_region() {
     let stream = shared_region_shells_partition_stream();
@@ -7574,6 +1730,7 @@ fn decode_preserves_multiple_shells_in_one_region() {
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
+
 
 #[test]
 fn nx_offset_surface_accepts_unbounded_representable_distance() {
@@ -7596,6 +1753,7 @@ fn nx_offset_surface_accepts_unbounded_representable_distance() {
     assert!(crate::topology::offset_surfaces(&stream).is_empty());
 }
 
+
 #[test]
 fn offset_surface_envelope_does_not_consume_the_following_record() {
     let mut stream = offset_surface_topology_partition_stream();
@@ -7612,6 +1770,7 @@ fn offset_surface_envelope_does_not_consume_the_following_record() {
     );
     assert!(graph.get(29, 20).is_some());
 }
+
 
 #[test]
 fn nx_blend_surface_requires_a_nonzero_rolling_ball_radius() {
@@ -7632,6 +1791,7 @@ fn nx_blend_surface_requires_a_nonzero_rolling_ball_radius() {
     assert!(crate::topology::blend_surfaces(&stream).is_empty());
 }
 
+
 #[test]
 fn detect_high_on_magic() {
     assert_eq!(NxCodec.detect(MAGIC), Confidence::High);
@@ -7640,6 +1800,7 @@ fn detect_high_on_magic() {
     // A Creo/Granite .prt shares the extension but not the magic.
     assert_eq!(NxCodec.detect(b"\xe0\x02\xff\xfeGRANITE"), Confidence::No);
 }
+
 
 #[test]
 fn container_parses_header_and_directory() {
@@ -7654,6 +1815,7 @@ fn container_parses_header_and_directory() {
         .iter()
         .any(|e| e.name == "/Root/UG_PART/UG_PART" && e.file_span.is_some()));
 }
+
 
 #[test]
 fn container_rejects_incomplete_counted_directories() {
@@ -7676,6 +1838,7 @@ fn container_rejects_incomplete_counted_directories() {
     footer[footer_offset + 6..footer_offset + 10].copy_from_slice(&1_u32.to_le_bytes());
     assert!(container::scan_bytes(footer).is_err());
 }
+
 
 #[test]
 fn container_rejects_trailing_or_overlapping_footer_data() {
@@ -7710,6 +1873,7 @@ fn container_rejects_trailing_or_overlapping_footer_data() {
     assert!(container::scan_bytes(overlap).is_err());
 }
 
+
 #[test]
 fn inspect_reports_bounded_nx_object_model_entities() {
     let mut cur = Cursor::new(prt_with_indexed_om_section());
@@ -7720,6 +1884,7 @@ fn inspect_reports_bounded_nx_object_model_entities() {
         note == "NX object model: 1 indexed section(s), 2 bounded entity record(s)"
     }));
 }
+
 
 #[test]
 fn decode_projects_part_attributes_to_document_attributes() {
@@ -7750,6 +1915,7 @@ fn decode_projects_part_attributes_to_document_attributes() {
     );
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn decode_exposes_strict_nx_jpeg_preview_metadata() {
@@ -7818,6 +1984,7 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
         .any(|unknown| unknown.id.0 == "nx:container:jpeg-preview#0"));
 }
 
+
 #[test]
 fn decode_rejects_repeated_nx_arrangement_terminators_atomically() {
     let mut arrangements =
@@ -7833,6 +2000,7 @@ fn decode_rejects_repeated_nx_arrangement_terminators_atomically() {
     assert!(result.ir.model.configurations.is_empty());
 }
 
+
 #[test]
 fn parasolid_extraction_classifies_partition_and_schema() {
     let f = single_part_prt();
@@ -7844,6 +2012,7 @@ fn parasolid_extraction_classifies_partition_and_schema() {
     assert_eq!(part.schema.as_deref(), Some("SCH_TEST_1_9999"));
     assert!(part.inflated.starts_with(b"PS\x00\x00"));
 }
+
 
 #[test]
 fn decode_transfers_point_plane_cylinder_line() {
@@ -7927,6 +2096,7 @@ fn decode_transfers_point_plane_cylinder_line() {
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
+
 #[test]
 fn decode_emits_connected_primitive_brep() {
     let mut cur = Cursor::new(topology_part_prt());
@@ -7982,6 +2152,7 @@ fn decode_emits_connected_primitive_brep() {
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
+
 #[test]
 fn decode_reports_missing_assembly_placements_only_for_external_references() {
     let file = prt_with_named_payloads(&[
@@ -8003,6 +2174,7 @@ fn decode_reports_missing_assembly_placements_only_for_external_references() {
             && loss.message.contains("Assembly occurrence placements")
     }));
 }
+
 
 #[test]
 fn retained_material_library_assets_do_not_imply_an_assignment_loss() {
@@ -8039,6 +2211,7 @@ fn retained_material_library_assets_do_not_imply_an_assignment_loss() {
         .iter()
         .all(|loss| loss.code != LossKind::MaterialNotTransferred));
 }
+
 
 #[test]
 fn offset_surface_parameter_solver_preserves_support_parameters() {
@@ -8136,6 +2309,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
     assert!((nested_parameters.v - expected.v).abs() < 1.0e-3);
 }
 
+
 #[test]
 fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
     let stream = offset_surface_topology_partition_stream();
@@ -8164,6 +2338,7 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
     assert_eq!(actual, seed);
 }
 
+
 #[test]
 fn decode_tracks_fully_extended_offset_common_header() {
     let stream = offset_surface_with_fully_extended_common_header();
@@ -8187,6 +2362,7 @@ fn decode_tracks_fully_extended_offset_common_header() {
     assert_ne!(procedural.surface, *support);
     assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
 }
+
 
 #[test]
 fn decode_tracks_fully_extended_compact_geometry_headers() {
@@ -8230,6 +2406,7 @@ fn decode_tracks_fully_extended_compact_geometry_headers() {
         .any(|curve| matches!(curve.geometry, CurveGeometry::Nurbs(_))));
 }
 
+
 #[test]
 fn intersection_construction_recovers_one_missing_term_from_unique_edge_endpoints() {
     let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
@@ -8246,6 +2423,7 @@ fn intersection_construction_recovers_one_missing_term_from_unique_edge_endpoint
         crate::intersection::RejectionCounts::default()
     );
 }
+
 
 #[test]
 fn intersection_construction_rejects_missing_term_without_topology_endpoint_match() {
@@ -8266,6 +2444,7 @@ fn intersection_construction_rejects_missing_term_without_topology_endpoint_matc
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_start_term, 1);
 }
+
 
 #[test]
 fn intersection_auxiliaries_reject_duplicate_identities() {
@@ -8323,6 +2502,7 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
     assert!(crate::intersection::blend_bounds(&blend_bound).is_empty());
 }
 
+
 #[test]
 fn intersection_rejection_census_requires_resolved_supports() {
     let mut stream = charted_intersection_curve_topology_partition_stream();
@@ -8342,6 +2522,7 @@ fn intersection_rejection_census_requires_resolved_supports() {
         crate::intersection::RejectionCounts::default()
     );
 }
+
 
 #[test]
 fn uncharted_intersection_requires_exact_topology_bounds() {
@@ -8370,6 +2551,7 @@ fn uncharted_intersection_requires_exact_topology_bounds() {
     assert!(crate::intersection::scan(&stream).uncharted.is_empty());
 }
 
+
 #[test]
 fn intersection_chart_accepts_one_matching_parameter_complement() {
     let ext11 = ext11_charted_intersection_curve_stream();
@@ -8392,6 +2574,7 @@ fn intersection_chart_accepts_one_matching_parameter_complement() {
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_chart, 1);
 }
+
 
 #[test]
 fn decode_lifts_pcurve_only_fin_carrier_to_its_surface() {
@@ -8433,6 +2616,7 @@ fn decode_lifts_pcurve_only_fin_carrier_to_its_surface() {
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
+
 #[test]
 fn decode_emits_blend_with_extended_support_reference() {
     let stream = blend_surface_with_extended_support_reference();
@@ -8445,6 +2629,7 @@ fn decode_emits_blend_with_extended_support_reference() {
         result.ir.model.procedural_surfaces[0].surface
     );
 }
+
 
 #[test]
 fn decode_binds_blend_ball_centre_spine() {
@@ -8464,6 +2649,7 @@ fn decode_binds_blend_ball_centre_spine() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_resolves_forward_blend_support_reference() {
     let stream = blend_surface_with_forward_blend_support();
@@ -8482,6 +2668,7 @@ fn decode_resolves_forward_blend_support_reference() {
     );
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn decode_reports_status_framed_deltas_records_and_tombstones() {
@@ -8510,6 +2697,7 @@ fn decode_reports_status_framed_deltas_records_and_tombstones() {
     );
 }
 
+
 #[test]
 fn decode_accepts_exact_loop_and_rejects_incomplete_fin_deltas() {
     let stream = variable_status_framed_deltas_stream();
@@ -8523,6 +2711,7 @@ fn decode_accepts_exact_loop_and_rejects_incomplete_fin_deltas() {
         Some("1")
     );
 }
+
 
 #[test]
 fn deltas_walks_complete_status_prefixed_entity_51_records() {
@@ -8570,6 +2759,7 @@ fn deltas_walks_complete_status_prefixed_entity_51_records() {
         .all(|record| record.kind != 81));
 }
 
+
 #[test]
 fn deltas_walks_attribute_records_that_share_a_terminal_zero() {
     let mut stream = vec![0, 84];
@@ -8609,6 +2799,7 @@ fn deltas_walks_attribute_records_that_share_a_terminal_zero() {
         .all(|byte| *byte == 0xff));
 }
 
+
 #[test]
 fn deltas_walks_fixed_record_that_shares_a_terminal_zero() {
     let mut stream = vec![0, 84];
@@ -8631,6 +2822,7 @@ fn deltas_walks_fixed_record_that_shares_a_terminal_zero() {
     assert_eq!(census.records[1].offset, census.records[0].end - 1);
     assert_eq!(census.bytes_decoded, stream.len());
 }
+
 
 #[test]
 fn deltas_fixed_records_share_a_terminal_zero_with_their_successor() {
@@ -8661,6 +2853,7 @@ fn deltas_fixed_records_share_a_terminal_zero_with_their_successor() {
     assert_eq!(census.records[1].offset, census.records[0].end - 1);
     assert_eq!(census.bytes_decoded, stream.len());
 }
+
 
 #[test]
 fn deltas_type_101_record_takes_precedence_over_an_overlapping_fixed_candidate() {
@@ -8701,6 +2894,7 @@ fn deltas_type_101_record_takes_precedence_over_an_overlapping_fixed_candidate()
     assert_eq!(census.bytes_decoded, type_101.len());
 }
 
+
 #[test]
 fn deltas_does_not_share_a_consecutive_reference_byte() {
     let mut stream = vec![0, 81];
@@ -8725,6 +2919,7 @@ fn deltas_does_not_share_a_consecutive_reference_byte() {
         [81]
     );
 }
+
 
 #[test]
 fn deltas_walks_complete_entity_value_records() {
@@ -8773,6 +2968,7 @@ fn deltas_walks_complete_entity_value_records() {
         "abc"
     );
 }
+
 
 #[test]
 fn deltas_walks_complete_type_91_records() {
@@ -8830,6 +3026,7 @@ fn deltas_walks_complete_type_91_records() {
     assert!(crate::deltas::walk(&invalid).records.is_empty());
 }
 
+
 #[test]
 fn deltas_walks_complete_group_records() {
     let mut direct = vec![0, 90, 0xff, 0xfe, 0, 1];
@@ -8880,6 +3077,7 @@ fn deltas_walks_complete_group_records() {
     assert!(crate::deltas::walk(&escaped).records.is_empty());
 }
 
+
 #[test]
 fn deltas_walks_complete_attdef_lists() {
     let mut direct = vec![0, 74];
@@ -8925,6 +3123,7 @@ fn deltas_walks_complete_attdef_lists() {
     escaped[20..22].copy_from_slice(&1u16.to_be_bytes());
     assert!(crate::deltas::walk(&escaped).records.is_empty());
 }
+
 
 #[test]
 fn deltas_walks_complete_type_101_records() {
@@ -8978,6 +3177,7 @@ fn deltas_walks_complete_type_101_records() {
     assert!(crate::deltas::walk(&escaped).records.is_empty());
 }
 
+
 #[test]
 fn deltas_walks_auxiliary_family_tombstones() {
     let mut stream = Vec::new();
@@ -9009,6 +3209,7 @@ fn deltas_walks_auxiliary_family_tombstones() {
         .iter()
         .all(|byte| *byte == 0xff));
 }
+
 
 #[test]
 fn deltas_term_use_numeric_tails_follow_the_declared_endpoint_count() {
@@ -9050,6 +3251,7 @@ fn deltas_term_use_numeric_tails_follow_the_declared_endpoint_count() {
     assert_eq!(census.bytes_decoded, 34);
 }
 
+
 #[test]
 fn deltas_tagged_reference_lanes_require_complete_known_kind_and_xmt_pairs() {
     let stream = [
@@ -9077,6 +3279,7 @@ fn deltas_tagged_reference_lanes_require_complete_known_kind_and_xmt_pairs() {
     }
 }
 
+
 #[test]
 fn deltas_point_normalizes_to_partition_record_framing() {
     let record = crate::deltas::walk(&status_framed_deltas_point_stream())
@@ -9091,6 +3294,7 @@ fn deltas_point_normalizes_to_partition_record_framing() {
     put_vec3(&mut expected, 16, [0.0125, -0.002, 0.004]);
     assert_eq!(record.canonical_bytes, expected);
 }
+
 
 #[test]
 fn deltas_intersection_normalizes_before_partition_style_decode() {
@@ -9109,6 +3313,7 @@ fn deltas_intersection_normalizes_before_partition_style_decode() {
     assert_eq!(intersections[0].xmt, 12);
     assert_eq!(intersections[0].references, [6, 7, 20, 21, 22, 23]);
 }
+
 
 #[test]
 fn deltas_walks_complete_single_byte_intersection_data_records() {
@@ -9145,6 +3350,7 @@ fn deltas_walks_complete_single_byte_intersection_data_records() {
     assert!(residual[..record_len].iter().all(|byte| *byte == 0xff));
     assert!(residual.ends_with(&stream[..record_len]));
 }
+
 
 #[test]
 fn deltas_rejects_denormal_topology_tolerance_payload_coincidences() {
@@ -9191,6 +3397,7 @@ fn deltas_rejects_denormal_topology_tolerance_payload_coincidences() {
     assert!(crate::deltas::walk(&vertex).records.is_empty());
 }
 
+
 #[test]
 fn deltas_rejects_denormal_point_payload_coincidences() {
     let mut point = status_framed_deltas_point_stream();
@@ -9211,6 +3418,7 @@ fn deltas_rejects_denormal_point_payload_coincidences() {
     point[position + 8..].fill(0);
     assert_eq!(crate::deltas::walk(&point).full_counts["POINT"], 1);
 }
+
 
 #[test]
 fn deltas_walks_complete_intersection_auxiliary_records() {
@@ -9252,6 +3460,7 @@ fn deltas_walks_complete_intersection_auxiliary_records() {
         assert!(residual.ends_with(bytes));
     }
 }
+
 
 #[test]
 fn deltas_walks_status_framed_blend_bound_records() {
@@ -9304,6 +3513,7 @@ fn deltas_walks_status_framed_blend_bound_records() {
     assert!(crate::deltas::walk(&invalid_status).records.is_empty());
 }
 
+
 #[test]
 fn deltas_walks_complete_nurbs_auxiliary_records() {
     let source = bspline_partition_stream();
@@ -9338,6 +3548,7 @@ fn deltas_walks_complete_nurbs_auxiliary_records() {
     }
 }
 
+
 #[test]
 fn deltas_walks_complete_status_framed_surface_descriptors() {
     let mut descriptor = 126u16.to_be_bytes().to_vec();
@@ -9371,6 +3582,7 @@ fn deltas_walks_complete_status_framed_surface_descriptors() {
     *invalid_status.last_mut().expect("final reference status") = 1;
     assert!(crate::deltas::walk(&invalid_status).records.is_empty());
 }
+
 
 #[test]
 fn deltas_walks_complete_surface_data_headers() {
@@ -9419,6 +3631,7 @@ fn deltas_walks_complete_surface_data_headers() {
     assert!(crate::deltas::walk(&invalid_status).records.is_empty());
 }
 
+
 #[test]
 fn deltas_walks_complete_curve_data_headers() {
     fn record(escape: bool, xmt: u32, mode: u8, reference: u32) -> Vec<u8> {
@@ -9454,6 +3667,7 @@ fn deltas_walks_complete_curve_data_headers() {
     *invalid_status.last_mut().expect("final status") = 0;
     assert!(crate::deltas::walk(&invalid_status).records.is_empty());
 }
+
 
 #[test]
 fn deltas_walks_complete_type_141_records() {
@@ -9502,6 +3716,7 @@ fn deltas_walks_complete_type_141_records() {
     assert!(residual[..decoded_len].iter().all(|byte| *byte == 0xff));
     assert!(residual.ends_with(&[direct, direct_extended, escaped, ambiguous_escaped].concat()));
 }
+
 
 #[test]
 fn deltas_walks_complete_type_45_records() {
@@ -9591,6 +3806,7 @@ fn deltas_walks_complete_type_45_records() {
     assert!(crate::deltas::walk(&subnormal).records.is_empty());
 }
 
+
 #[test]
 fn deltas_walks_complete_type_70_records() {
     fn record(escape: bool, xmt: u32, count: u16, trailing_reference: u32) -> Vec<u8> {
@@ -9636,6 +3852,7 @@ fn deltas_walks_complete_type_70_records() {
     assert!(crate::deltas::walk(&mismatched).records.is_empty());
 }
 
+
 #[test]
 fn deltas_offset_surface_normalizes_exact_record_envelope() {
     let stream = deltas_offset_surface_partition_stream();
@@ -9671,6 +3888,7 @@ fn deltas_offset_surface_normalizes_exact_record_envelope() {
         .iter()
         .any(|record| record.kind == 60));
 }
+
 
 #[test]
 fn deltas_procedural_wrappers_normalize_complete_record_envelopes() {
@@ -9714,6 +3932,7 @@ fn deltas_procedural_wrappers_normalize_complete_record_envelopes() {
         .any(|record| record.kind == 56));
 }
 
+
 #[test]
 fn deltas_fixed_record_boundary_accepts_known_auxiliary_tag() {
     let mut stream = deltas_bspline_curve_wrapper_stream();
@@ -9729,6 +3948,7 @@ fn deltas_fixed_record_boundary_accepts_known_auxiliary_tag() {
     assert_eq!(wrapper.end, wrapper_len);
     assert_eq!(wrapper.canonical_bytes.len(), 23);
 }
+
 
 #[test]
 fn deltas_fixed_records_accept_direct_extended_and_escaped_envelopes() {
@@ -9783,6 +4003,7 @@ fn deltas_fixed_records_accept_direct_extended_and_escaped_envelopes() {
     assert_eq!(census.records[2].position, Some([1.0, 2.0, 3.0]));
 }
 
+
 #[test]
 fn merged_deltas_full_record_replaces_partition_node() {
     let partition = topology_partition_stream();
@@ -9796,6 +4017,7 @@ fn merged_deltas_full_record_replaces_partition_node() {
     assert_eq!(points[0].position.z, 4.0);
     assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_some());
 }
+
 
 #[test]
 fn merged_tombstone_preserves_a_topology_referenced_carrier() {
@@ -9813,6 +4035,7 @@ fn merged_tombstone_preserves_a_topology_referenced_carrier() {
     assert_eq!(crate::geometry::points(&merged)[0].position.x, 10.0);
 }
 
+
 #[test]
 fn merged_exact_key_tombstone_removes_unreferenced_partition_node() {
     let mut partition = record(29, 40);
@@ -9822,6 +4045,7 @@ fn merged_exact_key_tombstone_removes_unreferenced_partition_node() {
     let merged = crate::deltas::merge_full_records(&partition, &tombstone);
     assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_none());
 }
+
 
 #[test]
 fn merged_deltas_uses_last_full_or_tombstone_event() {
@@ -9853,6 +4077,7 @@ fn deltas_body_revision(node_id: u32) -> Vec<u8> {
     revision
 }
 
+
 #[test]
 fn final_body_revision_scopes_deltas_overlay_events() {
     let mut partition = record(29, 40);
@@ -9871,6 +4096,7 @@ fn final_body_revision_scopes_deltas_overlay_events() {
     let merged = crate::deltas::merge_full_records(&partition, &current_delete);
     assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_none());
 }
+
 
 #[test]
 fn unmatched_tombstones_are_scoped_to_the_final_body_revision() {
@@ -9891,6 +4117,7 @@ fn unmatched_tombstones_are_scoped_to_the_final_body_revision() {
     );
 }
 
+
 #[test]
 fn semantic_residual_masks_historical_body_revisions() {
     let mut deltas = deltas_body_revision(1);
@@ -9905,6 +4132,7 @@ fn semantic_residual_masks_historical_body_revisions() {
         .all(|byte| *byte == 0xff));
     assert!(residual.ends_with(&[0, 38, 0x11, 0x22, 0x33]));
 }
+
 
 #[test]
 fn unmatched_delta_tombstones_follow_exact_last_event_identity() {
@@ -9941,6 +4169,7 @@ fn unmatched_delta_tombstones_follow_exact_last_event_identity() {
     );
 }
 
+
 #[test]
 fn deltas_tombstone_decodes_compact_and_extended_xmt_identities() {
     let compact = [0, 29, 0, 11, 0, 1];
@@ -9949,6 +4178,7 @@ fn deltas_tombstone_decodes_compact_and_extended_xmt_identities() {
     assert_eq!(crate::deltas::walk(&compact).tombstones[0].xmt, 11);
     assert_eq!(crate::deltas::walk(&extended).tombstones[0].xmt, 40_000);
 }
+
 
 #[test]
 fn deltas_body_revision_retains_prefix_identities_and_bounded_state_tail() {
@@ -9979,6 +4209,7 @@ fn deltas_body_revision_retains_prefix_identities_and_bounded_state_tail() {
     assert_eq!(census.body_revisions[0].end, bytes.len());
     assert_eq!(census.bytes_decoded, bytes.len());
 }
+
 
 #[test]
 fn deltas_reference_state_packets_decode_compact_and_extended_references() {
@@ -10053,6 +4284,7 @@ fn deltas_reference_state_packets_decode_compact_and_extended_references() {
     assert_eq!(compound_census.bytes_decoded, compound.len());
 }
 
+
 #[test]
 fn deltas_reference_marker_packets_decode_extended_references_atomically() {
     let packet = [
@@ -10083,6 +4315,7 @@ fn deltas_reference_marker_packets_decode_extended_references_atomically() {
             .is_empty());
     }
 }
+
 
 #[test]
 fn deltas_region_schema_declaration_exposes_a_following_marker_packet() {
@@ -10126,6 +4359,7 @@ fn deltas_region_schema_declaration_exposes_a_following_marker_packet() {
         .is_empty());
 }
 
+
 #[test]
 fn deltas_body_revision_does_not_absorb_an_adjacent_tagged_reference_lane() {
     let mut bytes = vec![0, 12, 0, 3];
@@ -10152,6 +4386,7 @@ fn deltas_body_revision_does_not_absorb_an_adjacent_tagged_reference_lane() {
     assert_eq!(census.bytes_decoded, bytes.len());
 }
 
+
 #[test]
 fn decode_emits_point_added_by_deltas_stream() {
     let mut cur = Cursor::new(prt_with_partition(&deltas_point_partition_stream()));
@@ -10161,6 +4396,7 @@ fn decode_emits_point_added_by_deltas_stream() {
     assert_eq!(result.ir.model.points[0].position.y, -2.0);
     assert_eq!(result.ir.model.points[0].position.z, 4.0);
 }
+
 
 #[test]
 fn decode_replaces_partition_point_with_same_xmt_deltas_point() {
@@ -10179,6 +4415,7 @@ fn decode_replaces_partition_point_with_same_xmt_deltas_point() {
     assert_eq!(result.ir.model.points[0].position.z, 4.0);
 }
 
+
 #[test]
 fn decode_preserves_partition_edge_topology_over_deltas_history() {
     let partition = topology_partition_stream();
@@ -10194,6 +4431,7 @@ fn decode_preserves_partition_edge_topology_over_deltas_history() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_preserves_partition_face_and_vertex_topology_over_deltas_history() {
     let partition = topology_partition_stream();
@@ -10206,6 +4444,7 @@ fn decode_preserves_partition_face_and_vertex_topology_over_deltas_history() {
     assert_eq!(result.ir.model.vertices[0].tolerance, Some(0.1));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn decode_preserves_partition_loop_topology_over_deltas_history() {
@@ -10225,6 +4464,7 @@ fn decode_preserves_partition_loop_topology_over_deltas_history() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_preserves_partition_shell_topology_over_deltas_history() {
     let partition = topology_partition_stream();
@@ -10243,6 +4483,7 @@ fn decode_preserves_partition_shell_topology_over_deltas_history() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_preserves_partition_fin_topology_over_deltas_history() {
     let partition = topology_partition_stream();
@@ -10259,6 +4500,7 @@ fn decode_preserves_partition_fin_topology_over_deltas_history() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_replaces_partition_line_from_status_framed_deltas() {
     let partition = topology_partition_stream();
@@ -10274,6 +4516,7 @@ fn decode_replaces_partition_line_from_status_framed_deltas() {
     assert_eq!(direction, Vector3::new(0.0, 1.0, 0.0));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn decode_replaces_partition_plane_from_status_framed_deltas() {
@@ -10296,6 +4539,7 @@ fn decode_replaces_partition_plane_from_status_framed_deltas() {
     );
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn decode_replaces_partition_offset_surface_from_status_framed_deltas() {
@@ -10326,6 +4570,7 @@ fn decode_replaces_partition_offset_surface_from_status_framed_deltas() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_replaces_partition_blend_surface_from_status_framed_deltas() {
     let partition = blend_surface_topology_partition_stream();
@@ -10355,6 +4600,7 @@ fn decode_replaces_partition_blend_surface_from_status_framed_deltas() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_replaces_partition_trimmed_curve_from_status_framed_deltas() {
     let partition = trimmed_topology_partition_stream();
@@ -10374,6 +4620,7 @@ fn decode_replaces_partition_trimmed_curve_from_status_framed_deltas() {
     assert_eq!(result.ir.model.edges[0].param_range, Some([0.3, 0.7]));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn decode_replaces_partition_surface_curve_from_status_framed_deltas() {
@@ -10398,6 +4645,7 @@ fn decode_replaces_partition_surface_curve_from_status_framed_deltas() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_replaces_partition_circle_from_status_framed_deltas() {
     let partition = circle_topology_partition_stream();
@@ -10416,6 +4664,7 @@ fn decode_replaces_partition_circle_from_status_framed_deltas() {
     )));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn decode_replaces_partition_ellipse_from_status_framed_deltas() {
@@ -10442,6 +4691,7 @@ fn decode_replaces_partition_ellipse_from_status_framed_deltas() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_replaces_partition_cylinder_from_status_framed_deltas() {
     let partition = cylinder_topology_partition_stream();
@@ -10460,6 +4710,7 @@ fn decode_replaces_partition_cylinder_from_status_framed_deltas() {
     )));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn decode_replaces_partition_cone_from_status_framed_deltas() {
@@ -10482,6 +4733,7 @@ fn decode_replaces_partition_cone_from_status_framed_deltas() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_replaces_partition_sphere_from_status_framed_deltas() {
     let partition = sphere_topology_partition_stream();
@@ -10500,6 +4752,7 @@ fn decode_replaces_partition_sphere_from_status_framed_deltas() {
     )));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn decode_replaces_partition_torus_from_status_framed_deltas() {
@@ -10525,6 +4778,7 @@ fn decode_replaces_partition_torus_from_status_framed_deltas() {
     )));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn intersection_pcurve_attachment_requires_face_incidence() {
@@ -10572,6 +4826,7 @@ fn intersection_pcurve_attachment_requires_face_incidence() {
     ));
 }
 
+
 #[test]
 fn decode_derives_analytic_support_uv_without_serialized_values() {
     let stream = charted_intersection_without_uv_stream();
@@ -10595,6 +4850,7 @@ fn decode_derives_analytic_support_uv_without_serialized_values() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_accepts_intersection_terms_within_chart_tolerance() {
     let stream = charted_intersection_with_approximated_term_stream();
@@ -10611,6 +4867,7 @@ fn decode_accepts_intersection_terms_within_chart_tolerance() {
     assert!(matches!(carrier.geometry, CurveGeometry::Nurbs(_)));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn decode_emits_ext11_deltas_intersection_chart() {
@@ -10632,6 +4889,7 @@ fn decode_emits_ext11_deltas_intersection_chart() {
     assert_eq!(nurbs.control_points[1].x, 10.0);
     assert_eq!(nurbs.knots, vec![2.0, 2.0, 5.0, 5.0]);
 }
+
 
 #[test]
 fn decode_assigns_ext11_uv_lanes_by_unique_surface_evaluation() {
@@ -10658,6 +4916,7 @@ fn decode_assigns_ext11_uv_lanes_by_unique_surface_evaluation() {
     assert_eq!(second, [Point2::new(0.0, 0.0), Point2::new(0.0, 10.0)]);
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn ext11_uv_assignment_eliminates_the_complementary_support_lane() {
@@ -10689,6 +4948,7 @@ fn ext11_uv_assignment_eliminates_the_complementary_support_lane() {
     assert_eq!(assigned, [lanes[0].clone(), None]);
 }
 
+
 #[test]
 fn topology_selects_one_candidate_at_an_ambiguous_record_offset() {
     let mut stream = vec![0; 40];
@@ -10697,6 +4957,7 @@ fn topology_selects_one_candidate_at_an_ambiguous_record_offset() {
     assert_eq!(graph.of_kind(12).count(), 1);
     assert_eq!(graph.at_pos(0).map(|node| node.xmt), Some(65_536));
 }
+
 
 #[test]
 fn trimmed_curves_reject_nonfinite_endpoint_witnesses() {
@@ -10711,6 +4972,7 @@ fn trimmed_curves_reject_nonfinite_endpoint_witnesses() {
     put_f64(&mut stream, trim + 21, f64::MAX);
     assert!(crate::topology::trimmed_curves(&stream).is_empty());
 }
+
 
 #[test]
 fn nurbs_carriers_reject_nonfinite_millimeter_control_points() {
@@ -10739,6 +5001,7 @@ fn nurbs_carriers_reject_nonfinite_millimeter_control_points() {
     put_f64(&mut curve, payload + 31, f64::MIN_POSITIVE);
     assert!(crate::nurbs::pcurves(&curve).is_empty());
 }
+
 
 #[test]
 fn nurbs_carriers_reject_invalid_basis_cardinality() {
@@ -10770,6 +5033,7 @@ fn nurbs_carriers_reject_invalid_basis_cardinality() {
     assert!(crate::nurbs::curves(&short_knots).is_empty());
 }
 
+
 #[test]
 fn nurbs_surface_rejects_mismatched_descriptor_payload_reference() {
     let mut stream = bspline_partition_stream();
@@ -10780,6 +5044,7 @@ fn nurbs_surface_rejects_mismatched_descriptor_payload_reference() {
     put_ref(&mut stream, descriptor + 46, 22);
     assert!(crate::nurbs::surfaces(&stream).is_empty());
 }
+
 
 #[test]
 fn nurbs_carriers_reject_duplicate_support_identities() {
@@ -10823,6 +5088,7 @@ fn nurbs_carriers_reject_duplicate_support_identities() {
     }
 }
 
+
 #[test]
 fn nurbs_decodes_descriptors_at_the_stream_boundary() {
     fn move_record_to_end(stream: &mut Vec<u8>, tag: u8, xmt: u16, len: usize) {
@@ -10843,6 +5109,7 @@ fn nurbs_decodes_descriptors_at_the_stream_boundary() {
     assert_eq!(crate::nurbs::curves(&curve).len(), 1);
 }
 
+
 #[test]
 fn intersection_chart_rejects_nonfinite_millimeter_tolerance() {
     let mut stream = charted_intersection_curve_topology_partition_stream();
@@ -10853,6 +5120,7 @@ fn intersection_chart_rejects_nonfinite_millimeter_tolerance() {
     put_f64(&mut stream, chart + 28, f64::MAX);
     assert!(crate::intersection::curves(&stream).is_empty());
 }
+
 
 #[test]
 fn decode_replaces_ambiguous_ext11_uv_lanes_from_analytic_supports() {
@@ -10869,6 +5137,7 @@ fn decode_replaces_ambiguous_ext11_uv_lanes_from_analytic_supports() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_completes_one_non_sentinel_ext11_uv_lane_analytically() {
     let stream = partial_ext11_charted_intersection_curve_stream();
@@ -10884,6 +5153,7 @@ fn decode_completes_one_non_sentinel_ext11_uv_lane_analytically() {
     assert!(context.sides[1].pcurve.is_some());
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn completed_intersection_support_lane_attaches_after_topology_emission() {
@@ -10980,6 +5250,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         .any(|pcurve| pcurve.pcurve == completed.id)));
 }
 
+
 #[test]
 fn ext11_uv_completion_runs_after_support_incidence_resolution() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
@@ -11019,6 +5290,7 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
@@ -11054,6 +5326,7 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
     assert!(context.sides.iter().all(|side| side.pcurve.is_some()));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
@@ -11199,6 +5472,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
     assert!(context.sides[0].pcurve.is_some());
 }
 
+
 #[test]
 fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
@@ -11247,6 +5521,7 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
@@ -11281,6 +5556,7 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
 
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn equivalent_offset_supports_share_a_complete_parameter_lane() {
@@ -11380,6 +5656,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
     ));
 }
 
+
 #[test]
 fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
     let surface = cadmpeg_ir::geometry::NurbsSurface {
@@ -11412,6 +5689,7 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
     assert!((after_invalid_seed.u - expected.u).abs() < 1.0e-10);
     assert!((after_invalid_seed.v - expected.v).abs() < 1.0e-10);
 }
+
 
 #[test]
 fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
@@ -11638,6 +5916,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     assert!(nurbs_lanes[0].last().unwrap().u > 4.0);
 }
 
+
 #[test]
 fn surface_intersection_jacobian_is_stable_at_large_model_coordinates() {
     use cadmpeg_ir::geometry::Surface;
@@ -11685,6 +5964,7 @@ fn surface_intersection_jacobian_is_stable_at_large_model_coordinates() {
     }
 }
 
+
 #[test]
 fn damped_intersection_correction_reduces_a_rank_deficient_system() {
     let matrix = [
@@ -11709,6 +5989,7 @@ fn damped_intersection_correction_reduces_a_rank_deficient_system() {
         assert!((actual - expected).abs() < 1.0e-8);
     }
 }
+
 
 #[test]
 fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
@@ -11751,6 +6032,7 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
     );
 }
 
+
 #[test]
 fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
     let mut control_points = Vec::new();
@@ -11788,6 +6070,7 @@ fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
     assert!((actual.v - expected.v).abs() < 1.0e-10);
 }
 
+
 #[test]
 fn nurbs_parameter_solver_preserves_close_equal_branches() {
     let mut control_points = Vec::new();
@@ -11818,6 +6101,7 @@ fn nurbs_parameter_solver_preserves_close_equal_branches() {
     assert!((actual.u - expected.u).abs() < 1.0e-10);
     assert!((actual.v - expected.v).abs() < 1.0e-10);
 }
+
 
 #[test]
 fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
@@ -11852,6 +6136,7 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
 
     assert!((actual - 0.25).abs() < 1.0e-10);
 }
+
 
 #[test]
 fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
@@ -11988,6 +6273,7 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
     );
 }
 
+
 #[test]
 fn blend_contact_offset_requires_the_radius_magnitude() {
     assert!(crate::decode::blend_contact_offset_matches(2.0, 5.0, 3.0));
@@ -12001,6 +6287,7 @@ fn blend_contact_offset_requires_the_radius_magnitude() {
         2.0, 5.001, 3.0
     ));
 }
+
 
 #[test]
 fn blend_contact_matches_separate_analytic_offset_carriers() {
@@ -12064,6 +6351,7 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
             .is_none()
     );
 }
+
 
 #[test]
 fn blend_contact_matches_concentric_blend_carriers() {
@@ -12167,6 +6455,7 @@ fn blend_contact_matches_concentric_blend_carriers() {
     assert!(crate::decode::constant_surface_offset_between(&ir, &inner, &outer, 0).is_none());
 }
 
+
 #[test]
 fn closest_spine_parameter_inverts_periodic_analytic_curves() {
     use cadmpeg_ir::geometry::Curve;
@@ -12218,6 +6507,7 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
         "{lower}"
     );
 }
+
 
 #[test]
 fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
@@ -12658,6 +6948,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     assert!(crate::decode::blend_surface_point(&ir, &outer, expected.u, expected.v).is_none());
 }
 
+
 #[test]
 fn decode_emits_both_intersection_support_pcurves() {
     let stream = two_support_charted_intersection_curve_stream();
@@ -12675,6 +6966,7 @@ fn decode_emits_both_intersection_support_pcurves() {
     assert!(context.sides[1].pcurve.is_some());
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn decode_retains_uncharted_intersection_without_inventing_a_range() {
@@ -12717,6 +7009,7 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
         .all(|edge| edge.param_range.is_none()));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn terminal_plane_intersection_establishes_exact_bidirectional_charts() {
@@ -12773,6 +7066,7 @@ fn terminal_plane_intersection_establishes_exact_bidirectional_charts() {
     assert_eq!(edge.param_range, Some([0.0, 1.0]));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn terminal_cylinder_generator_establishes_exact_bidirectional_charts() {
@@ -12845,6 +7139,7 @@ fn terminal_cylinder_generator_establishes_exact_bidirectional_charts() {
     ));
 }
 
+
 #[test]
 fn terminal_cone_generator_establishes_exact_bidirectional_charts() {
     let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
@@ -12898,6 +7193,7 @@ fn terminal_cone_generator_establishes_exact_bidirectional_charts() {
     }
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn terminal_sphere_and_torus_meridians_establish_exact_bidirectional_charts() {
@@ -12991,6 +7287,7 @@ fn terminal_sphere_and_torus_meridians_establish_exact_bidirectional_charts() {
     }
 }
 
+
 #[test]
 fn decode_emits_inline_descriptor_intersection_witnesses() {
     let stream = inline_descriptor_intersection_curve_stream();
@@ -13014,6 +7311,7 @@ fn decode_emits_inline_descriptor_intersection_witnesses() {
     ));
 }
 
+
 #[test]
 fn decode_emits_topology_when_record_xmt_uses_extended_encoding() {
     let stream = large_xmt_headers(&topology_partition_stream());
@@ -13026,6 +7324,7 @@ fn decode_emits_topology_when_record_xmt_uses_extended_encoding() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_maps_parasolid_tolerance_sentinel_to_none() {
     let stream = topology_with_missing_tolerances();
@@ -13036,6 +7335,7 @@ fn decode_maps_parasolid_tolerance_sentinel_to_none() {
     assert_eq!(result.ir.model.edges[0].tolerance, None);
     assert_eq!(result.ir.model.faces[0].tolerance, None);
 }
+
 
 #[test]
 fn decode_dual_writes_inline_entity_metadata_to_annotations() {
@@ -13090,6 +7390,7 @@ fn decode_dual_writes_inline_entity_metadata_to_annotations() {
     }
 }
 
+
 #[test]
 fn decode_transfers_bspline_surface_and_curve() {
     let stream = bspline_partition_stream();
@@ -13123,6 +7424,7 @@ fn decode_transfers_bspline_surface_and_curve() {
     assert!((curve.control_points[1].x - 20.0).abs() < 1e-9);
 }
 
+
 #[test]
 fn nurbs_decodes_extended_xmt_arrays_payload_and_long_surface_descriptor() {
     let surfaces = crate::nurbs::surfaces(&extended_bspline_surface_stream());
@@ -13135,6 +7437,7 @@ fn nurbs_decodes_extended_xmt_arrays_payload_and_long_surface_descriptor() {
     assert_eq!(surface.control_points.len(), 4);
     assert_eq!(surface.control_points[3].y, 20.0);
 }
+
 
 #[test]
 fn nurbs_decodes_escaped_surface_payload_envelope() {
@@ -13153,6 +7456,7 @@ fn nurbs_decodes_escaped_surface_payload_envelope() {
     assert_eq!(surface.control_points.len(), 4);
     assert_eq!(surface.control_points[3].y, 20.0);
 }
+
 
 #[test]
 fn nurbs_coalesces_equivalent_surface_descriptor_representations() {
@@ -13184,6 +7488,7 @@ fn nurbs_coalesces_equivalent_surface_descriptor_representations() {
     assert_eq!(surface.control_points.len(), 4);
 }
 
+
 #[test]
 fn nurbs_coalesces_equivalent_curve_descriptor_representations() {
     let mut stream = bspline_partition_stream();
@@ -13212,6 +7517,7 @@ fn nurbs_coalesces_equivalent_curve_descriptor_representations() {
     assert_eq!(curve.control_points.len(), 2);
 }
 
+
 #[test]
 fn nurbs_decodes_escaped_curve_descriptor_and_payload_count() {
     let mut stream = bspline_partition_stream();
@@ -13236,6 +7542,7 @@ fn nurbs_decodes_escaped_curve_descriptor_and_payload_count() {
     assert_eq!(curve.control_points[1].x, 20.0);
 }
 
+
 #[test]
 fn nurbs_compact_curve_descriptor_survives_a_status_prefix_collision() {
     let mut stream = bspline_partition_stream();
@@ -13247,6 +7554,7 @@ fn nurbs_compact_curve_descriptor_survives_a_status_prefix_collision() {
 
     assert_eq!(crate::nurbs::curves(&stream).len(), 1);
 }
+
 
 #[test]
 fn nurbs_decodes_dimension_four_rational_curve() {
@@ -13282,6 +7590,7 @@ fn nurbs_decodes_dimension_four_rational_curve() {
     assert_eq!(curve.control_points[1].x, 20.0);
 }
 
+
 #[test]
 fn decode_replaces_partition_bspline_surface_wrapper_from_deltas() {
     let partition = bspline_surface_replacement_partition_stream();
@@ -13297,6 +7606,7 @@ fn decode_replaces_partition_bspline_surface_wrapper_from_deltas() {
     )));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn decode_replaces_partition_bspline_curve_wrapper_from_deltas() {
@@ -13314,6 +7624,7 @@ fn decode_replaces_partition_bspline_curve_wrapper_from_deltas() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_uses_partner_fin_vertex_for_edge_endpoint() {
     let mut cur = Cursor::new(prt_with_partition(
@@ -13327,6 +7638,7 @@ fn decode_uses_partner_fin_vertex_for_edge_endpoint() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_resolves_forward_trimmed_curve_chain() {
     let mut cur = Cursor::new(prt_with_partition(&forward_trimmed_curve_chain_stream()));
@@ -13336,6 +7648,7 @@ fn decode_resolves_forward_trimmed_curve_chain() {
     assert_eq!(edge.param_range, Some([0.25, 0.75]));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn decode_retains_a_curve_when_its_trim_range_misses_edge_vertices() {
@@ -13354,6 +7667,7 @@ fn decode_retains_a_curve_when_its_trim_range_misses_edge_vertices() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_omits_overflowing_line_trim_range() {
     let mut stream = trimmed_topology_partition_stream();
@@ -13369,6 +7683,7 @@ fn decode_omits_overflowing_line_trim_range() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_resolves_extended_xmt_reference_inside_edge_record() {
     let mut cur = Cursor::new(prt_with_partition(
@@ -13381,6 +7696,7 @@ fn decode_resolves_extended_xmt_reference_inside_edge_record() {
         Some(&result.ir.model.curves[0].id)
     );
 }
+
 
 #[test]
 fn decode_tracks_extended_face_reference_shift() {
@@ -13398,6 +7714,7 @@ fn decode_tracks_extended_face_reference_shift() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_tracks_extended_edge_reference_shift() {
     let mut cur = Cursor::new(prt_with_partition(
@@ -13412,6 +7729,7 @@ fn decode_tracks_extended_edge_reference_shift() {
         Some(&result.ir.model.curves[0].id)
     );
 }
+
 
 #[test]
 fn decode_tracks_all_extended_topology_reference_shifts() {
@@ -13431,6 +7749,7 @@ fn decode_tracks_all_extended_topology_reference_shifts() {
     assert_eq!(result.ir.model.points[0].position.x, 10.0);
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn decode_tracks_fully_extended_geometry_header_shift() {
@@ -13464,6 +7783,7 @@ fn decode_tracks_fully_extended_geometry_header_shift() {
     ));
 }
 
+
 #[test]
 fn decode_tracks_geometry_envelope_escape_shift() {
     let mut cur = Cursor::new(prt_with_partition(
@@ -13482,6 +7802,7 @@ fn decode_tracks_geometry_envelope_escape_shift() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn cylinder_gate_rejects_denormal_radius() {
     // A coincidental byte alignment can present a unit axis and a model-scale
@@ -13494,6 +7815,7 @@ fn cylinder_gate_rejects_denormal_radius() {
     put_vec3(&mut cy, 75, [1.0, 0.0, 0.0]);
     assert!(crate::geometry::surfaces(&cy).is_empty());
 }
+
 
 #[test]
 fn graph_owned_analytic_geometry_has_no_scanner_magnitude_limit() {
@@ -13516,6 +7838,7 @@ fn graph_owned_analytic_geometry_has_no_scanner_magnitude_limit() {
     assert!(crate::geometry::decode_surface_record(&cylinder, 0x33, 0).is_none());
 }
 
+
 #[test]
 fn ellipse_requires_ordered_serialized_radii() {
     let mut ellipse = record(0x20, 107);
@@ -13531,6 +7854,7 @@ fn ellipse_requires_ordered_serialized_radii() {
     put_f64(&mut ellipse, 99, 0.01);
     assert_eq!(crate::geometry::curves(&ellipse).len(), 1);
 }
+
 
 #[test]
 fn graph_owned_point_has_no_scanner_magnitude_limit() {
@@ -13558,6 +7882,7 @@ fn graph_owned_point_has_no_scanner_magnitude_limit() {
     assert!(crate::topology::Graph::parse(&stream).get(29, 11).is_none());
 }
 
+
 #[test]
 fn decoded_tolerance_has_no_model_magnitude_limit() {
     assert_eq!(crate::decode::decoded_tolerance(1_001.0), Some(1_001_000.0));
@@ -13565,6 +7890,7 @@ fn decoded_tolerance_has_no_model_magnitude_limit() {
     assert_eq!(crate::decode::decoded_tolerance(f64::INFINITY), None);
     assert_eq!(crate::decode::decoded_tolerance(f64::MAX), None);
 }
+
 
 #[test]
 fn analytic_frame_gate_rejects_nonorthogonal_reference_direction() {
@@ -13577,6 +7903,7 @@ fn analytic_frame_gate_rejects_nonorthogonal_reference_direction() {
     put_vec3(&mut plane, 67, [1.0, 0.0, 0.0]);
     assert_eq!(crate::geometry::surfaces(&plane).len(), 1);
 }
+
 
 #[test]
 fn cone_gate_rejects_nonfinite_or_degenerate_half_angle() {
@@ -13595,6 +7922,7 @@ fn cone_gate_rejects_nonfinite_or_degenerate_half_angle() {
         assert!(crate::geometry::surfaces(&cone).is_empty());
     }
 }
+
 
 #[test]
 fn analytic_scanners_include_extended_reference_shifts_in_record_ownership() {
@@ -13621,6 +7949,7 @@ fn analytic_scanners_include_extended_reference_shifts_in_record_ownership() {
     assert_eq!(crate::geometry::curves(&curves).len(), 1);
 }
 
+
 #[test]
 fn analytic_record_ownership_is_shared_across_carrier_families() {
     let mut stream = vec![0; 158];
@@ -13639,6 +7968,7 @@ fn analytic_record_ownership_is_shared_across_carrier_families() {
     assert!(crate::geometry::points(&stream).is_empty());
 }
 
+
 #[test]
 fn decode_assembly_reports_external_dependency() {
     let mut cur = Cursor::new(assembly_prt());
@@ -13650,6 +7980,7 @@ fn decode_assembly_reports_external_dependency() {
         .iter()
         .any(|l| l.message.contains("assembly")));
 }
+
 
 #[test]
 fn external_reference_string_table_is_end_anchored() {
@@ -13668,6 +7999,7 @@ fn external_reference_string_table_is_end_anchored() {
     assert!(crate::container::parse_extref_string_table(&trailed).is_none());
     assert!(crate::container::parse_extref_string_table(b"\x01\xff\xff\xff\xff").is_none());
 }
+
 
 #[test]
 fn external_reference_record_parser_requires_sorted_doubled_handle_set() {
@@ -13723,6 +8055,7 @@ fn external_reference_record_parser_requires_sorted_doubled_handle_set() {
     );
 }
 
+
 #[test]
 fn external_reference_empty_record_parser_requires_the_complete_form() {
     assert_eq!(
@@ -13743,6 +8076,7 @@ fn external_reference_empty_record_parser_requires_the_complete_form() {
     );
 }
 
+
 #[test]
 fn external_reference_tail_pairs_require_adjacent_complete_tokens() {
     let bytes = [
@@ -13755,6 +8089,7 @@ fn external_reference_tail_pairs_require_adjacent_complete_tokens() {
     );
     assert!(crate::container::parse_extref_reference_pairs(&bytes[10..]).is_empty());
 }
+
 
 #[test]
 fn container_reads_rmfastload_active_ids() {
@@ -13780,6 +8115,7 @@ fn container_reads_rmfastload_active_ids() {
     assert_eq!(table.object_ids[49].raw, 50u32.to_le_bytes());
 }
 
+
 #[test]
 fn decode_retains_every_rmfastload_active_body() {
     let mut cur = Cursor::new(prt_with_two_active_bodies_and_rmfastload());
@@ -13804,6 +8140,7 @@ fn decode_retains_every_rmfastload_active_body() {
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
+
 #[test]
 fn decode_selects_active_shell_when_body_record_is_absent() {
     let mut cur = Cursor::new(prt_with_missing_active_body_record());
@@ -13819,6 +8156,7 @@ fn decode_selects_active_shell_when_body_record_is_absent() {
         .all(|loss| !loss.message.contains("sub-body partition")));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn decode_keeps_bodies_when_rmfastload_overlap_is_weak() {
@@ -13838,6 +8176,7 @@ fn decode_keeps_bodies_when_rmfastload_overlap_is_weak() {
         .any(|loss| loss.message.contains("sub-body partition")));
 }
 
+
 #[test]
 fn container_only_preserves_streams_without_geometry() {
     let mut cur = Cursor::new(single_part_prt());
@@ -13848,6 +8187,7 @@ fn container_only_preserves_streams_without_geometry() {
     assert_eq!(result.ir.native_unknowns("nx").unwrap().len(), 1);
     assert!(result.ir.model.points.is_empty());
 }
+
 
 #[test]
 fn inspect_enumerates_streams_and_names_schema() {
@@ -13860,6 +8200,7 @@ fn inspect_enumerates_streams_and_names_schema() {
     assert!(summary.entries.iter().any(|e| e.role == "parasolid-stream"));
     assert!(summary.notes.iter().any(|n| n.contains("partition")));
 }
+
 
 #[test]
 fn inspect_classifies_named_container_streams() {
@@ -13904,6 +8245,7 @@ fn inspect_classifies_named_container_streams() {
     assert_eq!(roles["/Root/qafmetadata"], "asset-catalog");
     assert_eq!(roles["/Root/vendor/private"], "named-opaque-stream");
 }
+
 
 #[test]
 fn decode_retains_unsupported_named_stream_payloads() {
@@ -13953,6 +8295,7 @@ fn decode_retains_unsupported_named_stream_payloads() {
     }
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
+
 
 #[test]
 fn design_intent_losses_distinguish_native_and_sketch_gaps() {
@@ -14184,6 +8527,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
 #[path = "integration_tests.rs"]
 mod integration_tests;
 
+
 #[test]
 fn extraction_uses_ug_part_bounds_and_all_standard_zlib_headers() {
     let part = zlib_compress_at_level(&partition_stream(), 6);
@@ -14208,6 +8552,7 @@ fn extraction_uses_ug_part_bounds_and_all_standard_zlib_headers() {
     assert_eq!(streams.len(), 1);
     assert_eq!(streams[0].schema.as_deref(), Some("SCH_TEST_1_9999"));
 }
+
 
 #[test]
 fn extraction_rejects_zlib_members_with_invalid_integrity_trailers() {
@@ -14234,6 +8579,7 @@ fn extraction_rejects_zlib_members_with_invalid_integrity_trailers() {
     let container = container::scan_bytes(indexed.clone()).expect("test SPLMSSTR container");
     assert!(parasolid::extract_streams(&ctx, root, &container).is_err());
 }
+
 
 #[test]
 fn extraction_uses_ordered_segment_wrappers_in_indexed_payloads() {
