@@ -9,7 +9,9 @@ use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::drawings::Drawing;
-use crate::features::{DesignConfiguration, DesignParameter, Feature, FeatureInputTopology};
+use crate::features::{
+    DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
+};
 use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::native::Native;
 use crate::presentation::{PresentationDocument, ViewPresentation};
@@ -47,6 +49,7 @@ macro_rules! arena_registry {
             assets: crate::assets::Asset, "Embedded and externally referenced document resources.", [serde(default, skip_serializing_if = "Vec::is_empty")];
             features: Feature, "Feature arena.", [];
             feature_input_topologies: FeatureInputTopology, "Feature input-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
+            feature_result_topologies: FeatureResultTopology, "Feature result-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
             configurations: DesignConfiguration, "Design configuration arena.", [serde(default)];
             parameters: DesignParameter, "Design parameter arena.", [serde(default)];
             sketches: Sketch, "Planar sketch arena.", [serde(default)];

@@ -183,6 +183,11 @@ impl ContainerNoted for DisplayJtGeometricTransformAttribute {
         (&self.id, self.source_offset)
     }
 }
+impl ContainerNoted for DisplayJtMaterialAttribute {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
 impl ContainerNoted for DisplayJtPolygonMesh {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
@@ -944,6 +949,18 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             )
         },
         len: |m| m.display_jt.display_jt_geometric_transform_attributes.len(),
+        counts_toward_emptiness: false,
+    },
+    CatalogueRow {
+        arena: "display_jt_material_attributes",
+        tag: Some("DISPLAY_JT_MATERIAL_ATTRIBUTE"),
+        exactness: Exactness::Derived,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| {
+            note_container(&m.display_jt.display_jt_material_attributes, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_material_attributes, r, ns),
+        len: |m| m.display_jt.display_jt_material_attributes.len(),
         counts_toward_emptiness: false,
     },
     CatalogueRow {
@@ -2204,6 +2221,16 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "feature_datum_csys_column_row_uses",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.features.feature_datum_csys_column_row_uses, r, ns),
+        len: |m| m.features.feature_datum_csys_column_row_uses.len(),
+        counts_toward_emptiness: false,
+    },
+    CatalogueRow {
         arena: "feature_datum_csys_payloads",
         tag: None,
         exactness: Exactness::ByteExact,
@@ -3037,6 +3064,46 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: None,
         emit: |m, r, ns| emit_arena(&m.om.data_block_target_index_rows, r, ns),
         len: |m| m.om.data_block_target_index_rows.len(),
+        counts_toward_emptiness: false,
+    },
+    CatalogueRow {
+        arena: "rm_creation_display_data_relations",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.om.rm_creation_display_data_relations, r, ns),
+        len: |m| m.om.rm_creation_display_data_relations.len(),
+        counts_toward_emptiness: false,
+    },
+    CatalogueRow {
+        arena: "part_color_tables",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.om.part_color_tables, r, ns),
+        len: |m| m.om.part_color_tables.len(),
+        counts_toward_emptiness: false,
+    },
+    CatalogueRow {
+        arena: "part_color_definitions",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.om.part_color_definitions, r, ns),
+        len: |m| m.om.part_color_definitions.len(),
+        counts_toward_emptiness: false,
+    },
+    CatalogueRow {
+        arena: "rm_display_color_assignments",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.om.rm_display_color_assignments, r, ns),
+        len: |m| m.om.rm_display_color_assignments.len(),
         counts_toward_emptiness: false,
     },
     CatalogueRow {

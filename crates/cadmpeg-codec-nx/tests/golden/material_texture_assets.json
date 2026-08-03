@@ -6,6 +6,18 @@
         "appearance_bindings": [],
         "appearances": [],
         "assembly_joints": [],
+        "assets": [
+          {
+            "content": {
+              "data": "SUkqAAgAAAAAAA==",
+              "kind": "embedded"
+            },
+            "id": "nx:container:material-texture#0:asset",
+            "media_type": "image/tiff",
+            "name": "AISI Steel 4340",
+            "native_ref": "nx:container:material-texture#0"
+          }
+        ],
         "attributes": [],
         "bodies": [
           {
@@ -168,7 +180,7 @@
               }
             ]
           },
-          "version": 181
+          "version": 189
         }
       },
       "source": {
@@ -209,11 +221,6 @@
           "code": "topology_not_transferred",
           "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Exact-key supported partition↔deltas replacements and deletions were applied before graph construction. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
           "severity": "blocking"
-        },
-        {
-          "code": "material_not_transferred",
-          "message": "Embedded material texture assets were retained without material or appearance assignment because their binding fields are not decoded.",
-          "severity": "warning"
         }
       ],
       "notes": [

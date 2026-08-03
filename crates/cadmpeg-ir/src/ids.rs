@@ -56,6 +56,10 @@ id_type!(
     FeatureInputTopologyId
 );
 id_type!(
+    /// Identifies one feature-result topology state.
+    FeatureResultTopologyId
+);
+id_type!(
     /// Identifies a body within one feature-input topology state.
     HistoricalBodyId
 );

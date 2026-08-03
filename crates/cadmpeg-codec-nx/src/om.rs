@@ -213,6 +213,96 @@ pub struct OffsetStoreLinkedIndexRow {
     pub mode: u8,
 }
 
+/// Canonical NX color-index token immediately preceding a display row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkedRowColorIndex {
+    /// One-based part palette index.
+    pub color_index: u16,
+    /// Exact serialized index token.
+    pub raw_color_index: Vec<u8>,
+    /// Color token's byte offset.
+    pub offset: usize,
+}
+
+/// Decode the color-index prefix of an `RMFastLoad` linked row.
+pub fn linked_row_color_index(
+    bytes: &[u8],
+    row: &OffsetStoreLinkedIndexRow,
+) -> Option<LinkedRowColorIndex> {
+    row_color_index(bytes, row.offset)
+}
+
+/// Decode the color-index prefix of an `RMFastLoad` target-index row.
+pub fn target_row_color_index(
+    bytes: &[u8],
+    row: &OffsetStoreTargetIndexRow,
+) -> Option<LinkedRowColorIndex> {
+    row_color_index(bytes, row.offset)
+}
+
+fn row_color_index(bytes: &[u8], row_offset: usize) -> Option<LinkedRowColorIndex> {
+    const PRECEDING_SUFFIX: [u8; 5] = [0x01, 0xc0, 0x44, 0x04, 0x00];
+    let direct_offset = row_offset.checked_sub(1)?;
+    let direct = *bytes.get(direct_offset)?;
+    if (1..=127).contains(&direct)
+        && bytes.get(direct_offset.checked_sub(PRECEDING_SUFFIX.len())?..direct_offset)
+            == Some(&PRECEDING_SUFFIX)
+    {
+        return Some(LinkedRowColorIndex {
+            color_index: u16::from(direct),
+            raw_color_index: vec![direct],
+            offset: direct_offset,
+        });
+    }
+    let extended_offset = row_offset.checked_sub(2)?;
+    let token: [u8; 2] = bytes.get(extended_offset..row_offset)?.try_into().ok()?;
+    (token[0] == 0x80
+        && (128..=216).contains(&token[1])
+        && bytes.get(extended_offset.checked_sub(PRECEDING_SUFFIX.len())?..extended_offset)
+            == Some(&PRECEDING_SUFFIX))
+    .then(|| LinkedRowColorIndex {
+        color_index: u16::from(token[1]),
+        raw_color_index: token.to_vec(),
+        offset: extended_offset,
+    })
+}
+
+#[cfg(test)]
+mod linked_row_color_index_tests {
+    use super::*;
+
+    #[test]
+    fn requires_the_complete_preceding_suffix() {
+        let row_bytes = [
+            0x02, 0x0b, 7, 0x93, 0x8c, 0x16, 2, 0xff, 0xff, 0x90, 0xfe, 3, 4, 5, 0, 0x47, 3, 4, 1,
+            0xc0, 0x44, 4, 0,
+        ];
+        let mut bytes = [1, 0xc0, 0x44, 4, 0, 0x80, 201].to_vec();
+        bytes.extend(row_bytes);
+        let rows = offset_store_linked_index_rows(&bytes);
+        let color = linked_row_color_index(&bytes, &rows[0]).expect("complete prefix");
+        assert_eq!(color.color_index, 201);
+        assert_eq!(color.raw_color_index, [0x80, 201]);
+
+        bytes[1] = 0;
+        assert_eq!(linked_row_color_index(&bytes, &rows[0]), None);
+    }
+
+    #[test]
+    fn accepts_the_same_prefix_for_a_target_index_row() {
+        let row_bytes = [
+            0x02, 0x01, 0x01, 0x01, 0x16, 2, 0xff, 0xff, 0x90, 0xfe, 3, 4, 5, 0, 0x47, 3, 4, 1,
+            0xc0, 0x44, 4, 0,
+        ];
+        let mut bytes = [1, 0xc0, 0x44, 4, 0, 0x80, 201].to_vec();
+        bytes.extend(row_bytes);
+        let rows = offset_store_target_index_rows(&bytes);
+        let color = target_row_color_index(&bytes, &rows[0]).expect("complete prefix");
+        assert_eq!(color.color_index, 201);
+        assert_eq!(color.raw_color_index, [0x80, 201]);
+    }
+}
+
 /// One self-framed target-index row in contiguous column storage.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OffsetStoreTargetIndexRow {
@@ -228,6 +318,157 @@ pub struct OffsetStoreTargetIndexRow {
     pub raw_indices: [Vec<u8>; 3],
     /// Serialized `04` or `07` row mode.
     pub mode: u8,
+}
+
+/// One RGB definition from an NX part color table.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColorTableDefinition<'a> {
+    /// One-based NX color index.
+    pub color_index: u16,
+    /// Color name paired by table order.
+    pub name: &'a str,
+    /// Normalized red, green, and blue components.
+    pub rgb: [f32; 3],
+    /// Exact serialized index token after the `05` marker.
+    pub raw_color_index: Vec<u8>,
+    /// Exact serialized component atoms.
+    pub raw_components: [Vec<u8>; 3],
+    /// Byte offset of the opening `05` marker.
+    pub offset: usize,
+    /// Byte offsets of the three component atoms.
+    pub component_offsets: [usize; 3],
+}
+
+/// Complete 216-entry NX part color table.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColorTable<'a> {
+    /// Byte offset of the counted name roster.
+    pub offset: usize,
+    /// Name associated with the separately encoded background color.
+    pub background_name: &'a str,
+    /// Normalized background RGB components.
+    pub background_rgb: [f32; 3],
+    /// Exact serialized background component atoms.
+    pub raw_background_components: [Vec<u8>; 3],
+    /// Byte offsets of the three background component atoms.
+    pub background_component_offsets: [usize; 3],
+    /// Ordered definitions for color indices 1 through 216.
+    pub definitions: Vec<ColorTableDefinition<'a>>,
+}
+
+fn color_component(bytes: &[u8]) -> Option<(f32, Vec<u8>, usize)> {
+    match bytes.first().copied()? {
+        0x00 => Some((0.0, vec![0x00], 1)),
+        0x01 => Some((1.0, vec![0x01], 1)),
+        marker @ (0x20..=0x3f | 0xa0..=0xbf) => {
+            let raw: [u8; 8] = bytes.get(..8)?.try_into().ok()?;
+            let value = shifted_ieee_f64(&raw)? / 4.0;
+            (value.is_finite() && (0.0..=1.0).contains(&value)).then(|| {
+                debug_assert_eq!(raw[0], marker);
+                (value as f32, raw.to_vec(), 8)
+            })
+        }
+        marker @ (0x40..=0x5f | 0xc0..=0xdf) => {
+            let raw: [u8; 4] = bytes.get(..4)?.try_into().ok()?;
+            let mut decoded = raw;
+            decoded[0] = decoded[0].checked_sub(0x10)?;
+            let value = f32::from_be_bytes(decoded) / 4.0;
+            (value.is_finite() && (0.0..=1.0).contains(&value)).then(|| {
+                debug_assert_eq!(raw[0], marker);
+                (value, raw.to_vec(), 4)
+            })
+        }
+        _ => None,
+    }
+}
+
+/// Decode every complete NX part color table in a bounded byte region.
+pub fn color_tables(bytes: &[u8]) -> Vec<ColorTable<'_>> {
+    const NAME_HEADER: [u8; 4] = [0x02, 0x80, 0xd9, 0x01];
+    const DEFINITION_PREAMBLE: [u8; 21] = [
+        0x02, 0x14, 0xff, 0x06, 0x00, 0xf0, 0x02, 0x80, 0x9d, 0x80, 0xc7, 0x00, 0xc0, 0x13, 0x0a,
+        0xc6, 0x01, 0x80, 0xd9, 0x80, 0xc8,
+    ];
+
+    (0..bytes.len().saturating_sub(NAME_HEADER.len()))
+        .filter_map(|start| {
+            (bytes.get(start..start + NAME_HEADER.len()) == Some(&NAME_HEADER)).then_some(())?;
+            let mut at = start + NAME_HEADER.len();
+            let mut names = Vec::with_capacity(217);
+            for _ in 0..217 {
+                let byte_len = usize::from(*bytes.get(at)?);
+                (byte_len >= 2).then_some(())?;
+                let text = bytes.get(at + 1..at + byte_len)?;
+                let text = text.strip_suffix(&[0])?;
+                (!text.is_empty()
+                    && text
+                        .iter()
+                        .all(|byte| byte.is_ascii_graphic() || *byte == b' '))
+                .then_some(())?;
+                names.push(std::str::from_utf8(text).ok()?);
+                at += byte_len;
+            }
+            (names.first().copied() == Some("Background")).then_some(())?;
+            (bytes.get(at..at + DEFINITION_PREAMBLE.len()) == Some(&DEFINITION_PREAMBLE))
+                .then_some(())?;
+            at += DEFINITION_PREAMBLE.len();
+            let mut background_rgb = Vec::with_capacity(3);
+            let mut raw_background_components = Vec::with_capacity(3);
+            let mut background_component_offsets = Vec::with_capacity(3);
+            for _ in 0..3 {
+                background_component_offsets.push(at);
+                let (value, raw, width) = color_component(bytes.get(at..)?)?;
+                background_rgb.push(value);
+                raw_background_components.push(raw);
+                at += width;
+            }
+
+            let mut definitions = Vec::with_capacity(216);
+            for color_index in 1u16..=216 {
+                (bytes.get(at) == Some(&0x05)).then_some(())?;
+                let offset = at;
+                at += 1;
+                let raw_color_index = if color_index < 128 {
+                    vec![color_index as u8]
+                } else {
+                    vec![0x80, (color_index - 1) as u8]
+                };
+                (bytes.get(at..at + raw_color_index.len()) == Some(raw_color_index.as_slice()))
+                    .then_some(())?;
+                at += raw_color_index.len();
+                (bytes.get(at..at + 3) == Some(&[0x01, 0x80, 0xc8])).then_some(())?;
+                at += 3;
+
+                let mut rgb = Vec::with_capacity(3);
+                let mut raw_components = Vec::with_capacity(3);
+                let mut component_offsets = Vec::with_capacity(3);
+                for _ in 0..3 {
+                    component_offsets.push(at);
+                    let (value, raw, width) = color_component(bytes.get(at..)?)?;
+                    rgb.push(value);
+                    raw_components.push(raw);
+                    at += width;
+                }
+                definitions.push(ColorTableDefinition {
+                    color_index,
+                    name: names[usize::from(color_index)],
+                    rgb: rgb.try_into().ok()?,
+                    raw_color_index,
+                    raw_components: raw_components.try_into().ok()?,
+                    offset,
+                    component_offsets: component_offsets.try_into().ok()?,
+                });
+            }
+            Some(ColorTable {
+                offset: start,
+                background_name: names[0],
+                background_rgb: background_rgb.try_into().ok()?,
+                raw_background_components: raw_background_components.try_into().ok()?,
+                background_component_offsets: background_component_offsets.try_into().ok()?,
+                definitions,
+            })
+        })
+        .collect()
 }
 
 /// Decode complete self-framed index rows from contiguous column storage.
@@ -1411,6 +1652,8 @@ pub struct SimpleHoleRepeatedScalarLaneBlockReferences {
     pub second: [u32; 2],
     /// Absolute offsets of the four tagged-index tokens.
     pub offsets: [[usize; 2]; 2],
+    /// Exact optional eight-byte wrappers before the two reference pairs.
+    pub prefixes: [Option<[u8; 8]>; 2],
 }
 
 /// Four construction-block references carried by a `HOLE PACKAGE` payload.
@@ -1993,10 +2236,21 @@ pub fn simple_hole_repeated_scalar_lane(
 pub fn simple_hole_repeated_scalar_lane_block_references(
     record: OperationRecord<'_>,
 ) -> Option<SimpleHoleRepeatedScalarLaneBlockReferences> {
+    const FIRST_PREFIX: [u8; 8] = [0x50, 0x10, 0x00, 0x04, 0x50, 0x49, 0x66, 0x2e];
+    const SECOND_PREFIX: [u8; 8] = [0x50, 0x21, 0x66, 0x62, 0x50, 0x49, 0x66, 0x2e];
     let pair = simple_hole_repeated_scalar_lane(record)?;
-    let decode_pair = |coordinate_offset: usize| {
+    let decode_pair = |coordinate_offset: usize, admitted_prefix: [u8; 8]| {
         let relative = coordinate_offset.checked_sub(record.payload_offset)?;
         let mut at = relative.checked_add(8)?;
+        let prefix = if payload_object_index(record.payload.get(at..)?).is_some() {
+            None
+        } else {
+            let candidate =
+                <[u8; 8]>::try_from(record.payload.get(at..at.checked_add(8)?)?).ok()?;
+            (candidate == admitted_prefix).then_some(())?;
+            at += 8;
+            Some(candidate)
+        };
         let first_offset = at;
         let (first, width) = payload_object_index(record.payload.get(at..)?)?;
         at += width;
@@ -2008,14 +2262,18 @@ pub fn simple_hole_repeated_scalar_lane_block_references(
                 record.payload_offset + first_offset,
                 record.payload_offset + second_offset,
             ],
+            prefix,
         ))
     };
-    let (first, first_offsets) = decode_pair(*pair.witness_offsets[0].last()?)?;
-    let (second, second_offsets) = decode_pair(*pair.witness_offsets[1].last()?)?;
+    let (first, first_offsets, first_prefix) =
+        decode_pair(*pair.witness_offsets[0].last()?, FIRST_PREFIX)?;
+    let (second, second_offsets, second_prefix) =
+        decode_pair(*pair.witness_offsets[1].last()?, SECOND_PREFIX)?;
     Some(SimpleHoleRepeatedScalarLaneBlockReferences {
         first,
         second,
         offsets: [first_offsets, second_offsets],
+        prefixes: [first_prefix, second_prefix],
     })
 }
 
@@ -4140,11 +4398,15 @@ pub fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
         0x08, 0x02, 0x03, 0x01, 0xc0, 0x40, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02,
         0x00, 0x01,
     ];
+    const THREE_MEMBER: [u8; 15] = [
+        0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
+    ];
     let mut pairs = Vec::new();
     for (discriminator, separator_width) in [
         (LEGACY.as_slice(), 1usize),
         (SHORT.as_slice(), 0),
         (EXTENDED.as_slice(), 0),
+        (THREE_MEMBER.as_slice(), 1),
     ] {
         for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
             if window != discriminator {
@@ -4228,42 +4490,53 @@ pub fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
 
 /// Decode every exactly framed signed Q1.55 pair in a datum-CSYS payload.
 pub fn datum_csys_payload_fixed_pairs(bytes: &[u8]) -> Vec<DatumCsysPayloadFixedPair> {
-    const DISCRIMINATOR: [u8; 15] = [
-        0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
+    const DISCRIMINATORS: [&[u8]; 2] = [
+        &[
+            0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00,
+            0x03,
+        ],
+        &[
+            0x80, 0x8d, 0x00, 0xff, 0x80, 0x81, 0x01, 0x02, 0x01, 0x00, 0x00, 0x00, 0x87, 0xd7,
+            0x01, 0x01, 0x01, 0x01, 0x02, 0xa5, 0x30, 0x21, 0xa5, 0x30, 0x21, 0x01, 0x00, 0x01,
+            0xaf, 0xff, 0xdf, 0x02, 0x01, 0x02,
+        ],
     ];
     let mut pairs = Vec::new();
-    for (offset, window) in bytes.windows(DISCRIMINATOR.len()).enumerate() {
-        if window != DISCRIMINATOR {
-            continue;
+    for discriminator in DISCRIMINATORS {
+        for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
+            if window != discriminator {
+                continue;
+            }
+            let first = offset + discriminator.len();
+            let second = first + 9;
+            if bytes.get(first) != Some(&0x30)
+                || bytes.get(first + 8) != Some(&0x00)
+                || bytes.get(second) != Some(&0x30)
+            {
+                continue;
+            }
+            let Some(first_raw) = bytes
+                .get(first + 1..first + 8)
+                .and_then(|raw| raw.try_into().ok())
+            else {
+                continue;
+            };
+            let Some(second_raw) = bytes
+                .get(second + 1..second + 8)
+                .and_then(|raw| raw.try_into().ok())
+            else {
+                continue;
+            };
+            pairs.push(DatumCsysPayloadFixedPair {
+                offset,
+                values: [decode_q1_55(first_raw), decode_q1_55(second_raw)],
+                value_offsets: [first, second],
+                raw_values: [first_raw, second_raw],
+                discriminator: discriminator.to_vec(),
+            });
         }
-        let first = offset + DISCRIMINATOR.len();
-        let second = first + 9;
-        if bytes.get(first) != Some(&0x30)
-            || bytes.get(first + 8) != Some(&0x00)
-            || bytes.get(second) != Some(&0x30)
-        {
-            continue;
-        }
-        let Some(first_raw) = bytes
-            .get(first + 1..first + 8)
-            .and_then(|raw| raw.try_into().ok())
-        else {
-            continue;
-        };
-        let Some(second_raw) = bytes
-            .get(second + 1..second + 8)
-            .and_then(|raw| raw.try_into().ok())
-        else {
-            continue;
-        };
-        pairs.push(DatumCsysPayloadFixedPair {
-            offset,
-            values: [decode_q1_55(first_raw), decode_q1_55(second_raw)],
-            value_offsets: [first, second],
-            raw_values: [first_raw, second_raw],
-            discriminator: DISCRIMINATOR.to_vec(),
-        });
     }
+    pairs.sort_by_key(|pair| pair.offset);
     pairs
 }
 

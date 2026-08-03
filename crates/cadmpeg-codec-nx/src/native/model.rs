@@ -42,6 +42,7 @@ pub(crate) struct DisplayJtRecords {
     pub(crate) display_jt_group_node_data: Vec<DisplayJtGroupNodeData>,
     pub(crate) display_jt_instance_nodes: Vec<DisplayJtInstanceNode>,
     pub(crate) display_jt_geometric_transform_attributes: Vec<DisplayJtGeometricTransformAttribute>,
+    pub(crate) display_jt_material_attributes: Vec<DisplayJtMaterialAttribute>,
     pub(crate) display_jt_partition_nodes: Vec<DisplayJtPartitionNode>,
     pub(crate) display_jt_range_lod_nodes: Vec<DisplayJtRangeLodNode>,
     pub(crate) display_jt_tri_strip_shape_nodes: Vec<DisplayJtTriStripShapeNode>,
@@ -147,6 +148,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_input_blocks: Vec<FeatureInputBlock>,
     pub(crate) feature_input_block_identity_groups: Vec<FeatureInputBlockIdentityGroup>,
     pub(crate) feature_datum_csys_constructions: Vec<FeatureDatumCsysConstruction>,
+    pub(crate) feature_datum_csys_column_row_uses: Vec<FeatureDatumCsysColumnRowUse>,
     pub(crate) feature_datum_csys_payloads: Vec<FeatureDatumCsysPayload>,
     pub(crate) feature_datum_csys_payload_scalar_pairs: Vec<FeatureDatumCsysPayloadScalarPair>,
     pub(crate) feature_datum_csys_payload_fixed_pairs: Vec<FeatureDatumCsysPayloadFixedPair>,
@@ -260,6 +262,10 @@ pub(crate) struct OmRecords {
     pub(crate) data_block_index_rows: Vec<DataBlockIndexRow>,
     pub(crate) data_block_linked_index_rows: Vec<DataBlockLinkedIndexRow>,
     pub(crate) data_block_target_index_rows: Vec<DataBlockTargetIndexRow>,
+    pub(crate) rm_creation_display_data_relations: Vec<RmCreationDisplayDataRelation>,
+    pub(crate) part_color_tables: Vec<PartColorTable>,
+    pub(crate) part_color_definitions: Vec<PartColorDefinition>,
+    pub(crate) rm_display_color_assignments: Vec<RmDisplayColorAssignment>,
     pub(crate) data_block_column_index_tables: Vec<DataBlockColumnIndexTable>,
     pub(crate) store_headers: Vec<StoreHeader>,
     pub(crate) string_values: Vec<StringValue>,
@@ -295,11 +301,6 @@ pub(crate) struct NativeModel {
 }
 
 impl NativeModel {
-    pub(crate) fn has_untransferred_material_assets(&self) -> bool {
-        !self.om.material_texture_assets.is_empty()
-            || !self.om.material_texture_catalog_entries.is_empty()
-    }
-
     pub(crate) fn has_untransferred_parasolid_attribute_fields(&self) -> bool {
         parasolid_attribute_definitions_have_untransferred_fields(
             &self.parasolid.parasolid_attribute_definitions,
@@ -505,6 +506,12 @@ impl NativeModel {
             &display_jt_documents,
         );
         let display_jt_geometric_transform_attributes = display_jt_geometric_transform_attributes(
+            budget,
+            container,
+            &display_jt_segments,
+            &display_jt_documents,
+        );
+        let display_jt_material_attributes = display_jt_material_attributes(
             budget,
             container,
             &display_jt_segments,
@@ -771,15 +778,31 @@ impl NativeModel {
         let data_block_control_references = data_block_control_references(container);
         let data_block_control_handle_pairs =
             data_block_control_handle_pairs(&data_block_control_references);
-        let data_block_references = data_block_references(container);
+        let data_block_references =
+            data_block_references(container, &object_records, &expression_declarations);
         let data_block_counted_index_lanes = data_block_counted_index_lanes(container);
         let data_block_abr_reference_lanes = data_block_abr_reference_lanes(container);
         let data_block_index_rows = data_block_index_rows(container);
         let data_block_linked_index_rows = data_block_linked_index_rows(container);
         let data_block_target_index_rows = data_block_target_index_rows(container);
+        let rm_creation_display_data_relations =
+            rm_creation_display_data_relations(container, &rmfastload_object_ids);
+        let (part_color_tables, part_color_definitions) = part_color_tables(container);
+        let rm_display_color_assignments = rm_display_color_assignments(
+            container,
+            &part_color_definitions,
+            &rmfastload_object_ids,
+        );
         let data_block_column_index_tables = data_block_column_index_tables(
             &data_block_linked_index_rows,
             &data_block_target_index_rows,
+        );
+        let feature_datum_csys_column_row_uses = feature_datum_csys_column_row_uses(
+            &feature_datum_csys_constructions,
+            &data_block_index_rows,
+            &data_block_linked_index_rows,
+            &data_block_target_index_rows,
+            &data_block_column_index_tables,
         );
         let feature_input_column_row_uses = feature_input_column_row_uses(
             &feature_input_blocks,
@@ -875,6 +898,7 @@ impl NativeModel {
                 display_jt_group_node_data,
                 display_jt_instance_nodes,
                 display_jt_geometric_transform_attributes,
+                display_jt_material_attributes,
                 display_jt_partition_nodes,
                 display_jt_range_lod_nodes,
                 display_jt_tri_strip_shape_nodes,
@@ -962,6 +986,7 @@ impl NativeModel {
                 feature_input_blocks,
                 feature_input_block_identity_groups,
                 feature_datum_csys_constructions,
+                feature_datum_csys_column_row_uses,
                 feature_datum_csys_payloads,
                 feature_datum_csys_payload_scalar_pairs,
                 feature_datum_csys_payload_fixed_pairs,
@@ -1070,6 +1095,10 @@ impl NativeModel {
                 data_block_index_rows,
                 data_block_linked_index_rows,
                 data_block_target_index_rows,
+                rm_creation_display_data_relations,
+                part_color_tables,
+                part_color_definitions,
+                rm_display_color_assignments,
                 data_block_column_index_tables,
                 store_headers,
                 string_values,

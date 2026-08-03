@@ -14,6 +14,16 @@
         "drawings": [],
         "edges": [],
         "faces": [],
+        "feature_result_topologies": [
+          {
+            "bodies": [
+              "nx:feature-history:body-reference#0000000000-0000000000"
+            ],
+            "id": "nx:feature-history:result-topology#0000000000-0000000000",
+            "native_ref": "nx:feature-history:body-reference#0000000000-0000000000",
+            "output_of": "nx:feature-history:feature#0000000000-0000000000"
+          }
+        ],
         "features": [
           {
             "definition": {
@@ -476,7 +486,7 @@
               }
             ]
           },
-          "version": 181
+          "version": 189
         }
       },
       "source": {
