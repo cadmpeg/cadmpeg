@@ -3511,6 +3511,8 @@ pub(crate) fn recipe_linear_dimension_candidates(
     evaluated_mm: f64,
     parameter: &cadmpeg_ir::features::ParameterId,
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+
     let sketch_entities = entities
         .iter()
         .filter(|entity| &entity.sketch == sketch)
@@ -3525,18 +3527,6 @@ pub(crate) fn recipe_linear_dimension_candidates(
             )
         })
         .collect::<Vec<_>>();
-    let mut candidates = Vec::new();
-    for first in 0..points.len() {
-        for second in first + 1..points.len() {
-            if let Some(definition) = directional_point_dimension(
-                &[points[first], points[second]],
-                evaluated_mm,
-                parameter.clone(),
-            ) {
-                candidates.push(definition);
-            }
-        }
-    }
     let lines = sketch_entities
         .iter()
         .copied()
@@ -3547,13 +3537,57 @@ pub(crate) fn recipe_linear_dimension_candidates(
             )
         })
         .collect::<Vec<_>>();
+    let mut line_pairs = Vec::new();
     for first in 0..lines.len() {
         for second in first + 1..lines.len() {
             if parallel_line_separation(lines[first], lines[second], evaluated_mm) {
-                candidates.push(cadmpeg_ir::sketches::SketchConstraintDefinition::Distance {
-                    entities: vec![lines[first].id.clone(), lines[second].id.clone()],
-                    parameter: parameter.clone(),
-                });
+                line_pairs.push((lines[first], lines[second]));
+            }
+        }
+    }
+    let same_point = |left: Point2, right: Point2| {
+        let scale = 1.0
+            + left
+                .u
+                .abs()
+                .max(left.v.abs())
+                .max(right.u.abs())
+                .max(right.v.abs());
+        (left.u - right.u).abs() <= 1.0e-9 * scale && (left.v - right.v).abs() <= 1.0e-9 * scale
+    };
+    let point_on_endpoint =
+        |point: &cadmpeg_ir::sketches::SketchEntity, line: &cadmpeg_ir::sketches::SketchEntity| {
+            let SketchGeometry::Point { position } = &point.geometry else {
+                unreachable!("point candidates contain only point entities")
+            };
+            sketch_entity_endpoints(line).is_some_and(|endpoints| {
+                endpoints.into_iter().any(|end| same_point(*position, end))
+            })
+        };
+    let mut candidates = line_pairs
+        .iter()
+        .map(|(first, second)| Definition::Distance {
+            entities: vec![first.id.clone(), second.id.clone()],
+            parameter: parameter.clone(),
+        })
+        .collect::<Vec<_>>();
+    for first in 0..points.len() {
+        for second in first + 1..points.len() {
+            let subsumed_by_line_pair = line_pairs.iter().any(|(first_line, second_line)| {
+                (point_on_endpoint(points[first], first_line)
+                    && point_on_endpoint(points[second], second_line))
+                    || (point_on_endpoint(points[first], second_line)
+                        && point_on_endpoint(points[second], first_line))
+            });
+            if subsumed_by_line_pair {
+                continue;
+            }
+            if let Some(definition) = directional_point_dimension(
+                &[points[first], points[second]],
+                evaluated_mm,
+                parameter.clone(),
+            ) {
+                candidates.push(definition);
             }
         }
     }

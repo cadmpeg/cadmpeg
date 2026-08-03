@@ -13575,6 +13575,32 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
         [SketchConstraintDefinition::Distance { entities, .. }]
             if entities.as_slice() == [SketchEntityId("first".into()), SketchEntityId("second".into())]
     ));
+    let point = |name: &str, position| SketchEntity {
+        id: SketchEntityId(name.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point { position },
+    };
+    let mut entities_with_endpoints = entities.clone();
+    entities_with_endpoints.extend([
+        point("first-start", Point2::new(0.0, 0.0)),
+        point("first-end", Point2::new(4.0, 0.0)),
+        point("second-start", Point2::new(1.0, 2.0)),
+        point("second-end", Point2::new(5.0, 2.0)),
+    ]);
+    assert!(matches!(
+        crate::design::dimensions::recipe_linear_dimension_candidates(
+            &entities_with_endpoints,
+            &sketch,
+            2.0,
+            &cadmpeg_ir::features::ParameterId("parameter".into()),
+        ).as_slice(),
+        [SketchConstraintDefinition::Distance { entities, .. }]
+            if entities.as_slice() == [SketchEntityId("first".into()), SketchEntityId("second".into())]
+    ));
 
     let parameter = DesignParameter {
         id: "f3d:A:design-parameter#1".into(),
