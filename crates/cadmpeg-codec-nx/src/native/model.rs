@@ -229,6 +229,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_sketch_preceding_named_point_uses: Vec<FeatureSketchPrecedingNamedPointUse>,
     pub(crate) feature_sketch_point_uses: Vec<FeatureSketchPointUse>,
     pub(crate) feature_sketch_datum_csys_dependencies: Vec<FeatureSketchDatumCsysDependency>,
+    pub(crate) feature_datum_csys_sketch_dependencies: Vec<FeatureDatumCsysSketchDependency>,
     pub(crate) feature_boolean_operations: Vec<FeatureBooleanOperation>,
     pub(crate) data_block_object_frames: Vec<DataBlockObjectFrame>,
     pub(crate) feature_input_column_row_uses: Vec<FeatureInputColumnRowUse>,
@@ -749,6 +750,13 @@ impl NativeModel {
             &feature_datum_csys_constructions,
             &feature_datum_csys_payload_scalars,
         );
+        let feature_datum_csys_sketch_dependencies = feature_datum_csys_sketch_dependencies(
+            &feature_operation_labels,
+            &feature_datum_csys_constructions,
+            &feature_datum_csys_payloads,
+            &feature_sketch_records,
+            &feature_sketch_references,
+        );
         let feature_boolean_operations = feature_boolean_operations(container);
         let segment_body_lineage_statuses = segment_body_lineage_statuses(
             &feature_operation_labels,
@@ -1055,6 +1063,7 @@ impl NativeModel {
                 feature_sketch_preceding_named_point_uses,
                 feature_sketch_point_uses,
                 feature_sketch_datum_csys_dependencies,
+                feature_datum_csys_sketch_dependencies,
                 feature_boolean_operations,
                 data_block_object_frames,
                 feature_input_column_row_uses,

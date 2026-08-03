@@ -1254,6 +1254,32 @@ pub struct FeatureSketchDatumCsysDependency {
     pub source_offset: u64,
 }
 
+/// Exact ordered dependency from a datum coordinate system to the immediately
+/// following sketch construction.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDatumCsysSketchDependency {
+    /// Globally unique dependency identity.
+    pub id: String,
+    /// Earlier datum-coordinate-system operation defining the construction.
+    pub datum_csys_operation_label: String,
+    /// Immediately following sketch operation consuming the construction.
+    pub sketch_operation_label: String,
+    /// Exact datum-coordinate-system construction.
+    pub datum_csys_construction: String,
+    /// Reconstructed two-block datum-coordinate-system payload.
+    pub datum_csys_payload: String,
+    /// Exact bounded sketch record.
+    pub sketch_record: String,
+    /// Ordered complete sketch payload-reference lane.
+    pub sketch_references: Vec<String>,
+    /// Final block of the datum-coordinate-system payload.
+    pub datum_csys_data_block: String,
+    /// First block of the consecutive sketch payload-reference lane.
+    pub sketch_data_block: String,
+    /// Absolute source offset of the first sketch reference.
+    pub source_offset: u64,
+}
+
 /// Ordered object reference carried by a bounded sketch-operation payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSketchReference {
@@ -5430,6 +5456,117 @@ pub fn feature_sketch_datum_csys_dependencies(
             block_relation: block_relation.clone(),
             scalar_aliases,
             source_offset: point_use.source_offsets[0],
+        });
+    }
+    dependencies.sort_by(|left, right| left.id.cmp(&right.id));
+    dependencies
+}
+
+/// Join a datum-CSYS payload to an immediately following sketch when the
+/// sketch's complete resolved payload-reference lane is the consecutive block
+/// span in the same offset store.
+pub fn feature_datum_csys_sketch_dependencies(
+    labels: &[FeatureOperationLabel],
+    constructions: &[FeatureDatumCsysConstruction],
+    payloads: &[FeatureDatumCsysPayload],
+    sketch_records: &[FeatureSketchRecord],
+    sketch_references: &[FeatureSketchReference],
+) -> Vec<FeatureDatumCsysSketchDependency> {
+    fn block_key(block: &str) -> Option<(&str, u32)> {
+        let (store, ordinal) = block.rsplit_once(":block#")?;
+        Some((store, ordinal.parse().ok()?))
+    }
+
+    let positions = labels
+        .iter()
+        .enumerate()
+        .map(|(position, label)| (label.id.as_str(), position))
+        .collect::<BTreeMap<_, _>>();
+    let mut dependencies = Vec::new();
+    for construction in constructions {
+        let Some(position) = positions
+            .get(construction.operation_label.as_str())
+            .copied()
+        else {
+            continue;
+        };
+        let Some(sketch_label) = labels.get(position + 1) else {
+            continue;
+        };
+        if sketch_label.value != "SKETCH"
+            || labels[position].section_link != sketch_label.section_link
+        {
+            continue;
+        }
+        let matching_payloads = payloads
+            .iter()
+            .filter(|payload| payload.operation_label == construction.operation_label)
+            .collect::<Vec<_>>();
+        let [payload] = matching_payloads.as_slice() else {
+            continue;
+        };
+        let matching_records = sketch_records
+            .iter()
+            .filter(|record| record.operation_label == sketch_label.id)
+            .collect::<Vec<_>>();
+        let [record] = matching_records.as_slice() else {
+            continue;
+        };
+        let references = record
+            .payload_references
+            .iter()
+            .map(|reference_id| {
+                sketch_references
+                    .iter()
+                    .find(|reference| reference.id == *reference_id)
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(references) = references.filter(|references| !references.is_empty()) else {
+            continue;
+        };
+        let blocks = references
+            .iter()
+            .map(|reference| reference.data_block.as_deref())
+            .collect::<Option<Vec<_>>>();
+        let Some(blocks) = blocks else {
+            continue;
+        };
+        let Some((payload_store, payload_ordinal)) = block_key(&payload.data_blocks[1]) else {
+            continue;
+        };
+        let Some((sketch_store, first_sketch_ordinal)) = block_key(blocks[0]) else {
+            continue;
+        };
+        if payload_store != sketch_store
+            || payload_ordinal.checked_add(1) != Some(first_sketch_ordinal)
+            || !blocks.windows(2).all(|pair| {
+                matches!(
+                    (block_key(pair[0]), block_key(pair[1])),
+                    (Some((left_store, left)), Some((right_store, right)))
+                        if left_store == right_store && left.checked_add(1) == Some(right)
+                )
+            })
+        {
+            continue;
+        }
+        dependencies.push(FeatureDatumCsysSketchDependency {
+            id: construction.id.replacen(
+                "datum-csys-construction",
+                "datum-csys-sketch-dependency",
+                1,
+            ),
+            datum_csys_operation_label: construction.operation_label.clone(),
+            sketch_operation_label: sketch_label.id.clone(),
+            datum_csys_construction: construction.id.clone(),
+            datum_csys_payload: payload.id.clone(),
+            sketch_record: record.id.clone(),
+            sketch_references: references
+                .iter()
+                .map(|reference| reference.id.clone())
+                .collect(),
+            datum_csys_data_block: payload.data_blocks[1].clone(),
+            sketch_data_block: blocks[0].to_string(),
+            source_offset: references[0].source_offset,
         });
     }
     dependencies.sort_by(|left, right| left.id.cmp(&right.id));
@@ -10594,5 +10731,103 @@ mod tests {
         let mut malformed = name;
         malformed.value = "Point0".to_string();
         assert!(feature_block_payload_points(&[record], &[malformed], &scalars).is_empty());
+    }
+
+    #[test]
+    fn datum_csys_sketch_dependency_requires_one_consecutive_complete_lane() {
+        let label = |id: &str, ordinal: u32, value: &str| FeatureOperationLabel {
+            id: id.to_string(),
+            section_link: "section".to_string(),
+            ordinal,
+            value: value.to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: u64::from(ordinal),
+        };
+        let labels = [label("csys", 0, "DATUM_CSYS"), label("sketch", 1, "SKETCH")];
+        let construction = FeatureDatumCsysConstruction {
+            id: "datum-csys-construction".to_string(),
+            operation_label: "csys".to_string(),
+            control: 0x21,
+            object_indices: [0; 8],
+            raw_object_indices: std::array::from_fn(|_| vec![0]),
+            data_blocks: std::array::from_fn(|ordinal| format!("store:block#{ordinal}")),
+            source_offsets: [0; 8],
+        };
+        let payload = FeatureDatumCsysPayload {
+            id: "payload".to_string(),
+            operation_label: "csys".to_string(),
+            construction: construction.id.clone(),
+            data_blocks: ["store:block#10".to_string(), "store:block#11".to_string()],
+            byte_len: 2,
+            sha256: "hash".to_string(),
+            block_payload_offsets: [0, 1],
+            block_byte_lengths: [1, 1],
+            block_source_offsets: [10, 11],
+        };
+        let reference = |id: &str, ordinal: u32, block: u32| FeatureSketchReference {
+            id: id.to_string(),
+            operation_label: "sketch".to_string(),
+            ordinal,
+            declared_count: 2,
+            terminal: ordinal == 1,
+            object_index: block,
+            raw_object_index: vec![block as u8],
+            data_block: Some(format!("store:block#{block}")),
+            source_offset: 100 + u64::from(ordinal),
+        };
+        let references = [
+            reference("reference-0", 0, 12),
+            reference("reference-1", 1, 13),
+        ];
+        let record = FeatureSketchRecord {
+            id: "sketch-record".to_string(),
+            operation_label: "sketch".to_string(),
+            ordinal: 0,
+            operation_record: "operation-record".to_string(),
+            input_blocks: Vec::new(),
+            payload_references: references
+                .iter()
+                .map(|reference| reference.id.clone())
+                .collect(),
+            source_offset: 90,
+        };
+
+        let dependencies = feature_datum_csys_sketch_dependencies(
+            &labels,
+            std::slice::from_ref(&construction),
+            std::slice::from_ref(&payload),
+            std::slice::from_ref(&record),
+            &references,
+        );
+        assert_eq!(dependencies.len(), 1);
+        assert_eq!(dependencies[0].datum_csys_data_block, "store:block#11");
+        assert_eq!(dependencies[0].sketch_data_block, "store:block#12");
+        assert_eq!(
+            dependencies[0].sketch_references,
+            ["reference-0", "reference-1"]
+        );
+
+        let mut other_section = labels.clone();
+        other_section[1].section_link = "other-section".to_string();
+        assert!(feature_datum_csys_sketch_dependencies(
+            &other_section,
+            std::slice::from_ref(&construction),
+            std::slice::from_ref(&payload),
+            std::slice::from_ref(&record),
+            &references,
+        )
+        .is_empty());
+
+        let mut gapped = references;
+        gapped[1].data_block = Some("store:block#14".to_string());
+        assert!(feature_datum_csys_sketch_dependencies(
+            &labels,
+            &[construction],
+            &[payload],
+            &[record],
+            &gapped,
+        )
+        .is_empty());
     }
 }

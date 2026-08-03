@@ -296,7 +296,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(184);
+    namespace.version = namespace.version.max(185);
     NATIVE_CATALOGUE.emit_all(model, namespace)?;
     Ok(())
 }
@@ -777,6 +777,7 @@ fn attach_feature_operations(
     let datum_plane_payloads = features.feature_datum_plane_payloads.as_slice();
     let datum_plane_csys_identity_uses = features.feature_datum_plane_csys_identity_uses.as_slice();
     let sketch_datum_csys_dependencies = features.feature_sketch_datum_csys_dependencies.as_slice();
+    let datum_csys_sketch_dependencies = features.feature_datum_csys_sketch_dependencies.as_slice();
     let sketch_references = features.feature_sketch_references.as_slice();
     let projected_curve_references = features.feature_projected_curve_references.as_slice();
     let projected_curve_construction_payloads = features
@@ -994,6 +995,10 @@ fn attach_feature_operations(
     let sketch_datum_csys_dependencies = sketch_datum_csys_dependencies
         .iter()
         .map(|dependency| (dependency.datum_csys_operation_label.as_str(), dependency))
+        .collect::<BTreeMap<_, _>>();
+    let datum_csys_sketch_dependencies = datum_csys_sketch_dependencies
+        .iter()
+        .map(|dependency| (dependency.sketch_operation_label.as_str(), dependency))
         .collect::<BTreeMap<_, _>>();
     let mut datum_identity_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumPlaneCsysIdentityUse>>::new();
@@ -1535,6 +1540,16 @@ fn attach_feature_operations(
                 }
             }
         }
+        if let Some(dependency) = datum_csys_sketch_dependencies.get(label.id.as_str()) {
+            if let Some(feature) = feature_ids_by_operation
+                .get(dependency.datum_csys_operation_label.as_str())
+                .cloned()
+            {
+                if !dependencies.contains(&feature) {
+                    dependencies.push(feature);
+                }
+            }
+        }
         let mut source_properties = BTreeMap::new();
         source_properties.extend(operation_source_properties(
             &label.id,
@@ -1595,6 +1610,17 @@ fn attach_feature_operations(
                     alias.sketch_coordinate_ordinal.to_string(),
                 );
             }
+        }
+        if let Some(dependency) = datum_csys_sketch_dependencies.get(label.id.as_str()) {
+            source_properties.insert("datum_csys_dependency".to_string(), dependency.id.clone());
+            source_properties.insert(
+                "datum_csys_dependency_payload_block".to_string(),
+                dependency.datum_csys_data_block.clone(),
+            );
+            source_properties.insert(
+                "datum_csys_dependency_sketch_block".to_string(),
+                dependency.sketch_data_block.clone(),
+            );
         }
         let deletes_body = label.value == "DELETE";
         let mut outputs = if deletes_body {
