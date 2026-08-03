@@ -2578,6 +2578,26 @@ pub(crate) fn exact_joint_origin_frame(
     let mut candidates = Vec::new();
     for record_index in &scope.reference_members {
         for (start, paired) in records.frames(*record_index) {
+            if paired.checked_sub(start)? == 385
+                && bytes.get(start + 4..start + 7) == Some(b"364")
+                && bytes.get(paired + 4..paired + 7) == Some(b"264")
+                && bytes.get(start + 11..start + 45) == Some(&[0; 34])
+                && bytes.get(start + 45..start + 49) == Some(&[1, 1, 0, 0])
+            {
+                let values = f64s_at(bytes, start + 49, 16)?;
+                let mut transform = [[0.0; 4]; 4];
+                for (ordinal, value) in values.into_iter().enumerate() {
+                    transform[ordinal / 4][ordinal % 4] = value;
+                }
+                if valid_sketch_transform(&transform) {
+                    candidates.push(ScopePlacementFrame {
+                        transform,
+                        transform_offset: (start + 49) as u64,
+                        reference: None,
+                    });
+                }
+                continue;
+            }
             if !matches!(paired.checked_sub(start)?, 336 | 347)
                 || bytes.get(start + 11..start + 45)? != [0; 34]
                 || bytes.get(start + 50..start + 60)? != [0; 10]

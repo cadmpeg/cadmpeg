@@ -4349,6 +4349,36 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(decoded.transform_offset, (joint_origin_at + 60) as u64);
     assert_eq!(decoded.reference, Some((61, (joint_origin_at + 46) as u64)));
 
+    let compact_joint_origin_at = bytes.len();
+    let mut compact_joint_origin = vec![0; 385];
+    compact_joint_origin[0..4].copy_from_slice(&3u32.to_le_bytes());
+    compact_joint_origin[4..7].copy_from_slice(b"364");
+    compact_joint_origin[7..11].copy_from_slice(&67u32.to_le_bytes());
+    compact_joint_origin[45..49].copy_from_slice(&[1, 1, 0, 0]);
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = 49 + ordinal * 8;
+        compact_joint_origin[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    compact_joint_origin.extend_from_slice(&3u32.to_le_bytes());
+    compact_joint_origin.extend_from_slice(b"264");
+    compact_joint_origin.extend_from_slice(&67u32.to_le_bytes());
+    bytes.extend_from_slice(&compact_joint_origin);
+    let mut compact_joint_origin_scope = scope.clone();
+    compact_joint_origin_scope.kind = "JointOrigin".into();
+    compact_joint_origin_scope.reference_members = vec![67];
+    let decoded = exact_joint_origin_frame(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &compact_joint_origin_scope,
+    )
+    .expect("exact compact JointOrigin frame");
+    assert_eq!(decoded.transform, transform);
+    assert_eq!(
+        decoded.transform_offset,
+        (compact_joint_origin_at + 49) as u64
+    );
+    assert_eq!(decoded.reference, None);
+
     let move_at = bytes.len();
     let mut move_frame = vec![0; 254];
     move_frame[0..4].copy_from_slice(&3u32.to_le_bytes());
