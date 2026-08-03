@@ -1526,6 +1526,22 @@ fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[
         && payload.get(offset + 118..offset + 124) == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
         && (payload.get(offset + 124..offset + 166) == Some(&[0; 42]) || identity_bearing_tail)
         && sketch_marker_prefix_at(payload, offset.checked_add(170)?);
+    let linked_line_handle_id =
+        u16::from_le_bytes(payload.get(offset + 108..offset + 110)?.try_into().ok()?);
+    let linked_line_handle = payload
+        .get(offset + 78..offset + 82)
+        .is_some_and(|reference| reference[..2] != [0; 2] && reference[..2] != [0xff; 2])
+        && payload.get(offset + 82..offset + 90)
+            == Some(&[0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00])
+        && payload.get(offset + 90..offset + 96) == Some(&[0xff, 0xff, 0x01, 0x00, 0x0c, 0x00])
+        && payload.get(offset + 96..offset + 108) == Some(b"sgLineHandle")
+        && linked_line_handle_id != u16::MAX
+        && payload.get(offset + 110..offset + 118)
+            == Some(&[0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00])
+        && payload.get(offset + 118..offset + 124) == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
+        && payload.get(offset + 124..offset + 166) == Some(&[0; 42])
+        && payload.get(offset + 166..offset + 170) != Some(&[0; 4])
+        && sketch_marker_prefix_at(payload, offset.checked_add(170)?);
     let arc_handle_id = payload
         .get(offset + 119..offset + 121)
         .and_then(|bytes| bytes.try_into().ok())
@@ -1570,7 +1586,7 @@ fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[
             .get(offset + 165..offset + 169)
             .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
         && sketch_marker_prefix_at(payload, offset.checked_add(169)?);
-    if !line_handle && !line_arc_handle && !arc_handle {
+    if !line_handle && !linked_line_handle && !line_arc_handle && !arc_handle {
         return None;
     }
     finite_coordinate_pair(payload, offset + 58)
@@ -9020,6 +9036,22 @@ mod marker_tests {
             sketch_input_entities(&payload, "lane")[0].kind,
             SketchInputKind::Point
         );
+
+        let mut linked = payload.clone();
+        linked[78..170].fill(0);
+        linked[78..82].copy_from_slice(&[0x15, 0x84, 0x00, 0x00]);
+        linked[82..86].fill(0xff);
+        linked[90..96].copy_from_slice(&[0xff, 0xff, 0x01, 0x00, 0x0c, 0x00]);
+        linked[96..108].copy_from_slice(b"sgLineHandle");
+        linked[110..114].fill(0xff);
+        linked[118..124].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
+        linked[166..170].copy_from_slice(&4u32.to_le_bytes());
+        assert_eq!(
+            legacy_declared_handle_coordinates(&linked, 0),
+            Some([0.045, -0.0225])
+        );
+        linked[90] = 0;
+        assert_eq!(legacy_declared_handle_coordinates(&linked, 0), None);
 
         payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
         payload[170..].copy_from_slice(SKETCH_MARKER);
