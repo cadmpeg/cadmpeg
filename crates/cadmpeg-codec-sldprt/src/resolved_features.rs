@@ -11840,6 +11840,11 @@ mod marker_tests {
             wide_indexed_curve_endpoint_indices(&payload, 0),
             Some([7, 11])
         );
+        payload[35..39].copy_from_slice(&[0x00, 0x00, 0x84, 0x00]);
+        assert_eq!(
+            wide_indexed_curve_endpoint_indices(&payload, 0),
+            Some([7, 11])
+        );
         payload[35..39].copy_from_slice(&[0x00, 0x00, 0x04, 0x00]);
 
         payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
@@ -45423,7 +45428,10 @@ fn wide_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<
         || prefix == LEGACY_SKETCH_MARKER
             && (marker_is_geometry_locus(payload, offset)
                 && payload.get(offset + 35..offset + 39) == Some(&[0x00, 0x00, 0x05, 0x00])
-                || payload.get(offset + 35..offset + 39) == Some(&[0x00, 0x00, 0x44, 0x00]));
+                || matches!(
+                    payload.get(offset + 35..offset + 39),
+                    Some([0x00, 0x00, 0x44 | 0x84, 0x00])
+                ));
     if !supported_prefix
         || !matches!(
             u32::from_le_bytes(payload.get(offset + 17..offset + 21)?.try_into().ok()?),
