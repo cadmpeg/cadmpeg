@@ -766,6 +766,21 @@ fn attach_feature_operations(
         .iter()
         .map(|operation| (operation.operation_label.as_str(), operation))
         .collect::<BTreeMap<_, _>>();
+    let body_references_by_id = body_references
+        .iter()
+        .map(|reference| (reference.id.as_str(), reference))
+        .collect::<BTreeMap<_, _>>();
+    let mut offset_store_bodies_by_operation = BTreeMap::<&str, Vec<(u32, String)>>::new();
+    for body_use in body_data_block_uses {
+        let Some(reference) = body_references_by_id.get(body_use.feature_body_reference.as_str())
+        else {
+            continue;
+        };
+        offset_store_bodies_by_operation
+            .entry(reference.operation_label.as_str())
+            .or_default()
+            .push((reference.body_object_index, body_use.data_block.clone()));
+    }
     let offset_store_body_references = body_data_block_uses
         .iter()
         .map(|use_| use_.feature_body_reference.as_str())
@@ -2250,6 +2265,13 @@ fn attach_feature_operations(
                     &body_alias_roots,
                     &bodies_by_object_index,
                 )
+                .or_else(|| {
+                    offset_store_trim_body_feature_definition(
+                        offset_store_bodies_by_operation
+                            .get(label.id.as_str())
+                            .map_or([].as_slice(), Vec::as_slice),
+                    )
+                })
             })
             .flatten();
         let offset_projection = (label.value == "OFFSET")
@@ -2320,6 +2342,15 @@ fn attach_feature_operations(
                 &output_kinds,
             )
         });
+        let extract_projection = (label.value == "EXTRACT_BODY")
+            .then(|| {
+                extract_body_feature_definition(
+                    offset_store_bodies_by_operation
+                        .get(label.id.as_str())
+                        .map_or([].as_slice(), Vec::as_slice),
+                )
+            })
+            .flatten();
         let delete_projection = deletes_body
             .then(|| {
                 delete_body_feature_definition(
@@ -2353,6 +2384,7 @@ fn attach_feature_operations(
                     .or(delete_projection)
                     .or(sew_projection)
                     .or(extrude_projection)
+                    .or(extract_projection)
                     .or_else(|| blend_projection.map(|(definition, _)| definition))
                     .or_else(|| thicken_projection.map(|(definition, _)| definition))
                     .or_else(|| offset_projection.map(|(definition, _)| definition))
@@ -4792,6 +4824,45 @@ fn feature_body_selection(
     }
 }
 
+/// Resolve one complete body set when possible. Otherwise retain every exact
+/// input-local object identity. A body set needs no cross-role disjointness
+/// proof, so an identity outside the segment alias table remains its own root.
+fn feature_body_set_selection(
+    object_indices: &[u32],
+    body_alias_roots: &BTreeMap<u32, u32>,
+    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
+    native: String,
+) -> BodySelection {
+    let mut roots = Vec::new();
+    for index in object_indices {
+        let root = body_alias_roots.get(index).copied().unwrap_or(*index);
+        if !roots.contains(&root) {
+            roots.push(root);
+        }
+    }
+    let resolved = roots
+        .iter()
+        .map(|root| {
+            let [body] = bodies_by_object_index.get(root)?.as_slice() else {
+                return None;
+            };
+            Some(body.clone())
+        })
+        .collect::<Option<Vec<_>>>();
+    if let Some(bodies) =
+        resolved.filter(|bodies| bodies.iter().collect::<BTreeSet<_>>().len() == bodies.len())
+    {
+        return BodySelection::Resolved { bodies, native };
+    }
+    BodySelection::Local {
+        bodies: roots
+            .iter()
+            .map(|root| format!("nx:om-body-object#{root}"))
+            .collect(),
+        native,
+    }
+}
+
 fn atomic_disjoint_body_selections(
     left: FeatureBodySelection,
     right: FeatureBodySelection,
@@ -4890,6 +4961,40 @@ fn delete_body_feature_definition(
     })
 }
 
+/// Project one input-store body as the exact feature-local source of an extract.
+/// Multiple or absent body uses do not establish a source identity.
+fn extract_body_feature_definition(
+    offset_store_bodies: &[(u32, String)],
+) -> Option<FeatureDefinition> {
+    let [(object_index, data_block)] = offset_store_bodies else {
+        return None;
+    };
+    Some(FeatureDefinition::ExtractBody {
+        source: BodySelection::Local {
+            bodies: vec![data_block.clone()],
+            native: format!("nx:om-object-index#{object_index}"),
+        },
+    })
+}
+
+/// Project one input-store body as the exact feature-local trim target. Tool
+/// and retained-side semantics remain unresolved independently of target identity.
+fn offset_store_trim_body_feature_definition(
+    offset_store_bodies: &[(u32, String)],
+) -> Option<FeatureDefinition> {
+    let [(object_index, data_block)] = offset_store_bodies else {
+        return None;
+    };
+    Some(FeatureDefinition::TrimBodies {
+        targets: BodySelection::Local {
+            bodies: vec![data_block.clone()],
+            native: format!("nx:om-object-index#{object_index}"),
+        },
+        tools: BodySelection::Unresolved,
+        keep: BodyTrimSide::Unresolved,
+    })
+}
+
 fn sew_body_feature_definition(
     primary_body_object_index: u32,
     operands: &[&crate::native::features::FeatureOperationBodyOperand],
@@ -4901,7 +5006,7 @@ fn sew_body_feature_definition(
             .chain(operands.iter().map(|operand| operand.operand_object_index))
             .collect::<Vec<_>>();
         FeatureDefinition::SewBodies {
-            bodies: feature_body_selection(
+            bodies: feature_body_set_selection(
                 &object_indices,
                 body_alias_roots,
                 bodies_by_object_index,
@@ -4913,8 +5018,7 @@ fn sew_body_feature_definition(
                         .collect::<Vec<_>>()
                         .join(",")
                 ),
-            )
-            .selection,
+            ),
             gap_tolerance: None,
         }
     })
@@ -6444,6 +6548,22 @@ mod tests {
                 gap_tolerance: None,
             })
         );
+        assert!(matches!(
+            super::sew_body_feature_definition(
+                736,
+                &references,
+                &roots,
+                &BTreeMap::new(),
+            ),
+            Some(FeatureDefinition::SewBodies {
+                bodies: BodySelection::Local { bodies, .. },
+                ..
+            }) if bodies == [
+                "nx:om-body-object#736",
+                "nx:om-body-object#20",
+                "nx:om-body-object#30",
+            ]
+        ));
         let resolved = BTreeMap::from([
             (10, vec![BodyId("target".to_string())]),
             (20, vec![BodyId("first-tool".to_string())]),
@@ -6514,6 +6634,44 @@ mod tests {
             super::delete_body_feature_definition(None, &roots, &BTreeMap::new()),
             None
         );
+    }
+
+    #[test]
+    fn nx_extract_body_requires_one_exact_input_store_body() {
+        use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+
+        let body = (736, "nx:om-data-blocks-2:block#736".to_string());
+        assert_eq!(
+            super::extract_body_feature_definition(std::slice::from_ref(&body)),
+            Some(FeatureDefinition::ExtractBody {
+                source: BodySelection::Local {
+                    bodies: vec!["nx:om-data-blocks-2:block#736".to_string()],
+                    native: "nx:om-object-index#736".to_string(),
+                },
+            })
+        );
+        assert!(super::extract_body_feature_definition(&[]).is_none());
+        assert!(super::extract_body_feature_definition(&[body.clone(), body]).is_none());
+    }
+
+    #[test]
+    fn nx_trim_body_retains_one_exact_input_store_target() {
+        use cadmpeg_ir::features::{BodySelection, BodyTrimSide, FeatureDefinition};
+
+        let body = (114, "nx:om-data-blocks-2:block#114".to_string());
+        assert_eq!(
+            super::offset_store_trim_body_feature_definition(std::slice::from_ref(&body)),
+            Some(FeatureDefinition::TrimBodies {
+                targets: BodySelection::Local {
+                    bodies: vec!["nx:om-data-blocks-2:block#114".to_string()],
+                    native: "nx:om-object-index#114".to_string(),
+                },
+                tools: BodySelection::Unresolved,
+                keep: BodyTrimSide::Unresolved,
+            })
+        );
+        assert!(super::offset_store_trim_body_feature_definition(&[]).is_none());
+        assert!(super::offset_store_trim_body_feature_definition(&[body.clone(), body]).is_none());
     }
 
     #[test]
