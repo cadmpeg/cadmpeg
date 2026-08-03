@@ -3115,6 +3115,12 @@ pub(crate) fn exact_work_plane_frame(
                 321 if bytes.get(start + 11..start + 49) == Some(&[0u8; 38][..]) => {
                     (start + 49, None)
                 }
+                325 if bytes.get(start + 4..start + 7) == Some(b"431")
+                    && bytes.get(paired + 4..paired + 7) == Some(b"257")
+                    && bytes.get(start + 11..start + 49) == Some(&[0u8; 38][..]) =>
+                {
+                    (start + 49, None)
+                }
                 321 if bytes.get(start + 4..start + 7) == Some(b"364")
                     && bytes.get(paired + 4..paired + 7) == Some(b"264")
                     && bytes.get(start + 11..start + 46) == Some(&[0u8; 35][..])

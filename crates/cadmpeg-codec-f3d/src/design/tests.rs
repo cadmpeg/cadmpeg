@@ -4574,6 +4574,31 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(decoded.transform_offset, (compact_at + 49) as u64);
     assert_eq!(decoded.reference, None);
 
+    let compact_431_at = bytes.len();
+    let mut compact_431 = vec![0; 325];
+    compact_431[0..4].copy_from_slice(&3u32.to_le_bytes());
+    compact_431[4..7].copy_from_slice(b"431");
+    compact_431[7..11].copy_from_slice(&67u32.to_le_bytes());
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = 49 + ordinal * 8;
+        compact_431[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    compact_431.extend_from_slice(&3u32.to_le_bytes());
+    compact_431.extend_from_slice(b"257");
+    compact_431.extend_from_slice(&67u32.to_le_bytes());
+    bytes.extend_from_slice(&compact_431);
+    let mut compact_431_scope = scope.clone();
+    compact_431_scope.reference_members = vec![67];
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &compact_431_scope,
+    )
+    .expect("class-431 compact direct WorkPlane frame");
+    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform_offset, (compact_431_at + 49) as u64);
+    assert_eq!(decoded.reference, None);
+
     let compact_364_at = bytes.len();
     let mut compact_364 = vec![0; 321];
     compact_364[0..4].copy_from_slice(&3u32.to_le_bytes());
