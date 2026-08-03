@@ -147,9 +147,9 @@ dependencies = [
  "cadmpeg-codec-nx",
  "cadmpeg-codec-rhino",
  "cadmpeg-codec-sldprt",
+ "cadmpeg-codec-step",
  "cadmpeg-container",
  "cadmpeg-ir",
- "cadmpeg-step",
  "clap",
  "crc32fast",
  "memchr",
@@ -289,6 +289,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-codec-step"
+version = "0.3.1"
+dependencies = [
+ "cadmpeg-codec-core",
+ "cadmpeg-ir",
+ "encoding_rs",
+ "thiserror",
+]
+
+[[package]]
 name = "cadmpeg-container"
 version = "0.3.1"
 dependencies = [
@@ -309,16 +319,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "thiserror",
-]
-
-[[package]]
-name = "cadmpeg-step"
-version = "0.3.1"
-dependencies = [
- "cadmpeg-codec-core",
- "cadmpeg-ir",
- "encoding_rs",
  "thiserror",
 ]
 

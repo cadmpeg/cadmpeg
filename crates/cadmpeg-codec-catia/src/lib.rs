@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Reads CATIA V5 `.CATPart` files into [`cadmpeg_ir::CadIr`].
 //!
-//! [`CatiaCodec`] is the crate's only entry point. It implements the shared
-//! [`Codec`] interface: it detects the `V5_CFV2` file signature, inspects the
-//! catalogued logical streams, identifies the storage variant, and decodes the
-//! record families supported for that variant.
+//! [`CatiaCodec`] is the normal public decode API. The optional `fuzzing`
+//! feature may expose additional modules. It implements the shared [`Codec`]
+//! interface: it detects the `V5_CFV2` file signature, inspects the catalogued
+//! logical streams, identifies the storage variant, and decodes the record
+//! families supported for that variant.
 //!
 //! Support level: [L2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
 //! on the cadmpeg support ladder for the standard-nested layout; other layouts

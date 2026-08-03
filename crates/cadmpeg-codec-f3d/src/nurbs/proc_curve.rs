@@ -2385,7 +2385,9 @@ fn decode_embedded_surface_fields(
                     ref_direction,
                     radius,
                     ratio,
-                    half_angle: sine.abs().asin(),
+                    // See `brep/geometry.rs`: `atan2` keeps half-angle recovery
+                    // stable across libm implementations.
+                    half_angle: sine.abs().atan2(cosine.abs()),
                 }
             };
             Some((surface, ranges))

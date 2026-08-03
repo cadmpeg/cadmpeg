@@ -68,7 +68,7 @@ pub struct ConversionPlan {
     /// Explicit Rhino output archive version.
     pub rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
     /// STEP writer options selected by the caller.
-    pub step_options: cadmpeg_step::StepWriteOptions,
+    pub step_options: cadmpeg_codec_step::StepWriteOptions,
     /// Explicit input format selected by the user.
     pub forced_input: Option<ForcedInput>,
 }
@@ -203,7 +203,7 @@ pub fn decode(
         path,
         force,
         None,
-        cadmpeg_step::StepWriteOptions::default(),
+        cadmpeg_codec_step::StepWriteOptions::default(),
         false,
     )?;
     if let Some(report) = loaded.decode_report() {
@@ -643,7 +643,7 @@ fn export_ir(
     input: &Path,
     force: bool,
     rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
-    step_options: cadmpeg_step::StepWriteOptions,
+    step_options: cadmpeg_codec_step::StepWriteOptions,
     reject_lossy: bool,
 ) -> Result<ExportReport> {
     let mut bytes = Vec::new();

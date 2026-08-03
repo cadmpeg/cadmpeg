@@ -1,17 +1,17 @@
 {
   "ir": {
-    "ir_version": "4",
+    "ir_version": "5",
     "source": {
       "format": "f3d",
       "attributes": {
         "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-        "active_brep_sha256": "1f3c3da3821c98610282c3b53568a7b800c2904066df3ce7d8043972ca502ba3",
-        "active_slice_len": "151",
+        "active_brep_sha256": "cc6675a89373316537e83d8498984baee7ba4cb79343a0c3b168afb07a05cf91",
         "asset_folder": "FusionAssetName[Active]",
         "product_family": "Autodesk Neutron",
         "product_version": "ASM 231.6.3.65535 OSX",
         "save_date": "Tue Mar 31 16:16:19 2026",
-        "semantic_sha256": "54b186d482b53e03af0ecbfb1f6c6bf6bb9186e1abf9a4bf85204f42b8ab17a4",
+        "semantic_sha256": "80ecf1187d03e9f6fff0334b15072377075b0a34e4c98801723788d5aae2d529",
+        "solved_record_len": "148",
         "zip_entry_count": "2"
       }
     },
@@ -47,7 +47,7 @@
       "spatial_sketches": [],
       "spatial_sketch_entities": [],
       "spreadsheets": [],
-      "components": [],
+      "product_definitions": [],
       "occurrences": [],
       "assembly_joints": [],
       "drawings": [],
@@ -58,14 +58,12 @@
       "appearances": [],
       "appearance_bindings": [],
       "attributes": [],
-      "products": [],
-      "product_occurrences": [],
       "pmi": [],
       "presentation_layers": []
     },
     "native": {
       "f3d": {
-        "version": 5,
+        "version": 11,
         "arenas": {
           "act_entities": [],
           "act_guids": [],
@@ -83,6 +81,8 @@
           "design_body_bounds": [],
           "design_body_members": [],
           "design_body_recipe_operands": [],
+          "design_canvas_images": [],
+          "design_component_occurrences": [],
           "design_configurations": [],
           "design_construction_operand_groups": [],
           "design_construction_operand_identities": [],
@@ -100,13 +100,13 @@
           "design_face_operands": [],
           "design_fillet_radius_groups": [],
           "design_material_assignments": [],
-          "design_objects": [],
           "design_parameter_companions": [],
           "design_parameter_owners": [],
           "design_parameter_scopes": [],
           "design_parameters": [],
           "design_record_headers": [],
           "design_sketch_placements": [],
+          "design_types": [],
           "edge_continuities": [],
           "edge_ownerships": [],
           "face_sidedness": [],
@@ -145,27 +145,25 @@
     "losses": [
       {
         "code": "geometry_not_transferred",
-        "category": "geometry",
         "severity": "blocking",
-        "message": "ASM BREP geometry was not transferred: the active stream is not a decodable BinaryFile4/BinaryFile8 SAB (or its framing failed). 1 BREP stream(s) were located, but no surfaces, curves, or points were produced."
+        "message": "ASM BREP geometry was not transferred: the selected stream is not a decodable BinaryFile4/BinaryFile8 SAB (or its framing failed). 1 BREP stream(s) were located, but no surfaces, curves, or points were produced."
       },
       {
         "code": "topology_not_transferred",
-        "category": "topology",
         "severity": "blocking",
         "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this stream."
       },
       {
         "code": "material_not_transferred",
-        "category": "material",
         "severity": "warning",
         "message": "Materials/appearances (.protein assets, ACT/design assignments) were not transferred."
       }
     ],
     "notes": [
       "asset folder (from entry paths): FusionAssetName[Active]",
-      "active BREP candidate: FusionAssetName[Active]/Breps.BlobParts/Body1.smbh (178 bytes uncompressed, authoritative .smbh history stream)",
-      "container-level inspection only; run `decode` to build the B-rep graph and analytic geometry from the active BREP's SAB record stream"
+      "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
+      "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/Body1.smbh (177 bytes uncompressed)",
+      "container-level inspection only; run `decode` to resolve Design body bindings and build each referenced BREP graph"
     ]
   },
   "source_fidelity": {
@@ -188,16 +186,16 @@
         "id": "f3d:file:source-image#0",
         "stream": "f3d",
         "offset": 0,
-        "byte_len": 494,
-        "sha256": "f419a94a700b7b975c247b133115ea212931b9f387c96f957740c3bb6cf210d0",
-        "data": "UEsDBAoAAAAAAAAAIQDgjy/+EgAAABIAAAAMAAAATWFuaWZlc3QuZGF0c3ludGhldGljLW1hbmlmZXN0UEsDBAoAAAAAAAAAIQDcYw3xsgAAALIAAAAyAAAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vQnJlcHMuQmxvYlBhcnRzL0JvZHkxLnNtYmhBU00gQmluYXJ5RmlsZTg8WgAAAAAAAAAAAAAAAAAABwAAAAAAAAADAAAAAAAAAAcQQXV0b2Rlc2sgTmV1dHJvbgcVQVNNIDIzMS42LjMuNjU1MzUgT1NYBxhUdWUgTWFyIDMxIDE2OjE2OjE5IDIwMjYGAAAAAAAATkAGje21oPfGsD4Gu73X2d982z0NBGJvZHkREQ0LZGVsdGFfc3RhdGUAAAAAAAAAAAAAAAAAAAAAUEsBAgoDCgAAAAAAAAAhAOCPL/4SAAAAEgAAAAwAAAAAAAAAAAAAAKSBAAAAAE1hbmlmZXN0LmRhdFBLAQIKAwoAAAAAAAAAIQDcYw3xsgAAALIAAAAyAAAAAAAAAAAAAACkgTwAAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9CcmVwcy5CbG9iUGFydHMvQm9keTEuc21iaFBLBQYAAAAAAgACAJoAAAA+AQAAAAA="
+        "byte_len": 493,
+        "sha256": "6ce10cebadfc0d14894145494238d0973bbbb45fbc07a5fa654de549ce81f39f",
+        "data": "UEsDBAoAAAAAAAAAIQDgjy/+EgAAABIAAAAMAAAATWFuaWZlc3QuZGF0c3ludGhldGljLW1hbmlmZXN0UEsDBAoAAAAAAAAAIQC+L7VksQAAALEAAAAyAAAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vQnJlcHMuQmxvYlBhcnRzL0JvZHkxLnNtYmhBU00gQmluYXJ5RmlsZTg8WgAAAAAAAAAAAAAAAAAABwAAAAAAAAADAAAAAAAAAAcQQXV0b2Rlc2sgTmV1dHJvbgcVQVNNIDIzMS42LjMuNjU1MzUgT1NYBxhUdWUgTWFyIDMxIDE2OjE2OjE5IDIwMjYGAAAAAAAATkAGje21oPfGsD4Gu73X2d982z0NBGJvZHkRDQtkZWx0YV9zdGF0ZQAAAAAAAAAAAAAAAAAAAABQSwECCgMKAAAAAAAAACEA4I8v/hIAAAASAAAADAAAAAAAAAAAAAAApIEAAAAATWFuaWZlc3QuZGF0UEsBAgoDCgAAAAAAAAAhAL4vtWSxAAAAsQAAADIAAAAAAAAAAAAAAKSBPAAAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL0JyZXBzLkJsb2JQYXJ0cy9Cb2R5MS5zbWJoUEsFBgAAAAACAAIAmgAAAD0BAAAAAA=="
       },
       {
         "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:unknown#0",
         "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
         "offset": 0,
-        "byte_len": 178,
-        "sha256": "1f3c3da3821c98610282c3b53568a7b800c2904066df3ce7d8043972ca502ba3"
+        "byte_len": 177,
+        "sha256": "cc6675a89373316537e83d8498984baee7ba4cb79343a0c3b168afb07a05cf91"
       }
     ]
   }

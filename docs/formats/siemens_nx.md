@@ -258,20 +258,20 @@ an unresolved input slot remains absent without reordering the other slots.
 
 ### 2.1 Stream inventory
 
-| Stream                       | Role                                                                           |
-| ---------------------------- | ------------------------------------------------------------------------------ |
-| `/Root/UG_PART/UG_PART`      | canonical part payload: OM sections + Parasolid partition/deltas/plain streams |
-| `/Root/FastLoad/RMFastLoad`  | fast-load object-id table → active-body membership (NX OM per-class form)      |
-| `/Root/FastLoad/Structure`   | fast-load structure stream                                                      |
-| `/Root/FastLoad/JT`          | preview/JT mesh and metadata                                                   |
-| `/Root/UG_PART/DisplayJT`    | indexed embedded JT display-model documents                                   |
-| `/Root/UG_PART/LastSavedToggleInfoStream` | saved toggle-information stream                                  |
-| `/Root/images/preview`       | JPEG preview image                                                            |
-| `/Root/materialsTif/<name>`  | named TIFF material texture                                                    |
-| `/Root/*/ExternalReferences` | `EXTREFSTREAM`; child-part names, filesystem paths, occurrence handles         |
-| `/Root/part/attrs`           | `<UgAttributes>` UTF-8 XML key/value part metadata                             |
-| `/Root/qafmetadata`          | UTF-8 XML catalog for stored and logical asset paths                           |
-| `/Root/part/arrangements`    | (assemblies) UTF-8 XML arrangement config                                      |
+| Stream                                    | Role                                                                           |
+| ----------------------------------------- | ------------------------------------------------------------------------------ |
+| `/Root/UG_PART/UG_PART`                   | canonical part payload: OM sections + Parasolid partition/deltas/plain streams |
+| `/Root/FastLoad/RMFastLoad`               | fast-load object-id table → active-body membership (NX OM per-class form)      |
+| `/Root/FastLoad/Structure`                | fast-load structure stream                                                     |
+| `/Root/FastLoad/JT`                       | preview/JT mesh and metadata                                                   |
+| `/Root/UG_PART/DisplayJT`                 | indexed embedded JT display-model documents                                    |
+| `/Root/UG_PART/LastSavedToggleInfoStream` | saved toggle-information stream                                                |
+| `/Root/images/preview`                    | JPEG preview image                                                             |
+| `/Root/materialsTif/<name>`               | named TIFF material texture                                                    |
+| `/Root/*/ExternalReferences`              | `EXTREFSTREAM`; child-part names, filesystem paths, occurrence handles         |
+| `/Root/part/attrs`                        | `<UgAttributes>` UTF-8 XML key/value part metadata                             |
+| `/Root/qafmetadata`                       | UTF-8 XML catalog for stored and logical asset paths                           |
+| `/Root/part/arrangements`                 | (assemblies) UTF-8 XML arrangement config                                      |
 
 Any file entry outside these canonical paths and path families is a named
 opaque stream. Its directory identity and exact bounded payload remain one
@@ -334,8 +334,7 @@ uses of the same named prototype. The roster does not assign hierarchy or a
 placement transform.
 
 Each `uuid` uses string tag `03` and the same length framing, and contains 36
-lowercase hexadecimal UUID characters with hyphens at positions 8, 13, 18, and
-23. Each UUID index is one-based and lies in `1..=uuid_count`. It associates
+lowercase hexadecimal UUID characters with hyphens at positions 8, 13, 18, and 23. Each UUID index is one-based and lies in `1..=uuid_count`. It associates
 the corresponding occurrence ordinal with the UUID table independently of the
 prototype index.
 
@@ -825,7 +824,7 @@ Topology node layouts (logical offsets, pre-shift):
 | Type        | Fields                                                                                                                                                                                                                           |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | BODY (12)   | `node_id +4`; owner of shells/faces/edges/vertices                                                                                                                                                                               |
-| SHELL (13)  | `node_id +4`, `attributes +8` (=1), `body_ref +10`, `next_shell +12` (=1), `first_face +14`, sentinels `+16/+18` (=1), `region_ref +20`, `face_anchor +22` (`1` or `first_face`)                                                         |
+| SHELL (13)  | `node_id +4`, `attributes +8` (=1), `body_ref +10`, `next_shell +12` (=1), `first_face +14`, sentinels `+16/+18` (=1), `region_ref +20`, `face_anchor +22` (`1` or `first_face`)                                                 |
 | FACE (14)   | `attributes +8`, `tolerance:f64 +10`, `next_face +18`, `prev_face +20`, `loop +22`, `shell +24`, `surface +26`, `sense +28`, `next_on_surface +29`, `prev_on_surface +31`, `next_front +33`, `prev_front +35`, `front_shell +37` |
 | LOOP (15)   | `attributes +8`, `fin +10`, `face +12`, `next_loop +14`                                                                                                                                                                          |
 | EDGE (16)   | `attributes +8`, `tolerance:f64 +10`, `fin +18`, `prev_edge +20`, `next_edge +22`, `curve +24`, `next_on_curve +26`, `prev_on_curve +28`, `owner +30`                                                                            |
@@ -849,13 +848,13 @@ referenced list and its instances resolve.
 
 ### 5.3 Topology assembly
 
-| Entity   | Rule                                                                  |
-| -------- | --------------------------------------------------------------------- |
-| vertices | FIN-referenced VERTEX nodes; coordinates from same-stream POINT nodes |
+| Entity   | Rule                                                                                                                                                                                                                                                                                                                                       |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| vertices | FIN-referenced VERTEX nodes; coordinates from same-stream POINT nodes                                                                                                                                                                                                                                                                      |
 | edges    | one per EDGE node; native endpoint incidence is `EDGE.fin → FIN.vertex` and `FIN.other_fin → FIN.vertex`, with null `other_fin` falling back to `FIN.forward_fin → FIN.vertex`; canonical start/end order follows increasing curve parameter; the carrier resolves through non-null `EDGE.curve`, otherwise through the owning `FIN.curve` |
-| loops    | walked from `FACE.loop` through the null-terminated LOOP chain; each FIN ring closes at its first FIN with reciprocal forward/backward links; non-null partner FINs reciprocally reference one another and carry the same EDGE |
-| faces    | one per FACE node, with resolved surface when available               |
-| bodies   | one per validated body-shape SHELL                                    |
+| loops    | walked from `FACE.loop` through the null-terminated LOOP chain; each FIN ring closes at its first FIN with reciprocal forward/backward links; non-null partner FINs reciprocally reference one another and carry the same EDGE                                                                                                             |
+| faces    | one per FACE node, with resolved surface when available                                                                                                                                                                                                                                                                                    |
+| bodies   | one per validated body-shape SHELL                                                                                                                                                                                                                                                                                                         |
 
 POINT is a geometric carrier. It becomes a topological vertex only through a validated `FIN.vertex → VERTEX.point` path. An unreferenced POINT is not a free vertex of an existing body.
 Distinct fixed analytic carrier records retain physical record order within each point, surface, or curve family. A graph-bounded fixed analytic carrier and a scanner candidate at the same type-tag offset are one carrier; graph framing and XMT identity are authoritative.

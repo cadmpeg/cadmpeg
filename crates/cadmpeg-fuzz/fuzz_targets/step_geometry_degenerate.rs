@@ -10,7 +10,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::CadIr;
-use cadmpeg_step::{write_step, StepWriteOptions};
+use cadmpeg_codec_step::{write_step, StepWriteOptions};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
