@@ -72,10 +72,12 @@ Run the stable CI gate from the repository root:
 
 ```sh
 cargo fmt --all --check
-cargo clippy --workspace -- -D warnings -W missing-docs
+cargo clippy --workspace
 cargo build --workspace
 cargo test-fast
 ```
+
+Lint levels live in `[workspace.lints]` in the root `Cargo.toml`, so `cargo clippy` needs no trailing lint flags. Do not add them back: trailing lint flags are part of the compilation fingerprint, so a flagged run and a bare run evict each other's cached artifacts, and an editor running bare `cargo check` or `cargo clippy` then re-checks the workspace on every alternation.
 
 The excluded fuzz crate uses Rust nightly and `cargo-fuzz`. The scheduled [fuzz smoke workflow](.github/workflows/fuzz-smoke.yml) compiles every fuzz target without running it:
 
@@ -92,7 +94,7 @@ See [`seeds/README.md`](seeds/README.md) for seed regeneration and local fuzz-ru
 - [ ] Commits are signed off (`git commit -s`).
 - [ ] For decoder/spec PRs: the provenance declaration is in the description.
 - [ ] `cargo fmt --all --check` passes.
-- [ ] `cargo clippy --workspace -- -D warnings -W missing-docs` passes.
+- [ ] `cargo clippy --workspace` passes.
 - [ ] `cargo build --workspace` passes.
 - [ ] `cargo test-fast` and `cargo test --workspace --doc` pass.
 - [ ] No CAD binaries committed outside the corpus donation pipeline or the generated fuzz seeds (see [`seeds/README.md`](seeds/README.md)).

@@ -50,9 +50,11 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Clippy
-        # -W missing-docs keeps the documentation debt visible without
-        # blocking; drop it once the workspace is fully documented.
-        run: cargo clippy --workspace -- -D warnings -W missing-docs
+        # Lint levels come from `[workspace.lints]` in Cargo.toml, so no
+        # trailing flags here. Trailing flags are part of the compilation
+        # fingerprint, and a flagged run and a bare run evict each other's
+        # cached artifacts.
+        run: cargo clippy --workspace
 
       - name: Unit and integration tests
         # Builds the full workspace (libs, bins, test harnesses) before

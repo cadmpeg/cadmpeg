@@ -89,7 +89,19 @@ inherits = "release"
 strip = "symbols"
 
 # Crates opt in with `[lints] workspace = true`.
+#
+# Levels live here, not on the `cargo clippy` command line. Trailing lint flags
+# are part of the compilation fingerprint, so `cargo clippy` and
+# `cargo clippy -- -D warnings` evict each other's cached artifacts: an editor
+# that runs bare `cargo check`/`cargo clippy` and a gate that adds the flags
+# then force a full re-check on every alternation. Declaring the levels in the
+# manifest gives both one shared cache.
 [workspace.lints.rust]
+# Reproduces the `-D warnings` the gate used to pass on the command line.
+# `-D warnings` resolves after individual levels, so it promotes every
+# remaining warn-level lint to an error, `missing_docs` included. The gate
+# already behaved that way; only the flag's location changes here.
+warnings = { level = "deny", priority = -100 }
 missing_docs = "warn"
 
 [workspace.lints.clippy]
