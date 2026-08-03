@@ -983,12 +983,28 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     alignment.offset[1],
                     alignment.offset[2],
                 ];
+                let compact_frames = matches!(
+                    (scope.paired_class_tag.as_str(), scope.frame_length),
+                    ("258", 633 | 732)
+                );
+                let frame_reference_offsets = if compact_frames { [25, 165] } else { [29, 169] };
+                let frame_transform_offsets = if compact_frames { [36, 176] } else { [40, 180] };
+                let assembly_owner_count = native
+                    .design_parameter_owners
+                    .iter()
+                    .filter(|owner| {
+                        design_stream(&owner.id) == native_stream
+                            && owner.scope_record_index == scope.record_index
+                    })
+                    .count();
                 let operand_frames_link = alignment.operand_frames.as_ref().is_none_or(|frames| {
                     frames[0].reference_record_index != frames[1].reference_record_index
                         && frames.iter().enumerate().all(|(ordinal, frame)| {
                             design::decode::sketch::valid_sketch_transform(&frame.transform)
-                                && frame.reference_offset == scope.byte_offset + [29, 169][ordinal]
-                                && frame.transform_offset == scope.byte_offset + [40, 180][ordinal]
+                                && frame.reference_offset
+                                    == scope.byte_offset + frame_reference_offsets[ordinal]
+                                && frame.transform_offset
+                                    == scope.byte_offset + frame_transform_offsets[ordinal]
                                 && records_by_index
                                     .contains_key(&(native_stream, frame.reference_record_index))
                         })
@@ -999,18 +1015,23 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 ) {
                     (None, None) => true,
                     (Some(frames), Some(paths)) => {
-                        paths[0].record_index.checked_add(5)
+                        let (first_delta, second_delta) = if scope.frame_length == 732 {
+                            (39, 36)
+                        } else {
+                            (5, 2)
+                        };
+                        paths[0].record_index.checked_add(first_delta)
                             == Some(frames[0].reference_record_index)
-                            && paths[1].record_index.checked_add(2)
+                            && paths[1].record_index.checked_add(second_delta)
                                 == Some(frames[0].reference_record_index)
                             && paths[0].byte_offset < paths[1].byte_offset
                             && paths.iter().all(|path| {
                                 !path.occurrence_guids.is_empty()
                                     && path.occurrence_guids.len()
                                         == path.occurrence_guid_offsets.len()
-                                    && matches!(path.class_tag.as_str(), "329" | "390")
+                                    && matches!(path.class_tag.as_str(), "329" | "386" | "390")
                                     && path.identity_guids.len() == path.identity_guid_offsets.len()
-                                    && if path.class_tag == "390" {
+                                    && if matches!(path.class_tag.as_str(), "386" | "390") {
                                         path.identity_guids.len() == 4
                                     } else {
                                         path.identity_guids.is_empty()
@@ -1035,19 +1056,20 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                         .occurrence_guid_offsets
                                         .iter()
                                         .all(|offset| *offset > path.byte_offset)
-                                    && path.occurrence_guids.first().is_some_and(|guid| {
-                                        native
-                                            .design_component_occurrences
-                                            .iter()
-                                            .filter(|occurrence| {
-                                                design_stream(&occurrence.id) == native_stream
-                                                    && occurrence
-                                                        .occurrence_guid
-                                                        .eq_ignore_ascii_case(guid)
-                                            })
-                                            .count()
-                                            == 1
-                                    })
+                                    && (path.class_tag == "386"
+                                        || path.occurrence_guids.first().is_some_and(|guid| {
+                                            native
+                                                .design_component_occurrences
+                                                .iter()
+                                                .filter(|occurrence| {
+                                                    design_stream(&occurrence.id) == native_stream
+                                                        && occurrence
+                                                            .occurrence_guid
+                                                            .eq_ignore_ascii_case(guid)
+                                                })
+                                                .count()
+                                                == 1
+                                        }))
                             })
                     }
                     _ => false,
@@ -1060,15 +1082,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && scope
                         .reference_members
                         .ends_with(&alignment.owner_record_indices)
-                    && native
-                        .design_parameter_owners
-                        .iter()
-                        .filter(|owner| {
-                            design_stream(&owner.id) == native_stream
-                                && owner.scope_record_index == scope.record_index
-                        })
-                        .count()
-                        == 4
+                    && matches!(assembly_owner_count, 4 | 8)
                     && alignment
                         .owner_record_indices
                         .iter()
@@ -1080,7 +1094,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 design_stream(&owner.id) == native_stream
                                     && owner.record_index == *record_index
                                     && owner.scope_record_index == scope.record_index
-                                    && owner.local_ordinal == ordinal as u32
+                                    && owner.local_ordinal
+                                        == ordinal as u32 + u32::from(assembly_owner_count == 8) * 4
                                     && owner.evaluated_value == value
                                     && owner.evaluated_value_offset == value_offset
                             })

@@ -379,16 +379,21 @@ pub(crate) fn exact_assembly_alignment(
         })
         .collect::<Vec<_>>();
     lanes.sort_by_key(|owner| owner.local_ordinal);
-    let [angle, offset_x, offset_y, offset_z] = lanes.as_slice() else {
-        return None;
-    };
-    if [angle, offset_x, offset_y, offset_z]
+    if lanes
         .iter()
         .enumerate()
         .any(|(ordinal, owner)| owner.local_ordinal != ordinal as u32)
     {
         return None;
     }
+    let alignment_lanes = match lanes.len() {
+        4 => lanes.as_slice(),
+        8 => &lanes[4..],
+        _ => return None,
+    };
+    let [angle, offset_x, offset_y, offset_z] = alignment_lanes else {
+        return None;
+    };
     let owner_record_indices = [
         angle.record_index,
         offset_x.record_index,
@@ -761,7 +766,16 @@ fn exact_assembly_operand_frames(
     scope: &DesignParameterScope,
 ) -> Option<[DesignAssemblyOperandFrame; 2]> {
     let start = usize::try_from(scope.byte_offset).ok()?;
-    let frame_variant = matches!(
+    let frame_offsets = match (
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
+        scope.frame_length,
+    ) {
+        (_, "259", 637 | 692) | ("459", "264", 627) => (28, 40, 168, 180),
+        (_, "258", 633 | 732) => (24, 36, 164, 176),
+        _ => return None,
+    };
+    let modern_prologue = matches!(
         (
             scope.class_tag.as_str(),
             scope.paired_class_tag.as_str(),
@@ -769,18 +783,31 @@ fn exact_assembly_operand_frames(
         ),
         (_, "259", 637 | 692) | ("459", "264", 627)
     );
-    if !frame_variant
-        || usize::try_from(scope.paired_byte_offset).ok()?
-            != start.checked_add(usize::try_from(scope.frame_length).ok()?)?
+    if usize::try_from(scope.paired_byte_offset).ok()?
+        != start.checked_add(usize::try_from(scope.frame_length).ok()?)?
         || bytes.get(start + 11..start + 20)? != [0; 9]
-        || bytes.get(start + 20..start + 25)? != [1, 0, 0, 0, 0]
-        || !matches!(bytes.get(start + 25), Some(0 | 1))
-        || bytes.get(start + 26..start + 28)? != [0; 2]
-        || bytes.get(start + 33..start + 40)? != [0; 7]
-        || bytes.get(start + 173..start + 180)? != [0; 7]
-        || bytes.get(start + 308..start + 312)? != [0; 4]
     {
         return None;
+    }
+    if modern_prologue {
+        if bytes.get(start + 20..start + 25)? != [1, 0, 0, 0, 0]
+            || !matches!(bytes.get(start + 25), Some(0 | 1))
+            || bytes.get(start + 26..start + 28)? != [0; 2]
+            || bytes.get(start + 33..start + 40)? != [0; 7]
+            || bytes.get(start + 173..start + 180)? != [0; 7]
+            || bytes.get(start + 308..start + 312)? != [0; 4]
+        {
+            return None;
+        }
+    } else {
+        let compact_flags = bytes.get(start + 20..start + 24)?;
+        if (compact_flags != [0; 4] && compact_flags != [0, 1, 0, 0])
+            || bytes.get(start + 29..start + 36)? != [0; 7]
+            || bytes.get(start + 169..start + 176)? != [0; 7]
+            || bytes.get(start + 304..start + 308)? != [0; 4]
+        {
+            return None;
+        }
     }
     let frame = |reference_at: usize, transform_at: usize| {
         let reference_record_index = marked_record_reference(bytes, reference_at)?;
@@ -799,8 +826,8 @@ fn exact_assembly_operand_frames(
             transform_offset: transform_at as u64,
         })
     };
-    let first = frame(start + 28, start + 40)?;
-    let second = frame(start + 168, start + 180)?;
+    let first = frame(start + frame_offsets.0, start + frame_offsets.1)?;
+    let second = frame(start + frame_offsets.2, start + frame_offsets.3)?;
     (first.reference_record_index != second.reference_record_index).then_some([first, second])
 }
 
@@ -813,8 +840,13 @@ fn exact_assembly_operand_paths(
     let search_start = usize::try_from(scope.paired_byte_offset).ok()?;
     let construction_at =
         records.first_at_or_after(search_start, frames[0].reference_record_index)?;
-    let first_record_index = frames[0].reference_record_index.checked_sub(5)?;
-    let second_record_index = frames[0].reference_record_index.checked_sub(2)?;
+    let (first_delta, second_delta) = if scope.frame_length == 732 {
+        (39, 36)
+    } else {
+        (5, 2)
+    };
+    let first_record_index = frames[0].reference_record_index.checked_sub(first_delta)?;
+    let second_record_index = frames[0].reference_record_index.checked_sub(second_delta)?;
     let first_at = records.first_at_or_after(search_start, first_record_index)?;
     let second_at = records.first_at_or_after(first_at + 11, second_record_index)?;
     if !(first_at < second_at && second_at < construction_at) {
@@ -858,7 +890,7 @@ fn exact_assembly_operand_path(
     let mut identity_guid_offsets = Vec::new();
     match class_tag.as_str() {
         "329" => {}
-        "390" => {
+        "386" | "390" => {
             let end = next_indexed_record_offset(bytes, start + 1)?;
             if end > limit {
                 return None;

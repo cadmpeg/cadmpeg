@@ -3,7 +3,9 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::products::{AssemblyJoint, JointKind, JointOperand};
+use cadmpeg_ir::products::{
+    AssemblyJoint, ExternalDocumentReference, ExternalResolution, JointKind, JointOperand,
+};
 
 use crate::ids::native_stream;
 use crate::records::{DesignComponentOccurrence, DesignParameterScope};
@@ -39,13 +41,21 @@ pub(crate) fn project_assembly_joints(
             .iter()
             .map(|path| {
                 let root_guid = path.occurrence_guids.first()?;
-                occurrences
+                let occurrence = occurrences
                     .get(&(stream, root_guid.to_ascii_lowercase()))
                     .copied()
-                    .flatten()?;
+                    .flatten();
+                if occurrence.is_none() && path.class_tag != "386" {
+                    return None;
+                }
                 Some(JointOperand {
-                    occurrence: Some(crate::ids::neutral_component_occurrence_id(root_guid)),
-                    external_document: None,
+                    occurrence: occurrence
+                        .map(|_| crate::ids::neutral_component_occurrence_id(root_guid)),
+                    external_document: occurrence.is_none().then(|| ExternalDocumentReference {
+                        path: None,
+                        document_id: path.identity_guids.first().cloned(),
+                        resolution: ExternalResolution::Unresolved,
+                    }),
                     object: Some(root_guid.to_ascii_lowercase()),
                     subelements: path.occurrence_guids[1..]
                         .iter()

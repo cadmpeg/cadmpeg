@@ -18774,6 +18774,26 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(alignment.value_offsets, [501, 502, 503, 504]);
     assert_eq!(alignment.operand_frames, None);
 
+    let mut placement_and_alignment_owners = rectangular_owners.to_vec();
+    placement_and_alignment_owners.extend([
+        owner(60, 4, 0.25, 601),
+        owner(61, 5, 4.0, 602),
+        owner(62, 6, 5.0, 603),
+        owner(63, 7, 6.0, 604),
+    ]);
+    scope.reference_members = vec![50, 51, 52, 53, 60, 61, 62, 63];
+    let alignment = exact_assembly_alignment(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &placement_and_alignment_owners,
+    )
+    .expect("assembly alignment after four placement lanes");
+    assert_eq!(alignment.angle, 0.25);
+    assert_eq!(alignment.offset, [4.0, 5.0, 6.0]);
+    assert_eq!(alignment.owner_record_indices, [60, 61, 62, 63]);
+    scope.reference_members = vec![50, 51, 52, 53];
+
     let mut assembly_bytes = vec![0_u8; 648];
     assembly_bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
     assembly_bytes[4..7].copy_from_slice(b"273");
@@ -18842,6 +18862,36 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             (80, 169, 180, [4.0, 5.0, 6.0]),
         ]
     );
+    let mut legacy_assembly_bytes = vec![0_u8; 633];
+    legacy_assembly_bytes[..11].copy_from_slice(&assembly_bytes[..11]);
+    for (legacy_reference, legacy_transform, modern_reference, modern_transform) in
+        [(24, 36, 28, 40), (164, 176, 168, 180)]
+    {
+        legacy_assembly_bytes[legacy_reference..legacy_reference + 5]
+            .copy_from_slice(&assembly_bytes[modern_reference..modern_reference + 5]);
+        legacy_assembly_bytes[legacy_transform..legacy_transform + 128]
+            .copy_from_slice(&assembly_bytes[modern_transform..modern_transform + 128]);
+    }
+    legacy_assembly_bytes.extend_from_slice(&3_u32.to_le_bytes());
+    legacy_assembly_bytes.extend_from_slice(b"258");
+    legacy_assembly_bytes.extend_from_slice(&scope_record_index.to_le_bytes());
+    let legacy_assembly_scope = DesignParameterScope {
+        frame_length: 633,
+        paired_byte_offset: 633,
+        paired_class_tag: "258".into(),
+        ..scope.clone()
+    };
+    let legacy_frames = exact_assembly_alignment(
+        &legacy_assembly_bytes,
+        &IndexedRecordOffsets::build(&legacy_assembly_bytes),
+        &legacy_assembly_scope,
+        &rectangular_owners,
+    )
+    .and_then(|alignment| alignment.operand_frames)
+    .expect("compact assembly operand frames");
+    assert_eq!(legacy_frames[0].reference_offset, 25);
+    assert_eq!(legacy_frames[0].transform_offset, 36);
+
     let mut compact_bytes = assembly_bytes[..627].to_vec();
     compact_bytes.extend_from_slice(&3_u32.to_le_bytes());
     compact_bytes.extend_from_slice(b"264");
@@ -18899,6 +18949,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         "dddddddd-dddd-dddd-dddd-dddddddddddd",
     ];
     let mut identity_path_bytes = assembly_bytes.clone();
+    let first_identity_path_at = identity_path_bytes.len();
     push_identity_path(
         &mut identity_path_bytes,
         65,
@@ -18908,6 +18959,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         ],
         &identities,
     );
+    let second_identity_path_at = identity_path_bytes.len();
     push_identity_path(
         &mut identity_path_bytes,
         68,
@@ -18928,6 +18980,20 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(identity_paths[0].class_tag, "390");
     assert_eq!(identity_paths[0].occurrence_guids.len(), 2);
     assert_eq!(identity_paths[0].identity_guids, identities);
+    for path_at in [first_identity_path_at, second_identity_path_at] {
+        identity_path_bytes[path_at + 4..path_at + 7].copy_from_slice(b"386");
+    }
+    let compact_identity_paths = exact_assembly_alignment(
+        &identity_path_bytes,
+        &IndexedRecordOffsets::build(&identity_path_bytes),
+        &scope,
+        &rectangular_owners,
+    )
+    .and_then(|alignment| alignment.operand_paths)
+    .expect("compact identity-qualified assembly occurrence paths");
+    assert!(compact_identity_paths
+        .iter()
+        .all(|path| path.class_tag == "386"));
 
     push_path(
         &mut assembly_bytes,
