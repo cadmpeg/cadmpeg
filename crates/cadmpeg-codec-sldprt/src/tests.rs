@@ -1203,14 +1203,23 @@ fn pmi_semantic_payload() -> Vec<u8> {
 }
 
 fn pmi_semantic_payload_for(cad_text: &str) -> Vec<u8> {
+    pmi_semantic_payload_for_with_guid(cad_text, "01234567-89ab-cdef-0123-456789abcdef")
+}
+
+fn pmi_semantic_payload_for_with_guid(cad_text: &str, guid: &str) -> Vec<u8> {
+    pmi_semantic_payload_for_with_guid_and_value(cad_text, guid, 0.025)
+}
+
+fn pmi_semantic_payload_for_with_guid_and_value(cad_text: &str, guid: &str, value: f64) -> Vec<u8> {
     fn string(bytes: &mut Vec<u8>, value: &str) {
         assert!(value.len() < 32);
         bytes.push(0xa0 | value.len() as u8);
         bytes.extend_from_slice(value.as_bytes());
     }
+    assert_eq!(guid.len(), 36);
     let mut payload = b"unqlite".to_vec();
     payload.extend_from_slice(&[0; 57]);
-    payload.extend_from_slice(b"01234567-89ab-cdef-0123-456789abcdef");
+    payload.extend_from_slice(guid.as_bytes());
     payload.push(0x87);
     string(&mut payload, "annoType");
     payload.push(1);
@@ -1233,7 +1242,7 @@ fn pmi_semantic_payload_for(cad_text: &str) -> Vec<u8> {
     payload.push(3);
     string(&mut payload, "value");
     payload.push(0xcb);
-    payload.extend_from_slice(&0.025f64.to_be_bytes());
+    payload.extend_from_slice(&value.to_be_bytes());
     string(&mut payload, "dimText");
     string(&mut payload, "25.000 mm");
     string(&mut payload, "dimType");
@@ -19043,6 +19052,83 @@ fn decode_reports_unbound_pmi_semantic_dimension() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
 
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.message
+            == "1 semantic dimension record(s) are not bound to parameters; 0 parameter dimension(s) retain native subtypes."
+    }));
+}
+
+#[test]
+fn duplicate_pmi_records_share_one_parameter_and_round_trip_edits() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    for guid in [
+        "01234567-89ab-cdef-0123-456789abcdef",
+        "fedcba98-7654-3210-fedc-ba9876543210",
+    ] {
+        source.extend(make_block(
+            0x49,
+            "Contents/PMISemanticDataDB",
+            &pmi_semantic_payload_for_with_guid("D1@Sketch1", guid),
+        ));
+    }
+
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(sldprt_native(&decoded.ir).pmi_dimensions.len(), 2);
+    assert_eq!(decoded.ir.model.parameters.len(), 1);
+    assert!(decoded.report.losses.iter().all(|loss| !loss
+        .message
+        .contains("semantic dimension record(s) are not bound")));
+
+    let parameter = &mut decoded.ir.model.parameters[0];
+    parameter.expression = "50mm".into();
+    parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+        cadmpeg_ir::features::Length(50.0),
+    ));
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(&regenerated.ir);
+    assert_eq!(native.pmi_dimensions.len(), 2);
+    assert!(native
+        .pmi_dimensions
+        .iter()
+        .all(|dimension| dimension.value == 0.05));
+}
+
+#[test]
+fn semantically_distinct_pmi_records_remain_unbound() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    for (guid, value) in [
+        ("01234567-89ab-cdef-0123-456789abcdef", 0.025),
+        ("fedcba98-7654-3210-fedc-ba9876543210", 0.030),
+    ] {
+        source.extend(make_block(
+            0x49,
+            "Contents/PMISemanticDataDB",
+            &pmi_semantic_payload_for_with_guid_and_value("D1@Sketch1", guid, value),
+        ));
+    }
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.message
             == "1 semantic dimension record(s) are not bound to parameters; 0 parameter dimension(s) retain native subtypes."

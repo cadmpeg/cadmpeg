@@ -1,13 +1,50 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic dimension records stored in `PMISemanticDataDB`.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::Exactness;
 
 use crate::container::ContainerScan;
 use crate::records::PmiDimension;
+
+/// Return whether two retained records encode the same semantic dimension.
+///
+/// Record identity and byte locations are intentionally excluded. `SolidWorks`
+/// can retain multiple GUID records for one owner-qualified dimension. Every
+/// editable semantic field must agree before those records are aliases.
+pub(crate) fn equivalent_dimensions(left: &PmiDimension, right: &PmiDimension) -> bool {
+    left.cad_text == right.cad_text
+        && left.subtype == right.subtype
+        && left.value.to_bits() == right.value.to_bits()
+        && left.precision == right.precision
+        && left.display_text == right.display_text
+        && left.basic == right.basic
+        && left.inspection == right.inspection
+        && left.reference_only == right.reference_only
+}
+
+/// Count native semantic dimensions not represented by a bound record or one
+/// of its semantically identical retained aliases.
+pub(crate) fn unbound_dimension_count(
+    records: &[PmiDimension],
+    bound_ids: &HashSet<&str>,
+) -> usize {
+    let bound = records
+        .iter()
+        .filter(|record| bound_ids.contains(record.id.as_str()))
+        .collect::<Vec<_>>();
+    records
+        .iter()
+        .filter(|record| {
+            !bound_ids.contains(record.id.as_str())
+                && !bound
+                    .iter()
+                    .any(|candidate| equivalent_dimensions(record, candidate))
+        })
+        .count()
+}
 
 /// Add uniquely owner-qualified PMI dimensions to a projection copy of history.
 pub(crate) fn enrich_history_parameters(
@@ -71,13 +108,23 @@ pub(crate) fn patch_payload(
     let native = crate::native::SldprtNative::load(namespace).map_err(|error| {
         cadmpeg_codec_core::CodecError::Malformed(format!("invalid SLDPRT native PMI: {error}"))
     })?;
+    let records_by_id = native
+        .pmi_dimensions
+        .iter()
+        .map(|record| (record.id.as_str(), record))
+        .collect::<HashMap<_, _>>();
     for record in native
         .pmi_dimensions
         .iter()
         .filter(|record| record.parent == block_id)
     {
         let mut parameters = ir.model.parameters.iter().filter(|parameter| {
-            parameter.pmi.as_ref().map(|pmi| pmi.native_ref.as_str()) == Some(record.id.as_str())
+            parameter.pmi.as_ref().is_some_and(|pmi| {
+                pmi.native_ref == record.id
+                    || records_by_id
+                        .get(pmi.native_ref.as_str())
+                        .is_some_and(|bound| equivalent_dimensions(record, bound))
+            })
         });
         let Some(parameter) = parameters.next() else {
             continue;

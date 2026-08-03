@@ -654,11 +654,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .map(|pmi| pmi.native_ref.as_str())
         .collect::<std::collections::HashSet<_>>();
     let unbound_pmi_dimensions = native.as_ref().map_or(0, |native| {
-        native
-            .pmi_dimensions
-            .iter()
-            .filter(|dimension| !bound_pmi.contains(dimension.id.as_str()))
-            .count()
+        crate::pmi::unbound_dimension_count(&native.pmi_dimensions, &bound_pmi)
     });
     let native_pmi_subtypes = ir
         .model
