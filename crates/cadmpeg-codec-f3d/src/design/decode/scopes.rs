@@ -1810,7 +1810,8 @@ pub(crate) fn exact_base_feature_construction(
     }
     let body_count = combined_count / 2;
     let expanded = scope.class_tag == "384" && scope.paired_class_tag == "264";
-    let base_length = if expanded { 262 } else { 271 };
+    let legacy_compact = scope.class_tag == "420" && scope.paired_class_tag == "258";
+    let base_length = if expanded || legacy_compact { 262 } else { 271 };
     if scope.frame_length != base_length + u64::try_from(body_count.checked_mul(52)?).ok()? {
         return None;
     }
@@ -1847,6 +1848,15 @@ pub(crate) fn exact_base_feature_construction(
             return None;
         }
         cursor += 11;
+    } else if legacy_compact {
+        if bytes.get(cursor) != Some(&1)
+            || bytes.get(cursor + 1..cursor + 6) != Some(&[0; 5])
+            || bytes.get(cursor + 6) != Some(&1)
+            || usize::try_from(u32_at(bytes, cursor + 7)?).ok()? != body_count
+        {
+            return None;
+        }
+        cursor += 11;
     } else {
         if bytes.get(cursor) != Some(&1) || bytes.get(cursor + 1..cursor + 11) != Some(&[0; 10]) {
             return None;
@@ -1858,8 +1868,13 @@ pub(crate) fn exact_base_feature_construction(
         cursor += 4;
     }
     let mut repeated_reference_fields = Vec::with_capacity(body_count);
-    for expected in &body_reference_records {
-        if bytes.get(cursor) != Some(&1) || u32_at(bytes, cursor + 1)? != *expected {
+    for ordinal in 0..body_count {
+        let expected = if legacy_compact {
+            u32::try_from(body_entity_suffixes[ordinal]).ok()?
+        } else {
+            body_reference_records[ordinal]
+        };
+        if bytes.get(cursor) != Some(&1) || u32_at(bytes, cursor + 1)? != expected {
             return None;
         }
         repeated_reference_fields.push(bytes.get(cursor + 5..cursor + 11)?.try_into().ok()?);
@@ -1874,7 +1889,7 @@ pub(crate) fn exact_base_feature_construction(
     }
     let metadata_record = u32::try_from(read_u64(bytes, cursor + 1)?).ok()?;
     let metadata_record_offset = u64::try_from(cursor + 1).ok()?;
-    let metadata_field_width = if expanded { 2 } else { 6 };
+    let metadata_field_width = if expanded || legacy_compact { 2 } else { 6 };
     let metadata_field = bytes
         .get(cursor + 9..cursor + 9 + metadata_field_width)?
         .to_vec();

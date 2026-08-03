@@ -18400,6 +18400,26 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     assert_eq!(expanded.body_entity_suffixes, [101, 202]);
     assert_eq!(expanded.result_records, [501, 502]);
     assert_eq!(expanded.metadata_field, [0, 0]);
+
+    let mut legacy_compact_bytes = expanded_bytes.clone();
+    legacy_compact_bytes[90] = 1;
+    legacy_compact_bytes[96..100].copy_from_slice(&101u32.to_le_bytes());
+    legacy_compact_bytes[107..111].copy_from_slice(&202u32.to_le_bytes());
+    let mut legacy_compact_scope = expanded_scope.clone();
+    legacy_compact_scope.class_tag = "420".into();
+    legacy_compact_scope.paired_class_tag = "258".into();
+    let legacy_compact =
+        exact_base_feature_construction(&legacy_compact_bytes, &legacy_compact_scope)
+            .expect("legacy compact Base Feature frame is canonical");
+    assert_eq!(legacy_compact.body_entity_suffixes, [101, 202]);
+    assert_eq!(legacy_compact.body_reference_records, [301, 302]);
+    assert_eq!(legacy_compact.result_records, [501, 502]);
+    assert_eq!(legacy_compact.metadata_field, [0, 0]);
+
+    legacy_compact_bytes[96..100].copy_from_slice(&301u32.to_le_bytes());
+    assert!(
+        exact_base_feature_construction(&legacy_compact_bytes, &legacy_compact_scope).is_none()
+    );
 }
 
 #[test]
