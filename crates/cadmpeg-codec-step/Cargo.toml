@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
-name = "cadmpeg-step"
+name = "cadmpeg-codec-step"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 rust-version.workspace = true
-description = "Serialize cadmpeg IR documents as ISO 10303-21 STEP AP214 files."
+description = "Read and write ISO 10303-21 STEP Part 21 files for AP203, AP214, and AP242."
 readme = "README.md"
-documentation = "https://docs.rs/cadmpeg-step"
-keywords = ["cad", "step", "iso-10303", "ap214", "brep"]
+documentation = "https://docs.rs/cadmpeg-codec-step"
+keywords = ["cad", "step", "iso-10303", "ap242", "brep"]
 categories = ["encoding", "graphics"]
 
 [dependencies]

@@ -14,9 +14,12 @@
 //! supported geometry and topology. Detection uses file content because NX and
 //! Creo share the `.prt` extension.
 //!
-//! Support level: [L4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
-//! for single-body, `RMFastLoad`-selected, and terminal-lineage-resolved body
-//! images; L2 for unresolved multi-partition history.
+//! Support level: [L3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+//! for selected or terminal-lineage-resolved body images; L2 for unresolved
+//! multi-partition history. `RMFastLoad` body selection is a conservative
+//! membership heuristic (intersect with topology node IDs; require sufficient
+//! hit ratio or dominance; otherwise decline and fall back to terminal lineage
+//! when complete).
 //!
 //! # Decode a part
 //!

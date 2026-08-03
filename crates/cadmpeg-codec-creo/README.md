@@ -1,32 +1,33 @@
-# Creo `.prt` inspection and structural decode
+# cadmpeg-codec-creo
 
 `cadmpeg-codec-creo` reads PTC Creo Parametric and Pro/ENGINEER `.prt` files
 with the `#UGC:2` PSB container signature. It identifies the container layout,
 lists named sections, reports geometry namespace counts and JPEG preview
-presence, and decodes selected placed geometry, topology, sketches, and design
+presence, and decodes placed geometry, topology, sketches, and design
 records into [`CadIr`].
 
 The `.prt` extension is also used by Siemens NX. Format detection uses the
-`#UGC:2` signature, not the extension.
+`#UGC:2` signature.
 
-Support level: [L1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder) on the cadmpeg support ladder.
+Support level: [L1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder).
 
-## Installation
+## Install
 
 ```sh
 cargo add cadmpeg-codec-creo cadmpeg-ir
 ```
 
-## Inspect a file
+## Inspect
 
 ```rust,no_run
+use cadmpeg_codec_core::decode::InspectOptions;
 use cadmpeg_codec_creo::CreoCodec;
-use cadmpeg_ir::Codec;
+use cadmpeg_ir::CodecEntry;
 use std::fs::File;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = File::open("part.prt")?;
-    let summary = CreoCodec.inspect(&mut input)?;
+    let summary = CreoCodec.inspect(&mut input, &InspectOptions::default())?;
 
     println!("{} sections", summary.entries.len());
     for note in summary.notes {
@@ -36,24 +37,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-Call `CreoCodec.decode` when you need a `CadIr` document and a structured loss
-report. Decode preserves recognized PSB geometry sections as unknown records
-and transfers every carrier and design record whose byte-backed placement and
-semantics are complete.
+Call `CreoCodec.decode` for a `CadIr` document and a structured loss report.
+Decode keeps recognized PSB geometry sections as unknown records and transfers
+carriers and design records that are complete in the source bytes. The crate is
+read-only; it does not encode.
 
-## Data model and limits
+## Data model
 
 PSB files use an ASCII header and table of contents followed by named binary
 sections. The crate recognizes the ND and DEPDB layout families and reads
-surface and curve namespace rows, prototype parameters, native half-edge
-links, active units, feature identifiers, and datum outlines.
+surface and curve namespace rows, prototype parameters, native half-edge links,
+active units, feature identifiers, and datum outlines.
 
-Surface prototype parameters are family templates, not placed model geometry.
-Exact plane components and selected cylinders transfer with connected topology.
-Complete named triangle-strip position arrays transfer as display tessellation;
-other per-instance coordinates, curve families, face bindings, and feature
-evaluation remain incomplete. The [`DecodeReport`] records these losses.
-Writing `.prt` files is not supported.
+Complete model-space planes and selected cylinders transfer with connected
+topology. Placed cones, tori, and spheres transfer when positional construction
+or feature evaluation establishes model space. Interpolation and NURBS-related
+carriers transfer when frame and control-point bodies are complete. Finite
+reference lines, circles, and ellipses transfer as model-space carriers.
+Complete named `SolidPrimdata` triangle-strip position arrays transfer as
+display tessellation. A unique native model-name header defines one part
+product and one root identity occurrence that owns every transferred body.
+Typed features, parameters, and expressions transfer as design records when
+their construction inputs are complete.
+
+Surface prototype parameters are family templates until a positional or feature
+placement establishes instances. Other per-instance coordinates, curve families,
+face bindings, and feature evaluation remain incomplete. Losses land in
+[`DecodeReport`].
 
 ## References
 

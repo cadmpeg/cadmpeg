@@ -65,23 +65,33 @@
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.f3d")?;
-//! let mut result = F3dCodec.decode(&mut input, &DecodeOptions::default())?;
+//! let result = F3dCodec.decode(&mut input, &DecodeOptions::default())?;
 //! // Edit supported fields in result.ir.
 //! let mut output = File::create("part-edited.f3d")?;
-//! F3dCodec.plan(cadmpeg_ir::codec::EncodeInput { ir: &result.ir, fidelity: None }).and_then(|plan| plan.write_to(&mut output))?;
+//! F3dCodec
+//!     .plan(cadmpeg_ir::codec::EncodeInput {
+//!         ir: &result.ir,
+//!         fidelity: Some(&result.source_fidelity),
+//!     })?
+//!     .write_to(&mut output)?;
 //! # Ok(())
 //! # }
 //! ```
 //!
+//! Encoding with the retained `source_fidelity` sidecar replays or patches the
+//! source archive. Omitting `fidelity` writes the source-less profile.
+//!
 //! # Data flow
 //!
-//! [`container`] selects the `.smbh` history stream, or the first `.smb` when
-//! no `.smbh` exists. [`sab`] frames its active record slice. The Design body
-//! map selects every B-rep blob contributing bodies to the document model;
+//! The Design body map selects every B-rep blob contributing bodies to the
+//! document model; `.smb` and `.smbh` extensions do not choose either model or
+//! history role. [`container`] locates history streams by the ASM header flag.
+//! Without body-map bindings, a unique history-bearing stream or a single BREP
+//! is the only fallback. [`sab`] frames each selected active record slice.
 //! [`brep`] builds each topology chain from bodies through vertices and points,
 //! while [`nurbs`] decodes cached spline carriers.
 //! [`design`], [`history`], and [`materials`] populate source-native records and
-//! appearance bindings.
+//! appearance bindings. [`f3z`] merges multi-document archives into one model.
 //!
 //! ASM model-space lengths become millimetres. Directions, ratios, angles,
 //! knots, weights, and UV parameters retain their native scale.
@@ -115,6 +125,7 @@ pub mod validate;
 mod value_tree;
 mod writer;
 pub mod xref;
+mod zip_write;
 
 use cadmpeg_codec_core::decode::{DecodeContext, View};
 use cadmpeg_codec_core::{CodecError, ContainerSummary};

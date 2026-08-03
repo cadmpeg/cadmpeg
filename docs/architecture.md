@@ -1,6 +1,6 @@
 # cadmpeg architecture
 
-cadmpeg routes native CAD containers through format codecs into neutral `CadIr` version 5 plus source annotations and retained native records, then optionally validates and encodes them. [cad-ir.md](cad-ir.md) defines canonical units and parameterization, identity, topology, free carriers, source annotations, retained records, and native-namespace contracts. Crate documentation and `cadmpeg --help` define exact APIs and CLI options.
+cadmpeg routes native CAD through format codecs into `CadIr` version 5. Source fidelity rides beside the product document as a sidecar. Codecs may validate and encode afterward. [cad-ir.md](cad-ir.md) defines the IR. Crate docs and `cadmpeg --help` define APIs and CLI options. [format-support.md](format-support.md) records per-envelope capability.
 
 ## Pipeline
 
@@ -9,49 +9,56 @@ native CAD ── detect + inspect ──> container summary
      │
      └── detect + decode ──> CadIr ── validate ──> validation report
                                 │
-                                └── encode ──> .cadir.json | .step/.stp | .f3d | .sldprt
+                                └── encode ──> .cadir.json | .step/.stp | .f3d | .sldprt | .3dm | .FCStd
 ```
 
-- `inspect` detects a codec and calls its container inspection path. It reports streams, blocks, entries, sizes, and codec-defined attributes without decoding geometry.
+- `inspect` detects a codec and reports container structure without decoding geometry.
 - `decode` runs the selected codec and serializes `CadIr`, normally as `.cadir.json`.
 - `validate` reads or decodes an input and checks IR invariants.
-- `export` reads or decodes an input and writes CADIR, STEP, or SLDPRT without validation.
-- `convert` performs load/decode, validation, and export. Validation errors stop export unless `--allow-invalid` is set.
-- `diff` reads or decodes two inputs and compares units, tolerances, the neutral model, native namespaces, source annotations, and retained records. ID-bearing records are matched by globally unique IDs. Vector position is not entity identity.
+- `export` reads or decodes an input and writes CADIR, STEP, SLDPRT, F3D, Rhino, or FreeCAD without validation.
+- `convert` loads or decodes, validates, then exports. `--allow-invalid` continues export after validation errors.
+- `diff` reads or decodes two inputs and compares units, tolerances, the neutral model, native namespaces, source annotations, and retained records. ID-bearing records match by globally unique IDs. Vector position is not entity identity.
 
-CADIR input bypasses codec detection and parses directly into `CadIr`. The parser accepts exactly IR version 5, including its required `subds` arena; source annotations and retained records remain outside the document. Geometry exports are refused when a source decode transferred no geometry unless `--allow-empty` is set.
+CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 5, including its required `subds` arena. Source annotations and retained records stay in the source-fidelity sidecar. `--allow-empty` permits geometry export when a source decode transferred no geometry.
 
 ## Decode session
 
-The `Codec` trait splits decoding into a provided `decode` wrapper and a required `decode_impl`. The wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the codec, and finalizes a `DecodeContext`. `DecodeContext` owns budget counters and the address-space registry; a `DecodeArena` owns byte buffers with stable addresses; and a `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field; the ownership model lives in `cadmpeg_codec_core::decode`.
+The `Codec` trait splits decoding into a provided `decode` wrapper and a required `decode_impl`. The wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the codec, and finalizes a `DecodeContext`.
+
+`DecodeContext` holds budget counters and the address-space registry. `DecodeArena` holds byte buffers with stable addresses. A `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field. Ownership lives in `cadmpeg_codec_core::decode`.
 
 ## CLI stream and exit contract
 
-`decode`, `export`, and `convert` reserve stdout for the output artifact; diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 5`, including semantic refusal paths. JSON output from `inspect`, `validate`, and `diff` uses the same CLI schema version. This envelope version is independent of `CadIr.ir_version`. Status 0 means success, status 1 means semantic failure or a non-empty diff, and status 2 means operational failure.
+`decode`, `export`, and `convert` reserve stdout for the output artifact. Diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 5`, including semantic refusal paths. JSON from `inspect`, `validate`, and `diff` uses the same CLI schema version. That envelope version is independent of `CadIr.ir_version`.
 
-Output and report files are written through a unique temporary file in the destination directory and then persisted. Existing files require `--force`. An output path resolving to the input is rejected.
+Status 0 is success. Status 1 is semantic failure or a non-empty diff. Status 2 is operational failure.
+
+Writers create a unique temporary file in the destination directory, then rename it into place. `--force` replaces an existing file. The CLI rejects an output path that resolves to the input.
 
 ## Loss reports
 
-Source decoders return `DecodeReport`, including `geometry_transferred`, a decode-coverage count census, notes, and attributable `LossNote` entries. Validation propagates supplied decode losses unchanged.
+Source decoders return `DecodeReport`, including `geometry_transferred`, a decode-coverage census, notes, and attributable `LossNote` entries. Validation propagates supplied decode losses unchanged.
 
-Every encoder returns an `ExportReport` containing its format id, entity census, total entity count, loss notes, and informational notes. STEP reports reductions and omitted IR data. CADIR has no export losses. F3D and SLDPRT retain all-or-nothing rejection for unsupported input and report whether the source container was replayed or regenerated. Decode losses remain present in the command report when export or convert started from native CAD.
-
-The [format support profiles](format-support.md) record read, write, and round-trip capability by semantic domain, summarized as one [ladder score](format-support.md#support-ladder) per codec.
+Every encoder returns an `ExportReport` with its format id, entity census, loss notes, and informational notes. STEP reports reductions and omitted IR data. CADIR export carries no losses. F3D, SLDPRT, Rhino, and FreeCAD report replay versus regeneration and reject unsupported input atomically. Decode losses remain in the command report when export or convert started from native CAD.
 
 ## Crate map
 
-| Crate                  | Responsibility                                                                                                                                                                                                   |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cadmpeg`              | CLI orchestration for `inspect`, `decode`, `validate`, `export`, `diff`, and `convert`; built-in codec registration; CADIR, STEP, and SLDPRT output dispatch.                                                    |
-| `cadmpeg-ir`           | Version 4 IR model, canonical JSON, free-carrier source associations, source-fidelity sidecars, sparse provenance and exactness, native namespaces, structural diff, validation, codec traits, and report types. |
-| `cadmpeg-codec-f3d`    | `.f3d` ZIP inspection; ASM/SAB B-rep, analytic and cached NURBS geometry, pcurves, transforms, attributes, appearances, Design/ACT records, history decode, retained-source replay, and selected native edits.   |
-| `cadmpeg-codec-sldprt` | SLDPRT block, directory, and cache-cell inspection; Parasolid analytic/NURBS B-rep, pcurves, appearances, feature lanes, history, and tessellation decode; retained-source and semantic SLDPRT writing.          |
-| `cadmpeg-codec-catia`  | CATIA V5 `V5_CFV2` layout inspection; standard, zero-entity, E5, and object-stream carrier decode; conditional standard-nested topology reconstruction.                                                          |
-| `cadmpeg-codec-nx`     | NX `SPLMSSTR` extraction; Parasolid analytic and NURBS carriers, supported trimmed-curve bindings, and conditional topology reconstruction.                                                                      |
-| `cadmpeg-codec-creo`   | Creo `#UGC:2`/PSB section and token decode, prototype and loop structure, opaque `VisibGeom` preservation, placed plane and selected cylinder carriers, and conditional planar model B-rep transfer.             |
-| `cadmpeg-step`         | Pure-Rust STEP AP214 writer for supported B-rep hierarchy, analytic, and B-spline carriers, with export loss notes.                                                                                              |
-| `cadmpeg-fuzz`         | `cargo-fuzz` targets and seed generators for untrusted decoder inputs. It is excluded from the default Cargo workspace because libFuzzer requires nightly; run it with `cargo +nightly fuzz ...`.                |
+| Crate                   | Responsibility                                                                                                                         |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `cadmpeg`               | CLI orchestration, built-in codec registration, and output dispatch.                                                                   |
+| `cadmpeg-ir`            | `CadIr` version 5, validation, diff, codec traits, reports, and source-fidelity sidecars.                                              |
+| `cadmpeg-codec-core`    | Shared decode budgets, arenas, views, container summaries, and I/O helpers.                                                            |
+| `cadmpeg-container`     | Shared archive and compression helpers for container codecs.                                                                           |
+| `cadmpeg-codec-freecad` | FreeCAD `.FCStd` read and semantic write for the schema-4/file-1 envelope.                                                             |
+| `cadmpeg-codec-f3d`     | Fusion `.f3d` inspection, ASM/SAB geometry, design records, retained replay, and selected native edits.                                |
+| `cadmpeg-codec-sldprt`  | SolidWorks `.sldprt` container, Parasolid B-rep, features, retained replay, and semantic writing.                                      |
+| `cadmpeg-codec-rhino`   | Rhino `.3dm` read and write for archive 50/60/70/80.                                                                                   |
+| `cadmpeg-codec-catia`   | CATIA V5 `.CATPart` layout inspection and carrier decode; conditional topology on the standard-nested band.                            |
+| `cadmpeg-codec-nx`      | NX `.prt` `SPLMSSTR` extraction, Parasolid carriers, and conditional topology.                                                         |
+| `cadmpeg-codec-creo`    | Creo `.prt` section decode with partial placed geometry and conditional connected bodies (general analytic intersections and pcurves). |
+| `cadmpeg-codec-iges`    | Read-only IGES 5.3 Fixed ASCII for the mechanical/document envelope.                                                                   |
+| `cadmpeg-codec-step`    | STEP Part 21 AP203, AP214, and AP242 read and write with export loss notes.                                                            |
+| `cadmpeg-fuzz`          | Nightly `cargo-fuzz` targets outside the default workspace.                                                                            |
 
 ## Codec interface
 
@@ -60,10 +67,6 @@ Each input codec implements `Codec`:
 - `id() -> &'static str` names the codec for registry lookup and `--input-format`.
 - `detect(&[u8]) -> Confidence` identifies a format from a byte prefix.
 - `inspect(&mut dyn ReadSeek) -> Result<ContainerSummary, CodecError>` enumerates container structure.
-- `decode(&mut dyn ReadSeek, &DecodeOptions) -> Result<DecodeResult, CodecError>` produces `CadIr` and `DecodeReport`.
+- `decode(&mut dyn ReadSeek, &DecodeOptions) -> Result<DecodeResult, CodecError>` produces `CadIr`, `DecodeReport`, and source fidelity.
 
-The CLI detects a codec unless `--input-format` selects one. Output codecs that implement native encoding use the separate `Encoder` trait. The Rust trait definitions are authoritative for exact signatures.
-
-## Build shape
-
-The default workspace and the core inspect/decode/validate/export path build on stable Rust without native CAD SDKs. `cadmpeg-fuzz` is an explicit nightly `cargo-fuzz` workflow outside the default workspace.
+`--input-format` selects a codec. Without it, the CLI detects one. Native writers use the separate `Encoder` trait. The Rust trait definitions are authoritative for exact signatures.

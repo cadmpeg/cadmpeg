@@ -52,22 +52,47 @@
 //!
 //! The outer container uses an 8-byte header, CRC-validated raw-DEFLATE blocks,
 //! a fixed-cell section index, and a tail directory. Embedded Parasolid
-//! `partition` and `deltas` streams supply the B-rep record graph. Parasolid
+//! `partition` and `deltas` streams supply the B-rep record graph. The decoder
+//! groups related body streams by site, selects the richest resulting B-rep,
+//! and merges alternate sites as configuration-specific bodies. Parasolid
 //! lengths are metres; decoded `CadIr` coordinates are millimetres. Directions,
 //! normals, and ratios remain dimensionless.
 //!
 //! # Encode
 //!
-//! [`SldprtCodec`] implements [`Encoder`]. Unchanged decoded IR replays its
-//! retained source image byte for byte. Supported geometry edits can patch the
-//! native partition when the entity graph and provenance remain stable.
-//! Otherwise the writer regenerates supported semantic records and returns
+//! ```no_run
+//! use std::fs::File;
+//!
+//! use cadmpeg_codec_sldprt::SldprtCodec;
+//! use cadmpeg_ir::{CodecEntry, DecodeOptions, Encoder};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let mut input = File::open("part.sldprt")?;
+//! let decoded = SldprtCodec.decode(&mut input, &DecodeOptions::default())?;
+//! let mut output = File::create("part-edited.sldprt")?;
+//! SldprtCodec
+//!     .plan(cadmpeg_ir::codec::EncodeInput {
+//!         ir: &decoded.ir,
+//!         fidelity: Some(&decoded.source_fidelity),
+//!     })?
+//!     .write_to(&mut output)?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! [`SldprtCodec`] implements [`Encoder`] through `plan` → `write_to`. Encoding
+//! with the retained `source_fidelity` sidecar replays or patches the source
+//! image. Omitting `fidelity` regenerates the supported source-less profile.
+//! Supported geometry edits can patch the native partition when the entity graph
+//! and provenance remain stable. Retained writing can synchronize supported
+//! feature, sketch, parameter, configuration, and PMI edits and returns
 //! [`CodecError::NotImplemented`] for an unsupported IR shape.
 //!
-//! The semantic writer supports solid bodies with multiple regions and shells,
-//! sheet bodies with one shell per region, analytic and non-periodic NURBS carriers, selected
-//! metadata and feature records, base colors, and sequential triangle-strip
-//! tessellation. It bakes right-handed rigid body transforms into geometry.
+//! The semantic writer supports solid bodies with at most five regions and at
+//! most six shells per solid region, sheet bodies with one shell per region,
+//! analytic and non-periodic NURBS carriers, selected metadata and feature
+//! records, base colors, and sequential triangle-strip tessellation. It bakes
+//! right-handed rigid body transforms into geometry.
 //!
 //! [`Codec::inspect`]: cadmpeg_ir::Codec::inspect
 //! [`CodecError::NotImplemented`]: cadmpeg_codec_core::CodecError::NotImplemented

@@ -15,7 +15,7 @@
 //!
 //! ```
 //! use cadmpeg_ir::examples::unit_cube;
-//! use cadmpeg_step::{write_step, StepWriteOptions};
+//! use cadmpeg_codec_step::{write_step, StepWriteOptions};
 //!
 //! let ir = unit_cube();
 //! let mut bytes = Vec::new();
@@ -23,7 +23,7 @@
 //!
 //! assert!(bytes.starts_with(b"ISO-10303-21;"));
 //! assert!(report.census.total() > 0);
-//! # Ok::<(), cadmpeg_step::StepError>(())
+//! # Ok::<(), cadmpeg_codec_step::StepError>(())
 //! ```
 //!
 //! Review [`cadmpeg_ir::ExportReport::losses`] before retaining report-mode
@@ -39,8 +39,11 @@
 //! and surfaces map to their corresponding STEP carriers. Rational and
 //! non-rational NURBS use the `*_WITH_KNOTS` entities.
 //!
-//! [`StepError`] represents output-sink failures. Since the writer streams the
-//! header and DATA section, such a failure can leave partial output.
+//! [`StepError`] reports [`StepError::Unsupported`] under
+//! [`StepUnsupportedPolicy::Reject`] before any output is written, and
+//! [`StepError::Io`] for output-sink failures. Because the writer streams the
+//! header and DATA section after acceptance, an I/O failure can leave partial
+//! output.
 
 mod geometry;
 pub mod lex;
@@ -221,18 +224,21 @@ pub enum StepError {
     Io(#[from] std::io::Error),
 }
 
-/// Serializes an IR document as an ISO 10303-21 STEP AP214 file.
+/// Serializes an IR document as an ISO 10303-21 STEP Part 21 file for the
+/// schema selected by [`StepWriteOptions::schema`].
 ///
-/// The output declares the `AUTOMOTIVE_DESIGN` schema and a millimetre length
-/// unit. Coordinate values are not rescaled. The IR linear tolerance becomes
-/// the representation context's uncertainty value.
+/// The output declares that schema and a millimetre length unit. Coordinate
+/// values are not rescaled. The IR linear tolerance becomes the representation
+/// context's uncertainty value.
 ///
-/// Geometry conversion completes before this function writes the header. It
-/// then streams the header, DATA instances, and closing records to `w`. An I/O
-/// error can therefore leave a partial file and returns no report.
+/// Geometry conversion completes before this function writes the header. Under
+/// [`StepUnsupportedPolicy::Reject`], unsupported content returns
+/// [`StepError::Unsupported`] before any output byte is written. Otherwise the
+/// function streams the header, DATA instances, and closing records to `w`. An
+/// I/O error can therefore leave a partial file and returns no report.
 ///
 /// On success, the report contains DATA entity counts and loss notes for
-/// omitted or reduced content.
+/// reductions that the selected schema cannot carry.
 pub fn write_step(
     ir: &CadIr,
     w: &mut (impl Write + ?Sized),
