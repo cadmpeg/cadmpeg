@@ -5,7 +5,7 @@ use super::names::{class_declarations, configuration, object_names};
 use super::scalars::named_scalars;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::container::ContainerScan;
-use crate::records::FeatureInputLane;
+use crate::records::{FeatureInputClassRole, FeatureInputLane};
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::Exactness;
 
@@ -136,10 +136,10 @@ pub(super) fn legacy_feature_input_section(section: &str) -> bool {
     !configuration.is_empty() && configuration.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-fn legacy_sketch_object_stream(payload: &[u8]) -> bool {
+pub(super) fn legacy_sketch_object_stream(payload: &[u8]) -> bool {
     let classes = class_declarations(payload, "legacy-sketch-probe");
     classes.iter().any(|class| class.name == "sgSketch")
         && classes
             .iter()
-            .any(|class| class.name == "moFeatureDimHandle_c")
+            .any(|class| class.role == FeatureInputClassRole::SketchEntity)
 }

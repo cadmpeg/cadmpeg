@@ -3,12 +3,13 @@
 use super::endpoints::{
     compact_curve_endpoint_indices, compact_indexed_curve_endpoint_indices,
     current_compact_104_profile_line, current_direct_92_profile_line_endpoint_indices,
-    extended_identity_inline_profile_line, extended_tagged_indexed_curve_endpoint_indices,
+    extended_identity_inline_line_record, extended_tagged_indexed_curve_endpoint_indices,
     extended_terminal_profile_line, extended_wide_horizontal_relation_endpoint_indices,
     legacy_compact_profile_line, legacy_referenced_wide_arc_endpoint_indices,
     marker_is_selected_construction_line, marker_profile_curve_role,
     wide_indexed_curve_endpoint_indices,
 };
+use super::curves::slot_curve_and_center_indices;
 use super::relation_loci::same_dimension_length;
 use super::relation_records::relation_signature;
 use super::scalars::{feature_object_name, operand_kind};
@@ -29,7 +30,7 @@ use cadmpeg_ir::sketches::{
 use std::collections::{BTreeMap, HashMap};
 
 #[cfg(test)]
-use super::assembly::legacy_feature_input_section;
+use super::assembly::{legacy_feature_input_section, legacy_sketch_object_stream};
 #[cfg(test)]
 use super::axes::{
     bounded_profile_axis_endpoints, common_generated_surface_axis,
@@ -52,7 +53,8 @@ use super::component_paths::{
 };
 #[cfg(test)]
 use super::curves::{
-    compact_bounded_curve_tangent, compact_line_chain_addresses, compact_line_region_addresses,
+    compact_bounded_curve_tangent, compact_legacy_rectangle_line_endpoints,
+    compact_line_chain_addresses, compact_line_region_addresses,
     complete_ordered_compact_line_profile, current_linked_semicircle_record,
     indexed_rectangle_from_line_cycle, legacy_extended_rectangle_diagonal_endpoint,
     ordered_compact_line_profile, ordered_rectangle_corners, resolve_connected_marker_arcs,
@@ -81,13 +83,15 @@ use super::endpoints::{
     current_wide_arc_direct_markers, direct_indexed_curve_endpoint_indices,
     equal_index_coordinate_roster_full_circle,
     extended_compact_84_construction_line_endpoint_indices,
+    extended_compact_84_profile_line_uses_point_roster,
     extended_compact_96_selected_axis_endpoint_indices, extended_compact_endpoint_markers,
     extended_compact_indexed_curve_endpoint_indices, extended_declared_inline_line_endpoints,
     extended_direct_object_line_endpoint_ids, extended_identity_inline_line_endpoints,
     extended_linked_inline_line_endpoints, extended_marker84_line_uses_point_roster,
     extended_profile_roster_construction_line_endpoint_indices,
-    extended_wide_construction_line_roster_indices, implicit_profile_chain_closure_endpoints,
-    indexed_arc_uses_coordinate_center, legacy_code_five_or_six_selected_axis_endpoint_indices,
+    extended_wide_construction_line_roster_indices, implicit_profile_chain_closure_endpoints, indexed_arc_uses_coordinate_center,
+    legacy_code_five_or_six_selected_axis_endpoint_indices,
+    legacy_compact_104_profile_line_endpoint_indices,
     legacy_compact_84_profile_line_uses_point_roster, legacy_compact_diameter_arc_center,
     legacy_compact_direct_endpoint_markers, legacy_compact_roster_selected_axis_endpoint_indices,
     legacy_coordinate_circle_radius, legacy_coordinate_roster_selected_axis_endpoint_indices,
@@ -98,6 +102,9 @@ use super::endpoints::{
     legacy_undetailed_profile_line, legacy_unlocated_geometry_handle,
     linked_profile_curve_endpoint_indices, packed_compact_legacy_curve_endpoint_indices,
     packed_legacy_curve_endpoint_indices, roster_curve_endpoint_markers,
+    current_compact_roster_selected_axis,
+    current_identity_linked_wide_curve_uses_one_based_roster,
+    current_referenced_compact_curve_uses_marker_roster,
     standard_legacy_compact_selected_axis_endpoint_indices, unique_arc_center_marker,
     wide_coordinate_roster_full_circle, wide_direct_line_endpoint_markers,
 };
@@ -169,8 +176,9 @@ use super::terminations::{
 use super::typed_relations::{
     compact_legacy_object_line_endpoints, consecutive_legacy_profile_line_endpoints,
     coordinate_centered_line_endpoints, current_coordinate_linked_line_endpoints,
-    current_wide_undetailed_line, extended_direct_object_line_endpoints,
-    legacy_marker104_arc_endpoints, legacy_terminal_indexed_profile_line,
+    current_undetailed_bounded_curve_is_line, extended_direct_object_line_endpoints,
+    extended_wide_selected_axis_endpoints, legacy_marker104_arc_endpoints,
+    legacy_point_roster_line_endpoint_markers, legacy_terminal_indexed_profile_line,
     marker_curve_endpoint_markers, one_based_point_roster_line_endpoint_markers,
 };
 #[cfg(test)]
@@ -179,7 +187,8 @@ use super::write_prepare::{
 };
 #[cfg(test)]
 use super::{
-    CLASS_MARKER, COMPACT_SCALAR_HEADER, NAME_MARKER, SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER,
+    CLASS_MARKER, COMPACT_SCALAR_HEADER, NAME_MARKER, PADDED_COMPACT_SCALAR_HEADER, SCALAR_HEADER,
+    VALUE_ONLY_SCALAR_HEADER,
 };
 #[cfg(test)]
 use crate::records::FeatureInputScalarRole;
@@ -572,7 +581,9 @@ pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchI
                 .or(compact_geometry_locus_point)
                 .or_else(|| inline_arc.map(|[center, _, _]| center))
                 .or_else(|| marker_coordinates(payload, offset));
-            let kind = if inline_arc.is_some() {
+            let kind = if slot_curve_and_center_indices(payload, offset).is_some() {
+                SketchInputKind::Native(code)
+            } else if inline_arc.is_some() {
                 SketchInputKind::Arc
             } else if marker_spatial_coordinates(payload, offset).is_some()
                 || legacy_declared_handle_coordinates(payload, offset).is_some()
@@ -600,7 +611,7 @@ pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchI
                 || current_compact_104_profile_line(payload, offset)
                 || current_direct_92_profile_line_endpoint_indices(payload, offset).is_some()
                 || extended_terminal_profile_line(payload, offset)
-                || extended_identity_inline_profile_line(payload, offset)
+                || extended_identity_inline_line_record(payload, offset)
                 || legacy_compact_profile_line(payload, offset)
                 || coordinates_m.is_none()
                     && (marker_is_selected_construction_line(payload, offset)
@@ -969,6 +980,11 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
     }
     if let Some([center, _, _]) = inline_arc_coordinates(payload, offset) {
         return Some(center);
+    }
+    if geometry_locus_profile_vertex(payload, offset)
+        && payload.get(offset + 56..offset + 58) == Some(&[0x1e, 0x00])
+    {
+        return finite_coordinate_pair(payload, offset.checked_add(58)?);
     }
     let indexed_endpoint_body = extended_tagged_indexed_curve_endpoint_indices(payload, offset)
         .is_some()
@@ -1460,15 +1476,17 @@ pub(super) fn inline_arc_coordinates(payload: &[u8], offset: usize) -> Option<[[
 fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
     let code = marker_native_code(payload, offset)?;
     let handle_state = u16::from_le_bytes(payload.get(offset + 76..offset + 78)?.try_into().ok()?);
-    if !matches!((code, handle_state), (0 | 1, 2 | 3) | (2, 2)) {
+    let current_prefix = payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER);
+    if !matches!((code, handle_state), (0..=2, 2 | 3)) {
         return None;
     }
-    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
-        || !matches!(
-            payload.get(offset + 23..offset + 27),
-            Some([0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
-        )
-        || marker_profile_curve_role(payload, offset) != Some(1)
+    if !matches!(
+        payload.get(offset..offset + SKETCH_MARKER.len()),
+        Some(prefix) if prefix == SKETCH_MARKER || prefix == LEGACY_SKETCH_MARKER
+    ) || !matches!(
+        payload.get(offset + 23..offset + 27),
+        Some([0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
+    ) || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
         || payload.get(offset + 31..offset + 39)
             != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
@@ -1483,12 +1501,6 @@ fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[
         && payload.get(offset + 84..offset + 96) == Some(b"sgLineHandle");
     let line_handle_id =
         u16::from_le_bytes(payload.get(offset + 96..offset + 98)?.try_into().ok()?);
-    let valid_line_handle_id = matches!(
-        (code, handle_state, line_handle_id),
-        (0, 2, 1) | (0, 3, 3) | (1, 2 | 3, 0 | 3) | (2, 2, 0 | 3)
-    ) && (payload.get(offset + 23..offset + 27)
-        == Some(&[0x04, 0x00, 0x02, 0x00])
-        || matches!((code, handle_state, line_handle_id), (1, 2, 0)));
     let identity_bearing_tail = payload.get(offset + 124..offset + 162) == Some(&[0; 38])
         && matches!(
             (
@@ -1496,18 +1508,35 @@ fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[
                 payload.get(offset + 166..offset + 170)
             ),
             (Some(identity), Some(next_object))
-                if identity == next_object
-                    && identity != [0; 4]
+                if identity != [0; 4]
                     && identity != [0xff; 4]
+                    && next_object != [0; 4]
+                    && next_object != [0xff; 4]
         );
     let line_handle = line_declaration
-        && valid_line_handle_id
+        && line_handle_id != u16::MAX
         && payload.get(offset + 98..offset + 106)
             == Some(&[0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00])
         && payload.get(offset + 110..offset + 114) == Some(&[0xff; 4])
         && payload.get(offset + 114..offset + 118) == Some(&[0; 4])
         && payload.get(offset + 118..offset + 124) == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
         && (payload.get(offset + 124..offset + 166) == Some(&[0; 42]) || identity_bearing_tail)
+        && sketch_marker_prefix_at(payload, offset.checked_add(170)?);
+    let linked_line_handle_id =
+        u16::from_le_bytes(payload.get(offset + 108..offset + 110)?.try_into().ok()?);
+    let linked_line_handle = payload
+        .get(offset + 78..offset + 82)
+        .is_some_and(|reference| reference[..2] != [0; 2] && reference[..2] != [0xff; 2])
+        && payload.get(offset + 82..offset + 90)
+            == Some(&[0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00])
+        && payload.get(offset + 90..offset + 96) == Some(&[0xff, 0xff, 0x01, 0x00, 0x0c, 0x00])
+        && payload.get(offset + 96..offset + 108) == Some(b"sgLineHandle")
+        && linked_line_handle_id != u16::MAX
+        && payload.get(offset + 110..offset + 118)
+            == Some(&[0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00])
+        && payload.get(offset + 118..offset + 124) == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
+        && payload.get(offset + 124..offset + 166) == Some(&[0; 42])
+        && payload.get(offset + 166..offset + 170) != Some(&[0; 4])
         && sketch_marker_prefix_at(payload, offset.checked_add(170)?);
     let arc_handle_id = payload
         .get(offset + 119..offset + 121)
@@ -1529,8 +1558,31 @@ fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[
             .get(offset + 173..offset + 177)
             .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
         && sketch_marker_prefix_at(payload, offset.checked_add(177)?);
-    let arc_handle = code == 1
+    let padded_arc_handle_id = payload
+        .get(offset + 123..offset + 125)
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(u16::from_le_bytes);
+    let padded_line_arc_handle = line_declaration
         && handle_state == 2
+        && line_handle_id != u16::MAX
+        && payload.get(offset + 98..offset + 106)
+            == Some(&[0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00])
+        && payload.get(offset + 106..offset + 112) == Some(&[0xff, 0xff, 0x01, 0x00, 0x0b, 0x00])
+        && payload.get(offset + 112..offset + 123) == Some(b"sgArcHandle")
+        && padded_arc_handle_id.is_some_and(|arc_handle_id| {
+            arc_handle_id != u16::MAX && arc_handle_id != line_handle_id
+        })
+        && payload.get(offset + 125..offset + 133)
+            == Some(&[0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00])
+        && payload.get(offset + 133..offset + 139) == Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
+        && payload.get(offset + 139..offset + 181) == Some(&[0; 42])
+        && payload
+            .get(offset + 181..offset + 185)
+            .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
+        && sketch_marker_prefix_at(payload, offset.checked_add(185)?);
+    let valid_arc_handle_state = matches!((code, handle_state), (1 | 2, 2))
+        || current_prefix && matches!((code, handle_state), (0, 3));
+    let arc_handle = valid_arc_handle_state
         && payload
             .get(offset + 78..offset + 82)
             .is_some_and(|reference| {
@@ -1552,7 +1604,12 @@ fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[
             .get(offset + 165..offset + 169)
             .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
         && sketch_marker_prefix_at(payload, offset.checked_add(169)?);
-    if !line_handle && !line_arc_handle && !arc_handle {
+    if !line_handle
+        && !linked_line_handle
+        && !line_arc_handle
+        && !padded_line_arc_handle
+        && !arc_handle
+    {
         return None;
     }
     finite_coordinate_pair(payload, offset + 58)
@@ -1869,6 +1926,17 @@ fn compact_geometry_locus_point_coordinates(payload: &[u8], offset: usize) -> Op
 }
 
 fn terminal_wide_geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
+    let identity = |relative| {
+        payload
+            .get(offset + relative..offset + relative + 4)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+            .is_some_and(|identity| !matches!(identity, 0 | u32::MAX))
+    };
+    let trailer = payload.get(offset + 96..offset + 138) == Some(&[0; 42])
+        || payload.get(offset + 96..offset + 134) == Some(&[0; 38])
+            && identity(134)
+            && identity(138);
     matches!(
         payload.get(offset..offset + SKETCH_MARKER.len()),
         Some(prefix)
@@ -1886,15 +1954,17 @@ fn terminal_wide_geometry_locus_profile_vertex(payload: &[u8], offset: usize) ->
         && payload.get(offset + 64..offset + 66) == Some(&[0x1e, 0x00])
         && finite_coordinate_pair(payload, offset.saturating_add(66)).is_some()
         && payload.get(offset + 92..offset + 96) == Some(&[0xfe, 0xff, 0xff, 0xff])
-        && payload.get(offset + 96..offset + 138) == Some(&[0; 42])
+        && trailer
         && sketch_marker_prefix_at(payload, offset.saturating_add(142))
 }
 
 fn geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
     if !matches!(
-        payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()),
+        payload.get(offset..offset + SKETCH_MARKER.len()),
         Some(prefix)
-            if prefix == LEGACY_SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER
+            if prefix == SKETCH_MARKER
+                || prefix == LEGACY_SKETCH_MARKER
+                || prefix == LEGACY_EXTENDED_SKETCH_MARKER
     ) || !matches!(marker_native_code(payload, offset), Some(1 | 2))
         || !marker_is_geometry_locus(payload, offset)
         || marker_profile_curve_role(payload, offset) != Some(1)
@@ -1977,6 +2047,10 @@ pub(super) fn linked_profile_point(payload: &[u8], offset: usize) -> Option<Link
         && native_code == Some(1)
         && locus == Some(&[0x05, 0x00, 0x01, 0x00])
         && link_count == Some(&2u16.to_le_bytes());
+    let current_geometry_long_layout = marker == Some(SKETCH_MARKER)
+        && native_code == Some(2)
+        && locus == Some(&[0x05, 0x00, 0x01, 0x00])
+        && link_count == Some(&2u16.to_le_bytes());
     if !matches!(
         marker,
         Some(prefix)
@@ -1984,7 +2058,7 @@ pub(super) fn linked_profile_point(payload: &[u8], offset: usize) -> Option<Link
                 || prefix == LEGACY_SKETCH_MARKER
                 || prefix == LEGACY_EXTENDED_SKETCH_MARKER
     ) || !matches!(native_code, Some(0..=2))
-        || (!profile_layout && !legacy_geometry_long_layout)
+        || (!profile_layout && !legacy_geometry_long_layout && !current_geometry_long_layout)
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
         || payload.get(offset + 31..offset + 39)
@@ -2001,9 +2075,11 @@ pub(super) fn linked_profile_point(payload: &[u8], offset: usize) -> Option<Link
         && payload.get(offset + 146..offset + 150) != Some(&u32::MAX.to_le_bytes())
         && sketch_marker_prefix_at(payload, offset.checked_add(154)?);
     let long_tail = matches!(
-        payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()),
+        payload.get(offset..offset + SKETCH_MARKER.len()),
         Some(prefix)
-            if prefix == LEGACY_SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER
+            if prefix == SKETCH_MARKER
+                || prefix == LEGACY_SKETCH_MARKER
+                || prefix == LEGACY_EXTENDED_SKETCH_MARKER
     ) && payload.get(offset + 108..offset + 144) == Some(&[0; 36])
         && payload
             .get(offset + 144..offset + 148)
@@ -2014,7 +2090,8 @@ pub(super) fn linked_profile_point(payload: &[u8], offset: usize) -> Option<Link
         && payload.get(offset + 152..offset + 154) == Some(&[0; 2])
         && payload.get(offset + 154..offset + 158) != Some(&0u32.to_le_bytes())
         && sketch_marker_prefix_at(payload, offset.checked_add(158)?);
-    let valid_tail = long_tail || (profile_layout && standard_tail);
+    let valid_tail =
+        long_tail || ((profile_layout || current_geometry_long_layout) && standard_tail);
     if !valid_tail {
         return None;
     }
@@ -2234,6 +2311,8 @@ pub(super) fn legacy_extended_profile_curve_kind(
         }
     })
 }
+
+
 
 #[cfg(test)]
 mod marker_tests;

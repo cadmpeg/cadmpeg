@@ -475,7 +475,6 @@ pub(crate) fn bind_pattern_inputs(
     }
 }
 
-/// Bind solid-sweep cross sections carried by the following profile object.
 pub(crate) fn bind_sweep_adjacent_profiles(
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
@@ -609,7 +608,6 @@ pub(crate) fn bind_sweep_adjacent_profiles(
     }
 }
 
-/// Resolve scalar operand indices within their owning feature-object interval.
 pub(crate) fn bind_scalar_operands(
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
@@ -661,7 +659,7 @@ pub(crate) fn bind_scalar_operands(
     }
 }
 
-fn finalize_lane_bindings(
+pub(super) fn finalize_lane_bindings(
     histories: &[crate::records::FeatureHistory],
     lane: &mut FeatureInputLane,
 ) {
@@ -806,7 +804,7 @@ pub(crate) fn bind_unresolved_detached_sketch_objects(
     }
 }
 
-fn bind_detached_legacy_sketch_objects(
+pub(super) fn bind_detached_legacy_sketch_objects(
     histories: &[crate::records::FeatureHistory],
     represented: &HashSet<String>,
     lane: &mut FeatureInputLane,
@@ -816,14 +814,14 @@ fn bind_detached_legacy_sketch_objects(
     if !is_supplemental_config_lane(lane) {
         return;
     }
-    let Some(limit) = lane
+    let limit = lane
         .classes
         .iter()
         .find(|class| class.name == "moFeatureDimHandle_c")
-        .map(|class| class.offset)
-    else {
-        return;
-    };
+        .map_or_else(
+            || u64::try_from(lane.native_payload.len()).unwrap_or(u64::MAX),
+            |class| class.offset,
+        );
     let markers = lane
         .sketch_entities
         .iter()

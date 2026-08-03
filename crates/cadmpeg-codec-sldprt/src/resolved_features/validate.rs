@@ -1,7 +1,9 @@
 //! Native lane validation findings.
 
 use super::assembly::is_supplemental_config_lane;
+use super::bindings::finalize_lane_bindings;
 use cadmpeg_ir::{Check, Finding, Severity};
+use std::collections::HashMap;
 
 /// Validate `SolidWorks` native feature-input byte references.
 ///
@@ -157,10 +159,7 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
         .filter(|lane| !is_supplemental_config_lane(lane))
         .cloned()
         .collect::<Vec<_>>();
-    crate::resolved_features::classes::bind_history_classes(
-        &mut expected_histories,
-        &history_lanes,
-    );
+    crate::resolved_features::classes::bind_history_classes(&mut expected_histories, &history_lanes);
     for (history, expected_history) in native.feature_histories.iter().zip(&expected_histories) {
         for (feature, expected_feature) in history.features.iter().zip(&expected_history.features) {
             if feature.input_class != expected_feature.input_class {
@@ -175,6 +174,76 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
             }
         }
     }
+    let mut expected_primary_lanes = native
+        .feature_input_lanes
+        .iter()
+        .filter(|lane| !is_supplemental_config_lane(lane))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut expected_supplemental_lanes = native
+        .feature_input_lanes
+        .iter()
+        .filter(|lane| is_supplemental_config_lane(lane))
+        .cloned()
+        .collect::<Vec<_>>();
+    for lane in expected_primary_lanes
+        .iter_mut()
+        .chain(&mut expected_supplemental_lanes)
+    {
+        lane.scalars =
+            crate::resolved_features::scalars::named_scalars(&lane.native_payload, &lane.id, &lane.names);
+        lane.relation_bindings =
+            crate::resolved_features::markers::relation_bindings(&lane.id, &lane.classes, &lane.scalars);
+        lane.references = crate::resolved_features::markers::reference_cells(&lane.scalars);
+    }
+    crate::resolved_features::bindings::bind_scalar_operands(
+        &native.feature_histories,
+        &mut expected_primary_lanes,
+    );
+    crate::resolved_features::bindings::bind_scalar_operands(
+        &native.feature_histories,
+        &mut expected_supplemental_lanes,
+    );
+    let supplemental_lanes = native
+        .feature_input_lanes
+        .iter()
+        .filter(|lane| is_supplemental_config_lane(lane))
+        .map(|lane| (lane.id.as_str(), lane))
+        .collect::<HashMap<_, _>>();
+    for expected_lane in &mut expected_supplemental_lanes {
+        let actual_lane = supplemental_lanes
+            .get(expected_lane.id.as_str())
+            .expect("expected supplemental lanes are cloned from native lanes");
+        // Detached supplemental objects acquire owners before later projection
+        // can replace an unresolved sketch definition. The final model does not
+        // retain that intermediate state. Treat the stored owner partition as
+        // derived provenance, then re-derive every byte-backed local link from it.
+        for (expected, actual) in expected_lane
+            .sketch_entities
+            .iter_mut()
+            .zip(&actual_lane.sketch_entities)
+        {
+            expected.feature_ref.clone_from(&actual.feature_ref);
+            expected.links.clear();
+            expected.link_selector = None;
+        }
+        for (expected, actual) in expected_lane
+            .references
+            .iter_mut()
+            .zip(&actual_lane.references)
+        {
+            expected.feature_ref.clone_from(&actual.feature_ref);
+        }
+        for (expected, actual) in expected_lane.scalars.iter_mut().zip(&actual_lane.scalars) {
+            expected.feature_ref.clone_from(&actual.feature_ref);
+        }
+        finalize_lane_bindings(&native.feature_histories, expected_lane);
+    }
+    let expected_lanes = expected_primary_lanes
+        .iter()
+        .chain(&expected_supplemental_lanes)
+        .map(|lane| (lane.id.as_str(), lane))
+        .collect::<HashMap<_, _>>();
     for lane in &native.feature_input_lanes {
         let expected_classes =
             crate::resolved_features::names::class_declarations(&lane.native_payload, &lane.id);
@@ -187,8 +256,7 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
                 entity: Some(lane.id.clone()),
             });
         }
-        let expected_names =
-            crate::resolved_features::names::object_names(&lane.native_payload, &lane.id);
+        let expected_names = crate::resolved_features::names::object_names(&lane.native_payload, &lane.id);
         if lane.names.len() != expected_names.len()
             || lane
                 .names
@@ -210,27 +278,10 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
                 entity: Some(lane.id.clone()),
             });
         }
-        let mut expected_lane = lane.clone();
-        expected_lane.scalars = crate::resolved_features::scalars::named_scalars(
-            &lane.native_payload,
-            &lane.id,
-            &lane.names,
-        );
-        expected_lane.relation_bindings = crate::resolved_features::markers::relation_bindings(
-            &lane.id,
-            &lane.classes,
-            &expected_lane.scalars,
-        );
-        expected_lane.references =
-            crate::resolved_features::markers::reference_cells(&expected_lane.scalars);
-        crate::resolved_features::bindings::bind_scalar_operands(
-            &native.feature_histories,
-            std::slice::from_mut(&mut expected_lane),
-        );
-        if !crate::resolved_features::scalars::scalar_indices_match(
-            &lane.scalars,
-            &expected_lane.scalars,
-        ) {
+        let expected_lane = expected_lanes
+            .get(lane.id.as_str())
+            .expect("expected lanes are cloned from native lanes");
+        if !crate::resolved_features::scalars::scalar_indices_match(&lane.scalars, &expected_lane.scalars) {
             let detail = lane
                 .scalars
                 .iter()
@@ -375,10 +426,7 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
             }
             if usize::try_from(entity.offset).ok().is_some_and(|offset| {
                 entity.object_index
-                    != crate::resolved_features::markers::marker_object_index(
-                        &lane.native_payload,
-                        offset,
-                    )
+                    != crate::resolved_features::markers::marker_object_index(&lane.native_payload, offset)
             }) {
                 findings.push(Finding {
                     check: Check::NativeLinks,
@@ -391,10 +439,7 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
             }
             if usize::try_from(entity.offset).ok().is_some_and(|offset| {
                 entity.local_id
-                    != crate::resolved_features::markers::marker_local_id(
-                        &lane.native_payload,
-                        offset,
-                    )
+                    != crate::resolved_features::markers::marker_local_id(&lane.native_payload, offset)
             }) {
                 findings.push(Finding {
                     check: Check::NativeLinks,

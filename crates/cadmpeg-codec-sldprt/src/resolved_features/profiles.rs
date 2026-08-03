@@ -1,6 +1,7 @@
 //! Sketch profile projection from marker and compact records.
 
 use super::assembly::is_supplemental_config_lane;
+use super::bindings::bind_detached_legacy_sketch_objects;
 use super::compact_reference_planes::{
     compact_profile_component_plane_frame, compact_profile_reference_plane_source,
     CompactReferencePlaneIndex,
@@ -13,8 +14,7 @@ use super::curves::{
     legacy_extended_rectangle_diagonal_endpoint, legacy_extended_rectangle_line_endpoints,
     ordered_rectangle_corners, resolve_connected_marker_arcs, resolve_slot_marker_arcs,
     resolve_two_center_semicircle_profile, tangent_bounded_curve,
-    unique_dimensioned_rectangle_markers,
-};
+    unique_dimensioned_rectangle_markers, compact_legacy_rectangle_line_endpoints};
 use super::endpoints::{
     auxiliary_profile_record, compact_legacy_code_one_line_endpoint_indices,
     compact_legacy_curve_endpoint_indices, compact_legacy_profile_full_circle,
@@ -30,8 +30,7 @@ use super::endpoints::{
     legacy_profile_radial_circle, legacy_undetailed_profile_line, legacy_unlocated_geometry_handle,
     marker_is_selected_construction_line, marker_profile_curve_role, minor_arc_geometry,
     packed_compact_legacy_curve_endpoint_indices, unique_arc_center_marker,
-    wide_coordinate_roster_full_circle,
-};
+    wide_coordinate_roster_full_circle, output_curve_endpoint_markers, current_compact_roster_selected_axis};
 use super::holes::{feature_input_sketch_frame, sketch_feature_frames};
 use super::markers::{inline_arc_coordinates, marker_is_geometry_locus};
 use super::projections::bind_circular_profile_by_dimension;
@@ -39,7 +38,7 @@ use super::reference_geometry::reference_plane_frame_key;
 use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
 use super::transforms::{quantize, sketch_frame_marker_transform};
-use super::typed_relations::{current_wide_undetailed_line, marker_curve_endpoint_markers};
+use super::typed_relations::{current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers};
 use super::SKETCH_POINT_TOLERANCE;
 use crate::records::{
     FeatureInputLane, FeatureInputRelationFamily, SketchInputEntity, SketchInputKind,
@@ -132,7 +131,6 @@ pub(crate) fn bind_sketch_profiles(
     bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters);
 }
 
-/// Materialize a planar line profile carried directly by a compact sketch region.
 pub(crate) fn project_compact_sketch_profiles(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
@@ -547,8 +545,6 @@ pub(crate) fn project_compact_sketch_profiles(
     }
 }
 
-/// Materialize planar sketch ownership and construction geometry when marker
-/// records have a unique reference-plane frame but no solved profile stream.
 pub(crate) fn project_marker_backed_sketches(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
@@ -782,7 +778,7 @@ pub(crate) fn project_marker_backed_sketches(
                                     radius: Length(radius * NATIVE_TO_IR),
                                 }
                             } else {
-                                let endpoints = marker_curve_endpoint_markers(
+                                let endpoints = output_curve_endpoint_markers(
                                     &lane.native_payload,
                                     marker,
                                     &markers_by_id,
@@ -1130,11 +1126,13 @@ pub(crate) fn project_marker_backed_sketches(
                                             QUANTUM,
                                         );
                                     }
-                                    (current_wide_undetailed_line(&lane.native_payload, offset)
-                                        || legacy_undetailed_profile_line(
-                                            &lane.native_payload,
-                                            offset,
-                                        ))
+                                    (current_undetailed_bounded_curve_is_line(
+                                        &lane.native_payload,
+                                        offset,
+                                    ) || legacy_undetailed_profile_line(
+                                        &lane.native_payload,
+                                        offset,
+                                    ))
                                     .then_some(SketchGeometry::Line { start, end })
                                 })()
                                 .unwrap_or_else(|| {
@@ -1153,7 +1151,7 @@ pub(crate) fn project_marker_backed_sketches(
                         marker.kind,
                         SketchInputKind::LineOrCircle | SketchInputKind::Arc
                     ) {
-                        let endpoints = marker_curve_endpoint_markers(
+                        let endpoints = output_curve_endpoint_markers(
                             &lane.native_payload,
                             marker,
                             &markers_by_id,
@@ -1181,7 +1179,11 @@ pub(crate) fn project_marker_backed_sketches(
                         )),
                         sketch: sketch_id.clone(),
                         construction: usize::try_from(marker.offset).ok().is_some_and(|offset| {
-                            marker_is_selected_construction_line(&lane.native_payload, offset)
+                            (marker_is_selected_construction_line(&lane.native_payload, offset)
+                                || current_compact_roster_selected_axis(
+                                    &lane.native_payload,
+                                    offset,
+                                ))
                                 && !(matches!(&geometry, SketchGeometry::Circle { .. })
                                     && marker_profile_curve_role(&lane.native_payload, offset)
                                         == Some(1))
@@ -1213,6 +1215,12 @@ pub(crate) fn project_marker_backed_sketches(
                             })
                             .or_else(|| {
                                 current_compact_rectangle_line_endpoints(
+                                    &lane.native_payload,
+                                    offset,
+                                )
+                            })
+                            .or_else(|| {
+                                compact_legacy_rectangle_line_endpoints(
                                     &lane.native_payload,
                                     offset,
                                 )
@@ -1780,10 +1788,11 @@ fn legacy_config_collinear_sketch(
     Some((sketch.clone(), entities))
 }
 
+
 #[cfg(test)]
 mod detached_legacy_sketch_tests {
     use super::*;
-    use crate::records::Feature;
+    use crate::records::{Feature, FeatureHistory};
 
     fn feature() -> Feature {
         Feature {
@@ -1841,6 +1850,48 @@ mod detached_legacy_sketch_tests {
             links: Vec::new(),
             link_selector: None,
         }
+    }
+
+    #[test]
+    fn detached_object_without_legacy_dimension_handle_binds_to_unique_sketch() {
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![feature()],
+        };
+        let mut detached = marker(1, Some(1), SketchInputKind::Point, Some([1.0, 2.0]));
+        detached.feature_ref = None;
+        detached.offset = 100;
+        let mut lane = FeatureInputLane {
+            id: "sldprt:feature-input:config-objects#1".into(),
+            configuration: None,
+            native_payload: vec![0; 512],
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![detached],
+        };
+
+        bind_detached_legacy_sketch_objects(
+            std::slice::from_ref(&history),
+            &HashSet::new(),
+            &mut lane,
+        );
+
+        assert_eq!(
+            lane.sketch_entities[0].feature_ref.as_deref(),
+            Some("feature")
+        );
     }
 
     #[test]

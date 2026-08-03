@@ -1,7 +1,7 @@
 //! Named scalar records, operands and feature object names.
 
 use super::relation_records::{compact_scalar_layout, legacy_scalar_layout, scalar_role};
-use super::{COMPACT_SCALAR_HEADER, NAME_MARKER, SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER};
+use super::{COMPACT_SCALAR_HEADER, NAME_MARKER, SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER, PADDED_COMPACT_SCALAR_HEADER};
 use crate::records::{
     FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputScalar,
@@ -75,6 +75,7 @@ fn scalar_value_offset(payload: &[u8], name_offset: usize, name: &str) -> Option
         .checked_add(name.encode_utf16().count().checked_mul(2)?)?;
     [
         SCALAR_HEADER,
+        PADDED_COMPACT_SCALAR_HEADER,
         COMPACT_SCALAR_HEADER,
         VALUE_ONLY_SCALAR_HEADER,
     ]

@@ -233,6 +233,10 @@ pub enum PmiDimensionSubtype {
     Diameter,
     /// Radius.
     Radial,
+    /// Linear coordinate measured from an ordinate origin.
+    Ordinate,
+    /// Dimensionless integral instance count.
+    Count,
     /// Source-native family without a neutral equivalent.
     Native(String),
 }

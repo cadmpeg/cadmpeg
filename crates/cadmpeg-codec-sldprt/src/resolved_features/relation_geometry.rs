@@ -11,7 +11,7 @@ use super::relation_loci::{
 };
 use super::transforms::{marker_entities, quantize, sketch_entity_loci};
 use super::typed_relations::{
-    current_wide_undetailed_line, marker_curve_endpoint_markers, marker_relation_is_inactive,
+    current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers, marker_relation_is_inactive,
     typed_marker_relation_definition_in_sketch,
 };
 use crate::records::{
@@ -224,7 +224,7 @@ pub(crate) fn project_relation_point_geometry(
             let marker_offset = usize::try_from(marker.offset).ok();
             let undetailed_arc_line = marker.kind == SketchInputKind::Arc
                 && marker_offset.is_some_and(|offset| {
-                    current_wide_undetailed_line(&lane.native_payload, offset)
+                    current_undetailed_bounded_curve_is_line(&lane.native_payload, offset)
                         || legacy_undetailed_profile_line(&lane.native_payload, offset)
                 });
             let self_linked_curve_handle = curve_operands.contains(marker.id.as_str())
@@ -373,8 +373,6 @@ pub(super) fn solver_line_geometry_ref(feature: &str, index: u16) -> String {
     format!("{feature}:solver-line:{index}")
 }
 
-/// Materialize solver-line operands encoded as indices into the feature's
-/// coordinate-bearing point-pair roster.
 pub(crate) fn project_relation_solved_line_geometry(
     entities: &mut Vec<SketchEntity>,
     sketches: &[cadmpeg_ir::sketches::Sketch],
@@ -534,7 +532,6 @@ pub(crate) fn project_relation_solved_line_geometry(
     }
 }
 
-/// Materialize point operands whose position is defined only within one dimension relation.
 pub(crate) fn project_relation_solved_point_geometry(
     entities: &mut Vec<SketchEntity>,
     sketches: &[cadmpeg_ir::sketches::Sketch],
@@ -795,7 +792,6 @@ pub(super) fn implicit_circle_marker<'a>(
     same_dimension_length(radius, expected_radius).then_some((*center, radius))
 }
 
-/// Project owned native relation bindings into their neutral sketches.
 pub(crate) fn project_relation_bindings(
     constraints: &mut Vec<SketchConstraint>,
     sketches: &[cadmpeg_ir::sketches::Sketch],
@@ -955,10 +951,6 @@ pub(crate) fn project_relation_bindings(
     }
 }
 
-/// Assign each constraint-owning relation instance to its parameter. Driving
-/// instances own their dimensions before display-only instances are considered.
-/// A driving instance whose scalar was not projected remains present with no
-/// parameter so completeness accounting can report it.
 pub(crate) fn owned_relation_parameters(
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::DesignParameter],

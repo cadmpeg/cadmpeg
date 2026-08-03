@@ -183,7 +183,6 @@ fn hole_position_sketch_source(
     Some(source)
 }
 
-/// Recover legacy Hole Wizard profile ownership from its typed child sources.
 pub(crate) fn enrich_history_hole_constructions(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -431,6 +430,7 @@ pub(crate) fn enrich_history_hole_constructions(
     }
 }
 
+
 #[derive(Clone)]
 struct ProfiledHoleConstruction {
     diameter: Length,
@@ -660,7 +660,6 @@ fn profiled_hole_construction(
     None
 }
 
-/// Recover hole dimensions and entry form from the exact axial profile.
 pub(crate) fn project_profiled_hole_constructions(
     features: &mut [cadmpeg_ir::features::Feature],
     entities: &[SketchEntity],
@@ -855,7 +854,6 @@ pub(crate) fn project_profiled_hole_constructions(
     }
 }
 
-/// Materialize Hole Wizard placements from the operation's typed position-sketch reference.
 pub(crate) fn project_hole_position_sketches(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[Sketch],
@@ -868,7 +866,7 @@ pub(crate) fn project_hole_position_sketches(
         .flat_map(|history| &history.features)
         .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
-    let model_sketches = features
+    let model_sketch_features = features
         .iter()
         .filter_map(|feature| {
             let FeatureDefinition::Sketch {
@@ -879,8 +877,15 @@ pub(crate) fn project_hole_position_sketches(
             else {
                 return None;
             };
-            Some((feature.native_ref.clone()?, sketch.clone()))
+            Some((
+                feature.native_ref.clone()?,
+                (feature.id.clone(), sketch.clone()),
+            ))
         })
+        .collect::<HashMap<_, _>>();
+    let model_sketches = model_sketch_features
+        .iter()
+        .map(|(native, (_, sketch))| (native.clone(), sketch.clone()))
         .collect::<HashMap<_, _>>();
     for feature in features.iter_mut() {
         if feature.suppressed == Some(true) {
@@ -899,10 +904,16 @@ pub(crate) fn project_hole_position_sketches(
         else {
             continue;
         };
-        let Some(position_feature) = hole_position_feature(native, histories, lanes) else {
+        let Some(position_feature) =
+            hole_position_feature(native, histories, lanes).or_else(|| {
+                direct_hole_position_feature(native, histories, &model_sketches, sketch_entities)
+            })
+        else {
             continue;
         };
-        let Some(sketch_id) = model_sketches.get(position_feature.id.as_str()) else {
+        let Some((position_dependency, sketch_id)) =
+            model_sketch_features.get(position_feature.id.as_str())
+        else {
             continue;
         };
         let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
@@ -958,6 +969,9 @@ pub(crate) fn project_hole_position_sketches(
         }
         if resolved.len() == authored_markers.len() {
             *placements = resolved;
+            if !feature.dependencies.contains(position_dependency) {
+                feature.dependencies.push(position_dependency.clone());
+            }
         }
     }
 }
@@ -991,8 +1005,6 @@ fn hole_position_feature<'a>(
     position_features.next().is_none().then_some(position)
 }
 
-/// Materialize Hole Wizard placements from spatial position points whose bore
-/// cylinders or incident cylindrical supports uniquely provide the local axes.
 pub(crate) fn project_spatial_hole_position_sketches(
     features: &mut [cadmpeg_ir::features::Feature],
     spatial_sketches: &[SpatialSketch],
@@ -1209,7 +1221,6 @@ fn point_axis_distance_squared(point: Point3, origin: Point3, axis: Vector3) -> 
     across.x * across.x + across.y * across.y + across.z * across.z
 }
 
-/// Topology arenas used to prove generated bore axes.
 pub(crate) struct HoleTopology<'a> {
     pub(crate) surfaces: &'a [Surface],
     pub(crate) faces: &'a [Face],
@@ -1226,12 +1237,13 @@ fn direct_hole_position_feature<'a>(
     model_sketches: &HashMap<String, cadmpeg_ir::sketches::SketchId>,
     sketch_entities: &[SketchEntity],
 ) -> Option<&'a crate::records::Feature> {
-    let children = hole.properties.get("DissectableChildren")?;
+    let children = hole.properties.get("DissectableChildren");
     let history = histories
         .iter()
         .find(|history| history.features.iter().any(|feature| feature.id == hole.id))?;
     let mut direct_sketches = children
-        .split(',')
+        .into_iter()
+        .flat_map(|children| children.split(','))
         .map(str::trim)
         .filter(|source| !source.is_empty())
         .filter_map(|source| {
@@ -1245,22 +1257,41 @@ fn direct_hole_position_feature<'a>(
         .collect::<Vec<_>>();
     direct_sketches.sort_by_key(|child| child.id.as_str());
     direct_sketches.dedup_by_key(|child| child.id.as_str());
-    let [first, second] = direct_sketches.as_slice() else {
-        return None;
-    };
-    let is_axial_profile = |child: &&crate::records::Feature| {
+    let is_axial_profile = |child: &crate::records::Feature| {
         model_sketches.get(&child.id).is_some_and(|sketch| {
             profiled_hole_construction(child, sketch, sketch_entities).is_some()
         })
     };
-    match (is_axial_profile(first), is_axial_profile(second)) {
-        (true, false) => Some(second),
-        (false, true) => Some(first),
+    let adjacent_position = || {
+        let position_ordinal = hole.ordinal.checked_add(1)?;
+        let profile_ordinal = hole.ordinal.checked_add(2)?;
+        let unique_at = |ordinal| {
+            let mut candidates = history.features.iter().filter(|candidate| {
+                candidate.ordinal == ordinal
+                    && classify(candidate) == Some(FeatureClass::Sketch)
+                    && model_sketches.contains_key(&candidate.id)
+            });
+            let candidate = candidates.next()?;
+            candidates.next().is_none().then_some(candidate)
+        };
+        let position = unique_at(position_ordinal)?;
+        let profile = unique_at(profile_ordinal)?;
+        (!is_axial_profile(position) && is_axial_profile(profile)).then_some((position, profile))
+    };
+    match direct_sketches.as_slice() {
+        [first, second] => match (is_axial_profile(first), is_axial_profile(second)) {
+            (true, false) => Some(second),
+            (false, true) => Some(first),
+            _ => None,
+        },
+        [profile] => adjacent_position()
+            .filter(|(_, adjacent_profile)| adjacent_profile.id == profile.id)
+            .map(|(position, _)| position),
+        [] => adjacent_position().map(|(position, _)| position),
         _ => None,
     }
 }
 
-/// Bind Hole placements to uniquely owned or position-constrained bore axes.
 pub(crate) fn project_hole_axes(
     model_features: &mut [cadmpeg_ir::features::Feature],
     sketch_entities: &[SketchEntity],
@@ -1791,8 +1822,6 @@ fn cylindrical_bore_face_spans(
         .collect()
 }
 
-/// Recover missing bore diameter and blind extent when every authored placement
-/// is carried by cylinders with one common exact radius and axial span.
 pub(crate) fn project_topological_hole_constructions(
     features: &mut [cadmpeg_ir::features::Feature],
     topology: &HoleTopology<'_>,
@@ -1875,8 +1904,6 @@ pub(crate) fn project_topological_hole_constructions(
     }
 }
 
-/// Reconstruct a missing planar position sketch from exact bore axes and their
-/// unique common planar support.
 pub(crate) fn project_bore_backed_position_sketches(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
@@ -2624,6 +2651,7 @@ fn compact_position_loci(
     Some(solution.clone())
 }
 
+
 #[allow(clippy::too_many_arguments)]
 fn compact_position_assignments(
     node_index: usize,
@@ -2703,6 +2731,7 @@ fn compact_position_assignments(
         used.remove(&locus_index);
     }
 }
+
 
 #[cfg(test)]
 mod hole_axis_tests;

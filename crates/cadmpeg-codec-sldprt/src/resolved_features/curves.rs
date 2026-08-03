@@ -3,14 +3,13 @@
 use super::compact_reference_planes::principal_sketch_frame;
 use super::endpoints::{
     compact_legacy_code_one_line_endpoint_indices, compact_legacy_curve_endpoint_indices,
-    marker_profile_curve_role, minor_arc_geometry, wide_indexed_curve_endpoint_indices,
-};
-use super::markers::{finite_coordinate_pair, marker_native_code, sketch_marker_prefix_at};
+    marker_profile_curve_role, minor_arc_geometry, wide_indexed_curve_endpoint_indices, one_based_u16_endpoint_pair};
+use super::markers::{finite_coordinate_pair, marker_native_code, sketch_marker_prefix_at, compact_legacy_marker_body};
 use super::reference_geometry::reference_plane_frame_key;
 use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
 use super::transforms::quantize;
-use super::{LEGACY_EXTENDED_SKETCH_MARKER, SKETCH_MARKER};
+use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
 use cadmpeg_codec_core::cursor::bounded_len;
 use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
@@ -359,53 +358,104 @@ pub(super) fn tangent_bounded_curve(
     })
 }
 
-fn slot_curve_and_center_indices(
+pub(super) fn slot_curve_and_center_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<([usize; 4], [usize; 2])> {
     const SLOT_DECLARATION: &[u8] = b"\xff\xff\x01\x00\x08\x00sgSlot_c\0\0\0\0\x01\0\0\0";
-    if payload.get(offset.checked_sub(SLOT_DECLARATION.len())?..offset) != Some(SLOT_DECLARATION)
-        || marker_native_code(payload, offset).is_none()
-        || payload.get(offset + 23..offset + 27) != Some(&[0x05, 0x00, 0x01, 0x00])
-        || marker_profile_curve_role(payload, offset) != Some(1)
+    let layout = slot_curve_reference_cells(payload, offset)?;
+    let declared = if payload.get(offset.checked_sub(SLOT_DECLARATION.len())?..offset)
+        == Some(SLOT_DECLARATION)
+    {
+        true
+    } else if let Some(stride) = layout.continuation_stride {
+        let mut cursor = offset;
+        loop {
+            cursor = cursor.checked_sub(stride)?;
+            if payload.get(cursor.checked_sub(SLOT_DECLARATION.len())?..cursor)
+                == Some(SLOT_DECLARATION)
+            {
+                break true;
+            }
+            if slot_curve_reference_cells(payload, cursor)
+                .is_none_or(|candidate| candidate.continuation_stride != Some(stride))
+            {
+                break false;
+            }
+        }
+    } else {
+        false
+    };
+    if !declared {
+        return None;
+    }
+    Some((
+        [
+            layout.cells[0].1,
+            layout.cells[1].1,
+            layout.cells[2].1,
+            layout.cells[3].1,
+        ],
+        [layout.cells[4].1, layout.cells[5].1],
+    ))
+}
+
+pub(super) struct SlotReferenceLayout {
+    cells: [(u16, usize); 6],
+    continuation_stride: Option<usize>,
+}
+
+pub(super) fn slot_curve_reference_cells(payload: &[u8], offset: usize) -> Option<SlotReferenceLayout> {
+    if marker_native_code(payload, offset).is_none()
+        || payload.get(offset + 23..offset + 29) != Some(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00])
         || payload.get(offset + 31..offset + 39)
             != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
         || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
     {
         return None;
     }
-    let cells_offset = match payload.get(offset..offset + SKETCH_MARKER.len()) {
-        Some(prefix) if prefix == SKETCH_MARKER => 72,
-        Some(prefix) if prefix == LEGACY_EXTENDED_SKETCH_MARKER => 64,
+    let layouts = match payload.get(offset..offset + SKETCH_MARKER.len()) {
+        Some(prefix) if prefix == SKETCH_MARKER => vec![(72, 12, None)],
+        Some(prefix) if prefix == LEGACY_SKETCH_MARKER => {
+            vec![(64, 8, Some(126))]
+        }
+        Some(prefix) if prefix == LEGACY_EXTENDED_SKETCH_MARKER => {
+            vec![(64, 8, Some(126)), (64, 12, None)]
+        }
         _ => return None,
     };
-    let cells = (0..6)
-        .map(|index| {
-            let start = offset.checked_add(cells_offset + index * 12)?;
-            let cell = payload.get(start..start + 12)?;
-            (cell[4..8] == [0xff; 4] && cell[8..12] == [0; 4]).then_some((
-                u16::from_le_bytes(cell[..2].try_into().ok()?),
-                usize::from(u16::from_le_bytes(cell[2..4].try_into().ok()?)),
-            ))
+    layouts
+        .into_iter()
+        .find_map(|(cells_offset, cell_size, continuation_stride)| {
+            let cells: [(u16, usize); 6] = (0..6)
+                .map(|index| {
+                    let start = offset.checked_add(cells_offset + index * cell_size)?;
+                    let cell = payload.get(start..start + cell_size)?;
+                    (cell[4..8] == [0xff; 4]
+                        && (cell_size == 8 || cell.get(8..12) == Some(&[0; 4])))
+                    .then_some((
+                        u16::from_le_bytes(cell[..2].try_into().ok()?),
+                        usize::from(u16::from_le_bytes(cell[2..4].try_into().ok()?)),
+                    ))
+                })
+                .collect::<Option<Vec<_>>>()?
+                .try_into()
+                .ok()?;
+            let component_tag = cells[0].0;
+            (component_tag != 0
+                && cells[1].0 != 0
+                && cells[1].0 != component_tag
+                && cells[2].0 == component_tag
+                && cells[3].0 == component_tag
+                && cells[4].0 != 0
+                && cells[4].0 != component_tag
+                && cells[4].0 != cells[1].0
+                && cells[5].0 == cells[4].0)
+                .then_some(SlotReferenceLayout {
+                    cells,
+                    continuation_stride,
+                })
         })
-        .collect::<Option<Vec<_>>>()?;
-    let component_tag = cells[0].0;
-    if component_tag == 0
-        || cells[1].0 == 0
-        || cells[1].0 == component_tag
-        || cells[2].0 != component_tag
-        || cells[3].0 != component_tag
-        || cells[4].0 == 0
-        || cells[4].0 == component_tag
-        || cells[4].0 == cells[1].0
-        || cells[5].0 != cells[4].0
-    {
-        return None;
-    }
-    Some((
-        [cells[0].1, cells[1].1, cells[2].1, cells[3].1],
-        [cells[4].1, cells[5].1],
-    ))
 }
 
 pub(super) fn resolve_slot_marker_arcs(
@@ -1243,6 +1293,13 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                 ));
             }
             if let Some(endpoints) = current_compact_rectangle_line_endpoints(payload, offset) {
+                return matches!(
+                    marker.kind,
+                    SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                )
+                .then_some((endpoints, None, false, EndpointSpace::Object));
+            }
+            if let Some(endpoints) = compact_legacy_rectangle_line_endpoints(payload, offset) {
                 return (marker.kind == SketchInputKind::LineOrCircle).then_some((
                     endpoints,
                     None,
@@ -1502,6 +1559,21 @@ pub(super) fn indexed_rectangle_from_line_cycle(
     .then_some(corners)
 }
 
+pub(super) fn compact_legacy_rectangle_line_endpoints(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
+    if !compact_legacy_marker_body(payload, offset)
+        || marker_native_code(payload, offset) != Some(1)
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 25..offset + 27) != Some(&1u16.to_le_bytes())
+        || payload.get(offset + 31..offset + 42) != Some(&[0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        || payload.get(offset + 46..offset + 50) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 50..offset + 58) != Some(&(-1.0f64).to_le_bytes())
+    {
+        return None;
+    }
+    one_based_u16_endpoint_pair(payload, offset, 42)
+        .filter(|endpoints| endpoints[0] != endpoints[1])
+}
+
 pub(super) fn legacy_extended_rectangle_line_endpoints(
     payload: &[u8],
     offset: usize,
@@ -1540,15 +1612,15 @@ pub(super) fn legacy_extended_rectangle_line_endpoints(
         .then_some(endpoints)
 }
 
-pub(super) fn current_compact_rectangle_line_endpoints(
-    payload: &[u8],
-    offset: usize,
-) -> Option<[u32; 2]> {
+pub(super) fn current_compact_rectangle_line_endpoints(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
     if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
-        || marker_native_code(payload, offset) != Some(1)
-        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || !matches!(marker_native_code(payload, offset), Some(1 | 2))
+        || !matches!(
+            payload.get(offset + 23..offset + 27),
+            Some([0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
+        )
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
         || payload.get(offset + 31..offset + 39)
@@ -1560,15 +1632,7 @@ pub(super) fn current_compact_rectangle_line_endpoints(
     {
         return None;
     }
-    let endpoint = |relative: usize| {
-        payload
-            .get(offset + relative..offset + relative + 2)?
-            .try_into()
-            .ok()
-            .map(u16::from_le_bytes)
-            .map(u32::from)
-    };
-    let endpoints = [endpoint(56)?, endpoint(58)?];
+    let endpoints = one_based_u16_endpoint_pair(payload, offset, 56)?;
     let terminal_state =
         u16::from_le_bytes(payload.get(offset + 74..offset + 76)?.try_into().ok()?);
     let continued = sketch_marker_prefix_at(payload, offset.saturating_add(84));
