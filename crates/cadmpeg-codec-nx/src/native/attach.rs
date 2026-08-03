@@ -296,7 +296,7 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(188);
+    namespace.version = namespace.version.max(189);
     NATIVE_CATALOGUE.emit_all(model, namespace)?;
     Ok(())
 }
@@ -6450,6 +6450,7 @@ mod tests {
             state: [1, 2, 1, 1, 1, 0, 0, 0],
             legacy_inactive_modules: Some(true),
             modifies_parasolid_data: Some(true),
+            split_tracking_data: [0, 0],
             group_count: 0,
             local_ordinal: 41,
             raw_local_ordinal: vec![0x29],

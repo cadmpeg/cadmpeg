@@ -1442,8 +1442,9 @@ nullable object reference, exact tokens, byte length, and token offsets. The
 fourth state byte is the Boolean `m_legacyInactiveModules`, and the fifth state
 byte is the Boolean `m_modifiesParasolidData`. For either Boolean field, `00` is
 false, `01` is true, and another value retains the state lane without a typed
-Boolean value. The eighth state byte is the unsigned `m_groupCount`. The sixth
-and seventh bytes retain the unresolved `m_splitTrackingData` representation.
+Boolean value. The sixth and seventh state bytes are the exact two-byte
+`m_splitTrackingData` representation. The eighth state byte is the unsigned
+`m_groupCount`.
 Legacy module inactivity does not assign feature suppression. A terminal suffix
 links the common frame ending at that suffix. Absence of that link does not
 invalidate the terminal suffix because an outer terminal suffix may follow a

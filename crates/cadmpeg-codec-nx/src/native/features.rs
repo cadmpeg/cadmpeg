@@ -89,6 +89,9 @@ pub struct FeatureOperationCommonFrame {
     /// Whether the operation modifies Parasolid data, when the stored field is boolean.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modifies_parasolid_data: Option<bool>,
+    /// Exact two-byte `m_splitTrackingData` representation.
+    #[serde(default)]
+    pub split_tracking_data: [u8; 2],
     /// Serialized operation group count.
     #[serde(default)]
     pub group_count: u8,
@@ -2897,6 +2900,7 @@ pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOper
                     state: frame.state,
                     legacy_inactive_modules: operation_legacy_inactive_modules(frame.state),
                     modifies_parasolid_data: operation_modifies_parasolid_data(frame.state),
+                    split_tracking_data: operation_split_tracking_data(frame.state),
                     group_count: frame.state[7],
                     local_ordinal: frame.local_ordinal,
                     raw_local_ordinal: frame.raw_local_ordinal,
@@ -2932,6 +2936,10 @@ fn operation_modifies_parasolid_data(state: [u8; 8]) -> Option<bool> {
         1 => Some(true),
         _ => None,
     }
+}
+
+fn operation_split_tracking_data(state: [u8; 8]) -> [u8; 2] {
+    [state[5], state[6]]
 }
 
 /// Decode canonical terminal common-frame suffixes from bounded operations.
@@ -10841,6 +10849,14 @@ mod tests {
         assert_eq!(operation_modifies_parasolid_data(state), Some(true));
         state[4] = 2;
         assert_eq!(operation_modifies_parasolid_data(state), None);
+    }
+
+    #[test]
+    fn operation_common_frame_retains_the_split_tracking_data_field() {
+        assert_eq!(
+            operation_split_tracking_data([1, 2, 3, 0, 1, 0x56, 0xa9, 7]),
+            [0x56, 0xa9]
+        );
     }
 
     #[test]
