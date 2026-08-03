@@ -555,6 +555,34 @@ pub struct FeatureDatumCsysConstruction {
     pub source_offsets: [u64; 8],
 }
 
+/// Exact reuse of one datum-CSYS construction block by a column-row slot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDatumCsysColumnRowUse {
+    /// Globally unique use identity.
+    pub id: String,
+    /// Owning datum-CSYS construction.
+    pub construction: String,
+    /// Owning `DATUM_CSYS` operation label.
+    pub operation_label: String,
+    /// Zero-based slot in the construction's eight-block lane.
+    pub construction_slot: u8,
+    /// Serialized grammar of the referenced column row.
+    pub row_kind: ColumnIndexRowKind,
+    /// Native row identity in its grammar-specific arena.
+    pub column_row: String,
+    /// Unique complete composite table containing the row, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column_table: Option<String>,
+    /// Zero-based slot in the row's four-block lane.
+    pub row_slot: u8,
+    /// Exact shared target in the native `data_blocks` arena.
+    pub data_block: String,
+    /// Absolute file offset of the construction's object-index token.
+    pub construction_source_offset: u64,
+    /// Absolute file offset of the row's compact block index.
+    pub row_source_offset: u64,
+}
+
 /// Exact logical payload reconstructed from the two leading datum-CSYS blocks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureDatumCsysPayload {
@@ -3634,15 +3662,16 @@ pub fn feature_input_block_identity_groups(
         .collect()
 }
 
-/// Join feature inputs to every column-row slot addressing the same block.
-pub fn feature_input_column_row_uses(
-    inputs: &[FeatureInputBlock],
-    index_rows: &[DataBlockIndexRow],
-    linked_rows: &[DataBlockLinkedIndexRow],
-    target_rows: &[DataBlockTargetIndexRow],
-    tables: &[DataBlockColumnIndexTable],
-) -> Vec<FeatureInputColumnRowUse> {
-    let mut table_by_row = BTreeMap::<&str, Option<&str>>::new();
+type ColumnTableByRow<'a> = BTreeMap<&'a str, Option<&'a str>>;
+type ColumnSlotsByBlock<'a> = BTreeMap<&'a str, Vec<(&'a str, ColumnIndexRowKind, usize, u64)>>;
+
+fn column_relations_by_block<'a>(
+    index_rows: &'a [DataBlockIndexRow],
+    linked_rows: &'a [DataBlockLinkedIndexRow],
+    target_rows: &'a [DataBlockTargetIndexRow],
+    tables: &'a [DataBlockColumnIndexTable],
+) -> (ColumnTableByRow<'a>, ColumnSlotsByBlock<'a>) {
+    let mut table_by_row = ColumnTableByRow::new();
     for table in tables {
         for row in std::iter::once(table.opening_linked_row.as_str())
             .chain(table.target_rows.iter().map(String::as_str))
@@ -3654,7 +3683,7 @@ pub fn feature_input_column_row_uses(
                 .or_insert(Some(table.id.as_str()));
         }
     }
-    let mut slots_by_block = BTreeMap::<&str, Vec<(&str, ColumnIndexRowKind, usize, u64)>>::new();
+    let mut slots_by_block = ColumnSlotsByBlock::new();
     for row in index_rows {
         for (slot, data_block) in row.data_blocks.iter().enumerate() {
             slots_by_block.entry(data_block).or_default().push((
@@ -3693,6 +3722,19 @@ pub fn feature_input_column_row_uses(
             ));
         }
     }
+    (table_by_row, slots_by_block)
+}
+
+/// Join feature inputs to every column-row slot addressing the same block.
+pub fn feature_input_column_row_uses(
+    inputs: &[FeatureInputBlock],
+    index_rows: &[DataBlockIndexRow],
+    linked_rows: &[DataBlockLinkedIndexRow],
+    target_rows: &[DataBlockTargetIndexRow],
+    tables: &[DataBlockColumnIndexTable],
+) -> Vec<FeatureInputColumnRowUse> {
+    let (table_by_row, slots_by_block) =
+        column_relations_by_block(index_rows, linked_rows, target_rows, tables);
     inputs
         .iter()
         .flat_map(|input| {
@@ -3722,6 +3764,64 @@ pub fn feature_input_column_row_uses(
                         source_offset: *source_offset,
                     },
                 )
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// Join every datum-CSYS construction lane to column-row slots addressing the
+/// same block. The relation assigns no geometric role to either lane.
+pub fn feature_datum_csys_column_row_uses(
+    constructions: &[FeatureDatumCsysConstruction],
+    index_rows: &[DataBlockIndexRow],
+    linked_rows: &[DataBlockLinkedIndexRow],
+    target_rows: &[DataBlockTargetIndexRow],
+    tables: &[DataBlockColumnIndexTable],
+) -> Vec<FeatureDatumCsysColumnRowUse> {
+    let (table_by_row, slots_by_block) =
+        column_relations_by_block(index_rows, linked_rows, target_rows, tables);
+    let table_by_row = &table_by_row;
+    let slots_by_block = &slots_by_block;
+    constructions
+        .iter()
+        .flat_map(|construction| {
+            construction
+                .data_blocks
+                .iter()
+                .enumerate()
+                .flat_map(|(construction_slot, data_block)| {
+                    slots_by_block
+                        .get(data_block.as_str())
+                        .into_iter()
+                        .flatten()
+                        .enumerate()
+                        .map(move |(ordinal, (row, row_kind, row_slot, row_source_offset))| {
+                            FeatureDatumCsysColumnRowUse {
+                                id: format!(
+                                    "nx:feature-history:datum-csys-column-row-use#{}-{construction_slot:010}-{}-{ordinal:010}",
+                                    construction
+                                        .id
+                                        .rsplit_once('#')
+                                        .map_or("unknown", |(_, key)| key),
+                                    row_kind.id_component(),
+                                ),
+                                construction: construction.id.clone(),
+                                operation_label: construction.operation_label.clone(),
+                                construction_slot: construction_slot as u8,
+                                row_kind: *row_kind,
+                                column_row: (*row).to_string(),
+                                column_table: table_by_row
+                                    .get(row)
+                                    .and_then(|table| *table)
+                                    .map(str::to_string),
+                                row_slot: *row_slot as u8,
+                                data_block: data_block.clone(),
+                                construction_source_offset: construction.source_offsets
+                                    [construction_slot],
+                                row_source_offset: *row_source_offset,
+                            }
+                        })
+                })
                 .collect::<Vec<_>>()
         })
         .collect()
@@ -9913,6 +10013,72 @@ mod tests {
         let mut duplicate = uses.clone();
         duplicate.push(uses[0].clone());
         assert!(feature_input_column_targets(&[input], &duplicate, &[], &[row]).is_empty());
+    }
+
+    #[test]
+    fn datum_csys_column_row_uses_preserve_both_lane_offsets() {
+        use super::{
+            feature_datum_csys_column_row_uses, ColumnIndexRowKind, FeatureDatumCsysConstruction,
+        };
+        use crate::native::om::{DataBlockColumnIndexTable, DataBlockTargetIndexRow};
+
+        let construction = FeatureDatumCsysConstruction {
+            id: "construction#1".into(),
+            operation_label: "operation#1".into(),
+            control: 0x16,
+            object_indices: std::array::from_fn(|slot| slot as u32),
+            raw_object_indices: std::array::from_fn(|slot| vec![slot as u8]),
+            data_blocks: std::array::from_fn(|slot| format!("block#{slot}")),
+            source_offsets: std::array::from_fn(|slot| 200 + slot as u64),
+        };
+        let row = DataBlockTargetIndexRow {
+            id: "target-row#3".into(),
+            section_ordinal: 0,
+            ordinal: 3,
+            target_index: 5,
+            raw_target_index: vec![5],
+            indices: [6, 7, 5],
+            raw_indices: [vec![6], vec![7], vec![5]],
+            data_blocks: [
+                "block#5".into(),
+                "block#6".into(),
+                "block#7".into(),
+                "block#5".into(),
+            ],
+            mode: 7,
+            source_entry: "entry".into(),
+            opening_data_block: "opening-block".into(),
+            opening_block_offset: 8,
+            source_offset: 100,
+            target_index_source_offset: 105,
+            index_source_offsets: [110, 111, 112],
+        };
+        let table = DataBlockColumnIndexTable {
+            id: "column-table".into(),
+            section_ordinal: 0,
+            opening_linked_row: "opening-row".into(),
+            target_rows: vec![row.id.clone()],
+            linked_rows: vec![],
+            first_target_index: 5,
+            last_target_index: 3,
+            source_entry: "entry".into(),
+            source_offset: 50,
+        };
+
+        let uses = feature_datum_csys_column_row_uses(&[construction], &[], &[], &[row], &[table]);
+        assert_eq!(uses.len(), 4);
+        assert_eq!(
+            uses.iter()
+                .map(|use_| (use_.construction_slot, use_.row_slot))
+                .collect::<Vec<_>>(),
+            [(5, 0), (5, 3), (6, 1), (7, 2)]
+        );
+        assert_eq!(uses[0].row_kind, ColumnIndexRowKind::TargetIndex);
+        assert_eq!(uses[0].column_table.as_deref(), Some("column-table"));
+        assert_eq!(uses[0].construction_source_offset, 205);
+        assert_eq!(uses[0].row_source_offset, 105);
+        assert_eq!(uses[1].construction_source_offset, 205);
+        assert_eq!(uses[1].row_source_offset, 112);
     }
 
     #[test]

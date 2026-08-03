@@ -148,6 +148,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_input_blocks: Vec<FeatureInputBlock>,
     pub(crate) feature_input_block_identity_groups: Vec<FeatureInputBlockIdentityGroup>,
     pub(crate) feature_datum_csys_constructions: Vec<FeatureDatumCsysConstruction>,
+    pub(crate) feature_datum_csys_column_row_uses: Vec<FeatureDatumCsysColumnRowUse>,
     pub(crate) feature_datum_csys_payloads: Vec<FeatureDatumCsysPayload>,
     pub(crate) feature_datum_csys_payload_scalar_pairs: Vec<FeatureDatumCsysPayloadScalarPair>,
     pub(crate) feature_datum_csys_payload_fixed_pairs: Vec<FeatureDatumCsysPayloadFixedPair>,
@@ -795,6 +796,13 @@ impl NativeModel {
             &data_block_linked_index_rows,
             &data_block_target_index_rows,
         );
+        let feature_datum_csys_column_row_uses = feature_datum_csys_column_row_uses(
+            &feature_datum_csys_constructions,
+            &data_block_index_rows,
+            &data_block_linked_index_rows,
+            &data_block_target_index_rows,
+            &data_block_column_index_tables,
+        );
         let feature_input_column_row_uses = feature_input_column_row_uses(
             &feature_input_blocks,
             &data_block_index_rows,
@@ -977,6 +985,7 @@ impl NativeModel {
                 feature_input_blocks,
                 feature_input_block_identity_groups,
                 feature_datum_csys_constructions,
+                feature_datum_csys_column_row_uses,
                 feature_datum_csys_payloads,
                 feature_datum_csys_payload_scalar_pairs,
                 feature_datum_csys_payload_fixed_pairs,

@@ -2221,6 +2221,16 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "feature_datum_csys_column_row_uses",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.features.feature_datum_csys_column_row_uses, r, ns),
+        len: |m| m.features.feature_datum_csys_column_row_uses.len(),
+        counts_toward_emptiness: false,
+    },
+    CatalogueRow {
         arena: "feature_datum_csys_payloads",
         tag: None,
         exactness: Exactness::ByteExact,
