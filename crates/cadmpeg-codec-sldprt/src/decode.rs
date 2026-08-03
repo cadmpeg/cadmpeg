@@ -3132,8 +3132,10 @@ fn mark_active_configuration(ir: &mut CadIr) {
             .collect::<Vec<_>>();
         (matches.len() == 1).then(|| matches[0])
     });
+    let inferred_by_index =
+        by_index.filter(|position| ir.model.configurations[*position].native_ref.is_none());
     let selected = if active_name.is_some() {
-        by_name
+        by_name.or(inferred_by_index)
     } else if active_index.is_some() {
         by_index
     } else if ir.model.configurations.len() == 1 {
@@ -3633,7 +3635,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 #[cfg(test)]
 mod design_loss_tests {
     use super::{
-        append_design_losses, assign_configuration_bodies,
+        append_design_losses, assign_configuration_bodies, mark_active_configuration,
         multiply_projected_sketch_relation_records,
         sketch_constraint_has_complete_neutral_semantics, snapshot_active_configuration,
         spatial_sketch_constraint_has_complete_neutral_semantics,
@@ -5342,6 +5344,45 @@ mod design_loss_tests {
         assert_eq!(ir.model.configurations[2].source_index, Some(7));
         assert_eq!(ir.model.configurations[2].bodies, vec![third]);
         assert!(ir.model.configurations[2].native_ref.is_none());
+    }
+
+    #[test]
+    fn inferred_active_partition_preserves_active_configuration_identity() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.source = Some(cadmpeg_ir::document::SourceMeta {
+            attributes: BTreeMap::from([
+                (
+                    "active_parasolid_block".into(),
+                    "Contents/Config-3-Partition".into(),
+                ),
+                ("sw_configuration_name".into(), "Default".into()),
+            ]),
+            ..Default::default()
+        });
+        let body = BodyId("body:active".into());
+
+        assign_configuration_bodies(&mut ir, &[(3, vec![body.clone()])]);
+        mark_active_configuration(&mut ir);
+
+        assert_eq!(ir.model.configurations.len(), 1);
+        let configuration = &ir.model.configurations[0];
+        assert!(configuration.active);
+        assert_eq!(configuration.source_index, Some(3));
+        assert_eq!(configuration.bodies, vec![body]);
+
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+        append_design_losses(&ir, &mut report);
+        assert!(report.losses.iter().all(|loss| !loss
+            .message
+            .starts_with("active configuration identity is unresolved")));
     }
 
     #[test]
