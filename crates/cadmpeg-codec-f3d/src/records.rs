@@ -1855,6 +1855,36 @@ pub struct DesignBaseFlangeOperation {
     pub settings_record_index: u32,
 }
 
+/// Bend position used by sheet-metal edge operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignBendPosition {
+    /// The bend is tangent to the side reference plane.
+    TangentToSide,
+    /// A serialized value whose bend-position meaning is not settled.
+    Unknown(u32),
+}
+
+impl DesignBendPosition {
+    /// Decode the serialized bend-position discriminator without discarding unknown values.
+    #[must_use]
+    pub fn from_code(code: u32) -> Self {
+        match code {
+            4 => Self::TangentToSide,
+            code => Self::Unknown(code),
+        }
+    }
+
+    /// Return the serialized discriminator.
+    #[must_use]
+    pub fn code(self) -> u32 {
+        match self {
+            Self::TangentToSide => 4,
+            Self::Unknown(code) => code,
+        }
+    }
+}
+
 /// Fixed construction carried by a sheet-metal `EdgeFlange` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignEdgeFlangeOperation {
@@ -1882,8 +1912,8 @@ pub struct DesignEdgeFlangeOperation {
     pub extent_code: u32,
     /// Uninterpreted height-datum discriminator (DR-09).
     pub height_datum_code: u32,
-    /// Uninterpreted bend-position discriminator (DR-09).
-    pub bend_position_code: u32,
+    /// Bend position relative to the selected side.
+    pub bend_position: DesignBendPosition,
 }
 
 /// Fixed construction carried by a sheet-metal `Hem` scope.
@@ -1915,8 +1945,8 @@ pub struct DesignHemOperation {
     pub direction_code: u32,
     /// Serialized direction reversal.
     pub is_flipped: bool,
-    /// Uninterpreted bend-position discriminator.
-    pub bend_position_code: u32,
+    /// Bend position relative to the selected side.
+    pub bend_position: DesignBendPosition,
 }
 
 /// Fixed construction carried by a uniform body-scale scope.

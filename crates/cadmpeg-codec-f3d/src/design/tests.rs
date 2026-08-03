@@ -6510,6 +6510,10 @@ fn edge_flange_scope_binds_each_edge_and_aggregate_operand() {
     assert_eq!(operation.angle_owner_record_index, 141);
     assert_eq!(operation.bend_radius, 0.25);
     assert_eq!(operation.bend_radius_offset, 237);
+    assert_eq!(
+        operation.bend_position,
+        crate::records::DesignBendPosition::TangentToSide
+    );
 }
 
 #[test]
@@ -6542,6 +6546,10 @@ fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
     assert_eq!(operation.length_owner_record_index, 202);
     assert_eq!(operation.bend_radius, 0.25);
     assert_eq!(operation.bend_radius_offset, 156);
+    assert_eq!(
+        operation.bend_position,
+        crate::records::DesignBendPosition::TangentToSide
+    );
 }
 
 #[test]

@@ -158,13 +158,12 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 - the `EdgeFlange` extent discriminator
 - the `EdgeFlange` height-datum discriminator
-- the `EdgeFlange` bend-position discriminator
 - the `Hem` direction discriminator
 - the `Hem` hem-form discriminator
 
-**Known.** `f3d.md` §8.1 "An `EdgeFlange` scope with" and `f3d.md` §8.1 "A `Hem` scope has" give the offset and the width of each field. The decoder keeps every one of them as an uninterpreted value.
+**Known.** `f3d.md` §8.1 "An `EdgeFlange` scope with" and `f3d.md` §8.1 "A `Hem` scope has" give the offset and the width of each field. The decoder keeps every unresolved field as an uninterpreted value. Bend-position value `4` is typed as tangent to the side reference plane in both feature families; other bend-position values remain losslessly retained unknown values.
 
-**Need.** These two features have no neutral operation without the value meanings. We cannot rebuild the feature in a neutral model. **Blocked on a specimen:** no sheet-metal scope of any family is available to read. Settling it needs a base face, one edge flange cycled through each hem form, one flange whose height is measured to a plane and one to a point, and one flange per width mode and per bend position.
+**Need.** These two features have no neutral operation without the remaining value meanings. We cannot rebuild either feature in a neutral model. Available records contain one combination of the unresolved values. Settling them needs one edge flange per width mode, one flange whose height is measured to a plane and one to a point, and one hem of each form and direction.
 
 ### DR-10. `SpirePrimitive` and `CoilPrimitive` values
 

@@ -10,10 +10,10 @@ use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::records::{
     DesignAssemblyAlignment, DesignAssemblyOperandFrame, DesignAssemblyOperandPath,
-    DesignBaseFeatureConstruction, DesignBaseFlangeOperation, DesignCircularPatternConstruction,
-    DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignCombineOperation,
-    DesignComponentInsertConstruction, DesignComponentOccurrence,
-    DesignComponentPatternOccurrences, DesignCopyPasteBodiesOperation,
+    DesignBaseFeatureConstruction, DesignBaseFlangeOperation, DesignBendPosition,
+    DesignCircularPatternConstruction, DesignCoilExtent, DesignCoilSection,
+    DesignCoilSectionPlacement, DesignCombineOperation, DesignComponentInsertConstruction,
+    DesignComponentOccurrence, DesignComponentPatternOccurrences, DesignCopyPasteBodiesOperation,
     DesignCopyPasteComponentOperation, DesignDirectFaceOperation, DesignDraftOperation,
     DesignEdgeFlangeOperation, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation,
     DesignExtrudePrologue, DesignExtrudePrologueReference, DesignExtrudeStart,
@@ -3637,7 +3637,7 @@ pub(crate) fn exact_edge_flange_operation(
         return None;
     }
     cursor = cursor.checked_add(11)?;
-    let bend_position_code = u32_at(bytes, cursor)?;
+    let bend_position = DesignBendPosition::from_code(u32_at(bytes, cursor)?);
     let bend_radius_offset = cursor.checked_add(15)?;
     let bend_radius = f64_at(bytes, bend_radius_offset)?;
     if !bend_radius.is_finite() || bend_radius <= 0.0 {
@@ -3663,7 +3663,7 @@ pub(crate) fn exact_edge_flange_operation(
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
         extent_code,
         height_datum_code,
-        bend_position_code,
+        bend_position,
     })
 }
 
@@ -3707,7 +3707,7 @@ pub(crate) fn exact_hem_operation(
         form_code: u32_at(bytes, start + 85)?,
         direction_code: u32_at(bytes, start + 115)?,
         is_flipped: bytes[start + 119] != 0,
-        bend_position_code: u32_at(bytes, start + 121)?,
+        bend_position: DesignBendPosition::from_code(u32_at(bytes, start + 121)?),
     })
 }
 
