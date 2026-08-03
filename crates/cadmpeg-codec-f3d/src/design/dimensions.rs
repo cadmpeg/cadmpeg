@@ -36,6 +36,82 @@ pub struct DimensionConstraintInputs<'a> {
     pub(crate) entities: &'a [cadmpeg_ir::sketches::SketchEntity],
 }
 
+pub(crate) fn container_only_dimension_companions(
+    pairs: &[DesignDimensionLocusPair],
+    null_pairs: &[DesignDimensionNullLocusPair],
+    annotation_frames: &[DesignDimensionAnnotationFrame],
+    groups: &[DesignDimensionLocusGroup],
+    recipe_records: &[DesignDimensionRecipeRecord],
+) -> HashSet<(String, u32)> {
+    let physical = pairs
+        .iter()
+        .filter_map(|pair| {
+            Some((
+                native_stream(&pair.id)?.to_owned(),
+                pair.companion_record_index,
+            ))
+        })
+        .chain(null_pairs.iter().filter_map(|pair| {
+            Some((
+                native_stream(&pair.id)?.to_owned(),
+                pair.companion_record_index,
+            ))
+        }))
+        .chain(annotation_frames.iter().filter_map(|frame| {
+            Some((
+                native_stream(&frame.id)?.to_owned(),
+                frame.companion_record_index?,
+            ))
+        }))
+        .chain(groups.iter().filter_map(|group| {
+            Some((
+                native_stream(&group.id)?.to_owned(),
+                group.companion_record_index,
+            ))
+        }))
+        .chain(recipe_records.iter().filter_map(|record| {
+            Some((
+                native_stream(&record.id)?.to_owned(),
+                record.companion_record_index,
+            ))
+        }))
+        .collect::<HashSet<_>>();
+    let governed = pairs
+        .iter()
+        .filter_map(|pair| {
+            Some((
+                native_stream(&pair.id)?.to_owned(),
+                pair.governing_companion_record_index,
+            ))
+        })
+        .chain(null_pairs.iter().filter_map(|pair| {
+            Some((
+                native_stream(&pair.id)?.to_owned(),
+                pair.governing_companion_record_index,
+            ))
+        }))
+        .chain(annotation_frames.iter().filter_map(|frame| {
+            Some((
+                native_stream(&frame.id)?.to_owned(),
+                frame.governing_companion_record_index,
+            ))
+        }))
+        .chain(groups.iter().filter_map(|group| {
+            Some((
+                native_stream(&group.id)?.to_owned(),
+                group.companion_record_index,
+            ))
+        }))
+        .chain(recipe_records.iter().filter_map(|record| {
+            Some((
+                native_stream(&record.id)?.to_owned(),
+                record.companion_record_index,
+            ))
+        }))
+        .collect::<HashSet<_>>();
+    physical.difference(&governed).cloned().collect()
+}
+
 /// Project dimensional parameter companions into parameter-backed sketch
 /// constraints. Solved linear measurements use the source kernel's absolute
 /// resolution. Two-locus dimensions have neutral semantics; aggregate and
@@ -820,6 +896,13 @@ fn project_all_dimension_constraints(
         .flat_map(|constraint| constraint_parameters(&constraint.definition))
         .cloned()
         .collect::<HashSet<_>>();
+    let container_only_payload_companions = container_only_dimension_companions(
+        pairs,
+        null_pairs,
+        annotation_frames,
+        groups,
+        recipe_records,
+    );
     constraints.extend(companions.iter().filter_map(|companion| {
         let scope = native_stream(&companion.id)?;
         let key = (scope.to_owned(), companion.record_index);
@@ -827,6 +910,7 @@ fn project_all_dimension_constraints(
         let (parameter, parameter_id) = parameter_for(scope, companion.record_index)?;
         if parameter.kind != DesignParameterKind::Dimension
             || projected_parameters.contains(&parameter_id)
+            || container_only_payload_companions.contains(&key)
         {
             return None;
         }

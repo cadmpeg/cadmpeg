@@ -27,6 +27,39 @@ use crate::brep::{self, Brep};
 use crate::container::{self, BrepFacts, ContainerScan};
 use crate::{asm_header, materials, sab};
 
+fn container_only_dimension_parameters(
+    native: &F3dNative,
+) -> std::collections::HashSet<cadmpeg_ir::features::ParameterId> {
+    let container_only = crate::design::dimensions::container_only_dimension_companions(
+        &native.design_dimension_locus_pairs,
+        &native.design_dimension_null_locus_pairs,
+        &native.design_dimension_annotation_frames,
+        &native.design_dimension_locus_groups,
+        &native.design_dimension_recipe_records,
+    );
+    native
+        .design_parameter_owners
+        .iter()
+        .filter_map(|owner| {
+            let stream = crate::ids::native_stream(&owner.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+            if !container_only.contains(&(stream.to_owned(), owner.companion_record_index)) {
+                return None;
+            }
+            let mut parameters = native.design_parameters.iter().filter(|parameter| {
+                crate::ids::native_stream(&parameter.id).unwrap_or(crate::ids::DEFAULT_STREAM)
+                    == stream
+                    && parameter.record_index == owner.parameter_record_index
+                    && parameter.kind == crate::records::DesignParameterKind::Dimension
+            });
+            let parameter = parameters.next()?;
+            parameters
+                .next()
+                .is_none()
+                .then(|| crate::ids::neutral_parameter_id(parameter))
+        })
+        .collect()
+}
+
 fn unresolved_dimension_companion_count(native: &F3dNative, ir: &CadIr) -> usize {
     use std::collections::{HashMap, HashSet};
 
@@ -540,15 +573,19 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             .iter()
             .filter(|relation| !projected_constraint_refs.contains(relation.id.as_str()))
             .count(),
-        unprojected_dimensions: native
-            .design_parameters
-            .iter()
-            .filter(|parameter| {
-                parameter.kind == crate::records::DesignParameterKind::Dimension
-                    && !projected_dimension_parameters
-                        .contains(&crate::ids::neutral_parameter_id(parameter))
-            })
-            .count(),
+        unprojected_dimensions: {
+            let container_only = container_only_dimension_parameters(native);
+            native
+                .design_parameters
+                .iter()
+                .filter(|parameter| {
+                    parameter.kind == crate::records::DesignParameterKind::Dimension
+                        && !projected_dimension_parameters
+                            .contains(&crate::ids::neutral_parameter_id(parameter))
+                        && !container_only.contains(&crate::ids::neutral_parameter_id(parameter))
+                })
+                .count()
+        },
         ..DesignProjectionGaps::default()
     };
     let mut edge_selection = |selection: &EdgeSelection| match selection {
@@ -3400,8 +3437,9 @@ fn apply_appearance_base_colors(ir: &mut CadIr) {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_appearance_base_colors, design_projection_gaps, feature_definition_is_incomplete,
-        incomplete_feature_families, unresolved_dimension_companion_count, DesignProjectionGaps,
+        apply_appearance_base_colors, container_only_dimension_parameters, design_projection_gaps,
+        feature_definition_is_incomplete, incomplete_feature_families,
+        unresolved_dimension_companion_count, DesignProjectionGaps,
     };
     use crate::native::F3dNative;
     use crate::records::{
@@ -4146,9 +4184,11 @@ mod tests {
                 paired_byte_offset: 378,
             });
         assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
+        assert!(container_only_dimension_parameters(&native).is_empty());
         native.design_dimension_locus_pairs[0].companion_record_index = 30;
         native.design_dimension_locus_pairs[0].governing_companion_record_index = 99;
         assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
+        assert_eq!(container_only_dimension_parameters(&native).len(), 1);
 
         native.design_dimension_locus_pairs.clear();
         native
