@@ -2052,9 +2052,6 @@ pub(crate) fn bind_form_cages(
     features: &mut [cadmpeg_ir::features::Feature],
     cages: &[cadmpeg_ir::subd::SubdSurface],
 ) -> Result<(), CodecError> {
-    if cages.is_empty() {
-        return Ok(());
-    }
     for scope in scopes.iter().filter(|scope| scope.kind == "Form") {
         let Some(stream) =
             native_stream(&scope.id).and_then(|stream| stream.strip_prefix(ids::SCHEME_PREFIX))
@@ -2073,9 +2070,6 @@ pub(crate) fn bind_form_cages(
         let [cage_objects] = cage_lists.as_slice() else {
             continue;
         };
-        if cage_objects.is_empty() {
-            continue;
-        }
         let surfaces = cage_objects
             .iter()
             .map(|object| form_cage_surface(bytes, &records, *object, scope.record_index))
@@ -2291,6 +2285,29 @@ mod form_tests {
                 2190,
             ),
             Some(vec![8300, 8303])
+        );
+
+        let mut empty = Vec::new();
+        empty.extend_from_slice(&3u32.to_le_bytes());
+        empty.extend_from_slice(b"402");
+        empty.extend_from_slice(&2196u64.to_le_bytes());
+        empty.extend_from_slice(&[0; 6]);
+        empty.push(1);
+        empty.extend_from_slice(&2190u64.to_le_bytes());
+        empty.extend_from_slice(&[0; 2]);
+        empty.extend_from_slice(&0u32.to_le_bytes());
+        empty.resize(88, 0);
+        empty.extend_from_slice(&3u32.to_le_bytes());
+        empty.extend_from_slice(b"264");
+        empty.extend_from_slice(&2196u64.to_le_bytes());
+        assert_eq!(
+            super::form_cage_objects(
+                &empty,
+                &crate::design::decode::sketch::IndexedRecordOffsets::build(&empty),
+                2196,
+                2190,
+            ),
+            Some(Vec::new())
         );
     }
 

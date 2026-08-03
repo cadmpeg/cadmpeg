@@ -5498,7 +5498,6 @@ fn feature_operation_geometry_is_validated() {
         },
     ];
     let expected = [
-        "Form operation has no control cage",
         "references missing Form control cage `synthetic:test:subd#missing`",
         "fillet radius is invalid",
         "rib geometry is invalid",
@@ -5546,6 +5545,9 @@ fn feature_operation_geometry_is_validated() {
         });
     }
     let findings = validate(&ir, Vec::new()).findings;
+    assert!(!findings
+        .iter()
+        .any(|finding| { finding.entity.as_deref() == Some("synthetic:test:feature#invalid-0") }));
     for message in expected {
         assert!(findings.iter().any(|finding| finding.message == message));
     }

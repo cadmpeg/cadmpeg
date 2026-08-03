@@ -2558,9 +2558,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 }
             }
             FeatureDefinition::Form { cages } => {
-                if cages.is_empty() {
-                    feature_geometry_error(findings, feature, "Form operation has no control cage");
-                }
                 check_ids(
                     findings,
                     &feature.id.0,
