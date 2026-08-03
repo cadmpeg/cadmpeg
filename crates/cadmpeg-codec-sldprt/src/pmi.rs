@@ -172,6 +172,15 @@ pub(crate) fn enrich_history_parameters(
     histories: &mut [crate::records::FeatureHistory],
     records: &[PmiDimension],
 ) {
+    enrich_history_parameters_with_features(histories, records, &[]);
+}
+
+/// Add uniquely owner-qualified PMI dimensions with neutral owner context.
+pub(crate) fn enrich_history_parameters_with_features(
+    histories: &mut [crate::records::FeatureHistory],
+    records: &[PmiDimension],
+    neutral_features: &[cadmpeg_ir::features::Feature],
+) {
     let mut owners = BTreeMap::<&str, Vec<(usize, usize)>>::new();
     for (history_index, history) in histories.iter().enumerate() {
         for (feature_index, feature) in history.features.iter().enumerate() {
@@ -197,6 +206,9 @@ pub(crate) fn enrich_history_parameters(
                 crate::history::parse_native_parameter_literal(feature, name, expression),
                 Some(cadmpeg_ir::features::ParameterValue::Integer(_))
             )
+        }) || neutral_features.iter().any(|neutral| {
+            neutral.native_ref.as_deref() == Some(feature.id.as_str())
+                && neutral_parameter_is_count(neutral, name, None)
         });
         let expression = match dimension_subtype(record, empty_subtype_is_count) {
             cadmpeg_ir::features::PmiDimensionSubtype::Linear
@@ -404,9 +416,11 @@ pub(crate) fn apply_to_parameters(
         let existing_parameter = parameters.iter().position(|parameter| {
             parameter.owner.as_ref() == Some(&owner.id) && parameter.name == name
         });
-        let empty_subtype_is_count = existing_parameter.is_some_and(|index| {
-            neutral_parameter_is_count(owner, name, parameters[index].value.as_ref())
-        });
+        let empty_subtype_is_count = neutral_parameter_is_count(
+            owner,
+            name,
+            existing_parameter.and_then(|index| parameters[index].value.as_ref()),
+        );
         let subtype = dimension_subtype(record, empty_subtype_is_count);
         let millimetres = record.value * 1000.0;
         let (expression, display, value) = match subtype {

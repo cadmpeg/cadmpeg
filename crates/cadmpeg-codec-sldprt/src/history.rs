@@ -9575,8 +9575,20 @@ pub(crate) fn project_configuration_design_states(
     {
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let mut projection = histories.to_vec();
+        // Seed PMI types before lane enrichment so dimension semantics reject
+        // incompatible native scalar candidates. Reapply afterward to add PMI
+        // parameters that the lane does not carry without replacing overrides.
+        crate::pmi::enrich_history_parameters_with_features(
+            &mut projection,
+            pmi_dimensions,
+            &ir.model.features,
+        );
         enrich_history_parameters_semantic(&mut projection, scoped_lanes);
-        crate::pmi::enrich_history_parameters(&mut projection, pmi_dimensions);
+        crate::pmi::enrich_history_parameters_with_features(
+            &mut projection,
+            pmi_dimensions,
+            &ir.model.features,
+        );
         ir.model.configurations[configuration_index].parameter_values =
             project_parameters(&projection)
                 .into_iter()

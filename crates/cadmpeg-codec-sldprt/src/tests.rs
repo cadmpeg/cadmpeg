@@ -15739,24 +15739,56 @@ fn semantic_writer_round_trips_pattern_count_pmi() {
             "<DIM>",
         ),
     ));
+    source.extend(make_block(
+        0x49,
+        "Contents/PMISemanticDataDB",
+        &pmi_semantic_payload_record(
+            "D2@MatrizL1",
+            "fedcba98-7654-3210-fedc-ba9876543210",
+            "",
+            1.0,
+            "<DIM>",
+        ),
+    ));
 
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let parameter = decoded
+    let parameter_index = decoded
         .ir
         .model
         .parameters
-        .iter_mut()
-        .find(|parameter| parameter.name == "D1")
+        .iter()
+        .position(|parameter| parameter.name == "D1")
         .expect("pattern count parameter");
+    let parameter = &decoded.ir.model.parameters[parameter_index];
     assert_eq!(parameter.value, Some(ParameterValue::Integer(15)));
     assert_eq!(
         parameter.pmi.as_ref().map(|pmi| &pmi.subtype),
         Some(&PmiDimensionSubtype::Count)
     );
-    parameter.expression = "12".into();
-    parameter.value = Some(ParameterValue::Integer(12));
+    let secondary = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "D2")
+        .expect("secondary pattern count parameter");
+    assert_eq!(secondary.value, Some(ParameterValue::Integer(1)));
+    assert_eq!(
+        secondary.pmi.as_ref().map(|pmi| &pmi.subtype),
+        Some(&PmiDimensionSubtype::Count)
+    );
+    assert_eq!(
+        decoded.ir.model.configurations[0].parameter_values.len(),
+        decoded.ir.model.parameters.len()
+    );
+    assert!(!decoded.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("lack a complete evaluated parameter snapshot")
+    }));
+    decoded.ir.model.parameters[parameter_index].expression = "12".into();
+    decoded.ir.model.parameters[parameter_index].value = Some(ParameterValue::Integer(12));
 
     let mut encoded = Vec::new();
     SldprtCodec
