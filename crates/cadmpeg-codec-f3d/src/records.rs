@@ -1213,6 +1213,9 @@ pub struct DesignAssemblyAlignment {
     /// Exact occurrence paths qualifying the two operand constructions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operand_paths: Option<[DesignAssemblyOperandPath; 2]>,
+    /// `JointOrigin` scope whose datum frame is carried by this scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub joint_origin_scope_record_index: Option<u32>,
 }
 
 /// Counted occurrence path qualifying one assembly operand construction.

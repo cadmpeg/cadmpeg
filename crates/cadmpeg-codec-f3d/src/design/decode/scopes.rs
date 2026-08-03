@@ -235,6 +235,7 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
     scopes: &mut [DesignParameterScope],
 ) {
     let mut candidates = Vec::new();
+    let mut envelopes = Vec::new();
     for scope in scopes.iter() {
         if scope.kind != "Assemble" {
             continue;
@@ -254,6 +255,7 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
             }
         }
         if let Some((joint_origin, frame)) = exact_single_joint_origin_frame(bytes, scope) {
+            envelopes.push((scope.record_index, joint_origin));
             candidates.push((
                 joint_origin,
                 frame.transform,
@@ -284,6 +286,28 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
         if let Some((record_index, offset)) = reference {
             scope.joint_origin_reference = Some(*record_index);
             scope.joint_origin_reference_offset = Some(*offset);
+        }
+    }
+    let resolved_origins = scopes
+        .iter()
+        .filter(|scope| scope.kind == "JointOrigin" && scope.joint_origin_transform.is_some())
+        .map(|scope| scope.record_index)
+        .collect::<HashSet<_>>();
+    for (assembly_record_index, joint_origin_record_index) in envelopes {
+        if !resolved_origins.contains(&joint_origin_record_index) {
+            continue;
+        }
+        let mut assemblies = scopes.iter_mut().filter(|scope| {
+            scope.kind == "Assemble" && scope.record_index == assembly_record_index
+        });
+        let Some(assembly) = assemblies.next() else {
+            continue;
+        };
+        if assemblies.next().is_some() {
+            continue;
+        }
+        if let Some(alignment) = assembly.assembly_alignment.as_mut() {
+            alignment.joint_origin_scope_record_index = Some(joint_origin_record_index);
         }
     }
 }
@@ -592,6 +616,7 @@ pub(crate) fn exact_assembly_alignment(
         value_offsets,
         operand_frames: None,
         operand_paths: None,
+        joint_origin_scope_record_index: None,
     };
     alignment.operand_frames = exact_assembly_operand_frames(bytes, scope);
     alignment.operand_paths = alignment

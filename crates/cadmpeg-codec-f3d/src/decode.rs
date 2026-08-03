@@ -517,7 +517,14 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         unprojected_feature_scopes: native
             .design_parameter_scopes
             .iter()
-            .filter(|scope| !projected_feature_refs.contains(scope.id.as_str()))
+            .filter(|scope| {
+                !projected_feature_refs.contains(scope.id.as_str())
+                    && scope
+                        .assembly_alignment
+                        .as_ref()
+                        .and_then(|alignment| alignment.joint_origin_scope_record_index)
+                        .is_none()
+            })
             .count(),
         unprojected_parameters: native
             .design_parameters

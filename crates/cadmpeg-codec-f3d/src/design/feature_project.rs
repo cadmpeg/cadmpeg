@@ -116,10 +116,23 @@ pub fn project_parameter_design_with_edge_identities(
     let scope_ids = scopes
         .iter()
         .filter_map(|scope| {
-            Some((
-                (native_stream(&scope.id)?, scope.record_index),
-                neutral_feature_id(scope),
-            ))
+            let stream = native_stream(&scope.id)?;
+            let feature_id = scope
+                .assembly_alignment
+                .as_ref()
+                .and_then(|alignment| alignment.joint_origin_scope_record_index)
+                .and_then(|record_index| {
+                    let mut targets = scopes.iter().filter(|target| {
+                        native_stream(&target.id) == Some(stream)
+                            && target.record_index == record_index
+                            && target.kind == "JointOrigin"
+                            && target.joint_origin_transform.is_some()
+                    });
+                    let target = targets.next()?;
+                    targets.next().is_none().then(|| neutral_feature_id(target))
+                })
+                .unwrap_or_else(|| neutral_feature_id(scope));
+            Some(((stream, scope.record_index), feature_id))
         })
         .collect::<HashMap<_, _>>();
     let owners_by_index = owners
@@ -131,6 +144,13 @@ pub fn project_parameter_design_with_edge_identities(
     };
     let mut features = scopes
         .iter()
+        .filter(|scope| {
+            scope
+                .assembly_alignment
+                .as_ref()
+                .and_then(|alignment| alignment.joint_origin_scope_record_index)
+                .is_none()
+        })
         .map(|scope| {
             let native_scope = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
             let parameters = owners
@@ -963,6 +983,17 @@ pub fn project_parameter_design_with_edge_identities(
                         ))
                     })
                     .and_then(|owner| {
+                        if scopes.iter().any(|scope| {
+                            native_stream(&scope.id) == native_stream(&owner.id)
+                                && scope.record_index == owner.scope_record_index
+                                && scope
+                                    .assembly_alignment
+                                    .as_ref()
+                                    .and_then(|alignment| alignment.joint_origin_scope_record_index)
+                                    .is_some()
+                        }) {
+                            return None;
+                        }
                         scope_ids.get(&(
                             native_stream(&owner.id).unwrap_or(ids::DEFAULT_STREAM),
                             owner.scope_record_index,

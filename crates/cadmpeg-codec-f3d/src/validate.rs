@@ -1094,11 +1094,28 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     }
                     _ => false,
                 };
+                let joint_origin_envelope_link = alignment
+                    .joint_origin_scope_record_index
+                    .is_none_or(|record_index| {
+                        alignment.operand_frames.is_none()
+                            && alignment.operand_paths.is_none()
+                            && scope.class_tag == "276"
+                            && scope.paired_class_tag == "258"
+                            && scope.frame_length == 604
+                            && native.design_parameter_scopes.iter().any(|target| {
+                                design_stream(&target.id) == native_stream
+                                    && target.kind == "JointOrigin"
+                                    && target.record_index == record_index
+                                    && target.joint_origin_transform_offset
+                                        == Some(scope.byte_offset + 36)
+                            })
+                    });
                 design::design_feature_family(&scope.kind)
                     == Some(design::DesignFeatureFamily::Assemble)
                     && values.iter().all(|value| value.is_finite())
                     && operand_frames_link
                     && operand_paths_link
+                    && joint_origin_envelope_link
                     && scope
                         .reference_members
                         .ends_with(&alignment.owner_record_indices)

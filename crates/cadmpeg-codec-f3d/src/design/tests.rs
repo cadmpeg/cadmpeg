@@ -19283,6 +19283,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         linked_scopes[2].joint_origin_transform,
         Some(axial_frames[1].transform)
     );
+    assert_eq!(
+        linked_scopes[0]
+            .assembly_alignment
+            .as_ref()
+            .and_then(|alignment| alignment.joint_origin_scope_record_index),
+        None
+    );
 
     let mut single_frame_bytes = vec![0_u8; 604];
     single_frame_bytes[..11].copy_from_slice(&assembly_bytes[..11]);
@@ -19297,7 +19304,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     single_frame_assembly.paired_class_tag = "258".into();
     single_frame_assembly.frame_length = 604;
     single_frame_assembly.paired_byte_offset = 604;
-    single_frame_assembly.assembly_alignment = None;
+    single_frame_assembly.assembly_alignment = Some(alignment.clone());
     let mut single_frame_joint_origin = scope.clone();
     single_frame_joint_origin.kind = "JointOrigin".into();
     single_frame_joint_origin.record_index = 91;
@@ -19316,6 +19323,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(
         single_frame_scopes[1].joint_origin_reference_offset,
         Some(25)
+    );
+    assert_eq!(
+        single_frame_scopes[0]
+            .assembly_alignment
+            .as_ref()
+            .and_then(|alignment| alignment.joint_origin_scope_record_index),
+        Some(91)
     );
 
     single_frame_bytes[175..179].copy_from_slice(&2_u32.to_le_bytes());
