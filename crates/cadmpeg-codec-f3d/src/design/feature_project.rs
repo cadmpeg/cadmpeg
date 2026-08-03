@@ -41,6 +41,7 @@ pub struct ProjectInputs<'a> {
     pub(crate) fillet_radius_groups: &'a [DesignFilletRadiusGroup],
     pub(crate) edge_operands: &'a [DesignEdgeOperand],
     pub(crate) edge_identity_operands: &'a [DesignEdgeIdentityOperand],
+    pub(crate) entity_selection_operands: &'a [crate::records::DesignEntitySelectionOperand],
     pub(crate) face_operands: &'a [DesignFaceOperand],
     pub(crate) placements: &'a [DesignSketchPlacement],
     pub(crate) body_bindings: &'a [DesignBodyBinding],
@@ -73,6 +74,7 @@ pub fn project_parameter_design(
         fillet_radius_groups,
         edge_operands,
         edge_identity_operands: &[],
+        entity_selection_operands: &[],
         face_operands,
         placements,
         body_bindings: &[],
@@ -99,6 +101,7 @@ pub fn project_parameter_design_with_edge_identities(
         construction_groups,
         edge_operands,
         edge_identity_operands,
+        entity_selection_operands,
         face_operands,
         placements,
         body_bindings,
@@ -259,6 +262,8 @@ pub fn project_parameter_design_with_edge_identities(
                     construction_groups,
                     edge_operands,
                     edge_identity_operands,
+                    entity_selection_operands,
+                    face_operands,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
                     kind: scope.kind.clone(),
@@ -2981,9 +2986,12 @@ pub(crate) fn project_fixed_sweep(
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
     edge_identity_operands: &[DesignEdgeIdentityOperand],
+    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
-        Angle, FeatureDefinition, ProfileRef, SweepGuideRail, SweepMode, SweepPathExtent,
+        Angle, FaceSelection, FeatureDefinition, ProfileRef, SweepGuideRail, SweepMode,
+        SweepOrientation, SweepPathExtent,
     };
 
     let DesignPathFeatureConstruction::Sweep {
@@ -3000,7 +3008,7 @@ pub(crate) fn project_fixed_sweep(
                 && group.scope_record_index == scope.record_index
         })
         .collect::<Vec<_>>();
-    let profile = groups
+    let profiles = groups
         .iter()
         .filter(|group| group.role == 0x41_0000_0000)
         .collect::<Vec<_>>();
@@ -3013,16 +3021,55 @@ pub(crate) fn project_fixed_sweep(
         .iter()
         .filter(|group| group.role == ROLE_0X4)
         .collect::<Vec<_>>();
-    let [profile] = profile.as_slice() else {
-        return None;
+    let guide_surfaces = groups
+        .iter()
+        .filter(|group| group.role == 0x11_0000_0000)
+        .collect::<Vec<_>>();
+    let guide_surface_form = match guide_surfaces.as_slice() {
+        [] => false,
+        [_] => true,
+        _ => return None,
+    };
+    let profile = if guide_surface_form {
+        let sweep_profile = scope.sweep_profile.as_ref()?;
+        let carriers = profiles
+            .iter()
+            .filter(|group| group.members.as_slice() == [sweep_profile.record_index])
+            .collect::<Vec<_>>();
+        let selections = profiles
+            .iter()
+            .filter(|group| group.members.as_slice() != [sweep_profile.record_index])
+            .collect::<Vec<_>>();
+        let ([_carrier], [selection]) = (carriers.as_slice(), selections.as_slice()) else {
+            return None;
+        };
+        if selection.members.is_empty()
+            || !selection.members.iter().all(|member| {
+                entity_selection_operands.iter().any(|operand| {
+                    native_stream(&operand.id) == Some(stream)
+                        && operand.scope_record_index == scope.record_index
+                        && operand.group_record_index == selection.record_index
+                        && operand.record_index == *member
+                })
+            })
+        {
+            return None;
+        }
+        *selection
+    } else {
+        let [profile] = profiles.as_slice() else {
+            return None;
+        };
+        *profile
     };
     let ([path] | [path, _]) = paths.as_slice() else {
         return None;
     };
-    let expected_group_count = 1 + paths.len() + bodies.len();
+    let expected_group_count = profiles.len() + paths.len() + bodies.len() + guide_surfaces.len();
     if bodies.len() > 1
         || groups.len() != expected_group_count
         || (*operation == DesignExtrudeOperation::NewBody && !bodies.is_empty())
+        || (guide_surface_form && paths.len() != 1)
         || values[..4].iter().any(|value| !(0.0..=1.0).contains(value))
         || (paths.len() == 1 && values[2..4] != [1.0; 2])
         || !values[4].is_finite()
@@ -3050,6 +3097,12 @@ pub(crate) fn project_fixed_sweep(
             against_fraction: values[3],
         },
     });
+    let orientation = guide_surfaces
+        .first()
+        .map(|group| SweepOrientation::GuideSurface {
+            faces: resolved_historical_face_group(scope, group, face_operands)
+                .unwrap_or_else(|| FaceSelection::Native(group.id.clone())),
+        });
     Some(FeatureDefinition::Sweep {
         section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Native(
             profile.id.clone(),
@@ -3063,7 +3116,7 @@ pub(crate) fn project_fixed_sweep(
                 op: fixed_boolean_operation(*operation),
             }
         },
-        orientation: None,
+        orientation,
         transition: None,
         transformation: None,
         path_tangent: false,

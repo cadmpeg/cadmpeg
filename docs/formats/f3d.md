@@ -1212,6 +1212,8 @@ A Design Mirror scope stores one seed group with role `0x0000000800000000`, one 
 
 A rectangular-pattern direction's evaluated distance is the total seed-to-final-instance span. Count includes the seed. For count greater than one, adjacent spacing is `evaluated_distance / (count - 1)`; a count-one direction has zero adjacent spacing.
 
+A guide-surface `Sweep` has two role-`0x0000004100000000` groups: one carries the persistent profile selection and the other carries the scope's sketch-profile record. Its sole role-`0x0000000500000000` group identifies the path, and one role-`0x0000001100000000` group identifies the guide faces that constrain the section frame.
+
 ### 8.2 Materials
 
 Visual and physical materials are distinct serialized channels.

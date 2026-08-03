@@ -11356,6 +11356,7 @@ pub(crate) fn sweep_mode_is_incomplete(mode: SweepMode) -> bool {
 pub(crate) fn sweep_orientation_is_incomplete(orientation: &SweepOrientation) -> bool {
     match orientation {
         SweepOrientation::Auxiliary { path, .. } => path_ref_is_incomplete(path),
+        SweepOrientation::GuideSurface { faces } => face_selection_is_incomplete(faces),
         SweepOrientation::Binormal { direction } => !valid_feature_direction(*direction),
         SweepOrientation::CorrectedFrenet | SweepOrientation::Fixed | SweepOrientation::Frenet => {
             false

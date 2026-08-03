@@ -2817,6 +2817,10 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 {
                     paths.push(path);
                 }
+                if let Some(crate::features::SweepOrientation::GuideSurface { faces }) = orientation
+                {
+                    face_selections.push(faces);
+                }
                 if invalid_section
                     || twist.is_some_and(|value| !value.0.is_finite())
                     || taper.is_some_and(|value| !value.0.is_finite())

@@ -5573,6 +5573,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             &[profile.clone(), path.clone()],
             &[],
             &[],
+            &[],
+            &[],
         ),
         Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
             path_extent: Some(cadmpeg_ir::features::SweepPathExtent {
@@ -5598,6 +5600,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         crate::design::feature_project::project_fixed_sweep(
             &sweep_scope,
             &[profile.clone(), path.clone(), rail],
+            &[],
+            &[],
             &[],
             &[],
         ),
@@ -5633,6 +5637,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             &[profile.clone(), path.clone()],
             &[],
             &[],
+            &[],
+            &[],
         ),
         Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
             mode: cadmpeg_ir::features::SweepMode::Unresolved,
@@ -5645,9 +5651,76 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             &[profile.clone(), path.clone(), body.clone()],
             &[],
             &[],
+            &[],
+            &[],
         ),
         None
     );
+    sweep_scope.sweep_profile = Some(crate::records::DesignSketchProfileOperand {
+        scope_reference_ordinal: 3,
+        record_index: 2795,
+        byte_offset: 32_000,
+        class_tag: "312".into(),
+        asset_id: "asset".into(),
+        asset_id_offset: 32_040,
+        entity_id: "0_2718".into(),
+        entity_suffix: 2718,
+        entity_reference_offset: 32_080,
+        paired_class_tag: "258".into(),
+        paired_byte_offset: 32_180,
+    });
+    let mut selected_profile = profile.clone();
+    selected_profile.members = vec![2788];
+    let mut profile_carrier = profile.clone();
+    profile_carrier.id = "stream:sweep-profile-carrier".into();
+    profile_carrier.scope_reference_ordinal = 3;
+    profile_carrier.members = vec![2795];
+    let mut guide_surface = sweep_group(4, 0x11_0000_0000);
+    guide_surface.id = "stream:sweep-guide-surface".into();
+    let entity_selection = crate::records::DesignEntitySelectionOperand {
+        id: "stream:sweep-profile-selection".into(),
+        scope_record_index: sweep_scope.record_index,
+        group_record_index: selected_profile.record_index,
+        group_member_ordinal: 0,
+        record_index: 2788,
+        byte_offset: 31_000,
+        class_tag: "310".into(),
+        asset_id: "asset".into(),
+        asset_id_offset: 31_040,
+        context_id: "context".into(),
+        context_id_offset: 31_080,
+        identity_record_index: 2791,
+        identity_record_offset: 31_180,
+        primary_identity: 2718,
+        primary_identity_offset: 31_200,
+        secondary_identity: 164,
+        secondary_identity_offset: 31_208,
+        historical_edge_candidates: Vec::new(),
+        resolved_edge_slot: None,
+        next_record_index: profile_carrier.record_index,
+        next_byte_offset: profile_carrier.byte_offset,
+    };
+    assert!(matches!(
+        crate::design::feature_project::project_fixed_sweep(
+            &sweep_scope,
+            &[selected_profile, profile_carrier, path.clone(), guide_surface],
+            &[],
+            &[],
+            &[entity_selection],
+            &[],
+        ),
+        Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
+            section: cadmpeg_ir::features::SweepSection::Profile(
+                cadmpeg_ir::features::ProfileRef::Native(profile)
+            ),
+            orientation: Some(cadmpeg_ir::features::SweepOrientation::GuideSurface {
+                faces: cadmpeg_ir::features::FaceSelection::Native(faces),
+            }),
+            guide_rail: None,
+            ..
+        }) if profile == "stream:sweep-group-0" && faces == "stream:sweep-guide-surface"
+    ));
+    sweep_scope.sweep_profile = None;
     sweep_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Sweep {
         operation: DesignExtrudeOperation::Cut,
         operation_offset: (sweep_start + 25) as u64,
@@ -5661,6 +5734,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         crate::design::feature_project::project_fixed_sweep(
             &sweep_scope,
             &[profile, path, body],
+            &[],
+            &[],
             &[],
             &[],
         ),

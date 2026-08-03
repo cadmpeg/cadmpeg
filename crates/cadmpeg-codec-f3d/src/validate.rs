@@ -1643,6 +1643,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 group.role,
                                 0x0000_0004_0000_0000
                                     | 0x0000_0005_0000_0000
+                                    | 0x0000_0011_0000_0000
                                     | 0x0000_0041_0000_0000
                             ))
                             && group.extrude_role.is_none()
@@ -1837,17 +1838,57 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
             },
             Some(records::DesignPathFeatureConstruction::Sweep { operation, .. }) => {
                 let path_count = role_count(0x0000_0005_0000_0000);
+                let profile_count = role_count(0x0000_0041_0000_0000);
+                let guide_surface_count = role_count(0x0000_0011_0000_0000);
+                let guide_profile_frame = scope.sweep_profile.as_ref().is_some_and(|profile| {
+                    let profile_groups = groups
+                        .iter()
+                        .filter(|group| group.role == 0x0000_0041_0000_0000)
+                        .collect::<Vec<_>>();
+                    profile_groups
+                        .iter()
+                        .filter(|group| group.members.as_slice() == [profile.record_index])
+                        .count()
+                        == 1
+                        && profile_groups
+                            .iter()
+                            .filter(|group| group.members.as_slice() != [profile.record_index])
+                            .filter(|group| {
+                                !group.members.is_empty()
+                                    && group.members.iter().all(|member| {
+                                        native.design_entity_selection_operands.iter().any(
+                                            |operand| {
+                                                design_stream(&operand.id) == native_stream
+                                                    && operand.scope_record_index
+                                                        == scope.record_index
+                                                    && operand.group_record_index
+                                                        == group.record_index
+                                                    && operand.record_index == *member
+                                            },
+                                        )
+                                    })
+                            })
+                            .count()
+                            == 1
+                });
                 let common_roles =
-                    role_count(0x0000_0041_0000_0000) == 1 && matches!(path_count, 1 | 2);
+                    (profile_count == 1 && guide_surface_count == 0 && matches!(path_count, 1 | 2))
+                        || (profile_count == 2
+                            && guide_surface_count == 1
+                            && path_count == 1
+                            && guide_profile_frame);
                 common_roles
                     && match operation {
                         records::DesignExtrudeOperation::NewBody => {
-                            groups.len() == path_count + 1 && role_count(0x0000_0004_0000_0000) == 0
+                            groups.len() == path_count + profile_count + guide_surface_count
+                                && role_count(0x0000_0004_0000_0000) == 0
                         }
                         records::DesignExtrudeOperation::Join
                         | records::DesignExtrudeOperation::Cut
                         | records::DesignExtrudeOperation::Intersect => {
-                            groups.len() == path_count + 2 && role_count(0x0000_0004_0000_0000) == 1
+                            guide_surface_count == 0
+                                && groups.len() == path_count + 2
+                                && role_count(0x0000_0004_0000_0000) == 1
                         }
                     }
             }
@@ -3408,6 +3449,11 @@ fn validate_face_operands<'a>(
                                         )
                                     }) && operand.recipe_kind
                                         == records::ConstructionRecipeKind::BoundedFace
+                                }
+                                Some(design::DesignFeatureFamily::Sweep) => {
+                                    group.is_some_and(|group| group.role == 0x0000_0011_0000_0000)
+                                        && operand.recipe_kind
+                                            == records::ConstructionRecipeKind::BoundedFace
                                 }
                                 Some(design::DesignFeatureFamily::Draft) => {
                                     group.is_some_and(|group| match group.role {

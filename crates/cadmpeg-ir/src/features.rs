@@ -2693,6 +2693,11 @@ pub enum SweepOrientation {
         /// Whether corresponding points use curvilinear rather than parameter distance.
         curvilinear: bool,
     },
+    /// Frame constrained to remain normal to selected guide faces.
+    GuideSurface {
+        /// Ordered guide faces controlling the section frame.
+        faces: FaceSelection,
+    },
     /// Frame constrained by a fixed binormal direction.
     Binormal {
         /// Unit binormal direction.
