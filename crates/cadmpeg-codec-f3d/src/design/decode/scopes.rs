@@ -3197,13 +3197,31 @@ pub(crate) fn exact_combine_operation(
         return None;
     }
     let start = usize::try_from(scope.byte_offset).ok()?;
-    if bytes.get(start + 11..start + 19)? != [0; 8]
-        || bytes.get(start + 24) != Some(&0)
-        || bytes.get(start + 26..start + 33)? != [0; 7]
-    {
-        return None;
-    }
-    let operation = match u32_at(bytes, start + 20)? {
+    let compact = scope.class_tag == "387"
+        && scope.paired_class_tag == "258"
+        && parameter_scope_payload_length(scope) == Some(314);
+    let operation_offset = if compact {
+        if bytes.get(start + 11..start + 21)? != [0; 10]
+            || bytes.get(start + 26..start + 29)? != [0; 3]
+            || bytes.get(start + 29..start + 31)? != [1, 0]
+            || u32_at(bytes, start + 31) != Some(1)
+            || bytes.get(start + 35) != Some(&1)
+            || read_u64(bytes, start + 36) == Some(0)
+            || bytes.get(start + 43..start + 45)? != [0; 2]
+        {
+            return None;
+        }
+        start + 21
+    } else {
+        if bytes.get(start + 11..start + 19)? != [0; 8]
+            || bytes.get(start + 24) != Some(&0)
+            || bytes.get(start + 26..start + 33)? != [0; 7]
+        {
+            return None;
+        }
+        start + 20
+    };
+    let operation = match u32_at(bytes, operation_offset)? {
         1 => DesignExtrudeOperation::Join,
         2 => DesignExtrudeOperation::Cut,
         3 => DesignExtrudeOperation::Intersect,
@@ -3250,7 +3268,7 @@ pub(crate) fn exact_combine_operation(
     body_selection_record_indexes.extend(tools);
     Some(DesignCombineOperation {
         operation,
-        operation_offset: u64::try_from(start + 20).ok()?,
+        operation_offset: u64::try_from(operation_offset).ok()?,
         keep_tools,
         keep_tools_offset: u64::try_from(start + 25).ok()?,
         body_selection_record_indexes,

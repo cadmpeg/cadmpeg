@@ -6652,6 +6652,32 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
             keep_tools: true,
         })
     );
+
+    let mut compact_bytes = bytes.clone();
+    compact_bytes[4..7].copy_from_slice(b"387");
+    compact_bytes[11..21].fill(0);
+    compact_bytes[21..25].copy_from_slice(&1u32.to_le_bytes());
+    compact_bytes[25] = 0;
+    compact_bytes[26..29].fill(0);
+    compact_bytes[29..31].copy_from_slice(&[1, 0]);
+    compact_bytes[31..35].copy_from_slice(&1u32.to_le_bytes());
+    compact_bytes[35] = 1;
+    compact_bytes[36..44].copy_from_slice(&200u64.to_le_bytes());
+    compact_bytes[44] = 0;
+    let mut compact_scope = scope.clone();
+    compact_scope.class_tag = "387".into();
+    compact_scope.paired_class_tag = "258".into();
+    compact_scope.frame_length = 328;
+    let compact = exact_combine_operation(
+        &compact_bytes,
+        &IndexedRecordOffsets::build(&compact_bytes),
+        &compact_scope,
+    )
+    .expect("compact Combine construction");
+    assert_eq!(compact.operation, DesignExtrudeOperation::Join);
+    assert_eq!(compact.operation_offset, 21);
+    assert!(!compact.keep_tools);
+    assert_eq!(compact.body_selection_record_indexes, [96, 92, 94]);
 }
 
 #[test]
