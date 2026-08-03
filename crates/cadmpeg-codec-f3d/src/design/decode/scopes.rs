@@ -3985,7 +3985,7 @@ fn exact_legacy_shifted_extrude_prologue(
             (offsets, discriminators, extent_for(discriminators)?)
         } else {
             let (first_offset, second_offset) = match reference_count_at.checked_sub(start)? {
-                252 => (106, 110),
+                252 | 262 | 263 => (106, 110),
                 272 => (116, 130),
                 _ => return None,
             };

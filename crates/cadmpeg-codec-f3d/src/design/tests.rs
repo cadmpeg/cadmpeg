@@ -6852,7 +6852,8 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
                  structural_constant: u8,
                  start: u8,
                  reference_padding: Option<usize>,
-                 legacy_side_extents: Option<((u32, u32), bool)>| {
+                 legacy_side_extents: Option<((u32, u32), bool)>,
+                 legacy_reference_count_offset: Option<usize>| {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(b"301");
@@ -6875,12 +6876,13 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         bytes[operation_offset + 13] = structural_constant;
         bytes[operation_offset + 14] = start;
         if legacy_side_extents.is_some() {
-            let reference_count_offset =
+            let reference_count_offset = legacy_reference_count_offset.unwrap_or_else(|| {
                 if legacy_side_extents.is_some_and(|(_, widened)| widened) || extent.0 == 2 {
                     272
                 } else {
                     252
-                };
+                }
+            });
             bytes.resize(reference_count_offset, 0);
         }
         if legacy_side_extents.is_some_and(|(_, widened)| widened)
@@ -6930,7 +6932,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header).unwrap()
     };
 
-    let direct = scope("Extrude", 1, (1, 2), 0, 1, 0, None, None);
+    let direct = scope("Extrude", 1, (1, 2), 0, 1, 0, None, None, None);
     assert_eq!(
         direct.extrude_prologue,
         Some(DesignExtrudePrologue::ReferenceAware {
@@ -6948,7 +6950,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             start_offset: 42,
         })
     );
-    let referenced = scope("Extrude", 3, (2, 0), 0, 1, 1, Some(8), None);
+    let referenced = scope("Extrude", 3, (2, 0), 0, 1, 1, Some(8), None, None);
     assert_eq!(
         referenced.extrude_prologue,
         Some(DesignExtrudePrologue::ReferenceAware {
@@ -6970,7 +6972,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             start_offset: 52,
         })
     );
-    let compact_reference = scope("Extrude", 2, (1, 2), 0, 1, 2, Some(7), None);
+    let compact_reference = scope("Extrude", 2, (1, 2), 0, 1, 2, Some(7), None, None);
     let Some(DesignExtrudePrologue::ReferenceAware {
         reference: Some(reference),
         operation_offset,
@@ -6982,7 +6984,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert_eq!(reference.trailing_zero_count, 7);
     assert_eq!(operation_offset, 37);
 
-    let to_face = scope("Extrusion", 2, (1, 1), 1, 1, 2, None, None);
+    let to_face = scope("Extrusion", 2, (1, 1), 1, 1, 2, None, None, None);
     assert_eq!(to_face.kind, "Extrusion");
     let Some(prologue) = to_face.extrude_prologue else {
         panic!("to-face Extrude prologue");
@@ -6991,14 +6993,34 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert!(prologue.direction_reversed());
     assert_eq!(prologue.start(), DesignExtrudeStart::FromFace);
 
-    let shifted_distance = scope("Extrude", 4, (1, 2), 0, 1, 0, None, Some(((1, 0), false)));
+    let shifted_distance = scope(
+        "Extrude",
+        4,
+        (1, 2),
+        0,
+        1,
+        0,
+        None,
+        Some(((1, 0), false)),
+        None,
+    );
     assert_eq!(
         shifted_distance
             .extrude_prologue
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::OneSidedDistance)
     );
-    let shifted_symmetric = scope("Extrude", 4, (3, 2), 0, 1, 0, None, Some(((1, 0), true)));
+    let shifted_symmetric = scope(
+        "Extrude",
+        4,
+        (3, 2),
+        0,
+        1,
+        0,
+        None,
+        Some(((1, 0), true)),
+        None,
+    );
     assert_eq!(
         shifted_symmetric
             .extrude_prologue
@@ -7012,7 +7034,17 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             ..
         })
     ));
-    let shifted_two_sided = scope("Extrude", 2, (2, 0), 0, 1, 0, None, Some(((1, 1), false)));
+    let shifted_two_sided = scope(
+        "Extrude",
+        2,
+        (2, 0),
+        0,
+        1,
+        0,
+        None,
+        Some(((1, 1), false)),
+        None,
+    );
     assert_eq!(
         shifted_two_sided
             .extrude_prologue
@@ -7020,14 +7052,34 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         Some(DesignExtrudeExtent::TwoSidedDistance)
     );
 
-    let shifted_through_all = scope("Extrude", 2, (1, 0), 1, 1, 0, None, Some(((4, 0), false)));
+    let shifted_through_all = scope(
+        "Extrude",
+        2,
+        (1, 0),
+        1,
+        1,
+        0,
+        None,
+        Some(((4, 0), false)),
+        None,
+    );
     assert_eq!(
         shifted_through_all
             .extrude_prologue
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::OneSidedThroughAll)
     );
-    let shifted_to_face = scope("Extrude", 2, (1, 1), 1, 1, 0, None, Some(((2, 0), true)));
+    let shifted_to_face = scope(
+        "Extrude",
+        2,
+        (1, 1),
+        1,
+        1,
+        0,
+        None,
+        Some(((2, 0), true)),
+        None,
+    );
     assert_eq!(
         shifted_to_face
             .extrude_prologue
@@ -7042,23 +7094,86 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         })
     ));
 
-    let invalid_absent_first_side =
-        scope("Extrude", 2, (3, 0), 0, 1, 0, None, Some(((0, 0), false)));
+    for reference_count_offset in [262, 263] {
+        let shifted_compact_to_face = scope(
+            "Extrude",
+            2,
+            (1, 1),
+            1,
+            1,
+            0,
+            None,
+            Some(((2, 0), false)),
+            Some(reference_count_offset),
+        );
+        assert!(matches!(
+            shifted_compact_to_face.extrude_prologue,
+            Some(DesignExtrudePrologue::LegacyShifted {
+                extent: Some(DesignExtrudeExtent::OneSidedToFace),
+                side_extent_discriminator_offsets: [106, offset],
+                ..
+            }) if offset == u64::try_from(reference_count_offset - 4).unwrap()
+        ));
+    }
+
+    let invalid_absent_first_side = scope(
+        "Extrude",
+        2,
+        (3, 0),
+        0,
+        1,
+        0,
+        None,
+        Some(((0, 0), false)),
+        None,
+    );
     assert_eq!(invalid_absent_first_side.extrude_prologue, None);
 
-    let unrecognized = scope("Extrude", 2, (3, 0), 0, 1, 0, None, None);
+    let unrecognized = scope("Extrude", 2, (3, 0), 0, 1, 0, None, None, None);
     assert_eq!(unrecognized.kind, "Extrude");
     assert_eq!(unrecognized.extrude_prologue, None);
     assert_eq!(
-        scope("Extrude", 2, (3, 0), 2, 1, 0, None, Some(((1, 0), false))).extrude_prologue,
+        scope(
+            "Extrude",
+            2,
+            (3, 0),
+            2,
+            1,
+            0,
+            None,
+            Some(((1, 0), false)),
+            None,
+        )
+        .extrude_prologue,
         None
     );
-    let sheet = scope("Extrude", 2, (3, 0), 0, 0, 0, None, Some(((1, 0), false)))
-        .extrude_prologue
-        .expect("sheet Extrude prologue");
+    let sheet = scope(
+        "Extrude",
+        2,
+        (3, 0),
+        0,
+        0,
+        0,
+        None,
+        Some(((1, 0), false)),
+        None,
+    )
+    .extrude_prologue
+    .expect("sheet Extrude prologue");
     assert!(!sheet.solid_operation());
     assert_eq!(
-        scope("Extrude", 2, (3, 0), 0, 1, 3, None, Some(((1, 0), false))).extrude_prologue,
+        scope(
+            "Extrude",
+            2,
+            (3, 0),
+            0,
+            1,
+            3,
+            None,
+            Some(((1, 0), false)),
+            None,
+        )
+        .extrude_prologue,
         None
     );
 }
