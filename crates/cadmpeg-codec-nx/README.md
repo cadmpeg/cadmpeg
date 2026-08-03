@@ -76,10 +76,12 @@ child-part references and therefore produce no inline geometry.
 
 Ordered feature-operation records, body dependencies, Boolean operations,
 sketch record lanes, arrangements, part attributes, and numeric expressions
-transfer. Complete design history, assembly occurrence placement, materials,
-appearances, entity-owned attributes, tessellation, and native `.prt` writing
-are not supported. See the [format support matrix][support] for current coverage
-and the [format notes][spec] for byte semantics.
+transfer. Validated embedded JPEG previews and TIFF material textures transfer
+as exact document assets. Complete design history, assembly occurrence
+placement, material assignment, appearances, entity-owned attributes,
+tessellation, and native `.prt` writing are not supported. See the [format
+support matrix][support] for current coverage and the [format notes][spec] for
+byte semantics.
 
 The crate also exposes lower-level container, stream, geometry, NURBS, and
 topology modules for tools that need inspection or partial decoding. Most
