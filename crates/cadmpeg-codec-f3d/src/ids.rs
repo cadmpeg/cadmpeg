@@ -233,22 +233,22 @@ pub(crate) fn neutral_parameter_id(
 ) -> cadmpeg_ir::features::ParameterId {
     neutral_parameter_id_parts(
         native_stream(&parameter.id).unwrap_or(DEFAULT_STREAM),
-        parameter.source_ordinal,
+        parameter.record_index,
     )
 }
 
-/// The neutral parameter key from its `stream` and source ordinal, with
+/// The neutral parameter key from its `stream` and indexed-record identity, with
 /// `stream` length-prefixed into a `#{len}:{key}` segment.
 pub(crate) fn neutral_parameter_id_parts(
     stream: &str,
-    source_ordinal: u32,
+    record_index: u32,
 ) -> cadmpeg_ir::features::ParameterId {
     let stream = identity_key_component(stream);
     cadmpeg_ir::features::ParameterId(format!(
         "f3d:model:parameter#{}:{}{}",
         stream.len(),
         stream,
-        source_ordinal,
+        record_index,
     ))
 }
 

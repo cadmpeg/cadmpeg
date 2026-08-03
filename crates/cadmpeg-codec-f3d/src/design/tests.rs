@@ -787,15 +787,39 @@ fn feature_identity_uses_stream_family_ordinal_and_scope_record() {
 }
 
 #[test]
-fn parameter_identity_uses_stream_and_native_source_ordinal() {
+fn parameter_identity_uses_stream_and_native_record_index() {
     let first = neutral_parameter_id_parts("Design/A:12", 3);
     let same = neutral_parameter_id_parts("Design/A:12", 3);
     let different_stream = neutral_parameter_id_parts("Design/A", 123);
-    let different_ordinal = neutral_parameter_id_parts("Design/A:12", 4);
+    let different_record = neutral_parameter_id_parts("Design/A:12", 4);
 
     assert_eq!(first, same);
     assert_ne!(first, different_stream);
-    assert_ne!(first, different_ordinal);
+    assert_ne!(first, different_record);
+}
+
+#[test]
+fn parameter_identity_distinguishes_repeated_source_ordinals() {
+    let mut first = parse_design_parameter(&parameter_record(
+        Some(40),
+        "1 cm",
+        "AlongDistance",
+        Some("cm"),
+        "d9",
+        1.0,
+    ))
+    .expect("first parameter");
+    first.id = "f3d:Design/A:design-parameter#100".into();
+
+    let mut second = first.clone();
+    second.id = "f3d:Design/A:design-parameter#200".into();
+    second.record_index = first.record_index + 1;
+
+    assert_eq!(first.source_ordinal, second.source_ordinal);
+    assert_ne!(
+        crate::ids::neutral_parameter_id(&first),
+        crate::ids::neutral_parameter_id(&second)
+    );
 }
 
 #[test]
@@ -12475,7 +12499,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             },
             ..
         } if actual_sketch == &spatial_sketch.id
-            && actual_parameter == &neutral_parameter_id_parts(stream, 4)
+            && actual_parameter == &neutral_parameter_id_parts(stream, 20)
             && first == &spatial_entities[0].id
             && second == &spatial_entities[1].id
     ));
@@ -13093,12 +13117,8 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
     else {
         panic!("expected repeated recipe-backed dimension")
     };
-    let expected_parameter = format!(
-        "f3d:model:parameter#{}:{}4",
-        stream.len() + 2,
-        stream.replace(':', "%3A")
-    );
-    assert_eq!(projected_parameter.0, expected_parameter);
+    let expected_parameter = neutral_parameter_id_parts(stream, parameter.record_index).0;
+    assert_eq!(&projected_parameter.0, &expected_parameter);
     assert_eq!(measurements.len(), 2);
     assert!(measurements.iter().all(|measurement| matches!(
         measurement,
@@ -13147,7 +13167,7 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
             },
             ..
         }] if entity == &circle.id
-            && actual_parameter == &neutral_parameter_id_parts(stream, 4)
+            && actual_parameter == &neutral_parameter_id_parts(stream, parameter.record_index)
     ));
 
     let curves = [40, 41].map(|record_index| SketchCurveIdentity {
@@ -13467,7 +13487,7 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
             ..
         }] if first == &line.id
             && second == &line.id
-            && actual_parameter == &neutral_parameter_id_parts(stream, 4)
+            && actual_parameter == &neutral_parameter_id_parts(stream, parameter.record_index)
     ));
 
     let mut second_line = line.clone();
@@ -13498,7 +13518,7 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
             },
             ..
         }] if entities.len() == 2
-            && parameter == &neutral_parameter_id_parts(stream, 4)
+            && parameter == &neutral_parameter_id_parts(stream, radial_parameter.record_index)
     ));
 }
 

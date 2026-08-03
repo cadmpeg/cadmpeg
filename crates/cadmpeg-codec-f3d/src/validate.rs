@@ -4718,11 +4718,9 @@ fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
     let owners_by_index = &ctx.owners_by_index;
     let mut parameter_indices = HashSet::new();
-    let mut parameter_ordinals = HashSet::new();
     for parameter in &native.design_parameters {
         let native_stream = design_stream(&parameter.id);
         let unique_index = parameter_indices.insert((native_stream, parameter.record_index));
-        let unique_ordinal = parameter_ordinals.insert((native_stream, parameter.source_ordinal));
         let expected_kind = if parameter.source_kind == "User Parameter" {
             records::DesignParameterKind::User
         } else if parameter.source_kind.contains("Dimension") {
@@ -4770,8 +4768,7 @@ fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && parameter.kind == expected_kind
             && owner_shape_valid
             && offsets_ordered
-            && unique_index
-            && unique_ordinal;
+            && unique_index;
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,
