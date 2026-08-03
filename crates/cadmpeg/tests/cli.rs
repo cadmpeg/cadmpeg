@@ -1347,6 +1347,90 @@ fn validate_report_writes_versioned_result_to_file() {
 }
 
 #[test]
+fn reporting_commands_accept_o_for_the_report_and_force_to_replace_it() {
+    // The overwrite refusal names `--force`, so every command that can hit it
+    // must accept `--force`. `-o` and `--output` name the report path for the
+    // commands whose only output is a report.
+    let dir = tempdir().unwrap();
+    let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
+    let report = dir.path().join("report.json");
+
+    for (command, path_flag) in [
+        (vec!["validate"], "-o"),
+        (vec!["validate"], "--output"),
+        (vec!["diff"], "-o"),
+    ] {
+        fs::write(&report, b"keep").unwrap();
+        let mut arguments = command.clone();
+        arguments.push(input.to_str().unwrap());
+        if command[0] == "diff" {
+            arguments.push(input.to_str().unwrap());
+        }
+        arguments.extend([path_flag, report.to_str().unwrap()]);
+
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(&arguments)
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains("pass --force to overwrite"));
+        assert_eq!(fs::read(&report).unwrap(), b"keep");
+
+        arguments.push("--force");
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(&arguments)
+            .assert()
+            .success();
+        let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+        assert_eq!(value["command"], command[0]);
+    }
+}
+
+#[test]
+fn validate_agrees_between_its_exit_code_printed_summary_and_report() {
+    // A dangling surface reference must reach all three channels and agree
+    // across them: exit 1, the printed error count, and the error-severity
+    // findings under `.validation_report.findings` in the written report.
+    let dir = tempdir().unwrap();
+    let mut ir = unit_cube();
+    let absent = format!("{}-absent", ir.model.faces[0].surface);
+    ir.model.faces[0].surface = absent.into();
+    let input = fixture(dir.path(), "broken.cadir.json", &ir);
+    let report = dir.path().join("report.json");
+
+    let output = Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "validate",
+            input.to_str().unwrap(),
+            "-o",
+            report.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let printed = String::from_utf8(output.stdout).unwrap();
+    let summary = printed
+        .lines()
+        .find(|line| line.starts_with("validation: FAILED"))
+        .unwrap_or_else(|| panic!("{printed}"));
+    let printed_errors: usize = summary
+        .split_once('(')
+        .and_then(|(_, rest)| rest.split_once(" error(s)"))
+        .map_or_else(|| panic!("{summary}"), |(count, _)| count.parse().unwrap());
+
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    let findings = value["validation_report"]["findings"].as_array().unwrap();
+    let reported_errors = findings
+        .iter()
+        .filter(|finding| finding["severity"] == "error" || finding["severity"] == "blocking")
+        .count();
+    assert!(printed_errors > 0, "{summary}");
+    assert_eq!(printed_errors, reported_errors, "{findings:#?}");
+}
+
+#[test]
 fn diff_report_writes_versioned_result_to_file() {
     let dir = tempdir().unwrap();
     let cube = unit_cube();
