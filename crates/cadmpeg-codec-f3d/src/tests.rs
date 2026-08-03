@@ -5715,7 +5715,7 @@ fn synthetic_mixed_smbh() -> Vec<u8> {
     out
 }
 
-/// Wrap an active-slice byte blob into a `.f3d` ZIP as the authoritative `.smbh`.
+/// Wrap an ASM stream byte blob into a `.f3d` ZIP as `Body1.smbh`.
 fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
@@ -24723,6 +24723,9 @@ fn colliding_body_keys_bind_the_smallest_body() {
     );
     assert_eq!(crate::materials::body_for_key(&body_keys, 11), None);
 }
+
+#[path = "golden_tests.rs"]
+mod golden;
 
 #[path = "integration_tests.rs"]
 mod integration_tests;
