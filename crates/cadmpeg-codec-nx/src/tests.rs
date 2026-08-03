@@ -7789,6 +7789,19 @@ fn decode_reports_material_loss_only_for_retained_material_assets() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
 
+    assert_eq!(result.ir.model.assets.len(), 1);
+    let asset = &result.ir.model.assets[0];
+    assert_eq!(asset.name.as_deref(), Some("Steel"));
+    assert_eq!(asset.media_type.as_deref(), Some("image/tiff"));
+    assert!(matches!(
+        &asset.content,
+        cadmpeg_ir::assets::AssetContent::Embedded { data }
+            if data == &[b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 0]
+    ));
+    assert_eq!(
+        asset.native_ref.as_deref(),
+        Some("nx:container:material-texture#0")
+    );
     assert!(result.report.losses.iter().any(|loss| {
         loss.code == LossKind::MaterialNotTransferred
             && loss.message.contains("Embedded material texture assets")

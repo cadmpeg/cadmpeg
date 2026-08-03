@@ -6,6 +6,18 @@
         "appearance_bindings": [],
         "appearances": [],
         "assembly_joints": [],
+        "assets": [
+          {
+            "content": {
+              "data": "SUkqAAgAAAAAAA==",
+              "kind": "embedded"
+            },
+            "id": "nx:container:material-texture#0:asset",
+            "media_type": "image/tiff",
+            "name": "AISI Steel 4340",
+            "native_ref": "nx:container:material-texture#0"
+          }
+        ],
         "attributes": [],
         "bodies": [
           {

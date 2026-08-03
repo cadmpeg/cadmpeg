@@ -9,6 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
@@ -116,6 +117,7 @@ pub(crate) fn attach(
         ir.model.tessellations.push(tessellation);
     }
     NATIVE_CATALOGUE.note_phase(Phase::GroupA, model, annotations);
+    attach_material_texture_assets(ir, model, scan, annotations);
     for attribute in &model.om.part_attributes {
         annotations
             .note(&attribute.id, annotation_stream, attribute.source_offset)
@@ -292,6 +294,53 @@ pub(crate) fn attach(
     namespace.version = namespace.version.max(181);
     NATIVE_CATALOGUE.emit_all(model, namespace)?;
     Ok(())
+}
+
+/// Transfer the complete validated TIFF set atomically. A partial transfer
+/// would make native catalog links appear usable when one of their targets is
+/// absent from the neutral asset arena.
+fn attach_material_texture_assets(
+    ir: &mut CadIr,
+    model: &crate::native::model::NativeModel,
+    scan: &Scan,
+    annotations: &mut AnnotationBuilder,
+) {
+    let assets = model
+        .om
+        .material_texture_assets
+        .iter()
+        .map(|texture| {
+            let start = usize::try_from(texture.source_offset).ok()?;
+            let byte_len = usize::try_from(texture.byte_len).ok()?;
+            let bytes = scan
+                .container
+                .data
+                .get(start..start.checked_add(byte_len)?)?;
+            (sha256_hex(bytes) == texture.sha256).then_some(Asset {
+                id: AssetId(format!("{}:asset", texture.id)),
+                name: Some(texture.name.clone()),
+                media_type: Some("image/tiff".to_string()),
+                content: AssetContent::Embedded {
+                    data: bytes.to_vec(),
+                },
+                native_ref: Some(texture.id.clone()),
+            })
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(assets) = assets else {
+        return;
+    };
+    let stream = annotations.stream("nx:container");
+    for (texture, asset) in model.om.material_texture_assets.iter().zip(&assets) {
+        annotations
+            .note(&asset.id.0, stream, texture.source_offset)
+            .tag("MATERIAL_TEXTURE_ASSET");
+        annotations.exactness(&asset.id.0, Exactness::ByteExact);
+        annotations.derived(&asset.id.0, "id");
+        annotations.derived(&asset.id.0, "media_type");
+        annotations.derived(&asset.id.0, "native_ref");
+    }
+    ir.model.assets.extend(assets);
 }
 
 fn attach_active_configuration_parameter_values(

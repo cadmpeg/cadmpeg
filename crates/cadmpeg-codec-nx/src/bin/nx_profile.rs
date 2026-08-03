@@ -63,6 +63,7 @@ struct RederivationBoundary {
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct EntityCounts {
+    assets: usize,
     bodies: usize,
     faces: usize,
     edges: usize,
@@ -78,6 +79,7 @@ struct EntityCounts {
 impl EntityCounts {
     fn from_ir(ir: &CadIr) -> Self {
         Self {
+            assets: ir.model.assets.len(),
             bodies: ir.model.bodies.len(),
             faces: ir.model.faces.len(),
             edges: ir.model.edges.len(),
@@ -92,6 +94,7 @@ impl EntityCounts {
     }
 
     fn add(&mut self, other: &Self) {
+        self.assets += other.assets;
         self.bodies += other.bodies;
         self.faces += other.faces;
         self.edges += other.edges;

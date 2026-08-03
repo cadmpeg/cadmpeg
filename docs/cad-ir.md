@@ -188,7 +188,8 @@ more than once when the source serializes repeated consumption slots.
 
 NX datum-coordinate-system payloads retain complete framed scalar fields with exact source offsets.
 
-NX native data also retains embedded TIFF material textures and exact QAF
+NX embedded TIFF material textures transfer to exact neutral document assets.
+NX native data retains their TIFF metadata and exact QAF
 stored-path-to-logical-material-path catalog relations. These relations identify
 texture assets and logical names; they do not assign appearances to bodies or
 faces.
