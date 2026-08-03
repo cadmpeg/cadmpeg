@@ -101,6 +101,7 @@ pub fn inspect(
     forced: Option<ForcedInput>,
     json: bool,
     report_path: Option<&Path>,
+    force: bool,
     limits: cadmpeg_codec_core::decode::ResourceLimits,
 ) -> Result<()> {
     let prefix = read_prefix(path, DETECTION_PREFIX_LEN)?;
@@ -133,7 +134,7 @@ pub fn inspect(
     write_json_report(
         path,
         report_path,
-        false,
+        force,
         "inspect",
         &serde_json::json!({
             "confidence": confidence,
@@ -228,6 +229,7 @@ pub fn validate_cmd(
     args: &DecodeArgs,
     json: bool,
     report_path: Option<&Path>,
+    force: bool,
 ) -> Result<()> {
     let loaded = loader::load_artifact(registry, path, args.options(), forced)?;
     let mut stdout = io::stdout();
@@ -243,7 +245,7 @@ pub fn validate_cmd(
     write_json_report(
         path,
         report_path,
-        false,
+        force,
         "validate",
         &serde_json::json!({
             "decode_report": loaded.decode_report(),
@@ -410,6 +412,7 @@ pub fn diff(
     args: &DecodeArgs,
     json: bool,
     report_path: Option<&Path>,
+    force: bool,
 ) -> Result<ExitCode> {
     let left = loader::load_artifact(registry, a.path, args.options(), a.forced)?;
     let right = loader::load_artifact(registry, b.path, args.options(), b.forced)?;
@@ -419,7 +422,7 @@ pub fn diff(
     write_json_report(
         a.path,
         report_path,
-        false,
+        force,
         "diff",
         &serde_json::json!({
             "different": different,

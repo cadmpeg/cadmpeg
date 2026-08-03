@@ -68,12 +68,13 @@ images; otherwise selection declines and complete primary-writer lineage falls
 back to terminal partition images. Assembly files can contain only external
 child-part references and produce no inline geometry.
 
-Embedded JT shape-LOD segments transfer as display tessellation. Ordered
-feature-operation records, body dependencies, Boolean operations, sketch record
-lanes, named arrangements and configurations, part attributes, external
-dependency inspection, and numeric expressions transfer. Coverage detail lives
-in the [format-support profile][support]. Byte semantics live in the
-[format notes][spec].
+Embedded JT shape-LOD segments transfer as display tessellation. Validated
+embedded JPEG previews and TIFF material textures transfer as exact document
+assets. Ordered feature-operation records, body dependencies, Boolean
+operations, sketch record lanes, named arrangements and configurations, part
+attributes, external dependency inspection, and numeric expressions transfer.
+Coverage detail lives in the [format-support profile][support]. Byte semantics
+live in the [format notes][spec].
 
 The crate also exposes lower-level container, stream, geometry, NURBS, and
 topology modules for inspection and partial decoding. Most applications should

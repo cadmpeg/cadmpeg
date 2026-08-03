@@ -117,6 +117,13 @@ cadmpeg inspect diff probe-a.prt probe-b.prt            # positional byte diff
 default. `read --count N` walks a record array, stepping `--stride` bytes and
 defaulting to the scalar width.
 
+Common alternative spellings are accepted: `--length` for `--len`, `--min-len`
+and `--min-length` for `--min`, `--start` for `--offset`, and `-n` for
+`--count`. `cadmpeg inspect bytes <tool>` runs the same tool as `cadmpeg inspect
+<tool>`. `find` needs its pattern on `--hex`, `--ascii`, or `--utf16le`, because
+a bare word does not say how to encode it; the tool stops at `--max` hits and
+says so, and `--max 0` reports every hit.
+
 `--layout` is a comma-separated record spec with no implicit alignment:
 
 | Field                        | Meaning                                             |
@@ -193,6 +200,12 @@ cadmpeg convert bracket.f3d -o bracket.step \
 The command report contains decode, validation, and export sections when those
 stages ran. `inspect --json`, `validate --json`, and `diff --json` write
 versioned JSON directly to standard output.
+
+`inspect`, `validate`, and `diff` produce no artifact beside the report, so they
+also accept `-o` and `--output` for the report path. Every command refuses to
+replace an existing report or artifact unless `--force` is present. Validation
+findings live under `.validation_report.findings`; the printed error count and
+exit status 1 count the same `error` and `blocking` findings.
 
 ## Exit status
 

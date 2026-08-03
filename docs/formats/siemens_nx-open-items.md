@@ -230,7 +230,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What geometric quantities and coordinate spaces do the framed scalar pairs in a `SKETCH` construction payload represent?
 
-**Known.** `siemens_nx.md` §2 "An operation label equal to `SKETCH` denotes a sketch history operation." `siemens_nx.md` §7.1 "A sketch payload scalar field is" and `siemens_nx.md` §7.1 "A sketch fixed pair has one of three exact forms:" define sketch record identity and the framed payload lanes but do not assign a model-space frame, sketch entity, or constraint role from equal scalar values.
+**Known.** `siemens_nx.md` §2 "An operation label equal to `SKETCH` denotes a sketch history operation." `siemens_nx.md` §7.1 "A sketch payload scalar field is" and `siemens_nx.md` §7.1 "A sketch fixed pair has one of four exact forms:" define sketch record identity and the framed payload lanes but do not assign a model-space frame, sketch entity, or constraint role from equal scalar values.
 
 **Need.** We must know the roles to construct neutral sketch geometry and constraints.
 
@@ -284,9 +284,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### OM-09. Embedded operation common-frame ownership
 
-**Question.** Which operation owns each embedded common frame, and what does each field in its eight-byte state lane mean?
+**Question.** Which operation owns each embedded common frame, and what do the state-lane fields other than `m_modifiesParasolidData` mean?
 
-**Known.** `siemens_nx.md` §7.1 "A bounded operation payload's terminal common-frame suffix is" and `siemens_nx.md` §7.1 "An exact common frame is" define the exact frame and state-lane boundaries for the admitted operation families.
+**Known.** `siemens_nx.md` §7.1 "A bounded operation payload's terminal common-frame suffix is" and `siemens_nx.md` §7.1 "An exact common frame is" define the exact frame and state-lane boundaries for the admitted operation families. The fourth state byte is the Boolean `m_legacyInactiveModules` field. The fifth state byte is the Boolean `m_modifiesParasolidData` field. The sixth and seventh state bytes are the exact two-byte `m_splitTrackingData` representation. The eighth state byte is the unsigned `m_groupCount` field. Legacy module inactivity is not feature suppression.
 
 **Need.** We must know ownership and field roles to attach the state to the correct operation.
 
@@ -483,7 +483,7 @@ placement, UUID, and state fields.
 does an `On` or `Off` member control feature suppression, visibility, or another
 state domain?
 
-**Known.** `siemens_nx.md` §2.2 "`/Root/UG_PART/LastSavedToggleInfoStream` is one atomic payload:" defines the complete counted stream envelope and retains each 32-hex-digit identity and `On`/`Off` state exactly. The toggle identities have no proven join to feature-operation records.
+**Known.** `siemens_nx.md` §2.2 "`/Root/UG_PART/LastSavedToggleInfoStream` is one atomic payload:" defines the complete counted stream envelope and retains each 32-hex-digit identity and `On`/`Off` state exactly. The member count is independent of the feature-operation-label count. The toggle identities have no proven join to feature-operation records.
 
 **Need.** We must identify the addressed object namespace before projecting any
 member as a neutral suppression or visibility state.

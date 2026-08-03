@@ -205,6 +205,154 @@ fn find_reports_pattern_string_and_wildcard_hits() {
 }
 
 #[test]
+fn find_rejects_a_positional_pattern_and_names_the_three_flags() {
+    let dir = tempdir().unwrap();
+    let file = write(dir.path(), "hits.bin", b"prefix");
+
+    // A bare word does not say how to encode it, so the positional form stays
+    // an error. The error names the flag that carries each encoding.
+    cadmpeg()
+        .args(["inspect", "find", file.to_str().unwrap(), "prefix"])
+        .assert()
+        .code(2)
+        .stderr(
+            predicate::str::contains("--hex prefix")
+                .and(predicate::str::contains("--ascii prefix"))
+                .and(predicate::str::contains("--utf16le prefix")),
+        );
+}
+
+#[test]
+fn find_notes_truncation_after_the_last_hit() {
+    let dir = tempdir().unwrap();
+    // Four single-byte hits at offsets 0..4, of which `--max 2` reports two.
+    let file = write(dir.path(), "many.bin", b"aaaa");
+
+    cadmpeg()
+        .args([
+            "inspect",
+            "find",
+            file.to_str().unwrap(),
+            "--ascii",
+            "a",
+            "--max",
+            "2",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "note: output truncated at 2 matches; pass --max 0 for all",
+        ));
+
+    // Every hit fits under the default limit, so no note is printed.
+    cadmpeg()
+        .args(["inspect", "find", file.to_str().unwrap(), "--ascii", "a"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("hits: 4").and(predicate::str::contains("truncated").not()),
+        );
+}
+
+#[test]
+fn guessed_flag_spellings_reach_the_same_arguments() {
+    let dir = tempdir().unwrap();
+    let bytes: Vec<u8> = (0u8..64).collect();
+    let counter = write(dir.path(), "counter.bin", &bytes);
+    let text = write(dir.path(), "text.bin", b"\x00document\x00");
+
+    // `--length` and `--start` are aliases of `--len` and `--offset`.
+    let expected = "00000010  10 11 12 13 14 15 16 17  18 19 1a 1b 1c 1d 1e 1f  \
+                    |................|\n";
+    for flags in [["--offset", "--len"], ["--start", "--length"]] {
+        cadmpeg()
+            .args([
+                "inspect",
+                "hex",
+                counter.to_str().unwrap(),
+                flags[0],
+                "0x10",
+                flags[1],
+                "0x10",
+            ])
+            .assert()
+            .success()
+            .stdout(expected);
+    }
+
+    // `--min-len` and `--min-length` are aliases of `--min`.
+    for flag in ["--min", "--min-len", "--min-length"] {
+        cadmpeg()
+            .args(["inspect", "strings", text.to_str().unwrap(), flag, "8"])
+            .assert()
+            .success()
+            .stdout("0x00000001  ascii     \"document\"\n");
+    }
+
+    // `-n` is the short form of `--count` on both `read` and `struct`.
+    cadmpeg()
+        .args([
+            "inspect",
+            "read",
+            counter.to_str().unwrap(),
+            "--type",
+            "u8",
+            "-n",
+            "2",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("0x00000000").and(predicate::str::contains("0x00000001")));
+    cadmpeg()
+        .args([
+            "inspect",
+            "struct",
+            counter.to_str().unwrap(),
+            "--layout",
+            "u8:byte",
+            "-n",
+            "2",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("record 0").and(predicate::str::contains("record 1")));
+}
+
+#[test]
+fn the_bytes_group_prefix_reaches_the_tool_and_its_help() {
+    let dir = tempdir().unwrap();
+    let file = write(dir.path(), "counter.bin", &(0u8..16).collect::<Vec<u8>>());
+
+    // `inspect bytes hex --help` prints the tool's help rather than a
+    // subcommand-conflict error. The usage line carries both path segments and
+    // the arguments belong to `hex`. The predicate omits the leading executable
+    // name, which clap takes from `argv[0]` and renders as `cadmpeg.exe` on
+    // Windows.
+    cadmpeg()
+        .args(["inspect", "bytes", "hex", "--help"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("inspect bytes hex [OPTIONS] <FILE>")
+                .and(predicate::str::contains("--width <WIDTH>")),
+        );
+
+    // The grouped form runs the same tool as the direct form.
+    let expected = "00000000  00 01 02 03 04 05 06 07  08 09 0a 0b 0c 0d 0e 0f  \
+                    |................|\n";
+    cadmpeg()
+        .args(["inspect", "bytes", "hex", file.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(expected);
+    cadmpeg()
+        .args(["inspect", "hex", file.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(expected);
+}
+
+#[test]
 fn find_rejects_a_malformed_pattern_and_a_missing_needle() {
     let dir = tempdir().unwrap();
     let file = write(dir.path(), "empty.bin", b"");

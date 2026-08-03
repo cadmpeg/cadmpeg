@@ -1475,8 +1475,9 @@ fn nx_replace_face_completeness_requires_resolved_disjoint_operands() {
 fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature,
-        FeatureDefinition, FeatureId, Length, ProfileRef, Termination,
+        FeatureDefinition, FeatureId, FeatureResultTopology, Length, ProfileRef, Termination,
     };
+    use cadmpeg_ir::ids::FeatureResultTopologyId;
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let output = ir.model.bodies[0].id.clone();
@@ -1518,7 +1519,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
         source_text: None,
         source_content: Vec::new(),
         outputs: vec![output],
-        definition: complete,
+        definition: complete.clone(),
         native_ref: None,
     });
 
@@ -1554,6 +1555,28 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("extrude (1)"));
     }
+
+    ir.model.features[0].definition = complete;
+    ir.model.features[0].outputs.clear();
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("extrude (1)"));
+
+    ir.model
+        .feature_result_topologies
+        .push(FeatureResultTopology {
+            id: FeatureResultTopologyId("test:feature-result#extrude".into()),
+            output_of: ir.model.features[0].id.clone(),
+            bodies: vec!["test:feature-local-body#0".into()],
+            faces: Vec::new(),
+            edges: Vec::new(),
+            vertices: Vec::new(),
+            native_ref: Some("test:native-body-writer#0".into()),
+        });
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
 }
 
 #[test]
@@ -1900,9 +1923,8 @@ fn nx_sketch_completeness_requires_planar_space() {
     let mut losses = Vec::new();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
     assert!(losses.iter().any(|loss| {
-        loss.message.contains(
-            "construction fields or output lineage remain unresolved or native-only: sketch (1)",
-        )
+        loss.message
+            .contains("incomplete neutral construction fields: sketch (1)")
     }));
 }
 
@@ -2370,6 +2392,38 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 }
 
 #[test]
+fn nx_exact_empty_base_feature_is_a_complete_replay_boundary() {
+    use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
+
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#initial-bodies".into()),
+        ordinal: 0,
+        name: Some("Retained history input".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Resolved {
+                bodies: Vec::new(),
+                native: "nx:segment-body-bindings".into(),
+            },
+        },
+        native_ref: None,
+    });
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+
+    assert!(losses.is_empty());
+}
+
+#[test]
 fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
     use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId, Length};
 
@@ -2801,6 +2855,27 @@ fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
 }
 
 #[test]
+fn sketch_fixed_pair_parser_accepts_the_three_member_branch() {
+    let discriminator = [
+        0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
+    ];
+    let mut bytes = discriminator.to_vec();
+    bytes.push(0x30);
+    bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0x00, 0x30]);
+    bytes.extend_from_slice(&[0xc0, 0, 0, 0, 0, 0, 0]);
+
+    let pairs = crate::om::sketch_payload_fixed_pairs(&bytes);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].values, [0.5, -0.5]);
+    assert_eq!(pairs[0].value_offsets, [15, 24]);
+    assert_eq!(pairs[0].discriminator, discriminator);
+
+    bytes[14] = 0x02;
+    assert!(crate::om::sketch_payload_fixed_pairs(&bytes).is_empty());
+}
+
+#[test]
 fn sketch_mixed_pair_parser_requires_q1_55_then_shifted_binary32() {
     let mut bytes = vec![0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84, 0x30];
     bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);
@@ -2838,6 +2913,32 @@ fn datum_csys_fixed_pair_requires_its_exact_branch_discriminator() {
     assert_eq!(pairs[0].raw_values[0], [0x40, 0, 0, 0, 0, 0, 0]);
 
     bytes[0] = 0x08;
+    assert!(crate::om::datum_csys_payload_fixed_pairs(&bytes).is_empty());
+}
+
+#[test]
+fn datum_csys_fixed_pair_accepts_the_continuation_branch() {
+    let discriminator = [
+        0x80, 0x8d, 0x00, 0xff, 0x80, 0x81, 0x01, 0x02, 0x01, 0x00, 0x00, 0x00, 0x87, 0xd7, 0x01,
+        0x01, 0x01, 0x01, 0x02, 0xa5, 0x30, 0x21, 0xa5, 0x30, 0x21, 0x01, 0x00, 0x01, 0xaf, 0xff,
+        0xdf, 0x02, 0x01, 0x02,
+    ];
+    let mut bytes = discriminator.to_vec();
+    bytes.push(0x30);
+    bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0x00, 0x30]);
+    bytes.extend_from_slice(&[0xc0, 0, 0, 0, 0, 0, 0]);
+
+    let pairs = crate::om::datum_csys_payload_fixed_pairs(&bytes);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].values, [0.5, -0.5]);
+    assert_eq!(
+        pairs[0].value_offsets,
+        [discriminator.len(), discriminator.len() + 9]
+    );
+    assert_eq!(pairs[0].discriminator, discriminator);
+
+    bytes[1] = 0x8c;
     assert!(crate::om::datum_csys_payload_fixed_pairs(&bytes).is_empty());
 }
 
@@ -2967,6 +3068,45 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
     assert_eq!(references.first, [231, 232]);
     assert_eq!(references.second, [233, 234]);
     assert_eq!(references.offsets, [[216, 218], [236, 238]]);
+    assert_eq!(references.prefixes, [None, None]);
+
+    let first_prefix = [0x50, 0x10, 0x00, 0x04, 0x50, 0x49, 0x66, 0x2e];
+    let second_prefix = [0x50, 0x21, 0x66, 0x62, 0x50, 0x49, 0x66, 0x2e];
+    let mut wrapped = Vec::new();
+    wrapped.extend_from_slice(&shifted(508.0));
+    wrapped.extend_from_slice(&shifted(38.1));
+    wrapped.extend_from_slice(&first_prefix);
+    wrapped.extend_from_slice(&[0xf0, 0xe7, 0xf0, 0xe8]);
+    wrapped.extend_from_slice(&shifted(508.0));
+    wrapped.extend_from_slice(&shifted(38.1));
+    wrapped.extend_from_slice(&second_prefix);
+    wrapped.extend_from_slice(&[0xf0, 0xe9, 0xf0, 0xea]);
+    wrapped.extend_from_slice(&[0x04, 0x08]);
+    wrapped.extend_from_slice(b"Hole_X\0");
+    let wrapped_references =
+        crate::om::simple_hole_repeated_scalar_lane_block_references(crate::om::OperationRecord {
+            bytes: &wrapped,
+            payload: &wrapped,
+            ..record
+        })
+        .unwrap();
+    assert_eq!(wrapped_references.first, [231, 232]);
+    assert_eq!(wrapped_references.second, [233, 234]);
+    assert_eq!(wrapped_references.offsets, [[224, 226], [252, 254]]);
+    assert_eq!(
+        wrapped_references.prefixes,
+        [Some(first_prefix), Some(second_prefix)]
+    );
+    let mut malformed_wrapper = wrapped.clone();
+    malformed_wrapper[16] ^= 1;
+    assert!(
+        crate::om::simple_hole_repeated_scalar_lane_block_references(crate::om::OperationRecord {
+            bytes: &malformed_wrapper,
+            payload: &malformed_wrapper,
+            ..record
+        },)
+        .is_none()
+    );
 
     let mut null = payload.clone();
     null[16] = 0xff;
@@ -5612,6 +5752,59 @@ fn om_offset_store_index_rows_require_complete_exact_frames() {
 }
 
 #[test]
+fn om_color_table_requires_complete_names_indices_and_rgb_atoms() {
+    let mut bytes = vec![0x02, 0x80, 0xd9, 0x01];
+    for ordinal in 0..=216 {
+        let name = if ordinal == 0 {
+            "Background".to_string()
+        } else {
+            format!("Color {ordinal}")
+        };
+        bytes.push(u8::try_from(name.len() + 2).unwrap());
+        bytes.extend_from_slice(name.as_bytes());
+        bytes.push(0);
+    }
+    bytes.extend_from_slice(&[
+        0x02, 0x14, 0xff, 0x06, 0x00, 0xf0, 0x02, 0x80, 0x9d, 0x80, 0xc7, 0x00, 0xc0, 0x13, 0x0a,
+        0xc6, 0x01, 0x80, 0xd9, 0x80, 0xc8, 0x01, 0x01, 0x01,
+    ]);
+    for color_index in 1u16..=216 {
+        bytes.push(0x05);
+        if color_index < 128 {
+            bytes.push(color_index as u8);
+        } else {
+            bytes.extend_from_slice(&[0x80, (color_index - 1) as u8]);
+        }
+        bytes.extend_from_slice(&[0x01, 0x80, 0xc8]);
+        if color_index == 2 {
+            bytes.extend_from_slice(&shifted_f64_bytes(2.0));
+            let mut binary32 = 1.0_f32.to_be_bytes();
+            binary32[0] += 0x10;
+            bytes.extend_from_slice(&binary32);
+            bytes.push(0x00);
+        } else {
+            bytes.extend_from_slice(&[0x01, 0x01, 0x01]);
+        }
+    }
+
+    let tables = crate::om::color_tables(&bytes);
+    assert_eq!(tables.len(), 1);
+    assert_eq!(tables[0].background_name, "Background");
+    assert_eq!(tables[0].background_rgb, [1.0, 1.0, 1.0]);
+    assert_eq!(tables[0].definitions.len(), 216);
+    assert_eq!(tables[0].definitions[0].name, "Color 1");
+    assert_eq!(tables[0].definitions[0].rgb, [1.0, 1.0, 1.0]);
+    assert_eq!(tables[0].definitions[1].rgb, [0.5, 0.25, 0.0]);
+    assert_eq!(tables[0].definitions[127].raw_color_index, [0x80, 0x7f]);
+
+    let mut malformed = bytes.clone();
+    *malformed.last_mut().unwrap() = 0x02;
+    assert!(crate::om::color_tables(&malformed).is_empty());
+    let truncated = &bytes[..bytes.len() - 1];
+    assert!(crate::om::color_tables(truncated).is_empty());
+}
+
+#[test]
 fn om_offset_store_linked_index_rows_require_complete_exact_frames() {
     let row = b"\x02\x0b\x83\x93\x93\x8c\x16\x24\xff\xff\x90\xfe\x20\x20\x41\x00\x47\x03\x04\x01\xc0\x44\x04\x00";
     let rows = crate::om::offset_store_linked_index_rows(row);
@@ -7568,6 +7761,7 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
         ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
         ("/Root/images/preview", preview.to_vec()),
     ]);
+    let container_only_file = file.clone();
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
@@ -7581,10 +7775,47 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
         attributes["jpeg_preview_0_byte_len"],
         preview.len().to_string()
     );
+    assert_eq!(result.ir.model.assets.len(), 1);
+    let asset = &result.ir.model.assets[0];
+    assert_eq!(asset.name.as_deref(), Some("preview.jpg"));
+    assert_eq!(asset.media_type.as_deref(), Some("image/jpeg"));
+    assert_eq!(
+        asset.native_ref.as_deref(),
+        Some("nx:container:jpeg-preview#0")
+    );
+    assert!(matches!(
+        &asset.content,
+        cadmpeg_ir::assets::AssetContent::Embedded { data } if data == &preview
+    ));
+    let container_only_result = NxCodec
+        .decode(
+            &mut Cursor::new(container_only_file),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        container_only_result.ir.model.assets,
+        result.ir.model.assets
+    );
 
     let mut malformed = preview;
     malformed[10..12].copy_from_slice(&16u16.to_be_bytes());
     assert!(crate::decode::jpeg_dimensions(&malformed).is_none());
+    let malformed_file = prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+        ("/Root/images/preview", malformed.to_vec()),
+    ]);
+    let malformed_result = NxCodec
+        .decode(&mut Cursor::new(malformed_file), &DecodeOptions::default())
+        .unwrap();
+    assert!(malformed_result.ir.model.assets.is_empty());
+    let malformed_unknowns = malformed_result.ir.native_unknowns("nx").unwrap();
+    assert!(malformed_unknowns
+        .iter()
+        .any(|unknown| unknown.id.0 == "nx:container:jpeg-preview#0"));
 }
 
 #[test]
@@ -7774,7 +8005,7 @@ fn decode_reports_missing_assembly_placements_only_for_external_references() {
 }
 
 #[test]
-fn decode_reports_material_loss_only_for_retained_material_assets() {
+fn retained_material_library_assets_do_not_imply_an_assignment_loss() {
     let file = prt_with_named_payloads(&[
         (
             "/Root/UG_PART/UG_PART",
@@ -7789,10 +8020,24 @@ fn decode_reports_material_loss_only_for_retained_material_assets() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.report.losses.iter().any(|loss| {
-        loss.code == LossKind::MaterialNotTransferred
-            && loss.message.contains("Embedded material texture assets")
-    }));
+    assert_eq!(result.ir.model.assets.len(), 1);
+    let asset = &result.ir.model.assets[0];
+    assert_eq!(asset.name.as_deref(), Some("Steel"));
+    assert_eq!(asset.media_type.as_deref(), Some("image/tiff"));
+    assert!(matches!(
+        &asset.content,
+        cadmpeg_ir::assets::AssetContent::Embedded { data }
+            if data == &[b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 0]
+    ));
+    assert_eq!(
+        asset.native_ref.as_deref(),
+        Some("nx:container:material-texture#0")
+    );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| loss.code != LossKind::MaterialNotTransferred));
 }
 
 #[test]
@@ -13887,7 +14132,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     let mut losses = Vec::new();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
-    assert_eq!(losses.len(), 6);
+    assert_eq!(losses.len(), 7);
     assert_eq!(losses[0].code.category(), LossCategory::DesignIntent);
     assert!(losses[0]
         .message
@@ -13903,12 +14148,13 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     assert!(losses[3].message.contains("loft (2)"));
     assert_eq!(losses[4].code.category(), LossCategory::DesignIntent);
     assert!(losses[4].message.contains("block (1)"));
-    assert!(losses[4].message.contains("delete body (1)"));
-    assert!(losses[4].message.contains("sketch (1)"));
     assert!(losses[4].message.contains("sweep (1)"));
     assert_eq!(losses[5].code.category(), LossCategory::DesignIntent);
-    assert!(losses[5].message.contains("1 NX sketch history feature"));
-    assert!(losses[5].message.contains("1 have no neutral sketch graph"));
+    assert!(losses[5].message.contains("delete body (1)"));
+    assert!(losses[5].message.contains("sketch (1)"));
+    assert_eq!(losses[6].code.category(), LossCategory::DesignIntent);
+    assert!(losses[6].message.contains("1 NX sketch history feature"));
+    assert!(losses[6].message.contains("1 have no neutral sketch graph"));
 
     let sketch_id = cadmpeg_ir::sketches::SketchId("test:sketch#0".into());
     ir.model.sketches.push(cadmpeg_ir::sketches::Sketch {
@@ -13930,8 +14176,9 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     losses.clear();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
-    assert_eq!(losses.len(), 5);
-    assert!(!losses[4].message.contains("sketch"));
+    assert_eq!(losses.len(), 6);
+    assert!(losses[4].message.contains("block (1)"));
+    assert!(!losses[5].message.contains("sketch"));
 }
 
 #[path = "integration_tests.rs"]
@@ -14084,6 +14331,7 @@ mod golden {
         "display_jt_coordinate_array_headers",
         "display_jt_documents",
         "display_jt_geometric_transform_attributes",
+        "display_jt_material_attributes",
         "display_jt_group_node_data",
         "display_jt_indices",
         "display_jt_initial_face_degree_symbols",
@@ -14132,6 +14380,7 @@ mod golden {
         "feature_body_segment_uses",
         "feature_boolean_operations",
         "feature_datum_csys_block_uses",
+        "feature_datum_csys_column_row_uses",
         "feature_datum_csys_constructions",
         "feature_datum_csys_descriptors",
         "feature_datum_csys_payload_fixed_pairs",
@@ -14271,7 +14520,11 @@ mod golden {
         "parasolid_topology_attribute_list_references",
         "parasolid_trimmed_curve_records",
         "part_attributes",
+        "part_color_definitions",
+        "part_color_tables",
+        "rm_display_color_assignments",
         "persistent_handles",
+        "rm_creation_display_data_relations",
         "rmfastload_object_id_tables",
         "rmfastload_object_ids",
         "saved_toggle_entries",
@@ -14982,7 +15235,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (223), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (229), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -14993,13 +15246,13 @@ mod golden {
 
         use crate::native::catalogue::CATALOGUE;
 
-        assert_eq!(CATALOGUE.len(), 223, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 229, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE
                 .iter()
                 .filter(|row| row.phase == Phase::GroupA)
                 .count(),
-            106,
+            107,
             "group A family count"
         );
         assert_eq!(
