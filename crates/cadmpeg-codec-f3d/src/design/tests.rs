@@ -18821,6 +18821,21 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(alignment.angle, 0.25);
     assert_eq!(alignment.offset, [4.0, 5.0, 6.0]);
     assert_eq!(alignment.owner_record_indices, [60, 61, 62, 63]);
+
+    let mut legacy_alignment_owners = placement_and_alignment_owners.clone();
+    legacy_alignment_owners.extend([owner(64, 8, 0.5, 605), owner(65, 9, 2.0, 606)]);
+    scope.reference_members = vec![50, 51, 52, 53, 60, 61, 62, 63, 64, 65];
+    let alignment = exact_assembly_alignment(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &legacy_alignment_owners,
+    )
+    .expect("legacy assembly axial alignment lanes");
+    assert_eq!(alignment.angle, 0.5);
+    assert_eq!(alignment.offset, [0.0, 0.0, 2.0]);
+    assert_eq!(alignment.owner_record_indices, [64, 65]);
+    assert_eq!(alignment.value_offsets, [605, 606]);
     scope.reference_members = vec![50, 51, 52, 53];
 
     let mut assembly_bytes = vec![0_u8; 648];
@@ -18920,6 +18935,42 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     .expect("compact assembly operand frames");
     assert_eq!(legacy_frames[0].reference_offset, 25);
     assert_eq!(legacy_frames[0].transform_offset, 36);
+
+    let mut axial_assembly_bytes = vec![0_u8; 772];
+    axial_assembly_bytes[..11].copy_from_slice(&assembly_bytes[..11]);
+    axial_assembly_bytes[20..25].copy_from_slice(&[1, 0, 0, 0, 0]);
+    for (axial_reference, axial_transform, modern_reference, modern_transform) in
+        [(28, 39, 28, 40), (167, 178, 168, 180)]
+    {
+        axial_assembly_bytes[axial_reference..axial_reference + 5]
+            .copy_from_slice(&assembly_bytes[modern_reference..modern_reference + 5]);
+        axial_assembly_bytes[axial_transform..axial_transform + 128]
+            .copy_from_slice(&assembly_bytes[modern_transform..modern_transform + 128]);
+    }
+    axial_assembly_bytes.extend_from_slice(&3_u32.to_le_bytes());
+    axial_assembly_bytes.extend_from_slice(b"261");
+    axial_assembly_bytes.extend_from_slice(&scope_record_index.to_le_bytes());
+    let axial_assembly_scope = DesignParameterScope {
+        frame_length: 772,
+        paired_byte_offset: 772,
+        paired_class_tag: "261".into(),
+        reference_members: vec![50, 51, 52, 53, 60, 61, 62, 63, 64, 65],
+        ..scope.clone()
+    };
+    let axial_alignment = exact_assembly_alignment(
+        &axial_assembly_bytes,
+        &IndexedRecordOffsets::build(&axial_assembly_bytes),
+        &axial_assembly_scope,
+        &legacy_alignment_owners,
+    )
+    .expect("legacy assembly alignment and operand frames");
+    assert_eq!(axial_alignment.angle, 0.5);
+    assert_eq!(axial_alignment.offset, [0.0, 0.0, 2.0]);
+    let axial_frames = axial_alignment.operand_frames.unwrap();
+    assert_eq!(axial_frames[0].reference_offset, 29);
+    assert_eq!(axial_frames[0].transform_offset, 39);
+    assert_eq!(axial_frames[1].reference_offset, 168);
+    assert_eq!(axial_frames[1].transform_offset, 178);
 
     let mut compact_bytes = assembly_bytes[..627].to_vec();
     compact_bytes.extend_from_slice(&3_u32.to_le_bytes());

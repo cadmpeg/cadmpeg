@@ -387,36 +387,51 @@ pub(crate) fn exact_assembly_alignment(
         return None;
     }
     let alignment_lanes = match lanes.len() {
-        4 => lanes.as_slice(),
+        4 => &lanes[..],
         8 => &lanes[4..],
+        10 => &lanes[8..],
         _ => return None,
     };
-    let [angle, offset_x, offset_y, offset_z] = alignment_lanes else {
-        return None;
+    let (angle, offset, owner_record_indices, value_offsets) = match alignment_lanes {
+        [angle, offset_x, offset_y, offset_z] => (
+            *angle,
+            [
+                offset_x.evaluated_value,
+                offset_y.evaluated_value,
+                offset_z.evaluated_value,
+            ],
+            vec![
+                angle.record_index,
+                offset_x.record_index,
+                offset_y.record_index,
+                offset_z.record_index,
+            ],
+            vec![
+                angle.evaluated_value_offset,
+                offset_x.evaluated_value_offset,
+                offset_y.evaluated_value_offset,
+                offset_z.evaluated_value_offset,
+            ],
+        ),
+        [angle, axial_offset] => (
+            *angle,
+            [0.0, 0.0, axial_offset.evaluated_value],
+            vec![angle.record_index, axial_offset.record_index],
+            vec![
+                angle.evaluated_value_offset,
+                axial_offset.evaluated_value_offset,
+            ],
+        ),
+        _ => return None,
     };
-    let owner_record_indices = [
-        angle.record_index,
-        offset_x.record_index,
-        offset_y.record_index,
-        offset_z.record_index,
-    ];
     if !scope.reference_members.ends_with(&owner_record_indices) {
         return None;
     }
     let mut alignment = DesignAssemblyAlignment {
         angle: angle.evaluated_value,
-        offset: [
-            offset_x.evaluated_value,
-            offset_y.evaluated_value,
-            offset_z.evaluated_value,
-        ],
+        offset,
         owner_record_indices,
-        value_offsets: [
-            angle.evaluated_value_offset,
-            offset_x.evaluated_value_offset,
-            offset_y.evaluated_value_offset,
-            offset_z.evaluated_value_offset,
-        ],
+        value_offsets,
         operand_frames: None,
         operand_paths: None,
     };
@@ -765,31 +780,30 @@ fn exact_assembly_operand_frames(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Option<[DesignAssemblyOperandFrame; 2]> {
+    enum FrameVariant {
+        Standard,
+        Compact,
+        Axial,
+    }
+
     let start = usize::try_from(scope.byte_offset).ok()?;
-    let frame_offsets = match (
+    let (frame_offsets, frame_variant) = match (
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
         scope.frame_length,
     ) {
-        (_, "259", 637 | 692) | ("459", "264", 627) => (28, 40, 168, 180),
-        (_, "258", 633 | 732) => (24, 36, 164, 176),
+        (_, "259", 637 | 692) | ("459", "264", 627) => ((28, 40, 168, 180), FrameVariant::Standard),
+        (_, "258", 633 | 732) => ((24, 36, 164, 176), FrameVariant::Compact),
+        (_, "261", 772) => ((28, 39, 167, 178), FrameVariant::Axial),
         _ => return None,
     };
-    let modern_prologue = matches!(
-        (
-            scope.class_tag.as_str(),
-            scope.paired_class_tag.as_str(),
-            scope.frame_length
-        ),
-        (_, "259", 637 | 692) | ("459", "264", 627)
-    );
     if usize::try_from(scope.paired_byte_offset).ok()?
         != start.checked_add(usize::try_from(scope.frame_length).ok()?)?
         || bytes.get(start + 11..start + 20)? != [0; 9]
     {
         return None;
     }
-    if modern_prologue {
+    if matches!(frame_variant, FrameVariant::Standard) {
         if bytes.get(start + 20..start + 25)? != [1, 0, 0, 0, 0]
             || !matches!(bytes.get(start + 25), Some(0 | 1))
             || bytes.get(start + 26..start + 28)? != [0; 2]
@@ -799,7 +813,7 @@ fn exact_assembly_operand_frames(
         {
             return None;
         }
-    } else {
+    } else if matches!(frame_variant, FrameVariant::Compact) {
         let compact_flags = bytes.get(start + 20..start + 24)?;
         if (compact_flags != [0; 4] && compact_flags != [0, 1, 0, 0])
             || bytes.get(start + 29..start + 36)? != [0; 7]
@@ -808,6 +822,14 @@ fn exact_assembly_operand_frames(
         {
             return None;
         }
+    } else if bytes.get(start + 20..start + 25)? != [1, 0, 0, 0, 0]
+        || !matches!(bytes.get(start + 25), Some(0 | 1))
+        || bytes.get(start + 26..start + 28)? != [0; 2]
+        || bytes.get(start + 33..start + 39)? != [0; 6]
+        || bytes.get(start + 172..start + 178)? != [0; 6]
+        || bytes.get(start + 306..start + 310)? != [0; 4]
+    {
+        return None;
     }
     let frame = |reference_at: usize, transform_at: usize| {
         let reference_record_index = marked_record_reference(bytes, reference_at)?;

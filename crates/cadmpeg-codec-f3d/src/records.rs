@@ -1203,10 +1203,10 @@ pub struct DesignAssemblyAlignment {
     pub angle: f64,
     /// Signed local-frame translation in source centimetres.
     pub offset: [f64; 3],
-    /// Parameter-owner records for angle, X offset, Y offset, and Z offset.
-    pub owner_record_indices: [u32; 4],
+    /// Parameter-owner records for the stored alignment scalars.
+    pub owner_record_indices: Vec<u32>,
     /// Evaluated-value offsets parallel to `owner_record_indices`.
-    pub value_offsets: [u64; 4],
+    pub value_offsets: Vec<u64>,
     /// Exact operand frames embedded by the assembly scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operand_frames: Option<[DesignAssemblyOperandFrame; 2]>,

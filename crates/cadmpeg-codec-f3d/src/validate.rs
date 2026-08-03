@@ -977,18 +977,34 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     != Some(design::DesignFeatureFamily::Assemble)
             }
             Some(alignment) => {
-                let values = [
-                    alignment.angle,
-                    alignment.offset[0],
-                    alignment.offset[1],
-                    alignment.offset[2],
-                ];
+                let values = if alignment.owner_record_indices.len() == 2 {
+                    vec![alignment.angle, alignment.offset[2]]
+                } else {
+                    vec![
+                        alignment.angle,
+                        alignment.offset[0],
+                        alignment.offset[1],
+                        alignment.offset[2],
+                    ]
+                };
                 let compact_frames = matches!(
                     (scope.paired_class_tag.as_str(), scope.frame_length),
                     ("258", 633 | 732)
                 );
-                let frame_reference_offsets = if compact_frames { [25, 165] } else { [29, 169] };
-                let frame_transform_offsets = if compact_frames { [36, 176] } else { [40, 180] };
+                let frame_reference_offsets = if scope.frame_length == 772 {
+                    [29, 168]
+                } else if compact_frames {
+                    [25, 165]
+                } else {
+                    [29, 169]
+                };
+                let frame_transform_offsets = if scope.frame_length == 772 {
+                    [39, 178]
+                } else if compact_frames {
+                    [36, 176]
+                } else {
+                    [40, 180]
+                };
                 let assembly_owner_count = native
                     .design_parameter_owners
                     .iter()
@@ -1014,14 +1030,18 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     alignment.operand_paths.as_ref(),
                 ) {
                     (None, None) => true,
+                    // The class-261 form stores exact connector frames but no
+                    // occurrence-path records that qualify them.
+                    (Some(_), None) => scope.frame_length == 772,
                     (Some(frames), Some(paths)) => {
                         let (first_delta, second_delta) = if scope.frame_length == 732 {
                             (39, 36)
                         } else {
                             (5, 2)
                         };
-                        paths[0].record_index.checked_add(first_delta)
-                            == Some(frames[0].reference_record_index)
+                        scope.frame_length != 772
+                            && paths[0].record_index.checked_add(first_delta)
+                                == Some(frames[0].reference_record_index)
                             && paths[1].record_index.checked_add(second_delta)
                                 == Some(frames[0].reference_record_index)
                             && paths[0].byte_offset < paths[1].byte_offset
@@ -1082,11 +1102,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && scope
                         .reference_members
                         .ends_with(&alignment.owner_record_indices)
-                    && matches!(assembly_owner_count, 4 | 8)
+                    && matches!(assembly_owner_count, 4 | 8 | 10)
+                    && matches!(alignment.owner_record_indices.len(), 2 | 4)
+                    && alignment.value_offsets.len() == alignment.owner_record_indices.len()
                     && alignment
                         .owner_record_indices
                         .iter()
-                        .zip(alignment.value_offsets)
+                        .zip(&alignment.value_offsets)
                         .zip(values)
                         .enumerate()
                         .all(|(ordinal, ((record_index, value_offset), value))| {
@@ -1095,9 +1117,14 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                     && owner.record_index == *record_index
                                     && owner.scope_record_index == scope.record_index
                                     && owner.local_ordinal
-                                        == ordinal as u32 + u32::from(assembly_owner_count == 8) * 4
+                                        == ordinal as u32
+                                            + match assembly_owner_count {
+                                                8 => 4,
+                                                10 => 8,
+                                                _ => 0,
+                                            }
                                     && owner.evaluated_value == value
-                                    && owner.evaluated_value_offset == value_offset
+                                    && owner.evaluated_value_offset == *value_offset
                             })
                         })
             }
