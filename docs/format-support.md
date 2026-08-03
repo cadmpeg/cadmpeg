@@ -424,8 +424,4 @@ The evidence tier is tested. Proven status requires the proof criteria above for
 
 ## Maintaining these profiles
 
-Per-format specifications in [`formats/`](formats/) define byte semantics. Adjacent `*-open-items.md` files contain unresolved fields and structures.
-
-Support profiles describe repository behavior only. A profile changes when code and tests land, and every **Partial** domain must identify its remaining gates here or in the linked open-items document. Claims move to **Complete** only after satisfying the proof criteria.
-
-Ladder scores change only when a per-gate review confirms every gate at the new level and below. A score's headline names the failing gate of the next level. **Tested** requires fixtures exercising the scored gates. **Proven** requires the proof criteria.
+Per-format specifications in [`formats/`](formats/) define byte semantics. Adjacent `*-open-items.md` files contain unresolved fields and structures. Every **Partial** domain names its remaining gates here or in the linked open-items document. A score's headline names the failing gate of the next level.
