@@ -9247,6 +9247,16 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     assert_eq!(compact_edge_identity.asset_id_offset, 41);
     assert_eq!(compact_edge_identity.context_id_offset, 117);
 
+    edge_identity_bytes.remove(21);
+    let shortest_edge_identity =
+        crate::design::decode::operands::parse_edge_identity_member(&edge_identity_bytes, 0)
+            .expect("short compact edge-treatment selection identity");
+    assert!(shortest_edge_identity.compact_layout);
+    assert_eq!(shortest_edge_identity.local_id, 5890);
+    assert_eq!(shortest_edge_identity.local_id_offset, 22);
+    assert_eq!(shortest_edge_identity.asset_id_offset, 40);
+    assert_eq!(shortest_edge_identity.context_id_offset, 116);
+
     group.id = "f3d:Design/BulkStream.dat:selection-group#100".into();
     member.id = "f3d:Design/BulkStream.dat:selection-member#200".into();
     let identity = DesignConstructionOperandIdentity {

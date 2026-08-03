@@ -2487,6 +2487,8 @@ pub(crate) fn parse_edge_identity_member(
         (false, 23)
     } else if bytes.get(start + 11..start + 22) == Some(&[0; 11]) {
         (true, 22)
+    } else if bytes.get(start + 11..start + 21) == Some(&[0; 10]) {
+        (true, 21)
     } else {
         return None;
     };

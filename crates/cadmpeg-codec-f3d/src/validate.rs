@@ -3169,9 +3169,14 @@ fn validate_edge_identity_operands<'a>(
         let scope = scopes_by_index.get(&(native_stream, operand.scope_record_index));
         let group = operand_groups_by_index.get(&(native_stream, operand.group_record_index));
         let header = records_by_index.get(&(native_stream, operand.record_index));
-        let expected_local_id_offset = operand
-            .byte_offset
-            .saturating_add(if operand.compact_layout { 23 } else { 24 });
+        let local_id_offset_is_valid = if operand.compact_layout {
+            matches!(
+                operand.local_id_offset.checked_sub(operand.byte_offset),
+                Some(22 | 23)
+            )
+        } else {
+            operand.local_id_offset == operand.byte_offset.saturating_add(24)
+        };
         let valid = operand.class_tag.len() == 3
             && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && scope.is_some_and(|scope| {
@@ -3192,8 +3197,8 @@ fn validate_edge_identity_operands<'a>(
             && header.is_some_and(|header| {
                 header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
             })
-            && operand.local_id_offset == expected_local_id_offset
-            && operand.asset_id_offset == expected_local_id_offset.saturating_add(18)
+            && local_id_offset_is_valid
+            && operand.asset_id_offset == operand.local_id_offset.saturating_add(18)
             && operand.context_id_offset == operand.asset_id_offset.saturating_add(76)
             && valid_design_guid(&operand.asset_id)
             && valid_design_guid(&operand.context_id)
@@ -4181,8 +4186,6 @@ fn validate_face_operands<'a>(
                                                         == group_member_ordinal
                                                     && identity.record_index == operand.record_index
                                                     && identity.class_tag == operand.class_tag
-                                                    && identity.local_id
-                                                        == u64::from(operand.recipe_record_index)
                                             },
                                         )
                                 }
