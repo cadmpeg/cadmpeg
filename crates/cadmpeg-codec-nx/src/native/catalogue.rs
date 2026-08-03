@@ -3057,6 +3057,16 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: false,
     },
     CatalogueRow {
+        arena: "rm_creation_display_data_relations",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.om.rm_creation_display_data_relations, r, ns),
+        len: |m| m.om.rm_creation_display_data_relations.len(),
+        counts_toward_emptiness: false,
+    },
+    CatalogueRow {
         arena: "data_block_column_index_tables",
         tag: None,
         exactness: Exactness::ByteExact,

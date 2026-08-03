@@ -261,6 +261,7 @@ pub(crate) struct OmRecords {
     pub(crate) data_block_index_rows: Vec<DataBlockIndexRow>,
     pub(crate) data_block_linked_index_rows: Vec<DataBlockLinkedIndexRow>,
     pub(crate) data_block_target_index_rows: Vec<DataBlockTargetIndexRow>,
+    pub(crate) rm_creation_display_data_relations: Vec<RmCreationDisplayDataRelation>,
     pub(crate) data_block_column_index_tables: Vec<DataBlockColumnIndexTable>,
     pub(crate) store_headers: Vec<StoreHeader>,
     pub(crate) string_values: Vec<StringValue>,
@@ -779,6 +780,7 @@ impl NativeModel {
         let data_block_index_rows = data_block_index_rows(container);
         let data_block_linked_index_rows = data_block_linked_index_rows(container);
         let data_block_target_index_rows = data_block_target_index_rows(container);
+        let rm_creation_display_data_relations = rm_creation_display_data_relations(container);
         let data_block_column_index_tables = data_block_column_index_tables(
             &data_block_linked_index_rows,
             &data_block_target_index_rows,
@@ -1073,6 +1075,7 @@ impl NativeModel {
                 data_block_index_rows,
                 data_block_linked_index_rows,
                 data_block_target_index_rows,
+                rm_creation_display_data_relations,
                 data_block_column_index_tables,
                 store_headers,
                 string_values,

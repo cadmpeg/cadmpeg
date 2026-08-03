@@ -628,6 +628,70 @@ pub struct DataBlockTargetIndexRow {
     pub index_source_offsets: [u64; 3],
 }
 
+/// Exact row encoding that selects `UGS::RM_creation_display_data` in an
+/// `RMFastLoad` record area.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RmCreationDisplayDataEncoding {
+    /// Self-framed index row whose fourth post-flag index selects the class.
+    Index {
+        flag: u8,
+        indices: [u32; 4],
+        raw_indices: [Vec<u8>; 4],
+        index_source_offsets: [u64; 4],
+    },
+    /// Self-framed linked row whose third post-marker index selects the class.
+    Linked {
+        discriminator: u8,
+        target_index: u32,
+        raw_target_index: Vec<u8>,
+        target_index_source_offset: u64,
+        indices: [u32; 3],
+        raw_indices: [Vec<u8>; 3],
+        index_source_offsets: [u64; 3],
+        flag: u8,
+        mode: u8,
+    },
+    /// Self-framed target row whose third post-marker index selects the class.
+    Target {
+        target_index: u32,
+        raw_target_index: Vec<u8>,
+        target_index_source_offset: u64,
+        indices: [u32; 3],
+        raw_indices: [Vec<u8>; 3],
+        index_source_offsets: [u64; 3],
+        mode: u8,
+    },
+}
+
+/// Lossless class-selected creation-display relation in `RMFastLoad`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RmCreationDisplayDataRelation {
+    /// Globally unique relation identity.
+    pub id: String,
+    /// Zero-based relation order in ascending source order.
+    pub ordinal: u32,
+    /// Leading compact index when the row encoding carries one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_index: Option<u32>,
+    /// Exact serialized leading-index token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_first_index: Option<Vec<u8>>,
+    /// Absolute file offset of the leading compact index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_index_source_offset: Option<u64>,
+    /// Exact registered class name.
+    pub class_name: String,
+    /// Target in the native `class_definitions` arena.
+    pub class_definition: String,
+    /// Exact admitted row encoding.
+    pub encoding: RmCreationDisplayDataEncoding,
+    /// Directory entry containing the relation.
+    pub source_entry: String,
+    /// Absolute file offset of the opening row discriminator.
+    pub source_offset: u64,
+}
+
 /// Complete composite table spanning linked and target-index row grammars.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataBlockColumnIndexTable {
@@ -2615,6 +2679,136 @@ pub fn data_block_target_index_rows(container: &Container) -> Vec<DataBlockTarge
                 .collect()
         })
         .collect()
+}
+
+/// Decode class-selected creation-display relations from `RMFastLoad` record
+/// areas. The compact indices remain uninterpreted until their object roles are
+/// established independently.
+pub fn rm_creation_display_data_relations(
+    container: &Container,
+) -> Vec<RmCreationDisplayDataRelation> {
+    const CLASS_NAME: &str = "UGS::RM_creation_display_data";
+
+    let mut relations = Vec::new();
+    for (entry, section) in container
+        .om_sections()
+        .into_iter()
+        .filter(|(entry, _)| entry.name == "/Root/FastLoad/RMFastLoad")
+    {
+        let Some(record_area) = section.record_area else {
+            continue;
+        };
+        let Some(record_area_offset) = section.record_area_offset else {
+            continue;
+        };
+        let Some((class_ordinal, definition)) = section
+            .types
+            .iter()
+            .enumerate()
+            .find(|(_, definition)| definition.name == CLASS_NAME)
+        else {
+            continue;
+        };
+        let Ok(class_ordinal) = u32::try_from(class_ordinal) else {
+            continue;
+        };
+        let entry_index = container
+            .entries
+            .iter()
+            .position(|candidate| std::ptr::eq(candidate, entry))
+            .expect("OM entry belongs to container");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let source_base = entry_offset + record_area_offset as u64;
+        let class_definition = format!("nx:om-entry-{entry_index}:class#{}", definition.offset);
+
+        for row in crate::om::offset_store_index_rows(record_area) {
+            if row.indices[3].0 != class_ordinal {
+                continue;
+            }
+            relations.push(RmCreationDisplayDataRelation {
+                id: String::new(),
+                ordinal: 0,
+                first_index: Some(row.first_index),
+                raw_first_index: Some(row.raw_first_index),
+                first_index_source_offset: Some(source_base + row.first_index_offset as u64),
+                class_name: CLASS_NAME.to_string(),
+                class_definition: class_definition.clone(),
+                encoding: RmCreationDisplayDataEncoding::Index {
+                    flag: row.flag,
+                    indices: row.indices.map(|(index, _)| index),
+                    raw_indices: row.raw_indices,
+                    index_source_offsets: row
+                        .indices
+                        .map(|(_, offset)| source_base + offset as u64),
+                },
+                source_entry: entry.name.clone(),
+                source_offset: source_base + row.offset as u64,
+            });
+        }
+        for row in crate::om::offset_store_linked_index_rows(record_area) {
+            if row.indices[2].0 != class_ordinal {
+                continue;
+            }
+            relations.push(RmCreationDisplayDataRelation {
+                id: String::new(),
+                ordinal: 0,
+                first_index: Some(row.first_index.0),
+                raw_first_index: Some(row.raw_first_index),
+                first_index_source_offset: Some(source_base + row.first_index.1 as u64),
+                class_name: CLASS_NAME.to_string(),
+                class_definition: class_definition.clone(),
+                encoding: RmCreationDisplayDataEncoding::Linked {
+                    discriminator: row.discriminator,
+                    target_index: row.target_index.0,
+                    raw_target_index: row.raw_target_index,
+                    target_index_source_offset: source_base + row.target_index.1 as u64,
+                    indices: row.indices.map(|(index, _)| index),
+                    raw_indices: row.raw_indices,
+                    index_source_offsets: row
+                        .indices
+                        .map(|(_, offset)| source_base + offset as u64),
+                    flag: row.flag,
+                    mode: row.mode,
+                },
+                source_entry: entry.name.clone(),
+                source_offset: source_base + row.offset as u64,
+            });
+        }
+        for row in crate::om::offset_store_target_index_rows(record_area) {
+            if row.indices[2].0 != class_ordinal {
+                continue;
+            }
+            relations.push(RmCreationDisplayDataRelation {
+                id: String::new(),
+                ordinal: 0,
+                first_index: None,
+                raw_first_index: None,
+                first_index_source_offset: None,
+                class_name: CLASS_NAME.to_string(),
+                class_definition: class_definition.clone(),
+                encoding: RmCreationDisplayDataEncoding::Target {
+                    target_index: row.target_index.0,
+                    raw_target_index: row.raw_target_index,
+                    target_index_source_offset: source_base + row.target_index.1 as u64,
+                    indices: row.indices.map(|(index, _)| index),
+                    raw_indices: row.raw_indices,
+                    index_source_offsets: row
+                        .indices
+                        .map(|(_, offset)| source_base + offset as u64),
+                    mode: row.mode,
+                },
+                source_entry: entry.name.clone(),
+                source_offset: source_base + row.offset as u64,
+            });
+        }
+    }
+
+    relations.sort_by_key(|relation| relation.source_offset);
+    for (ordinal, relation) in relations.iter_mut().enumerate() {
+        relation.ordinal = ordinal as u32;
+        relation.id = format!("nx:rm-creation-display-data-relations:relation#{ordinal}");
+    }
+    relations
 }
 
 /// Resolve complete composite column-index tables atomically by section.
