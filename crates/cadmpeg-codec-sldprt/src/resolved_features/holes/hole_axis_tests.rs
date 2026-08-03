@@ -150,7 +150,6 @@ fn cylinder(id: usize, x: f64) -> Surface {
     }
 }
 
-
 #[test]
 fn cylindrical_support_point_defines_its_radial_axis() {
     let surface = Surface {
@@ -170,7 +169,6 @@ fn cylindrical_support_point_defines_its_radial_axis() {
     );
     assert!(cylindrical_support_normal(&surface, Point3::new(12.0, 4.0, 40.0)).is_none());
 }
-
 
 #[test]
 fn position_plane_owns_only_reversed_normal_cylinders() {
@@ -276,7 +274,6 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
         ])
     );
 }
-
 
 #[test]
 fn cylindrical_face_span_identifies_a_blind_bore_depth() {
@@ -438,7 +435,6 @@ fn profile_line(sketch: &SketchId, ordinal: usize, start: Point2, end: Point2) -
     }
 }
 
-
 #[test]
 fn axial_profile_resolves_counterbore_roles() {
     let mut profile = native_history().features.remove(0);
@@ -490,7 +486,6 @@ fn axial_profile_resolves_counterbore_roles() {
     assert_eq!(construction.bottom, None);
 }
 
-
 #[test]
 fn single_diameter_axial_profile_resolves_flat_and_drilled_holes() {
     let mut profile = native_history().features.remove(0);
@@ -531,7 +526,6 @@ fn single_diameter_axial_profile_resolves_flat_and_drilled_holes() {
         })
     );
 }
-
 
 #[test]
 fn closed_tapered_axial_profile_resolves_conical_hole() {
@@ -586,7 +580,6 @@ fn closed_tapered_axial_profile_resolves_conical_hole() {
             < 1.0e-12
     );
 }
-
 
 #[test]
 fn axial_profile_resolves_countersink_and_drill_point_roles() {
@@ -647,7 +640,6 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
     );
 }
 
-
 #[test]
 fn incomplete_axial_profile_does_not_assign_dimension_roles() {
     let mut profile = native_history().features.remove(0);
@@ -667,7 +659,6 @@ fn incomplete_axial_profile_does_not_assign_dimension_roles() {
 
     assert!(profiled_hole_construction(&profile, &sketch, &entities).is_none());
 }
-
 
 #[test]
 fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
@@ -820,7 +811,6 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
     ));
 }
 
-
 #[test]
 fn ordered_profile_fallback_excludes_claimed_profiles() {
     let mut history = native_history();
@@ -915,7 +905,6 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
     ));
 }
 
-
 #[test]
 fn compact_position_graph_selects_the_unique_bore_loci() {
     use FeatureInputRelationFamily::{
@@ -945,7 +934,6 @@ fn compact_position_graph_selects_the_unique_bore_loci() {
         None
     );
 }
-
 
 #[test]
 fn object_indexed_line_handles_select_a_congruent_bore_pattern() {
@@ -1041,7 +1029,6 @@ fn object_indexed_line_handles_select_a_congruent_bore_pattern() {
     );
 }
 
-
 #[test]
 fn hole_temporary_axis_decodes_depth_point_direction_layout() {
     let mut payload = vec![0; 500];
@@ -1069,7 +1056,6 @@ fn hole_temporary_axis_decodes_depth_point_direction_layout() {
         ))
     );
 }
-
 
 #[test]
 fn embedded_position_sketch_name_resolves_its_typed_source() {
@@ -1126,7 +1112,6 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
         None
     );
 }
-
 
 #[test]
 fn typed_position_sketch_reference_lifts_only_authored_points() {
@@ -1269,7 +1254,6 @@ fn typed_position_sketch_reference_lifts_only_authored_points() {
         [FeatureId("position-sketch".into())]
     );
 }
-
 
 #[test]
 fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
@@ -1426,7 +1410,6 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
     );
 }
 
-
 #[test]
 fn source_intervals_supply_legacy_hole_profiles() {
     let mut history = native_history();
@@ -1519,7 +1502,6 @@ fn source_intervals_supply_legacy_hole_profiles() {
     );
 }
 
-
 #[test]
 fn ordered_legacy_sketch_children_identify_the_unique_hole_profile() {
     let mut history = native_history();
@@ -1571,7 +1553,6 @@ fn ordered_legacy_sketch_children_identify_the_unique_hole_profile() {
     assert_eq!(history.features[2].source_id, None);
 }
 
-
 #[test]
 fn parameter_class_supplies_an_operandless_scalar_unit() {
     let mut history = native_history();
@@ -1612,7 +1593,6 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
         Some("6.283185307179586rad")
     );
 }
-
 
 #[test]
 fn hole_axes_require_exact_output_cardinality() {

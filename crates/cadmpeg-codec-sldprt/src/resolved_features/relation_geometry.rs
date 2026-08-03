@@ -11,8 +11,8 @@ use super::relation_loci::{
 };
 use super::transforms::{marker_entities, quantize, sketch_entity_loci};
 use super::typed_relations::{
-    current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers, marker_relation_is_inactive,
-    typed_marker_relation_definition_in_sketch,
+    current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
+    marker_relation_is_inactive, typed_marker_relation_definition_in_sketch,
 };
 use crate::records::{
     FeatureInputLane, FeatureInputOperandKind, FeatureInputRelationFamily,

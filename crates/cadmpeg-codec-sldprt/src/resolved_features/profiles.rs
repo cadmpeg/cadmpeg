@@ -7,30 +7,33 @@ use super::compact_reference_planes::{
     CompactReferencePlaneIndex,
 };
 use super::curves::{
-    closed_marker_profiles, compact_bounded_curve_tangent, compact_line_chain_addresses,
-    compact_line_region_addresses, complete_ordered_compact_line_profile,
-    current_compact_rectangle_line_endpoints, current_wide_rectangle_line_endpoints,
-    indexed_rectangle_from_line_cycle, lane_sketch_plane_frames,
-    legacy_extended_rectangle_diagonal_endpoint, legacy_extended_rectangle_line_endpoints,
-    ordered_rectangle_corners, resolve_connected_marker_arcs, resolve_slot_marker_arcs,
-    resolve_two_center_semicircle_profile, tangent_bounded_curve,
-    unique_dimensioned_rectangle_markers, compact_legacy_rectangle_line_endpoints};
+    closed_marker_profiles, compact_bounded_curve_tangent, compact_legacy_rectangle_line_endpoints,
+    compact_line_chain_addresses, compact_line_region_addresses,
+    complete_ordered_compact_line_profile, current_compact_rectangle_line_endpoints,
+    current_wide_rectangle_line_endpoints, indexed_rectangle_from_line_cycle,
+    lane_sketch_plane_frames, legacy_extended_rectangle_diagonal_endpoint,
+    legacy_extended_rectangle_line_endpoints, ordered_rectangle_corners,
+    resolve_connected_marker_arcs, resolve_slot_marker_arcs, resolve_two_center_semicircle_profile,
+    tangent_bounded_curve, unique_dimensioned_rectangle_markers,
+};
 use super::endpoints::{
     auxiliary_profile_record, compact_legacy_code_one_line_endpoint_indices,
     compact_legacy_curve_endpoint_indices, compact_legacy_profile_full_circle,
     compact_profile_full_circle, coordinate_circle_radius, coordinate_ellipse_axes,
     coordinate_roster_arc_center, coordinate_roster_full_circle,
-    current_indexed_arc_reverses_center_sweep, equal_index_coordinate_roster_full_circle,
-    extended_declared_inline_line_endpoints, extended_identity_inline_line_endpoints,
-    extended_linked_inline_line_endpoints, extended_wide_construction_line_roster_indices,
-    implicit_coordinate_roster_curve_endpoints, implicit_profile_chain_closure_endpoints,
-    indexed_arc_uses_coordinate_center, inferred_point_coordinates_by_index,
-    legacy_compact_diameter_arc_center, legacy_coordinate_circle_radius,
-    legacy_direct_compact_selected_axis_endpoint_indices, legacy_marker104_arc_center,
-    legacy_profile_radial_circle, legacy_undetailed_profile_line, legacy_unlocated_geometry_handle,
-    marker_is_selected_construction_line, marker_profile_curve_role, minor_arc_geometry,
+    current_compact_roster_selected_axis, current_indexed_arc_reverses_center_sweep,
+    equal_index_coordinate_roster_full_circle, extended_declared_inline_line_endpoints,
+    extended_identity_inline_line_endpoints, extended_linked_inline_line_endpoints,
+    extended_wide_construction_line_roster_indices, implicit_coordinate_roster_curve_endpoints,
+    implicit_profile_chain_closure_endpoints, indexed_arc_uses_coordinate_center,
+    inferred_point_coordinates_by_index, legacy_compact_diameter_arc_center,
+    legacy_coordinate_circle_radius, legacy_direct_compact_selected_axis_endpoint_indices,
+    legacy_marker104_arc_center, legacy_profile_radial_circle, legacy_undetailed_profile_line,
+    legacy_unlocated_geometry_handle, marker_is_selected_construction_line,
+    marker_profile_curve_role, minor_arc_geometry, output_curve_endpoint_markers,
     packed_compact_legacy_curve_endpoint_indices, unique_arc_center_marker,
-    wide_coordinate_roster_full_circle, output_curve_endpoint_markers, current_compact_roster_selected_axis};
+    wide_coordinate_roster_full_circle,
+};
 use super::holes::{feature_input_sketch_frame, sketch_feature_frames};
 use super::markers::{inline_arc_coordinates, marker_is_geometry_locus};
 use super::projections::bind_circular_profile_by_dimension;
@@ -38,7 +41,9 @@ use super::reference_geometry::reference_plane_frame_key;
 use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
 use super::transforms::{quantize, sketch_frame_marker_transform};
-use super::typed_relations::{current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers};
+use super::typed_relations::{
+    current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
+};
 use super::SKETCH_POINT_TOLERANCE;
 use crate::records::{
     FeatureInputLane, FeatureInputRelationFamily, SketchInputEntity, SketchInputKind,
@@ -1787,7 +1792,6 @@ fn legacy_config_collinear_sketch(
     }
     Some((sketch.clone(), entities))
 }
-
 
 #[cfg(test)]
 mod detached_legacy_sketch_tests {

@@ -135,7 +135,6 @@ pub(crate) fn component_path_terminal_feature(
     None
 }
 
-
 #[derive(Clone, Copy)]
 pub(super) enum ComponentPathEnd {
     Leading,

@@ -3,8 +3,12 @@
 use super::compact_reference_planes::principal_sketch_frame;
 use super::endpoints::{
     compact_legacy_code_one_line_endpoint_indices, compact_legacy_curve_endpoint_indices,
-    marker_profile_curve_role, minor_arc_geometry, wide_indexed_curve_endpoint_indices, one_based_u16_endpoint_pair};
-use super::markers::{finite_coordinate_pair, marker_native_code, sketch_marker_prefix_at, compact_legacy_marker_body};
+    marker_profile_curve_role, minor_arc_geometry, one_based_u16_endpoint_pair,
+    wide_indexed_curve_endpoint_indices,
+};
+use super::markers::{
+    compact_legacy_marker_body, finite_coordinate_pair, marker_native_code, sketch_marker_prefix_at,
+};
 use super::reference_geometry::reference_plane_frame_key;
 use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
@@ -405,7 +409,10 @@ pub(super) struct SlotReferenceLayout {
     continuation_stride: Option<usize>,
 }
 
-pub(super) fn slot_curve_reference_cells(payload: &[u8], offset: usize) -> Option<SlotReferenceLayout> {
+pub(super) fn slot_curve_reference_cells(
+    payload: &[u8],
+    offset: usize,
+) -> Option<SlotReferenceLayout> {
     if marker_native_code(payload, offset).is_none()
         || payload.get(offset + 23..offset + 29) != Some(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00])
         || payload.get(offset + 31..offset + 39)
@@ -1559,7 +1566,10 @@ pub(super) fn indexed_rectangle_from_line_cycle(
     .then_some(corners)
 }
 
-pub(super) fn compact_legacy_rectangle_line_endpoints(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
+pub(super) fn compact_legacy_rectangle_line_endpoints(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[u32; 2]> {
     if !compact_legacy_marker_body(payload, offset)
         || marker_native_code(payload, offset) != Some(1)
         || marker_profile_curve_role(payload, offset) != Some(1)
@@ -1612,7 +1622,10 @@ pub(super) fn legacy_extended_rectangle_line_endpoints(
         .then_some(endpoints)
 }
 
-pub(super) fn current_compact_rectangle_line_endpoints(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
+pub(super) fn current_compact_rectangle_line_endpoints(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[u32; 2]> {
     if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])

@@ -5,7 +5,8 @@ use super::dimensions::compact_legacy_radial_circle_index;
 use super::markers::{
     alternate_current_curve_body, compact_legacy_marker_body,
     current_reverse_incidence_endpoint_offsets, finite_coordinate_pair, marker_is_geometry_locus,
-    marker_native_code, packed_legacy_marker_body, sketch_marker_prefix_at, marker_object_index};
+    marker_native_code, marker_object_index, packed_legacy_marker_body, sketch_marker_prefix_at,
+};
 use super::relation_loci::same_dimension_length;
 use super::scalars::operand_kind;
 use super::selections::operand_accepts_marker;
@@ -1049,7 +1050,10 @@ pub(super) fn output_curve_endpoint_markers<'a>(
     marker_curve_endpoint_markers(payload, curve, markers_by_id, markers)
 }
 
-pub(super) fn current_identity_linked_wide_curve_uses_one_based_roster(payload: &[u8], offset: usize) -> bool {
+pub(super) fn current_identity_linked_wide_curve_uses_one_based_roster(
+    payload: &[u8],
+    offset: usize,
+) -> bool {
     payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
         && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
         && sketch_marker_prefix_at(payload, offset.saturating_add(92))
@@ -1059,7 +1063,10 @@ pub(super) fn current_identity_linked_wide_curve_uses_one_based_roster(payload: 
         && current_direct_92_profile_line_endpoint_indices(payload, offset).is_none()
 }
 
-pub(super) fn current_referenced_compact_curve_uses_marker_roster(payload: &[u8], offset: usize) -> bool {
+pub(super) fn current_referenced_compact_curve_uses_marker_roster(
+    payload: &[u8],
+    offset: usize,
+) -> bool {
     let distinct_identities = |first: usize, second: usize| {
         let identities =
             [first, second].map(|relative| payload.get(offset + relative..offset + relative + 4));
@@ -2686,7 +2693,10 @@ pub(super) fn extended_marker84_line_uses_point_roster(payload: &[u8], offset: u
         && sketch_marker_prefix_at(payload, offset.saturating_add(84))
 }
 
-pub(super) fn extended_compact_84_profile_line_uses_point_roster(payload: &[u8], offset: usize) -> bool {
+pub(super) fn extended_compact_84_profile_line_uses_point_roster(
+    payload: &[u8],
+    offset: usize,
+) -> bool {
     payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
         && payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
@@ -3859,8 +3869,6 @@ fn compact_indexed_curve_endpoint_indices_for_prefixes(
     one_based_u16_endpoint_pair(payload, offset, 56)
 }
 
-
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum CompactIndexedCurveRecordEnd {
     Marker84,
@@ -3978,7 +3986,10 @@ pub(super) fn compact_indexed_curve_record_end(
     }
 }
 
-pub(super) fn wide_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
+pub(super) fn wide_indexed_curve_endpoint_indices(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[u32; 2]> {
     let prefix = payload.get(offset..offset + SKETCH_MARKER.len())?;
     let supported_prefix = prefix == SKETCH_MARKER
         || prefix == LEGACY_SKETCH_MARKER

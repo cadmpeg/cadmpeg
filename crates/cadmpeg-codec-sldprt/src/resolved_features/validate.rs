@@ -159,7 +159,10 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
         .filter(|lane| !is_supplemental_config_lane(lane))
         .cloned()
         .collect::<Vec<_>>();
-    crate::resolved_features::classes::bind_history_classes(&mut expected_histories, &history_lanes);
+    crate::resolved_features::classes::bind_history_classes(
+        &mut expected_histories,
+        &history_lanes,
+    );
     for (history, expected_history) in native.feature_histories.iter().zip(&expected_histories) {
         for (feature, expected_feature) in history.features.iter().zip(&expected_history.features) {
             if feature.input_class != expected_feature.input_class {
@@ -190,10 +193,16 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
         .iter_mut()
         .chain(&mut expected_supplemental_lanes)
     {
-        lane.scalars =
-            crate::resolved_features::scalars::named_scalars(&lane.native_payload, &lane.id, &lane.names);
-        lane.relation_bindings =
-            crate::resolved_features::markers::relation_bindings(&lane.id, &lane.classes, &lane.scalars);
+        lane.scalars = crate::resolved_features::scalars::named_scalars(
+            &lane.native_payload,
+            &lane.id,
+            &lane.names,
+        );
+        lane.relation_bindings = crate::resolved_features::markers::relation_bindings(
+            &lane.id,
+            &lane.classes,
+            &lane.scalars,
+        );
         lane.references = crate::resolved_features::markers::reference_cells(&lane.scalars);
     }
     crate::resolved_features::bindings::bind_scalar_operands(
@@ -256,7 +265,8 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
                 entity: Some(lane.id.clone()),
             });
         }
-        let expected_names = crate::resolved_features::names::object_names(&lane.native_payload, &lane.id);
+        let expected_names =
+            crate::resolved_features::names::object_names(&lane.native_payload, &lane.id);
         if lane.names.len() != expected_names.len()
             || lane
                 .names
@@ -281,7 +291,10 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
         let expected_lane = expected_lanes
             .get(lane.id.as_str())
             .expect("expected lanes are cloned from native lanes");
-        if !crate::resolved_features::scalars::scalar_indices_match(&lane.scalars, &expected_lane.scalars) {
+        if !crate::resolved_features::scalars::scalar_indices_match(
+            &lane.scalars,
+            &expected_lane.scalars,
+        ) {
             let detail = lane
                 .scalars
                 .iter()
@@ -426,7 +439,10 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
             }
             if usize::try_from(entity.offset).ok().is_some_and(|offset| {
                 entity.object_index
-                    != crate::resolved_features::markers::marker_object_index(&lane.native_payload, offset)
+                    != crate::resolved_features::markers::marker_object_index(
+                        &lane.native_payload,
+                        offset,
+                    )
             }) {
                 findings.push(Finding {
                     check: Check::NativeLinks,
@@ -439,7 +455,10 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
             }
             if usize::try_from(entity.offset).ok().is_some_and(|offset| {
                 entity.local_id
-                    != crate::resolved_features::markers::marker_local_id(&lane.native_payload, offset)
+                    != crate::resolved_features::markers::marker_local_id(
+                        &lane.native_payload,
+                        offset,
+                    )
             }) {
                 findings.push(Finding {
                     check: Check::NativeLinks,

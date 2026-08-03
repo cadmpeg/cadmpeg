@@ -1,5 +1,6 @@
 //! Sketch marker record decoding and profile point coordinates.
 
+use super::curves::slot_curve_and_center_indices;
 use super::endpoints::{
     compact_curve_endpoint_indices, compact_indexed_curve_endpoint_indices,
     current_compact_104_profile_line, current_direct_92_profile_line_endpoint_indices,
@@ -9,7 +10,6 @@ use super::endpoints::{
     marker_is_selected_construction_line, marker_profile_curve_role,
     wide_indexed_curve_endpoint_indices,
 };
-use super::curves::slot_curve_and_center_indices;
 use super::relation_loci::same_dimension_length;
 use super::relation_records::relation_signature;
 use super::scalars::{feature_object_name, operand_kind};
@@ -79,9 +79,10 @@ use super::endpoints::{
     coordinate_circle_radius, coordinate_ellipse_axes, coordinate_roster_arc_center,
     coordinate_roster_curve_endpoint_markers, coordinate_roster_endpoint_offset,
     coordinate_roster_full_circle, current_compact_104_indexed_line_endpoint_indices,
+    current_compact_roster_selected_axis, current_identity_linked_wide_curve_uses_one_based_roster,
     current_indexed_arc_reverses_center_sweep, current_long_full_circle_radial_index,
-    current_wide_arc_direct_markers, direct_indexed_curve_endpoint_indices,
-    equal_index_coordinate_roster_full_circle,
+    current_referenced_compact_curve_uses_marker_roster, current_wide_arc_direct_markers,
+    direct_indexed_curve_endpoint_indices, equal_index_coordinate_roster_full_circle,
     extended_compact_84_construction_line_endpoint_indices,
     extended_compact_84_profile_line_uses_point_roster,
     extended_compact_96_selected_axis_endpoint_indices, extended_compact_endpoint_markers,
@@ -89,8 +90,8 @@ use super::endpoints::{
     extended_direct_object_line_endpoint_ids, extended_identity_inline_line_endpoints,
     extended_linked_inline_line_endpoints, extended_marker84_line_uses_point_roster,
     extended_profile_roster_construction_line_endpoint_indices,
-    extended_wide_construction_line_roster_indices, implicit_profile_chain_closure_endpoints, indexed_arc_uses_coordinate_center,
-    legacy_code_five_or_six_selected_axis_endpoint_indices,
+    extended_wide_construction_line_roster_indices, implicit_profile_chain_closure_endpoints,
+    indexed_arc_uses_coordinate_center, legacy_code_five_or_six_selected_axis_endpoint_indices,
     legacy_compact_104_profile_line_endpoint_indices,
     legacy_compact_84_profile_line_uses_point_roster, legacy_compact_diameter_arc_center,
     legacy_compact_direct_endpoint_markers, legacy_compact_roster_selected_axis_endpoint_indices,
@@ -102,9 +103,6 @@ use super::endpoints::{
     legacy_undetailed_profile_line, legacy_unlocated_geometry_handle,
     linked_profile_curve_endpoint_indices, packed_compact_legacy_curve_endpoint_indices,
     packed_legacy_curve_endpoint_indices, roster_curve_endpoint_markers,
-    current_compact_roster_selected_axis,
-    current_identity_linked_wide_curve_uses_one_based_roster,
-    current_referenced_compact_curve_uses_marker_roster,
     standard_legacy_compact_selected_axis_endpoint_indices, unique_arc_center_marker,
     wide_coordinate_roster_full_circle, wide_direct_line_endpoint_markers,
 };
@@ -2311,8 +2309,6 @@ pub(super) fn legacy_extended_profile_curve_kind(
         }
     })
 }
-
-
 
 #[cfg(test)]
 mod marker_tests;

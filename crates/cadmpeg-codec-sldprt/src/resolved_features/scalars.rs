@@ -1,7 +1,10 @@
 //! Named scalar records, operands and feature object names.
 
 use super::relation_records::{compact_scalar_layout, legacy_scalar_layout, scalar_role};
-use super::{COMPACT_SCALAR_HEADER, NAME_MARKER, SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER, PADDED_COMPACT_SCALAR_HEADER};
+use super::{
+    COMPACT_SCALAR_HEADER, NAME_MARKER, PADDED_COMPACT_SCALAR_HEADER, SCALAR_HEADER,
+    VALUE_ONLY_SCALAR_HEADER,
+};
 use crate::records::{
     FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputScalar,

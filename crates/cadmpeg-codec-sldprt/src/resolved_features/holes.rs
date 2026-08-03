@@ -430,7 +430,6 @@ pub(crate) fn enrich_history_hole_constructions(
     }
 }
 
-
 #[derive(Clone)]
 struct ProfiledHoleConstruction {
     diameter: Length,
@@ -2651,7 +2650,6 @@ fn compact_position_loci(
     Some(solution.clone())
 }
 
-
 #[allow(clippy::too_many_arguments)]
 fn compact_position_assignments(
     node_index: usize,
@@ -2731,7 +2729,6 @@ fn compact_position_assignments(
         used.remove(&locus_index);
     }
 }
-
 
 #[cfg(test)]
 mod hole_axis_tests;
