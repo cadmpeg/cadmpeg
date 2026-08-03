@@ -825,12 +825,23 @@ pub(crate) fn bind_feature_body_selections(
             else {
                 continue;
             };
-            let Some(Some(state)) = states.get(&state_id) else {
+            let Some((history, state, _)) =
+                unique_history_state_pair(histories, state_id, previous_state_id)
+            else {
                 continue;
             };
-            let Some(body) =
-                singleton_revised_input_body_across_state_chain(state, previous_state_id, &states)
-            else {
+            let mut history_states = HashMap::<i64, Option<&AsmDeltaState>>::new();
+            for history_state in &history.states {
+                history_states
+                    .entry(history_state.state_id)
+                    .and_modify(|state| *state = None)
+                    .or_insert(Some(history_state));
+            }
+            let Some(body) = singleton_revised_input_body_across_state_chain(
+                state,
+                previous_state_id,
+                &history_states,
+            ) else {
                 continue;
             };
             let prefix = feature_input_prefix(&feature_id, previous_state_id);
@@ -2029,13 +2040,6 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
     if projection_was_finalized(histories) {
         return;
     }
-    let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
-    for state in histories.iter().flat_map(|history| &history.states) {
-        states
-            .entry(state.state_id)
-            .and_modify(|state| *state = None)
-            .or_insert(Some(state));
-    }
     for operand in operands.iter_mut() {
         for reference in &mut operand.references {
             reference.preceding_candidate_faces.clear();
@@ -2059,11 +2063,18 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         else {
             continue;
         };
-        let (Some(Some(state)), Some(Some(previous))) =
-            (states.get(&state_id), states.get(&previous_state_id))
+        let Some((history, state, previous)) =
+            unique_history_state_pair(histories, state_id, previous_state_id)
         else {
             continue;
         };
+        let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
+        for state in &history.states {
+            states
+                .entry(state.state_id)
+                .and_modify(|state| *state = None)
+                .or_insert(Some(state));
+        }
         let Some(topology) = &previous.topology else {
             continue;
         };
