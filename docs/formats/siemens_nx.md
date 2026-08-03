@@ -1335,14 +1335,17 @@ native object-index selection is retained
 atomically. The operation record does not assign a gap tolerance, so the
 neutral tolerance remains absent.
 
-A `TRIM BODY` operation projects as a neutral body-trim feature. Without one
-unambiguous primary body and one or more body operands, the target and tool-body
-selections are unresolved. With those fields, the primary body is the target;
-wrapped-member order defines the ordered tool-body selection. Target and tools
-resolve atomically through surviving segment body bindings only when their
-participant body sets are pairwise disjoint, and otherwise retain their native
-object-index selections. The body clauses do not assign which side
-is retained, so the neutral retained side is unresolved.
+A `TRIM BODY` operation projects as a neutral body-trim feature. One
+unambiguous primary body identifies the target independently. One or more body
+operands are required to identify the tools; wrapped-member order defines the
+ordered tool-body selection. Target and tools resolve atomically through
+surviving segment body bindings only when their participant body sets are
+pairwise disjoint. When the operation selects one offset store, the primary
+body retains its exact local data-block identity. Every tool also retains its
+exact local data-block identity when the target and ordered tool indices are
+distinct. Other unresolved selections retain their native object-index
+identities or feature-local body identities. The body clauses do not assign
+which side is retained, so the neutral retained side is unresolved.
 
 A `DELETE` operation with a primary-body field projects as a neutral
 delete-selected-bodies feature. The field identifies the selected body, not an
