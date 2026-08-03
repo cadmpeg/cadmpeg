@@ -42,9 +42,10 @@ geometry in the cumulative L0–L6 gates.
 | L5 | Incomplete | Close all L2/L3 families and transfer body/face appearance with source precedence. |
 | L6 | Incomplete | Close sketch constraints and dimensions, all expression forms, every feature construction, inactive configurations, and re-derivation coherence. |
 
-The full validation profile passes cumulatively through L3. Profile version 5
-records saved-body re-derivation as separate L6 evidence and identifies the
-first unsupported feature family and history ordinal. Absence of a design-domain
-loss cannot substitute for neutral feature evaluation and an exact current-body
-census comparison. Higher-level implementation is extra capability until every
+The full validation profile passes cumulatively through L3. Profile version 6
+records saved-body re-derivation as separate L6 evidence, identifies the first
+unsupported feature family and history ordinal, and aggregates exact boundaries
+by evaluator reason and feature family. Absence of a design-domain loss cannot
+substitute for neutral feature evaluation and an exact current-body census
+comparison. Higher-level implementation is extra capability until every
 cumulative gate passes.

@@ -24,6 +24,7 @@ struct Profile {
     fixtures: Vec<FixtureEvidence>,
     totals: EntityCounts,
     loss_codes: BTreeMap<String, usize>,
+    rederivation_boundaries: Vec<RederivationBoundaryCount>,
     gates: Vec<Gate>,
     highest_passing_gate: Option<String>,
 }
@@ -59,6 +60,13 @@ struct RederivationBoundary {
     feature_family: Option<String>,
     feature_ordinal: Option<u64>,
     reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct RederivationBoundaryCount {
+    reason: String,
+    feature_family: Option<String>,
+    fixtures: usize,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -206,17 +214,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let gates = capability_gates(&fixtures);
+    let rederivation_boundaries = rederivation_boundary_counts(&fixtures);
     let highest_passing_gate = gates
         .iter()
         .take_while(|gate| gate.passed)
         .last()
         .map(|gate| gate.level.clone());
     let profile = Profile {
-        version: 5,
+        version: 6,
         format: "nx",
         fixtures,
         totals,
         loss_codes: total_loss_codes,
+        rederivation_boundaries,
         gates,
         highest_passing_gate,
     };
@@ -224,6 +234,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     json.push('\n');
     fs::write(output, json)?;
     Ok(())
+}
+
+fn rederivation_boundary_counts(fixtures: &[FixtureEvidence]) -> Vec<RederivationBoundaryCount> {
+    let mut counts = BTreeMap::<(String, Option<String>), usize>::new();
+    for boundary in fixtures
+        .iter()
+        .filter_map(|fixture| fixture.rederivation_boundary.as_ref())
+    {
+        *counts
+            .entry((boundary.reason.clone(), boundary.feature_family.clone()))
+            .or_default() += 1;
+    }
+    counts
+        .into_iter()
+        .map(
+            |((reason, feature_family), fixtures)| RederivationBoundaryCount {
+                reason,
+                feature_family,
+                fixtures,
+            },
+        )
+        .collect()
 }
 
 fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::error::Error>> {
@@ -645,6 +677,42 @@ mod tests {
                 feature_ordinal: Some(17),
                 reason: "incomplete_feature_definition".to_string(),
             })
+        );
+    }
+
+    #[test]
+    fn rederivation_boundary_census_groups_reason_and_feature_family() {
+        let boundary = |reason: &str, family: Option<&str>| RederivationBoundary {
+            feature: None,
+            feature_name: None,
+            feature_family: family.map(str::to_string),
+            feature_ordinal: None,
+            reason: reason.to_string(),
+        };
+        let mut fixtures = [fixture(), fixture(), fixture()];
+        fixtures[0].rederivation = VerificationStatus::Missing;
+        fixtures[0].rederivation_boundary =
+            Some(boundary("incomplete_feature_definition", Some("hole")));
+        fixtures[1].rederivation = VerificationStatus::Missing;
+        fixtures[1].rederivation_boundary =
+            Some(boundary("incomplete_feature_definition", Some("hole")));
+        fixtures[2].rederivation = VerificationStatus::Missing;
+        fixtures[2].rederivation_boundary = Some(boundary("configuration_evaluation", None));
+
+        assert_eq!(
+            rederivation_boundary_counts(&fixtures),
+            vec![
+                RederivationBoundaryCount {
+                    reason: "configuration_evaluation".to_string(),
+                    feature_family: None,
+                    fixtures: 1,
+                },
+                RederivationBoundaryCount {
+                    reason: "incomplete_feature_definition".to_string(),
+                    feature_family: Some("hole".to_string()),
+                    fixtures: 2,
+                },
+            ]
         );
     }
 
