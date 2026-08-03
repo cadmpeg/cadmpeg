@@ -2032,6 +2032,8 @@ fn build_geometry_ir(
         &histories,
         &lanes,
     );
+    // Marker-backed sketches can originate in either lane family. Their
+    // geometry and constraints must use the same complete lane set.
     let mut sketch_lanes = lanes.clone();
     sketch_lanes.extend(supplemental_config_lanes.clone());
     crate::resolved_features::project_marker_backed_sketches(
@@ -2101,7 +2103,7 @@ fn build_geometry_ir(
         &ir.model.features,
         &sketch_entities,
         &ir.model.parameters,
-        &lanes,
+        &sketch_lanes,
     );
     stamp_feature_baseline(&mut ir);
     let mut attributes = crate::metadata::attributes(scan, &mut annotations);
@@ -2840,6 +2842,8 @@ fn build_metadata_ir(
         &histories,
         &lanes,
     );
+    // Marker-backed sketches can originate in either lane family. Their
+    // geometry and constraints must use the same complete lane set.
     let mut sketch_lanes = lanes.clone();
     sketch_lanes.extend(supplemental_config_lanes.clone());
     crate::resolved_features::project_marker_backed_sketches(
@@ -2906,7 +2910,7 @@ fn build_metadata_ir(
         &ir.model.features,
         &ir.model.sketch_entities,
         &ir.model.parameters,
-        &lanes,
+        &sketch_lanes,
     );
     crate::resolved_features::project_profiled_hole_constructions(
         &mut ir.model.features,
