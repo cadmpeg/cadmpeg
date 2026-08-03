@@ -183,6 +183,11 @@ impl ContainerNoted for DisplayJtGeometricTransformAttribute {
         (&self.id, self.source_offset)
     }
 }
+impl ContainerNoted for DisplayJtMaterialAttribute {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
 impl ContainerNoted for DisplayJtPolygonMesh {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
@@ -944,6 +949,18 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             )
         },
         len: |m| m.display_jt.display_jt_geometric_transform_attributes.len(),
+        counts_toward_emptiness: false,
+    },
+    CatalogueRow {
+        arena: "display_jt_material_attributes",
+        tag: Some("DISPLAY_JT_MATERIAL_ATTRIBUTE"),
+        exactness: Exactness::Derived,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| {
+            note_container(&m.display_jt.display_jt_material_attributes, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.display_jt.display_jt_material_attributes, r, ns),
+        len: |m| m.display_jt.display_jt_material_attributes.len(),
         counts_toward_emptiness: false,
     },
     CatalogueRow {

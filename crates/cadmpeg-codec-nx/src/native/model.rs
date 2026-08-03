@@ -42,6 +42,7 @@ pub(crate) struct DisplayJtRecords {
     pub(crate) display_jt_group_node_data: Vec<DisplayJtGroupNodeData>,
     pub(crate) display_jt_instance_nodes: Vec<DisplayJtInstanceNode>,
     pub(crate) display_jt_geometric_transform_attributes: Vec<DisplayJtGeometricTransformAttribute>,
+    pub(crate) display_jt_material_attributes: Vec<DisplayJtMaterialAttribute>,
     pub(crate) display_jt_partition_nodes: Vec<DisplayJtPartitionNode>,
     pub(crate) display_jt_range_lod_nodes: Vec<DisplayJtRangeLodNode>,
     pub(crate) display_jt_tri_strip_shape_nodes: Vec<DisplayJtTriStripShapeNode>,
@@ -505,6 +506,12 @@ impl NativeModel {
             &display_jt_segments,
             &display_jt_documents,
         );
+        let display_jt_material_attributes = display_jt_material_attributes(
+            budget,
+            container,
+            &display_jt_segments,
+            &display_jt_documents,
+        );
         let display_jt_partition_nodes = display_jt_partition_nodes(
             budget,
             container,
@@ -870,6 +877,7 @@ impl NativeModel {
                 display_jt_group_node_data,
                 display_jt_instance_nodes,
                 display_jt_geometric_transform_attributes,
+                display_jt_material_attributes,
                 display_jt_partition_nodes,
                 display_jt_range_lod_nodes,
                 display_jt_tri_strip_shape_nodes,

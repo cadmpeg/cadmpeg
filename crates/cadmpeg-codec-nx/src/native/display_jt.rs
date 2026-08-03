@@ -649,6 +649,38 @@ pub struct DisplayJtGeometricTransformAttribute {
     pub source_offset: u64,
 }
 
+/// One JT material attribute attached to logical scene nodes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DisplayJtMaterialAttribute {
+    /// Globally unique material-attribute identity.
+    pub id: String,
+    /// Owning compressed logical scene-graph element.
+    pub element: String,
+    /// Serialized attribute object identifier referenced by nodes.
+    pub object_id: u32,
+    /// Base-attribute state flags.
+    pub state_flags: u8,
+    /// Base-attribute field-inhibit flags.
+    pub field_inhibit_flags: u32,
+    /// Material blending and vertex-color override flags.
+    pub data_flags: u16,
+    /// Ambient RGBA components.
+    pub ambient: [f32; 4],
+    /// Diffuse RGBA components.
+    pub diffuse: [f32; 4],
+    /// Specular RGBA components.
+    pub specular: [f32; 4],
+    /// Emission RGBA components.
+    pub emission: [f32; 4],
+    /// Specular exponent in the inclusive range 1 through 128.
+    pub shininess: f32,
+    /// Reflected fraction for version 2 material records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reflectivity: Option<f32>,
+    /// Absolute source offset of the owning compressed envelope.
+    pub source_offset: u64,
+}
+
 /// Complete JT 9 partition node linking an LSG branch to a partition file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DisplayJtPartitionNode {
@@ -1265,6 +1297,68 @@ pub(crate) fn parse_jt9_geometric_transform_body(
         }
     }
     Some((state_flags, field_inhibit_flags, stored_values_mask, matrix))
+}
+
+type ParsedJt9Material = (u8, u32, u16, [[f32; 4]; 4], f32, Option<f32>);
+
+pub(crate) fn parse_jt9_material_body(body: &[u8]) -> Option<ParsedJt9Material> {
+    let base_version = u16::from_le_bytes(body.get(0..2)?.try_into().ok()?);
+    let state_flags = *body.get(2)?;
+    let field_inhibit_flags = u32::from_le_bytes(body.get(3..7)?.try_into().ok()?);
+    let version = u16::from_le_bytes(body.get(7..9)?.try_into().ok()?);
+    let data_flags = u16::from_le_bytes(body.get(9..11)?.try_into().ok()?);
+    let expected_len = match version {
+        1 => 79,
+        2 => 83,
+        _ => return None,
+    };
+    let source_blend_factor = (data_flags >> 6) & 0x1f;
+    let destination_blend_factor = (data_flags >> 11) & 0x1f;
+    if base_version != 1
+        || state_flags & !0x0f != 0
+        || field_inhibit_flags & !0x01ff != 0
+        || data_flags & 0x000f != 0
+        || source_blend_factor > 10
+        || destination_blend_factor > 10
+        || body.len() != expected_len
+    {
+        return None;
+    }
+    let scalar = |offset: usize| {
+        let value = f32::from_le_bytes(body.get(offset..offset + 4)?.try_into().ok()?);
+        value.is_finite().then_some(value)
+    };
+    let rgba = |offset: usize| {
+        let color = [
+            scalar(offset)?,
+            scalar(offset + 4)?,
+            scalar(offset + 8)?,
+            scalar(offset + 12)?,
+        ];
+        color
+            .iter()
+            .all(|component| (0.0..=1.0).contains(component))
+            .then_some(color)
+    };
+    let colors = [rgba(11)?, rgba(27)?, rgba(43)?, rgba(59)?];
+    let shininess = scalar(75)?;
+    if !(1.0..=128.0).contains(&shininess) {
+        return None;
+    }
+    let reflectivity = (version == 2)
+        .then(|| scalar(79).filter(|value| (0.0..=1.0).contains(value)))
+        .flatten();
+    if version == 2 && reflectivity.is_none() {
+        return None;
+    }
+    Some((
+        state_flags,
+        field_inhibit_flags,
+        data_flags,
+        colors,
+        shininess,
+        reflectivity,
+    ))
 }
 
 /// Decode the complete outer index of each `/Root/UG_PART/DisplayJT` stream.
@@ -3020,6 +3114,84 @@ pub fn display_jt_geometric_transform_attributes(
     attributes
 }
 
+/// Decode JT 9 material attributes from logical scene-graph segments.
+pub fn display_jt_material_attributes(
+    budget: Option<(&DecodeContext<'_>, View<'_>)>,
+    container: &Container,
+    segments: &[DisplayJtSegment],
+    documents: &[DisplayJtDocument],
+) -> Vec<DisplayJtMaterialAttribute> {
+    const MATERIAL_ATTRIBUTE_TYPE: [u8; 16] = [
+        0x30, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
+        0x97,
+    ];
+    let mut attributes = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.segment_type == 1) {
+        let Some(document) = documents
+            .iter()
+            .find(|document| document.id == segment.document)
+        else {
+            return Vec::new();
+        };
+        if document.format_major != 9 || segment.compression.is_none() {
+            continue;
+        }
+        let Ok(start) = usize::try_from(segment.source_offset) else {
+            return Vec::new();
+        };
+        let Some(bytes) = container
+            .data
+            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+        else {
+            return Vec::new();
+        };
+        let Some(inflated) = bytes
+            .get(33..)
+            .and_then(|compressed| inflate_display_jt(budget, compressed))
+        else {
+            return Vec::new();
+        };
+        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
+            return Vec::new();
+        };
+        for (ordinal, element) in elements.into_iter().enumerate() {
+            if element.object_type_id != MATERIAL_ATTRIBUTE_TYPE {
+                continue;
+            }
+            if element.object_base_type != 3 {
+                return Vec::new();
+            }
+            let Some((
+                state_flags,
+                field_inhibit_flags,
+                data_flags,
+                colors,
+                shininess,
+                reflectivity,
+            )) = parse_jt9_material_body(element.body)
+            else {
+                return Vec::new();
+            };
+            attributes.push(DisplayJtMaterialAttribute {
+                id: format!("{}-material-attribute-{ordinal}", segment.id),
+                element: format!("{}-inflated-element-{ordinal}", segment.id),
+                object_id: element.object_id,
+                state_flags,
+                field_inhibit_flags,
+                data_flags,
+                ambient: colors[0],
+                diffuse: colors[1],
+                specular: colors[2],
+                emission: colors[3],
+                shininess,
+                reflectivity,
+                source_offset: segment.source_offset + 24,
+            });
+        }
+    }
+    attributes
+}
+
 /// Decode complete JT 9 partition nodes from logical scene-graph segments.
 pub fn display_jt_partition_nodes(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
@@ -4668,6 +4840,47 @@ mod tests {
         shear.extend_from_slice(&0.5_f32.to_le_bytes());
         shear.extend_from_slice(&0.5_f32.to_le_bytes());
         assert!(super::parse_jt9_geometric_transform_body(&shear).is_none());
+    }
+
+    #[test]
+    fn display_jt9_material_requires_complete_bounded_components() {
+        let mut body = 1_u16.to_le_bytes().to_vec();
+        body.push(0x02);
+        body.extend_from_slice(&0x41_u32.to_le_bytes());
+        body.extend_from_slice(&2_u16.to_le_bytes());
+        body.extend_from_slice(&0x3990_u16.to_le_bytes());
+        for color in [
+            [0.1_f32, 0.2, 0.3, 1.0],
+            [0.4_f32, 0.5, 0.6, 0.75],
+            [0.7_f32, 0.8, 0.9, 1.0],
+            [0.0_f32, 0.1, 0.2, 1.0],
+        ] {
+            for component in color {
+                body.extend_from_slice(&component.to_le_bytes());
+            }
+        }
+        body.extend_from_slice(&64.0_f32.to_le_bytes());
+        body.extend_from_slice(&0.25_f32.to_le_bytes());
+        let (state, inhibit, flags, colors, shininess, reflectivity) =
+            super::parse_jt9_material_body(&body).expect("required invariant");
+        assert_eq!(state, 0x02);
+        assert_eq!(inhibit, 0x41);
+        assert_eq!(flags, 0x3990);
+        assert_eq!(colors[1], [0.4, 0.5, 0.6, 0.75]);
+        assert_eq!(shininess, 64.0);
+        assert_eq!(reflectivity, Some(0.25));
+
+        let mut invalid = body.clone();
+        invalid[27..31].copy_from_slice(&1.1_f32.to_le_bytes());
+        assert!(super::parse_jt9_material_body(&invalid).is_none());
+        let mut invalid = body.clone();
+        invalid[75..79].copy_from_slice(&0.0_f32.to_le_bytes());
+        assert!(super::parse_jt9_material_body(&invalid).is_none());
+        let mut invalid = body.clone();
+        invalid[9..11].copy_from_slice(&0x0001_u16.to_le_bytes());
+        assert!(super::parse_jt9_material_body(&invalid).is_none());
+        body.pop();
+        assert!(super::parse_jt9_material_body(&body).is_none());
     }
 
     #[test]

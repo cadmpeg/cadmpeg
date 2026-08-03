@@ -14136,6 +14136,7 @@ mod golden {
         "display_jt_coordinate_array_headers",
         "display_jt_documents",
         "display_jt_geometric_transform_attributes",
+        "display_jt_material_attributes",
         "display_jt_group_node_data",
         "display_jt_indices",
         "display_jt_initial_face_degree_symbols",
@@ -15034,7 +15035,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (223), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (224), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -15045,13 +15046,13 @@ mod golden {
 
         use crate::native::catalogue::CATALOGUE;
 
-        assert_eq!(CATALOGUE.len(), 223, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 224, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE
                 .iter()
                 .filter(|row| row.phase == Phase::GroupA)
                 .count(),
-            106,
+            107,
             "group A family count"
         );
         assert_eq!(
