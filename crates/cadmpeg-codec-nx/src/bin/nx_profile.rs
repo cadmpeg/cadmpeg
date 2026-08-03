@@ -79,6 +79,7 @@ struct EntityCounts {
     edges: usize,
     vertices: usize,
     features: usize,
+    feature_result_topologies: usize,
     sketches: usize,
     sketch_entities: usize,
     sketch_constraints: usize,
@@ -95,6 +96,7 @@ impl EntityCounts {
             edges: ir.model.edges.len(),
             vertices: ir.model.vertices.len(),
             features: ir.model.features.len(),
+            feature_result_topologies: ir.model.feature_result_topologies.len(),
             sketches: ir.model.sketches.len(),
             sketch_entities: ir.model.sketch_entities.len(),
             sketch_constraints: ir.model.sketch_constraints.len(),
@@ -110,6 +112,7 @@ impl EntityCounts {
         self.edges += other.edges;
         self.vertices += other.vertices;
         self.features += other.features;
+        self.feature_result_topologies += other.feature_result_topologies;
         self.sketches += other.sketches;
         self.sketch_entities += other.sketch_entities;
         self.sketch_constraints += other.sketch_constraints;
@@ -229,7 +232,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .last()
         .map(|gate| gate.level.clone());
     let profile = Profile {
-        version: 7,
+        version: 8,
         format: "nx",
         fixtures,
         totals,

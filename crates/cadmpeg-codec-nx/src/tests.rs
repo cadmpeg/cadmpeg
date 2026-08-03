@@ -1475,8 +1475,9 @@ fn nx_replace_face_completeness_requires_resolved_disjoint_operands() {
 fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature,
-        FeatureDefinition, FeatureId, Length, ProfileRef, Termination,
+        FeatureDefinition, FeatureId, FeatureResultTopology, Length, ProfileRef, Termination,
     };
+    use cadmpeg_ir::ids::FeatureResultTopologyId;
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let output = ir.model.bodies[0].id.clone();
@@ -1518,7 +1519,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
         source_text: None,
         source_content: Vec::new(),
         outputs: vec![output],
-        definition: complete,
+        definition: complete.clone(),
         native_ref: None,
     });
 
@@ -1554,6 +1555,28 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("extrude (1)"));
     }
+
+    ir.model.features[0].definition = complete;
+    ir.model.features[0].outputs.clear();
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("extrude (1)"));
+
+    ir.model
+        .feature_result_topologies
+        .push(FeatureResultTopology {
+            id: FeatureResultTopologyId("test:feature-result#extrude".into()),
+            output_of: ir.model.features[0].id.clone(),
+            bodies: vec!["test:feature-local-body#0".into()],
+            faces: Vec::new(),
+            edges: Vec::new(),
+            vertices: Vec::new(),
+            native_ref: Some("test:native-body-writer#0".into()),
+        });
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
 }
 
 #[test]

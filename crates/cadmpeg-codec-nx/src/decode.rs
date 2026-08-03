@@ -10350,6 +10350,13 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
 
     let mut incomplete_feature_output_families = BTreeMap::<&str, usize>::new();
     let mut incomplete_feature_construction_families = BTreeMap::<&str, usize>::new();
+    let generated_body_outputs = ir
+        .model
+        .feature_result_topologies
+        .iter()
+        .filter(|state| !state.bodies.is_empty())
+        .map(|state| &state.output_of)
+        .collect::<BTreeSet<_>>();
     for feature in &ir.model.features {
         let is_exact_empty_base = matches!(
             &feature.definition,
@@ -10359,13 +10366,15 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         );
         if feature.suppressed != Some(true) && !is_exact_empty_base {
             if let Some(family) = feature.definition.body_output_family().filter(|_| {
-                feature.outputs.is_empty()
-                    || feature.outputs.iter().collect::<BTreeSet<_>>().len()
-                        != feature.outputs.len()
-                    || feature
+                let current_outputs_are_valid = !feature.outputs.is_empty()
+                    && feature.outputs.iter().collect::<BTreeSet<_>>().len()
+                        == feature.outputs.len()
+                    && feature
                         .outputs
                         .iter()
-                        .any(|output| !ir.model.bodies.iter().any(|body| body.id == *output))
+                        .all(|output| ir.model.bodies.iter().any(|body| body.id == *output));
+                !(current_outputs_are_valid
+                    || feature.outputs.is_empty() && generated_body_outputs.contains(&feature.id))
             }) {
                 *incomplete_feature_output_families
                     .entry(family)

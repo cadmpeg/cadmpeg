@@ -220,6 +220,13 @@ neutral body from that image is an output of the operation. An offset-store
 primary body or unbound object-namespace primary body retains its native
 relation but has no neutral output.
 
+Every non-`DELETE` operation with an unambiguous primary-body writer declares
+one intermediate result body. The result body's feature-local identity is the
+retained primary-body-field identity. This result declaration is independent
+of a segment body-image binding and does not make the intermediate body a
+current model body. A `DELETE` primary-body field consumes its selected body
+and declares no result body.
+
 A body selection retains input-local identity atomically only when every
 serialized object identity belongs to a segment body-image alias component.
 The identity is the smallest object index in the complete transitive alias

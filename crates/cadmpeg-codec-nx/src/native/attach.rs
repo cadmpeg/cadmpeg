@@ -17,15 +17,16 @@ use cadmpeg_ir::features::{
     ConfigurationBodies, ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
     CurveProjectionDirectionState, DesignConfiguration, DesignParameter, EdgeSelection,
     ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition, FeatureId,
-    FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind, HolePlacement, Length,
-    ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
-    RibConstruction, RibDraft, SketchSpace, SweepMode, Termination, ThickenSide, TrimRegion,
+    FeatureResultTopology, FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind,
+    HolePlacement, Length, ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef,
+    RadiusForm, RadiusSpec, RibConstruction, RibDraft, SketchSpace, SweepMode, Termination,
+    ThickenSide, TrimRegion,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::ids::{AttributeId, BodyId, LoopId, SurfaceId, UnknownId};
+use cadmpeg_ir::ids::{AttributeId, BodyId, FeatureResultTopologyId, LoopId, SurfaceId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::semantic_annotations::{
     SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
@@ -884,6 +885,10 @@ fn attach_feature_operations(
     let body_references_by_id = body_references
         .iter()
         .map(|reference| (reference.id.as_str(), reference))
+        .collect::<BTreeMap<_, _>>();
+    let body_writer_references_by_operation = body_references
+        .iter()
+        .map(|reference| (reference.operation_label.as_str(), reference))
         .collect::<BTreeMap<_, _>>();
     let mut offset_store_bodies_by_operation = BTreeMap::<&str, Vec<(u32, String)>>::new();
     for body_use in body_data_block_uses {
@@ -2640,6 +2645,27 @@ fn attach_feature_operations(
             definition,
             native_ref: Some(label.id.clone()),
         });
+        if !deletes_body {
+            if let Some(writer) = body_writer_references_by_operation.get(label.id.as_str()) {
+                let key = label
+                    .id
+                    .strip_prefix("nx:feature-history:operation-label#")
+                    .unwrap_or(label.id.as_str());
+                ir.model
+                    .feature_result_topologies
+                    .push(FeatureResultTopology {
+                        id: FeatureResultTopologyId(format!(
+                            "nx:feature-history:result-topology#{key}"
+                        )),
+                        output_of: id,
+                        bodies: vec![writer.id.clone()],
+                        faces: Vec::new(),
+                        edges: Vec::new(),
+                        vertices: Vec::new(),
+                        native_ref: Some(writer.id.clone()),
+                    });
+            }
+        }
     }
 }
 
