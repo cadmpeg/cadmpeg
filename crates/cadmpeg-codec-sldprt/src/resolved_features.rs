@@ -10602,6 +10602,73 @@ mod marker_tests {
     }
 
     #[test]
+    fn extended_compact_marker84_profile_line_uses_zero_based_geometry_roster() {
+        let mut payload = vec![0; 84 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+        payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+        payload[31..41]
+            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x08, 0x00, 0x58, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..58].copy_from_slice(&0u16.to_le_bytes());
+        payload[58..60].copy_from_slice(&2u16.to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[72..76].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
+        payload[80..84].copy_from_slice(&7u32.to_le_bytes());
+        payload[84..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        let entity = |id: &str, offset, coordinates_m: Option<[f64; 2]>| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("sketch".into()),
+            ordinal: 0,
+            offset,
+            object_index: None,
+            local_id: None,
+            kind: if coordinates_m.is_some() {
+                SketchInputKind::Point
+            } else {
+                SketchInputKind::LineOrCircle
+            },
+            state_value: Some(1.0),
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let curve = entity("curve", 0, None);
+        let first = entity("first", 10, Some([0.0, 0.0]));
+        let second = entity("second", 20, Some([1.0, 0.0]));
+        let third = entity("third", 30, Some([1.0, 1.0]));
+        let markers = [&curve, &first, &second, &third];
+
+        assert!(super::extended_compact_84_profile_line_uses_point_roster(
+            &payload, 0
+        ));
+        assert!(!marker_is_selected_construction_line(&payload, 0));
+        assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
+        assert_eq!(
+            roster_curve_endpoint_markers(&payload, &curve, &markers)
+                .iter()
+                .map(|endpoint| endpoint.id.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "third"]
+        );
+
+        payload[39] = 0x40;
+        assert!(super::extended_compact_84_profile_line_uses_point_roster(
+            &payload, 0
+        ));
+        payload[39] = 0x58;
+        payload[80..84].fill(0);
+        assert!(!super::extended_compact_84_profile_line_uses_point_roster(
+            &payload, 0
+        ));
+        assert!(roster_curve_endpoint_markers(&payload, &curve, &markers).is_empty());
+    }
+
+    #[test]
     fn legacy_referenced_wide_arc_indexes_center_and_endpoints() {
         let mut payload = vec![0; 112 + LEGACY_SKETCH_MARKER.len()];
         payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
@@ -41900,6 +41967,7 @@ fn roster_curve_endpoint_markers<'a>(
     }
     if curve.kind == SketchInputKind::LineOrCircle
         && (extended_marker84_line_uses_point_roster(payload, offset)
+            || extended_compact_84_profile_line_uses_point_roster(payload, offset)
             || legacy_compact_84_profile_line_uses_point_roster(payload, offset))
     {
         let endpoints = coordinate_roster_curve_endpoint_markers(payload, curve, markers);
@@ -44130,6 +44198,41 @@ fn extended_marker84_line_uses_point_roster(payload: &[u8], offset: usize) -> bo
         && sketch_marker_prefix_at(payload, offset.saturating_add(84))
 }
 
+fn extended_compact_84_profile_line_uses_point_roster(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        && payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
+        && payload.get(offset + 13..offset + 17) == Some(&[0x00, 0x00, 0x80, 0xbf])
+        && marker_native_code(payload, offset) == Some(2)
+        && payload.get(offset + 23..offset + 31)
+            == Some(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00])
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x08, 0x00])
+        && matches!(
+            payload.get(offset + 39..offset + 48),
+            Some([0x40 | 0x58, 0, 0, 0, 0, 0, 0, 0, 0])
+        )
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && payload
+            .get(offset + 56..offset + 60)
+            .is_some_and(|endpoints| {
+                endpoints[..2] != [0xff; 2]
+                    && endpoints[2..] != [0xff; 2]
+                    && endpoints[..2] != endpoints[2..]
+            })
+        && payload.get(offset + 60..offset + 64) == Some(&[0; 4])
+        && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
+        && matches!(
+            payload.get(offset + 72..offset + 76),
+            Some([0, 0, 0 | 2, 0])
+        )
+        && payload.get(offset + 76..offset + 80) != Some(&[0xff; 4])
+        && payload
+            .get(offset + 80..offset + 84)
+            .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
+        && sketch_marker_prefix_at(payload, offset.saturating_add(84))
+}
+
 fn legacy_compact_84_profile_line_uses_point_roster(payload: &[u8], offset: usize) -> bool {
     payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) == Some(LEGACY_SKETCH_MARKER)
         && payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
@@ -44248,6 +44351,7 @@ fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Option<us
             Some(64)
         } else if extended_marker104_arc_uses_point_roster(payload, offset)
             || extended_marker84_line_uses_point_roster(payload, offset)
+            || extended_compact_84_profile_line_uses_point_roster(payload, offset)
             || extended_compact_indexed_curve_endpoint_indices(payload, offset).is_some()
             || compact_curve_endpoint_indices(payload, offset).is_some()
         {
@@ -45450,6 +45554,7 @@ fn marker_is_selected_construction_line(payload: &[u8], offset: usize) -> bool {
     {
         extended_horizontal_axis_endpoint_indices(payload, offset).is_some()
             || payload.get(offset + 17..offset + 21) == Some(&2u32.to_le_bytes())
+                && !extended_compact_84_profile_line_uses_point_roster(payload, offset)
                 && !(marker_profile_curve_role(payload, offset) == Some(1)
                     && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes()))
                 && wide_indexed_curve_endpoint_indices(payload, offset).is_none()
