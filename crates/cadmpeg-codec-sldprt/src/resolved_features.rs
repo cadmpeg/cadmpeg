@@ -199,7 +199,7 @@ fn legacy_sketch_object_stream(payload: &[u8]) -> bool {
     classes.iter().any(|class| class.name == "sgSketch")
         && classes
             .iter()
-            .any(|class| class.name == "moFeatureDimHandle_c")
+            .any(|class| class.role == FeatureInputClassRole::SketchEntity)
 }
 
 /// Project spatial sketches from their model-space marker coordinates or bounded lines.
@@ -2827,6 +2827,25 @@ mod marker_tests {
         assert!(!legacy_feature_input_section("Contents/Config-0-Partition"));
         assert!(!legacy_feature_input_section("Contents/Config-name"));
         assert!(!legacy_feature_input_section("Other/Config-0"));
+    }
+
+    #[test]
+    fn legacy_sketch_object_stream_requires_a_sketch_and_entity_declaration() {
+        let declaration = |name: &str| {
+            let mut bytes = CLASS_MARKER.to_vec();
+            bytes.extend_from_slice(&(name.len() as u16).to_le_bytes());
+            bytes.extend_from_slice(name.as_bytes());
+            bytes
+        };
+        let mut payload = declaration("sgSketch");
+        assert!(!super::legacy_sketch_object_stream(&payload));
+
+        payload.extend_from_slice(&declaration("sgPointHandle"));
+        assert!(super::legacy_sketch_object_stream(&payload));
+
+        assert!(!super::legacy_sketch_object_stream(&declaration(
+            "sgPointHandle"
+        )));
     }
 
     #[test]
@@ -18970,14 +18989,14 @@ fn bind_detached_legacy_sketch_objects(
     if !is_supplemental_config_lane(lane) {
         return;
     }
-    let Some(limit) = lane
+    let limit = lane
         .classes
         .iter()
         .find(|class| class.name == "moFeatureDimHandle_c")
-        .map(|class| class.offset)
-    else {
-        return;
-    };
+        .map_or_else(
+            || u64::try_from(lane.native_payload.len()).unwrap_or(u64::MAX),
+            |class| class.offset,
+        );
     let markers = lane
         .sketch_entities
         .iter()
@@ -31944,7 +31963,7 @@ fn legacy_config_collinear_sketch(
 #[cfg(test)]
 mod detached_legacy_sketch_tests {
     use super::*;
-    use crate::records::Feature;
+    use crate::records::{Feature, FeatureHistory};
 
     fn feature() -> Feature {
         Feature {
@@ -32002,6 +32021,48 @@ mod detached_legacy_sketch_tests {
             links: Vec::new(),
             link_selector: None,
         }
+    }
+
+    #[test]
+    fn detached_object_without_legacy_dimension_handle_binds_to_unique_sketch() {
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![feature()],
+        };
+        let mut detached = marker(1, Some(1), SketchInputKind::Point, Some([1.0, 2.0]));
+        detached.feature_ref = None;
+        detached.offset = 100;
+        let mut lane = FeatureInputLane {
+            id: "sldprt:feature-input:config-objects#1".into(),
+            configuration: None,
+            native_payload: vec![0; 512],
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![detached],
+        };
+
+        bind_detached_legacy_sketch_objects(
+            std::slice::from_ref(&history),
+            &HashSet::new(),
+            &mut lane,
+        );
+
+        assert_eq!(
+            lane.sketch_entities[0].feature_ref.as_deref(),
+            Some("feature")
+        );
     }
 
     #[test]
