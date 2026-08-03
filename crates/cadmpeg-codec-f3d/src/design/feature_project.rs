@@ -287,15 +287,17 @@ pub fn project_parameter_design_with_edge_identities(
                         .collect(),
                     properties: native_scope_properties(scope, native_scope),
                 }),
-                Some(DesignFeatureFamily::SurfacePatch) => {
-                    project_surface_patch(scope, construction_groups).unwrap_or_else(|| {
-                        FeatureDefinition::Native {
-                            kind: scope.kind.clone(),
-                            parameters: BTreeMap::new(),
-                            properties: native_scope_properties(scope, native_scope),
-                        }
-                    })
-                }
+                Some(DesignFeatureFamily::SurfacePatch) => project_surface_patch(
+                    scope,
+                    construction_groups,
+                    edge_operands,
+                    edge_identity_operands,
+                )
+                .unwrap_or_else(|| FeatureDefinition::Native {
+                    kind: scope.kind.clone(),
+                    parameters: BTreeMap::new(),
+                    properties: native_scope_properties(scope, native_scope),
+                }),
                 Some(DesignFeatureFamily::SurfaceExtend) => scope
                     .surface_extend_operation
                     .as_ref()
@@ -3420,16 +3422,62 @@ fn project_fixed_pipe(
 pub(crate) fn project_surface_patch(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
+    edge_operands: &[DesignEdgeOperand],
+    edge_identity_operands: &[DesignEdgeIdentityOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, PathRef, SurfaceBoundary};
 
     if scope.kind != "SurfacePatch" {
         return None;
     }
-    // The reference count separates the two forms: the fixed-path form has
-    // `3n + 1` references and the sketch-profile form has three. Frame length
-    // does not, because the Design scope envelope has two generations and the
-    // later one adds fourteen bytes to every `SurfacePatch` form.
+    let stream = native_stream(&scope.id)?;
+    let mut groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    groups.sort_by_key(|group| group.scope_reference_ordinal);
+
+    // The single-group path form stores the group, all of its ordered edge
+    // members, and the tool body. It has no per-component settings records.
+    let grouped_path_frame_length = u64::try_from(scope.reference_members.len())
+        .ok()?
+        .checked_mul(11)?
+        .checked_add(277)?;
+    if scope.frame_length == grouped_path_frame_length {
+        let [group] = groups.as_slice() else {
+            return None;
+        };
+        if scope.reference_members.len() < 3
+            || group.scope_reference_ordinal != 0
+            || group.record_index != scope.reference_members[0]
+            || group.role != ROLE_0X4
+            || group.members.is_empty()
+            || group.members.as_slice()
+                != &scope.reference_members[1..scope.reference_members.len() - 1]
+        {
+            return None;
+        }
+        return Some(FeatureDefinition::FilledSurface {
+            boundary: SurfaceBoundary::Path(resolved_loft_path(
+                group,
+                construction_groups,
+                edge_operands,
+                edge_identity_operands,
+                scope,
+            )),
+            support_faces: FaceSelection::Faces(Vec::new()),
+            continuity: None,
+            merge_result: None,
+        });
+    }
+
+    // The reference count separates the two settings-bearing forms: the
+    // fixed-path form has `3n + 1` references and the sketch-profile form has
+    // three. Frame length does not, because the Design scope envelope has two
+    // generations and the later one adds fourteen bytes to both forms.
     let (boundary_count, boundary_role) = if scope.reference_members.len() == 3 {
         (1, 0x0000_0041_0000_0000)
     } else {
@@ -3439,19 +3487,9 @@ pub(crate) fn project_surface_patch(
         }
         (boundary_count, ROLE_0X4)
     };
-    let stream = native_stream(&scope.id)?;
-    let groups = construction_groups
-        .iter()
-        .filter(|group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == scope.record_index
-        })
-        .collect::<Vec<_>>();
     if groups.len() != boundary_count {
         return None;
     }
-    let mut groups = groups;
-    groups.sort_by_key(|group| group.scope_reference_ordinal);
     for (ordinal, boundary) in groups.iter().enumerate() {
         let reference_ordinal = ordinal * 3;
         if boundary.scope_reference_ordinal != u32::try_from(reference_ordinal).ok()?
@@ -3464,12 +3502,18 @@ pub(crate) fn project_surface_patch(
         }
     }
     let boundary = if let [boundary] = groups.as_slice() {
-        boundary.id.clone()
+        resolved_loft_path(
+            boundary,
+            construction_groups,
+            edge_operands,
+            edge_identity_operands,
+            scope,
+        )
     } else {
-        scope.id.clone()
+        PathRef::Native(scope.id.clone())
     };
     Some(FeatureDefinition::FilledSurface {
-        boundary: SurfaceBoundary::Path(PathRef::Native(boundary)),
+        boundary: SurfaceBoundary::Path(boundary),
         support_faces: FaceSelection::Faces(Vec::new()),
         continuity: None,
         merge_result: None,

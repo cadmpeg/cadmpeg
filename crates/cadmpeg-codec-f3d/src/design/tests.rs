@@ -16090,7 +16090,12 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     let mut patch_group = group(100, 0, vec![200]);
     patch_group.role = 0x0000_0004_0000_0000;
     assert!(matches!(
-        crate::design::feature_project::project_surface_patch(&patch_scope, std::slice::from_ref(&patch_group)),
+        crate::design::feature_project::project_surface_patch(
+            &patch_scope,
+            std::slice::from_ref(&patch_group),
+            &[],
+            &[],
+        ),
         Some(FeatureDefinition::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::Native(ref native)
@@ -16108,7 +16113,9 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
             &patch_scope,
-            &[patch_group.clone(), second_patch_group]
+            &[patch_group.clone(), second_patch_group],
+            &[],
+            &[],
         ),
         Some(FeatureDefinition::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
@@ -16122,7 +16129,12 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     patch_scope.reference_members = vec![100, 200, 300];
     patch_group.role = 0x0000_0041_0000_0000;
     assert!(matches!(
-        crate::design::feature_project::project_surface_patch(&patch_scope, std::slice::from_ref(&patch_group)),
+        crate::design::feature_project::project_surface_patch(
+            &patch_scope,
+            std::slice::from_ref(&patch_group),
+            &[],
+            &[],
+        ),
         Some(FeatureDefinition::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::Native(ref native)
@@ -16137,7 +16149,9 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
             &patch_scope,
-            std::slice::from_ref(&patch_group)
+            std::slice::from_ref(&patch_group),
+            &[],
+            &[],
         ),
         Some(FeatureDefinition::FilledSurface { .. })
     ));
@@ -16147,16 +16161,38 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
             &patch_scope,
-            std::slice::from_ref(&patch_group)
+            std::slice::from_ref(&patch_group),
+            &[],
+            &[],
         ),
         Some(FeatureDefinition::FilledSurface { .. })
     ));
     patch_scope.reference_members = vec![100, 200, 300, 301, 302];
     assert!(crate::design::feature_project::project_surface_patch(
         &patch_scope,
-        std::slice::from_ref(&patch_group)
+        std::slice::from_ref(&patch_group),
+        &[],
+        &[],
     )
     .is_none());
+
+    patch_scope.frame_length = 343;
+    patch_scope.reference_members = vec![100, 200, 201, 202, 203, 300];
+    patch_group.members = vec![200, 201, 202, 203];
+    assert!(matches!(
+        crate::design::feature_project::project_surface_patch(
+            &patch_scope,
+            std::slice::from_ref(&patch_group),
+            &[],
+            &[],
+        ),
+        Some(FeatureDefinition::FilledSurface {
+            boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
+                cadmpeg_ir::features::PathRef::Native(ref native)
+            ),
+            ..
+        }) if native == &patch_group.id
+    ));
 
     let mut fill_scope = scope.clone();
     fill_scope.kind = "BoundaryFill".into();
