@@ -3,8 +3,9 @@
 `cadmpeg-codec-freecad` decodes FreeCAD `.FCStd` archives into `CadIr` and
 encodes supported `CadIr` documents back to `.FCStd`.
 
-Support level: [L9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
-for the schema-4/file-1 envelope.
+Support level: [L5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+for the schema-4/file-1 envelope. Deterministic retained writes, checked edits,
+and source-less typed application graphs are extras above L5.
 
 ## Install
 
@@ -49,24 +50,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = File::open("part.FCStd")?;
     let result = FcstdCodec.decode(&mut input, &DecodeOptions::default())?;
 
-    // Edit supported fields in result.ir.
+    // Edit supported fields on the FCStd native document graph in result.ir.
 
     let mut output = File::create("part-edited.FCStd")?;
     FcstdCodec
         .plan(cadmpeg_ir::codec::EncodeInput {
             ir: &result.ir,
-            fidelity: Some(&result.source_fidelity),
+            fidelity: None,
         })?
         .write_to(&mut output)?;
     Ok(())
 }
 ```
 
-Retained schema-4/file-1 documents regenerate while preserving unedited XML
-records and named side entries. Checked leaf property edits and side-entry
-replacements update the native graph in place. `FcstdDocumentBuilder` builds
-source-less application graphs for the same write envelope. Unsupported
-schema or file targets are refused.
+Writing uses the FCStd native document graph on `CadIr`
+(`ir.native["fcstd"]`), not `SourceFidelity`. `Encoder::plan` ignores
+`fidelity` and returns `NotConsumed` when one is supplied. Retained
+schema-4/file-1 documents regenerate while preserving unedited XML records and
+named side entries. Checked leaf property edits and side-entry replacements
+update the native graph in place. `FcstdDocumentBuilder` builds source-less
+application graphs for the same write envelope. Unsupported schema or file
+targets are refused.
 
 ## Data model
 

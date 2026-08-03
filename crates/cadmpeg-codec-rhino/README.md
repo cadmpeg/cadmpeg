@@ -3,8 +3,9 @@
 `cadmpeg-codec-rhino` decodes Rhino `.3dm` archives into `CadIr` and encodes
 supported `CadIr` documents back to `.3dm`.
 
-Support level: [L9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
-for archive versions 50, 60, 70, and 80.
+Support level: [L8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+for archive versions 50, 60, 70, and 80. Bounded source-less native writing is
+an extra above L8.
 
 ## Install
 
@@ -56,9 +57,13 @@ fn write_3dm(ir: &CadIr, path: &str) -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-`RhinoEncoder` selects the target archive version explicitly. Source-less
-generation writes the supported object families for that version. The CLI
-accepts the same choice:
+`RhinoEncoder` selects the target archive version explicitly. Writing is
+source-less semantic regeneration from a narrowly writable IR. `fidelity` is
+ignored and resolves to `NotConsumed`. Writable families are points and point
+clouds, circles, canonical NURBS curves and surfaces, planes, restricted
+planar and NURBS sheet and solid Breps, and triangle meshes. Unsupported
+arenas and retained non-writer namespaces are refused. Generated archives
+declare millimetre units. The CLI accepts the same archive-version choice:
 
 ```sh
 cadmpeg inspect model.3dm

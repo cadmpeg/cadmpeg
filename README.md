@@ -71,15 +71,15 @@ wrote part.step (2125 entities)
 
 Current format support includes:
 
-- **FreeCAD `.FCStd` — [L9](docs/format-support.md#support-ladder) for schema 4/file 1:** complete application graph read, deterministic retained writes, checked edits, and source-less generation.
+- **FreeCAD `.FCStd` — [L5](docs/format-support.md#support-ladder) for schema 4/file 1:** shape-complete typed read for the primary envelope; deterministic retained writes, checked edits, and source-less generation as extras above L5.
 - **Autodesk Fusion `.f3d` — [L4](docs/format-support.md#support-ladder):** readable design records; partial B-rep and appearance decode; native replay, patching, and generation.
 - **SolidWorks `.sldprt` — [L4](docs/format-support.md#support-ladder):** connected model read; configurations; typed features, sketches, and parameters; retained replay/patching and source-less native write.
-- **Rhino `.3dm` — [L9](docs/format-support.md#support-ladder) for archive 50/60/70/80:** complete built-in model, product structure, presentation, annotations, application-data retention, and bounded semantic native writing; older bands have inspection and metadata support.
-- **Siemens NX `.prt` — [L4](docs/format-support.md#support-ladder) for single-body, `RMFastLoad`-selected, and terminal-feature-lineage-resolved body images; L2 for unresolved multi-partition history:** exact carriers, connected B-rep, ordered feature history, expressions, and typed sketch-point dependencies, with conservative retention when final-body membership remains inconclusive.
+- **Rhino `.3dm` — [L8](docs/format-support.md#support-ladder) for archive 50/60/70/80:** complete built-in model, product structure, presentation, annotations, and application-data retention, with bounded source-less native writing as an extra; older bands have inspection and metadata support.
+- **Siemens NX `.prt` — [L3](docs/format-support.md#support-ladder) claimed for selected or terminal-lineage-resolved body images; L2 claimed for unresolved multi-partition history:** exact carriers and connected B-rep in the cumulative validation envelope, with feature and history transfer as extras and conservative retention when final-body membership remains inconclusive.
 - **CATIA V5 `.CATPart` — [L2](docs/format-support.md#support-ladder):** exact carriers with conditional topology on the standard-nested layout; other layouts at L1.
 - **Creo `.prt` — [L1](docs/format-support.md#support-ladder):** structural decode with partial placed geometry, topology, sketches, and design records.
 - **STEP Part 21 AP203/AP214/AP242 — [L9](docs/format-support.md#support-ladder):** full-document read and semantic clear-text write with target-schema selection and strict fidelity checks.
-- **IGES 5.3 Fixed ASCII — [L8](docs/format-support.md#support-ladder):** complete mechanical and document read with full byte accounting; read only.
+- **IGES 5.3 Fixed ASCII — [L8](docs/format-support.md#support-ladder):** complete mechanical and document read with `native.iges` card and entity retention; read only.
 
 The pure-Rust STEP writer re-decodes generated files and can reject every reported semantic loss before writing.
 
