@@ -1,23 +1,23 @@
-# Creo `.prt` inspection and structural decode
+# cadmpeg-codec-creo
 
 `cadmpeg-codec-creo` reads PTC Creo Parametric and Pro/ENGINEER `.prt` files
 with the `#UGC:2` PSB container signature. It identifies the container layout,
 lists named sections, reports geometry namespace counts and JPEG preview
-presence, and decodes selected placed geometry, topology, sketches, and design
+presence, and decodes placed geometry, topology, sketches, and design
 records into [`CadIr`].
 
 The `.prt` extension is also used by Siemens NX. Format detection uses the
-`#UGC:2` signature, not the extension.
+`#UGC:2` signature.
 
-Support level: [L1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder) on the cadmpeg support ladder.
+Support level: [L1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder).
 
-## Installation
+## Install
 
 ```sh
 cargo add cadmpeg-codec-creo cadmpeg-ir
 ```
 
-## Inspect a file
+## Inspect
 
 ```rust,no_run
 use cadmpeg_codec_creo::CreoCodec;
@@ -36,24 +36,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-Call `CreoCodec.decode` when you need a `CadIr` document and a structured loss
-report. Decode preserves recognized PSB geometry sections as unknown records
-and transfers every carrier and design record whose byte-backed placement and
-semantics are complete.
+Call `CreoCodec.decode` for a `CadIr` document and a structured loss report.
+Decode keeps recognized PSB geometry sections as unknown records and transfers
+carriers and design records that are complete in the source bytes.
 
-## Data model and limits
+## Data model
 
 PSB files use an ASCII header and table of contents followed by named binary
 sections. The crate recognizes the ND and DEPDB layout families and reads
-surface and curve namespace rows, prototype parameters, native half-edge
-links, active units, feature identifiers, and datum outlines.
+surface and curve namespace rows, prototype parameters, native half-edge links,
+active units, feature identifiers, and datum outlines.
 
-Surface prototype parameters are family templates, not placed model geometry.
-Exact plane components and selected cylinders transfer with connected topology.
-Complete named triangle-strip position arrays transfer as display tessellation;
-other per-instance coordinates, curve families, face bindings, and feature
-evaluation remain incomplete. The [`DecodeReport`] records these losses.
-Writing `.prt` files is not supported.
+Surface prototype parameters are family templates. Exact plane components and
+selected cylinders transfer with connected topology. Complete named
+triangle-strip position arrays transfer as display tessellation. Losses land in
+[`DecodeReport`].
 
 ## References
 
