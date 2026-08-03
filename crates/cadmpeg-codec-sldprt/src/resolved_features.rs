@@ -1587,7 +1587,7 @@ fn legacy_declared_handle_coordinates(payload: &[u8], offset: usize) -> Option<[
             .get(offset + 181..offset + 185)
             .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
         && sketch_marker_prefix_at(payload, offset.checked_add(185)?);
-    let valid_arc_handle_state = matches!((code, handle_state), (1, 2))
+    let valid_arc_handle_state = matches!((code, handle_state), (1 | 2, 2))
         || current_prefix && matches!((code, handle_state), (0, 3));
     let arc_handle = valid_arc_handle_state
         && payload
@@ -9311,6 +9311,16 @@ mod marker_tests {
             sketch_input_entities(&payload, "lane")[0].kind,
             SketchInputKind::Point
         );
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            legacy_declared_handle_coordinates(&payload, 0),
+            Some([0.352, 0.005])
+        );
+        assert_eq!(
+            sketch_input_entities(&payload, "lane")[0].kind,
+            SketchInputKind::Point
+        );
+        payload[17..21].copy_from_slice(&1u32.to_le_bytes());
 
         payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
         payload[17..21].fill(0);
