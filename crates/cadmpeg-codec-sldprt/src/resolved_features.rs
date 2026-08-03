@@ -8664,6 +8664,14 @@ mod marker_tests {
             equal_index_coordinate_roster_full_circle(&payload, &circle, &markers),
             Some(([1.0, 1.0], 2.0))
         );
+        payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[104..104 + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        assert_eq!(
+            equal_index_coordinate_roster_full_circle(&payload, &circle, &markers),
+            Some(([1.0, 1.0], 2.0))
+        );
     }
 
     #[test]
@@ -43888,21 +43896,27 @@ fn equal_index_coordinate_roster_full_circle(
 ) -> Option<([f64; 2], f64)> {
     let offset = usize::try_from(circle.offset).ok()?;
     let prefix = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())?;
-    let supported_layout = prefix == LEGACY_EXTENDED_SKETCH_MARKER
+    let extended_layout = prefix == LEGACY_EXTENDED_SKETCH_MARKER
         && marker_native_code(payload, offset) == Some(0)
+        && marker_is_geometry_locus(payload, offset)
         && matches!(
             payload.get(offset + 31..offset + 39),
             Some([0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x01 | 0x04, 0x00])
-        )
-        || prefix == LEGACY_SKETCH_MARKER
-            && marker_native_code(payload, offset) == Some(2)
-            && payload.get(offset + 31..offset + 39)
-                == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        );
+    let legacy_layout = prefix == LEGACY_SKETCH_MARKER
+        && marker_native_code(payload, offset) == Some(2)
+        && marker_is_geometry_locus(payload, offset)
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    let current_profile_layout = prefix == SKETCH_MARKER
+        && marker_native_code(payload, offset) == Some(2)
+        && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
     if circle.kind != SketchInputKind::Arc
-        || !supported_layout
+        || !(extended_layout || legacy_layout || current_profile_layout)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
-        || payload.get(offset + 23..offset + 27) != Some(&[0x05, 0x00, 0x01, 0x00])
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
         || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
