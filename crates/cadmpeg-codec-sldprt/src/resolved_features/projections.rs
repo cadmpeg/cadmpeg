@@ -1125,3 +1125,6 @@ pub(super) fn unique_planar_face(
     let selected = candidates.next()?;
     candidates.next().is_none().then_some(selected)
 }
+
+#[cfg(test)]
+mod projections_tests;

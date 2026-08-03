@@ -2003,3 +2003,22 @@ fn counted_legacy_profile_line_layout(payload: &[u8], offset: usize) -> bool {
         && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
         && payload.get(offset + 84..offset + 86) == Some(&2u16.to_le_bytes())
 }
+
+#[cfg(test)]
+pub(super) fn selection_vector_tail(payload: &mut Vec<u8>, entries: &[u32]) -> usize {
+    payload.extend_from_slice(&(entries.len() as u32).to_le_bytes());
+    payload.extend_from_slice(&[0, 2, 0, 0]);
+    payload.extend_from_slice(&[0, 0, 0, 0]);
+    let marker = payload.len();
+    payload.extend_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+    payload.extend_from_slice(&[0, 0]);
+    for local_id in entries {
+        payload.extend_from_slice(&[0x32, 0x80, 0, 0]);
+        payload.extend_from_slice(&[1; 12]);
+        payload.extend_from_slice(&local_id.to_le_bytes());
+    }
+    marker
+}
+
+#[cfg(test)]
+mod selections_tests;

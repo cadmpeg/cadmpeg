@@ -1008,3 +1008,6 @@ pub(crate) fn project_marker_dimensioned_circles(
         }
     }
 }
+
+#[cfg(test)]
+mod dimensions_tests;

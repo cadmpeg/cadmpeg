@@ -143,3 +143,6 @@ pub(super) fn legacy_sketch_object_stream(payload: &[u8]) -> bool {
             .iter()
             .any(|class| class.role == FeatureInputClassRole::SketchEntity)
 }
+
+#[cfg(test)]
+mod assembly_tests;

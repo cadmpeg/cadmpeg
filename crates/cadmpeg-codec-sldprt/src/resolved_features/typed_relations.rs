@@ -1886,3 +1886,6 @@ pub(super) fn legacy_terminal_indexed_profile_line(
                 == Some(SketchInputKind::LineOrCircle)
     })
 }
+
+#[cfg(test)]
+mod typed_relations_tests;

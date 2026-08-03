@@ -297,3 +297,6 @@ pub(super) fn principal_sketch_frame(
         ),
     }
 }
+
+#[cfg(test)]
+mod compact_reference_planes_tests;

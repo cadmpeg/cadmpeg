@@ -293,3 +293,6 @@ pub(crate) fn sync_changed_feature_scalars(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod parameters_tests;

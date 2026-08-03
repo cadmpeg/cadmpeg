@@ -205,3 +205,6 @@ pub(crate) fn feature_object_name<'a>(
     let first = matches.next()?;
     matches.next().is_none().then_some(first)
 }
+
+#[cfg(test)]
+mod scalars_tests;

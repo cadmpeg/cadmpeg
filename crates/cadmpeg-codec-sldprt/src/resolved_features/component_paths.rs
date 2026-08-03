@@ -662,3 +662,6 @@ pub(crate) fn compact_body_selection_value(local_body_ids: &[u32]) -> String {
 pub(crate) fn is_compact_body_selection_value(value: &str) -> bool {
     value.starts_with("sldprt:feature-input:body-ids:")
 }
+
+#[cfg(test)]
+mod component_paths_tests;

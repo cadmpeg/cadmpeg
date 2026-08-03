@@ -413,3 +413,6 @@ mod projected_profile_orientation_tests {
         ));
     }
 }
+
+#[cfg(test)]
+mod sketch_projection_tests;

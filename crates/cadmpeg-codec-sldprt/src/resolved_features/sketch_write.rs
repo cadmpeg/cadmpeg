@@ -987,3 +987,6 @@ fn polar(radius: f64, angle: f64) -> Point2 {
 fn offset_point(origin: Point2, delta: Point2) -> Point2 {
     Point2::new(origin.u + delta.u, origin.v + delta.v)
 }
+
+#[cfg(test)]
+mod sketch_write_tests;

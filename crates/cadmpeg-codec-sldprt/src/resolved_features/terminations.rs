@@ -1738,3 +1738,6 @@ pub(crate) fn compact_surface_selection_value(
     }
     value
 }
+
+#[cfg(test)]
+mod terminations_tests;

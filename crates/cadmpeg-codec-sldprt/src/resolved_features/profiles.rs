@@ -1,6 +1,7 @@
 //! Sketch profile projection from marker and compact records.
 
 use super::assembly::is_supplemental_config_lane;
+#[cfg(test)]
 use super::bindings::bind_detached_legacy_sketch_objects;
 use super::compact_reference_planes::{
     compact_profile_component_plane_frame, compact_profile_reference_plane_source,

@@ -1737,3 +1737,6 @@ fn bounded_profile_axis_coordinates(
     }
     observed && (minimum_side >= -TOLERANCE_M || maximum_side <= TOLERANCE_M)
 }
+
+#[cfg(test)]
+mod axes_tests;

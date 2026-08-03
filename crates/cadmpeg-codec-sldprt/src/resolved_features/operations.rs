@@ -323,3 +323,6 @@ pub(crate) fn bind_extrusion_operations(
         }
     }
 }
+
+#[cfg(test)]
+mod operations_tests;

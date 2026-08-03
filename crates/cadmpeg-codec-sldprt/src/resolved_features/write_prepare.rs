@@ -1790,3 +1790,6 @@ mod source_less_lane_tests {
             .contains("repeats one locus"));
     }
 }
+
+#[cfg(test)]
+mod write_prepare_tests;

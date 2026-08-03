@@ -1020,3 +1020,6 @@ pub(super) fn bind_resolved_curve_vertices(lane: &mut FeatureInputLane) {
         }
     }
 }
+
+#[cfg(test)]
+mod bindings_tests;

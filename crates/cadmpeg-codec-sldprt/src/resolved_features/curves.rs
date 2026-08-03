@@ -1969,3 +1969,6 @@ pub(super) fn compact_line_chain_addresses(payload: &[u8]) -> Option<Vec<u16>> {
     };
     Some(addresses.clone())
 }
+
+#[cfg(test)]
+mod curves_tests;

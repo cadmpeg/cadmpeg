@@ -4454,3 +4454,6 @@ fn extended_horizontal_axis_endpoint_indices(payload: &[u8], offset: usize) -> O
     }
     one_based_u16_endpoint_pair(payload, offset, 64)
 }
+
+#[cfg(test)]
+mod endpoints_tests;

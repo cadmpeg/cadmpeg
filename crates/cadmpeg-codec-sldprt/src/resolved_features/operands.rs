@@ -322,3 +322,6 @@ pub(super) fn linked_coordinate_line_endpoints<'a>(
     };
     (first.id != second.id).then_some([first, second])
 }
+
+#[cfg(test)]
+mod operands_tests;

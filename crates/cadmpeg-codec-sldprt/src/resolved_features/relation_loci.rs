@@ -2406,3 +2406,6 @@ pub(super) fn marker_accepts_locus(kind: SketchInputKind, geometry: &SketchGeome
         | SketchInputKind::Native(_) => true,
     }
 }
+
+#[cfg(test)]
+mod relation_loci_tests;

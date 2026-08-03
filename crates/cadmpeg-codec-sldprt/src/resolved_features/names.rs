@@ -148,3 +148,6 @@ pub(super) fn configuration(section: &str) -> Option<String> {
         .unwrap_or(tail.len());
     (!tail[..end].is_empty()).then(|| tail[..end].to_string())
 }
+
+#[cfg(test)]
+mod names_tests;

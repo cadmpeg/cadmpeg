@@ -272,3 +272,6 @@ pub(super) fn cross(left: Vector3, right: Vector3) -> Vector3 {
         left.x * right.y - left.y * right.x,
     )
 }
+
+#[cfg(test)]
+mod sketch_edges_tests;
