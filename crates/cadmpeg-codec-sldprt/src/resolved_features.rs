@@ -4065,6 +4065,39 @@ mod marker_tests {
                 Point2::new(0.0, 1.0),
             ])
         );
+
+        let mut geometry_locus = payload;
+        for (index, endpoints) in [[0u16, 3u16], [0, 2], [2, 1], [3, 1]]
+            .into_iter()
+            .enumerate()
+        {
+            let offset = index * 84;
+            geometry_locus[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+            geometry_locus[offset + 56..offset + 58].copy_from_slice(&endpoints[0].to_le_bytes());
+            geometry_locus[offset + 58..offset + 60].copy_from_slice(&endpoints[1].to_le_bytes());
+            geometry_locus[offset + 76..offset + 80]
+                .copy_from_slice(&u32::try_from(index + 1).unwrap().to_le_bytes());
+            geometry_locus[offset + 80..offset + 84]
+                .copy_from_slice(&u32::try_from((index + 1) % 4 + 1).unwrap().to_le_bytes());
+        }
+        let mut diagonal = markers;
+        diagonal[0].kind = SketchInputKind::Point;
+        diagonal[0].coordinates_m = Some([0.0, 0.0]);
+        diagonal[1].coordinates_m = Some([2.0, 1.0]);
+        diagonal[2].coordinates_m = None;
+        diagonal[3].coordinates_m = None;
+        assert_eq!(
+            indexed_rectangle_from_line_cycle(
+                &geometry_locus,
+                &diagonal.iter().collect::<Vec<_>>(),
+            ),
+            Some([
+                Point2::new(0.0, 0.0),
+                Point2::new(2.0, 0.0),
+                Point2::new(2.0, 1.0),
+                Point2::new(0.0, 1.0),
+            ])
+        );
     }
 
     #[test]
@@ -34258,7 +34291,10 @@ fn current_compact_rectangle_line_endpoints(payload: &[u8], offset: usize) -> Op
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
         || !matches!(marker_native_code(payload, offset), Some(1 | 2))
-        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || !matches!(
+            payload.get(offset + 23..offset + 27),
+            Some([0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
+        )
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
         || payload.get(offset + 31..offset + 39)
