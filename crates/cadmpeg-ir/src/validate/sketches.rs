@@ -364,7 +364,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 else {
                     continue;
                 };
-                if distance2(left.1, right.0) > 1.0e-9 {
+                if distance2(left.1, right.0) > ir.tolerances.linear {
                     finding(
                         findings,
                         Check::GeometricConsistency,
@@ -632,7 +632,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         (left.1.x - right.0.x)
                             .hypot(left.1.y - right.0.y)
                             .hypot(left.1.z - right.0.z)
-                            > 1.0e-9
+                            > ir.tolerances.linear
                     }) {
                         finding(
                             findings,

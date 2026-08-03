@@ -955,7 +955,7 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
             Point2::new(1.0, 0.0),
         ),
         line(
-            disconnected,
+            disconnected.clone(),
             first_sketch.clone(),
             Point2::new(2.0, 0.0),
             Point2::new(3.0, 0.0),
@@ -995,6 +995,23 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(constraint.0.as_str())
             && finding.message.contains("different sketch")
+    }));
+
+    let disconnected_geometry = &mut ir
+        .model
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id == disconnected)
+        .expect("disconnected entity remains present")
+        .geometry;
+    let SketchGeometry::Line { start, .. } = disconnected_geometry else {
+        unreachable!("second entity is a line")
+    };
+    *start = Point2::new(1.0 + ir.tolerances.linear * 0.5, 0.0);
+    let report = validate(&ir, Vec::new());
+    assert!(!report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(first_sketch.0.as_str())
+            && finding.message.contains("disconnected consecutive")
     }));
 }
 

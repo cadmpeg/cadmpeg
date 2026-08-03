@@ -42,7 +42,7 @@ IDs are globally unique across neutral and native arenas. A codec produces ident
 
 All stored lengths, coordinates, distances, radii, linear tolerances, and length-bearing parameters are millimeters. `units.length` is `"millimeter"`. All angles and angular tolerances are radians. Dimensionless quantities remain unscaled.
 
-`tolerances.linear` is the document-wide maximum linear deviation in millimeters. `tolerances.angular` is the document-wide maximum angular deviation in radians. A face, edge, or vertex `tolerance` overrides `tolerances.linear` for that entity. The override has the same maximum-deviation meaning and must be finite and positive.
+`tolerances.linear` is the document-wide maximum linear deviation in millimeters. Consecutive planar or spatial sketch-profile entities are connected when their oriented endpoints differ by no more than this tolerance. `tolerances.angular` is the document-wide maximum angular deviation in radians. A face, edge, or vertex `tolerance` overrides `tolerances.linear` for that entity. The override has the same maximum-deviation meaning and must be finite and positive.
 
 | IR term          | Meaning                                                        |
 | ---------------- | -------------------------------------------------------------- |
