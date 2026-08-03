@@ -2918,6 +2918,13 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                 RadiusSpec::Chordal { chord_length } => {
                                     positive_feature_length(*chord_length)
                                 }
+                                RadiusSpec::Asymmetric {
+                                    offset_one,
+                                    offset_two,
+                                } => {
+                                    positive_feature_length(*offset_one)
+                                        && positive_feature_length(*offset_two)
+                                }
                                 RadiusSpec::Variable { points } => {
                                     points.len() >= 2
                                         && points.iter().all(|point| {
@@ -4754,6 +4761,10 @@ fn radius_spec_is_valid(radius: &RadiusSpec) -> bool {
         RadiusSpec::Unresolved { .. } => true,
         RadiusSpec::Constant { radius } => positive_feature_length(*radius),
         RadiusSpec::Chordal { chord_length } => positive_feature_length(*chord_length),
+        RadiusSpec::Asymmetric {
+            offset_one,
+            offset_two,
+        } => positive_feature_length(*offset_one) && positive_feature_length(*offset_two),
         RadiusSpec::Variable { points } => {
             points.len() >= 2
                 && points.iter().all(|point| {

@@ -1400,6 +1400,7 @@ pub(crate) fn project_fixed_fillet(
             let edge_radius = match radius {
                 RadiusSpec::Constant { radius } => Some(radius.0),
                 RadiusSpec::Chordal { .. }
+                | RadiusSpec::Asymmetric { .. }
                 | RadiusSpec::Variable { .. }
                 | RadiusSpec::Unresolved { .. } => None,
             };

@@ -15828,6 +15828,51 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                 }]
             )
     ));
+    let asymmetric_parameters = [
+        parameter(130, 131, "TangencyWeight", None, 1.0),
+        parameter(140, 141, "EdgeOffset1", Some("mm"), 0.2),
+        parameter(150, 151, "EdgeOffset2", Some("mm"), 0.7),
+    ];
+    let asymmetric_owners = [owner(130, 131, 0), owner(140, 141, 1), owner(150, 151, 2)];
+    let asymmetric_assignments = decode_fillet_radius_groups(
+        std::slice::from_ref(&scope),
+        &operand_groups[..1],
+        &asymmetric_owners,
+        &asymmetric_parameters,
+    );
+    assert_eq!(asymmetric_assignments.len(), 1);
+    assert_eq!(
+        asymmetric_assignments[0].law,
+        crate::records::DesignFilletRadiusLaw::Asymmetric {
+            offset_one_parameter_record_index: 141,
+            offset_two_parameter_record_index: 151,
+        }
+    );
+    let (asymmetric_features, _) = project_parameter_design(
+        &asymmetric_parameters,
+        &asymmetric_owners,
+        std::slice::from_ref(&scope),
+        &operand_groups[..1],
+        &asymmetric_assignments,
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &asymmetric_features[0].definition,
+        FeatureDefinition::Fillet { groups }
+            if matches!(
+                groups.as_slice(),
+                [cadmpeg_ir::features::FilletGroup {
+                    radius: cadmpeg_ir::features::RadiusSpec::Asymmetric {
+                        offset_one: cadmpeg_ir::features::Length(2.0),
+                        offset_two: cadmpeg_ir::features::Length(7.0),
+                    },
+                    tangency_weight: Some(1.0),
+                    ..
+                }]
+            )
+    ));
     operand_groups[0]
         .lost_edge_references
         .push("f3d:native:lost-edge-reference#1".into());

@@ -2191,6 +2191,25 @@ fn validate_fillet_radius_groups<'a>(
                             && parameter.evaluated_value.is_finite()
                     },
                 ),
+                records::DesignFilletRadiusLaw::Asymmetric {
+                    offset_one_parameter_record_index,
+                    offset_two_parameter_record_index,
+                } => [
+                    (*offset_one_parameter_record_index, "EdgeOffset1"),
+                    (*offset_two_parameter_record_index, "EdgeOffset2"),
+                ]
+                .into_iter()
+                .all(|(record_index, kind)| {
+                    assignment_parameter(record_index).is_some_and(|parameter| {
+                        parameter.source_kind == kind
+                            && parameter
+                                .unit
+                                .as_deref()
+                                .is_some_and(design::feature_project::design_length_unit)
+                            && parameter.evaluated_value > 0.0
+                            && parameter.evaluated_value.is_finite()
+                    })
+                }),
                 records::DesignFilletRadiusLaw::Variable {
                     start_radius_parameter_record_index,
                     end_radius_parameter_record_index,
@@ -2280,6 +2299,48 @@ fn validate_fillet_operand_groups<'a>(
         let is_fillet = scope.is_some_and(|scope| {
             design::design_feature_family(&scope.kind) == Some(design::DesignFeatureFamily::Fillet)
         });
+        let fixed_edge_groups = scope
+            .map(|scope| {
+                native
+                    .design_construction_operand_groups
+                    .iter()
+                    .filter(|candidate| {
+                        design_stream(&candidate.id) == native_stream
+                            && candidate.scope_record_index == scope.record_index
+                            && !candidate.members.is_empty()
+                            && candidate.members.iter().all(|member| {
+                                native.design_edge_operands.iter().any(|operand| {
+                                    design_stream(&operand.id) == native_stream
+                                        && operand.scope_record_index == scope.record_index
+                                        && operand.record_index == *member
+                                })
+                            })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let is_fixed_edge_group = fixed_edge_groups
+            .iter()
+            .any(|candidate| candidate.record_index == group.record_index);
+        let sole_compact_group_shape = scope.is_some_and(|scope| {
+            native
+                .design_construction_operand_groups
+                .iter()
+                .filter(|candidate| {
+                    design_stream(&candidate.id) == native_stream
+                        && candidate.scope_record_index == scope.record_index
+                })
+                .count()
+                == 1
+                && group.members.iter().all(|member| {
+                    native.design_edge_identity_operands.iter().any(|operand| {
+                        design_stream(&operand.id) == native_stream
+                            && operand.scope_record_index == scope.record_index
+                            && operand.group_record_index == group.record_index
+                            && operand.record_index == *member
+                    })
+                })
+        });
         let has_fixed_assignment = scope
             .and_then(|scope| {
                 scope
@@ -2337,17 +2398,11 @@ fn validate_fillet_operand_groups<'a>(
                             .count()
                             == 1
                     })
-                    && native
-                        .design_construction_operand_groups
-                        .iter()
-                        .filter(|candidate| {
-                            design_stream(&candidate.id) == native_stream
-                                && candidate.scope_record_index == scope.record_index
-                        })
-                        .count()
-                        == fixed.groups.len()
+                    && ((fixed_edge_groups.len() == fixed.groups.len() && is_fixed_edge_group)
+                        || (fixed.groups.len() == 1 && sole_compact_group_shape))
             });
         if is_fillet
+            && (group.role == 0x0000_0008_0000_0000 || sole_compact_group_shape)
             && !has_fixed_assignment
             && !fillet_radius_group_records.contains(&(native_stream, group.record_index))
         {
@@ -2641,9 +2696,19 @@ fn validate_body_recipe_operands<'a>(
                         return false;
                     };
                     u64::try_from(design_id.len()).ok().is_some_and(|length| {
-                        design_id_offset.checked_add(length) == Some(selector.byte_offset)
-                            && selector.byte_offset.checked_add(20) == Some(recipe.byte_offset)
+                        let selector_follows_id =
+                            design_id_offset.checked_add(length) == Some(selector.byte_offset);
+                        let prefix_frame =
+                            selector.byte_offset.checked_add(20) == Some(recipe.byte_offset);
+                        let body_suffix_frame = recipe
+                            .byte_offset
+                            .checked_add(b"body_recipe_data".len() as u64)
+                            .and_then(|offset| offset.checked_add(12))
+                            == Some(design_id_offset)
+                            && selector.value == operand.next_record_index;
+                        selector_follows_id
                             && selector.value != 0
+                            && (prefix_frame || body_suffix_frame)
                     })
                 });
                 design_stream(&recipe.id) == native_stream

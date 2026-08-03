@@ -2182,6 +2182,13 @@ pub enum DesignFilletRadiusLaw {
         /// Chord-length parameter record.
         chord_length_parameter_record_index: u32,
     },
+    /// Distinct support-face offsets along the complete edge group.
+    Asymmetric {
+        /// First support-face offset parameter record.
+        offset_one_parameter_record_index: u32,
+        /// Second support-face offset parameter record.
+        offset_two_parameter_record_index: u32,
+    },
     /// Explicit endpoint and optional midpoint radius controls.
     Variable {
         /// Radius at normalized parameter zero.

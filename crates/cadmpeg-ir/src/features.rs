@@ -3070,6 +3070,13 @@ pub enum RadiusSpec {
         /// Distance between the fillet's two support boundaries.
         chord_length: Length,
     },
+    /// Distinct offsets from the selected edge along its two support faces.
+    Asymmetric {
+        /// Offset on the first support-face side.
+        offset_one: Length,
+        /// Offset on the second support-face side.
+        offset_two: Length,
+    },
     /// Radius varying along the edge chain per explicit control points.
     Variable {
         /// Radius samples along the edge chain, in chain-parameter order.
@@ -3106,6 +3113,8 @@ pub enum RadiusForm {
     Constant,
     /// Constant transverse chord length defines the fillet width.
     Chordal,
+    /// Distinct offsets define the two sides of the fillet.
+    Asymmetric,
     /// Radius varies along the edge chain.
     Variable,
 }

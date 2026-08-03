@@ -13075,6 +13075,12 @@ pub fn sync_neutral_features(
                             feature.id
                         )));
                     }
+                    RadiusSpec::Asymmetric { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} uses an asymmetric fillet law",
+                            feature.id
+                        )));
+                    }
                     RadiusSpec::Variable { points } => {
                         parameters.retain(|name, _| {
                             name != "Radius"

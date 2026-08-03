@@ -761,6 +761,39 @@ pub fn decode_fillet_radius_groups(
             });
             continue;
         }
+        let asymmetric_offsets = |kind: &str| {
+            owned_parameters
+                .iter()
+                .filter_map(|(_, parameter)| {
+                    (parameter.source_kind == kind).then_some(parameter.record_index)
+                })
+                .collect::<Vec<_>>()
+        };
+        let (offset_one, offset_two) = (
+            asymmetric_offsets("EdgeOffset1"),
+            asymmetric_offsets("EdgeOffset2"),
+        );
+        if owned_parameters.len() == 3 {
+            if let ([offset_one], [offset_two], [weight]) = (
+                offset_one.as_slice(),
+                offset_two.as_slice(),
+                weights.as_slice(),
+            ) {
+                out.push(DesignFilletRadiusGroup {
+                    id: format!("{stream}:design-fillet-radius-group#{}", group.record_index),
+                    scope_record_index: scope.record_index,
+                    group_ordinal: 0,
+                    group_record_index: group.record_index,
+                    edge_operand_record_indices: group.members.clone(),
+                    law: DesignFilletRadiusLaw::Asymmetric {
+                        offset_one_parameter_record_index: *offset_one,
+                        offset_two_parameter_record_index: *offset_two,
+                    },
+                    tangency_weight_parameter_record_index: Some(weight.record_index),
+                });
+                continue;
+            }
+        }
         let records = |kind: &str| {
             owned_parameters
                 .iter()

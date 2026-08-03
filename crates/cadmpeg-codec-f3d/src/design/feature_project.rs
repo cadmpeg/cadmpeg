@@ -1159,7 +1159,7 @@ fn project_fillet_arm(
                 || parameters.iter().any(|(_, parameter)| {
                     !matches!(
                         parameter.source_kind.as_str(),
-                        "Radius" | "ChordLen" | "TangencyWeight"
+                        "Radius" | "ChordLen" | "EdgeOffset1" | "EdgeOffset2" | "TangencyWeight"
                     ) || assigned_parameter_records
                         .iter()
                         .filter(|record_index| **record_index == parameter.record_index)
@@ -1167,7 +1167,10 @@ fn project_fillet_arm(
                         != 1
                 })
                 || parameters.iter().any(|(_, parameter)| {
-                    if matches!(parameter.source_kind.as_str(), "Radius" | "ChordLen") {
+                    if matches!(
+                        parameter.source_kind.as_str(),
+                        "Radius" | "ChordLen" | "EdgeOffset1" | "EdgeOffset2"
+                    ) {
                         design_length(parameter).is_none_or(|value| value.0 <= 0.0)
                     } else {
                         !parameter.evaluated_value.is_finite()
@@ -1211,6 +1214,29 @@ fn project_fillet_arm(
                                 .and_then(|(_, parameter)| design_length(parameter))
                                 .expect("complete chordal Fillet has a positive chord length");
                             (RadiusSpec::Chordal { chord_length }, None)
+                        }
+                        DesignFilletRadiusLaw::Asymmetric {
+                            offset_one_parameter_record_index,
+                            offset_two_parameter_record_index,
+                        } => {
+                            let offset = |record_index| {
+                                parameters
+                                    .iter()
+                                    .find(|(_, parameter)| parameter.record_index == record_index)
+                                    .and_then(|(_, parameter)| design_length(parameter))
+                                    .filter(|offset| offset.0 > 0.0)
+                            };
+                            let offset_one = offset(offset_one_parameter_record_index)
+                                .expect("complete asymmetric Fillet has a positive first offset");
+                            let offset_two = offset(offset_two_parameter_record_index)
+                                .expect("complete asymmetric Fillet has a positive second offset");
+                            (
+                                RadiusSpec::Asymmetric {
+                                    offset_one,
+                                    offset_two,
+                                },
+                                None,
+                            )
                         }
                         DesignFilletRadiusLaw::Variable { .. } => {
                             unreachable!("variable Fillet projected before constants")
@@ -2192,6 +2218,13 @@ fn fillet_law_parameter_records(law: &DesignFilletRadiusLaw) -> Vec<u32> {
         DesignFilletRadiusLaw::Chordal {
             chord_length_parameter_record_index,
         } => vec![*chord_length_parameter_record_index],
+        DesignFilletRadiusLaw::Asymmetric {
+            offset_one_parameter_record_index,
+            offset_two_parameter_record_index,
+        } => vec![
+            *offset_one_parameter_record_index,
+            *offset_two_parameter_record_index,
+        ],
         DesignFilletRadiusLaw::Variable {
             start_radius_parameter_record_index,
             end_radius_parameter_record_index,
