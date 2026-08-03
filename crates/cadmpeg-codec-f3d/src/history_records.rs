@@ -93,6 +93,9 @@ pub(crate) struct AsmHistoricalTopology {
     /// Exact plane carriers in this historical state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub surface_planes: Vec<AsmHistoricalPlane>,
+    /// Model-space axes of axis-bearing analytic surface carriers in this state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub surface_axes: Vec<AsmHistoricalSurfaceAxis>,
     pub curves: Vec<i64>,
     /// Model-space axes of axis-bearing curve carriers in this state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -133,6 +136,14 @@ pub(crate) struct AsmHistoricalTopology {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct AsmHistoricalCurveAxis {
     pub curve: i64,
+    pub origin: Point3,
+    pub direction: Vector3,
+}
+
+/// Stable axis line of one cylinder, cone, or torus carrier.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct AsmHistoricalSurfaceAxis {
+    pub surface: i64,
     pub origin: Point3,
     pub direction: Vector3,
 }

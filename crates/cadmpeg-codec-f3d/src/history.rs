@@ -3435,16 +3435,35 @@ fn historical_edge_axis(
     edge: i64,
     topology: &AsmHistoricalTopology,
 ) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
-    let curve = topology
+    if let Some(axis) = topology
         .edge_curves
         .iter()
-        .find(|binding| binding.entity == edge)?
-        .carrier?;
-    let axis = topology
-        .curve_axes
+        .find(|binding| binding.entity == edge)
+        .and_then(|binding| binding.carrier)
+        .and_then(|curve| topology.curve_axes.iter().find(|axis| axis.curve == curve))
+    {
+        return Some((axis.origin, axis.direction));
+    }
+    let support_surfaces = historical_edge_context(edge, topology)
+        .incident_loops
+        .into_iter()
+        .filter_map(|context| {
+            let mut bindings = topology
+                .face_surfaces
+                .iter()
+                .filter(|binding| binding.entity == context.face_slot);
+            let carrier = bindings.next()?.carrier;
+            bindings.next().is_none().then_some(carrier)
+        })
+        .collect::<HashSet<_>>();
+    let mut axes = topology
+        .surface_axes
         .iter()
-        .find(|axis| axis.curve == curve)?;
-    Some((axis.origin, axis.direction))
+        .filter(|axis| support_surfaces.contains(&axis.surface))
+        .map(|axis| (axis.origin, axis.direction));
+    let first = axes.next()?;
+    axes.all(|axis| same_axis_line(first, axis))
+        .then_some(first)
 }
 
 fn bind_active_edge_operand_candidates(
@@ -4412,6 +4431,39 @@ fn historical_pattern_identity_axes(
     let selected = identities
         .selection_identity_kind(identity)
         .map(|(kind, entity_ref, _)| (kind, entity_ref));
+    if selected.is_none() {
+        let Some(revision) = snapshot_edge_identity_revision(identity, history) else {
+            return Vec::new();
+        };
+        let archived = HistoricalIdentityIndex::build(std::slice::from_ref(history), [revision]);
+        let selected = archived
+            .selection_identity_kind(revision)
+            .map(|(kind, entity_ref, _)| (kind, entity_ref));
+        return historical_pattern_identity_axes_for_selection(selected, history);
+    }
+    historical_pattern_identity_axes_for_selection(selected, history)
+}
+
+fn snapshot_edge_identity_revision(identity: u64, history: &AsmHistory) -> Option<u64> {
+    let matches = history
+        .states
+        .iter()
+        .flat_map(|state| &state.records)
+        .filter(|record| record.index == identity)
+        .collect::<Vec<_>>();
+    let [record] = matches.as_slice() else {
+        return None;
+    };
+    (record.name == "edge")
+        .then_some(record.revision_id?)
+        .filter(|revision| *revision > 0)
+        .and_then(|revision| u64::try_from(revision).ok())
+}
+
+fn historical_pattern_identity_axes_for_selection(
+    selected: Option<(AsmHistoricalEntityKind, i64)>,
+    history: &AsmHistory,
+) -> Vec<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
     let mut axes = Vec::new();
     for topology in history
         .states
@@ -5401,6 +5453,25 @@ pub(crate) fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistori
         })
         .collect::<Vec<_>>();
     surface_planes.sort_by_key(|candidate| candidate.surface);
+    let mut surface_axes = brep
+        .surfaces
+        .iter()
+        .filter_map(|surface| {
+            use cadmpeg_ir::geometry::SurfaceGeometry;
+            let (origin, direction) = match surface.geometry {
+                SurfaceGeometry::Cylinder { origin, axis, .. }
+                | SurfaceGeometry::Cone { origin, axis, .. } => (origin, axis),
+                SurfaceGeometry::Torus { center, axis, .. } => (center, axis),
+                _ => return None,
+            };
+            Some(crate::history_records::AsmHistoricalSurfaceAxis {
+                surface: entity_ref(&surface.id.0)?,
+                origin,
+                direction,
+            })
+        })
+        .collect::<Vec<_>>();
+    surface_axes.sort_by_key(|candidate| candidate.surface);
 
     Some(AsmHistoricalTopology {
         bodies: refs(brep.bodies.iter().map(|entity| entity.id.0.as_str()))?,
@@ -5416,6 +5487,7 @@ pub(crate) fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistori
         surface_radii,
         surface_cylinders,
         surface_planes,
+        surface_axes,
         curves: refs(brep.curves.iter().map(|entity| entity.id.0.as_str()))?,
         curve_axes: brep
             .curves
@@ -6262,6 +6334,154 @@ mod tests {
             ))
         );
         assert_eq!(historical_edge_axis(8, &topology), None);
+    }
+
+    #[test]
+    fn historical_edge_axis_uses_a_unique_incident_surface_axis() {
+        let surface_axis =
+            |surface, origin, direction| crate::history_records::AsmHistoricalSurfaceAxis {
+                surface,
+                origin,
+                direction,
+            };
+        let mut topology = AsmHistoricalTopology {
+            face_loops: vec![crate::history_records::AsmHistoricalRelation {
+                owner_ref: 11,
+                member_refs: vec![21],
+            }],
+            loop_coedges: vec![crate::history_records::AsmHistoricalRelation {
+                owner_ref: 21,
+                member_refs: vec![31],
+            }],
+            coedge_topology: vec![crate::history_records::AsmHistoricalCoedge {
+                coedge: 31,
+                owner_loop: 21,
+                edge: 7,
+                next: 31,
+                previous: 31,
+                radial_next: 31,
+            }],
+            face_surfaces: vec![AsmHistoricalCarrierBinding {
+                entity: 11,
+                carrier: 41,
+            }],
+            surface_axes: vec![surface_axis(
+                41,
+                cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            )],
+            ..AsmHistoricalTopology::default()
+        };
+        let expected = Some((
+            cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        ));
+        assert_eq!(historical_edge_axis(7, &topology), expected);
+
+        topology.face_surfaces.push(AsmHistoricalCarrierBinding {
+            entity: 11,
+            carrier: 42,
+        });
+        topology.surface_axes.push(surface_axis(
+            42,
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        ));
+        assert_eq!(historical_edge_axis(7, &topology), None);
+
+        topology.face_surfaces.pop();
+        topology
+            .face_loops
+            .push(crate::history_records::AsmHistoricalRelation {
+                owner_ref: 12,
+                member_refs: vec![22],
+            });
+        topology
+            .loop_coedges
+            .push(crate::history_records::AsmHistoricalRelation {
+                owner_ref: 22,
+                member_refs: vec![32],
+            });
+        topology
+            .coedge_topology
+            .push(crate::history_records::AsmHistoricalCoedge {
+                coedge: 32,
+                owner_loop: 22,
+                edge: 7,
+                next: 32,
+                previous: 32,
+                radial_next: 32,
+            });
+        topology.face_surfaces.push(AsmHistoricalCarrierBinding {
+            entity: 12,
+            carrier: 42,
+        });
+        assert_eq!(historical_edge_axis(7, &topology), None);
+    }
+
+    #[test]
+    fn snapshot_edge_identity_requires_one_edge_record_and_positive_revision() {
+        let record = |index, name: &str, revision_id| AsmHistoryRecord {
+            id: format!("record-{index}-{name}"),
+            parent: "state".into(),
+            revision_id,
+            index,
+            byte_offset: 0,
+            name: name.into(),
+            framing_error: None,
+            entity_references: Vec::new(),
+            raw_bytes: Vec::new(),
+        };
+        let history = |records| AsmHistory {
+            id: "history".into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
+            states: vec![AsmDeltaState {
+                id: "state".into(),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id: 1,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: 0,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records,
+                entity_versions: Vec::new(),
+                record_table_complete: false,
+                topology: None,
+                transition: None,
+            }],
+        };
+
+        assert_eq!(
+            snapshot_edge_identity_revision(3, &history(vec![record(3, "edge", Some(17))])),
+            Some(17)
+        );
+        assert_eq!(
+            snapshot_edge_identity_revision(3, &history(vec![record(3, "face", Some(17))])),
+            None
+        );
+        assert_eq!(
+            snapshot_edge_identity_revision(
+                3,
+                &history(vec![
+                    record(3, "edge", Some(17)),
+                    record(3, "face", Some(18))
+                ]),
+            ),
+            None
+        );
+        assert_eq!(
+            snapshot_edge_identity_revision(3, &history(vec![record(3, "edge", Some(0))])),
+            None
+        );
     }
 
     #[test]
