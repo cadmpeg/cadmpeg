@@ -1,13 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-history record extractors and their record types.
-//!
-//! This module is one ownership unit: every native feature-history arena field
-//! on [`super::model::NativeModel`], plus the helpers that walk OM sections,
-//! resolve offset-store blocks, and reconstruct joined construction payloads.
-//! Operation-label families (sketch, datum, hole, extrude, pattern, draft,
-//! surface, and the rest) specialize that shared substrate; they are not
-//! independent modules. Keep kind-tagged extractors here so changes to the
-//! reconstruction grammar stay in one place.
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
