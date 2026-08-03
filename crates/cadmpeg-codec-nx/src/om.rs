@@ -230,6 +230,157 @@ pub struct OffsetStoreTargetIndexRow {
     pub mode: u8,
 }
 
+/// One RGB definition from an NX part color table.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColorTableDefinition<'a> {
+    /// One-based NX color index.
+    pub color_index: u16,
+    /// Color name paired by table order.
+    pub name: &'a str,
+    /// Normalized red, green, and blue components.
+    pub rgb: [f32; 3],
+    /// Exact serialized index token after the `05` marker.
+    pub raw_color_index: Vec<u8>,
+    /// Exact serialized component atoms.
+    pub raw_components: [Vec<u8>; 3],
+    /// Byte offset of the opening `05` marker.
+    pub offset: usize,
+    /// Byte offsets of the three component atoms.
+    pub component_offsets: [usize; 3],
+}
+
+/// Complete 216-entry NX part color table.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColorTable<'a> {
+    /// Byte offset of the counted name roster.
+    pub offset: usize,
+    /// Name associated with the separately encoded background color.
+    pub background_name: &'a str,
+    /// Normalized background RGB components.
+    pub background_rgb: [f32; 3],
+    /// Exact serialized background component atoms.
+    pub raw_background_components: [Vec<u8>; 3],
+    /// Byte offsets of the three background component atoms.
+    pub background_component_offsets: [usize; 3],
+    /// Ordered definitions for color indices 1 through 216.
+    pub definitions: Vec<ColorTableDefinition<'a>>,
+}
+
+fn color_component(bytes: &[u8]) -> Option<(f32, Vec<u8>, usize)> {
+    match bytes.first().copied()? {
+        0x00 => Some((0.0, vec![0x00], 1)),
+        0x01 => Some((1.0, vec![0x01], 1)),
+        marker @ (0x20..=0x3f | 0xa0..=0xbf) => {
+            let raw: [u8; 8] = bytes.get(..8)?.try_into().ok()?;
+            let value = shifted_ieee_f64(&raw)? / 4.0;
+            (value.is_finite() && (0.0..=1.0).contains(&value)).then(|| {
+                debug_assert_eq!(raw[0], marker);
+                (value as f32, raw.to_vec(), 8)
+            })
+        }
+        marker @ (0x40..=0x5f | 0xc0..=0xdf) => {
+            let raw: [u8; 4] = bytes.get(..4)?.try_into().ok()?;
+            let mut decoded = raw;
+            decoded[0] = decoded[0].checked_sub(0x10)?;
+            let value = f32::from_be_bytes(decoded) / 4.0;
+            (value.is_finite() && (0.0..=1.0).contains(&value)).then(|| {
+                debug_assert_eq!(raw[0], marker);
+                (value, raw.to_vec(), 4)
+            })
+        }
+        _ => None,
+    }
+}
+
+/// Decode every complete NX part color table in a bounded byte region.
+pub fn color_tables(bytes: &[u8]) -> Vec<ColorTable<'_>> {
+    const NAME_HEADER: [u8; 4] = [0x02, 0x80, 0xd9, 0x01];
+    const DEFINITION_PREAMBLE: [u8; 21] = [
+        0x02, 0x14, 0xff, 0x06, 0x00, 0xf0, 0x02, 0x80, 0x9d, 0x80, 0xc7, 0x00, 0xc0, 0x13, 0x0a,
+        0xc6, 0x01, 0x80, 0xd9, 0x80, 0xc8,
+    ];
+
+    (0..bytes.len().saturating_sub(NAME_HEADER.len()))
+        .filter_map(|start| {
+            (bytes.get(start..start + NAME_HEADER.len()) == Some(&NAME_HEADER)).then_some(())?;
+            let mut at = start + NAME_HEADER.len();
+            let mut names = Vec::with_capacity(217);
+            for _ in 0..217 {
+                let byte_len = usize::from(*bytes.get(at)?);
+                (byte_len >= 2).then_some(())?;
+                let text = bytes.get(at + 1..at + byte_len)?;
+                let text = text.strip_suffix(&[0])?;
+                (!text.is_empty()
+                    && text
+                        .iter()
+                        .all(|byte| byte.is_ascii_graphic() || *byte == b' '))
+                .then_some(())?;
+                names.push(std::str::from_utf8(text).ok()?);
+                at += byte_len;
+            }
+            (names.first().copied() == Some("Background")).then_some(())?;
+            (bytes.get(at..at + DEFINITION_PREAMBLE.len()) == Some(&DEFINITION_PREAMBLE))
+                .then_some(())?;
+            at += DEFINITION_PREAMBLE.len();
+            let mut background_rgb = Vec::with_capacity(3);
+            let mut raw_background_components = Vec::with_capacity(3);
+            let mut background_component_offsets = Vec::with_capacity(3);
+            for _ in 0..3 {
+                background_component_offsets.push(at);
+                let (value, raw, width) = color_component(bytes.get(at..)?)?;
+                background_rgb.push(value);
+                raw_background_components.push(raw);
+                at += width;
+            }
+
+            let mut definitions = Vec::with_capacity(216);
+            for color_index in 1u16..=216 {
+                (bytes.get(at) == Some(&0x05)).then_some(())?;
+                let offset = at;
+                at += 1;
+                let raw_color_index = if color_index < 128 {
+                    vec![color_index as u8]
+                } else {
+                    vec![0x80, (color_index - 1) as u8]
+                };
+                (bytes.get(at..at + raw_color_index.len()) == Some(raw_color_index.as_slice()))
+                    .then_some(())?;
+                at += raw_color_index.len();
+                (bytes.get(at..at + 3) == Some(&[0x01, 0x80, 0xc8])).then_some(())?;
+                at += 3;
+
+                let mut rgb = Vec::with_capacity(3);
+                let mut raw_components = Vec::with_capacity(3);
+                let mut component_offsets = Vec::with_capacity(3);
+                for _ in 0..3 {
+                    component_offsets.push(at);
+                    let (value, raw, width) = color_component(bytes.get(at..)?)?;
+                    rgb.push(value);
+                    raw_components.push(raw);
+                    at += width;
+                }
+                definitions.push(ColorTableDefinition {
+                    color_index,
+                    name: names[usize::from(color_index)],
+                    rgb: rgb.try_into().ok()?,
+                    raw_color_index,
+                    raw_components: raw_components.try_into().ok()?,
+                    offset,
+                    component_offsets: component_offsets.try_into().ok()?,
+                });
+            }
+            Some(ColorTable {
+                offset: start,
+                background_name: names[0],
+                background_rgb: background_rgb.try_into().ok()?,
+                raw_background_components: raw_background_components.try_into().ok()?,
+                background_component_offsets: background_component_offsets.try_into().ok()?,
+                definitions,
+            })
+        })
+        .collect()
+}
+
 /// Decode complete self-framed index rows from contiguous column storage.
 pub fn offset_store_index_rows(bytes: &[u8]) -> Vec<OffsetStoreIndexRow> {
     const PREFIX: [u8; 3] = [0x2d, 0x02, 0x0b];

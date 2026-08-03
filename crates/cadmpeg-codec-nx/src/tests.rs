@@ -5683,6 +5683,59 @@ fn om_offset_store_index_rows_require_complete_exact_frames() {
 }
 
 #[test]
+fn om_color_table_requires_complete_names_indices_and_rgb_atoms() {
+    let mut bytes = vec![0x02, 0x80, 0xd9, 0x01];
+    for ordinal in 0..=216 {
+        let name = if ordinal == 0 {
+            "Background".to_string()
+        } else {
+            format!("Color {ordinal}")
+        };
+        bytes.push(u8::try_from(name.len() + 2).unwrap());
+        bytes.extend_from_slice(name.as_bytes());
+        bytes.push(0);
+    }
+    bytes.extend_from_slice(&[
+        0x02, 0x14, 0xff, 0x06, 0x00, 0xf0, 0x02, 0x80, 0x9d, 0x80, 0xc7, 0x00, 0xc0, 0x13, 0x0a,
+        0xc6, 0x01, 0x80, 0xd9, 0x80, 0xc8, 0x01, 0x01, 0x01,
+    ]);
+    for color_index in 1u16..=216 {
+        bytes.push(0x05);
+        if color_index < 128 {
+            bytes.push(color_index as u8);
+        } else {
+            bytes.extend_from_slice(&[0x80, (color_index - 1) as u8]);
+        }
+        bytes.extend_from_slice(&[0x01, 0x80, 0xc8]);
+        if color_index == 2 {
+            bytes.extend_from_slice(&shifted_f64_bytes(2.0));
+            let mut binary32 = 1.0_f32.to_be_bytes();
+            binary32[0] += 0x10;
+            bytes.extend_from_slice(&binary32);
+            bytes.push(0x00);
+        } else {
+            bytes.extend_from_slice(&[0x01, 0x01, 0x01]);
+        }
+    }
+
+    let tables = crate::om::color_tables(&bytes);
+    assert_eq!(tables.len(), 1);
+    assert_eq!(tables[0].background_name, "Background");
+    assert_eq!(tables[0].background_rgb, [1.0, 1.0, 1.0]);
+    assert_eq!(tables[0].definitions.len(), 216);
+    assert_eq!(tables[0].definitions[0].name, "Color 1");
+    assert_eq!(tables[0].definitions[0].rgb, [1.0, 1.0, 1.0]);
+    assert_eq!(tables[0].definitions[1].rgb, [0.5, 0.25, 0.0]);
+    assert_eq!(tables[0].definitions[127].raw_color_index, [0x80, 0x7f]);
+
+    let mut malformed = bytes.clone();
+    *malformed.last_mut().unwrap() = 0x02;
+    assert!(crate::om::color_tables(&malformed).is_empty());
+    let truncated = &bytes[..bytes.len() - 1];
+    assert!(crate::om::color_tables(truncated).is_empty());
+}
+
+#[test]
 fn om_offset_store_linked_index_rows_require_complete_exact_frames() {
     let row = b"\x02\x0b\x83\x93\x93\x8c\x16\x24\xff\xff\x90\xfe\x20\x20\x41\x00\x47\x03\x04\x01\xc0\x44\x04\x00";
     let rows = crate::om::offset_store_linked_index_rows(row);
@@ -14395,6 +14448,8 @@ mod golden {
         "parasolid_topology_attribute_list_references",
         "parasolid_trimmed_curve_records",
         "part_attributes",
+        "part_color_definitions",
+        "part_color_tables",
         "persistent_handles",
         "rm_creation_display_data_relations",
         "rmfastload_object_id_tables",
@@ -15107,7 +15162,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (225), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (227), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -15118,7 +15173,7 @@ mod golden {
 
         use crate::native::catalogue::CATALOGUE;
 
-        assert_eq!(CATALOGUE.len(), 225, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 227, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE
                 .iter()

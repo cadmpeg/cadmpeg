@@ -692,6 +692,52 @@ pub struct RmCreationDisplayDataRelation {
     pub source_offset: u64,
 }
 
+/// Complete named NX part palette for color indices 1 through 216.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PartColorTable {
+    /// Globally unique table identity.
+    pub id: String,
+    /// Registered `UGS::COLOR_table` declaration in `class_definitions`.
+    pub class_definition: String,
+    /// Name of the separately encoded background color.
+    pub background_name: String,
+    /// Normalized background RGB components.
+    pub background_rgb: [f32; 3],
+    /// Exact serialized background component atoms.
+    pub raw_background_components: [Vec<u8>; 3],
+    /// Absolute file offsets of the background component atoms.
+    pub background_component_source_offsets: [u64; 3],
+    /// Ordered entries in the native `part_color_definitions` arena.
+    pub definitions: Vec<String>,
+    /// Directory entry containing the table.
+    pub source_entry: String,
+    /// Absolute file offset of the counted name roster.
+    pub source_offset: u64,
+}
+
+/// One named RGB entry from an NX part palette.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PartColorDefinition {
+    /// Globally unique color-definition identity.
+    pub id: String,
+    /// Owning table in the native `part_color_tables` arena.
+    pub color_table: String,
+    /// One-based NX color index.
+    pub color_index: u16,
+    /// Serialized color name.
+    pub name: String,
+    /// Normalized RGB components.
+    pub rgb: [f32; 3],
+    /// Exact serialized index token.
+    pub raw_color_index: Vec<u8>,
+    /// Exact serialized component atoms.
+    pub raw_components: [Vec<u8>; 3],
+    /// Absolute file offset of the opening `05` marker.
+    pub source_offset: u64,
+    /// Absolute file offsets of the three component atoms.
+    pub component_source_offsets: [u64; 3],
+}
+
 /// Complete composite table spanning linked and target-index row grammars.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataBlockColumnIndexTable {
@@ -2809,6 +2855,85 @@ pub fn rm_creation_display_data_relations(
         relation.id = format!("nx:rm-creation-display-data-relations:relation#{ordinal}");
     }
     relations
+}
+
+/// Decode complete part-local color tables from class-declaring offset stores.
+pub fn part_color_tables(container: &Container) -> (Vec<PartColorTable>, Vec<PartColorDefinition>) {
+    const CLASS_NAME: &str = "UGS::COLOR_table";
+    let mut tables = Vec::new();
+    let mut definitions = Vec::new();
+
+    for (section_ordinal, (entry, section)) in
+        container.indexed_om_sections().into_iter().enumerate()
+    {
+        let Some(storage) = section.column_storage else {
+            continue;
+        };
+        let Some(storage_offset) = section.records.first().map(|record| record.offset) else {
+            continue;
+        };
+        let Some(class) = section
+            .types
+            .iter()
+            .find(|definition| definition.name == CLASS_NAME)
+        else {
+            continue;
+        };
+        let parsed_tables = crate::om::color_tables(storage);
+        let [table] = parsed_tables.as_slice() else {
+            continue;
+        };
+        let entry_index = container
+            .entries
+            .iter()
+            .position(|candidate| std::ptr::eq(candidate, entry))
+            .expect("indexed entry belongs to container");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let source_base = entry_offset + storage_offset as u64;
+        let table_id = format!("nx:part-color-tables:table#{section_ordinal}");
+        let definition_ids = table
+            .definitions
+            .iter()
+            .map(|definition| {
+                format!(
+                    "nx:part-color-definitions-{section_ordinal}:color#{}",
+                    definition.color_index
+                )
+            })
+            .collect::<Vec<_>>();
+        definitions.extend(table.definitions.iter().zip(&definition_ids).map(
+            |(definition, id)| {
+                PartColorDefinition {
+                    id: id.clone(),
+                    color_table: table_id.clone(),
+                    color_index: definition.color_index,
+                    name: definition.name.to_string(),
+                    rgb: definition.rgb,
+                    raw_color_index: definition.raw_color_index.clone(),
+                    raw_components: definition.raw_components.clone(),
+                    source_offset: source_base + definition.offset as u64,
+                    component_source_offsets: definition
+                        .component_offsets
+                        .map(|offset| source_base + offset as u64),
+                }
+            },
+        ));
+        tables.push(PartColorTable {
+            id: table_id,
+            class_definition: format!("nx:om-entry-{entry_index}:class#{}", class.offset),
+            background_name: table.background_name.to_string(),
+            background_rgb: table.background_rgb,
+            raw_background_components: table.raw_background_components.clone(),
+            background_component_source_offsets: table
+                .background_component_offsets
+                .map(|offset| source_base + offset as u64),
+            definitions: definition_ids,
+            source_entry: entry.name.clone(),
+            source_offset: source_base + table.offset as u64,
+        });
+    }
+
+    (tables, definitions)
 }
 
 /// Resolve complete composite column-index tables atomically by section.
