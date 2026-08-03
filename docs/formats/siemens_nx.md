@@ -1551,7 +1551,16 @@ Entry and exit chamfer dimensions project when every typed through-hole operatio
 
 Before its unique `Hole_` template string, a `SIMPLE HOLE` payload may carry an even nonzero count of marker-`30` shifted-binary64 scalars. The second half must be byte-identical to the first half in order. The payload retains the first half as one ordered scalar lane with finite decoded values and exact eight-byte encodings, and retains the absolute offset of every scalar in both witnesses. An odd or zero count or any unequal aligned encoding rejects the repeated lane atomically. No unit, coordinate frame, or geometric role is assigned to these values.
 
-Each complete scalar-lane witness is followed immediately by two tagged object indices. `f0,lo` encodes an ordinal below 256. `f1,hi,lo` encodes a big-endian ordinal of at least 256. Both reference pairs address blocks by direct ordinal in the offset store that owns the operation-header input blocks. The four indices resolve atomically: the operation inputs must select one store and every addressed ordinal must exist in that store. The first and repeated reference pairs retain their order independently.
+Each complete scalar-lane witness is followed by two tagged object indices. The
+pair is either adjacent to the last scalar or follows one exact eight-byte
+wrapper. The first-witness wrapper is `50 10 00 04 50 49 66 2e`; the
+repeated-witness wrapper is `50 21 66 62 50 49 66 2e`. `f0,lo` encodes an
+ordinal below 256. `f1,hi,lo` encodes a big-endian ordinal of at least 256.
+Both reference pairs address blocks by direct ordinal in the offset store that
+owns the operation-header input blocks. The four indices resolve atomically:
+the operation inputs must select one store and every addressed ordinal must
+exist in that store. The first and repeated reference pairs retain their order
+and optional wrappers independently.
 
 Two or more `SIMPLE HOLE` operations belong to one construction-identity group when their resolved first-witness block pair and repeated-witness block pair are equal in order. The group retains the shared four-block identity and aligns operation labels, scalar lanes, and block-reference lanes in feature-history order. Each operation contributes exactly one scalar lane and one block-reference lane; a duplicate operation identity or lane rejects the group. A different block in any position prevents the join. The equality assigns no parent, dependency, placement, or scalar role.
 

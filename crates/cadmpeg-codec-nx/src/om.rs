@@ -1411,6 +1411,8 @@ pub struct SimpleHoleRepeatedScalarLaneBlockReferences {
     pub second: [u32; 2],
     /// Absolute offsets of the four tagged-index tokens.
     pub offsets: [[usize; 2]; 2],
+    /// Exact optional eight-byte wrappers before the two reference pairs.
+    pub prefixes: [Option<[u8; 8]>; 2],
 }
 
 /// Four construction-block references carried by a `HOLE PACKAGE` payload.
@@ -1993,10 +1995,21 @@ pub fn simple_hole_repeated_scalar_lane(
 pub fn simple_hole_repeated_scalar_lane_block_references(
     record: OperationRecord<'_>,
 ) -> Option<SimpleHoleRepeatedScalarLaneBlockReferences> {
+    const FIRST_PREFIX: [u8; 8] = [0x50, 0x10, 0x00, 0x04, 0x50, 0x49, 0x66, 0x2e];
+    const SECOND_PREFIX: [u8; 8] = [0x50, 0x21, 0x66, 0x62, 0x50, 0x49, 0x66, 0x2e];
     let pair = simple_hole_repeated_scalar_lane(record)?;
-    let decode_pair = |coordinate_offset: usize| {
+    let decode_pair = |coordinate_offset: usize, admitted_prefix: [u8; 8]| {
         let relative = coordinate_offset.checked_sub(record.payload_offset)?;
         let mut at = relative.checked_add(8)?;
+        let prefix = if payload_object_index(record.payload.get(at..)?).is_some() {
+            None
+        } else {
+            let candidate =
+                <[u8; 8]>::try_from(record.payload.get(at..at.checked_add(8)?)?).ok()?;
+            (candidate == admitted_prefix).then_some(())?;
+            at += 8;
+            Some(candidate)
+        };
         let first_offset = at;
         let (first, width) = payload_object_index(record.payload.get(at..)?)?;
         at += width;
@@ -2008,14 +2021,18 @@ pub fn simple_hole_repeated_scalar_lane_block_references(
                 record.payload_offset + first_offset,
                 record.payload_offset + second_offset,
             ],
+            prefix,
         ))
     };
-    let (first, first_offsets) = decode_pair(*pair.witness_offsets[0].last()?)?;
-    let (second, second_offsets) = decode_pair(*pair.witness_offsets[1].last()?)?;
+    let (first, first_offsets, first_prefix) =
+        decode_pair(*pair.witness_offsets[0].last()?, FIRST_PREFIX)?;
+    let (second, second_offsets, second_prefix) =
+        decode_pair(*pair.witness_offsets[1].last()?, SECOND_PREFIX)?;
     Some(SimpleHoleRepeatedScalarLaneBlockReferences {
         first,
         second,
         offsets: [first_offsets, second_offsets],
+        prefixes: [first_prefix, second_prefix],
     })
 }
 

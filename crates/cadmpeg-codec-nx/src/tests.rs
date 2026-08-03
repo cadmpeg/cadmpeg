@@ -2967,6 +2967,45 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
     assert_eq!(references.first, [231, 232]);
     assert_eq!(references.second, [233, 234]);
     assert_eq!(references.offsets, [[216, 218], [236, 238]]);
+    assert_eq!(references.prefixes, [None, None]);
+
+    let first_prefix = [0x50, 0x10, 0x00, 0x04, 0x50, 0x49, 0x66, 0x2e];
+    let second_prefix = [0x50, 0x21, 0x66, 0x62, 0x50, 0x49, 0x66, 0x2e];
+    let mut wrapped = Vec::new();
+    wrapped.extend_from_slice(&shifted(508.0));
+    wrapped.extend_from_slice(&shifted(38.1));
+    wrapped.extend_from_slice(&first_prefix);
+    wrapped.extend_from_slice(&[0xf0, 0xe7, 0xf0, 0xe8]);
+    wrapped.extend_from_slice(&shifted(508.0));
+    wrapped.extend_from_slice(&shifted(38.1));
+    wrapped.extend_from_slice(&second_prefix);
+    wrapped.extend_from_slice(&[0xf0, 0xe9, 0xf0, 0xea]);
+    wrapped.extend_from_slice(&[0x04, 0x08]);
+    wrapped.extend_from_slice(b"Hole_X\0");
+    let wrapped_references =
+        crate::om::simple_hole_repeated_scalar_lane_block_references(crate::om::OperationRecord {
+            bytes: &wrapped,
+            payload: &wrapped,
+            ..record
+        })
+        .unwrap();
+    assert_eq!(wrapped_references.first, [231, 232]);
+    assert_eq!(wrapped_references.second, [233, 234]);
+    assert_eq!(wrapped_references.offsets, [[224, 226], [252, 254]]);
+    assert_eq!(
+        wrapped_references.prefixes,
+        [Some(first_prefix), Some(second_prefix)]
+    );
+    let mut malformed_wrapper = wrapped.clone();
+    malformed_wrapper[16] ^= 1;
+    assert!(
+        crate::om::simple_hole_repeated_scalar_lane_block_references(crate::om::OperationRecord {
+            bytes: &malformed_wrapper,
+            payload: &malformed_wrapper,
+            ..record
+        },)
+        .is_none()
+    );
 
     let mut null = payload.clone();
     null[16] = 0xff;

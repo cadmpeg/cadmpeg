@@ -179,6 +179,12 @@ pub struct FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
     pub first_data_blocks: [String; 2],
     /// Ordered blocks following the repeated scalar lane.
     pub second_data_blocks: [String; 2],
+    /// Exact optional wrapper before the first reference pair.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_reference_prefix: Option<[u8; 8]>,
+    /// Exact optional wrapper before the repeated reference pair.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub second_reference_prefix: Option<[u8; 8]>,
     /// Absolute offsets of the first pair of tagged-index tokens.
     pub first_reference_offsets: [u64; 2],
     /// Absolute offsets of the repeated pair of tagged-index tokens.
@@ -3122,6 +3128,8 @@ pub fn feature_simple_hole_repeated_scalar_lane_block_references(
                 operation_label,
                 first_data_blocks,
                 second_data_blocks,
+                first_reference_prefix: decoded.prefixes[0],
+                second_reference_prefix: decoded.prefixes[1],
                 first_reference_offsets: decoded.offsets[0].map(|offset| entry_offset + offset as u64),
                 second_reference_offsets: decoded.offsets[1].map(|offset| entry_offset + offset as u64),
             });
@@ -10400,6 +10408,8 @@ mod tests {
                 operation_label: operation.into(),
                 first_data_blocks: ["block-1".into(), "block-2".into()],
                 second_data_blocks: ["block-3".into(), last.into()],
+                first_reference_prefix: None,
+                second_reference_prefix: None,
                 first_reference_offsets: [3, 4],
                 second_reference_offsets: [5, 6],
             };

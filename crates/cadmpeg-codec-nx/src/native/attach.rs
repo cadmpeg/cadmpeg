@@ -7585,6 +7585,8 @@ mod tests {
             operation_label: operation.to_string(),
             first_data_blocks: ["block#231".to_string(), "block#232".to_string()],
             second_data_blocks: ["block#233".to_string(), "block#234".to_string()],
+            first_reference_prefix: None,
+            second_reference_prefix: None,
             first_reference_offsets: [20, 22],
             second_reference_offsets: [40, 42],
         };
