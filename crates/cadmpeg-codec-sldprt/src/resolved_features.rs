@@ -2365,9 +2365,10 @@ mod marker_tests {
         fixed_reference_plane_frame, generated_surface_identities, geometry_locus_profile_vertex,
         history_features_with_object_sources, indexed_arc_uses_coordinate_center,
         indexed_profile_vertex, indexed_rectangle_from_line_cycle, inline_arc_coordinates,
-        inline_surface_reference_at, legacy_compact_diameter_arc_center,
-        legacy_compact_direct_endpoint_markers, legacy_compact_profile_line,
-        legacy_coordinate_circle_radius, legacy_coordinate_roster_selected_axis_endpoint_indices,
+        inline_surface_reference_at, legacy_compact_104_profile_line_endpoint_indices,
+        legacy_compact_diameter_arc_center, legacy_compact_direct_endpoint_markers,
+        legacy_compact_profile_line, legacy_coordinate_circle_radius,
+        legacy_coordinate_roster_selected_axis_endpoint_indices,
         legacy_declared_handle_coordinates, legacy_direct_compact_selected_axis_endpoint_indices,
         legacy_extended_linked_profile_point_coordinates, legacy_extended_profile_curve_kind,
         legacy_extended_rectangle_diagonal_endpoint, legacy_feature_input_section,
@@ -10916,6 +10917,42 @@ mod marker_tests {
 
         payload[100..104].copy_from_slice(&3u32.to_le_bytes());
         assert!(!current_compact_104_profile_line(&payload, 0));
+    }
+
+    #[test]
+    fn legacy_compact_104_profile_line_uses_one_based_point_indices() {
+        let offset = 4;
+        let mut payload = vec![0; offset + 104 + LEGACY_SKETCH_MARKER.len()];
+        payload[..offset].copy_from_slice(&2u32.to_le_bytes());
+        payload[offset..offset + LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[offset + 5..offset + 13].fill(0xff);
+        payload[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[offset + 23..offset + 31]
+            .copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00]);
+        payload[offset + 31..offset + 39]
+            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x05, 0x00]);
+        payload[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[offset + 56..offset + 60].copy_from_slice(&[6, 0, 8, 0]);
+        payload[offset + 60..offset + 64].copy_from_slice(&1u32.to_le_bytes());
+        payload[offset + 64..offset + 72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[offset + 72..offset + 76].copy_from_slice(&1u32.to_le_bytes());
+        for relative in [78, 82, 86, 90] {
+            payload[offset + relative..offset + relative + 4]
+                .copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        payload[offset + 96..offset + 100].copy_from_slice(&2u32.to_le_bytes());
+        payload[offset + 100..offset + 104].copy_from_slice(&3u32.to_le_bytes());
+        payload[offset + 104..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+        assert_eq!(
+            legacy_compact_104_profile_line_endpoint_indices(&payload, offset),
+            Some([7, 9])
+        );
+        payload[offset + 96..offset + 100].copy_from_slice(&4u32.to_le_bytes());
+        assert_eq!(
+            legacy_compact_104_profile_line_endpoint_indices(&payload, offset),
+            None
+        );
     }
 
     #[test]
@@ -41797,6 +41834,7 @@ const CURVE_ENDPOINT_INDEX_DECODERS: &[CurveEndpointDecoder] = &[
     extended_compact_84_construction_line_endpoint_indices,
     extended_compact_96_selected_axis_endpoint_indices,
     extended_compact_indexed_curve_endpoint_indices,
+    legacy_compact_104_profile_line_endpoint_indices,
     compact_legacy_curve_endpoint_indices,
     compact_legacy_short_role_two_curve_endpoint_indices,
     compact_legacy_short_role_one_curve_endpoint_indices,
@@ -44723,6 +44761,46 @@ fn current_compact_104_indexed_line_endpoint_indices(
         return None;
     }
     one_based_u16_endpoint_pair(payload, offset, 64)
+        .filter(|endpoints| endpoints[0] != endpoints[1])
+}
+
+fn legacy_compact_104_profile_line_endpoint_indices(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[u32; 2]> {
+    let object_index = marker_object_index(payload, offset)?;
+    let retained_object_index =
+        u32::from_le_bytes(payload.get(offset + 96..offset + 100)?.try_into().ok()?);
+    let next_object_index =
+        u32::from_le_bytes(payload.get(offset + 100..offset + 104)?.try_into().ok()?);
+    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || marker_native_code(payload, offset) != Some(0)
+        || !marker_is_geometry_locus(payload, offset)
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x05, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
+        || payload.get(offset + 72..offset + 76) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 76..offset + 78) != Some(&[0; 2])
+        || payload.get(offset + 78..offset + 94)
+            != Some(&[
+                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+                0xff, 0xff,
+            ])
+        || payload.get(offset + 94..offset + 96) != Some(&[0; 2])
+        || retained_object_index != object_index
+        || matches!(next_object_index, 0 | u32::MAX)
+        || next_object_index == retained_object_index
+        || !sketch_marker_prefix_at(payload, offset.checked_add(104)?)
+    {
+        return None;
+    }
+    one_based_u16_endpoint_pair(payload, offset, 56)
         .filter(|endpoints| endpoints[0] != endpoints[1])
 }
 
