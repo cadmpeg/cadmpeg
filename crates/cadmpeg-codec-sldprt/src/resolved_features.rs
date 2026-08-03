@@ -12947,6 +12947,14 @@ mod marker_tests {
             &current_compact,
             0
         ));
+        let mut extended_compact = current_compact.clone();
+        extended_compact[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        extended_compact[84..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        assert!(current_undetailed_bounded_curve_is_line(
+            &extended_compact,
+            0
+        ));
         current_compact[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
         assert!(!indexed_arc_uses_coordinate_center(&current_compact, 0));
         let mut detailed = current.clone();
@@ -41639,7 +41647,8 @@ fn current_undetailed_bounded_curve_is_line(payload: &[u8], offset: usize) -> bo
         && marker_is_geometry_locus(payload, offset);
     let complete_indexed_record = wide_indexed_curve_endpoint_indices(payload, offset).is_some()
         && sketch_marker_prefix_at(payload, offset.saturating_add(92))
-        || compact_indexed_curve_endpoint_indices(payload, offset).is_some()
+        || (compact_indexed_curve_endpoint_indices(payload, offset).is_some()
+            || extended_compact_indexed_curve_endpoint_indices(payload, offset).is_some())
             && sketch_marker_prefix_at(payload, offset.saturating_add(84));
     supported_prefix
         && (profile_locus || extended_geometry_locus)

@@ -154,6 +154,8 @@ An extended-prefix 134-byte value-2 profile-locus record carries `1e 00` at mark
 
 An extended-prefix kind `0` bounded curve in the 104-byte compact indexed layout carries a circular arc when exactly one coordinate-bearing geometry marker in the feature object is equidistant from its two distinct endpoints. The selected marker is the arc center, and the angle order represents the minor arc between the endpoints. Zero or multiple admissible centers leave the curve unresolved.
 
+An extended-prefix compact indexed profile-locus bounded curve that ends at marker +84 carries the straight chord between its two distinct endpoints when no complete role-2 tangent record follows it.
+
 An extended-prefix kind `0` geometry-locus record in the 104-byte compact indexed layout carries a full circle when marker +56 and marker +58 contain the same nonzero one-based point-roster index. Its selector bytes at marker +31 are `00 00 80 bf 00 00 04 00`; its role and state u16 values are `1`; marker +60 stores u32 `1`; marker +64 stores f64 `-1`; marker +72 stores signed selector `1` or `-1`; marker +78 contains four i32 `-2` cells; and marker +94 is zero u16. The indexed point is the radial witness, and the immediately preceding point in the feature-local point roster is the center. Their positive distance is the radius.
 
 A compact-legacy kind `2` bounded curve with locus `05 00 01 00` and the compact indexed endpoint layout is a semicircle when exactly one feature-local point marker lies at the endpoint midpoint. That point is the circle center and the endpoint chord is the diameter.
