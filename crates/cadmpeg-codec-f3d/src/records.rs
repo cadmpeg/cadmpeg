@@ -2387,10 +2387,12 @@ pub struct DesignEntitySelectionOperand {
     pub primary_identity: u64,
     /// Byte offset of `primary_identity`.
     pub primary_identity_offset: u64,
-    /// Second u64 in the nested identity pair.
-    pub secondary_identity: u64,
+    /// Second u64 in the expanded nested identity pair.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secondary_identity: Option<u64>,
     /// Byte offset of `secondary_identity`.
-    pub secondary_identity_offset: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secondary_identity_offset: Option<u64>,
     /// Input-state edge proofs derived from the two serialized identities.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub historical_edge_candidates: Vec<DesignEntitySelectionEdgeCandidate>,

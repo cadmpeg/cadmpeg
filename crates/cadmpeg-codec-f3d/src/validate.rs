@@ -313,7 +313,12 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         &edge_identity_records,
     );
     let face_operand_records = validate_face_operands(&ctx, &mut findings, &expected_face_operands);
-    validate_face_group_member_resolution(&mut findings, face_group_members, &face_operand_records);
+    validate_face_group_member_resolution(
+        &mut findings,
+        face_group_members,
+        &face_operand_records,
+        &native.design_entity_selection_operands,
+    );
     validate_sketch_placements(&ctx, &mut findings);
     validate_parameter_owners(&ctx, &mut findings);
     validate_parameter_companions(&ctx, &mut findings);
@@ -1630,11 +1635,18 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 })
                         }
                         Some(records::DesignExtrudeOperandRole::Faces) => {
-                            group.role == 0x0000_0011_0000_0000 && group.extrude_face_role.is_some()
+                            matches!(
+                                (group.role, group.extrude_face_role),
+                                (
+                                    0x0000_0005_0000_0000,
+                                    Some(records::DesignExtrudeFaceRole::Start),
+                                ) | (
+                                    0x0000_0011_0000_0000,
+                                    Some(records::DesignExtrudeFaceRole::Termination),
+                                )
+                            )
                         }
-                        None => {
-                            group.role == 0x0000_0005_0000_0000 && group.extrude_face_role.is_none()
-                        }
+                        None => false,
                     },
                     Some(
                         design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer,
@@ -3108,11 +3120,27 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && valid_design_guid(&operand.asset_id)
             && valid_design_guid(&operand.context_id)
             && operand.identity_record_index == operand.record_index.saturating_add(3)
-            && operand.primary_identity_offset == operand.identity_record_offset.saturating_add(29)
-            && operand.secondary_identity_offset
-                == operand.identity_record_offset.saturating_add(37)
-            && operand.next_record_index == operand.record_index.saturating_add(4)
-            && operand.next_byte_offset == operand.identity_record_offset.saturating_add(45)
+            && (matches!(
+                (operand.primary_identity_offset, operand.secondary_identity, operand.secondary_identity_offset),
+                (primary, Some(_), Some(secondary))
+                    if primary == operand.identity_record_offset.saturating_add(29)
+                        && secondary == operand.identity_record_offset.saturating_add(37)
+            ) || matches!(
+                (operand.primary_identity_offset, operand.secondary_identity, operand.secondary_identity_offset),
+                (primary, None, None)
+                    if primary == operand.identity_record_offset.saturating_add(21)
+            ))
+            && (operand.secondary_identity.is_none()
+                || operand.next_record_index == operand.record_index.saturating_add(4))
+            && records_by_index.contains_key(&(native_stream, operand.next_record_index))
+            && operand.next_byte_offset
+                == operand.identity_record_offset.saturating_add(
+                    if operand.secondary_identity.is_some() {
+                        45
+                    } else {
+                        29
+                    },
+                )
             && entity_selection_slots.insert((
                 native_stream,
                 operand.group_record_index,
@@ -3676,9 +3704,20 @@ fn validate_face_group_member_resolution(
     findings: &mut Vec<Finding>,
     face_group_members: HashSet<(&str, u32, u32)>,
     face_operand_records: &HashSet<(&str, u32, u32)>,
+    entity_selection_operands: &[records::DesignEntitySelectionOperand],
 ) {
+    let entity_selection_records = entity_selection_operands
+        .iter()
+        .map(|operand| {
+            (
+                design_stream(&operand.id),
+                operand.scope_record_index,
+                operand.record_index,
+            )
+        })
+        .collect::<HashSet<_>>();
     for member in face_group_members {
-        if !face_operand_records.contains(&member) {
+        if !face_operand_records.contains(&member) && !entity_selection_records.contains(&member) {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,

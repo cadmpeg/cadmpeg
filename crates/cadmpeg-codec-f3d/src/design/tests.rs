@@ -5778,8 +5778,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         identity_record_offset: 31_180,
         primary_identity: 2718,
         primary_identity_offset: 31_200,
-        secondary_identity: 164,
-        secondary_identity_offset: 31_208,
+        secondary_identity: Some(164),
+        secondary_identity_offset: Some(31_208),
         historical_edge_candidates: Vec::new(),
         resolved_edge_slot: None,
         next_record_index: profile_carrier.record_index,
@@ -6788,14 +6788,17 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(flagged.members, [200, 201]);
     assert_eq!(flagged.role, 0x0000_0008_0000_0000);
 
-    let mut unclassified_bytes = bytes.clone();
-    unclassified_bytes[group.role_offset as usize..group.role_offset as usize + 8]
+    let mut start_face_bytes = bytes.clone();
+    start_face_bytes[group.role_offset as usize..group.role_offset as usize + 8]
         .copy_from_slice(&0x0000_0005_0000_0000u64.to_le_bytes());
-    let unclassified = parse_construction_operand_group(&unclassified_bytes, &scope, 0, &record)
+    let start_face = parse_construction_operand_group(&start_face_bytes, &scope, 0, &record)
         .complete()
-        .expect("counted Extrude group with an unclassified role");
-    assert_eq!(unclassified.role, 0x0000_0005_0000_0000);
-    assert_eq!(unclassified.extrude_role, None);
+        .expect("counted Extrude start-face group");
+    assert_eq!(start_face.role, 0x0000_0005_0000_0000);
+    assert_eq!(
+        start_face.extrude_role,
+        Some(DesignExtrudeOperandRole::Faces)
+    );
 
     let tail_at = 11 + 10 + 4 + 2 * 11;
     let mut flagless = bytes[..tail_at + 62].to_vec();
@@ -7353,7 +7356,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
 }
 
 #[test]
-fn nested_entity_selection_member_retains_both_identity_values() {
+fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(&class_tag);
@@ -7422,9 +7425,23 @@ fn nested_entity_selection_member_retains_both_identity_values() {
     let operand = parse_entity_selection_operand(&bytes, &group, 0, &record)
         .expect("nested entity-selection frame");
     assert_eq!(operand.primary_identity, 1331);
-    assert_eq!(operand.secondary_identity, 183);
+    assert_eq!(operand.secondary_identity, Some(183));
     assert_eq!(operand.identity_record_offset, identity_at as u64);
     assert_eq!(operand.next_byte_offset, next_at as u64);
+
+    let mut compact = bytes[..identity_at].to_vec();
+    header(&mut compact, *b"429", 103);
+    compact.extend_from_slice(&[0; 10]);
+    compact.extend_from_slice(&1331u64.to_le_bytes());
+    let compact_next_at = compact.len();
+    header(&mut compact, *b"311", 109);
+    let compact_operand = parse_entity_selection_operand(&compact, &group, 0, &record)
+        .expect("compact nested entity-selection frame");
+    assert_eq!(compact_operand.primary_identity, 1331);
+    assert_eq!(compact_operand.secondary_identity, None);
+    assert_eq!(compact_operand.identity_record_offset, identity_at as u64);
+    assert_eq!(compact_operand.next_record_index, 109);
+    assert_eq!(compact_operand.next_byte_offset, compact_next_at as u64);
 }
 
 #[test]

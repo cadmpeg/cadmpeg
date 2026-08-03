@@ -1051,7 +1051,7 @@ pub(crate) fn parse_construction_operand_group(
         match role {
             0x0000_0008_0000_0000 => Some(DesignExtrudeOperandRole::Bodies),
             0x0000_0041_0000_0000 => Some(DesignExtrudeOperandRole::Profile),
-            0x0000_0011_0000_0000 => Some(DesignExtrudeOperandRole::Faces),
+            0x0000_0005_0000_0000 | 0x0000_0011_0000_0000 => Some(DesignExtrudeOperandRole::Faces),
             _ => None,
         }
     } else {
@@ -1492,28 +1492,34 @@ pub(crate) fn parse_entity_selection_operand(
         header.record_index.checked_add(1)?,
         header.record_index.checked_add(2)?,
         header.record_index.checked_add(3)?,
-        header.record_index.checked_add(4)?,
     ];
-    for (offset, expected) in [
-        paired_at,
-        nested_one_at,
-        nested_two_at,
-        identity_at,
-        next_at,
-    ]
-    .into_iter()
-    .zip(expected)
+    for (offset, expected) in [paired_at, nested_one_at, nested_two_at, identity_at]
+        .into_iter()
+        .zip(expected)
     {
         let (_, after_tag) = lp_ascii_filtered(bytes, offset, 0..=2000, u8::is_ascii_graphic)?;
         if u32_at(bytes, after_tag)? != expected {
             return None;
         }
     }
-    if bytes.get(identity_at + 11..identity_at + 29)? != [0; 18]
-        || identity_at.checked_add(45)? != next_at
-    {
-        return None;
-    }
+    let (_, after_next_tag) = lp_ascii_filtered(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
+    let next_record_index = u32_at(bytes, after_next_tag)?;
+    let (primary_identity_offset, secondary_identity_offset) =
+        if bytes.get(identity_at + 11..identity_at + 29)? == [0; 18]
+            && identity_at.checked_add(45)? == next_at
+            && next_record_index == header.record_index.checked_add(4)?
+        {
+            (
+                identity_at.checked_add(29)?,
+                Some(identity_at.checked_add(37)?),
+            )
+        } else if bytes.get(identity_at + 11..identity_at + 21)? == [0; 10]
+            && identity_at.checked_add(29)? == next_at
+        {
+            (identity_at.checked_add(21)?, None)
+        } else {
+            return None;
+        };
     Some(DesignEntitySelectionOperand {
         id: String::new(),
         scope_record_index: group.scope_record_index,
@@ -1528,13 +1534,14 @@ pub(crate) fn parse_entity_selection_operand(
         context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
         identity_record_index: header.record_index.checked_add(3)?,
         identity_record_offset: u64::try_from(identity_at).ok()?,
-        primary_identity: read_u64(bytes, identity_at + 29)?,
-        primary_identity_offset: u64::try_from(identity_at + 29).ok()?,
-        secondary_identity: read_u64(bytes, identity_at + 37)?,
-        secondary_identity_offset: u64::try_from(identity_at + 37).ok()?,
+        primary_identity: read_u64(bytes, primary_identity_offset)?,
+        primary_identity_offset: u64::try_from(primary_identity_offset).ok()?,
+        secondary_identity: secondary_identity_offset.and_then(|offset| read_u64(bytes, offset)),
+        secondary_identity_offset: secondary_identity_offset
+            .and_then(|offset| u64::try_from(offset).ok()),
         historical_edge_candidates: Vec::new(),
         resolved_edge_slot: None,
-        next_record_index: header.record_index.checked_add(4)?,
+        next_record_index,
         next_byte_offset: u64::try_from(next_at).ok()?,
     })
 }

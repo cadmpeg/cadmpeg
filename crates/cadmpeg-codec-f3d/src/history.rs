@@ -3715,9 +3715,9 @@ pub(crate) fn bind_entity_selection_history(
 ) {
     let identities = HistoricalIdentityIndex::build(
         histories,
-        operands
-            .iter()
-            .flat_map(|operand| [operand.primary_identity, operand.secondary_identity]),
+        operands.iter().flat_map(|operand| {
+            std::iter::once(operand.primary_identity).chain(operand.secondary_identity)
+        }),
     );
     for operand in operands {
         operand.historical_edge_candidates.clear();
@@ -3749,8 +3749,11 @@ pub(crate) fn bind_entity_selection_history(
         let Some(topology) = &state.topology else {
             continue;
         };
+        let Some(secondary_identity) = operand.secondary_identity else {
+            continue;
+        };
         operand.historical_edge_candidates = entity_selection_edge_candidates(
-            [operand.primary_identity, operand.secondary_identity],
+            [operand.primary_identity, secondary_identity],
             previous_state_id,
             &identities,
             topology,

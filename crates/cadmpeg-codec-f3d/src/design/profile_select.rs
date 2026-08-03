@@ -164,7 +164,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                 let mut matching_curves = curve_identities.iter().filter(|curve| {
                     native_stream(&curve.id) == Some(stream)
                         && curve.owner_reference == Some(owner_reference)
-                        && curve.primary_id == operand.secondary_identity
+                        && Some(curve.primary_id) == operand.secondary_identity
                 });
                 let curve = matching_curves.next()?;
                 if matching_curves.next().is_some() {
@@ -226,7 +226,7 @@ pub(crate) fn bind_sweep_sketch_selections(
             let mut matching_curves = curve_identities.iter().filter(|curve| {
                 native_stream(&curve.id) == Some(stream)
                     && curve.owner_reference == Some(owner_reference)
-                    && curve.primary_id == operand.secondary_identity
+                    && Some(curve.primary_id) == operand.secondary_identity
             });
             let curve = matching_curves.next()?;
             if matching_curves.next().is_some() {
@@ -336,7 +336,7 @@ pub(crate) fn bind_split_face_sketch_selections(
             let mut matching_curves = resolution.curve_identities.iter().filter(|curve| {
                 native_stream(&curve.id) == Some(stream)
                     && curve.owner_reference == Some(owner_reference)
-                    && curve.primary_id == operand.secondary_identity
+                    && Some(curve.primary_id) == operand.secondary_identity
             });
             let Some(curve) = matching_curves.next() else {
                 complete = false;
@@ -1726,7 +1726,7 @@ pub(crate) fn bind_loft_sketch_selections(
             .filter(|curve| {
                 native_stream(&curve.id) == Some(stream)
                     && curve.owner_reference == Some(owner_reference)
-                    && curve.primary_id == operand.secondary_identity
+                    && Some(curve.primary_id) == operand.secondary_identity
             })
             .count();
         if geometry_matches != 1 {
