@@ -8,8 +8,8 @@ use crate::design::decode::dimension_frames::companion_owned_interval;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::ids::{self, native_stream};
 use crate::records::{
-    ConstructionRecipe, DesignParameter, DesignParameterCompanion, DesignParameterKind,
-    DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
+    ConstructionRecipe, DesignEntityHeader, DesignParameter, DesignParameterCompanion,
+    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
 };
 use cadmpeg_codec_core::le::{f64_at, u32_at, u64_at as read_u64};
 use cadmpeg_codec_core::CodecError;
@@ -617,11 +617,13 @@ pub(crate) fn parse_parameter_companion(prefix: &[u8]) -> Option<DesignParameter
 
 /// Bind each companion to its exact owned byte interval and the construction
 /// recipes nested in that interval.
+#[allow(clippy::too_many_arguments)] // Each argument is one independently decoded native arena.
 pub fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
     companions: &mut [DesignParameterCompanion],
     parameters: &[DesignParameter],
     owners: &[DesignParameterOwner],
     scopes: &[DesignParameterScope],
+    entities: &[DesignEntityHeader],
     headers: &[DesignRecordHeader],
     recipes: &[ConstructionRecipe],
     stream_lengths: &HashMap<String, usize, S>,
@@ -633,7 +635,7 @@ pub fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
         let Some(stream_length) = stream_lengths.get(stream).copied() else {
             continue;
         };
-        let Some((start, end)) = companion_owned_interval(
+        let Some((start, mut end)) = companion_owned_interval(
             companion,
             parameters.iter(),
             owners,
@@ -643,6 +645,32 @@ pub fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
         ) else {
             continue;
         };
+        // Entity headers precede their owning scope record. A parameter
+        // companion immediately before a new scope does not own that scope's
+        // preamble even though no indexed sibling separates the two records.
+        // Bind the preamble through the scope's entity identity, not by an
+        // assumed class-tag or byte length.
+        end = scopes
+            .iter()
+            .filter(|scope| {
+                native_stream(&scope.id) == Some(stream)
+                    && scope.byte_offset >= u64::try_from(end).unwrap_or(u64::MAX)
+                    && scope.entity_suffix.is_some()
+            })
+            .filter_map(|scope| {
+                entities
+                    .iter()
+                    .filter(|entity| {
+                        native_stream(&entity.id) == Some(stream)
+                            && Some(entity.entity_suffix) == scope.entity_suffix
+                            && usize::try_from(entity.byte_offset)
+                                .is_ok_and(|offset| offset >= start && offset < end)
+                    })
+                    .filter_map(|entity| usize::try_from(entity.byte_offset).ok())
+                    .min()
+            })
+            .min()
+            .unwrap_or(end);
         companion.payload_byte_offset = u64::try_from(start).unwrap_or(u64::MAX);
         companion.payload_byte_length = u64::try_from(end - start).unwrap_or(u64::MAX);
         let mut owned = recipes

@@ -3039,6 +3039,7 @@ fn extend_related_design_records(
         &native.design_parameters,
         &native.design_parameter_owners,
         &native.design_parameter_scopes,
+        &native.design_entity_headers,
         &native.design_record_headers,
         &native.construction_recipes,
         &stream_lengths,

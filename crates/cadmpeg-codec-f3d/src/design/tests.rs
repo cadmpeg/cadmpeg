@@ -53,8 +53,9 @@ use crate::design::dimensions::{
     exact_atomic_constraint, exact_counted_dimension_relation, exact_counted_offset,
     exact_offset_constraint, expression_identifiers, indirect_angular_lines,
     null_locus_dimension_definition, offset_parameter_factor,
-    owner_scoped_line_length_dimension_definition, owner_scoped_radial_dimension_definition,
-    point_lies_on_sketch_geometry, radial_dimension_definition, radial_locus_dimension_definition,
+    owner_scoped_angular_dimension_definition, owner_scoped_line_length_dimension_definition,
+    owner_scoped_radial_dimension_definition, point_lies_on_sketch_geometry,
+    radial_dimension_definition, radial_locus_dimension_definition,
     remove_dimension_frame_relations, repeated_linear_dimension,
     spatial_parallel_line_distance_matches, spatial_point_distance_matches,
     two_locus_distance_dimension, unique_point_class_dimension_definition,
@@ -3594,6 +3595,59 @@ fn owner_scoped_line_lengths_preserve_repeated_entities() {
 }
 
 #[test]
+fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
+    let sketch = SketchId("f3d:model:sketch#angular".into());
+    let line = |name: &str, angle: f64| SketchEntity {
+        id: SketchEntityId(format!("f3d:model:sketch-entity#{name}")),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(angle.cos(), angle.sin()),
+        },
+    };
+    let horizontal = line("horizontal", 0.0);
+    let sloped = line("sloped", std::f64::consts::FRAC_PI_6);
+    let vertical = line("vertical", std::f64::consts::FRAC_PI_2);
+    let parameter = parse_design_parameter(&parameter_record(
+        Some(1),
+        "30 deg",
+        "Angular Dimension-2",
+        Some("deg"),
+        "d1",
+        std::f64::consts::FRAC_PI_6,
+    ))
+    .expect("angular parameter");
+    let parameter_id = cadmpeg_ir::features::ParameterId("parameter#angle".into());
+
+    assert!(matches!(
+        owner_scoped_angular_dimension_definition(
+            &[horizontal.clone(), sloped.clone(), vertical.clone()],
+            &sketch,
+            &parameter,
+            &parameter_id,
+        ),
+        Some(SketchConstraintDefinition::Angle {
+            first,
+            second,
+            parameter,
+        }) if first == horizontal.id && second == sloped.id && parameter == parameter_id
+    ));
+
+    let other_sloped = line("other-sloped", -std::f64::consts::FRAC_PI_6);
+    assert!(owner_scoped_angular_dimension_definition(
+        &[horizontal, sloped, vertical, other_sloped],
+        &sketch,
+        &parameter,
+        &parameter_id,
+    )
+    .is_none());
+}
+
+#[test]
 fn owner_scoped_point_dimensions_quotient_coincident_identities() {
     let sketch = SketchId("f3d:model:sketch#point-classes".into());
     let point = |name: &str, u: f64, v: f64| SketchEntity {
@@ -6494,7 +6548,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             &companion,
             std::iter::empty(),
             &[],
-            &[scope],
+            &[scope.clone()],
             &[foreign_header],
             100,
         ),
@@ -6533,12 +6587,46 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &[],
         &[],
         &[],
+        &[],
         std::slice::from_ref(&recipe),
         &HashMap::from([("f3d:native".into(), 100)]),
     );
     assert_eq!(companion.payload_byte_offset, 58);
     assert_eq!(companion.payload_byte_length, 7);
     assert_eq!(companion.owned_recipe_ids, [recipe.id]);
+
+    companion.payload_byte_length = 0;
+    companion.owned_recipe_ids.clear();
+    scope.entity_id = Some("Sketch_99".into());
+    scope.entity_suffix = Some(99);
+    let entity = crate::records::DesignEntityHeader {
+        id: "f3d:native:design-entity-header#70".into(),
+        byte_offset: 70,
+        entity_suffix: 99,
+        entity_id: "Sketch_99".into(),
+        class_tag: "366".into(),
+        optional_slot_present: false,
+        module: Some("MSketch".into()),
+        record_reference: None,
+        record_reference_offset: None,
+        declared_reference_count: None,
+        reference_indices: Vec::new(),
+        reference_offsets: Vec::new(),
+        member_indices: Vec::new(),
+        member_offsets: Vec::new(),
+    };
+    bind_parameter_companion_payloads(
+        std::slice::from_mut(&mut companion),
+        &[],
+        &[],
+        std::slice::from_ref(&scope),
+        std::slice::from_ref(&entity),
+        &[],
+        &[],
+        &HashMap::from([("f3d:native".into(), 100)]),
+    );
+    assert_eq!(companion.payload_byte_offset, 58);
+    assert_eq!(companion.payload_byte_length, 12);
 }
 
 #[test]

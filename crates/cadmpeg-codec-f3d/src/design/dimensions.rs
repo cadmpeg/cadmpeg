@@ -958,6 +958,9 @@ fn project_all_dimension_constraints(
             linear_tolerance,
         )
         .or_else(|| {
+            owner_scoped_angular_dimension_definition(entities, &sketch, parameter, &parameter_id)
+        })
+        .or_else(|| {
             owner_scoped_line_length_dimension_definition(
                 entities,
                 &sketch,
@@ -1030,6 +1033,52 @@ fn project_all_dimension_constraints(
     }));
     constraints.sort_by_key(|constraint| constraint.id.clone());
     constraints
+}
+
+/// Resolve an angular parameter when exactly one unordered line pair in its
+/// owning sketch has the evaluated supporting-line angle.
+pub(crate) fn owner_scoped_angular_dimension_definition(
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    sketch: &cadmpeg_ir::sketches::SketchId,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+
+    if !parameter.source_kind.starts_with("Angular Dimension")
+        || !design_dimension_unit(parameter)
+        || !parameter.evaluated_value.is_finite()
+    {
+        return None;
+    }
+    let lines = entities
+        .iter()
+        .filter(|entity| {
+            &entity.sketch == sketch && matches!(entity.geometry, SketchGeometry::Line { .. })
+        })
+        .collect::<Vec<_>>();
+    let mut matched = None;
+    for first in 0..lines.len() {
+        for second in first + 1..lines.len() {
+            if !line_angle_matches(
+                &lines[first].geometry,
+                &lines[second].geometry,
+                parameter.evaluated_value,
+            ) {
+                continue;
+            }
+            if matched.is_some() {
+                return None;
+            }
+            matched = Some((lines[first], lines[second]));
+        }
+    }
+    let (first, second) = matched?;
+    Some(Definition::Angle {
+        first: first.id.clone(),
+        second: second.id.clone(),
+        parameter: parameter_id.clone(),
+    })
 }
 
 /// Bind an angular parameter to the common direction of one exact parallel
