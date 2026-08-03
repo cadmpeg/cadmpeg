@@ -2,9 +2,13 @@
 
 **One open pipeline for native CAD.**
 
-cadmpeg aims to do for CAD what FFmpeg does for media: provide one open toolchain for reading, inspecting, converting, and building across formats. It decodes vendor files into a documented intermediate representation (IR), validates them, and exports neutral formats.
+cadmpeg aims to do for CAD what FFmpeg does for media: provide a toolchain for reading, inspecting, converting, and building across formats. 
+As a CLI, it's a tool for convert and inspect CAD files.
+As a library, it's a building block for developers to add native vendor files support to their own applications.
 
-cadmpeg is early. End-to-end Autodesk Fusion `.f3d` to STEP path is about 70% complete, while codecs for SolidWorks, Rhino, CATIA, NX, and Creo cover different subsets. Long-term goal is one inspectable pipeline for every major CAD format.
+The end goal is to parse and semantically understand all aspects of a vendor CAD file, from preview meshes, to BREP geometry, to design intent and parametric history. Then, store the data in a rich IR and finally produce an export from that IR. 
+
+Currently, the project is early phases. Some open formats like STEP and Rhino are supported quite well but proprietary formats are limited and in active development. We use a format-support ladder from l0 to l9 capabilty level system to track progress for each format.
 
 [Try it](#quick-start) · [Format support](docs/format-support.md) · [Donate a test file](corpus/README.md) · [Contribute](CONTRIBUTING.md)
 
