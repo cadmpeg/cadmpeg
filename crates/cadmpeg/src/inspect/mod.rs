@@ -30,8 +30,28 @@ use numeric::{parse_offset, EndianArgs, ScalarType};
 const DEFAULT_HEX_LEN: u64 = 256;
 
 /// Byte-level subcommands of `cadmpeg inspect`.
+///
+/// The tools run directly, as `cadmpeg inspect hex FILE`. The hidden `bytes`
+/// group accepts the same tools one level deeper, as `cadmpeg inspect bytes hex
+/// FILE`, so the guessed spelling reaches the tool and its `--help` instead of
+/// a subcommand-conflict error.
 #[derive(Debug, Subcommand)]
 pub enum ByteCommand {
+    /// One byte tool named directly under `inspect`.
+    #[command(flatten)]
+    Tool(ByteTool),
+    /// The same byte tools under an explicit `bytes` group.
+    #[command(hide = true)]
+    Bytes {
+        /// Byte tool to run.
+        #[command(subcommand)]
+        tool: ByteTool,
+    },
+}
+
+/// One format-agnostic byte tool.
+#[derive(Debug, Subcommand)]
+pub enum ByteTool {
     /// Print a hexadecimal dump with absolute offsets and an ASCII gutter.
     Hex(HexArgs),
     /// Read fixed-width scalars at an offset, optionally striding a record array.
@@ -54,10 +74,10 @@ pub struct HexArgs {
     /// File to dump.
     pub file: PathBuf,
     /// First byte to print.
-    #[arg(long, default_value = "0", value_parser = parse_offset)]
+    #[arg(long, alias = "start", default_value = "0", value_parser = parse_offset)]
     pub offset: u64,
     /// Number of bytes to print; the dump stops early at end of file.
-    #[arg(long, value_parser = parse_offset)]
+    #[arg(long, visible_alias = "length", value_parser = parse_offset)]
     pub len: Option<u64>,
     /// Bytes per output line.
     #[arg(long, default_value_t = 16)]
@@ -73,10 +93,10 @@ pub struct ReadArgs {
     #[arg(long = "type", value_enum)]
     pub ty: ScalarType,
     /// Offset of the first value.
-    #[arg(long, default_value = "0", value_parser = parse_offset)]
+    #[arg(long, alias = "start", default_value = "0", value_parser = parse_offset)]
     pub offset: u64,
     /// How many values to read.
-    #[arg(long, default_value_t = 1)]
+    #[arg(short = 'n', long, default_value_t = 1)]
     pub count: u64,
     /// Byte step between consecutive values; defaults to the scalar width.
     #[arg(long, value_parser = parse_offset)]
@@ -87,10 +107,14 @@ pub struct ReadArgs {
 
 /// Arguments for `cadmpeg inspect find`.
 #[derive(Debug, Args)]
-#[command(group(clap::ArgGroup::new("needle").required(true).args(["hex", "ascii", "utf16le"])))]
+#[command(group(clap::ArgGroup::new("needle").args(["hex", "ascii", "utf16le"])))]
 pub struct FindArgs {
     /// File to search.
     pub file: PathBuf,
+    /// Rejected placeholder: the pattern belongs to `--hex`, `--ascii`, or
+    /// `--utf16le`, because a bare word cannot say how to encode it.
+    #[arg(hide = true)]
+    pub misplaced_pattern: Option<String>,
     /// Hexadecimal byte pattern; `??` matches any byte.
     #[arg(long)]
     pub hex: Option<String>,
@@ -111,7 +135,12 @@ pub struct StringsArgs {
     /// File to scan.
     pub file: PathBuf,
     /// Shortest run to report, in characters.
-    #[arg(long, default_value_t = 4)]
+    #[arg(
+        long,
+        visible_alias = "min-len",
+        alias = "min-length",
+        default_value_t = 4
+    )]
     pub min: usize,
     /// Which encodings to scan for.
     #[arg(long, value_enum, default_value_t = search::StringEncoding::Ascii)]
@@ -127,10 +156,10 @@ pub struct StructArgs {
     #[arg(long)]
     pub layout: String,
     /// Offset of the first record.
-    #[arg(long, default_value = "0", value_parser = parse_offset)]
+    #[arg(long, alias = "start", default_value = "0", value_parser = parse_offset)]
     pub offset: u64,
     /// How many consecutive records to decode.
-    #[arg(long, default_value_t = 1)]
+    #[arg(short = 'n', long, default_value_t = 1)]
     pub count: u64,
 }
 
@@ -169,14 +198,17 @@ pub struct DiffArgs {
 /// Returns an operational error when a file cannot be read, an argument does
 /// not parse, or a requested offset lies past end of file.
 pub fn run(command: ByteCommand) -> Result<()> {
-    match command {
-        ByteCommand::Hex(args) => hex(&args),
-        ByteCommand::Read(args) => read(&args),
-        ByteCommand::Find(args) => find(&args),
-        ByteCommand::Strings(args) => strings(&args),
-        ByteCommand::Struct(args) => structure(&args),
-        ByteCommand::Container(args) => container_list(&args),
-        ByteCommand::Diff(args) => diff_files(&args),
+    let tool = match command {
+        ByteCommand::Tool(tool) | ByteCommand::Bytes { tool } => tool,
+    };
+    match tool {
+        ByteTool::Hex(args) => hex(&args),
+        ByteTool::Read(args) => read(&args),
+        ByteTool::Find(args) => find(&args),
+        ByteTool::Strings(args) => strings(&args),
+        ByteTool::Struct(args) => structure(&args),
+        ByteTool::Container(args) => container_list(&args),
+        ByteTool::Diff(args) => diff_files(&args),
     }
 }
 
@@ -277,6 +309,13 @@ fn read(args: &ReadArgs) -> Result<()> {
 }
 
 fn find(args: &FindArgs) -> Result<()> {
+    if let Some(stray) = &args.misplaced_pattern {
+        bail!(
+            "`{stray}` is an extra positional argument; the search pattern is named by a flag \
+             because a bare word does not say how to encode it: pass `--hex {stray}` for a byte \
+             pattern, `--ascii {stray}` for text, or `--utf16le {stray}` for UTF-16LE text"
+        );
+    }
     let (pattern, described) = if let Some(text) = &args.hex {
         (search::parse_pattern(text), format!("hex {text}"))
     } else if let Some(text) = &args.ascii {
@@ -290,18 +329,25 @@ fn find(args: &FindArgs) -> Result<()> {
     let bytes = read_whole(&args.file)?;
     let limit = (args.max > 0).then_some(args.max);
     let hits = search::find_all(&bytes, &pattern, limit);
+    let truncated = limit.is_some_and(|max| hits.len() >= max);
     println!(
         "pattern: {described} ({} bytes)  hits: {}{}",
         pattern.len(),
         hits.len(),
-        if limit.is_some_and(|max| hits.len() >= max) {
+        if truncated {
             " (truncated by --max)"
         } else {
             ""
         }
     );
-    for offset in hits {
+    for offset in &hits {
         println!("0x{offset:08x}  {offset}");
+    }
+    if truncated {
+        println!(
+            "note: output truncated at {} matches; pass --max 0 for all",
+            args.max
+        );
     }
     Ok(())
 }

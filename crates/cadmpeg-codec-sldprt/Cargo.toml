@@ -8,6 +8,12 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 rust-version.workspace = true
+
+# Golden decode snapshots are a repository-side regression asset, not part of
+# the published API. They dominate the packaged crate (66MB of 70MB for the
+# FreeCAD codec) and a registry consumer cannot act on them. CI runs the golden
+# tests from the repository checkout.
+exclude = ["tests/golden/**"]
 readme = "README.md"
 documentation = "https://docs.rs/cadmpeg-codec-sldprt"
 keywords = ["cad", "solidworks", "sldprt", "parasolid", "geometry"]

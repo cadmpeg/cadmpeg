@@ -27,6 +27,18 @@ impl BodyWriterHistory {
             || native_body.is_some_and(|body| self.native.contains_key(&body))
     }
 
+    pub(crate) fn has_output_writer_other_than(
+        &self,
+        feature: Option<&FeatureId>,
+        outputs: &[BodyId],
+    ) -> bool {
+        outputs.iter().any(|output| {
+            self.outputs
+                .get(output)
+                .is_some_and(|writer| Some(writer) != feature)
+        })
+    }
+
     pub(crate) fn extend_primary_dependencies(
         &self,
         native_body: Option<u32>,
@@ -62,6 +74,16 @@ impl BodyWriterHistory {
         }
         for output in outputs {
             self.outputs.insert(output.clone(), feature.clone());
+        }
+    }
+
+    /// Retract provisional output ownership when a later construction record
+    /// proves that the body did not exist at the start of retained replay.
+    pub(crate) fn retract_outputs(&mut self, feature: &FeatureId, outputs: &[BodyId]) {
+        for output in outputs {
+            if self.outputs.get(output) == Some(feature) {
+                self.outputs.remove(output);
+            }
         }
     }
 }
@@ -152,5 +174,26 @@ mod tests {
         dependencies.clear();
         history.extend_primary_dependencies(Some(7), &[], &mut dependencies);
         assert_eq!(dependencies, [FeatureId("first".into())]);
+    }
+
+    #[test]
+    fn provisional_output_writer_can_be_retracted_without_affecting_other_writers() {
+        let provisional = FeatureId("provisional".into());
+        let retained = FeatureId("retained".into());
+        let created = BodyId("created".into());
+        let existing = BodyId("existing".into());
+        let mut history = BodyWriterHistory::default();
+        history.record_writer(None, &[created.clone(), existing.clone()], &provisional);
+        history.record_writer(Some(7), std::slice::from_ref(&existing), &retained);
+
+        assert!(!history
+            .has_output_writer_other_than(Some(&provisional), std::slice::from_ref(&created)));
+        assert!(history
+            .has_output_writer_other_than(Some(&provisional), std::slice::from_ref(&existing)));
+
+        history.retract_outputs(&provisional, &[created.clone(), existing.clone()]);
+
+        assert!(!history.has_primary_writer(None, &[created]));
+        assert!(history.has_primary_writer(Some(7), &[existing]));
     }
 }

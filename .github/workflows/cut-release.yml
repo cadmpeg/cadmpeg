@@ -55,7 +55,7 @@ jobs:
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
       - name: Checkout main
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           ref: main
           # Check out with the App token so the later commit and tag pushes are

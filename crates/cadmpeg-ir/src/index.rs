@@ -7,7 +7,9 @@ use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::document::CadIr;
 use crate::drawings::Drawing;
-use crate::features::{DesignConfiguration, DesignParameter, Feature, FeatureInputTopology};
+use crate::features::{
+    DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
+};
 use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Occurrence, ProductDefinition};

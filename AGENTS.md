@@ -8,7 +8,6 @@
 Multi-agent repository etiquette:
 
 - One worktree and one branch per agent. Do not edit or build inside another agent's worktree.
-- Stage explicit paths only. Do not use `git add -A`, `git add .`, or `git commit -a`; they capture other agents' unstaged work.
 - Unstaged changes you did not make belong to another agent. Do not commit them, revert them, or bypass hooks because of them.
 - Use `--no-verify` only with the reason stated in the commit body.
 - In a conflicted merge, restore a file from a merge stage with `scripts/restore-merge-stage.sh`, not with `git checkout` or `git restore`.
@@ -23,4 +22,8 @@ Build and test operations:
 - Test expectations come from the specification or approximate equality. Do not paste a failing run's observed output into an expectation.
 - Rebuild the `cadmpeg` binary before a batch decode run. An unchanged report after a code change indicates a stale binary, not an ineffective change.
 - Do not write file content back from a truncated read. Re-read a file after formatting hooks or context compaction before you patch it.
-- `/tmp` has a small quota. Put large scratch artifacts under `~/side2/tmp`.
+- Do byte-level work through `cadmpeg inspect` rather than `xxd`, `od`, `strings`, or `unzip`: `hex --offset --len`, `read --type --offset --count`, `find --hex|--ascii|--utf16le` with `--max 0` for every hit, plus `strings --min`, `struct --layout`, `diff`, and `container`. `inspect container` lists a ZIP member whose name contains brackets, such as `Body[Active].brp`; `unzip -p` reads that name as a glob and reports `filename not matched`.
+- Fixed byte offsets for a format are in `docs/layouts/<format>.toml`, with a rendered `<format>.md` beside it. Read the table before you derive an offset again, and record a settled fixed-offset layout there, not only in specification prose. `cargo test -p cadmpeg --test layout_tables` checks the arithmetic and the specification citations.
+- In decoded CADIR JSON, native arenas are under `.native.<codec>.arenas`, for example `.native.fcstd.arenas.objects`. In a `validate` report, findings are under `.validation_report.findings`; the printed error count and exit status 1 count the `error` and `blocking` findings there.
+- The CLI package is `cadmpeg`, so `cargo build -p cadmpeg`. There is no `cadmpeg-cli`. The package has no library target, so select its tests with `--all-targets`; `--lib` is an error.
+- Give each file in a corpus-wide decode loop its own `timeout N`. One pathological input then cannot stall the whole run.

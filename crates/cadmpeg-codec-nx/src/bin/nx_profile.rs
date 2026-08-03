@@ -24,6 +24,8 @@ struct Profile {
     fixtures: Vec<FixtureEvidence>,
     totals: EntityCounts,
     loss_codes: BTreeMap<String, usize>,
+    loss_details: BTreeMap<String, usize>,
+    rederivation_boundaries: Vec<RederivationBoundaryCount>,
     gates: Vec<Gate>,
     highest_passing_gate: Option<String>,
 }
@@ -36,6 +38,7 @@ struct FixtureEvidence {
     entities: EntityCounts,
     losses: BTreeMap<LossCategory, usize>,
     loss_codes: BTreeMap<String, usize>,
+    loss_details: BTreeMap<String, usize>,
     validation_errors: usize,
     all_bodies_colored: bool,
     all_faces_colored: bool,
@@ -56,16 +59,27 @@ enum VerificationStatus {
 struct RederivationBoundary {
     feature: Option<String>,
     feature_name: Option<String>,
+    feature_family: Option<String>,
+    feature_ordinal: Option<u64>,
     reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct RederivationBoundaryCount {
+    reason: String,
+    feature_family: Option<String>,
+    fixtures: usize,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct EntityCounts {
+    assets: usize,
     bodies: usize,
     faces: usize,
     edges: usize,
     vertices: usize,
     features: usize,
+    feature_result_topologies: usize,
     sketches: usize,
     sketch_entities: usize,
     sketch_constraints: usize,
@@ -76,11 +90,13 @@ struct EntityCounts {
 impl EntityCounts {
     fn from_ir(ir: &CadIr) -> Self {
         Self {
+            assets: ir.model.assets.len(),
             bodies: ir.model.bodies.len(),
             faces: ir.model.faces.len(),
             edges: ir.model.edges.len(),
             vertices: ir.model.vertices.len(),
             features: ir.model.features.len(),
+            feature_result_topologies: ir.model.feature_result_topologies.len(),
             sketches: ir.model.sketches.len(),
             sketch_entities: ir.model.sketch_entities.len(),
             sketch_constraints: ir.model.sketch_constraints.len(),
@@ -90,11 +106,13 @@ impl EntityCounts {
     }
 
     fn add(&mut self, other: &Self) {
+        self.assets += other.assets;
         self.bodies += other.bodies;
         self.faces += other.faces;
         self.edges += other.edges;
         self.vertices += other.vertices;
         self.features += other.features;
+        self.feature_result_topologies += other.feature_result_topologies;
         self.sketches += other.sketches;
         self.sketch_entities += other.sketch_entities;
         self.sketch_constraints += other.sketch_constraints;
@@ -125,6 +143,7 @@ struct DecodedFixtureEvidence {
     entities: EntityCounts,
     losses: BTreeMap<LossCategory, usize>,
     loss_codes: BTreeMap<String, usize>,
+    loss_details: BTreeMap<String, usize>,
     validation_errors: usize,
     all_bodies_colored: bool,
     all_faces_colored: bool,
@@ -173,6 +192,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut fixtures = Vec::new();
     let mut totals = EntityCounts::default();
     let mut total_loss_codes = BTreeMap::new();
+    let mut total_loss_details = BTreeMap::new();
     for path in paths {
         let first = decode_fixture_in_worker(&path)?;
         let second = decode_fixture_in_worker(&path)?;
@@ -180,6 +200,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         totals.add(&entities);
         for (code, count) in &first.loss_codes {
             *total_loss_codes.entry(code.clone()).or_insert(0) += count;
+        }
+        for (detail, count) in &first.loss_details {
+            *total_loss_details.entry(detail.clone()).or_insert(0) += count;
         }
         fixtures.push(FixtureEvidence {
             filename: path
@@ -196,22 +219,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             entities,
             losses: first.losses,
             loss_codes: first.loss_codes,
+            loss_details: first.loss_details,
             validation_errors: first.validation_errors,
         });
     }
 
     let gates = capability_gates(&fixtures);
+    let rederivation_boundaries = rederivation_boundary_counts(&fixtures);
     let highest_passing_gate = gates
         .iter()
         .take_while(|gate| gate.passed)
         .last()
         .map(|gate| gate.level.clone());
     let profile = Profile {
-        version: 4,
+        version: 8,
         format: "nx",
         fixtures,
         totals,
         loss_codes: total_loss_codes,
+        loss_details: total_loss_details,
+        rederivation_boundaries,
         gates,
         highest_passing_gate,
     };
@@ -221,17 +248,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn rederivation_boundary_counts(fixtures: &[FixtureEvidence]) -> Vec<RederivationBoundaryCount> {
+    let mut counts = BTreeMap::<(String, Option<String>), usize>::new();
+    for boundary in fixtures
+        .iter()
+        .filter_map(|fixture| fixture.rederivation_boundary.as_ref())
+    {
+        *counts
+            .entry((boundary.reason.clone(), boundary.feature_family.clone()))
+            .or_default() += 1;
+    }
+    counts
+        .into_iter()
+        .map(
+            |((reason, feature_family), fixtures)| RederivationBoundaryCount {
+                reason,
+                feature_family,
+                fixtures,
+            },
+        )
+        .collect()
+}
+
 fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::error::Error>> {
     let bytes = fs::read(path)?;
     let decoded = NxCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default())?;
     let mut losses = BTreeMap::new();
     let mut loss_codes = BTreeMap::new();
+    let mut loss_details = BTreeMap::new();
     for loss in &decoded.report.losses {
         if loss.severity >= Severity::Warning {
             *losses.entry(loss.code.category()).or_insert(0) += 1;
             *loss_codes
                 .entry(loss.code.as_str().to_string())
                 .or_insert(0) += 1;
+            *loss_details.entry(loss.message.clone()).or_insert(0) += 1;
         }
     }
     let validation_errors = cadmpeg_ir::validate(&decoded.ir, Vec::new())
@@ -250,6 +301,7 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
         entities: EntityCounts::from_ir(&decoded.ir),
         losses,
         loss_codes,
+        loss_details,
         validation_errors,
         all_bodies_colored: !decoded.ir.model.bodies.is_empty()
             && decoded
@@ -281,17 +333,27 @@ fn neutral_rederivation_evidence(ir: &CadIr) -> (VerificationStatus, Option<Rede
             Some(RederivationBoundary {
                 feature: None,
                 feature_name: None,
+                feature_family: None,
+                feature_ordinal: None,
                 reason: "saved_body_census_mismatch".to_string(),
             }),
         ),
         BodyCensusEvaluation::Unsupported { feature, reason } => {
-            let feature_name = feature.as_ref().and_then(|id| {
+            let boundary_feature = feature.as_ref().and_then(|id| {
                 ir.model
                     .features
                     .iter()
                     .find(|candidate| candidate.id == *id)
-                    .and_then(|feature| feature.name.clone())
             });
+            let feature_name = boundary_feature.and_then(|feature| feature.name.clone());
+            let feature_family = boundary_feature.and_then(|feature| {
+                serde_json::to_value(&feature.definition)
+                    .ok()?
+                    .get("definition")?
+                    .as_str()
+                    .map(str::to_string)
+            });
+            let feature_ordinal = boundary_feature.map(|feature| feature.ordinal);
             let reason = match reason {
                 UnsupportedBodyCensusReason::UnresolvedSuppression => "unresolved_suppression",
                 UnsupportedBodyCensusReason::UnsupportedFeatureDefinition => {
@@ -310,6 +372,8 @@ fn neutral_rederivation_evidence(ir: &CadIr) -> (VerificationStatus, Option<Rede
                 Some(RederivationBoundary {
                     feature: feature.map(|id| id.0),
                     feature_name,
+                    feature_family,
+                    feature_ordinal,
                     reason: reason.to_string(),
                 }),
             )
@@ -319,6 +383,8 @@ fn neutral_rederivation_evidence(ir: &CadIr) -> (VerificationStatus, Option<Rede
             Some(RederivationBoundary {
                 feature: None,
                 feature_name: None,
+                feature_family: None,
+                feature_ordinal: None,
                 reason: "unknown_evaluation_boundary".to_string(),
             }),
         ),
@@ -518,6 +584,7 @@ mod tests {
             entities: EntityCounts::default(),
             losses: BTreeMap::new(),
             loss_codes: BTreeMap::new(),
+            loss_details: BTreeMap::new(),
             validation_errors: 0,
             all_bodies_colored: false,
             all_faces_colored: false,
@@ -587,6 +654,81 @@ mod tests {
         assert_eq!(
             neutral_rederivation_evidence(&ir),
             (VerificationStatus::Verified, None)
+        );
+    }
+
+    #[test]
+    fn rederivation_boundary_identifies_feature_family_and_history_position() {
+        use cadmpeg_ir::features::{Feature, FeatureId};
+
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.features.push(Feature {
+            id: FeatureId("block".to_string()),
+            ordinal: 17,
+            name: Some("BLOCK".to_string()),
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: vec![BodyId("body".to_string())],
+            definition: FeatureDefinition::Block {
+                dimensions: None,
+                placement: None,
+                op: cadmpeg_ir::features::BooleanOp::Unresolved,
+            },
+            native_ref: None,
+        });
+
+        let (status, boundary) = neutral_rederivation_evidence(&ir);
+        assert_eq!(status, VerificationStatus::Missing);
+        assert_eq!(
+            boundary,
+            Some(RederivationBoundary {
+                feature: Some("block".to_string()),
+                feature_name: Some("BLOCK".to_string()),
+                feature_family: Some("block".to_string()),
+                feature_ordinal: Some(17),
+                reason: "incomplete_feature_definition".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn rederivation_boundary_census_groups_reason_and_feature_family() {
+        let boundary = |reason: &str, family: Option<&str>| RederivationBoundary {
+            feature: None,
+            feature_name: None,
+            feature_family: family.map(str::to_string),
+            feature_ordinal: None,
+            reason: reason.to_string(),
+        };
+        let mut fixtures = [fixture(), fixture(), fixture()];
+        fixtures[0].rederivation = VerificationStatus::Missing;
+        fixtures[0].rederivation_boundary =
+            Some(boundary("incomplete_feature_definition", Some("hole")));
+        fixtures[1].rederivation = VerificationStatus::Missing;
+        fixtures[1].rederivation_boundary =
+            Some(boundary("incomplete_feature_definition", Some("hole")));
+        fixtures[2].rederivation = VerificationStatus::Missing;
+        fixtures[2].rederivation_boundary = Some(boundary("configuration_evaluation", None));
+
+        assert_eq!(
+            rederivation_boundary_counts(&fixtures),
+            vec![
+                RederivationBoundaryCount {
+                    reason: "configuration_evaluation".to_string(),
+                    feature_family: None,
+                    fixtures: 1,
+                },
+                RederivationBoundaryCount {
+                    reason: "incomplete_feature_definition".to_string(),
+                    feature_family: Some("hole".to_string()),
+                    fixtures: 2,
+                },
+            ]
         );
     }
 

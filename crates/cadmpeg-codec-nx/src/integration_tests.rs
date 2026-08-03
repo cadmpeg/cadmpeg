@@ -151,12 +151,15 @@ fn display_jt_pipeline_decodes_mesh_scene_lod_and_property_streams() {
 fn object_model_pipeline_projects_composed_feature_history_and_inputs() {
     let result = decode(composed_feature_history_prt());
     assert!(!result.ir.model.features.is_empty());
-    assert!(result
+    let mut ordinals = result
         .ir
         .model
         .features
-        .windows(2)
-        .all(|pair| { pair[0].ordinal <= pair[1].ordinal }));
+        .iter()
+        .map(|feature| feature.ordinal)
+        .collect::<Vec<_>>();
+    ordinals.sort_unstable();
+    assert_eq!(ordinals, (0..ordinals.len() as u64).collect::<Vec<_>>());
     let namespace = result.ir.native.namespace("nx").unwrap();
     assert!(!namespace.arenas["feature_operation_records"].is_empty());
     assert!(!namespace.arenas["feature_input_blocks"].is_empty());
