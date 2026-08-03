@@ -1071,7 +1071,12 @@ pub(crate) fn resolved_edge_candidate_intersection<'a>(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<i64> {
-    resolved_edge_candidate_intersection_with_extra_proofs(selector_contexts, shared_edge_sets, [])
+    resolved_edge_candidate_intersection_with_extra_proofs(
+        selector_contexts,
+        shared_edge_sets,
+        [],
+        None,
+    )
 }
 
 pub(crate) fn unique_incidence_edge_shared_by_reference_faces<'a>(
@@ -1120,13 +1125,13 @@ pub(crate) fn resolved_edge_candidate_intersection_with_deleted_proofs<'a>(
     deleted_boundary_edges: &[i64],
     deleted_reference: Option<i64>,
 ) -> Option<i64> {
+    let deleted_triplet =
+        unique_deleted_triplet_candidate(selector_contexts, deleted_boundary_edges);
     resolved_edge_candidate_intersection_with_extra_proofs(
         selector_contexts,
         shared_edge_sets,
-        [
-            unique_deleted_triplet_candidate(selector_contexts, deleted_boundary_edges),
-            deleted_reference,
-        ],
+        [deleted_reference],
+        deleted_triplet,
     )
 }
 
@@ -1134,7 +1139,13 @@ fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
     extra_proofs: [Option<i64>; N],
+    disjoint_reference_proof: Option<i64>,
 ) -> Option<i64> {
+    let extra_proofs = extra_proofs
+        .into_iter()
+        .flatten()
+        .chain(disjoint_reference_proof)
+        .collect::<Vec<_>>();
     let ordered_edge_sets = shared_edge_sets.into_iter().collect::<Vec<_>>();
     let shared_edge_sets = ordered_edge_sets
         .iter()
@@ -1144,14 +1155,17 @@ fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
     let references_unavailable = !ordered_edge_sets.is_empty() && shared_edge_sets.is_empty();
     let reference_candidates =
         (shared_edge_sets.len() >= 2).then(|| edge_set_intersection(&shared_edge_sets));
-    // A disjoint adjacent-face reference set names no edge that every reference
-    // shares, so it identifies an unresolved edge-bearing operand: no other
-    // proof can select an edge outside the operand's own references.
+    // Disjoint contextual face references do not name a common edge. An exact
+    // recipe-clause/history proof remains independent of that context.
     if reference_candidates
         .as_deref()
         .is_some_and(<[i64]>::is_empty)
     {
-        return None;
+        let edge = disjoint_reference_proof?;
+        return extra_proofs
+            .iter()
+            .all(|proof| *proof == edge)
+            .then_some(edge);
     }
     let reference = match reference_candidates.as_deref() {
         Some(&[edge]) => Some(edge),
@@ -1175,8 +1189,8 @@ fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
         cross_clause_triplet,
     ]
     .into_iter()
-    .chain(extra_proofs)
     .flatten()
+    .chain(extra_proofs)
     .collect::<Vec<_>>();
     let edge = *proofs.first()?;
     proofs.iter().all(|proof| *proof == edge).then_some(edge)

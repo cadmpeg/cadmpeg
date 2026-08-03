@@ -15686,6 +15686,17 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         ),
         None
     );
+    let mut deleted_triplet = selector(0, &[]);
+    deleted_triplet.clause_triplet_edge_slots = vec![Some([vec![17, 19], vec![17, 20]]), None];
+    assert_eq!(
+        resolved_edge_candidate_intersection_with_deleted_proofs(
+            &[deleted_triplet],
+            [&[18][..], &[19][..]],
+            &[17],
+            None,
+        ),
+        Some(17)
+    );
     // The same proof stands where the references do share the edge.
     assert_eq!(
         resolved_edge_candidate_intersection_with_deleted_proofs(
