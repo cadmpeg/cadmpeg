@@ -7812,7 +7812,7 @@ fn decode_reports_missing_assembly_placements_only_for_external_references() {
 }
 
 #[test]
-fn decode_reports_material_loss_only_for_retained_material_assets() {
+fn retained_material_library_assets_do_not_imply_an_assignment_loss() {
     let file = prt_with_named_payloads(&[
         (
             "/Root/UG_PART/UG_PART",
@@ -7840,10 +7840,11 @@ fn decode_reports_material_loss_only_for_retained_material_assets() {
         asset.native_ref.as_deref(),
         Some("nx:container:material-texture#0")
     );
-    assert!(result.report.losses.iter().any(|loss| {
-        loss.code == LossKind::MaterialNotTransferred
-            && loss.message.contains("Embedded material texture assets")
-    }));
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| loss.code != LossKind::MaterialNotTransferred));
 }
 
 #[test]
