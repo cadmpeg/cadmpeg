@@ -8651,6 +8651,11 @@ mod marker_tests {
             equal_index_coordinate_roster_full_circle(&payload, &circle, &markers),
             Some(([1.0, 1.0], 2.0))
         );
+        payload[35..39].copy_from_slice(&[0x00, 0x00, 0x04, 0x00]);
+        assert_eq!(
+            equal_index_coordinate_roster_full_circle(&payload, &circle, &markers),
+            Some(([1.0, 1.0], 2.0))
+        );
     }
 
     #[test]
@@ -43779,8 +43784,10 @@ fn equal_index_coordinate_roster_full_circle(
     let prefix = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())?;
     let supported_layout = prefix == LEGACY_EXTENDED_SKETCH_MARKER
         && marker_native_code(payload, offset) == Some(0)
-        && payload.get(offset + 31..offset + 39)
-            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x01, 0x00])
+        && matches!(
+            payload.get(offset + 31..offset + 39),
+            Some([0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x01 | 0x04, 0x00])
+        )
         || prefix == LEGACY_SKETCH_MARKER
             && marker_native_code(payload, offset) == Some(2)
             && payload.get(offset + 31..offset + 39)
