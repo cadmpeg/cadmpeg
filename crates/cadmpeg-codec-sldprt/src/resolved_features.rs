@@ -11558,6 +11558,10 @@ mod marker_tests {
             super::extended_compact_indexed_curve_endpoint_indices(&normalized_payload, 0),
             Some([5, 9])
         );
+        assert!(current_undetailed_bounded_curve_is_line(
+            &normalized_payload,
+            0
+        ));
         let entity = |id: &str, offset, object_index, coordinates_m| SketchInputEntity {
             id: id.into(),
             parent: "lane".into(),
@@ -41645,11 +41649,17 @@ fn current_undetailed_bounded_curve_is_line(payload: &[u8], offset: usize) -> bo
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
         && marker_native_code(payload, offset) == Some(2)
         && marker_is_geometry_locus(payload, offset);
+    let compact_indexed_record = compact_indexed_curve_endpoint_indices(payload, offset).is_some()
+        || extended_compact_indexed_curve_endpoint_indices(payload, offset).is_some();
     let complete_indexed_record = wide_indexed_curve_endpoint_indices(payload, offset).is_some()
         && sketch_marker_prefix_at(payload, offset.saturating_add(92))
-        || (compact_indexed_curve_endpoint_indices(payload, offset).is_some()
-            || extended_compact_indexed_curve_endpoint_indices(payload, offset).is_some())
-            && sketch_marker_prefix_at(payload, offset.saturating_add(84));
+        || compact_indexed_record
+            && matches!(
+                compact_indexed_curve_record_end(payload, offset),
+                Some(
+                    CompactIndexedCurveRecordEnd::Marker84 | CompactIndexedCurveRecordEnd::Marker96
+                )
+            );
     supported_prefix
         && (profile_locus || extended_geometry_locus)
         && complete_indexed_record
