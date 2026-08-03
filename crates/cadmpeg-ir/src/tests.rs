@@ -5656,6 +5656,27 @@ fn body_selections_round_trip_through_json() {
 }
 
 #[test]
+fn feature_result_topology_round_trips_without_current_model_bodies() {
+    use crate::features::{FeatureId, FeatureResultTopology};
+    use crate::ids::FeatureResultTopologyId;
+
+    let state = FeatureResultTopology {
+        id: FeatureResultTopologyId("synthetic:history-result:state#0".into()),
+        output_of: FeatureId("synthetic:feature#0".into()),
+        bodies: vec!["body:17".into()],
+        faces: vec!["face:3".into()],
+        edges: vec!["edge:5".into()],
+        vertices: vec!["vertex:8".into()],
+        native_ref: Some("native:result#0".into()),
+    };
+    let json = serde_json::to_string(&state).unwrap();
+    assert_eq!(
+        serde_json::from_str::<FeatureResultTopology>(&json).unwrap(),
+        state
+    );
+}
+
+#[test]
 fn combine_omits_the_default_keep_tools_flag_from_json() {
     use crate::features::{BodySelection, BooleanOp, FeatureDefinition};
 

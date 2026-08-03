@@ -2297,6 +2297,57 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             }
         }
     }
+    let mut result_owners = HashSet::new();
+    for state in &ir.model.feature_result_topologies {
+        if !features.contains_key(state.output_of.as_str()) {
+            ref_error(
+                findings,
+                state.id.as_str(),
+                "result feature",
+                state.output_of.as_str(),
+            );
+        }
+        if !result_owners.insert(state.output_of.as_str()) {
+            findings.push(Finding {
+                check: Check::Counts,
+                severity: Severity::Error,
+                message: "feature has multiple result topology states".into(),
+                entity: Some(state.output_of.0.clone()),
+            });
+        }
+        if state.bodies.is_empty()
+            && state.faces.is_empty()
+            && state.edges.is_empty()
+            && state.vertices.is_empty()
+        {
+            findings.push(Finding {
+                check: Check::Counts,
+                severity: Severity::Error,
+                message: "feature result topology is empty".into(),
+                entity: Some(state.id.0.clone()),
+            });
+        }
+        for (kind, members) in [
+            ("body", &state.bodies),
+            ("face", &state.faces),
+            ("edge", &state.edges),
+            ("vertex", &state.vertices),
+        ] {
+            let mut seen = HashSet::new();
+            for member in members {
+                if member.trim().is_empty() || !seen.insert(member) {
+                    findings.push(Finding {
+                        check: Check::Counts,
+                        severity: Severity::Error,
+                        message: format!(
+                            "result topology has empty or repeated generated {kind} `{member}`"
+                        ),
+                        entity: Some(state.id.0.clone()),
+                    });
+                }
+            }
+        }
+    }
     let mut feature_ordinals = HashSet::new();
     for feature in &ir.model.features {
         if !feature_ordinals.insert(feature.ordinal) {

@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use crate::assets::AssetId;
 use crate::ids::{
-    BodyId, CurveId, EdgeId, FaceId, FeatureInputTopologyId, HistoricalBodyId, HistoricalEdgeId,
-    HistoricalFaceId, OccurrenceId, SubdId, VertexId,
+    BodyId, CurveId, EdgeId, FaceId, FeatureInputTopologyId, FeatureResultTopologyId,
+    HistoricalBodyId, HistoricalEdgeId, HistoricalFaceId, OccurrenceId, SubdId, VertexId,
 };
 use crate::math::{Point2, Point3, Vector3};
 use crate::products::JointId;
@@ -332,6 +332,35 @@ pub struct FeatureInputTopology {
     /// Edges present in this state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub edges: Vec<HistoricalEdgeId>,
+    /// Full-fidelity source state reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_ref: Option<String>,
+}
+
+/// Persistent feature-local topology identities in one regenerated result.
+///
+/// These identities describe intermediate history results that need not be
+/// members of the saved current model topology. Generated feature selections
+/// address members through the producing feature and the corresponding local
+/// identity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FeatureResultTopology {
+    /// Globally unique result-state id.
+    pub id: FeatureResultTopologyId,
+    /// Feature that produces this state.
+    pub output_of: FeatureId,
+    /// Feature-local body identities in stable source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bodies: Vec<String>,
+    /// Feature-local face identities in stable source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub faces: Vec<String>,
+    /// Feature-local edge identities in stable source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edges: Vec<String>,
+    /// Feature-local vertex identities in stable source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub vertices: Vec<String>,
     /// Full-fidelity source state reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,

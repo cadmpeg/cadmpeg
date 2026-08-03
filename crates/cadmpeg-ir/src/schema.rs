@@ -55,6 +55,8 @@ pub enum EntityKind {
     Feature,
     /// Feature input topology.
     FeatureInputTopology,
+    /// Feature result topology.
+    FeatureResultTopology,
     /// Design configuration.
     DesignConfiguration,
     /// Design parameter.
@@ -103,7 +105,7 @@ pub enum EntityKind {
 
 impl EntityKind {
     /// Every registered entity kind in canonical arena order.
-    pub const ALL: [Self; 40] = [
+    pub const ALL: [Self; 41] = [
         Self::Body,
         Self::Region,
         Self::Shell,
@@ -122,6 +124,7 @@ impl EntityKind {
         Self::Asset,
         Self::Feature,
         Self::FeatureInputTopology,
+        Self::FeatureResultTopology,
         Self::DesignConfiguration,
         Self::DesignParameter,
         Self::Sketch,
@@ -501,6 +504,12 @@ impl_entity_schema!(
     FeatureInputTopology,
     id.0;
     id, input_of, bodies, faces, edges, native_ref
+);
+impl_entity_schema!(
+    crate::features::FeatureResultTopology,
+    FeatureResultTopology,
+    id.0;
+    id, output_of, bodies, faces, edges, vertices, native_ref
 );
 impl_entity_schema!(
     crate::features::DesignConfiguration,
