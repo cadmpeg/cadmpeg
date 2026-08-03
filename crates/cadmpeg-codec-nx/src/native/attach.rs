@@ -2241,6 +2241,7 @@ fn attach_feature_operations(
         let block_dimension_values = block_dimensions_by_operation
             .get(label.id.as_str())
             .map(|dimensions| dimensions.values);
+        let block_has_explicit_output = !outputs.is_empty();
         let block_projection = (label.value == "BLOCK")
             .then(|| block_placement(ir, block_dimension_values?, &outputs))
             .flatten();
@@ -2251,7 +2252,8 @@ fn attach_feature_operations(
         }
         let block_op = if block_projection.is_some()
             && matches!(outputs.as_slice(), [_])
-            && !body_writer_history.has_primary_writer(native_primary_body, &outputs)
+            && (!block_has_explicit_output
+                || !body_writer_history.has_primary_writer(native_primary_body, &outputs))
         {
             BooleanOp::NewBody
         } else {
