@@ -392,10 +392,14 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
     }
     let mut unprojected_history_dependencies = 0;
     let mut ambiguous_history_dependencies = 0;
+    let bound_scope_histories = crate::history::bind_scope_histories(
+        &native.design_parameter_scopes,
+        &native.design_body_bindings,
+        &native.asm_histories,
+    );
     for scope in &native.design_parameter_scopes {
-        let (Some(stream), Some(state_id), Some(previous_state_id), Some(feature)) = (
+        let (Some(stream), Some(previous_state_id), Some(feature)) = (
             crate::ids::native_stream(&scope.id),
-            scope.history_state_id,
             scope.previous_history_state_id,
             projected_features.get(scope.id.as_str()),
         ) else {
@@ -411,11 +415,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             };
             *predecessor_ref
         } else {
-            let Some((history, _, _)) = crate::history::unique_history_state_pair(
-                &native.asm_histories,
-                state_id,
-                previous_state_id,
-            ) else {
+            let Some(history_id) = bound_scope_histories.get(&scope.id) else {
                 ambiguous_history_dependencies += 1;
                 continue;
             };
@@ -429,18 +429,9 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                     else {
                         return false;
                     };
-                    let (Some(predecessor_state_id), Some(predecessor_previous_state_id)) = (
-                        predecessor_scope.history_state_id,
-                        predecessor_scope.previous_history_state_id,
-                    ) else {
-                        return false;
-                    };
-                    crate::history::unique_history_state_pair(
-                        &native.asm_histories,
-                        predecessor_state_id,
-                        predecessor_previous_state_id,
-                    )
-                    .is_some_and(|(predecessor_history, _, _)| predecessor_history.id == history.id)
+                    bound_scope_histories
+                        .get(&predecessor_scope.id)
+                        .is_some_and(|predecessor_history_id| predecessor_history_id == history_id)
                 })
                 .copied()
                 .collect::<Vec<_>>();

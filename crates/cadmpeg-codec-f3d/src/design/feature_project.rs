@@ -889,16 +889,13 @@ pub fn project_parameter_design_with_edge_identities(
             }
         })
         .collect::<Vec<_>>();
+    let bound_scope_histories =
+        crate::history::bind_scope_histories(scopes, body_bindings, histories);
     let scope_history = |scope: &DesignParameterScope| {
         if histories.is_empty() {
             return Some("");
         }
-        crate::history::unique_history_state_pair(
-            histories,
-            scope.history_state_id?,
-            scope.previous_history_state_id?,
-        )
-        .map(|(history, _, _)| history.id.as_str())
+        bound_scope_histories.get(&scope.id).map(String::as_str)
     };
     let mut state_features =
         HashMap::<(&str, &str, i64), Option<cadmpeg_ir::features::FeatureId>>::new();

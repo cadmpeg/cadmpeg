@@ -1737,6 +1737,139 @@ fn history_state_pair(
     Some((history, state, previous))
 }
 
+pub(crate) fn bind_scope_histories(
+    scopes: &[crate::records::DesignParameterScope],
+    body_bindings: &[crate::records::DesignBodyBinding],
+    histories: &[AsmHistory],
+) -> HashMap<String, String> {
+    let candidates = scopes
+        .iter()
+        .filter_map(|scope| {
+            let (Some(state_id), Some(previous_state_id)) =
+                (scope.history_state_id, scope.previous_history_state_id)
+            else {
+                return None;
+            };
+            let direct = histories
+                .iter()
+                .filter(|history| {
+                    history_state_pair(history, state_id, previous_state_id, true).is_some()
+                })
+                .collect::<Vec<_>>();
+            let candidates = if direct.is_empty() {
+                histories
+                    .iter()
+                    .filter(|history| {
+                        history_state_pair(history, state_id, previous_state_id, false).is_some()
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                direct
+            };
+            (!candidates.is_empty()).then_some((scope, candidates))
+        })
+        .collect::<Vec<_>>();
+    let mut resolved = HashMap::<String, String>::new();
+    for (scope, candidates) in &candidates {
+        if candidates.len() == 1 {
+            resolved.insert(scope.id.clone(), candidates[0].id.clone());
+            continue;
+        }
+        let Some(construction) = &scope.base_feature_construction else {
+            continue;
+        };
+        let mut referenced_histories =
+            construction
+                .body_reference_records
+                .iter()
+                .filter_map(|suffix| {
+                    let mut bindings = body_bindings.iter().filter(|binding| {
+                        crate::ids::same_native_occurrence(&binding.id, &scope.id)
+                            && binding.entity_suffix == u64::from(*suffix)
+                    });
+                    let binding = bindings.next()?;
+                    if bindings.next().is_some() {
+                        return None;
+                    }
+                    let mut matching = candidates.iter().filter(|history| {
+                        historical_brep_source(&history.id).is_some_and(|source| {
+                            binding.blob_name.strip_prefix("BREP.") == Some(source)
+                        })
+                    });
+                    let history = matching.next()?;
+                    matching.next().is_none().then_some(history.id.as_str())
+                });
+        let Some(history_id) = referenced_histories.next() else {
+            continue;
+        };
+        if referenced_histories.all(|candidate| candidate == history_id) {
+            resolved.insert(scope.id.clone(), history_id.to_owned());
+        }
+    }
+    let mut groups = HashMap::<(&str, i64, i64), Vec<usize>>::new();
+    for (index, (scope, _)) in candidates.iter().enumerate() {
+        let (Some(stream), Some(state_id), Some(previous_state_id)) = (
+            crate::ids::native_stream(&scope.id),
+            scope.history_state_id,
+            scope.previous_history_state_id,
+        ) else {
+            continue;
+        };
+        groups
+            .entry((stream, state_id, previous_state_id))
+            .or_default()
+            .push(index);
+    }
+    for members in groups.values() {
+        let candidate_histories = members
+            .iter()
+            .flat_map(|index| {
+                candidates[*index]
+                    .1
+                    .iter()
+                    .map(|history| history.id.as_str())
+            })
+            .collect::<HashSet<_>>();
+        if candidate_histories.len() != members.len() {
+            continue;
+        }
+        loop {
+            let assigned = members
+                .iter()
+                .filter_map(|index| resolved.get(&candidates[*index].0.id))
+                .cloned()
+                .collect::<HashSet<_>>();
+            if assigned.len()
+                != members
+                    .iter()
+                    .filter(|index| resolved.contains_key(&candidates[**index].0.id))
+                    .count()
+            {
+                break;
+            }
+            let mut progress = false;
+            for index in members {
+                let (scope, scope_candidates) = &candidates[*index];
+                if resolved.contains_key(&scope.id) {
+                    continue;
+                }
+                let remaining = scope_candidates
+                    .iter()
+                    .filter(|history| !assigned.contains(&history.id))
+                    .collect::<Vec<_>>();
+                if let [history] = remaining.as_slice() {
+                    resolved.insert(scope.id.clone(), history.id.clone());
+                    progress = true;
+                }
+            }
+            if !progress {
+                break;
+            }
+        }
+    }
+    resolved
+}
+
 fn history_state_reaches(
     history: &AsmHistory,
     state: &AsmDeltaState,
