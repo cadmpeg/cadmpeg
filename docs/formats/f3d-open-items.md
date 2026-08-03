@@ -260,6 +260,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the field meanings to write a construction group from a neutral model. The role value `0x0000000500000000` in an Extrude scope is one case of an undefined role.
 
+### DR-19A. Entity-tracking path discriminators
+
+**Question.** What do the signed selector and kind fields of a construction-operand entity-tracking path select?
+
+**Known.** `f3d.md` §8.1 "A construction-operand entity-tracking path" gives the complete wrapper and carrier grammar. The selector is a signed i32, the kind is a u32, and the two optional related identities retain their ordered positions independently. The primary and related identities also occur as persistent Sketch-curve identities. Selector values `-1`, `1`, and `2` and kind values `1`, `2`, and `3` occur.
+
+**Need.** The decoder retains both discriminators and every identity. Their semantic meanings are required to generate an entity-tracking path from neutral selection intent.
+
 ### DR-20. Face-recipe node scalar fields
 
 **Question.** What is the topology meaning of the root scalar, the prelude scalars, and the side-clause scalars of a face-recipe node?

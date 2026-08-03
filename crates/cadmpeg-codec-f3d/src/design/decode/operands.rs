@@ -16,16 +16,17 @@ use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyRecipeOperand,
     DesignBodyRecipeOperandOwner, DesignBodyRecipeReference, DesignConstructionOperandGroup,
     DesignConstructionOperandGroupFrame, DesignConstructionOperandIdentity,
-    DesignConstructionPersistentIdentity, DesignEdgeIdentityOperand, DesignEdgeOperand,
-    DesignEntityHeader, DesignEntitySelectionOperand, DesignExtrudeFaceRole,
-    DesignExtrudeOperandRole, DesignExtrudePrologue, DesignExtrudeSelectionGroup,
-    DesignExtrudeSelectionMember, DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup,
-    DesignFilletRadiusLaw, DesignParameter, DesignParameterOwner, DesignParameterScope,
-    DesignRecordHeader, DesignSketchProfileOperand, DesignTopologyRecipeEntry,
-    DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, LostEdgeReference,
-    PersistentSubentityTag, SketchCurveIdentity, SketchPoint, SketchRelationOperand,
+    DesignConstructionPersistentIdentity, DesignConstructionTrackingPath,
+    DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
+    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudePrologue,
+    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
+    DesignFaceOperand, DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignParameter,
+    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchProfileOperand,
+    DesignTopologyRecipeEntry, DesignTopologyRecipeSide, DesignTopologyRecipeTriplet,
+    LostEdgeReference, PersistentSubentityTag, SketchCurveIdentity, SketchPoint,
+    SketchRelationOperand,
 };
-use cadmpeg_codec_core::le::{f64_at, u32_at, u64_at as read_u64};
+use cadmpeg_codec_core::le::{f64_at, i32_at, u32_at, u64_at as read_u64};
 use cadmpeg_codec_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -1433,13 +1434,30 @@ pub(crate) fn parse_construction_operand_identity(
     let mut current_at = usize::try_from(wrapper_header.byte_offset).ok()?;
     let mut current_record_index = wrapper_header.record_index;
     let mut current_class_tag = wrapper_header.class_tag.clone();
+    let mut chain_started = false;
+    if let Some(transform) = parse_construction_operand_transform(bytes, wrapper_header) {
+        current_at = usize::try_from(transform.following_byte_offset).ok()?;
+        current_record_index = transform.following_record_index;
+        current_class_tag = transform.following_class_tag;
+        chain_started = true;
+    }
     let mut wrapper_record_indices = Vec::new();
     let mut wrapper_byte_offsets = Vec::new();
     let mut wrapper_class_tags = Vec::new();
     let mut seen = HashSet::new();
-    while bytes.get(current_at + 11..current_at + 21)? == [0; 10]
-        && bytes.get(current_at + 21..current_at + 24)? == [1, 1, 0]
-    {
+    loop {
+        if parse_construction_tracking_path(
+            bytes,
+            current_at,
+            current_record_index,
+            &current_class_tag,
+        )
+        .is_some()
+            || bytes.get(current_at + 11..current_at + 21)? != [0; 10]
+            || bytes.get(current_at + 21..current_at + 24)? != [1, 1, 0]
+        {
+            break;
+        }
         if !seen.insert((current_record_index, current_at)) {
             return None;
         }
@@ -1451,8 +1469,21 @@ pub(crate) fn parse_construction_operand_identity(
             lp_ascii_filtered(bytes, current_at, 0..=2000, u8::is_ascii_graphic)?;
         current_record_index = u32_at(bytes, after_next_tag)?;
         current_class_tag = next_class_tag;
+        chain_started = true;
     }
-    if wrapper_record_indices.is_empty() {
+    let tracking_path = parse_construction_tracking_path(
+        bytes,
+        current_at,
+        current_record_index,
+        &current_class_tag,
+    );
+    if let Some(path) = &tracking_path {
+        current_at = usize::try_from(path.following_byte_offset).ok()?;
+        current_record_index = path.following_record_index;
+        current_class_tag.clone_from(&path.following_class_tag);
+        chain_started = true;
+    }
+    if !chain_started {
         return None;
     }
     let persistent_identity = parse_extrude_identity_member(bytes, current_at).map(|member| {
@@ -1478,8 +1509,95 @@ pub(crate) fn parse_construction_operand_identity(
         following_record_index: current_record_index,
         following_byte_offset: u64::try_from(current_at).ok()?,
         following_class_tag: current_class_tag,
+        tracking_path,
         persistent_identity,
     })
+}
+
+pub(crate) fn parse_construction_tracking_path(
+    bytes: &[u8],
+    wrapper_at: usize,
+    wrapper_record_index: u32,
+    wrapper_class_tag: &str,
+) -> Option<DesignConstructionTrackingPath> {
+    if bytes.get(wrapper_at + 11..wrapper_at + 21)? != [0; 10]
+        || bytes.get(wrapper_at + 21) != Some(&1)
+        || read_u64(bytes, wrapper_at + 22)? != u64::from(wrapper_record_index.checked_add(1)?)
+        || bytes.get(wrapper_at + 30..wrapper_at + 33)? != [0; 3]
+    {
+        return None;
+    }
+    let carrier_at = wrapper_at.checked_add(33)?;
+    let (carrier_class_tag, after_carrier_tag) =
+        lp_ascii_filtered(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
+    let carrier_record_index = u32_at(bytes, after_carrier_tag)?;
+    if carrier_record_index != wrapper_record_index.checked_add(1)?
+        || bytes.get(carrier_at + 11..carrier_at + 21)? != [0; 10]
+        || u32_at(bytes, carrier_at + 21)? != 1
+        || u32_at(bytes, carrier_at + 25)? != 0
+        || u32_at(bytes, carrier_at + 29)? != 1
+        || u32_at(bytes, carrier_at + 33)? != 2
+        || read_u64(bytes, carrier_at + 45)? != 0
+        || u32_at(bytes, carrier_at + 53)? != 1
+        || read_u64(bytes, carrier_at + 65)? != 0
+    {
+        return None;
+    }
+    let primary_identity = read_u64(bytes, carrier_at + 37)?;
+    let selector = i32_at(bytes, carrier_at + 57)?;
+    let kind = u32_at(bytes, carrier_at + 61)?;
+    let mut cursor = carrier_at.checked_add(73)?;
+    let (first_related_identity, first_related_identity_offset) =
+        take_optional_tracking_identity(bytes, &mut cursor)?;
+    let (second_related_identity, second_related_identity_offset) =
+        take_optional_tracking_identity(bytes, &mut cursor)?;
+    let following_at = cursor;
+    let (following_class_tag, after_following_tag) =
+        lp_ascii_filtered(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
+    let following_record_index = u32_at(bytes, after_following_tag)?;
+    if following_record_index != carrier_record_index.checked_add(1)? {
+        return None;
+    }
+    Some(DesignConstructionTrackingPath {
+        wrapper_record_index,
+        wrapper_byte_offset: u64::try_from(wrapper_at).ok()?,
+        wrapper_class_tag: wrapper_class_tag.to_owned(),
+        carrier_record_index,
+        carrier_byte_offset: u64::try_from(carrier_at).ok()?,
+        carrier_class_tag,
+        primary_identity,
+        primary_identity_offset: u64::try_from(carrier_at + 37).ok()?,
+        selector,
+        selector_offset: u64::try_from(carrier_at + 57).ok()?,
+        kind,
+        kind_offset: u64::try_from(carrier_at + 61).ok()?,
+        first_related_identity,
+        first_related_identity_offset,
+        second_related_identity,
+        second_related_identity_offset,
+        following_record_index,
+        following_byte_offset: u64::try_from(following_at).ok()?,
+        following_class_tag,
+    })
+}
+
+fn take_optional_tracking_identity(
+    bytes: &[u8],
+    cursor: &mut usize,
+) -> Option<(Option<u64>, Option<u64>)> {
+    match u32_at(bytes, *cursor)? {
+        0 => {
+            *cursor = (*cursor).checked_add(4)?;
+            Some((None, None))
+        }
+        1 => {
+            let value_at = (*cursor).checked_add(4)?;
+            let value = read_u64(bytes, value_at)?;
+            *cursor = value_at.checked_add(8)?;
+            Some((Some(value), Some(u64::try_from(value_at).ok()?)))
+        }
+        _ => None,
+    }
 }
 
 pub(crate) fn parse_extrude_selection_group(

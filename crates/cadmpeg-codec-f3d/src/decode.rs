@@ -2566,7 +2566,10 @@ fn extend_related_design_records(
                     .trailing_record_indices
                     .iter()
                     .flat_map(|record_index| {
-                        std::iter::once(*record_index).chain(record_index.checked_add(1))
+                        std::iter::once(*record_index)
+                            .chain(record_index.checked_add(1))
+                            .chain(record_index.checked_add(2))
+                            .chain(record_index.checked_add(3))
                     })
                     .chain(
                         group

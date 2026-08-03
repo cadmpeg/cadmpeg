@@ -2290,9 +2290,59 @@ pub struct DesignConstructionOperandIdentity {
     pub following_byte_offset: u64,
     /// Per-file dynamic class tag of the record following the wrappers.
     pub following_class_tag: String,
+    /// Entity-tracking path between the outer wrappers and persistent identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tracking_path: Option<DesignConstructionTrackingPath>,
     /// Fixed-width persistent identity, when the following record has that grammar.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub persistent_identity: Option<DesignConstructionPersistentIdentity>,
+}
+
+/// Entity-tracking path embedded in a construction-operand identity chain.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignConstructionTrackingPath {
+    /// Outer tracking-wrapper record identity.
+    pub wrapper_record_index: u32,
+    /// Outer tracking-wrapper header byte offset.
+    pub wrapper_byte_offset: u64,
+    /// Outer tracking-wrapper dynamic class tag.
+    pub wrapper_class_tag: String,
+    /// Nested tracking-carrier record identity.
+    pub carrier_record_index: u32,
+    /// Nested tracking-carrier header byte offset.
+    pub carrier_byte_offset: u64,
+    /// Nested tracking-carrier dynamic class tag.
+    pub carrier_class_tag: String,
+    /// Primary persistent identity stored by the carrier.
+    pub primary_identity: u64,
+    /// Byte offset of `primary_identity`.
+    pub primary_identity_offset: u64,
+    /// Signed carrier selector.
+    pub selector: i32,
+    /// Byte offset of `selector`.
+    pub selector_offset: u64,
+    /// Carrier-kind discriminator.
+    pub kind: u32,
+    /// Byte offset of `kind`.
+    pub kind_offset: u64,
+    /// First optional related persistent identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_related_identity: Option<u64>,
+    /// Byte offset of the first related identity value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_related_identity_offset: Option<u64>,
+    /// Second optional related persistent identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub second_related_identity: Option<u64>,
+    /// Byte offset of the second related identity value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub second_related_identity_offset: Option<u64>,
+    /// Indexed record immediately following the carrier.
+    pub following_record_index: u32,
+    /// Following-record header byte offset.
+    pub following_byte_offset: u64,
+    /// Following-record dynamic class tag.
+    pub following_class_tag: String,
 }
 
 /// Fixed-width persistent identity following a construction-operand identity chain.

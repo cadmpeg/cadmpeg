@@ -21,9 +21,9 @@ use crate::design::decode::operands::{
     decode_fillet_radius_groups, face_recipe_program_kind, has_typed_edge_treatment_group,
     parse_body_recipe_operand, parse_construction_operand_group,
     parse_construction_operand_identity, parse_construction_operand_path,
-    parse_construction_operand_transform, parse_edge_operand, parse_entity_selection_operand,
-    parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
-    parse_sketch_profile, ConstructionOperandGroupParse, FaceRecipeProgramKind,
+    parse_construction_operand_transform, parse_construction_tracking_path, parse_edge_operand,
+    parse_entity_selection_operand, parse_extrude_selection_group, parse_extrude_selection_member,
+    parse_face_operand, parse_sketch_profile, ConstructionOperandGroupParse, FaceRecipeProgramKind,
 };
 use crate::design::decode::parameters::{
     bind_parameter_companion_payloads, design_parameter_discriminator, parse_design_parameter,
@@ -7389,6 +7389,68 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
 }
 
 #[test]
+fn construction_tracking_path_decodes_absent_and_present_related_identities() {
+    fn header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn tracking_path(first: Option<u64>, second: Option<u64>) -> Vec<u8> {
+        let wrapper_record_index = 300u32;
+        let mut bytes = Vec::new();
+        header(&mut bytes, b"361", wrapper_record_index);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.push(1);
+        bytes.extend_from_slice(&u64::from(wrapper_record_index + 1).to_le_bytes());
+        bytes.extend_from_slice(&[0; 3]);
+        header(&mut bytes, b"363", wrapper_record_index + 1);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&268u64.to_le_bytes());
+        bytes.extend_from_slice(&0u64.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&(-1i32).to_le_bytes());
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&0u64.to_le_bytes());
+        for identity in [first, second] {
+            bytes.extend_from_slice(&u32::from(identity.is_some()).to_le_bytes());
+            if let Some(identity) = identity {
+                bytes.extend_from_slice(&identity.to_le_bytes());
+            }
+        }
+        header(&mut bytes, b"301", wrapper_record_index + 2);
+        bytes
+    }
+
+    let absent = tracking_path(None, None);
+    let absent = parse_construction_tracking_path(&absent, 0, 300, "361")
+        .expect("tracking path without related identities");
+    assert_eq!(absent.carrier_record_index, 301);
+    assert_eq!(absent.carrier_byte_offset, 33);
+    assert_eq!(absent.primary_identity, 268);
+    assert_eq!(absent.primary_identity_offset, 70);
+    assert_eq!(absent.selector, -1);
+    assert_eq!(absent.kind, 3);
+    assert_eq!(absent.first_related_identity, None);
+    assert_eq!(absent.second_related_identity, None);
+    assert_eq!(absent.following_record_index, 302);
+    assert_eq!(absent.following_byte_offset, 114);
+
+    let present = tracking_path(Some(113), Some(119));
+    let present = parse_construction_tracking_path(&present, 0, 300, "361")
+        .expect("tracking path with related identities");
+    assert_eq!(present.first_related_identity, Some(113));
+    assert_eq!(present.first_related_identity_offset, Some(110));
+    assert_eq!(present.second_related_identity, Some(119));
+    assert_eq!(present.second_related_identity_offset, Some(122));
+    assert_eq!(present.following_byte_offset, 130);
+}
+
+#[test]
 fn ruled_surface_operation_reads_mode_parameters_and_ordered_edge_groups() {
     let mut bytes = vec![0; 366];
     bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
@@ -8020,6 +8082,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         following_record_index: 200,
         following_byte_offset: 0,
         following_class_tag: "290".into(),
+        tracking_path: None,
         persistent_identity: Some(DesignConstructionPersistentIdentity {
             local_id: 586,
             local_id_offset: 21,

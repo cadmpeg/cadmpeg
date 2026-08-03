@@ -2656,8 +2656,8 @@ fn validate_construction_operand_identities<'a>(
         let selected_profile = group
             .and_then(|group| scopes_by_index.get(&(native_stream, group.scope_record_index)))
             .and_then(|scope| scope.extrude_profile.as_ref());
-        let wrapper_shape = !identity.wrapper_record_indices.is_empty()
-            && identity.wrapper_record_indices.len() == identity.wrapper_byte_offsets.len()
+        let wrapper_shape = identity.wrapper_record_indices.len()
+            == identity.wrapper_byte_offsets.len()
             && identity.wrapper_record_indices.len() == identity.wrapper_class_tags.len()
             && identity
                 .wrapper_record_indices
@@ -2684,15 +2684,91 @@ fn validate_construction_operand_identities<'a>(
                                 header.byte_offset == byte_offset && header.class_tag == *class_tag
                             })
                 });
+        let transform = group.and_then(|group| group.frame.trailing_transforms.first());
+        let tracking_shape = identity.tracking_path.as_ref().is_none_or(|path| {
+            let mut cursor = path.carrier_byte_offset.saturating_add(73);
+            let first_offset = path.first_related_identity.map(|_| {
+                let offset = cursor.saturating_add(4);
+                cursor = cursor.saturating_add(12);
+                offset
+            });
+            if path.first_related_identity.is_none() {
+                cursor = cursor.saturating_add(4);
+            }
+            let second_offset = path.second_related_identity.map(|_| {
+                let offset = cursor.saturating_add(4);
+                cursor = cursor.saturating_add(12);
+                offset
+            });
+            if path.second_related_identity.is_none() {
+                cursor = cursor.saturating_add(4);
+            }
+            path.carrier_record_index == path.wrapper_record_index.saturating_add(1)
+                && path.carrier_byte_offset == path.wrapper_byte_offset.saturating_add(33)
+                && records_by_index
+                    .get(&(native_stream, path.wrapper_record_index))
+                    .is_some_and(|header| {
+                        header.byte_offset == path.wrapper_byte_offset
+                            && header.class_tag == path.wrapper_class_tag
+                    })
+                && records_by_index
+                    .get(&(native_stream, path.carrier_record_index))
+                    .is_some_and(|header| {
+                        header.byte_offset == path.carrier_byte_offset
+                            && header.class_tag == path.carrier_class_tag
+                    })
+                && path.primary_identity_offset == path.carrier_byte_offset.saturating_add(37)
+                && path.selector_offset == path.carrier_byte_offset.saturating_add(57)
+                && path.kind_offset == path.carrier_byte_offset.saturating_add(61)
+                && path.first_related_identity_offset == first_offset
+                && path.second_related_identity_offset == second_offset
+                && path.following_record_index == path.carrier_record_index.saturating_add(1)
+                && path.following_byte_offset == cursor
+                && records_by_index
+                    .get(&(native_stream, path.following_record_index))
+                    .is_some_and(|header| {
+                        header.byte_offset == path.following_byte_offset
+                            && header.class_tag == path.following_class_tag
+                    })
+        });
+        let chain_entry_shape = if let Some(path) = &identity.tracking_path {
+            identity
+                .wrapper_byte_offsets
+                .last()
+                .is_some_and(|offset| path.wrapper_byte_offset == offset.saturating_add(24))
+                || (identity.wrapper_byte_offsets.is_empty()
+                    && transform.is_some_and(|transform| {
+                        path.wrapper_record_index == transform.following_record_index
+                            && path.wrapper_byte_offset == transform.following_byte_offset
+                            && path.wrapper_class_tag == transform.following_class_tag
+                    }))
+                || (identity.wrapper_byte_offsets.is_empty()
+                    && transform.is_none()
+                    && group.is_some_and(|group| {
+                        group.frame.trailing_record_indices.first()
+                            == Some(&path.wrapper_record_index)
+                    }))
+        } else {
+            true
+        };
         let following_shape = identity.following_class_tag.len() == 3
             && identity
                 .following_class_tag
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
-            && identity
-                .wrapper_byte_offsets
-                .last()
-                .is_some_and(|offset| identity.following_byte_offset == offset.saturating_add(24))
+            && if let Some(path) = &identity.tracking_path {
+                identity.following_record_index == path.following_record_index
+                    && identity.following_byte_offset == path.following_byte_offset
+                    && identity.following_class_tag == path.following_class_tag
+            } else if let Some(offset) = identity.wrapper_byte_offsets.last() {
+                identity.following_byte_offset == offset.saturating_add(24)
+            } else {
+                transform.is_some_and(|transform| {
+                    identity.following_record_index == transform.following_record_index
+                        && identity.following_byte_offset == transform.following_byte_offset
+                        && identity.following_class_tag == transform.following_class_tag
+                })
+            }
             && records_by_index
                 .get(&(native_stream, identity.following_record_index))
                 .is_some_and(|header| {
@@ -2716,8 +2792,27 @@ fn validate_construction_operand_identities<'a>(
                     && persistent.next_record_index != 0
             });
         let valid = group.is_some_and(|group| {
-            identity.wrapper_record_indices.first() == group.frame.trailing_record_indices.first()
+            let trailing = group.frame.trailing_record_indices.first();
+            identity
+                .wrapper_record_indices
+                .first()
+                .or_else(|| {
+                    group
+                        .frame
+                        .trailing_transforms
+                        .first()
+                        .map(|transform| &transform.record_index)
+                })
+                .or_else(|| {
+                    identity
+                        .tracking_path
+                        .as_ref()
+                        .map(|path| &path.wrapper_record_index)
+                })
+                == trailing
         }) && wrapper_shape
+            && tracking_shape
+            && chain_entry_shape
             && following_shape
             && persistent_shape
             && operand_identity_groups.insert((native_stream, identity.group_record_index));
