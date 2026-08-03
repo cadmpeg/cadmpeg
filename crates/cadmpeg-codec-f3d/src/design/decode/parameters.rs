@@ -83,6 +83,9 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
         && payload.get(30) == Some(&1)
         && payload.get(35..41) == Some(&[0; 6]);
     let discriminated = !compact_owned && payload.get(30) == Some(&0);
+    if !compact_owned && !discriminated {
+        return parse_legacy_design_parameter(payload, class_tag, record_index);
+    }
     let (family_discriminator, source_ordinal, owner_record_index, expression_at, trailer_len) =
         if discriminated {
             let discriminator = read_u64(payload, 22)?;
@@ -190,6 +193,71 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
         kind,
         unit,
         unit_offset: unit_offset.map(|offset| offset as u64),
+        name,
+        name_offset: (name_at + 4) as u64,
+        evaluated_value,
+        evaluated_value_offset: name_end as u64,
+    })
+}
+
+fn parse_legacy_design_parameter(
+    payload: &[u8],
+    class_tag: String,
+    record_index: u32,
+) -> Option<DesignParameter> {
+    if payload.get(11..25)? != [0; 14]
+        || payload.get(29) != Some(&1)
+        || payload.get(34..40)? != [0; 6]
+    {
+        return None;
+    }
+    let source_ordinal = u32_at(payload, 25)?;
+    let owner_record_index = u32_at(payload, 30)?;
+    let expression_at = 40;
+    let (expression, expression_end) = lp_utf16_bounded(payload, expression_at, 1..=256)?;
+    if payload.get(expression_end..expression_end + 5)? != [0; 5] {
+        return None;
+    }
+    let source_kind_at = expression_end + 5;
+    let (source_kind, source_kind_end) = lp_utf16_bounded(payload, source_kind_at, 1..=256)?;
+    let unit_at = source_kind_end;
+    let (unit, unit_end) = lp_utf16_bounded(payload, unit_at, 1..=64)?;
+    let name_at = unit_end;
+    let (name, name_end) = lp_utf16_bounded(payload, name_at, 1..=256)?;
+    let evaluated_value = f64_at(payload, name_end)?;
+    let tail = payload.get(name_end + 8..)?;
+    if tail != [0, 1, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        || expression.is_empty()
+        || source_kind.is_empty()
+        || unit.is_empty()
+        || name.is_empty()
+        || !evaluated_value.is_finite()
+    {
+        return None;
+    }
+    let kind = if source_kind == "User Parameter" {
+        DesignParameterKind::User
+    } else if source_kind.contains("Dimension") {
+        DesignParameterKind::Dimension
+    } else {
+        DesignParameterKind::Feature
+    };
+    Some(DesignParameter {
+        id: String::new(),
+        byte_offset: 0,
+        class_tag,
+        record_index,
+        family_discriminator: None,
+        family_discriminator_offset: None,
+        source_ordinal,
+        owner_record_index: Some(owner_record_index),
+        expression,
+        expression_offset: (expression_at + 4) as u64,
+        source_kind,
+        source_kind_offset: (source_kind_at + 4) as u64,
+        kind,
+        unit: Some(unit),
+        unit_offset: Some((unit_at + 4) as u64),
         name,
         name_offset: (name_at + 4) as u64,
         evaluated_value,

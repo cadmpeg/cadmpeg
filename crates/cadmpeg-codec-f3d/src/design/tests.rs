@@ -2535,6 +2535,35 @@ fn compact_owned_design_parameter_has_no_family_discriminator() {
 }
 
 #[test]
+fn legacy_owned_design_parameter_uses_the_compact_identity_prefix() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    bytes.extend_from_slice(b"296");
+    bytes.extend_from_slice(&439_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 14]);
+    bytes.extend_from_slice(&5_u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&437_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    lp_utf16(&mut bytes, "0.00 mm");
+    bytes.extend_from_slice(&[0; 5]);
+    lp_utf16(&mut bytes, "OffsetX");
+    lp_utf16(&mut bytes, "mm");
+    lp_utf16(&mut bytes, "d5");
+    bytes.extend_from_slice(&0.0_f64.to_le_bytes());
+    bytes.extend_from_slice(&[0, 1, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+    let parameter = parse_design_parameter(&bytes).expect("legacy owned parameter");
+    assert_eq!(parameter.record_index, 439);
+    assert_eq!(parameter.owner_record_index, Some(437));
+    assert_eq!(parameter.source_ordinal, 5);
+    assert_eq!(parameter.source_kind, "OffsetX");
+    assert_eq!(parameter.unit.as_deref(), Some("mm"));
+    assert_eq!(parameter.name, "d5");
+    assert_eq!(parameter.evaluated_value, 0.0);
+}
+
+#[test]
 fn body_bound_candidate_has_one_marker_and_six_ordered_f64_values() {
     let values: [f64; 6] = [4.0, 6.0, 1.5, -1.0, 0.0, -0.25];
     let mut bytes = vec![1];
