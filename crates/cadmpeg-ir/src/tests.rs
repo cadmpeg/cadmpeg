@@ -115,6 +115,85 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
 }
 
 #[test]
+fn typed_reference_walk_treats_historical_members_as_state_local() {
+    use crate::features::{
+        EdgeSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology, FilletGroup,
+        Length, RadiusSpec,
+    };
+    use crate::ids::{FeatureInputTopologyId, HistoricalEdgeId};
+    use crate::schema::EntitySchema;
+
+    let feature_id = FeatureId("test:model:feature#owner".into());
+    let state_id = FeatureInputTopologyId("test:model:feature-input#owner".into());
+    let historical_edge = HistoricalEdgeId("test:model:historical-edge#local".into());
+    let state = FeatureInputTopology {
+        id: state_id.clone(),
+        input_of: feature_id.clone(),
+        bodies: Vec::new(),
+        faces: Vec::new(),
+        edges: vec![historical_edge.clone()],
+        native_ref: None,
+    };
+    let feature = Feature {
+        id: feature_id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Fillet {
+            groups: vec![FilletGroup {
+                edges: EdgeSelection::Historical {
+                    state: state_id.clone(),
+                    edges: vec![historical_edge],
+                    native: "edge:local".into(),
+                },
+                radius: RadiusSpec::Constant {
+                    radius: Length(1.0),
+                },
+                tangency_weight: None,
+            }],
+        },
+        native_ref: None,
+    };
+
+    let mut state_references = Vec::new();
+    state.visit_references(&mut |reference| state_references.push(reference.target));
+    assert_eq!(state_references, vec![feature_id.0.clone()]);
+
+    let mut feature_references = Vec::new();
+    feature.visit_references(&mut |reference| feature_references.push(reference.target));
+    assert_eq!(feature_references, vec![state_id.0]);
+
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.feature_input_topologies.push(state);
+    ir.model.features.push(feature);
+    assert!(!validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.check == Check::ReferentialIntegrity));
+
+    let missing = "test:model:historical-edge#missing";
+    let FeatureDefinition::Fillet { groups } = &mut ir.model.features[0].definition else {
+        unreachable!("test feature is a fillet")
+    };
+    let EdgeSelection::Historical { edges, .. } = &mut groups[0].edges else {
+        unreachable!("test fillet uses a historical selection")
+    };
+    edges[0] = HistoricalEdgeId(missing.into());
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.check == Check::ReferentialIntegrity
+            && finding.entity.as_deref() == Some(feature_id.as_str())
+            && finding.message == format!("references missing historical edge `{missing}`")
+    }));
+}
+
+#[test]
 fn typed_ids_keep_their_canonical_json_string_shape() {
     let id = crate::ids::BodyId("test:model:body#1".into());
     assert_eq!(serde_json::to_string(&id).unwrap(), "\"test:model:body#1\"");
