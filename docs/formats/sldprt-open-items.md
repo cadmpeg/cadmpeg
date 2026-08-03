@@ -46,7 +46,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How do we derive the UV curve for a non-isoparametric trim on a B-spline face?
 
-**Known.** `sldprt.md` §7.1 "00 TT  [ff]?" through `sldprt.md` §7.2 "00 2d  marker [ff?]  value_count u32 BE  attr u16 BE  f64[value_count] BE   ; poles /" define exact pcurves for the supported analytic, isoparametric, polar-NURBS, and ruled-surface cases. The Parasolid stream does not store a two-dimensional UV control array.
+**Known.** `sldprt.md` §7.1 "00 TT [ff]?" through `sldprt.md` §7.2 "00 2d marker [ff?] value_count u32 BE attr u16 BE f64[value_count] BE ; poles /" define exact pcurves for the supported analytic, isoparametric, polar-NURBS, and ruled-surface cases. The Parasolid stream does not store a two-dimensional UV control array.
 
 **Need.** We must know the convention to construct the trim in the surface parameter space.
 
