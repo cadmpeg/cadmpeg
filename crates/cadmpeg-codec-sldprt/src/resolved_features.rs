@@ -2361,11 +2361,13 @@ mod marker_tests {
         current_direct_92_profile_line_endpoint_indices, current_geometry_locus_profile_vertex,
         current_identity_linked_wide_curve_uses_one_based_roster,
         current_indexed_arc_reverses_center_sweep, current_linked_semicircle_record,
-        current_long_full_circle_radial_index, current_reverse_incidence_endpoint_offsets,
-        current_undetailed_bounded_curve_is_line, current_wide_arc_direct_markers,
-        direct_indexed_curve_endpoint_indices, enrich_history_revolution_inputs,
-        equal_index_coordinate_roster_full_circle, explicit_reference_axis_frame,
-        explicit_reference_plane_frame, extended_compact_84_construction_line_endpoint_indices,
+        current_long_full_circle_radial_index,
+        current_referenced_compact_104_curve_uses_marker_roster,
+        current_reverse_incidence_endpoint_offsets, current_undetailed_bounded_curve_is_line,
+        current_wide_arc_direct_markers, direct_indexed_curve_endpoint_indices,
+        enrich_history_revolution_inputs, equal_index_coordinate_roster_full_circle,
+        explicit_reference_axis_frame, explicit_reference_plane_frame,
+        extended_compact_84_construction_line_endpoint_indices,
         extended_compact_96_selected_axis_endpoint_indices, extended_compact_endpoint_markers,
         extended_declared_inline_line_endpoints, extended_direct_object_line_endpoint_ids,
         extended_direct_object_line_endpoints, extended_identity_inline_line_endpoints,
@@ -11124,6 +11126,79 @@ mod marker_tests {
             current_direct_92_profile_line_endpoint_indices(&payload, 0),
             None
         );
+    }
+
+    #[test]
+    fn current_referenced_compact_104_line_uses_complete_one_based_marker_roster() {
+        let curve_offset = 100;
+        let mut payload = vec![0; curve_offset + 104 + SKETCH_MARKER.len()];
+        payload[curve_offset..curve_offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[curve_offset + 5..curve_offset + 13].fill(0xff);
+        payload[curve_offset + 13..curve_offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[curve_offset + 17..curve_offset + 21].copy_from_slice(&2u32.to_le_bytes());
+        payload[curve_offset + 23..curve_offset + 31]
+            .copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00]);
+        payload[curve_offset + 31..curve_offset + 39]
+            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[curve_offset + 48..curve_offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[curve_offset + 56..curve_offset + 58].copy_from_slice(&1u16.to_le_bytes());
+        payload[curve_offset + 58..curve_offset + 60].copy_from_slice(&3u16.to_le_bytes());
+        payload[curve_offset + 60..curve_offset + 64].copy_from_slice(&1u32.to_le_bytes());
+        payload[curve_offset + 64..curve_offset + 72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[curve_offset + 72..curve_offset + 76].copy_from_slice(&1i32.to_le_bytes());
+        payload[curve_offset + 76..curve_offset + 78].copy_from_slice(&22u16.to_le_bytes());
+        for relative in [78, 82, 86, 90] {
+            payload[curve_offset + relative..curve_offset + relative + 4]
+                .copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        payload[curve_offset + 96..curve_offset + 100].copy_from_slice(&13u32.to_le_bytes());
+        payload[curve_offset + 100..curve_offset + 104].copy_from_slice(&7u32.to_le_bytes());
+        payload[curve_offset + 104..].copy_from_slice(SKETCH_MARKER);
+
+        let marker = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("sketch".into()),
+            ordinal: 0,
+            offset,
+            object_index: None,
+            local_id: None,
+            kind,
+            state_value: Some(1.0),
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let entities = [
+            marker("first", 0, SketchInputKind::Point, Some([1.0, 2.0])),
+            marker(
+                "relation",
+                10,
+                SketchInputKind::Relation(SketchRelationKind::Horizontal),
+                None,
+            ),
+            marker("second", 20, SketchInputKind::Point, Some([3.0, 4.0])),
+            marker("curve", 100, SketchInputKind::Arc, None),
+        ];
+        let markers = entities.iter().collect::<Vec<_>>();
+
+        assert!(current_referenced_compact_104_curve_uses_marker_roster(
+            &payload,
+            curve_offset
+        ));
+        assert_eq!(
+            coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+                .iter()
+                .map(|marker| marker.id.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
+
+        payload[curve_offset + 100..curve_offset + 104].copy_from_slice(&13u32.to_le_bytes());
+        assert!(!current_referenced_compact_104_curve_uses_marker_roster(
+            &payload,
+            curve_offset
+        ));
     }
 
     #[test]
@@ -42971,9 +43046,12 @@ fn coordinate_roster_curve_endpoint_markers<'a>(
     if !coordinate_roster_curve_layout(payload, offset) {
         return Vec::new();
     }
-    let complete_entity_roster = extended_marker84_line_uses_point_roster(payload, offset)
-        && marker_profile_curve_role(payload, offset) == Some(2)
-        && payload.get(offset + 72..offset + 76) == Some(&[0x00, 0x00, 0x01, 0x00]);
+    let current_complete_roster =
+        current_referenced_compact_104_curve_uses_marker_roster(payload, offset);
+    let complete_entity_roster = current_complete_roster
+        || extended_marker84_line_uses_point_roster(payload, offset)
+            && marker_profile_curve_role(payload, offset) == Some(2)
+            && payload.get(offset + 72..offset + 76) == Some(&[0x00, 0x00, 0x01, 0x00]);
     let mut coordinates = markers
         .iter()
         .copied()
@@ -42997,7 +43075,8 @@ fn coordinate_roster_curve_endpoint_markers<'a>(
     let one_based = (extended_marker84_line_uses_point_roster(payload, offset)
         && payload.get(offset + 27..offset + 31) == Some(&[0x01, 0x00, 0x01, 0x00])
         && payload.get(offset + 72..offset + 76) == Some(&[0x00, 0x00, 0x02, 0x00]))
-        || current_identity_linked_wide_curve_uses_one_based_roster(payload, offset);
+        || current_identity_linked_wide_curve_uses_one_based_roster(payload, offset)
+        || current_complete_roster;
     let endpoint = |relative: usize| {
         let index = usize::from(u16::from_le_bytes(
             payload
@@ -43038,6 +43117,28 @@ fn current_identity_linked_wide_curve_uses_one_based_roster(payload: &[u8], offs
             .get(offset + 88..offset + 92)
             .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
         && current_direct_92_profile_line_endpoint_indices(payload, offset).is_none()
+}
+
+fn current_referenced_compact_104_curve_uses_marker_roster(payload: &[u8], offset: usize) -> bool {
+    let identities =
+        [96usize, 100].map(|relative| payload.get(offset + relative..offset + relative + 4));
+    payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
+        && marker_native_code(payload, offset) == Some(2)
+        && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 29..offset + 31) == Some(&1u16.to_le_bytes())
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && compact_indexed_curve_endpoint_indices(payload, offset)
+            .is_some_and(|endpoints| endpoints[0] != endpoints[1])
+        && compact_indexed_curve_record_end(payload, offset)
+            == Some(CompactIndexedCurveRecordEnd::Marker104)
+        && payload.get(offset + 72..offset + 76) == Some(&1i32.to_le_bytes())
+        && payload
+            .get(offset + 76..offset + 78)
+            .is_some_and(|state| state != [0; 2] && state != [0xff; 2])
+        && matches!(identities, [Some(first), Some(second)] if first != [0; 4] && first != [0xff; 4] && second != [0; 4] && second != [0xff; 4] && first != second)
 }
 
 fn inferred_point_coordinates_by_index(
