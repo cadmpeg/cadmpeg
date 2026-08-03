@@ -86,10 +86,9 @@ lto = "thin"
 # that silently changes which bytes a decoder reads.
 overflow-checks = true
 
-# The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
-lto = "thin"
+strip = "symbols"
 
 # Shared lint policy. Crates opt in with `[lints] workspace = true`.
 # CI escalates warnings to errors (`cargo clippy -- -D warnings -W missing-docs`);
