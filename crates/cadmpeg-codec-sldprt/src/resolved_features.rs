@@ -12663,6 +12663,13 @@ mod marker_tests {
             sketch_input_entities(&payload, "lane")[0].kind,
             SketchInputKind::LineOrCircle
         );
+
+        payload[82..84].copy_from_slice(&10u16.to_le_bytes());
+        assert!(legacy_compact_profile_line(&payload, 0));
+        payload[82..84].copy_from_slice(&0u16.to_le_bytes());
+        assert!(!legacy_compact_profile_line(&payload, 0));
+        payload[82..84].copy_from_slice(&u16::MAX.to_le_bytes());
+        assert!(!legacy_compact_profile_line(&payload, 0));
     }
 
     #[test]
@@ -45549,8 +45556,12 @@ fn legacy_compact_profile_line(payload: &[u8], offset: usize) -> bool {
                 Some([0, 0, 0 | 2, 0])
             ),
             Some(CompactIndexedCurveRecordEnd::Marker96) => {
+                let state = payload
+                    .get(offset + 82..offset + 84)
+                    .and_then(|bytes| bytes.try_into().ok())
+                    .map(u16::from_le_bytes);
                 payload.get(offset + 72..offset + 82) == Some(&[0; 10])
-                    && matches!(payload.get(offset + 82..offset + 84), Some([1 | 2, 0]))
+                    && state.is_some_and(|state| !matches!(state, 0 | u16::MAX))
                     && payload.get(offset + 84..offset + 88) == Some(&[0; 4])
                     && payload.get(offset + 92..offset + 96) == Some(&1u32.to_le_bytes())
             }
