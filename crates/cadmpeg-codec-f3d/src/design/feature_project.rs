@@ -4108,6 +4108,22 @@ pub(crate) fn project_extrude(
                 prologue.direction_reversed(),
             )
         }
+        (DesignExtrudeExtent::OneSidedThroughNext, None, None)
+            if termination_groups.is_empty() && effective_side_one_offset.is_none() =>
+        {
+            (
+                ExtentShape::OneSided(Termination::ThroughNext),
+                prologue.direction_reversed(),
+            )
+        }
+        (DesignExtrudeExtent::OneSidedThroughAll, None, None)
+            if termination_groups.is_empty() && effective_side_one_offset.is_none() =>
+        {
+            (
+                ExtentShape::OneSided(Termination::ThroughAll),
+                prologue.direction_reversed(),
+            )
+        }
         _ => return None,
     };
     let direction = if reverse_direction {

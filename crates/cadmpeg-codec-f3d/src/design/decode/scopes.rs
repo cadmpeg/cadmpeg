@@ -3369,15 +3369,25 @@ fn exact_legacy_shifted_extrude_prologue(
     };
     let first_extent_offset = operation_offset.checked_add(4)?;
     let second_extent_offset = operation_offset.checked_add(8)?;
-    let extent_discriminators = [
+    let direction_face_extend_values = [
         u32_at(bytes, first_extent_offset)?,
         u32_at(bytes, second_extent_offset)?,
     ];
-    let extent = match extent_discriminators {
-        [1, 1] => Some(DesignExtrudeExtent::OneSidedToFace),
-        [1, 2] => Some(DesignExtrudeExtent::OneSidedDistance),
-        [2, 0] => Some(DesignExtrudeExtent::TwoSidedDistance),
-        [3, 2] => Some(DesignExtrudeExtent::SymmetricDistance),
+    if !matches!(direction_face_extend_values[0], 1..=3) {
+        return None;
+    }
+    let side_extent_discriminator_offsets = [start.checked_add(106)?, start.checked_add(110)?];
+    let side_extent_discriminators = [
+        u32_at(bytes, side_extent_discriminator_offsets[0])?,
+        u32_at(bytes, side_extent_discriminator_offsets[1])?,
+    ];
+    let extent = match (direction_face_extend_values[0], side_extent_discriminators) {
+        (1, [1, 0]) => Some(DesignExtrudeExtent::OneSidedDistance),
+        (1, [2, 0]) => Some(DesignExtrudeExtent::OneSidedToFace),
+        (1, [3, 0]) => Some(DesignExtrudeExtent::OneSidedThroughNext),
+        (1, [4, 0]) => Some(DesignExtrudeExtent::OneSidedThroughAll),
+        (2, [1, 1]) => Some(DesignExtrudeExtent::TwoSidedDistance),
+        (3, [1, 0]) => Some(DesignExtrudeExtent::SymmetricDistance),
         _ => None,
     };
     let direction_reversed_offset = operation_offset.checked_add(12)?;
@@ -3402,9 +3412,14 @@ fn exact_legacy_shifted_extrude_prologue(
     Some(DesignExtrudePrologue::LegacyShifted {
         operation,
         operation_offset: operation_offset as u64,
-        extent_discriminators,
+        direction_face_extend_values,
+        side_extent_discriminators,
+        side_extent_discriminator_offsets: [
+            side_extent_discriminator_offsets[0] as u64,
+            side_extent_discriminator_offsets[1] as u64,
+        ],
         extent,
-        extent_discriminator_offsets: [first_extent_offset as u64, second_extent_offset as u64],
+        direction_face_extend_offsets: [first_extent_offset as u64, second_extent_offset as u64],
         direction_reversed,
         direction_reversed_offset: direction_reversed_offset as u64,
         solid_operation,

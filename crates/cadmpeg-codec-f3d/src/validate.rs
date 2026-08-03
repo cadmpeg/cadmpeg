@@ -1203,9 +1203,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     true,
                     Some(records::DesignExtrudePrologue::LegacyShifted {
                         operation_offset,
-                        extent_discriminators,
+                        direction_face_extend_values,
+                        side_extent_discriminators,
+                        side_extent_discriminator_offsets,
                         extent,
-                        extent_discriminator_offsets: extent_offsets,
+                        direction_face_extend_offsets,
                         direction_reversed_offset,
                         solid_operation_offset,
                         start_offset,
@@ -1213,22 +1215,36 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     }),
                 ) => {
                     operation_offset == scope.byte_offset.saturating_add(27)
-                        && match extent {
-                            Some(records::DesignExtrudeExtent::OneSidedToFace) => {
-                                extent_discriminators == [1, 1]
+                        && matches!(direction_face_extend_values[0], 1..=3)
+                        && match (
+                            direction_face_extend_values[0],
+                            side_extent_discriminators,
+                            extent,
+                        ) {
+                            (1, [1, 0], Some(records::DesignExtrudeExtent::OneSidedDistance))
+                            | (1, [2, 0], Some(records::DesignExtrudeExtent::OneSidedToFace))
+                            | (
+                                1,
+                                [3, 0],
+                                Some(records::DesignExtrudeExtent::OneSidedThroughNext),
+                            )
+                            | (1, [4, 0], Some(records::DesignExtrudeExtent::OneSidedThroughAll))
+                            | (2, [1, 1], Some(records::DesignExtrudeExtent::TwoSidedDistance))
+                            | (3, [1, 0], Some(records::DesignExtrudeExtent::SymmetricDistance)) => {
+                                true
                             }
-                            Some(records::DesignExtrudeExtent::OneSidedDistance) => {
-                                extent_discriminators == [1, 2]
-                            }
-                            Some(records::DesignExtrudeExtent::TwoSidedDistance) => {
-                                extent_discriminators == [2, 0]
-                            }
-                            Some(records::DesignExtrudeExtent::SymmetricDistance) => {
-                                extent_discriminators == [3, 2]
-                            }
-                            None => !matches!(extent_discriminators, [1, 1 | 2] | [2, 0] | [3, 2]),
+                            (_, _, None) => !matches!(
+                                (direction_face_extend_values[0], side_extent_discriminators),
+                                (1, [1..=4, 0]) | (2, [1, 1]) | (3, [1, 0])
+                            ),
+                            _ => false,
                         }
-                        && extent_offsets
+                        && side_extent_discriminator_offsets
+                            == [
+                                scope.byte_offset.saturating_add(106),
+                                scope.byte_offset.saturating_add(110),
+                            ]
+                        && direction_face_extend_offsets
                             == [
                                 operation_offset.saturating_add(4),
                                 operation_offset.saturating_add(8),
@@ -1236,7 +1252,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && start_offset == operation_offset.saturating_add(14)
                         && solid_operation_offset == operation_offset.saturating_add(13)
                         && direction_reversed_offset == operation_offset.saturating_add(12)
-                        && extent_offsets[1] < scope.reference_count_offset
+                        && direction_face_extend_offsets[1] < scope.reference_count_offset
                 }
                 (true | false, None) => true,
                 _ => false,
@@ -2125,6 +2141,13 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && against_count == 0
                         && side_one_offset_is_absent
                         && !prologue.direction_reversed()
+                }
+                records::DesignExtrudeExtent::OneSidedThroughNext
+                | records::DesignExtrudeExtent::OneSidedThroughAll => {
+                    along_count == 0
+                        && !has_fixed_extrude_parameters
+                        && against_count == 0
+                        && side_one_offset_is_absent
                 }
             };
             let extrude_start = prologue.start();

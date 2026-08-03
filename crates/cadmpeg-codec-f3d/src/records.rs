@@ -754,7 +754,7 @@ pub enum DesignExtrudeOperation {
     NewBody,
 }
 
-/// Extent form selected by the two fixed Extrude prologue enums.
+/// Decoded Extrude travel form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DesignExtrudeExtent {
@@ -766,6 +766,10 @@ pub enum DesignExtrudeExtent {
     TwoSidedDistance,
     /// Travel one fixed total distance symmetrically around the profile plane.
     SymmetricDistance,
+    /// Travel on the first side until the next material region is exited.
+    OneSidedThroughNext,
+    /// Travel on the first side through all material.
+    OneSidedThroughAll,
 }
 
 /// Starting support selected by the fixed Extrude prologue enum.
@@ -828,13 +832,21 @@ pub enum DesignExtrudePrologue {
         operation: DesignExtrudeOperation,
         /// Byte offset of `operation`.
         operation_offset: u64,
-        /// Raw extent discriminators.
-        extent_discriminators: [u32; 2],
+        /// Raw travel-direction and face-extension values.
+        #[serde(alias = "extent_discriminators")]
+        direction_face_extend_values: [u32; 2],
+        /// Per-side termination discriminators stored after the profile-normal slots.
+        #[serde(default)]
+        side_extent_discriminators: [u32; 2],
+        /// Byte offsets parallel to `side_extent_discriminators`.
+        #[serde(default)]
+        side_extent_discriminator_offsets: [u64; 2],
         /// Decoded extent form.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         extent: Option<DesignExtrudeExtent>,
-        /// Byte offsets parallel to `extent_discriminators`.
-        extent_discriminator_offsets: [u64; 2],
+        /// Byte offsets parallel to `direction_face_extend_values`.
+        #[serde(alias = "extent_discriminator_offsets")]
+        direction_face_extend_offsets: [u64; 2],
         /// Direction-reversal state.
         direction_reversed: bool,
         /// Byte offset of `direction_reversed`.
