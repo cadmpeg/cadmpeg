@@ -369,6 +369,10 @@ fn feature_family_tokens_are_localized() {
         Some(DesignFeatureFamily::SurfacePatch)
     );
     assert_eq!(
+        design_feature_family("SurfaceRuled"),
+        Some(DesignFeatureFamily::SurfaceRuled)
+    );
+    assert_eq!(
         design_feature_family("BoundaryFill"),
         Some(DesignFeatureFamily::BoundaryFill)
     );

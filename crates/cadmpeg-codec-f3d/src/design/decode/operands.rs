@@ -54,6 +54,7 @@ pub fn decode_edge_operands(
                     | DesignFeatureFamily::Pipe
                     | DesignFeatureFamily::SurfaceExtend
                     | DesignFeatureFamily::SurfaceOffset
+                    | DesignFeatureFamily::SurfaceRuled
             )
         ) || matches!(scope.kind.as_str(), "EdgeFlange" | "Hem")
     }) {
@@ -586,6 +587,7 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Thicken)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Move)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::SurfacePatch)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::SurfaceRuled)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::BoundaryFill)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Split)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Draft)
