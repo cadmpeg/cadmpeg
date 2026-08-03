@@ -381,6 +381,9 @@ fn feature_family_tokens_are_localized() {
         design_feature_family("SurfacePatch"),
         Some(DesignFeatureFamily::SurfacePatch)
     );
+    assert!(crate::design::decode::operands::has_edge_recipe_operands(
+        "SurfacePatch"
+    ));
     assert_eq!(
         design_feature_family("SurfaceRuled"),
         Some(DesignFeatureFamily::SurfaceRuled)
@@ -8698,6 +8701,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     header(&mut bytes, *b"408", 101);
     header(&mut bytes, *b"414", 102);
     let recipe_record_at = header(&mut bytes, *b"423", 103);
+    // A recipe prefix can contain header-shaped scalar bytes. Only the exact
+    // N+4 record closes the N through N+3 operand envelope.
+    header(&mut bytes, *b"122", 0);
     let recipe_name_at = bytes.len() + 4;
     bytes.extend_from_slice(&16u32.to_le_bytes());
     bytes.extend_from_slice(b"edge_recipe_data");

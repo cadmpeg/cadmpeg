@@ -295,17 +295,18 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let edge_identity_records =
         validate_edge_identity_operands(&ctx, &mut findings, &expected_face_operands);
     let body_recipe_operand_records = validate_body_recipe_operands(&ctx, &mut findings);
+    let edge_operand_records = validate_edge_operands(&ctx, &mut findings);
     validate_operand_group_carriers(
         &ctx,
         &mut findings,
         &operand_identity_groups,
         &edge_identity_records,
         &body_recipe_operand_records,
+        &edge_operand_records,
     );
     validate_extrude_selection_members(&ctx, &mut findings);
     validate_entity_selection_operands(&ctx, &mut findings);
     validate_extrude_selection_group_members(&ctx, &mut findings);
-    let edge_operand_records = validate_edge_operands(&ctx, &mut findings);
     validate_edge_treatment_groups(
         &ctx,
         &mut findings,
@@ -3122,6 +3123,7 @@ fn validate_operand_group_carriers<'a>(
     operand_identity_groups: &HashSet<(&'a str, u32)>,
     edge_identity_records: &HashSet<(&'a str, u32)>,
     body_recipe_operand_records: &HashSet<(&'a str, u32)>,
+    edge_operand_records: &HashSet<(&'a str, u32)>,
 ) {
     let native = ctx.native;
     for group in &native.design_construction_operand_groups {
@@ -3198,6 +3200,15 @@ fn validate_operand_group_carriers<'a>(
                         })
                     })
                 });
+        let has_exact_edge_recipe_members = !group.members.is_empty()
+            && group.members.iter().all(|record_index| {
+                edge_operand_records.contains(&(native_stream, *record_index))
+                    && native.design_edge_operands.iter().any(|operand| {
+                        design_stream(&operand.id) == native_stream
+                            && operand.scope_record_index == group.scope_record_index
+                            && operand.record_index == *record_index
+                    })
+            });
         let has_exact_sketch_profile_member = group.members.len() == 1
             && ctx
                 .scopes_by_index
@@ -3255,6 +3266,7 @@ fn validate_operand_group_carriers<'a>(
             || has_exact_entity_selection_members
             || has_exact_face_members
             || has_exact_body_recipe_members
+            || has_exact_edge_recipe_members
             || has_exact_sketch_profile_member
             || has_exact_group_members;
         if !has_exact_member_carrier {
@@ -3588,17 +3600,7 @@ fn validate_edge_operands<'a>(
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && scope.is_some_and(|scope| {
-                (matches!(
-                    design::design_feature_family(&scope.kind),
-                    Some(
-                        design::DesignFeatureFamily::Fillet
-                            | design::DesignFeatureFamily::Chamfer
-                            | design::DesignFeatureFamily::Revolve
-                            | design::DesignFeatureFamily::Loft
-                            | design::DesignFeatureFamily::Sweep
-                            | design::DesignFeatureFamily::SurfaceRuled
-                    )
-                ) || matches!(scope.kind.as_str(), "EdgeFlange" | "Hem"))
+                design::decode::operands::has_edge_recipe_operands(&scope.kind)
                     && usize::try_from(operand.scope_reference_ordinal)
                         .ok()
                         .and_then(|ordinal| scope.reference_members.get(ordinal))
@@ -3609,6 +3611,7 @@ fn validate_edge_operands<'a>(
             })
             && operand.paired_byte_offset > operand.byte_offset
             && operand.recipe_record_index == operand.record_index.saturating_add(3)
+            && operand.next_record_index == operand.record_index.saturating_add(4)
             && operand.recipe_record_byte_offset > operand.paired_byte_offset
             && operand.next_byte_offset > operand.recipe_record_byte_offset
             && operand.recipe_prefix_offset == operand.recipe_record_byte_offset.saturating_add(11)

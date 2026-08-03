@@ -43,22 +43,10 @@ pub fn decode_edge_operands(
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
-    for scope in scopes.iter().filter(|scope| {
-        matches!(
-            design_feature_family(&scope.kind),
-            Some(
-                DesignFeatureFamily::Fillet
-                    | DesignFeatureFamily::Chamfer
-                    | DesignFeatureFamily::Revolve
-                    | DesignFeatureFamily::Loft
-                    | DesignFeatureFamily::Sweep
-                    | DesignFeatureFamily::Pipe
-                    | DesignFeatureFamily::SurfaceExtend
-                    | DesignFeatureFamily::SurfaceOffset
-                    | DesignFeatureFamily::SurfaceRuled
-            )
-        ) || matches!(scope.kind.as_str(), "EdgeFlange" | "Hem")
-    }) {
+    for scope in scopes
+        .iter()
+        .filter(|scope| has_edge_recipe_operands(&scope.kind))
+    {
         let mut member_indices = groups
             .iter()
             .filter(|group| {
@@ -102,6 +90,26 @@ pub fn decode_edge_operands(
     }
     out.sort_by_key(|operand| operand.id.clone());
     Ok(out)
+}
+
+/// Whether a feature family owns edge-recipe operands directly or through a
+/// counted construction-operand group.
+pub(crate) fn has_edge_recipe_operands(kind: &str) -> bool {
+    matches!(
+        design_feature_family(kind),
+        Some(
+            DesignFeatureFamily::Fillet
+                | DesignFeatureFamily::Chamfer
+                | DesignFeatureFamily::Revolve
+                | DesignFeatureFamily::Loft
+                | DesignFeatureFamily::Sweep
+                | DesignFeatureFamily::Pipe
+                | DesignFeatureFamily::SurfacePatch
+                | DesignFeatureFamily::SurfaceExtend
+                | DesignFeatureFamily::SurfaceOffset
+                | DesignFeatureFamily::SurfaceRuled
+        )
+    ) || matches!(kind, "EdgeFlange" | "Hem")
 }
 
 /// Decode persistent selection identities named by Fillet and Chamfer groups.
@@ -2596,7 +2604,11 @@ pub(crate) fn parse_edge_operand(
         offsets.push(offset);
         position = offset.checked_add(11)?;
     }
-    offsets.push(next_indexed_record_offset(bytes, position)?);
+    offsets.push(next_indexed_record_offset_with_index(
+        bytes,
+        position,
+        header.record_index.checked_add(4)?,
+    )?);
     let mut indexed = Vec::with_capacity(offsets.len());
     for offset in &offsets {
         let (class_tag, after_tag) =
@@ -2606,10 +2618,12 @@ pub(crate) fn parse_edge_operand(
     let next_one = header.record_index.checked_add(1)?;
     let next_two = header.record_index.checked_add(2)?;
     let recipe_record_index = header.record_index.checked_add(3)?;
+    let next_record_index = header.record_index.checked_add(4)?;
     if indexed[0].1 != header.record_index
         || indexed[1].1 != next_one
         || indexed[2].1 != next_two
         || indexed[3].1 != recipe_record_index
+        || indexed[4].1 != next_record_index
     {
         return None;
     }
