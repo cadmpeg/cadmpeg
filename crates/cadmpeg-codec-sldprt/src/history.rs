@@ -5344,6 +5344,32 @@ mod history_reference_tests {
         assert!(!ir.model.configurations[0]
             .parameter_values
             .contains_key(&count_id));
+
+        ir.model.configurations[0]
+            .parameter_values
+            .insert(count_id.clone(), ParameterValue::Length(Length(7.0)));
+        align_configuration_parameter_kinds(&mut ir);
+        assert_eq!(
+            ir.model.configurations[0].parameter_values[&count_id],
+            ParameterValue::Integer(7)
+        );
+
+        ir.model.configurations[0]
+            .parameter_values
+            .insert(count_id.clone(), ParameterValue::Real(7.0));
+        align_configuration_parameter_kinds(&mut ir);
+        assert_eq!(
+            ir.model.configurations[0].parameter_values[&count_id],
+            ParameterValue::Integer(7)
+        );
+
+        ir.model.configurations[0]
+            .parameter_values
+            .insert(count_id.clone(), ParameterValue::Real(7.5));
+        align_configuration_parameter_kinds(&mut ir);
+        assert!(!ir.model.configurations[0]
+            .parameter_values
+            .contains_key(&count_id));
     }
 }
 
@@ -10055,6 +10081,20 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
             }
             (ParameterValue::Real(_), ParameterValue::Integer(integer)) => {
                 exact_integer_f64(*integer).map(ParameterValue::Real)
+            }
+            (ParameterValue::Integer(_), ParameterValue::Real(real)) => {
+                let integer = *real as i64;
+                (integer as f64 == *real).then_some(ParameterValue::Integer(integer))
+            }
+            // Configuration lanes can provisionally classify an untyped scalar
+            // as a length. The canonical integer wins only when the values agree.
+            (ParameterValue::Integer(expected), ParameterValue::Length(Length(candidate))) => {
+                exact_integer_f64(*expected)
+                    .filter(|expected_value| {
+                        (candidate - expected_value).abs()
+                            <= 1.0e-9 * candidate.abs().max(expected_value.abs()).max(1.0)
+                    })
+                    .map(|_| ParameterValue::Integer(*expected))
             }
             _ => None,
         };
