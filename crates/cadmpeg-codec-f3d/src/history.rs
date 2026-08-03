@@ -1682,6 +1682,22 @@ pub(crate) fn bind_face_operand_history_candidates(
             topology,
             &changed_faces,
         );
+        let preserves_stable_face_set = scope.kind == "Shell"
+            || operand
+                .group_record_index
+                .is_some_and(|group_record_index| {
+                    let mut groups = operand_groups.iter().filter(|group| {
+                        crate::ids::native_stream(&group.id) == stream
+                            && group.scope_record_index == scope.record_index
+                            && group.record_index == group_record_index
+                    });
+                    let Some(group) = groups.next() else {
+                        return false;
+                    };
+                    groups.next().is_none()
+                        && group.extrude_face_role
+                            == Some(crate::records::DesignExtrudeFaceRole::Termination)
+                });
         operand.resolved_face_slots = match scope.direct_face_operation {
             Some(crate::records::DesignDirectFaceOperation::OffsetFaces { .. }) => {
                 let direct = resolve_direct_face_recipe_clauses(
@@ -1702,7 +1718,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                     crate::design::face_resolve::resolve_face_operand_history_candidates(operand);
                 if let Some(direct) = direct {
                     vec![direct]
-                } else if scope.kind == "Shell" {
+                } else if preserves_stable_face_set {
                     crate::design::face_resolve::resolve_stable_bounded_face_history_set(operand)
                         .or_else(|| {
                             crate::design::face_resolve::resolve_bounded_face_history_candidates(
