@@ -3769,6 +3769,33 @@ mod marker_tests {
                 Point2::new(-0.025, 0.011),
             ])
         );
+        let mut current_payload = payload.clone();
+        for index in 0..=4 {
+            let offset = CURVE_START + index * 84;
+            current_payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+            if index < 4 {
+                current_payload[offset + 17..offset + 21].copy_from_slice(&2u32.to_le_bytes());
+            }
+        }
+        let mut current_corners = three_corners.clone();
+        for (index, marker) in current_corners.iter_mut().take(4).enumerate() {
+            marker.object_index = Some(index as u32 + 1);
+        }
+        for marker in current_corners.iter_mut().skip(4) {
+            marker.kind = SketchInputKind::Arc;
+        }
+        assert_eq!(
+            indexed_rectangle_from_line_cycle(
+                &current_payload,
+                &current_corners.iter().collect::<Vec<_>>(),
+            ),
+            Some([
+                Point2::new(-0.025, -0.011),
+                Point2::new(0.025, -0.011),
+                Point2::new(0.025, 0.011),
+                Point2::new(-0.025, 0.011),
+            ])
+        );
         three_corners[2].coordinates_m = Some([0.024, -0.010]);
         assert_eq!(
             indexed_rectangle_from_line_cycle(&payload, &three_corners.iter().collect::<Vec<_>>(),),
@@ -33677,12 +33704,11 @@ fn indexed_rectangle_from_line_cycle(
                 ));
             }
             if let Some(endpoints) = current_compact_rectangle_line_endpoints(payload, offset) {
-                return (marker.kind == SketchInputKind::LineOrCircle).then_some((
-                    endpoints,
-                    None,
-                    false,
-                    EndpointSpace::Object,
-                ));
+                return matches!(
+                    marker.kind,
+                    SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                )
+                .then_some((endpoints, None, false, EndpointSpace::Object));
             }
             if let Some(endpoints) = compact_legacy_rectangle_line_endpoints(payload, offset) {
                 return (marker.kind == SketchInputKind::LineOrCircle).then_some((
@@ -33998,7 +34024,7 @@ fn current_compact_rectangle_line_endpoints(payload: &[u8], offset: usize) -> Op
     if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
-        || marker_native_code(payload, offset) != Some(1)
+        || !matches!(marker_native_code(payload, offset), Some(1 | 2))
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
@@ -34011,15 +34037,7 @@ fn current_compact_rectangle_line_endpoints(payload: &[u8], offset: usize) -> Op
     {
         return None;
     }
-    let endpoint = |relative: usize| {
-        payload
-            .get(offset + relative..offset + relative + 2)?
-            .try_into()
-            .ok()
-            .map(u16::from_le_bytes)
-            .map(u32::from)
-    };
-    let endpoints = [endpoint(56)?, endpoint(58)?];
+    let endpoints = one_based_u16_endpoint_pair(payload, offset, 56)?;
     let terminal_state =
         u16::from_le_bytes(payload.get(offset + 74..offset + 76)?.try_into().ok()?);
     let continued = sketch_marker_prefix_at(payload, offset.saturating_add(84));
