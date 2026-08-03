@@ -654,11 +654,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .map(|pmi| pmi.native_ref.as_str())
         .collect::<std::collections::HashSet<_>>();
     let unbound_pmi_dimensions = native.as_ref().map_or(0, |native| {
-        native
-            .pmi_dimensions
-            .iter()
-            .filter(|dimension| !bound_pmi.contains(dimension.id.as_str()))
-            .count()
+        crate::pmi::unbound_dimension_count(&native.pmi_dimensions, &bound_pmi)
     });
     let native_pmi_subtypes = ir
         .model
@@ -1648,6 +1644,18 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
 }
 
 fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::SldprtNative) -> usize {
+    let sketch_feature_refs = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.definition,
+                cadmpeg_ir::features::FeatureDefinition::Sketch { .. }
+            )
+        })
+        .filter_map(|feature| feature.native_ref.as_deref())
+        .collect::<std::collections::HashSet<_>>();
     let projected = ir
         .model
         .sketch_constraints
@@ -1685,24 +1693,34 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
                 .relation_instances
                 .iter()
                 .filter(|relation| {
-                    owned_instances.contains_key(&relation.id) && !projected.contains(&relation.id)
+                    sketch_feature_refs.contains(relation.feature_ref.as_str())
+                        && owned_instances.contains_key(&relation.id)
+                        && !projected.contains(&relation.id)
                 })
                 .count();
             let bindings = lane
                 .relation_bindings
                 .iter()
                 .filter(|binding| {
-                    !lane.relation_instances.iter().any(|relation| {
-                        relation.class_ref == binding.class_ref
-                            && relation.scalar_refs.contains(&binding.scalar_ref)
-                    })
+                    binding
+                        .feature_ref
+                        .as_deref()
+                        .is_some_and(|feature_ref| sketch_feature_refs.contains(feature_ref))
+                        && !lane.relation_instances.iter().any(|relation| {
+                            relation.class_ref == binding.class_ref
+                                && relation.scalar_refs.contains(&binding.scalar_ref)
+                        })
                 })
                 .count();
             let markers = lane
                 .sketch_entities
                 .iter()
                 .filter(|marker| {
-                    crate::resolved_features::marker_owns_constraint(marker, &markers_by_id)
+                    marker
+                        .feature_ref
+                        .as_deref()
+                        .is_some_and(|feature_ref| sketch_feature_refs.contains(feature_ref))
+                        && crate::resolved_features::marker_owns_constraint(marker, &markers_by_id)
                         && !projected.contains(&marker.id)
                 })
                 .count();
@@ -2036,6 +2054,8 @@ fn build_geometry_ir(
         &histories,
         &lanes,
     );
+    // Marker-backed sketches can originate in either lane family. Their
+    // geometry and constraints must use the same complete lane set.
     let mut sketch_lanes = lanes.clone();
     sketch_lanes.extend(supplemental_config_lanes.clone());
     crate::resolved_features::project_marker_backed_sketches(
@@ -2105,7 +2125,7 @@ fn build_geometry_ir(
         &ir.model.features,
         &sketch_entities,
         &ir.model.parameters,
-        &lanes,
+        &sketch_lanes,
     );
     stamp_feature_baseline(&mut ir);
     let mut attributes = crate::metadata::attributes(scan, &mut annotations);
@@ -2240,6 +2260,7 @@ fn build_geometry_ir(
         &ir.model.surfaces,
     );
     sync_active_configuration_face_selections(&mut ir);
+    crate::history::order_model_features_for_regeneration(&mut ir);
     stamp_feature_baseline(&mut ir);
     assign_native_configuration_indices(&ir, &mut native);
     if let Some(source) = &mut ir.source {
@@ -2843,6 +2864,8 @@ fn build_metadata_ir(
         &histories,
         &lanes,
     );
+    // Marker-backed sketches can originate in either lane family. Their
+    // geometry and constraints must use the same complete lane set.
     let mut sketch_lanes = lanes.clone();
     sketch_lanes.extend(supplemental_config_lanes.clone());
     crate::resolved_features::project_marker_backed_sketches(
@@ -2909,7 +2932,7 @@ fn build_metadata_ir(
         &ir.model.features,
         &ir.model.sketch_entities,
         &ir.model.parameters,
-        &lanes,
+        &sketch_lanes,
     );
     crate::resolved_features::project_profiled_hole_constructions(
         &mut ir.model.features,
@@ -2982,6 +3005,7 @@ fn build_metadata_ir(
     sync_active_configuration_face_selections(&mut ir);
     crate::history::order_features_for_regeneration(&mut ir.model.features);
     crate::history::project_configuration_sketch_states(&mut ir, &histories, &lanes, &annotations);
+    crate::history::order_model_features_for_regeneration(&mut ir);
     stamp_feature_baseline(&mut ir);
     lanes.extend(supplemental_config_lanes);
     let native = crate::native::SldprtNative {
@@ -3130,8 +3154,10 @@ fn mark_active_configuration(ir: &mut CadIr) {
             .collect::<Vec<_>>();
         (matches.len() == 1).then(|| matches[0])
     });
+    let inferred_by_index =
+        by_index.filter(|position| ir.model.configurations[*position].native_ref.is_none());
     let selected = if active_name.is_some() {
-        by_name
+        by_name.or(inferred_by_index)
     } else if active_index.is_some() {
         by_index
     } else if ir.model.configurations.len() == 1 {
@@ -3631,7 +3657,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 #[cfg(test)]
 mod design_loss_tests {
     use super::{
-        append_design_losses, assign_configuration_bodies,
+        append_design_losses, assign_configuration_bodies, mark_active_configuration,
         multiply_projected_sketch_relation_records,
         sketch_constraint_has_complete_neutral_semantics, snapshot_active_configuration,
         spatial_sketch_constraint_has_complete_neutral_semantics,
@@ -5343,6 +5369,45 @@ mod design_loss_tests {
     }
 
     #[test]
+    fn inferred_active_partition_preserves_active_configuration_identity() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.source = Some(cadmpeg_ir::document::SourceMeta {
+            attributes: BTreeMap::from([
+                (
+                    "active_parasolid_block".into(),
+                    "Contents/Config-3-Partition".into(),
+                ),
+                ("sw_configuration_name".into(), "Default".into()),
+            ]),
+            ..Default::default()
+        });
+        let body = BodyId("body:active".into());
+
+        assign_configuration_bodies(&mut ir, &[(3, vec![body.clone()])]);
+        mark_active_configuration(&mut ir);
+
+        assert_eq!(ir.model.configurations.len(), 1);
+        let configuration = &ir.model.configurations[0];
+        assert!(configuration.active);
+        assert_eq!(configuration.source_index, Some(3));
+        assert_eq!(configuration.bodies, vec![body]);
+
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            coverage: BTreeMap::new(),
+            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+        append_design_losses(&ir, &mut report);
+        assert!(report.losses.iter().all(|loss| !loss
+            .message
+            .starts_with("active configuration identity is unresolved")));
+    }
+
+    #[test]
     fn duplicate_configuration_partition_identities_are_reported() {
         let mut ir = CadIr::empty(Units::default());
         for id in ["first", "second"] {
@@ -5672,8 +5737,26 @@ mod design_loss_tests {
     }
 
     #[test]
-    fn retained_relation_records_without_constraints_are_counted() {
+    fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         let mut ir = CadIr::empty(Units::default());
+        ir.model.features.push(Feature {
+            id: FeatureId("sketch-feature".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::default(),
+                sketch: Some(SketchId("sketch".into())),
+            },
+            native_ref: Some("feature".into()),
+        });
         ir.model.sketch_entities.push(SketchEntity {
             id: SketchEntityId("represented-geometry".into()),
             sketch: SketchId("sketch".into()),
@@ -5769,6 +5852,13 @@ mod design_loss_tests {
         };
 
         assert_eq!(unprojected_sketch_relation_records(&ir, &native), 3);
+
+        ir.model.features[0].definition = FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::History,
+            children: Vec::new(),
+            active_child: None,
+        };
+        assert_eq!(unprojected_sketch_relation_records(&ir, &native), 0);
     }
 
     #[test]
