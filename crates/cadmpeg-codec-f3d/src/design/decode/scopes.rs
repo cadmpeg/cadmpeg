@@ -2422,7 +2422,7 @@ pub(crate) fn exact_work_plane_frame(
                 326 if bytes.get(start + 11..start + 50) == Some(&[0u8; 39][..]) => {
                     (start + 50, None)
                 }
-                352 | 363
+                352 | 363 | 374
                     if bytes.get(start + 55) == Some(&1)
                         && bytes.get(start + 56..start + 66) == Some(&[0u8; 10][..]) =>
                 {

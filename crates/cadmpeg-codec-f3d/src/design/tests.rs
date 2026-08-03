@@ -4066,6 +4066,32 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(decoded.transform_offset, (extended_direct_at + 66) as u64);
     assert_eq!(decoded.reference, None);
 
+    let large_direct_at = bytes.len();
+    let mut large_direct = vec![0; 374];
+    large_direct[0..4].copy_from_slice(&3u32.to_le_bytes());
+    large_direct[4..7].copy_from_slice(b"267");
+    large_direct[7..11].copy_from_slice(&62u32.to_le_bytes());
+    large_direct[55] = 1;
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = 66 + ordinal * 8;
+        large_direct[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    large_direct.extend_from_slice(&3u32.to_le_bytes());
+    large_direct.extend_from_slice(b"258");
+    large_direct.extend_from_slice(&62u32.to_le_bytes());
+    bytes.extend_from_slice(&large_direct);
+    let mut large_direct_scope = scope.clone();
+    large_direct_scope.reference_members = vec![62];
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &large_direct_scope,
+    )
+    .expect("large direct WorkPlane frame");
+    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform_offset, (large_direct_at + 66) as u64);
+    assert_eq!(decoded.reference, None);
+
     let mut axis_bytes = vec![0; 232];
     axis_bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
     axis_bytes[4..7].copy_from_slice(b"701");
