@@ -770,6 +770,7 @@ fn attach_feature_operations(
     let input_blocks = features.feature_input_blocks.as_slice();
     let input_block_identity_groups = features.feature_input_block_identity_groups.as_slice();
     let datum_csys_constructions = features.feature_datum_csys_constructions.as_slice();
+    let datum_csys_column_row_uses = features.feature_datum_csys_column_row_uses.as_slice();
     let datum_csys_payloads = features.feature_datum_csys_payloads.as_slice();
     let datum_csys_block_uses = features.feature_datum_csys_block_uses.as_slice();
     let datum_plane_headers = features.feature_datum_plane_headers.as_slice();
@@ -962,6 +963,8 @@ fn attach_feature_operations(
         .collect::<BTreeMap<_, _>>();
     let datum_csys_payloads_by_operation =
         records_by_operation(datum_csys_payloads, |payload| &payload.operation_label);
+    let datum_csys_column_row_uses_by_operation =
+        records_by_operation(datum_csys_column_row_uses, |use_| &use_.operation_label);
     let mut datum_csys_uses_by_input_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumCsysBlockUse>>::new();
     for block_use in datum_csys_block_uses {
@@ -1825,6 +1828,17 @@ fn attach_feature_operations(
             source_properties.insert(
                 "datum_csys_construction".to_string(),
                 construction.id.clone(),
+            );
+        }
+        for (ordinal, use_) in datum_csys_column_row_uses_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("datum_csys_column_row_use.{ordinal}"),
+                use_.id.clone(),
             );
         }
         for (ordinal, payload) in datum_csys_payloads_by_operation
