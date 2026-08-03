@@ -38,6 +38,7 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
+use crate::container::EntryContent;
 use crate::decode::Scan;
 use crate::native::history::{active_feature_closure, BodyWriterHistory};
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
@@ -86,6 +87,7 @@ pub(crate) fn attach(
             links: Vec::new(),
         });
     }
+    attach_jpeg_preview_assets(ir, scan, annotations, unknowns);
     let object_sections = scan.container.indexed_om_sections();
     if model.is_empty() && object_sections.is_empty() {
         return Ok(());
@@ -294,6 +296,78 @@ pub(crate) fn attach(
     namespace.version = namespace.version.max(181);
     NATIVE_CATALOGUE.emit_all(model, namespace)?;
     Ok(())
+}
+
+/// Transfer each independently validated JPEG preview with its exact bounded
+/// container bytes. Invalid entries remain absent from the neutral asset arena.
+fn attach_jpeg_preview_assets(
+    ir: &mut CadIr,
+    scan: &Scan,
+    annotations: &mut AnnotationBuilder,
+    unknowns: &mut Vec<UnknownRecord>,
+) {
+    let stream = annotations.stream("nx:container");
+    for (ordinal, entry) in scan
+        .container
+        .entries
+        .iter()
+        .filter(|entry| entry.content() == EntryContent::PreviewImage)
+        .enumerate()
+    {
+        let Some((source_offset, source_byte_len)) = entry.file_span else {
+            continue;
+        };
+        let (Ok(start), Ok(byte_len)) = (
+            usize::try_from(source_offset),
+            usize::try_from(source_byte_len),
+        ) else {
+            continue;
+        };
+        let Some(bytes) = start
+            .checked_add(byte_len)
+            .and_then(|end| scan.container.data.get(start..end))
+        else {
+            continue;
+        };
+        let native_ref = format!("nx:container:jpeg-preview#{ordinal}");
+        if crate::decode::jpeg_dimensions(bytes).is_none() {
+            annotations
+                .note(&native_ref, stream, source_offset)
+                .tag("JPEG_PREVIEW_INVALID");
+            annotations.exactness(&native_ref, Exactness::ByteExact);
+            unknowns.push(UnknownRecord {
+                id: UnknownId(native_ref),
+                offset: source_offset,
+                byte_len: source_byte_len,
+                sha256: sha256_hex(bytes),
+                data: Some(bytes.to_vec()),
+                links: Vec::new(),
+            });
+            continue;
+        }
+        let id = AssetId(format!("{native_ref}:asset"));
+        annotations
+            .note(&id.0, stream, source_offset)
+            .tag("JPEG_PREVIEW_ASSET");
+        annotations.exactness(&id.0, Exactness::ByteExact);
+        annotations.derived(&id.0, "id");
+        annotations.derived(&id.0, "name");
+        annotations.derived(&id.0, "media_type");
+        annotations.derived(&id.0, "native_ref");
+        ir.model.assets.push(Asset {
+            id,
+            name: Some(if ordinal == 0 {
+                "preview.jpg".to_string()
+            } else {
+                format!("preview-{ordinal}.jpg")
+            }),
+            media_type: Some("image/jpeg".to_string()),
+            content: AssetContent::Embedded {
+                data: bytes.to_vec(),
+            },
+            native_ref: Some(native_ref),
+        });
+    }
 }
 
 /// Transfer the complete validated TIFF set atomically. A partial transfer

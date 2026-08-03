@@ -7568,6 +7568,7 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
         ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
         ("/Root/images/preview", preview.to_vec()),
     ]);
+    let container_only_file = file.clone();
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
@@ -7581,10 +7582,47 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
         attributes["jpeg_preview_0_byte_len"],
         preview.len().to_string()
     );
+    assert_eq!(result.ir.model.assets.len(), 1);
+    let asset = &result.ir.model.assets[0];
+    assert_eq!(asset.name.as_deref(), Some("preview.jpg"));
+    assert_eq!(asset.media_type.as_deref(), Some("image/jpeg"));
+    assert_eq!(
+        asset.native_ref.as_deref(),
+        Some("nx:container:jpeg-preview#0")
+    );
+    assert!(matches!(
+        &asset.content,
+        cadmpeg_ir::assets::AssetContent::Embedded { data } if data == &preview
+    ));
+    let container_only_result = NxCodec
+        .decode(
+            &mut Cursor::new(container_only_file),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        container_only_result.ir.model.assets,
+        result.ir.model.assets
+    );
 
     let mut malformed = preview;
     malformed[10..12].copy_from_slice(&16u16.to_be_bytes());
     assert!(crate::decode::jpeg_dimensions(&malformed).is_none());
+    let malformed_file = prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+        ("/Root/images/preview", malformed.to_vec()),
+    ]);
+    let malformed_result = NxCodec
+        .decode(&mut Cursor::new(malformed_file), &DecodeOptions::default())
+        .unwrap();
+    assert!(malformed_result.ir.model.assets.is_empty());
+    let malformed_unknowns = malformed_result.ir.native_unknowns("nx").unwrap();
+    assert!(malformed_unknowns
+        .iter()
+        .any(|unknown| unknown.id.0 == "nx:container:jpeg-preview#0"));
 }
 
 #[test]

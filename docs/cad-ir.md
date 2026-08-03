@@ -194,6 +194,9 @@ stored-path-to-logical-material-path catalog relations. These relations identify
 texture assets and logical names; they do not assign appearances to bodies or
 faces.
 
+NX JPEG previews with valid bounded marker structure transfer to exact neutral
+document assets.
+
 Topology-owned Parasolid type-81 attribute instances retain exact class
 relations to same-stream type-79 definitions selected by their serialized
 discriminators. Class-specific field-value roles remain native-only.
