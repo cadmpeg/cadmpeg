@@ -3645,13 +3645,19 @@ pub(crate) fn exact_draft_operation(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignDraftOperation> {
+    // The frame is variable-length and carries six or more references, so no
+    // frame length or reference count identifies the record. The ordered
+    // reference table is in record-index order, so the two scalar lanes hold no
+    // fixed position in it either: they sort before the operand groups in one
+    // document and after them in another. The lanes are identified by their own
+    // properties instead. They are the only scope-owned fixed scalars among the
+    // references, and their local ordinals order them.
     if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Draft)
-        || scope.frame_length != 361
-        || scope.reference_members.len() != 7
+        || scope.reference_members.len() < 6
     {
         return None;
     }
-    let lanes = scope
+    let mut lanes = scope
         .reference_members
         .iter()
         .filter_map(|record_index| {
@@ -3660,6 +3666,7 @@ pub(crate) fn exact_draft_operation(
                 .then_some((*record_index, scalar))
         })
         .collect::<Vec<_>>();
+    lanes.sort_by_key(|(_, scalar)| scalar.ordinal);
     let [(angle_record_index, angle), (opposite_angle_record_index, opposite)] = lanes.as_slice()
     else {
         return None;
@@ -3669,8 +3676,6 @@ pub(crate) fn exact_draft_operation(
         || !angle.value.is_finite()
         || angle.value == 0.0
         || opposite.value != 0.0
-        || *angle_record_index != scope.reference_members[0]
-        || *opposite_angle_record_index != scope.reference_members[1]
     {
         return None;
     }

@@ -311,13 +311,19 @@ The hem-form discriminator at offset `85 + S` is `3` for the flat form. The open
 
 **Need.** This item is the case in which the agreement rule has no input. The neutral model then has no body selection.
 
-### DR-23. `Draft` direction fields
+### DR-23. `Draft` pull direction and outward convention
 
-**Question.** How do the signed angle, the neutral-plane orientation, the explicit pull direction, and the outward-material convention of a `Draft` scope relate to each other?
+**Question.** How do the signed angle, the neutral-plane orientation, the explicit pull direction, and the outward-material convention of a `Draft` scope relate to each other? Which references of a parting-line draft name its pull direction and its parting tool?
 
-**Known.** `f3d.md` §8.1 "A `Draft` scope has" gives the field roles. The first scalar is the nonzero signed draft angle in radians. Another field selects the neutral plane.
+**Known.** `f3d.md` §8.1 "A `Draft` scope has" gives the field roles and both group forms. The first scalar is the nonzero signed draft angle in radians and the second reserves the opposite-side angle at zero.
 
-**Need.** The pull direction and the outward flag are redundant with the angle sign and the plane. We must know the relation to compute them. The neutral model leaves both empty now. **Blocked on a specimen:** no `Draft` scope is available to read. Settling it needs a design holding a neutral-plane draft and a parting-line draft, plus a flip-flag and negative-angle pair authored to identical geometry.
+A neutral-plane draft and a parting-line draft authored to the same result show the angle sign and the pull direction are independent stored fields whose combination fixes the geometry: a draft authored at `+7` degrees with the default pull direction and one authored at `-7` degrees with the pull direction reversed carry the two angle signs and produce the same result. Neither the pull direction nor the outward flag is therefore derivable from the angle sign alone.
+
+A parting-line draft carries two role-`0x0000002100000000` groups where a neutral-plane draft carries one. Which of the two names the parting tool and which names the pull direction is not established, and the outward-material convention has no identified carrier.
+
+**Need.** The neutral model leaves the pull direction and the outward flag empty, and a parting-line draft keeps its native form because its second group has no assigned role. A design holding a neutral-plane draft whose pull direction alone is reversed separates the pull-direction carrier from the parting tool.
+
+**Note.** The three neutral-plane specimens authored for this item contain no `Draft` scope, so only the parting-line pair is readable.
 
 ### DR-24. Class-365 whole-body operand fields
 

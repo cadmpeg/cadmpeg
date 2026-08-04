@@ -5660,21 +5660,41 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     draft_scope.kind = "Draft".into();
     draft_scope.frame_length = 361;
     draft_scope.reference_members = vec![175, 176, 181, 182, 186, 190, 193];
+    let expected = Some(DesignDraftOperation {
+        angle: 0.4,
+        angle_record_index: 175,
+        angle_offset: (draft_start + 40) as u64,
+        opposite_angle_record_index: 176,
+        opposite_angle_offset: (draft_start + 155) as u64,
+    });
     assert_eq!(
         exact_draft_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &draft_scope),
-        Some(DesignDraftOperation {
-            angle: 0.4,
-            angle_record_index: 175,
-            angle_offset: (draft_start + 40) as u64,
-            opposite_angle_record_index: 176,
-            opposite_angle_offset: (draft_start + 155) as u64,
-        })
+        expected
     );
-    draft_scope.reference_members.swap(0, 1);
+
+    // The ordered reference table is in record-index order, so the scalar lanes
+    // hold no fixed position in it. Their local ordinals order them, and moving
+    // them within the table must not change the recovered operation.
+    draft_scope.reference_members = vec![181, 182, 186, 190, 193, 175, 176];
+    assert_eq!(
+        exact_draft_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &draft_scope),
+        expected
+    );
+
+    // A table that reaches only one of the two lanes has no complete operation.
+    draft_scope.reference_members = vec![175, 181, 182, 186, 190, 193];
     assert_eq!(
         exact_draft_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &draft_scope),
         None
     );
+
+    // Fewer than six references cannot carry the two lanes plus both groups.
+    draft_scope.reference_members = vec![175, 176, 181, 182, 186];
+    assert_eq!(
+        exact_draft_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &draft_scope),
+        None
+    );
+    draft_scope.reference_members = vec![175, 176, 181, 182, 186, 190, 193];
 
     let fillet_start = bytes.len();
     for (record_index, ordinal, value) in [

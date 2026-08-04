@@ -266,6 +266,21 @@ struct DesignProjectionGaps {
     unresolved_edge_selections: usize,
 }
 
+/// Whether a face selection names the faces the operation acts on.
+///
+/// A native or absent selection proves one source operand but no neutral face,
+/// so an operation depending on it is not a complete neutral definition.
+fn face_selection_is_resolved(selection: &cadmpeg_ir::features::FaceSelection) -> bool {
+    use cadmpeg_ir::features::FaceSelection;
+
+    match selection {
+        FaceSelection::Faces(faces) => !faces.is_empty(),
+        FaceSelection::Resolved { faces, .. } => !faces.is_empty(),
+        FaceSelection::Historical { faces, .. } => !faces.is_empty(),
+        _ => false,
+    }
+}
+
 fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDefinition) -> bool {
     use cadmpeg_ir::features::{FeatureDefinition, PatternKind, SketchSpace};
 
@@ -278,6 +293,19 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         | FeatureDefinition::FreeformSurfaceUnresolved
         | FeatureDefinition::BoundarySurfaceUnresolved
         | FeatureDefinition::DraftUnresolved => true,
+        // A draft carries its angle even when the face recipes do not resolve to
+        // active B-rep faces, so the selections decide completeness.
+        FeatureDefinition::Draft {
+            faces,
+            neutral_plane,
+            angle,
+            ..
+        } => {
+            angle.is_none()
+                || [faces, neutral_plane]
+                    .into_iter()
+                    .any(|selection| !face_selection_is_resolved(selection))
+        }
         FeatureDefinition::Sketch { space, sketch } => {
             *space == SketchSpace::Unresolved || sketch.is_none()
         }

@@ -1631,32 +1631,39 @@ fn project_draft(
     use cadmpeg_ir::features::{Angle, FeatureDefinition};
 
     let construction = scope.draft_operation.as_ref()?;
-    let stream = native_stream(&scope.id)?;
-    let mut groups = groups
-        .iter()
-        .filter(|group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == scope.record_index
-        })
-        .collect::<Vec<_>>();
-    groups.sort_by_key(|group| group.scope_reference_ordinal);
-    let [faces, neutral_plane] = groups.as_slice() else {
-        return None;
+    // The ordered reference table is in record-index order, so neither group
+    // holds a fixed table position. Each is selected by its role instead. A
+    // scope carrying more than one neutral-plane group is a parting-line draft:
+    // it also names a pull direction and a parting tool, which this operation
+    // does not represent, so it keeps its native form.
+    let faces = single_operand_group(groups, scope, ROLE_0X10)?;
+    let neutral_plane = single_operand_group(groups, scope, 0x0000_0021_0000_0000)?;
+    let member_of_scope = |group: &DesignConstructionOperandGroup| {
+        group
+            .members
+            .iter()
+            .all(|member| scope.reference_members.contains(member))
     };
-    if faces.scope_reference_ordinal != 2
-        || faces.record_index != scope.reference_members[2]
-        || faces.role != ROLE_0X10
-        || faces.members.as_slice() != &scope.reference_members[3..5]
-        || neutral_plane.scope_reference_ordinal != 5
-        || neutral_plane.record_index != scope.reference_members[5]
-        || neutral_plane.role != 0x0000_0021_0000_0000
-        || neutral_plane.members.as_slice() != &scope.reference_members[6..]
+    if !scope.reference_members.contains(&faces.record_index)
+        || !scope
+            .reference_members
+            .contains(&neutral_plane.record_index)
+        || !member_of_scope(faces)
+        || !member_of_scope(neutral_plane)
     {
         return None;
     }
+    // The signed angle is decoded whether or not the face recipes resolve to
+    // active B-rep faces. An unresolved recipe therefore degrades to its native
+    // selection rather than discarding the operation; the decode report still
+    // counts such a draft as an incomplete definition.
+    let selection = |group: &DesignConstructionOperandGroup| {
+        resolved_historical_face_group(scope, group, face_operands)
+            .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone()))
+    };
     Some(FeatureDefinition::Draft {
-        faces: resolved_historical_face_group(scope, faces, face_operands)?,
-        neutral_plane: resolved_historical_face_group(scope, neutral_plane, face_operands)?,
+        faces: selection(faces),
+        neutral_plane: selection(neutral_plane),
         pull_direction: None,
         angle: Some(Angle(construction.angle)),
         outward: None,
