@@ -21,6 +21,7 @@ pub(crate) fn load_count() -> usize {
     LOAD_COUNT.get()
 }
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -1048,7 +1049,8 @@ const F3D_CATALOGUE: Catalogue<'static, F3dNative, (), cadmpeg_ir::NativeNamespa
     );
 
 /// Autodesk Fusion records retained outside the format-neutral model.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct F3dNative {
     /// Schema version this namespace was written under; see [`F3D_NATIVE_VERSION`].
     pub version: u32,

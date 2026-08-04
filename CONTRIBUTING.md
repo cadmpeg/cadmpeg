@@ -72,9 +72,19 @@ Run the stable CI gate from the repository root:
 
 ```sh
 cargo fmt --all --check
-cargo clippy --workspace -- -D warnings -W missing-docs
+cargo clippy --workspace --all-targets
 cargo build --workspace
 cargo test-fast
+```
+
+Lint levels live in `[workspace.lints]` in the root `Cargo.toml`, so `cargo clippy` needs no trailing lint flags. Do not add them back: trailing lint flags are part of the compilation fingerprint, so a flagged run and a bare run evict each other's cached artifacts, and an editor running bare `cargo check` or `cargo clippy` then re-checks the workspace on every alternation.
+
+Manifest levels apply to every cargo command, so a warning fails `cargo build` and `cargo test`, not only `cargo clippy`. Jobs on an unpinned toolchain set `RUSTFLAGS: -A warnings`, because lint sets differ between releases; the MSRV job is the only one.
+
+The `JsonSchema` derives sit behind a `schema` feature that is off by default, because only `cadmpeg_ir::cadir_json_schema()` consumes them and building them costs 26% of `cadmpeg-ir`'s compile time. Run the schema side when you change IR or native record types:
+
+```sh
+cargo test -p cadmpeg-ir --features schema --lib
 ```
 
 The excluded fuzz crate uses Rust nightly and `cargo-fuzz`. The scheduled [fuzz smoke workflow](.github/workflows/fuzz-smoke.yml) compiles every fuzz target without running it:
@@ -92,9 +102,10 @@ See [`seeds/README.md`](seeds/README.md) for seed regeneration and local fuzz-ru
 - [ ] Commits are signed off (`git commit -s`).
 - [ ] For decoder/spec PRs: the provenance declaration is in the description.
 - [ ] `cargo fmt --all --check` passes.
-- [ ] `cargo clippy --workspace -- -D warnings -W missing-docs` passes.
+- [ ] `cargo clippy --workspace --all-targets` passes.
 - [ ] `cargo build --workspace` passes.
 - [ ] `cargo test-fast` and `cargo test --workspace --doc` pass.
+- [ ] `cargo test -p cadmpeg-ir --features schema --lib` passes (IR or native record type changes).
 - [ ] No CAD binaries committed outside the corpus donation pipeline or the generated fuzz seeds (see [`seeds/README.md`](seeds/README.md)).
 - [ ] IR exactness is classified as `ByteExact`, `Derived`, `Inferred`, or `Unknown` accurately (decoder PRs).
 

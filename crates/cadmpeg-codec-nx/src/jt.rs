@@ -880,3 +880,7 @@ pub(crate) fn decode_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(Vec<i32>, us
         .collect::<Option<Vec<_>>>()?;
     Some((values, cursor))
 }
+
+#[cfg(test)]
+#[path = "jt_tests.rs"]
+mod tests;

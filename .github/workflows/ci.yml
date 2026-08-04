@@ -50,9 +50,13 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Clippy
-        # -W missing-docs keeps the documentation debt visible without
-        # blocking; drop it once the workspace is fully documented.
-        run: cargo clippy --workspace -- -D warnings -W missing-docs
+        # Lint levels come from `[workspace.lints]` in Cargo.toml, so no
+        # trailing flags here. Trailing flags are part of the compilation
+        # fingerprint, and a flagged run and a bare run evict each other's
+        # cached artifacts.
+        # `--all-targets` covers lib, bins, tests, and benches so test-only
+        # style debt cannot hide behind crate-root cfg(test) mute lists.
+        run: cargo clippy --workspace --all-targets
 
       - name: Unit and integration tests
         # Builds the full workspace (libs, bins, test harnesses) before
@@ -61,6 +65,18 @@ jobs:
 
       - name: Documentation tests
         run: cargo test --workspace --doc
+
+      - name: Schema feature
+        # `schema` is off by default, so the steps above never build the
+        # `JsonSchema` derives. This step is the only thing that compiles them
+        # and runs the schema assertions, so a derive that stops matching its
+        # type fails here rather than at release time.
+        run: |
+          set -euo pipefail
+          cargo test -p cadmpeg-ir --features schema --lib
+          cargo check -p cadmpeg-codec-core -p cadmpeg-codec-f3d \
+            -p cadmpeg-codec-catia -p cadmpeg-codec-sldprt --all-targets \
+            --features cadmpeg-codec-core/schema,cadmpeg-codec-f3d/schema,cadmpeg-codec-catia/schema,cadmpeg-codec-sldprt/schema
 
       - name: Fuzz targets compile
         # The fuzz crate declares its own `[workspace]`, so every step above
@@ -76,6 +92,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RUSTUP_TOOLCHAIN: "1.88"
+      # `[workspace.lints]` denies warnings on every toolchain, and 1.88's lint
+      # set differs from the pinned one's. This job checks compilation, not
+      # lints; deny-by-default lints stay hard errors.
+      RUSTFLAGS: "-A warnings"
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1

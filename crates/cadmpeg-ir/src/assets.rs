@@ -1,25 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Embedded and externally referenced document resources.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Stable identity of one document asset.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct AssetId(pub String);
 
 /// Bytes or location supplying an asset's content.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AssetContent {
     /// Content embedded in the decoded document.
     Embedded {
         /// Exact resource bytes.
         #[serde(with = "crate::bytes")]
-        #[schemars(with = "String")]
+        #[cfg_attr(feature = "schema", schemars(with = "String"))]
         data: Vec<u8>,
     },
     /// Content resolved outside the decoded document.
@@ -30,7 +31,8 @@ pub enum AssetContent {
 }
 
 /// A document resource referenced by model, drawing, or presentation entities.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Asset {
     /// Stable asset identity.
     pub id: AssetId,

@@ -65,7 +65,10 @@ use crate::topology::HalfEdgeId;
 mod native;
 mod records;
 use native::{annotate, emit_arena, store_arena};
-#[allow(clippy::wildcard_imports)]
+#[allow(
+    clippy::wildcard_imports,
+    reason = "Split check modules share a private orchestration prelude via wildcard import."
+)]
 use records::*;
 
 fn unique_owned_feature_definition(

@@ -6193,3 +6193,7 @@ pub(crate) fn parameter_name_parts(name: &str) -> Option<(u32, Option<&str>)> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "om_parser_tests.rs"]
+mod parser_tests;

@@ -2,13 +2,15 @@
 //! Outer `7C08` feature and object-ownership graph decoder.
 
 use cadmpeg_codec_core::le::u32_at as u32_le;
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{catalog, value_block};
 
 /// One decoded outer object graph.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ObjectGraph {
     /// Offset of the selected `7C08` root.
     pub pos: usize,
@@ -21,7 +23,8 @@ pub struct ObjectGraph {
 }
 
 /// One `7C09` object record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ObjectRecord {
     /// Zero-based serialized record index.
     pub index: usize,
@@ -35,7 +38,7 @@ pub struct ObjectRecord {
     pub head: Vec<HeadToken>,
     /// Complete alternate inline body when the record has no nested `7C0A`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<String>")]
+    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
     pub inline_body: Option<Vec<u8>>,
     /// First head reference, identifying the owner by stored entity identity.
     pub owner_ref: Option<u32>,
@@ -56,7 +59,8 @@ pub struct ObjectRecord {
 }
 
 /// Token in a `7C09` record head.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum HeadToken {
     /// Initial head lead.
     Lead(u8),
@@ -71,7 +75,8 @@ pub enum HeadToken {
 }
 
 /// Decoded `7C0A` tagged-atom payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ObjectPayload {
     /// Payload size in bytes.
     pub size: usize,
@@ -80,7 +85,8 @@ pub struct ObjectPayload {
 }
 
 /// One counted reference suffix whose reference prefix is serialized twice.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct RepeatedReferenceSuffix {
     /// Schema-selection production in the payload prefix before this suffix.
     pub schema_preamble: Option<ReferenceSchemaPreamble>,
@@ -95,7 +101,8 @@ pub struct RepeatedReferenceSuffix {
 }
 
 /// Schema reference carried by a repeated-reference payload preamble.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ReferenceSchemaPreamble {
     /// `<59-byte blob> <5:atom> <46:atom> <schema-ref:atom>`.
     BlobThenSchema {
@@ -114,7 +121,8 @@ pub enum ReferenceSchemaPreamble {
 }
 
 /// Item within a count-prefixed `0x3b` list.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ListItem {
     /// Referenced object ordinal.
     Reference {
@@ -133,7 +141,8 @@ pub enum ListItem {
 }
 
 /// One schema-free field in a `7C0A` payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum PayloadField {
     /// Untagged atom.
     Atom {
@@ -164,7 +173,7 @@ pub enum PayloadField {
         declared_len: usize,
         /// Available blob bytes.
         #[serde(with = "cadmpeg_ir::bytes")]
-        #[schemars(with = "String")]
+        #[cfg_attr(feature = "schema", schemars(with = "String"))]
         bytes: Vec<u8>,
         /// Byte offset within the payload.
         offset: usize,
@@ -197,7 +206,8 @@ pub enum PayloadField {
 }
 
 /// Structural role of a decoded payload.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum PayloadSubtype {
     /// Contains a sane bulk-table header.
     BulkTable,
@@ -216,7 +226,8 @@ pub enum PayloadSubtype {
 }
 
 /// Classification of the four-byte word preceding a surface-alias marker.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum AliasLead {
     /// Low byte `0x01`: ordinary surface-support storage.
     SurfaceSupportStorage,
@@ -231,7 +242,8 @@ pub enum AliasLead {
 }
 
 /// Group-allocation header attached to an outer surface-alias row.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct AliasGroupMembership {
     /// `ObjectModeler` node prototype.
     pub prototype: u32,
@@ -241,7 +253,7 @@ pub struct AliasGroupMembership {
     pub target_slot: u32,
     /// Complete bounded storage prefix between the group header and alias marker.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[schemars(with = "String")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub storage_prefix: Vec<u8>,
 }
 

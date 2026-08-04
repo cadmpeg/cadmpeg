@@ -249,7 +249,7 @@ pub(crate) fn decode(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::archive_test_support::{class_wrapper, polyline_payload, POLYLINE_CLASS};
 
@@ -266,7 +266,7 @@ mod tests {
         .collect()
     }
 
-    fn version_two_hatch_payload() -> Vec<u8> {
+    pub(crate) fn version_two_hatch_payload() -> Vec<u8> {
         let mut loop_payload = polyline_payload(
             &[
                 [0.0, 0.0, 0.0],

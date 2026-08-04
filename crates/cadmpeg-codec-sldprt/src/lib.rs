@@ -1,12 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(
-    test,
-    allow(
-        clippy::redundant_field_names,
-        clippy::unreadable_literal,
-        clippy::unwrap_used
-    )
-)]
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Read and write `SolidWorks` `.sldprt` part documents.
 //!
 //! [`SldprtCodec`] decodes B-rep topology, analytic and NURBS geometry,
@@ -146,7 +139,7 @@ struct SourceRecord<'a> {
 
 /// Validate `SolidWorks` native feature-input byte references.
 pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
-    resolved_features::validate_native(ir)
+    resolved_features::validate::validate_native(ir)
 }
 
 impl SldprtCodec {
@@ -360,5 +353,7 @@ fn source_records<'a>(
 
 #[cfg(test)]
 mod golden_tests;
+#[cfg(test)]
+mod spatial_write_tests;
 #[cfg(test)]
 mod tests;

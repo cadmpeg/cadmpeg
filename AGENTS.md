@@ -11,12 +11,13 @@ Multi-agent repository etiquette:
 - Unstaged changes you did not make belong to another agent. Do not commit them, revert them, or bypass hooks because of them.
 - Use `--no-verify` only with the reason stated in the commit body.
 - In a conflicted merge, restore a file from a merge stage with `scripts/restore-merge-stage.sh`, not with `git checkout` or `git restore`.
-- When several agents build concurrently, isolate build artifacts: set a per-worktree `CARGO_TARGET_DIR`, or export `RUSTFLAGS="-C metadata=$(git branch --show-current)"` so a shared target directory stays collision-free.
 
 Build and test operations:
 
 - Run several tests in one invocation with filters after the separator: `cargo test -- name_a name_b`. Plain `cargo test name_a name_b` fails with `unexpected argument`. Fast suite: `cargo test-fast`. Regenerate golden snapshots after an intended change: `UPDATE_GOLDEN=1 cargo test-fast golden`, then review the diff.
 - The pre-commit gate scopes clippy and tests to the staged crates plus their workspace dependents. Triage a lint finding once and apply a targeted `#[allow]` with a comment; do not rerun the full gate against code you did not touch.
+- The `JsonSchema` derives are behind a `schema` feature that is off by default in `cadmpeg-ir`, `cadmpeg-codec-core`, `cadmpeg-codec-f3d`, `cadmpeg-codec-catia`, and `cadmpeg-codec-sldprt`. `cargo test-fast` does not build them. After changing an IR or native record type run `cargo test -p cadmpeg-ir --features schema --lib`. Do not add `JsonSchema` to a bare `derive` list; use `#[cfg_attr(feature = "schema", derive(JsonSchema))]`.
+- The `JsonSchema` derives are behind a `schema` feature that is off by default in `cadmpeg-ir`, `cadmpeg-codec-core`, `cadmpeg-codec-f3d`, `cadmpeg-codec-catia`, and `cadmpeg-codec-sldprt`. `cargo test-fast` does not build them. After changing an IR or native record type run `cargo test -p cadmpeg-ir --features schema --lib`. Do not add `JsonSchema` to a bare `derive` list; use `#[cfg_attr(feature = "schema", derive(JsonSchema))]`.
 - Changes to `cadmpeg-ir` or `cadmpeg-codec-core` fan out to every codec crate and diverge all goldens. Add struct fields through `Default` or constructor helpers and plan the fan-out before editing.
 - A successful decode is not a valid IR. Run `cadmpeg validate` on decoder output; it enforces ID-naming and topology conventions beyond decode success.
 - Test expectations come from the specification or approximate equality. Do not paste a failing run's observed output into an expectation.

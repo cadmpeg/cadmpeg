@@ -3,6 +3,8 @@
 //! Unit tests for the IR: the worked cube validates clean, JSON round-trips,
 //! and each validation check actually fires when its invariant is broken.
 
+use std::collections::BTreeMap;
+
 use crate::annotations::{ExactnessNote, Provenance};
 use crate::codec::{CadirEncoder, Encoder};
 use crate::document::Model;
@@ -2243,6 +2245,7 @@ fn direct_deserialization_accepts_current_version_and_canonical_round_trip() {
     assert_eq!(parsed.to_canonical_json().unwrap(), json);
 }
 
+#[cfg(feature = "schema")]
 #[test]
 fn schema_constrains_version_and_requires_subd_arena() {
     let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
@@ -2962,6 +2965,7 @@ fn byte_payloads_use_nonempty_base64_and_reject_invalid_text() {
     );
 }
 
+#[cfg(feature = "schema")]
 #[test]
 fn schema_generation_produces_definitions() {
     let schema = crate::cadir_json_schema();
@@ -5809,15 +5813,15 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
-        source_properties: Default::default(),
+        source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "producer".into(),
-            parameters: Default::default(),
-            properties: Default::default(),
+            parameters: BTreeMap::default(),
+            properties: BTreeMap::default(),
         },
         native_ref: None,
     });
@@ -5839,7 +5843,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         suppressed: Some(false),
         parent: None,
         dependencies: vec![producer.clone()],
-        source_properties: Default::default(),
+        source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: Vec::new(),

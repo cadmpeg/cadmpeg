@@ -230,7 +230,10 @@ pub(crate) fn ordered_range(range: [f64; 2]) -> [f64; 2] {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+)]
 pub(crate) fn circle_parameter_range_from_surface_branch(
     surface: &SurfaceGeometry,
     center: Point3,

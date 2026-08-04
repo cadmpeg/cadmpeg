@@ -4,7 +4,11 @@
 //! whose bytes exercise the real container, variant-detection, and geometry
 //! decode paths and fail if the code regresses.
 
-#![allow(clippy::unwrap_used)]
+#![allow(
+    clippy::doc_markdown,
+    clippy::unwrap_used,
+    reason = "Synthetic CATIA fixtures use concise test prose and unwrap assertions for required fixture invariants."
+)]
 
 use std::io::Cursor;
 

@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 
@@ -80,7 +81,8 @@ pub(crate) use arena_registry;
 macro_rules! declare_model {
     ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
         /// Format-neutral entity arenas connected by typed IDs.
-        #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+        #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
         pub struct Model {
             $(
                 $(#[$attribute])*
@@ -206,6 +208,7 @@ where
     Ok(version)
 }
 
+#[cfg(feature = "schema")]
 fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
     schemars::json_schema!({
         "type": "string",
@@ -218,11 +221,12 @@ fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 /// `model` holds the format-neutral graph. `native` retains typed
 /// format-specific product data without changing that graph's semantics.
 /// Entity IDs must be globally unique across all document arenas.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CadIr {
     /// IR schema version.
     #[serde(deserialize_with = "deserialize_ir_version")]
-    #[schemars(schema_with = "ir_version_schema")]
+    #[cfg_attr(feature = "schema", schemars(schema_with = "ir_version_schema"))]
     pub ir_version: String,
     /// Source-container metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -385,7 +389,8 @@ impl CadIr {
 }
 
 /// Source-container metadata preserved for reporting.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SourceMeta {
     /// Source format id.
     pub format: String,

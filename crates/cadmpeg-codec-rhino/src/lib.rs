@@ -1,12 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(
-    test,
-    allow(
-        clippy::doc_markdown,
-        clippy::redundant_field_names,
-        clippy::unwrap_used
-    )
-)]
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Reads and writes Rhino `.3dm` files through [`cadmpeg_ir::document::CadIr`].
 //!
 //! Support level: L8 for archive versions 50, 60, 70, and 80 on the cadmpeg
@@ -16,7 +9,7 @@
 use cadmpeg_codec_core::decode::{DecodeContext, View};
 use cadmpeg_codec_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
-use cadmpeg_ir::report::{ExportReport, LossKind, LossNote, Severity};
+use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::FidelityResolution;
 
 pub(crate) mod annotations;
@@ -34,6 +27,7 @@ pub(crate) mod extrusion;
 pub(crate) mod hatch;
 pub(crate) mod history;
 pub(crate) mod instances;
+pub mod loss;
 pub(crate) mod mesh;
 pub(crate) mod morph;
 pub(crate) mod objects;
@@ -157,20 +151,16 @@ impl Encoder for RhinoEncoder {
             });
         let mut losses = Vec::new();
         if vertex_quantization {
-            losses.push(LossNote {
-                code: LossKind::MeshVertexPrecision,
-                severity: Severity::Warning,
-                message: "archive version 50 stores standalone mesh vertices as f32".into(),
-                provenance: None,
-            });
+            losses.push(
+                loss::RhinoLossCode::MeshVertexPrecisionReduced
+                    .note("archive version 50 stores standalone mesh vertices as f32"),
+            );
         }
         if normal_quantization {
-            losses.push(LossNote {
-                code: LossKind::MeshVertexPrecision,
-                severity: Severity::Warning,
-                message: "3DM mesh normals are stored as f32".into(),
-                provenance: None,
-            });
+            losses.push(
+                loss::RhinoLossCode::MeshNormalPrecisionReduced
+                    .note("3DM mesh normals are stored as f32"),
+            );
         }
         let report = ExportReport {
             format: "rhino".into(),

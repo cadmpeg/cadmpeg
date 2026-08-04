@@ -2,11 +2,13 @@
 //! Framed CATIA `7C0B` value blocks.
 
 use cadmpeg_codec_core::le::u32_at as u32_le;
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// One exact `7C0B` value block immediately preceding a schema catalog.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ValueBlock {
     /// Byte offset of the `7C0B` marker.
     pub pos: usize,
@@ -21,7 +23,8 @@ pub struct ValueBlock {
 }
 
 /// One token in a `7C0B` value payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ValueField {
     /// `0x32` followed by a source-schema ordinal or terminal absent sentinel.
     SchemaSelector {
@@ -62,7 +65,7 @@ pub enum ValueField {
         code: u8,
         /// Exact inline bytes.
         #[serde(with = "cadmpeg_ir::bytes")]
-        #[schemars(with = "String")]
+        #[cfg_attr(feature = "schema", schemars(with = "String"))]
         bytes: Vec<u8>,
         /// Byte offset within the value payload.
         offset: usize,
@@ -71,7 +74,7 @@ pub enum ValueField {
     ByteString {
         /// Exact stored bytes.
         #[serde(with = "cadmpeg_ir::bytes")]
-        #[schemars(with = "String")]
+        #[cfg_attr(feature = "schema", schemars(with = "String"))]
         bytes: Vec<u8>,
         /// Byte offset within the value payload.
         offset: usize,
