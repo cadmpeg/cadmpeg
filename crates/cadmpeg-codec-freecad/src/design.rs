@@ -348,13 +348,7 @@ pub(crate) fn transfer(
                 properties: BTreeMap::new(),
             }
         };
-        let definition = post_processed_definition(definition, &owned).unwrap_or_else(|| {
-            FeatureDefinition::Native {
-                kind: object.type_name.clone(),
-                parameters: native_parameters(&owned),
-                properties: BTreeMap::new(),
-            }
-        });
+        let definition = post_processed_definition(definition, &owned);
         append_operation_parameters(&mut ir.model.parameters, object, &owned);
         let outputs = payloads
             .iter()
@@ -411,13 +405,32 @@ pub(crate) fn transfer(
     Ok(())
 }
 
+/// Wrap an operation in its shape-refinement and boolean-tolerance controls.
+///
+/// An unresolvable control leaves the operation unwrapped. The controls
+/// qualify an operation rather than define it, so they never cost the
+/// operation its neutral form.
 fn post_processed_definition(
     definition: FeatureDefinition,
     properties: &[&PropertyRecord],
-) -> Option<FeatureDefinition> {
+) -> FeatureDefinition {
+    let Some((refine, fuzzy_tolerance)) = post_process_controls(properties) else {
+        return definition;
+    };
+    FeatureDefinition::PostProcess {
+        operation: Box::new(definition),
+        refine,
+        fuzzy_tolerance,
+    }
+}
+
+/// Resolve the refinement flag and boolean fuzzy tolerance an operation
+/// carries. `None` states that the object carries neither control, or that a
+/// carried control does not resolve to a neutral value.
+fn post_process_controls(properties: &[&PropertyRecord]) -> Option<(bool, FuzzyTolerance)> {
     if property(properties, "Refine").is_none() && property(properties, "FuzzyTolerance").is_none()
     {
-        return Some(definition);
+        return None;
     }
     let refine = if property(properties, "Refine").is_some() {
         bool_property(properties, "Refine")?
@@ -438,11 +451,7 @@ fn post_processed_definition(
     } else {
         return None;
     };
-    Some(FeatureDefinition::PostProcess {
-        operation: Box::new(definition),
-        refine,
-        fuzzy_tolerance,
-    })
+    Some((refine, fuzzy_tolerance))
 }
 
 fn append_spreadsheet(
