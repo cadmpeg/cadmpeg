@@ -5,7 +5,8 @@
       "attributes": {
         "desc_offset": "16",
         "directory": "outer",
-        "extent_count": "1"
+        "extent_count": "1",
+        "extent_flags": "0x00000000"
       },
       "compressed_size": 20,
       "compression": "none",

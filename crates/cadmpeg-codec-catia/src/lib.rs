@@ -120,4 +120,6 @@ impl Codec for CatiaCodec {
 }
 
 #[cfg(test)]
+mod golden_tests;
+#[cfg(test)]
 mod tests;
