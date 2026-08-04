@@ -4,6 +4,7 @@
 use crate::features::{Angle, Length, ParameterId};
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -11,7 +12,8 @@ use std::collections::BTreeMap;
 macro_rules! string_id {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
-        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, JsonSchema)]
+        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
         #[serde(transparent)]
         pub struct $name(pub String);
 
@@ -39,7 +41,8 @@ string_id!(
 );
 
 /// Canonical reference axis in neutral sketch coordinates.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SketchAxis {
     /// Positive sketch-u direction.
@@ -49,7 +52,8 @@ pub enum SketchAxis {
 }
 
 /// A planar sketch and its ordered profile loops.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Sketch {
     /// Globally unique sketch id.
     pub id: SketchId,
@@ -70,7 +74,8 @@ pub struct Sketch {
 }
 
 /// Placement of a planar sketch's local coordinates in model space.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SketchPlacement {
     /// Local geometry is decoded but its model-space frame is unresolved.
@@ -108,7 +113,8 @@ impl Sketch {
 }
 
 /// Oriented use of one sketch entity in a profile chain.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SketchEntityUse {
     /// Referenced sketch entity.
     pub entity: SketchEntityId,
@@ -118,7 +124,8 @@ pub struct SketchEntityUse {
 }
 
 /// Solved geometry belonging to one sketch.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SketchEntity {
     /// Globally unique entity id.
     pub id: SketchEntityId,
@@ -141,7 +148,8 @@ pub struct SketchEntity {
 }
 
 /// Solved two-dimensional sketch geometry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SketchGeometry {
     /// Isolated point.
@@ -276,7 +284,8 @@ pub enum SketchGeometry {
 }
 
 /// A sketch whose solved geometry is expressed directly in model space.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SpatialSketch {
     /// Globally unique spatial-sketch id.
     pub id: SpatialSketchId,
@@ -295,7 +304,8 @@ pub struct SpatialSketch {
 }
 
 /// One closed spatial-sketch profile and its model-space plane.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SpatialSketchProfile {
     /// Profile-plane origin in model space.
     pub origin: Point3,
@@ -308,7 +318,8 @@ pub struct SpatialSketchProfile {
 }
 
 /// Oriented use of one spatial-sketch entity in a profile boundary.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SpatialSketchEntityUse {
     /// Referenced spatial-sketch entity.
     pub entity: SpatialSketchEntityId,
@@ -318,7 +329,8 @@ pub struct SpatialSketchEntityUse {
 }
 
 /// Solved model-space geometry belonging to one spatial sketch.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SpatialSketchEntity {
     /// Globally unique spatial entity id.
     pub id: SpatialSketchEntityId,
@@ -341,7 +353,8 @@ pub struct SpatialSketchEntity {
 }
 
 /// One geometric relation owned by a spatial sketch.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SpatialSketchConstraint {
     /// Globally unique constraint id.
     pub id: SketchConstraintId,
@@ -355,7 +368,8 @@ pub struct SpatialSketchConstraint {
 }
 
 /// One progenitor/result pair in a model-space sketch offset relation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SpatialSketchOffsetPair {
     /// Source entity whose stored direction defines the signed offset normal.
     pub source: SpatialSketchEntityId,
@@ -367,7 +381,8 @@ pub struct SpatialSketchOffsetPair {
 }
 
 /// One unordered entity pair in a repeated model-space sketch relation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SpatialSketchEntityPair {
     /// First member in source discovery order.
     pub first: SpatialSketchEntityId,
@@ -376,7 +391,8 @@ pub struct SpatialSketchEntityPair {
 }
 
 /// Neutral geometric relations between model-space sketch entities.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SpatialSketchConstraintDefinition {
     /// Source-native spatial relation without complete neutral semantics.
@@ -509,7 +525,8 @@ pub enum SpatialSketchConstraintDefinition {
 
 /// Solved geometry in model coordinates.
 /// Solved model-space spatial-sketch geometry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SpatialSketchGeometry {
     /// Model-space point.
@@ -586,7 +603,8 @@ pub enum SpatialSketchGeometry {
 }
 
 /// One relation constraining solved sketch geometry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SketchConstraint {
     /// Globally unique constraint id.
     pub id: SketchConstraintId,
@@ -627,7 +645,8 @@ pub struct SketchConstraint {
 }
 
 /// A geometric locus on a sketch entity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "entity", rename_all = "snake_case")]
 pub enum SketchLocus {
     /// The complete entity.
@@ -641,7 +660,8 @@ pub enum SketchLocus {
 }
 
 /// Coordinate axis selected by a sketch relation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SketchCoordinateAxis {
     /// First coordinate in sketch space.
@@ -651,7 +671,8 @@ pub enum SketchCoordinateAxis {
 }
 
 /// One ordered operand retained from a native sketch relation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SketchNativeOperand {
     /// Source-native operand family.
     pub native_kind: String,
@@ -669,7 +690,8 @@ pub struct SketchNativeOperand {
 }
 
 /// One progenitor/result pair in a sketch offset relation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SketchOffsetPair {
     /// Source entity whose stored direction defines the signed offset normal.
     pub source: SketchEntityId,
@@ -681,7 +703,8 @@ pub struct SketchOffsetPair {
 }
 
 /// One axis of a rectangular sketch pattern.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SketchPatternDirection {
     /// Unit direction in sketch coordinates.
     pub direction: [f64; 2],
@@ -702,7 +725,8 @@ pub struct SketchPatternDirection {
 }
 
 /// One resolved rectangular-pattern instance.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SketchPatternInstance {
     /// Zero-based indices along the two pattern directions.
     pub indices: [u32; 2],
@@ -711,7 +735,8 @@ pub struct SketchPatternInstance {
 }
 
 /// One resolved circular-pattern instance.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SketchCircularPatternInstance {
     /// Zero-based position in pattern order; zero is the seed instance.
     pub index: u32,
@@ -722,7 +747,8 @@ pub struct SketchCircularPatternInstance {
 }
 
 /// One independently measured pair within a repeated linear dimension.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SketchDistanceMeasurement {
     /// Euclidean separation between two loci.
@@ -749,7 +775,8 @@ pub enum SketchDistanceMeasurement {
 }
 
 /// Meaning of an internal sketch alignment helper relation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SketchInternalAlignment {
     /// Major diameter helper for an ellipse.
@@ -777,7 +804,8 @@ pub enum SketchInternalAlignment {
 }
 
 /// Neutral geometric and dimensional sketch relations.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SketchConstraintDefinition {
     /// Persisted no-op relation slot.

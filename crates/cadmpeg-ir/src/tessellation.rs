@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source tessellation retained alongside exact boundary representation.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -9,7 +10,8 @@ use crate::math::{Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
 
 /// One indexed triangle mesh decoded from a source display or facet stream.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Tessellation {
     /// Stable source-derived identifier.
     pub id: String,
@@ -43,7 +45,8 @@ pub struct Tessellation {
 }
 
 /// One descriptor from the source tessellation table.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct TessellationChannel {
     /// Byte size of one element of `data`.
     pub item_size: u32,
@@ -55,6 +58,6 @@ pub struct TessellationChannel {
     pub count: u32,
     /// Raw channel payload, `count * item_size` bytes, undecoded.
     #[serde(with = "crate::bytes")]
-    #[schemars(with = "String")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub data: Vec<u8>,
 }

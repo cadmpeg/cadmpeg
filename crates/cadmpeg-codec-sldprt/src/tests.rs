@@ -4281,7 +4281,7 @@ fn semantic_writer_retains_partial_native_flex_construction() {
 }
 
 #[test]
-fn decode_retains_nonfinite_feature_dimensions_as_native() {
+fn decode_degrades_nonfinite_feature_dimensions() {
     use cadmpeg_ir::features::FeatureDefinition;
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -4302,7 +4302,16 @@ fn decode_retains_nonfinite_feature_dimensions_as_native() {
     assert_eq!(decoded.ir.model.features.len(), 5);
     assert!(matches!(
         decoded.ir.model.features[0].definition,
-        FeatureDefinition::Native { .. }
+        FeatureDefinition::Extrude {
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    ..
+                },
+            },
+            op: cadmpeg_ir::features::BooleanOp::Join,
+            ..
+        }
     ));
     assert!(matches!(
         &decoded.ir.model.features[1].definition,
@@ -4348,7 +4357,7 @@ fn decode_retains_nonfinite_feature_dimensions_as_native() {
 }
 
 #[test]
-fn decode_retains_nonpositive_feature_dimensions_as_native() {
+fn decode_degrades_nonpositive_feature_dimensions() {
     use cadmpeg_ir::features::FeatureDefinition;
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -4370,7 +4379,16 @@ fn decode_retains_nonpositive_feature_dimensions_as_native() {
     assert_eq!(decoded.ir.model.features.len(), 6);
     assert!(matches!(
         decoded.ir.model.features[0].definition,
-        FeatureDefinition::Native { .. }
+        FeatureDefinition::Extrude {
+            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::ExtrudeSide {
+                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    ..
+                },
+            },
+            op: cadmpeg_ir::features::BooleanOp::Join,
+            ..
+        }
     ));
     assert!(matches!(
         &decoded.ir.model.features[1].definition,
@@ -9693,6 +9711,144 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
 }
 
 #[test]
+fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
+    use cadmpeg_ir::features::{
+        ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureTreeNodeRole, Length, ParameterValue,
+        Termination,
+    };
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="Width">4mm</Dimension></Feature><Extrusion Name="Equation boss" Type="BossExtrude" id="8" Operation="Join" EndCondition="Blind"><Dimension Name="Depth">Width * 2</Dimension></Extrusion></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let equations = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Equations"))
+        .expect("equations node");
+    assert!(matches!(
+        equations.definition,
+        FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::Equations,
+            ..
+        }
+    ));
+    let width = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Width")
+        .expect("width parameter");
+    assert_eq!(width.owner.as_ref(), Some(&equations.id));
+    let depth = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Depth")
+        .expect("depth parameter");
+    assert_eq!(depth.dependencies, vec![width.id.clone()]);
+    assert_eq!(depth.value, Some(ParameterValue::Length(Length(8.0))));
+
+    // Edit both arenas so the write path enters `sync_neutral_features` (which
+    // checks the retained tree-node role) and `sync_neutral_parameters` (which
+    // recomputes dependency edges against the global-owner set) instead of the
+    // unchanged-baseline short circuits.
+    let extrusion = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .position(|feature| feature.name.as_deref() == Some("Equation boss"))
+        .expect("extrusion");
+    decoded.ir.model.features[extrusion].name = Some("Renamed equation boss".into());
+    let FeatureDefinition::Extrude { extent, .. } =
+        &mut decoded.ir.model.features[extrusion].definition
+    else {
+        panic!("typed extrusion");
+    };
+    *extent = ExtrudeExtent::OneSided {
+        side: ExtrudeSide {
+            termination: Termination::Blind {
+                length: Length(12.0),
+            },
+            draft: None,
+            offset: None,
+        },
+    };
+    let depth = decoded
+        .ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.name == "Depth")
+        .expect("depth parameter");
+    depth.expression = "Width * 3".into();
+    depth.value = Some(ParameterValue::Length(Length(12.0)));
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let equations = regenerated
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Equations"))
+        .expect("equations node");
+    assert!(matches!(
+        equations.definition,
+        FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::Equations,
+            ..
+        }
+    ));
+    let depth = regenerated
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Depth")
+        .expect("depth parameter");
+    assert_eq!(depth.expression, "Width * 3");
+    assert_eq!(depth.value, Some(ParameterValue::Length(Length(12.0))));
+    assert_eq!(depth.dependencies.len(), 1);
+    let extrusion = regenerated
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Renamed equation boss"))
+        .expect("extrusion");
+    assert!(matches!(
+        extrusion.definition,
+        FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(12.0)
+                    },
+                    ..
+                }
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_resolves_and_rewrites_owner_qualified_parameters() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -12356,6 +12512,123 @@ fn semantic_writer_retains_partial_native_scale_construction() {
 }
 
 #[test]
+fn semantic_writer_round_trips_extrusion_with_unresolved_blind_extent() {
+    use cadmpeg_ir::features::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Termination,
+    };
+    use cadmpeg_ir::math::Vector3;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Boss-Extrude1" Type="BossExtrude" id="9" EndCondition="Blind"><Dimension Name="Depth">0mm</Dimension></Extrusion></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Unresolved,
+                    ..
+                },
+            },
+            ..
+        }
+    ));
+
+    let FeatureDefinition::Extrude { direction, .. } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed extrusion");
+    };
+    *direction = ExtrudeDirection::Explicit(Vector3::new(0.0, 1.0, 0.0));
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(feature.properties["EndCondition"], "Blind");
+    assert_eq!(feature.properties["Direction"], "0,1,0");
+    assert_eq!(feature.parameters["Depth"], "0mm");
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Unresolved,
+                    ..
+                },
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn semantic_writer_round_trips_extrusion_with_unrecognized_end_condition() {
+    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, FeatureDefinition, Termination};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Boss-Extrude1" Type="BossExtrude" id="9" EndCondition="Unrecognized" Direction="0,0,1" Face="face:1" Vertex="vertex:2"><Dimension Name="Depth">4mm</Dimension><Dimension Name="Depth2">6mm</Dimension><Dimension Name="Draft">3deg</Dimension></Extrusion></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Unresolved,
+                    ..
+                },
+            },
+            ..
+        }
+    ));
+
+    // The retained record still spells the draft angle as authored; only the
+    // neutral write path canonicalizes it to radians. Asserting both spellings
+    // proves this round trip reached `sync_neutral_features` instead of the
+    // unchanged-baseline short circuit.
+    assert_eq!(
+        sldprt_native(&decoded.ir).feature_histories[0].features[0].parameters["Draft"],
+        "3deg"
+    );
+    decoded.ir.model.features[0].name = Some("Renamed extrusion".into());
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(feature.name, "Renamed extrusion");
+    assert_eq!(feature.properties["EndCondition"], "Unrecognized");
+    assert_eq!(feature.properties["Direction"], "0,0,1");
+    assert_eq!(feature.properties["Face"], "face:1");
+    assert_eq!(feature.properties["Vertex"], "vertex:2");
+    assert_eq!(feature.parameters["Depth"], "4mm");
+    assert_eq!(feature.parameters["Depth2"], "6mm");
+    assert_eq!(
+        feature.parameters["Draft"],
+        format!("{}rad", 3f64.to_radians())
+    );
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_draft() {
     use cadmpeg_ir::features::{Angle, FaceSelection, FeatureDefinition};
     use cadmpeg_ir::math::Vector3;
@@ -12425,6 +12698,61 @@ fn semantic_writer_round_trips_typed_draft() {
             outward: Some(true),
             ..
         }
+    ));
+}
+
+#[test]
+fn semantic_writer_round_trips_draft_without_angle_or_outward() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
+    use cadmpeg_ir::math::Vector3;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Draft Name="Taper" Type="Draft" id="18" Faces="face:1,face:2" NeutralPlane="face:3" Direction="0,0,1"/></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Draft {
+            faces: FaceSelection::Native(faces),
+            neutral_plane: FaceSelection::Native(neutral_plane),
+            pull_direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
+            angle: None,
+            outward: None,
+        } if faces == "face:1,face:2" && neutral_plane == "face:3"
+    ));
+
+    let FeatureDefinition::Draft { faces, .. } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed draft");
+    };
+    *faces = FaceSelection::Native("face:4".into());
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(feature.properties["Faces"], "face:4");
+    assert_eq!(feature.properties["NeutralPlane"], "face:3");
+    assert_eq!(feature.properties["Direction"], "0,0,1");
+    assert_eq!(feature.properties.get("Outward"), None);
+    assert_eq!(feature.parameters.get("Angle"), None);
+    assert!(matches!(
+        &regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Draft {
+            faces: FaceSelection::Native(faces),
+            angle: None,
+            outward: None,
+            ..
+        } if faces == "face:4"
     ));
 }
 

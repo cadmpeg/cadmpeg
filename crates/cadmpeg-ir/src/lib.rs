@@ -126,6 +126,9 @@ pub use validate::{validate, validate_with_source_fidelity};
 pub mod unknown;
 
 /// Generate the JSON Schema for the current [`CadIr`] representation.
+///
+/// Requires the `schema` feature.
+#[cfg(feature = "schema")]
 pub fn cadir_json_schema() -> schemars::Schema {
     schemars::schema_for!(CadIr)
 }

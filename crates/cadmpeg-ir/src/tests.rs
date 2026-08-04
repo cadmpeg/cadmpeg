@@ -2245,6 +2245,7 @@ fn direct_deserialization_accepts_current_version_and_canonical_round_trip() {
     assert_eq!(parsed.to_canonical_json().unwrap(), json);
 }
 
+#[cfg(feature = "schema")]
 #[test]
 fn schema_constrains_version_and_requires_subd_arena() {
     let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
@@ -2964,6 +2965,7 @@ fn byte_payloads_use_nonempty_base64_and_reject_invalid_text() {
     );
 }
 
+#[cfg(feature = "schema")]
 #[test]
 fn schema_generation_produces_definitions() {
     let schema = crate::cadir_json_schema();

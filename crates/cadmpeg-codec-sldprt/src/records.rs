@@ -2,12 +2,14 @@
 //! `SolidWorks` parametric construction-history records.
 #![deny(clippy::disallowed_methods)]
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// One semantic product-manufacturing dimension from `PMISemanticDataDB`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PmiDimension {
     /// Globally unique source-derived record id.
     pub id: String,
@@ -51,7 +53,8 @@ pub struct PmiDimension {
 
 /// A named parametric-model variant (e.g. CAD "configuration") with its own
 /// material and property overrides.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Configuration {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -79,7 +82,8 @@ fn default_feature_xml_tag() -> String {
 }
 
 /// One parametric construction-history feature (e.g. an extrude or fillet operation).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Feature {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -129,7 +133,8 @@ pub struct Feature {
 }
 
 /// One ordered item inside a native feature XML element.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum FeatureContent {
     /// Named dimension child.
@@ -141,7 +146,8 @@ pub enum FeatureContent {
 }
 
 /// One ordered item inside the native `Keywords` root.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum HistoryContent {
     /// Native configuration record id.
@@ -153,7 +159,8 @@ pub enum HistoryContent {
 }
 
 /// The full parametric construction-history timeline for a part.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureHistory {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -175,7 +182,8 @@ pub struct FeatureHistory {
 }
 
 /// Native feature-input stream retained for parametric replay and rewrite.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputLane {
     /// Stable source-derived identifier for this feature-input record.
     pub id: String,
@@ -186,7 +194,7 @@ pub struct FeatureInputLane {
     /// Complete native feature-input byte stream, retained undecoded for
     /// parametric replay and native rewrite.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[schemars(with = "String")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub native_payload: Vec<u8>,
     /// Class declarations used by object instances in this lane.
     #[serde(default)]
@@ -224,7 +232,8 @@ pub struct FeatureInputLane {
 }
 
 /// One compact feature-local body-selection vector.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputBodySelection {
     /// Globally unique deterministic identifier for this vector.
     pub id: String,
@@ -249,7 +258,8 @@ pub struct FeatureInputBodySelection {
 }
 
 /// One compact feature-local edge-selection vector.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputEdgeSelection {
     /// Globally unique deterministic identifier for this vector.
     pub id: String,
@@ -277,7 +287,8 @@ pub struct FeatureInputEdgeSelection {
 }
 
 /// One compact feature-local surface-component selection.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputSurfaceSelection {
     /// Globally unique deterministic identifier.
     pub id: String,
@@ -303,7 +314,8 @@ pub struct FeatureInputSurfaceSelection {
 }
 
 /// One persistent identity of a surface produced by a regenerated feature.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputGeneratedSurfaceIdentity {
     /// Globally unique deterministic identifier.
     pub id: String,
@@ -325,7 +337,8 @@ pub struct FeatureInputGeneratedSurfaceIdentity {
 }
 
 /// One typed node in a persistent feature-input component path.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputComponentPathEntry {
     /// Serialized component instance tag; absent on anonymous path nodes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -338,7 +351,8 @@ pub struct FeatureInputComponentPathEntry {
 }
 
 /// A declared sketch-relation family and its attached scalar record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputRelationBinding {
     /// Globally unique deterministic identifier for this binding.
     pub id: String,
@@ -360,7 +374,8 @@ pub struct FeatureInputRelationBinding {
 }
 
 /// One compact sketch-relation instance represented by related scalar records.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputRelationInstance {
     /// Globally unique deterministic identifier for this relation instance.
     pub id: String,
@@ -389,7 +404,8 @@ pub struct FeatureInputRelationInstance {
 }
 
 /// Native sketch-relation family.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureInputRelationFamily {
     /// Diameter of one circular sketch entity.
@@ -409,7 +425,8 @@ pub enum FeatureInputRelationFamily {
 }
 
 /// One native entity-reference cell in a feature-input stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputReference {
     /// Globally unique deterministic identifier for this cell.
     pub id: String,
@@ -429,7 +446,8 @@ pub struct FeatureInputReference {
 }
 
 /// One serialized UTF-16 object name in a feature-input stream.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputName {
     /// Globally unique deterministic identifier for this name record.
     pub id: String,
@@ -447,7 +465,8 @@ pub struct FeatureInputName {
 }
 
 /// One named scalar serialized in native SI units.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputScalar {
     /// Globally unique deterministic identifier for this scalar record.
     pub id: String,
@@ -477,7 +496,8 @@ pub struct FeatureInputScalar {
 }
 
 /// One native entity-reference cell attached to a feature-input scalar.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputOperand {
     /// Byte offset of the reference cell within the feature-input stream.
     pub offset: u64,
@@ -493,7 +513,8 @@ pub struct FeatureInputOperand {
 }
 
 /// Native feature-input entity-reference cell family.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureInputOperandKind {
     /// `d6 80` reference cell.
@@ -505,7 +526,8 @@ pub enum FeatureInputOperandKind {
 }
 
 /// Function of a named scalar in its dimension record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureInputScalarRole {
     /// Value consumed during model regeneration.
@@ -517,7 +539,8 @@ pub enum FeatureInputScalarRole {
 }
 
 /// One class declaration in a native feature-input stream.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputClass {
     /// Globally unique deterministic identifier for this declaration.
     pub id: String,
@@ -535,7 +558,8 @@ pub struct FeatureInputClass {
 }
 
 /// Design-intent role declared by a feature-input class.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureInputClassRole {
     /// Modeling operation or construction feature.
@@ -560,7 +584,8 @@ pub enum FeatureInputClassRole {
 }
 
 /// One typed sketch-entity marker inside a native feature-input stream.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SketchInputEntity {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -596,7 +621,8 @@ pub struct SketchInputEntity {
 }
 
 /// One marker-local reference resolved within its owning feature object.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SketchInputLink {
     /// Feature-local object identifier stored in the marker payload.
     pub local_id: u16,
@@ -605,7 +631,8 @@ pub struct SketchInputLink {
 }
 
 /// Kind of sketch entity referenced by a native feature-input marker.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SketchInputKind {
     /// A sketch point.
@@ -676,7 +703,8 @@ impl SketchInputKind {
 }
 
 /// Relation kind carried by a non-coordinate sketch marker.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SketchRelationKind {
     /// Linear distance.
