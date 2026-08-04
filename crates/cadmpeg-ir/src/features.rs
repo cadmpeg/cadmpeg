@@ -951,6 +951,23 @@ pub enum FeatureDefinition {
         /// Distribution of thickness relative to the profile plane.
         side: SheetMetalThicknessSide,
     },
+    /// Sheet-metal wall grown from selected edges of an existing sheet body.
+    SheetMetalEdgeFlange {
+        /// Edges the flange is grown from.
+        edges: EdgeSelection,
+        /// Height of the flange wall.
+        height: Length,
+        /// Angle between the flange wall and its source face.
+        angle: Angle,
+        /// Face pair the height is measured from.
+        height_datum: SheetMetalHeightDatum,
+        /// Placement of the bend region against the selected edge.
+        bend_position: SheetMetalBendPosition,
+        /// Extent of the flange along the selected edge.
+        width: SheetMetalFlangeWidth,
+        /// Inside radius of the bend joining the flange to its source face.
+        bend_radius: Length,
+    },
     /// Edge fillet.
     Fillet {
         /// Ordered edge groups and their radius laws.
@@ -2012,6 +2029,50 @@ pub enum ThickenSide {
     Reverse,
     /// Split the thickness equally across both sides.
     Both,
+}
+
+/// Face pair a sheet-metal flange height is measured from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SheetMetalHeightDatum {
+    /// The height is measured from the inner faces of the sheet.
+    InnerFaces,
+    /// The height is measured from the outer faces of the sheet.
+    OuterFaces,
+}
+
+/// Placement of a sheet-metal bend region against its selected edge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SheetMetalBendPosition {
+    /// The bend lies outside the selected edge.
+    Outside,
+    /// The bend lies inside the selected edge.
+    Inside,
+    /// The bend starts at the selected edge.
+    Adjacent,
+    /// The bend is tangent to the side reference plane.
+    TangentToSide,
+}
+
+/// Extent of a sheet-metal flange along its selected edge.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum SheetMetalFlangeWidth {
+    /// The flange spans the complete selected edge.
+    FullEdge,
+    /// The flange is centred on the edge with one width.
+    Symmetric {
+        /// Total width centred on the edge.
+        width: Length,
+    },
+    /// The flange is measured inward from each end of the edge.
+    TwoSides {
+        /// Distance measured from the edge's first end.
+        first: Length,
+        /// Distance measured from the edge's second end.
+        second: Length,
+    },
 }
 
 /// Distribution of sheet thickness relative to its construction plane.

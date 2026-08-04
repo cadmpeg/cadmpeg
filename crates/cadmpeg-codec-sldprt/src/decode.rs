@@ -1270,6 +1270,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::SheetMetalBaseFlange { profile, .. } => {
                 incomplete_profile(profile)
             }
+            FeatureDefinition::SheetMetalEdgeFlange { edges, .. } => {
+                incomplete_edge_selection(edges)
+            }
             FeatureDefinition::Fillet { groups } => {
                 groups.is_empty()
                     || groups.iter().any(|group| {

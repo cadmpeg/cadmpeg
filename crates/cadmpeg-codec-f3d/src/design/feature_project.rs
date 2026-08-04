@@ -594,6 +594,24 @@ pub fn project_parameter_design_with_edge_identities(
                             }
                         },
                     ),
+                Some(DesignFeatureFamily::SheetMetalEdgeFlange) => project_edge_flange(
+                    scope,
+                    owners,
+                    native,
+                    construction_groups,
+                    edge_operands,
+                    edge_identity_operands,
+                )
+                .unwrap_or_else(|| FeatureDefinition::Native {
+                    kind: scope.kind.clone(),
+                    parameters: parameters
+                        .iter()
+                        .map(|(_, parameter)| {
+                            (parameter.name.clone(), parameter.expression.clone())
+                        })
+                        .collect(),
+                    properties: native_scope_properties(scope, native_scope),
+                }),
                 None => {
                     if let Some(primitive) = scope.solid_primitive.as_ref() {
                         let operation = |operation| match operation {
@@ -1846,6 +1864,120 @@ fn project_base_flange(
         profile: ProfileRef::Sketch(neutral_sketch_id(placement)),
         thickness: Length(operation.thickness * 10.0),
         side: SheetMetalThicknessSide::Forward,
+    })
+}
+
+/// Project a sheet-metal `EdgeFlange` scope onto its neutral operation.
+///
+/// The scope's typed operation supplies the bend position, the height datum and
+/// the inside bend radius directly. The height, the angle and the width come
+/// from the parameters the scope's owner records name, so a scope whose owners
+/// do not resolve to one parameter each keeps its native form instead of
+/// reporting a partial operation.
+pub(crate) fn project_edge_flange(
+    scope: &DesignParameterScope,
+    owners: &[crate::records::DesignParameterOwner],
+    parameters: &[DesignParameter],
+    groups: &[DesignConstructionOperandGroup],
+    edge_operands: &[DesignEdgeOperand],
+    edge_identity_operands: &[DesignEdgeIdentityOperand],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use crate::records::{DesignBendPosition, DesignEdgeWidthMode, DesignSheetMetalHeightDatum};
+    use cadmpeg_ir::features::{
+        FeatureDefinition, Length, SheetMetalBendPosition, SheetMetalFlangeWidth,
+        SheetMetalHeightDatum,
+    };
+
+    let operation = scope.edge_flange_operation.as_ref()?;
+    let stream = native_stream(&scope.id)?;
+    let parameter = |owner_record_index, source_kind: &str| {
+        let mut matching = owners.iter().filter(|owner| {
+            native_stream(&owner.id) == Some(stream)
+                && owner.scope_record_index == scope.record_index
+                && owner.record_index == owner_record_index
+        });
+        let owner = matching.next()?;
+        if matching.next().is_some() {
+            return None;
+        }
+        parameters.iter().find(|parameter| {
+            native_stream(&parameter.id) == Some(stream)
+                && parameter.record_index == owner.parameter_record_index
+                && parameter.source_kind == source_kind
+        })
+    };
+
+    let height = design_length(parameter(
+        operation.height_owner_record_index,
+        "FlangeHeight",
+    )?)?;
+    let angle = design_angle(parameter(
+        operation.angle_owner_record_index,
+        "FlangeAngle",
+    )?)?;
+
+    // The width owners are ordered, and their parameter kinds name the mode
+    // independently of the owner count, so both must agree.
+    let width = match (
+        operation.edge_width_mode(),
+        operation.width_distance_owner_record_indices.as_slice(),
+    ) {
+        (DesignEdgeWidthMode::FullEdge, []) => SheetMetalFlangeWidth::FullEdge,
+        (DesignEdgeWidthMode::Symmetric, [owner]) => SheetMetalFlangeWidth::Symmetric {
+            width: design_length(parameter(*owner, "EdgeWidth")?)?,
+        },
+        (DesignEdgeWidthMode::TwoSides, [first, second]) => SheetMetalFlangeWidth::TwoSides {
+            first: design_length(parameter(*first, "EdgeWidth_1")?)?,
+            second: design_length(parameter(*second, "EdgeWidth_2")?)?,
+        },
+        _ => return None,
+    };
+
+    let height_datum = match operation.height_datum {
+        DesignSheetMetalHeightDatum::InnerFaces => SheetMetalHeightDatum::InnerFaces,
+        DesignSheetMetalHeightDatum::OuterFaces => SheetMetalHeightDatum::OuterFaces,
+        DesignSheetMetalHeightDatum::Unknown(_) => return None,
+    };
+    let bend_position = match operation.bend_position {
+        DesignBendPosition::Outside => SheetMetalBendPosition::Outside,
+        DesignBendPosition::Inside => SheetMetalBendPosition::Inside,
+        DesignBendPosition::Adjacent => SheetMetalBendPosition::Adjacent,
+        DesignBendPosition::TangentToSide => SheetMetalBendPosition::TangentToSide,
+        DesignBendPosition::Unknown(_) => return None,
+    };
+
+    // The role-`0x08` group carries the selected edges. The aggregate role-`0x43`
+    // group repeats them, so it contributes no separate selection.
+    let [edge_group_record_index] = operation.edge_group_record_indices.as_slice() else {
+        return None;
+    };
+    let mut matching = groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream)
+            && group.scope_record_index == scope.record_index
+            && group.record_index == *edge_group_record_index
+    });
+    let edge_group = matching.next()?;
+    if matching.next().is_some() || edge_group.role != 0x0000_0008_0000_0000 {
+        return None;
+    }
+    let edges = crate::design::edge_resolve::resolved_edge_group(
+        edge_group,
+        groups,
+        edge_operands,
+        edge_identity_operands,
+        scope.previous_history_state_id,
+        &neutral_feature_id(scope),
+        None,
+    );
+
+    Some(FeatureDefinition::SheetMetalEdgeFlange {
+        edges,
+        height,
+        angle,
+        height_datum,
+        bend_position,
+        width,
+        bend_radius: Length(operation.bend_radius * 10.0),
     })
 }
 

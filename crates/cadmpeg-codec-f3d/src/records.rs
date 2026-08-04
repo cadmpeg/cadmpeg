@@ -2074,6 +2074,95 @@ pub enum DesignEdgeWidthMode {
     TwoSides,
 }
 
+#[cfg(test)]
+impl DesignParameterScope {
+    /// Build a scope carrying only its identity, kind, and record index.
+    ///
+    /// Sheet-metal and other projection tests set the few typed members their
+    /// family reads and leave the rest empty, so a new member does not require
+    /// an edit in every test that constructs a scope.
+    pub(crate) fn empty(id: &str, kind: &str, record_index: u32) -> Self {
+        Self {
+            id: id.to_string(),
+            byte_offset: 0,
+            class_tag: String::new(),
+            record_index,
+            frame_length: 0,
+            kind: kind.to_string(),
+            kind_offset: 0,
+            extrude_prologue: None,
+            coil_operation: None,
+            coil_operation_offset: None,
+            coil_extent: None,
+            coil_extent_offset: None,
+            coil_section: None,
+            coil_section_offset: None,
+            coil_section_placement: None,
+            coil_section_placement_offset: None,
+            coil_clockwise: None,
+            coil_clockwise_offset: None,
+            feature_ordinal: 0,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
+            history_state_id_offset: 0,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: 0,
+            reference_count_offset: 0,
+            reference_members: Vec::new(),
+            reference_member_offsets: Vec::new(),
+            solid_primitive: None,
+            direct_face_operation: None,
+            move_operation: None,
+            scale_operation: None,
+            surface_stitch_operation: None,
+            surface_extend_operation: None,
+            surface_offset_operation: None,
+            ruled_surface_operation: None,
+            base_flange_operation: None,
+            surface_patch_boundaries: Vec::new(),
+            edge_flange_operation: None,
+            hem_operation: None,
+            fixed_extrude_parameters: None,
+            fixed_fillet_parameters: None,
+            fixed_chamfer_parameters: None,
+            path_feature_construction: None,
+            combine_operation: None,
+            thread_construction: None,
+            draft_operation: None,
+            circular_pattern_construction: None,
+            rectangular_pattern_construction: None,
+            assembly_alignment: None,
+            component_insert_construction: None,
+            copy_paste_component_operation: None,
+            mirror_construction: None,
+            copy_paste_bodies_operation: None,
+            base_feature_construction: None,
+            work_plane_transform: None,
+            work_plane_transform_offset: None,
+            work_plane_reference: None,
+            work_plane_reference_offset: None,
+            work_axis_construction: None,
+            joint_origin_transform: None,
+            joint_origin_transform_offset: None,
+            joint_origin_reference: None,
+            joint_origin_reference_offset: None,
+            work_point_position: None,
+            work_point_position_offset: None,
+            unclosed_construction_operand_groups: Vec::new(),
+            work_point_reference_type: None,
+            work_point_input_record_indices: Vec::new(),
+            extrude_profile: None,
+            sweep_profile: None,
+            base_flange_profile: None,
+            entity_id: None,
+            entity_suffix: None,
+            entity_reference_offset: None,
+            paired_class_tag: String::new(),
+            paired_byte_offset: 0,
+        }
+    }
+}
+
 /// Fixed construction carried by a sheet-metal `EdgeFlange` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignEdgeFlangeOperation {

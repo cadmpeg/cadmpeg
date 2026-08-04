@@ -7926,6 +7926,198 @@ fn edge_flange_frame(fixture: &EdgeFlangeFixture) -> EdgeFlangeFrame {
 }
 
 #[test]
+fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
+    use crate::records::{
+        DesignBendPosition, DesignEdgeFlangeOperation, DesignParameterKind, DesignParameterScope,
+        DesignSheetMetalHeightDatum,
+    };
+    use cadmpeg_ir::features::{
+        FeatureDefinition, SheetMetalBendPosition, SheetMetalFlangeWidth, SheetMetalHeightDatum,
+    };
+
+    let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
+    let mut scope = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#900"),
+        "EdgeFlange",
+        382,
+    );
+    scope.reference_members = vec![383, 385, 388, 393, 396, 399, 402, 404, 407, 411];
+    scope.edge_flange_operation = Some(DesignEdgeFlangeOperation {
+        edge_wrapper_record_indices: vec![383],
+        edge_group_record_indices: vec![385],
+        edge_operand_record_indices: vec![388],
+        aggregate_group_record_index: 404,
+        aggregate_operand_record_indices: vec![407],
+        height_owner_record_index: 399,
+        angle_owner_record_index: 402,
+        width_distance_owner_record_indices: vec![393, 396],
+        settings_record_index: 411,
+        bend_radius: 0.25,
+        bend_radius_offset: 156,
+        reference_side_code: 4,
+        height_datum: DesignSheetMetalHeightDatum::InnerFaces,
+        bend_position: DesignBendPosition::Adjacent,
+    });
+
+    let owner =
+        |record_index: u32, parameter_record_index: u32| crate::records::DesignParameterOwner {
+            id: format!("{stream}:design-parameter-owner#{record_index}"),
+            byte_offset: 0,
+            class_tag: "000".into(),
+            record_index,
+            scope_record_index: 382,
+            local_ordinal: 0,
+            evaluated_value: 0.0,
+            evaluated_value_offset: 0,
+            parameter_record_index,
+            owned_ordinal: 0,
+            variant: None,
+            companion_record_index: 0,
+        };
+    let parameter = |record_index: u32, source_kind: &str, unit: &str, evaluated_value: f64| {
+        crate::records::DesignParameter {
+            id: format!("{stream}:design-parameter#{record_index}"),
+            byte_offset: 0,
+            class_tag: "000".into(),
+            record_index,
+            family_discriminator: None,
+            family_discriminator_offset: None,
+            source_ordinal: 0,
+            owner_record_index: None,
+            expression: String::new(),
+            expression_offset: 0,
+            source_kind: source_kind.into(),
+            source_kind_offset: 0,
+            kind: DesignParameterKind::Dimension,
+            unit: Some(unit.into()),
+            unit_offset: None,
+            name: source_kind.into(),
+            name_offset: 0,
+            evaluated_value,
+            evaluated_value_offset: 0,
+        }
+    };
+    let owners = [
+        owner(393, 392),
+        owner(396, 395),
+        owner(399, 398),
+        owner(402, 401),
+    ];
+    // Stored lengths are centimetres and stored angles are radians.
+    let parameters = [
+        parameter(392, "EdgeWidth_1", "mm", 3.0),
+        parameter(395, "EdgeWidth_2", "mm", 1.5),
+        parameter(398, "FlangeHeight", "mm", 2.5),
+        parameter(401, "FlangeAngle", "deg", std::f64::consts::FRAC_PI_2),
+    ];
+    let group = crate::records::DesignConstructionOperandGroup {
+        id: format!("{stream}:design-construction-operand-group#385"),
+        scope_record_index: 382,
+        scope_reference_ordinal: 1,
+        record_index: 385,
+        byte_offset: 0,
+        class_tag: "000".into(),
+        members: vec![388],
+        lost_edge_references: Vec::new(),
+        member_offsets: vec![0],
+        frame: crate::records::DesignConstructionOperandGroupFrame {
+            member_count_offset: 0,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            auxiliary_paths: Vec::new(),
+            trailing_record_indices: Vec::new(),
+            trailing_record_offsets: Vec::new(),
+            trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
+            opaque_index: 0,
+            opaque_index_offset: 0,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 0,
+            variant: false,
+        },
+        role: 0x0000_0008_0000_0000,
+        extrude_role: None,
+        extrude_face_role: None,
+        role_offset: 0,
+        paired_class_tag: "000".into(),
+        paired_byte_offset: 0,
+    };
+
+    let definition = crate::design::feature_project::project_edge_flange(
+        &scope,
+        &owners,
+        &parameters,
+        std::slice::from_ref(&group),
+        &[],
+        &[],
+    )
+    .expect("typed EdgeFlange definition");
+
+    let FeatureDefinition::SheetMetalEdgeFlange {
+        height,
+        angle,
+        height_datum,
+        bend_position,
+        width,
+        bend_radius,
+        ..
+    } = definition
+    else {
+        panic!("expected a sheet-metal edge flange");
+    };
+    assert!((height.0 - 25.0).abs() < 1e-12);
+    assert!((angle.0 - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+    assert_eq!(height_datum, SheetMetalHeightDatum::InnerFaces);
+    assert_eq!(bend_position, SheetMetalBendPosition::Adjacent);
+    assert!((bend_radius.0 - 2.5).abs() < 1e-12);
+    let SheetMetalFlangeWidth::TwoSides { first, second } = width else {
+        panic!("expected a two-sided flange width");
+    };
+    assert!((first.0 - 30.0).abs() < 1e-12);
+    assert!((second.0 - 15.0).abs() < 1e-12);
+}
+
+#[test]
+fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
+    use crate::records::{
+        DesignBendPosition, DesignEdgeFlangeOperation, DesignParameterScope,
+        DesignSheetMetalHeightDatum,
+    };
+
+    let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
+    let mut scope = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#901"),
+        "EdgeFlange",
+        317,
+    );
+    scope.reference_members = vec![318, 320, 323, 328, 331, 334, 336, 339, 343];
+    scope.edge_flange_operation = Some(DesignEdgeFlangeOperation {
+        edge_wrapper_record_indices: vec![318],
+        edge_group_record_indices: vec![320],
+        edge_operand_record_indices: vec![323],
+        aggregate_group_record_index: 336,
+        aggregate_operand_record_indices: vec![339],
+        height_owner_record_index: 331,
+        angle_owner_record_index: 334,
+        width_distance_owner_record_indices: vec![328],
+        settings_record_index: 343,
+        bend_radius: 0.25,
+        bend_radius_offset: 156,
+        reference_side_code: 4,
+        height_datum: DesignSheetMetalHeightDatum::OuterFaces,
+        bend_position: DesignBendPosition::Inside,
+    });
+
+    // The symmetric mode needs one `EdgeWidth` parameter. Without it the scope
+    // has no complete width, so no partial neutral flange is reported.
+    assert!(
+        crate::design::feature_project::project_edge_flange(&scope, &[], &[], &[], &[], &[],)
+            .is_none()
+    );
+}
+
+#[test]
 fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
     fn reference(bytes: &mut [u8], at: usize, record_index: u32) {
         bytes[at] = 1;
