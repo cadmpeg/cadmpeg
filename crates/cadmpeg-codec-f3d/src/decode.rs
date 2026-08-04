@@ -2105,6 +2105,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         apply_sketch_only_classification(
             &mut report,
             scan.breps.len(),
+            container::text_brep_names(&scan).len(),
             native.design_body_bindings.len() + native.design_body_members.len(),
             ir.model.sketch_entities.len() + ir.model.spatial_sketch_entities.len(),
         );
@@ -2299,19 +2300,22 @@ fn apply_mesh_body_classification(report: &mut DecodeReport, scan: &ContainerSca
 /// Reclassify a sketch-only design: a document whose content is sketch curves
 /// declares no body, so it has no B-rep to transfer.
 ///
-/// Three facts must hold together. The container declares no BREP stream, so no
-/// geometry carrier is present to decode. The design segment declares no body,
-/// which separates a design that never had a solid from one whose body exists
-/// and whose carrier is missing — that second case is a real geometry loss and
-/// keeps its blocking notes. Sketch entities reached the IR, so the content the
-/// document does carry was transferred.
+/// Four facts must hold together. The container declares no BREP stream in
+/// either encoding, so no geometry carrier is present to decode — a text carrier
+/// counts, because it holds a B-rep this codec does not read, and calling that
+/// document complete would hide the whole of its geometry. The design segment
+/// declares no body, which separates a design that never had a solid from one
+/// whose body exists and whose carrier is missing; that second case is a real
+/// geometry loss and keeps its blocking notes. Sketch entities reached the IR, so
+/// the content the document does carry was transferred.
 pub(crate) fn apply_sketch_only_classification(
     report: &mut DecodeReport,
     brep_streams: usize,
+    text_brep_streams: usize,
     declared_bodies: usize,
     sketch_entities: usize,
 ) {
-    if brep_streams != 0 || declared_bodies != 0 || sketch_entities == 0 {
+    if brep_streams != 0 || text_brep_streams != 0 || declared_bodies != 0 || sketch_entities == 0 {
         return;
     }
     report.losses.retain(|loss| {
@@ -3572,18 +3576,37 @@ fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
 /// State the geometry and topology losses from the container's BREP-stream
 /// state, not from one assumed cause.
 ///
-/// This path runs when no BREP stream reached the model, which happens for
-/// three distinct reasons: the container declares no ASM BREP stream at all, a
-/// selected stream did not decode, or several streams are present with no
-/// Design body map to select between them. Only the middle case is a decode
-/// failure. Naming that cause for the other two overstates the geometry gap and
-/// hides which carrier is actually missing.
+/// This path runs when no BREP stream reached the model, which happens for four
+/// distinct reasons: the container declares no ASM BREP carrier at all, its only
+/// carrier uses the text encoding that this codec does not read, a selected
+/// binary stream did not decode, or several streams are present with no Design
+/// body map to select between them. Only the third case is a decode failure.
+/// Naming that cause for the others overstates the geometry gap and hides which
+/// carrier is actually missing.
 fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
     let brep_count = scan.breps.len();
     let selected = container::select_fallback_brep(scan);
+    let text_breps = container::text_brep_names(scan);
 
     let (geometry, topology) = match (brep_count, selected) {
+        // A text carrier is present but unread, so the container does declare a
+        // carrier. Reporting "no ASM BREP stream" here would name the wrong gap:
+        // the geometry exists in the archive and this codec cannot read its
+        // encoding.
+        (0, _) if !text_breps.is_empty() => (
+            format!(
+                "ASM BREP geometry was not transferred: the document's only geometry carrier is \
+                 the text-encoded ASM stream(s) `{}`, which this codec locates but does not read, \
+                 so no surfaces, curves, or points were produced.",
+                text_breps.join("`, `")
+            ),
+            format!(
+                "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not \
+                 built: the carrier(s) `{}` use the text encoding, which is not read.",
+                text_breps.join("`, `")
+            ),
+        ),
         (0, _) => (
             "ASM BREP geometry was not transferred: the container declares no ASM BREP stream, so \
              no surfaces, curves, or points were produced."
@@ -3647,7 +3670,13 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         losses.push(LossNote {
             code: LossKind::MissingGeometryStream,
             severity: Severity::Error,
-            message: if brep_count == 0 {
+            message: if brep_count == 0 && !text_breps.is_empty() {
+                format!(
+                    "{} ASM BREP stream(s) are present in the text encoding (.sat/.smt), which is \
+                     not read; no binary stream (.smb/.smbh) was found",
+                    text_breps.len()
+                )
+            } else if brep_count == 0 {
                 "no ASM BREP stream (.smb/.smbh) was found in the container".to_string()
             } else {
                 format!(

@@ -142,6 +142,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** The decoder currently attaches the construction-chart pcurve directly to the solved NURBS support. This relation is invalid when the charts differ. We must retain or derive the exact chart map before the neutral support relation can be complete. A fitted map is not sufficient because it does not preserve the stored construction semantics.
 
+### GC-29. Header-line field roles of a text-encoded B-rep stream
+
+**Question.** What are the field roles of the three header lines of a `.sat` or `.smt` B-rep stream?
+
+**Known.** `f3d.md` §1.1.3 gives the record grammar and the terminator. The first header line begins with the save format and continues with three more integers. The second line holds the producing application and version as length-prefixed strings. The third line holds two tolerance values. The binary header's field assignment (§2.2) does not transfer: the text header carries no flags word, so the history-partition bit that the `.smbh` extension mirrors has no counterpart, and how a text stream declares a history partition is unknown. The counts on the first line are not the record count: a stream whose only record is `asmheader` and a stream carrying a full solid both give a small value there.
+
+**Need.** The text encoding is a geometry carrier, so a decoder must frame it before it can read a document whose geometry is in that form. The record grammar is enough to frame the records, but not to establish whether a stream declares construction history, and history determines which records are the solved model. Writing the encoding needs the field roles as well.
+
 ## 2. Container, header, and design records
 
 ### DR-03. ACT table trailing GUID run

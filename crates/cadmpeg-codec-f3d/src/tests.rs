@@ -24580,6 +24580,43 @@ fn f3d_without_brep(doc_type: &str, own_name: &str, targets: &[(&str, &str)]) ->
     zip.finish().unwrap().into_inner()
 }
 
+/// A minimal ASM text stream: the three header lines, an `asmheader`, one `body`
+/// record, and the terminator. Written from the encoding's own structure so the
+/// fixture exercises classification without carrying a decodable payload.
+fn synthetic_asm_text_stream() -> Vec<u8> {
+    let mut text = String::new();
+    text.push_str("21800 0 1 12           \n");
+    text.push_str("16 Autodesk Neutron 23 ASM 218.0.1.400 Unknown 8 Synthetic \n");
+    text.push_str("10 9.999999999999999547e-07 1.000000000000000036e-10 \n");
+    text.push_str("asmheader $-1 -1 @11 218.0.1.400 #\n");
+    text.push_str("body $-1 -1 $-1 $-1 $-1 $-1 #\n");
+    text.push_str("End-of-ASM-data\n");
+    text.into_bytes()
+}
+
+/// A BREP-less `.f3d` whose `Breps.BlobParts` holds text-encoded ASM members
+/// only. This is the shape of an early-generation archive: a geometry carrier is
+/// present, and its encoding is one this codec does not read.
+fn f3d_with_text_brep(members: &[&str]) -> Vec<u8> {
+    let base = f3d_without_brep("part-design", "part.f3d", &[]);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let mut source = zip::ZipArchive::new(Cursor::new(base)).unwrap();
+    for i in 0..source.len() {
+        let mut entry = source.by_index(i).unwrap();
+        let name = entry.name().to_owned();
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
+        zip.start_file(name, stored).unwrap();
+        zip.write_all(&bytes).unwrap();
+    }
+    for member in members {
+        zip.start_file(*member, stored).unwrap();
+        zip.write_all(&synthetic_asm_text_stream()).unwrap();
+    }
+    zip.finish().unwrap().into_inner()
+}
+
 /// Wrap members into a `.f3z` archive with `Manifest.json` naming the root.
 fn f3z_archive(root_name: &str, members: &[(&str, &[u8])]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -24701,6 +24738,52 @@ fn brep_less_part_reports_an_absent_stream_not_a_failed_decode() {
             .any(|note| note.starts_with("container-level inspection only")),
         "full decode must not carry container-only advice: {:?}",
         decoded.report.notes
+    );
+}
+
+/// A document whose only geometry carrier uses the text encoding does declare a
+/// carrier. Reporting an absent stream names the wrong gap: the geometry is in
+/// the archive and its encoding is not read. The two statements send a reader to
+/// different places, so the report must separate them.
+#[test]
+fn a_text_only_carrier_is_reported_as_unread_not_as_absent() {
+    let archive = f3d_with_text_brep(&[
+        "Fusion[Active]/Breps.BlobParts/BREP0.sat",
+        "Fusion[Active]/Breps.BlobParts/BREP1.sat",
+    ]);
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    let message = |code: LossCode| {
+        let loss = decoded
+            .report
+            .losses
+            .iter()
+            .find(|loss| loss.code == code)
+            .unwrap_or_else(|| panic!("{code:?} not reported: {:?}", decoded.report.losses));
+        loss.message.clone()
+    };
+
+    let geometry = message(LossCode::GeometryNotTransferred);
+    assert!(
+        geometry.contains("text-encoded ASM stream(s)") && geometry.contains("BREP0.sat"),
+        "geometry loss must name the unread text carrier: {geometry}"
+    );
+    assert!(
+        !geometry.contains("declares no ASM BREP stream"),
+        "a text carrier is a declared carrier: {geometry}"
+    );
+
+    let topology = message(LossCode::TopologyNotTransferred);
+    assert!(
+        topology.contains("text encoding"),
+        "topology loss must state the unread encoding: {topology}"
+    );
+
+    assert_eq!(
+        message(LossCode::MissingGeometryStream),
+        "2 ASM BREP stream(s) are present in the text encoding (.sat/.smt), which is not read; no \
+         binary stream (.smb/.smbh) was found"
     );
 }
 
@@ -25129,7 +25212,7 @@ fn brep_less_geometry_report() -> cadmpeg_ir::report::DecodeReport {
 #[test]
 fn sketch_only_design_is_not_a_geometry_loss() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_sketch_only_classification(&mut report, 0, 0, 13);
+    crate::decode::apply_sketch_only_classification(&mut report, 0, 0, 0, 13);
     assert!(report.geometry_transferred);
     assert!(
         report
@@ -25150,17 +25233,18 @@ fn sketch_only_design_is_not_a_geometry_loss() {
 #[test]
 fn a_declared_body_without_a_brep_stream_keeps_its_geometry_losses() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_sketch_only_classification(&mut report, 0, 1, 13);
+    crate::decode::apply_sketch_only_classification(&mut report, 0, 0, 1, 13);
     assert!(!report.geometry_transferred);
     assert_eq!(report.losses.len(), 3);
 }
 
 /// A document with no sketch entities transferred nothing, so nothing settles
-/// the loss. Fusion drops DXF text on import, which produces exactly this.
+/// the loss. An imported drawing whose only entity the importer did not author
+/// produces exactly this: a document with no body and no sketch.
 #[test]
 fn a_document_without_sketch_entities_keeps_its_geometry_losses() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_sketch_only_classification(&mut report, 0, 0, 0);
+    crate::decode::apply_sketch_only_classification(&mut report, 0, 0, 0, 0);
     assert!(!report.geometry_transferred);
     assert_eq!(report.losses.len(), 3);
 }
@@ -25170,9 +25254,48 @@ fn a_document_without_sketch_entities_keeps_its_geometry_losses() {
 #[test]
 fn a_present_brep_stream_is_never_reclassified_as_sketch_only() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_sketch_only_classification(&mut report, 1, 0, 13);
+    crate::decode::apply_sketch_only_classification(&mut report, 1, 0, 0, 13);
     assert!(!report.geometry_transferred);
     assert_eq!(report.losses.len(), 3);
+}
+
+/// A text-encoded carrier holds a B-rep this codec does not read. A document
+/// that has one is not sketch-only however many sketches it also carries:
+/// calling it complete would hide the whole of its solid geometry.
+#[test]
+fn a_text_brep_carrier_is_never_reclassified_as_sketch_only() {
+    let mut report = brep_less_geometry_report();
+    crate::decode::apply_sketch_only_classification(&mut report, 0, 2, 0, 13);
+    assert!(!report.geometry_transferred);
+    assert_eq!(report.losses.len(), 3);
+}
+
+/// The text encoding of an ASM stream carries the same entity model as the
+/// binary one, so its archive members are geometry carriers and must classify as
+/// such. Leaving them unclassified is what let the report state that a document
+/// holding one declares no carrier at all.
+#[test]
+fn text_encoded_asm_members_classify_as_geometry_carriers() {
+    for name in [
+        "Fusion[Active]/Breps.BlobParts/BREP0.sat",
+        "Fusion[Active]/Breps.BlobParts/BREP1.SAT",
+        "probe/body.smt",
+    ] {
+        assert_eq!(
+            crate::container::classify(name),
+            crate::container::role::BREP_TEXT,
+            "{name} must classify as a text-encoded BREP carrier"
+        );
+    }
+    // The binary roles keep their own labels: the new arm must not capture them.
+    assert_eq!(
+        crate::container::classify("a/b.smb"),
+        crate::container::role::BREP_SMB
+    );
+    assert_eq!(
+        crate::container::classify("a/b.smbh"),
+        crate::container::role::BREP_SMBH
+    );
 }
 
 /// A report carrying the unconditional appearance loss that

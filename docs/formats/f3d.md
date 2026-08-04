@@ -14,7 +14,8 @@ Record offsets, field widths, and endianness are also maintained as a machine-ch
 
 | Path pattern                                                                     | Role                                                                                                                                                                  |
 | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `<folder>/Breps.BlobParts/*.smb`, `*.smbh`                                       | ASM/ACIS exact B-rep streams                                                                                                                                          |
+| `<folder>/Breps.BlobParts/*.smb`, `*.smbh`                                       | ASM/ACIS exact B-rep streams, binary encoding (§2)                                                                                                                    |
+| `<folder>/Breps.BlobParts/*.sat`, `*.smt`                                        | ASM/ACIS exact B-rep streams, text encoding (§1.1.3)                                                                                                                  |
 | `<folder>/ProteinAssets.BlobParts/*.protein`                                     | nested ZIP archives with appearance/material assets                                                                                                                   |
 | `<folder>/Design1/BulkStream.dat` (or `FusionDesignSegmentType1/BulkStream.dat`) | design recipes, material assignments, body map                                                                                                                        |
 | `<folder>/*/MetaStream.dat`                                                      | per-segment object tables (GUID → entity-type registry)                                                                                                               |
@@ -95,6 +96,12 @@ The element code selects the stored element:
 A field-4 channel that declares no index stream stores exactly one value per vertex, so the value stream holds the vertex count times the element width. A field-4 channel that declares an index stream stores its values deduplicated per vertex, and the index stream holds exactly the element count less the vertex count values. Roles 3 and 4 mark the texture-coordinate and colour channels.
 
 A registry field-8 entry pairs a property key in field 1 with either a text value in field 3 or a stream name in field 4. Key `fusion_uuid` carries the ASCII GUID the container's Design-segment GUID record repeats. Key `attname.amt.autodesk` names the stream holding an XML `<Attrib>` document, whose `TriName` element is `color_tt` followed by the resource GUID of a colour channel and whose `AmtName` element is the authored attribute name.
+
+### 1.1.3 Text encoding of a B-rep stream
+
+A `Breps.BlobParts` member with the `.sat` or `.smt` extension carries the same entity model as a binary `.smb` or `.smbh` stream (§2) in a line-oriented ASCII encoding. Three header lines precede the records. The first line begins with the save format, in the same numbering the binary header's save-format field uses. The second line holds the producing application and version, and the third holds two tolerance values. Each following line is one record: a record name, then its fields, then the record terminator `#`. A field of the form `$N` is a reference to the record at index `N`, and `$-1` is a null reference. A field of the form `@N` prefixes a string of `N` bytes. Record indices count records in file order from zero, so the `asmheader` record is index 0, the same rule the binary encoding's `RecordTable` uses. The line `End-of-ASM-data` ends the stream.
+
+The two encodings are alternatives, not layers: a document's geometry is in one of them. See GC-29 for the header-line field roles.
 
 ### 1.2 Stored property and configuration entries
 
