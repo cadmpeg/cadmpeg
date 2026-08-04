@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "4",
+    "ir_version": "5",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -25,7 +25,6 @@
         }
       ],
       "coedges": [],
-      "components": [],
       "configurations": [],
       "curves": [
         {
@@ -317,8 +316,7 @@
         }
       ],
       "procedural_surfaces": [],
-      "product_occurrences": [],
-      "products": [],
+      "product_definitions": [],
       "regions": [
         {
           "body": "rhino:object:body#record-000000-offset-177",
@@ -497,45 +495,38 @@
     "geometry_transferred": true,
     "losses": [
       {
-        "category": "geometry",
         "code": "object_records_untransferred",
-        "message": "decoded 6/6 Rhino object records",
+        "message": "object.record-census: decoded 6/6 Rhino object records",
         "severity": "info"
       },
       {
-        "category": "other",
         "code": "decode_diagnostic",
-        "message": "object at 177 has nil object UUID",
+        "message": "container.scan-diagnostic: object at 177 has nil object UUID",
         "severity": "warning"
       },
       {
-        "category": "other",
         "code": "decode_diagnostic",
-        "message": "object at 314 has nil object UUID",
+        "message": "container.scan-diagnostic: object at 314 has nil object UUID",
         "severity": "warning"
       },
       {
-        "category": "other",
         "code": "decode_diagnostic",
-        "message": "object at 659 has nil object UUID",
+        "message": "container.scan-diagnostic: object at 659 has nil object UUID",
         "severity": "warning"
       },
       {
-        "category": "other",
         "code": "decode_diagnostic",
-        "message": "object at 840 has nil object UUID",
+        "message": "container.scan-diagnostic: object at 840 has nil object UUID",
         "severity": "warning"
       },
       {
-        "category": "other",
         "code": "decode_diagnostic",
-        "message": "object at 1197 has nil object UUID",
+        "message": "container.scan-diagnostic: object at 1197 has nil object UUID",
         "severity": "warning"
       },
       {
-        "category": "other",
         "code": "decode_diagnostic",
-        "message": "object at 1418 has nil object UUID",
+        "message": "container.scan-diagnostic: object at 1418 has nil object UUID",
         "severity": "warning"
       }
     ],

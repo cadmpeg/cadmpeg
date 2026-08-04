@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "4",
+    "ir_version": "5",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -60,7 +60,6 @@
           "sense": "forward"
         }
       ],
-      "components": [],
       "configurations": [],
       "curves": [
         {
@@ -357,8 +356,7 @@
       "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_occurrences": [],
-      "products": [],
+      "product_definitions": [],
       "regions": [
         {
           "body": "rhino:object:body#record-000000-offset-177",
@@ -524,15 +522,13 @@
     "geometry_transferred": true,
     "losses": [
       {
-        "category": "geometry",
         "code": "object_records_untransferred",
-        "message": "decoded 1/1 Rhino object records",
+        "message": "object.record-census: decoded 1/1 Rhino object records",
         "severity": "info"
       },
       {
-        "category": "other",
         "code": "decode_diagnostic",
-        "message": "object at 177 has nil object UUID",
+        "message": "container.scan-diagnostic: object at 177 has nil object UUID",
         "severity": "warning"
       }
     ],

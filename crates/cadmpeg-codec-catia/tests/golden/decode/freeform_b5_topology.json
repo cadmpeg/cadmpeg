@@ -1,8 +1,99 @@
 {
   "ir": {
-    "ir_version": "4",
+    "ir_version": "5",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {
+      "catia": {
+        "arenas": {
+          "alias_rows": [],
+          "catalog_entries": [],
+          "catalogs": [],
+          "configuration_row_chains": [],
+          "consolidated_circles": [],
+          "consolidated_class61_records": [],
+          "consolidated_cone_faces": [],
+          "consolidated_cones": [],
+          "consolidated_cylinders": [],
+          "consolidated_edge_nodes": [],
+          "consolidated_edge_runs": [],
+          "consolidated_embedded_cylinders": [],
+          "consolidated_groups": [],
+          "consolidated_line_profiles": [],
+          "consolidated_owner_packets": [],
+          "consolidated_parameter_points": [],
+          "consolidated_pcurves": [],
+          "consolidated_reference_lists": [],
+          "consolidated_revolutions": [],
+          "consolidated_spheres": [],
+          "consolidated_tori": [],
+          "consolidated_vertex_identities": [],
+          "design_objects": [],
+          "entity_records": [],
+          "external_references": [],
+          "finjpl_segments": [],
+          "legacy_entity_runs": [],
+          "object_graph_records": [],
+          "object_graphs": [],
+          "preview_images": [],
+          "reference_signature_cohorts": [],
+          "unknowns": [
+            {
+              "id": "catia:payload:unknown#brep-stream"
+            }
+          ],
+          "value_blocks": [],
+          "value_schema_selections": [],
+          "zero_entity_edge_strides": [],
+          "zero_entity_endpoint_locus_candidates": [],
+          "zero_entity_endpoint_pair_candidates": [],
+          "zero_entity_oriented_use_pairs": [],
+          "zero_entity_ownership_roots": [],
+          "zero_entity_records": [],
+          "zero_entity_support_runs": [],
+          "zero_entity_vertex_incidences": []
+        },
+        "version": 268
+      }
+    },
     "source": {
-      "format": "catia",
       "attributes": {
         "brep_stream_len": "416",
         "brep_stream_sha256": "98a1afc06fb070d7e0f51e857e79d7a100b6e564321d2216831e321856e77386",
@@ -16,585 +107,336 @@
         "stream_count": "2",
         "variant": "float_packed_inner_no_fbb",
         "vertex_records": "3"
-      }
+      },
+      "format": "catia"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
     },
     "units": {
       "length": "millimeter"
-    },
-    "tolerances": {
-      "linear": 1e-6,
-      "angular": 1e-10
-    },
-    "model": {
-      "bodies": [
-        {
-          "id": "catia:b5:body#0",
-          "kind": "sheet",
-          "regions": [
-            "catia:b5:region#0"
-          ]
-        }
-      ],
-      "regions": [
-        {
-          "id": "catia:b5:region#0",
-          "body": "catia:b5:body#0",
-          "shells": [
-            "catia:b5:shell#0"
-          ]
-        }
-      ],
-      "shells": [
-        {
-          "id": "catia:b5:shell#0",
-          "region": "catia:b5:region#0",
-          "faces": [
-            "catia:b5:face#500"
-          ]
-        }
-      ],
-      "faces": [
-        {
-          "id": "catia:b5:face#500",
-          "shell": "catia:b5:shell#0",
-          "surface": "catia:b5:surface#100",
-          "sense": "forward",
-          "loops": [
-            "catia:b5:loop#400"
-          ]
-        }
-      ],
-      "loops": [
-        {
-          "id": "catia:b5:loop#400",
-          "face": "catia:b5:face#500",
-          "boundary_role": "unspecified",
-          "coedges": [
-            "catia:b5:coedge#400-0",
-            "catia:b5:coedge#400-1",
-            "catia:b5:coedge#400-2"
-          ]
-        }
-      ],
-      "coedges": [
-        {
-          "id": "catia:b5:coedge#400-0",
-          "owner_loop": "catia:b5:loop#400",
-          "edge": "catia:b5:edge#300",
-          "next": "catia:b5:coedge#400-1",
-          "previous": "catia:b5:coedge#400-2",
-          "radial_next": "catia:b5:coedge#400-0",
-          "sense": "forward",
-          "pcurves": [
-            {
-              "pcurve": "catia:b5:pcurve#200"
-            }
-          ]
-        },
-        {
-          "id": "catia:b5:coedge#400-1",
-          "owner_loop": "catia:b5:loop#400",
-          "edge": "catia:b5:edge#301",
-          "next": "catia:b5:coedge#400-2",
-          "previous": "catia:b5:coedge#400-0",
-          "radial_next": "catia:b5:coedge#400-1",
-          "sense": "forward",
-          "pcurves": [
-            {
-              "pcurve": "catia:b5:pcurve#201"
-            }
-          ]
-        },
-        {
-          "id": "catia:b5:coedge#400-2",
-          "owner_loop": "catia:b5:loop#400",
-          "edge": "catia:b5:edge#302",
-          "next": "catia:b5:coedge#400-0",
-          "previous": "catia:b5:coedge#400-1",
-          "radial_next": "catia:b5:coedge#400-2",
-          "sense": "forward",
-          "pcurves": [
-            {
-              "pcurve": "catia:b5:pcurve#202"
-            }
-          ]
-        }
-      ],
-      "edges": [
-        {
-          "id": "catia:b5:edge#300",
-          "curve": "catia:b5:curve#300",
-          "start": "catia:b5:vertex#0",
-          "end": "catia:b5:vertex#1"
-        },
-        {
-          "id": "catia:b5:edge#301",
-          "curve": "catia:b5:curve#301",
-          "start": "catia:b5:vertex#1",
-          "end": "catia:b5:vertex#2"
-        },
-        {
-          "id": "catia:b5:edge#302",
-          "curve": "catia:b5:curve#302",
-          "start": "catia:b5:vertex#2",
-          "end": "catia:b5:vertex#0"
-        }
-      ],
-      "vertices": [
-        {
-          "id": "catia:b5:vertex#0",
-          "point": "catia:b5:point#0"
-        },
-        {
-          "id": "catia:b5:vertex#1",
-          "point": "catia:b5:point#1"
-        },
-        {
-          "id": "catia:b5:vertex#2",
-          "point": "catia:b5:point#2"
-        }
-      ],
-      "points": [
-        {
-          "id": "catia:b5:point#0",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "catia:b5:point#1",
-          "position": {
-            "x": 1.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "catia:b5:point#2",
-          "position": {
-            "x": 0.0,
-            "y": 1.0,
-            "z": 0.0
-          }
-        }
-      ],
-      "surfaces": [
-        {
-          "id": "catia:b5:surface#100",
-          "geometry": {
-            "kind": "plane",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
-          },
-          "source_object": {
-            "format": "catia",
-            "object_id": "cgm-surface:000064"
-          }
-        }
-      ],
-      "curves": [
-        {
-          "id": "catia:b5:curve#300",
-          "geometry": {
-            "kind": "nurbs",
-            "degree": 1,
-            "knots": [
-              0.0,
-              0.0,
-              1.0,
-              1.0
-            ],
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            ],
-            "periodic": false
-          },
-          "source_object": {
-            "format": "catia",
-            "object_id": "cgm-edge:00012c"
-          }
-        },
-        {
-          "id": "catia:b5:curve#301",
-          "geometry": {
-            "kind": "nurbs",
-            "degree": 1,
-            "knots": [
-              0.0,
-              0.0,
-              1.0,
-              1.0
-            ],
-            "control_points": [
-              {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 0.0,
-                "y": 1.0,
-                "z": 0.0
-              }
-            ],
-            "periodic": false
-          },
-          "source_object": {
-            "format": "catia",
-            "object_id": "cgm-edge:00012d"
-          }
-        },
-        {
-          "id": "catia:b5:curve#302",
-          "geometry": {
-            "kind": "nurbs",
-            "degree": 1,
-            "knots": [
-              0.0,
-              0.0,
-              1.0,
-              1.0
-            ],
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 1.0,
-                "z": 0.0
-              },
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            ],
-            "periodic": false
-          },
-          "source_object": {
-            "format": "catia",
-            "object_id": "cgm-edge:00012e"
-          }
-        }
-      ],
-      "subds": [],
-      "pcurves": [
-        {
-          "id": "catia:b5:pcurve#200",
-          "geometry": {
-            "kind": "nurbs",
-            "degree": 1,
-            "knots": [
-              0.0,
-              0.0,
-              1.0,
-              1.0
-            ],
-            "control_points": [
-              {
-                "u": 0.0,
-                "v": 0.0
-              },
-              {
-                "u": 1.0,
-                "v": 0.0
-              }
-            ],
-            "periodic": false
-          },
-          "parameter_range": [
-            0.0,
-            1.0
-          ]
-        },
-        {
-          "id": "catia:b5:pcurve#201",
-          "geometry": {
-            "kind": "nurbs",
-            "degree": 1,
-            "knots": [
-              0.0,
-              0.0,
-              1.0,
-              1.0
-            ],
-            "control_points": [
-              {
-                "u": 1.0,
-                "v": 0.0
-              },
-              {
-                "u": 0.0,
-                "v": 1.0
-              }
-            ],
-            "periodic": false
-          },
-          "parameter_range": [
-            0.0,
-            1.0
-          ]
-        },
-        {
-          "id": "catia:b5:pcurve#202",
-          "geometry": {
-            "kind": "nurbs",
-            "degree": 1,
-            "knots": [
-              0.0,
-              0.0,
-              1.0,
-              1.0
-            ],
-            "control_points": [
-              {
-                "u": 0.0,
-                "v": 1.0
-              },
-              {
-                "u": 0.0,
-                "v": 0.0
-              }
-            ],
-            "periodic": false
-          },
-          "parameter_range": [
-            0.0,
-            1.0
-          ]
-        }
-      ],
-      "procedural_surfaces": [],
-      "procedural_curves": [
-        {
-          "id": "catia:b5:surface-curve#300",
-          "curve": "catia:b5:curve#300",
-          "definition": {
-            "kind": "surface_curve",
-            "family": "parametric",
-            "context": {
-              "sides": [
-                {
-                  "surface": "catia:b5:surface#100",
-                  "pcurve": {
-                    "kind": "nurbs",
-                    "degree": 1,
-                    "knots": [
-                      0.0,
-                      0.0,
-                      1.0,
-                      1.0
-                    ],
-                    "control_points": [
-                      {
-                        "u": 0.0,
-                        "v": 0.0
-                      },
-                      {
-                        "u": 1.0,
-                        "v": 0.0
-                      }
-                    ],
-                    "periodic": false
-                  }
-                },
-                {}
-              ],
-              "parameter_range": [
-                0.0,
-                1.0
-              ],
-              "discontinuities": [
-                [],
-                [],
-                []
-              ]
-            }
-          }
-        },
-        {
-          "id": "catia:b5:surface-curve#301",
-          "curve": "catia:b5:curve#301",
-          "definition": {
-            "kind": "surface_curve",
-            "family": "parametric",
-            "context": {
-              "sides": [
-                {
-                  "surface": "catia:b5:surface#100",
-                  "pcurve": {
-                    "kind": "nurbs",
-                    "degree": 1,
-                    "knots": [
-                      0.0,
-                      0.0,
-                      1.0,
-                      1.0
-                    ],
-                    "control_points": [
-                      {
-                        "u": 1.0,
-                        "v": 0.0
-                      },
-                      {
-                        "u": 0.0,
-                        "v": 1.0
-                      }
-                    ],
-                    "periodic": false
-                  }
-                },
-                {}
-              ],
-              "parameter_range": [
-                0.0,
-                1.0
-              ],
-              "discontinuities": [
-                [],
-                [],
-                []
-              ]
-            }
-          }
-        },
-        {
-          "id": "catia:b5:surface-curve#302",
-          "curve": "catia:b5:curve#302",
-          "definition": {
-            "kind": "surface_curve",
-            "family": "parametric",
-            "context": {
-              "sides": [
-                {
-                  "surface": "catia:b5:surface#100",
-                  "pcurve": {
-                    "kind": "nurbs",
-                    "degree": 1,
-                    "knots": [
-                      0.0,
-                      0.0,
-                      1.0,
-                      1.0
-                    ],
-                    "control_points": [
-                      {
-                        "u": 0.0,
-                        "v": 1.0
-                      },
-                      {
-                        "u": 0.0,
-                        "v": 0.0
-                      }
-                    ],
-                    "periodic": false
-                  }
-                },
-                {}
-              ],
-              "parameter_range": [
-                0.0,
-                1.0
-              ],
-              "discontinuities": [
-                [],
-                [],
-                []
-              ]
-            }
-          }
-        }
-      ],
-      "features": [],
-      "configurations": [],
-      "parameters": [],
-      "sketches": [],
-      "sketch_entities": [],
-      "sketch_constraints": [],
-      "spatial_sketches": [],
-      "spatial_sketch_entities": [],
-      "spreadsheets": [],
-      "components": [],
-      "occurrences": [],
-      "assembly_joints": [],
-      "drawings": [],
-      "semantic_annotations": [],
-      "presentation_documents": [],
-      "view_presentations": [],
-      "tessellations": [],
-      "appearances": [],
-      "appearance_bindings": [],
-      "attributes": [],
-      "products": [],
-      "product_occurrences": [],
-      "pmi": [],
-      "presentation_layers": []
-    },
-    "native": {
-      "catia": {
-        "version": 71,
-        "arenas": {
-          "alias_rows": [],
-          "catalog_entries": [],
-          "catalogs": [],
-          "consolidated_edge_nodes": [],
-          "consolidated_edge_runs": [],
-          "consolidated_pcurves": [],
-          "consolidated_vertex_identities": [],
-          "design_objects": [],
-          "external_references": [],
-          "finjpl_segments": [],
-          "object_graph_records": [],
-          "object_graphs": [],
-          "preview_images": [],
-          "unknowns": [
-            {
-              "id": "catia:payload:unknown#freeform",
-              "links": [
-                "catia:b5:surface#100",
-                "catia:b5:curve#300",
-                "catia:b5:curve#301",
-                "catia:b5:curve#302"
-              ]
-            }
-          ],
-          "value_blocks": []
-        }
-      }
     }
   },
   "report": {
-    "format": "catia",
     "container_only": false,
-    "geometry_transferred": true,
+    "coverage": {
+      "ambiguous_formula_parameter_dependency_count": 0,
+      "ambiguous_relation_program_parameter_dependency_count": 0,
+      "classified_design_object_count": 0,
+      "decoded_appearance_packet_count": 0,
+      "decoded_atom_entity_suffix_value_count": 0,
+      "decoded_boolean_parser_version_relation_expression_count": 0,
+      "decoded_classified_configuration_entity_reference_count": 0,
+      "decoded_classified_configuration_row_chain_terminal_count": 0,
+      "decoded_classified_constraint_range_source_entity_count": 0,
+      "decoded_classified_formula_expression_entity_count": 0,
+      "decoded_classified_formula_output_entity_count": 0,
+      "decoded_classified_formula_parameter_dependency_candidate_count": 0,
+      "decoded_classified_reference_signature_entity_count": 0,
+      "decoded_classified_relation_program_entity_count": 0,
+      "decoded_classified_relation_program_reference_incidence_count": 0,
+      "decoded_classified_relation_program_repeated_entity_count": 0,
+      "decoded_compact_entity_value_packet_count": 0,
+      "decoded_complete_configuration_row_chain_count": 0,
+      "decoded_complex_constraint_range_count": 0,
+      "decoded_configuration_record_count": 0,
+      "decoded_configuration_row_intervening_configuration_count": 0,
+      "decoded_configuration_row_intervening_entity_count": 0,
+      "decoded_configuration_row_link_count": 0,
+      "decoded_configuration_row_source_interval_chain_count": 0,
+      "decoded_configuration_schema_reference_count": 0,
+      "decoded_consolidated_circle_count": 0,
+      "decoded_consolidated_class61_record_count": 0,
+      "decoded_consolidated_cone_count": 0,
+      "decoded_consolidated_cone_face_count": 0,
+      "decoded_consolidated_cone_face_parameter_point_count": 0,
+      "decoded_consolidated_cylinder_count": 0,
+      "decoded_consolidated_edge_run_count": 0,
+      "decoded_consolidated_edge_run_endpoint_locus_count": 0,
+      "decoded_consolidated_edge_run_shared_locus_count": 0,
+      "decoded_consolidated_edge_run_support_binding_count": 0,
+      "decoded_consolidated_group_count": 0,
+      "decoded_consolidated_line_profile_count": 0,
+      "decoded_consolidated_parameter_point_count": 0,
+      "decoded_consolidated_pcurve_count": 0,
+      "decoded_consolidated_reference_list_count": 0,
+      "decoded_consolidated_revolution_count": 0,
+      "decoded_consolidated_sphere_count": 0,
+      "decoded_consolidated_torus_count": 0,
+      "decoded_constraint_range_count": 0,
+      "decoded_constraint_range_incoming_payload_reference_count": 0,
+      "decoded_constraint_range_incoming_reference_count": 0,
+      "decoded_constraint_range_incoming_storage_reference_count": 0,
+      "decoded_control_e8_entity_suffix_value_count": 0,
+      "decoded_control_e9_entity_suffix_value_count": 0,
+      "decoded_control_entity_suffix_value_count": 0,
+      "decoded_definition_chain_atom_count": 0,
+      "decoded_definition_chain_control_count": 0,
+      "decoded_definition_chain_evaluation_count": 0,
+      "decoded_definition_chain_schema_selector_count": 0,
+      "decoded_definition_chain_separator_count": 0,
+      "decoded_definition_chain_value_count": 0,
+      "decoded_definition_schema_selection_count": 0,
+      "decoded_definition_value_count": 0,
+      "decoded_design_field_count": 0,
+      "decoded_design_object_count": 0,
+      "decoded_design_object_owner_link_count": 0,
+      "decoded_design_object_relation_count": 0,
+      "decoded_design_parallel_reference_cell_count": 0,
+      "decoded_design_parallel_reference_classified_cell_count": 0,
+      "decoded_design_parallel_reference_classified_column_count": 0,
+      "decoded_design_parallel_reference_column_count": 0,
+      "decoded_design_parallel_reference_matched_row_count": 0,
+      "decoded_design_parallel_reference_null_cell_count": 0,
+      "decoded_design_parallel_reference_resolved_cell_count": 0,
+      "decoded_design_parallel_reference_row_count": 0,
+      "decoded_design_parallel_reference_table_count": 0,
+      "decoded_design_reflexive_field_relation_count": 0,
+      "decoded_design_same_object_relation_count": 0,
+      "decoded_design_unowned_field_relation_count": 0,
+      "decoded_dimension_constraint_range_count": 0,
+      "decoded_entity_value_field_count": 0,
+      "decoded_entity_value_schema_selection_count": 0,
+      "decoded_escaped_word_entity_suffix_count": 0,
+      "decoded_evaluated_constraint_range_count": 0,
+      "decoded_evaluated_definition_chain_count": 0,
+      "decoded_fixed_fe_f6_entity_suffix_count": 0,
+      "decoded_formula_parameter_dependency_candidate_count": 0,
+      "decoded_formula_parameter_dependency_count": 0,
+      "decoded_formula_referenced_relation_expression_count": 0,
+      "decoded_formula_relation_count": 0,
+      "decoded_instanced_relation_expression_count": 0,
+      "decoded_layout_entity_value_packet_count": 0,
+      "decoded_lead12_relation_program_instance_count": 0,
+      "decoded_lead12_relation_program_paramout_context_entity_count": 0,
+      "decoded_lead54_relation_program_instance_count": 0,
+      "decoded_legacy_asynchronous_relation_count": 0,
+      "decoded_legacy_directory_bound_schema_program_count": 0,
+      "decoded_legacy_e3_role_tail_text_field_count": 0,
+      "decoded_legacy_entity_identity_count": 0,
+      "decoded_legacy_entity_run_count": 0,
+      "decoded_legacy_evaluated_value_name_count": 0,
+      "decoded_legacy_identity_lead_81_count": 0,
+      "decoded_legacy_identity_lead_82_count": 0,
+      "decoded_legacy_identity_lead_e5_count": 0,
+      "decoded_legacy_identity_lead_fd_count": 0,
+      "decoded_legacy_integer_value_count": 0,
+      "decoded_legacy_literal_type_descriptor_count": 0,
+      "decoded_legacy_named_integer_value_count": 0,
+      "decoded_legacy_named_scalar_value_count": 0,
+      "decoded_legacy_named_string_value_count": 0,
+      "decoded_legacy_parameter_relation_count": 0,
+      "decoded_legacy_relation_count": 0,
+      "decoded_legacy_role_field_binding_count": 0,
+      "decoded_legacy_role_selector_count": 0,
+      "decoded_legacy_role_text_field_count": 0,
+      "decoded_legacy_scalar_value_count": 0,
+      "decoded_legacy_schema_field_count": 0,
+      "decoded_legacy_schema_identifier_count": 0,
+      "decoded_legacy_schema_program_count": 0,
+      "decoded_legacy_selected_role_count": 0,
+      "decoded_legacy_string_value_count": 0,
+      "decoded_legacy_synchronous_relation_count": 0,
+      "decoded_legacy_synchronous_state_count": 0,
+      "decoded_legacy_text_field_count": 0,
+      "decoded_legacy_type_descriptor_count": 0,
+      "decoded_legacy_vendor_footer_schema_program_count": 0,
+      "decoded_multi_member_reference_signature_cohort_count": 0,
+      "decoded_null_configuration_entity_reference_count": 0,
+      "decoded_null_configuration_row_chain_terminal_count": 0,
+      "decoded_null_configuration_row_class_count": 0,
+      "decoded_null_configuration_row_successor_count": 0,
+      "decoded_null_formula_output_count": 0,
+      "decoded_null_lead12_relation_program_context_entity_count": 0,
+      "decoded_null_lead54_relation_program_trailing_entity_count": 0,
+      "decoded_null_object_record_reference_count": 0,
+      "decoded_null_reference_signature_entity_count": 0,
+      "decoded_null_relation_program_instance_count": 0,
+      "decoded_null_relation_program_reference_incidence_count": 0,
+      "decoded_null_relation_program_repeated_reference_count": 0,
+      "decoded_numeric_entity_value_packet_count": 0,
+      "decoded_numeric_entity_value_pair_count": 0,
+      "decoded_object_graph_count": 0,
+      "decoded_object_record_count": 0,
+      "decoded_object_record_reference_count": 0,
+      "decoded_opened_boolean_parser_version_relation_expression_count": 0,
+      "decoded_ordered_configuration_row_link_count": 0,
+      "decoded_other_lead12_relation_program_context_class_count": 0,
+      "decoded_other_relation_program_instance_count": 0,
+      "decoded_owned_definition_value_count": 0,
+      "decoded_paged_atom_state_01_entity_suffix_count": 0,
+      "decoded_parameter_value_count": 0,
+      "decoded_parser_version_relation_expression_count": 0,
+      "decoded_placeholder_state_relation_expression_count": 0,
+      "decoded_program_referenced_relation_expression_count": 0,
+      "decoded_reference_signature_cohort_count": 0,
+      "decoded_reference_signature_cohort_member_count": 0,
+      "decoded_reference_signature_count": 0,
+      "decoded_reference_signature_instruction_count": 0,
+      "decoded_reference_signature_prefix_atom_2_count": 0,
+      "decoded_reference_signature_prefix_atom_35_count": 0,
+      "decoded_reference_signature_token_count": 0,
+      "decoded_referenced_relation_expression_count": 0,
+      "decoded_relation_expression_count": 0,
+      "decoded_relation_expression_program_instance_count": 0,
+      "decoded_relation_program_instance_count": 0,
+      "decoded_relation_program_parameter_dependency_count": 0,
+      "decoded_relation_program_reference_incidence_count": 0,
+      "decoded_repeated_reference_schema_selection_count": 0,
+      "decoded_repeated_reference_suffix_count": 0,
+      "decoded_resolved_configuration_entity_reference_count": 0,
+      "decoded_resolved_configuration_row_chain_terminal_count": 0,
+      "decoded_resolved_configuration_row_class_count": 0,
+      "decoded_resolved_configuration_row_successor_count": 0,
+      "decoded_resolved_formula_output_count": 0,
+      "decoded_resolved_formula_parameter_dependency_count": 0,
+      "decoded_resolved_lead12_relation_program_context_entity_count": 0,
+      "decoded_resolved_lead54_relation_program_trailing_entity_count": 0,
+      "decoded_resolved_object_record_reference_count": 0,
+      "decoded_resolved_reference_signature_entity_count": 0,
+      "decoded_resolved_relation_program_input_count": 0,
+      "decoded_resolved_relation_program_input_instance_count": 0,
+      "decoded_resolved_relation_program_instance_count": 0,
+      "decoded_resolved_relation_program_parameter_dependency_count": 0,
+      "decoded_resolved_relation_program_reference_incidence_count": 0,
+      "decoded_resolved_relation_program_repeated_reference_count": 0,
+      "decoded_scalar_entity_suffix_value_count": 0,
+      "decoded_schema_selected_atom_entity_suffix_value_count": 0,
+      "decoded_schema_selected_control_entity_suffix_value_count": 0,
+      "decoded_schema_selected_entity_suffix_value_count": 0,
+      "decoded_schema_selected_evaluation_entity_suffix_value_count": 0,
+      "decoded_schema_selected_reference_signature_cohort_count": 0,
+      "decoded_schema_selected_schema_entity_suffix_value_count": 0,
+      "decoded_schema_selected_separator_entity_suffix_value_count": 0,
+      "decoded_separator_entity_suffix_value_count": 0,
+      "decoded_storage_record_link_count": 0,
+      "decoded_structurally_owned_definition_chain_evaluation_count": 0,
+      "decoded_structurally_owned_definition_chain_value_count": 0,
+      "decoded_token_8149_entity_suffix_count": 0,
+      "decoded_typed_relation_expression_count": 0,
+      "decoded_typed_relation_program_instance_count": 0,
+      "decoded_unassigned_definition_chain_evaluation_count": 0,
+      "decoded_unassigned_definition_chain_value_count": 0,
+      "decoded_unassigned_object_owner_slot_count": 0,
+      "decoded_unresolved_reference_signature_entity_count": 0,
+      "decoded_unset_constraint_range_count": 0,
+      "decoded_unset_definition_chain_count": 0,
+      "decoded_unset_entity_suffix_value_count": 0,
+      "decoded_untyped_relation_expression_count": 0,
+      "decoded_value_block_count": 0,
+      "decoded_value_field_count": 0,
+      "decoded_value_schema_selection_count": 0,
+      "decoded_wide_prefix_entity_suffix_value_count": 0,
+      "decoded_zero_entity_bound_support_member_count": 0,
+      "decoded_zero_entity_bound_typed_loop_reference_count": 0,
+      "decoded_zero_entity_edge_stride_allocation_count": 0,
+      "decoded_zero_entity_edge_stride_count": 0,
+      "decoded_zero_entity_endpoint_locus_candidate_count": 0,
+      "decoded_zero_entity_endpoint_pair_candidate_count": 0,
+      "decoded_zero_entity_face_bound_support_run_count": 0,
+      "decoded_zero_entity_face_terminal_control_03_count": 0,
+      "decoded_zero_entity_face_terminal_control_05_count": 0,
+      "decoded_zero_entity_forward_loop_member_count": 0,
+      "decoded_zero_entity_loop_class_41_count": 0,
+      "decoded_zero_entity_loop_class_50_count": 0,
+      "decoded_zero_entity_loop_class_c1_count": 0,
+      "decoded_zero_entity_loop_record_count": 0,
+      "decoded_zero_entity_loop_terminal_count": 0,
+      "decoded_zero_entity_model_endpoint_pair_count": 0,
+      "decoded_zero_entity_model_midpoint_count": 0,
+      "decoded_zero_entity_oriented_loop_member_count": 0,
+      "decoded_zero_entity_oriented_model_endpoint_pair_count": 0,
+      "decoded_zero_entity_oriented_use_allocation_count": 0,
+      "decoded_zero_entity_oriented_use_count": 0,
+      "decoded_zero_entity_oriented_use_pair_count": 0,
+      "decoded_zero_entity_record_count": 0,
+      "decoded_zero_entity_reversed_loop_member_count": 0,
+      "decoded_zero_entity_support_model_construction_count": 0,
+      "decoded_zero_entity_support_model_curve_count": 0,
+      "decoded_zero_entity_support_occurrence_count": 0,
+      "decoded_zero_entity_support_pcurve_count": 0,
+      "decoded_zero_entity_support_run_count": 0,
+      "decoded_zero_entity_uv_endpoint_pair_count": 0,
+      "decoded_zero_entity_vertex_incidence_allocation_count": 0,
+      "decoded_zero_entity_vertex_incidence_count": 0,
+      "decoded_zero_entity_vertex_owner_binding_count": 0,
+      "fully_resolved_consolidated_edge_run_count": 0,
+      "modeling_object_graph_count": 0,
+      "modeling_object_record_count": 0,
+      "multiply_referenced_constraint_range_count": 0,
+      "partially_resolved_consolidated_edge_run_count": 0,
+      "retained_unscoped_object_graph_count": 0,
+      "retained_unscoped_object_record_count": 0,
+      "transferred_appearance_asset_count": 0,
+      "transferred_appearance_binding_count": 0,
+      "transferred_configuration_count": 0,
+      "transferred_consolidated_line_profile_count": 0,
+      "transferred_consolidated_revolution_count": 0,
+      "transferred_feature_count": 0,
+      "transferred_formula_design_record_count": 0,
+      "transferred_legacy_formula_count": 0,
+      "transferred_legacy_parameter_count": 0,
+      "transferred_legacy_selector_parameter_count": 0,
+      "transferred_parameter_count": 0,
+      "transferred_principal_plane_record_count": 0,
+      "transferred_relation_program_input_parameter_count": 0,
+      "transferred_sketch_constraint_count": 0,
+      "transferred_sketch_count": 0,
+      "transferred_sketch_entity_count": 0,
+      "unclassified_configuration_entity_reference_count": 0,
+      "unclassified_configuration_row_chain_terminal_count": 0,
+      "unclassified_constraint_range_source_entity_count": 0,
+      "unclassified_design_parallel_reference_cell_count": 0,
+      "unclassified_design_parallel_reference_column_count": 0,
+      "unclassified_formula_expression_entity_count": 0,
+      "unclassified_formula_output_entity_count": 0,
+      "unclassified_formula_parameter_dependency_candidate_count": 0,
+      "unclassified_lead12_relation_program_context_entity_count": 0,
+      "unclassified_relation_program_entity_count": 0,
+      "unclassified_relation_program_reference_incidence_count": 0,
+      "unclassified_relation_program_repeated_entity_count": 0,
+      "uniquely_referenced_constraint_range_count": 0,
+      "unmatched_design_parallel_reference_row_count": 0,
+      "unreferenced_constraint_range_count": 0,
+      "unresolved_appearance_packet_count": 0,
+      "unresolved_configuration_entity_reference_count": 0,
+      "unresolved_configuration_row_chain_terminal_count": 0,
+      "unresolved_configuration_row_class_count": 0,
+      "unresolved_configuration_row_order_count": 0,
+      "unresolved_configuration_row_successor_count": 0,
+      "unresolved_consolidated_edge_run_count": 0,
+      "unresolved_definition_chain_evaluation_owner_count": 0,
+      "unresolved_definition_chain_value_owner_count": 0,
+      "unresolved_definition_value_owner_count": 0,
+      "unresolved_design_owner_count": 0,
+      "unresolved_design_parallel_reference_cell_count": 0,
+      "unresolved_design_record_count": 0,
+      "unresolved_formula_output_count": 0,
+      "unresolved_formula_parameter_dependency_count": 0,
+      "unresolved_lead12_relation_program_context_entity_count": 0,
+      "unresolved_lead54_relation_program_trailing_entity_count": 0,
+      "unresolved_object_record_reference_count": 0,
+      "unresolved_relation_program_input_instance_count": 0,
+      "unresolved_relation_program_instance_count": 0,
+      "unresolved_relation_program_parameter_dependency_count": 0,
+      "unresolved_relation_program_reference_incidence_count": 0,
+      "unresolved_relation_program_repeated_reference_count": 0,
+      "unresolved_storage_record_count": 0,
+      "unresolved_unreferenced_relation_expression_count": 0
+    },
+    "format": "catia",
+    "geometry_transferred": false,
     "losses": [
       {
+        "code": "geometry_not_transferred",
+        "message": "No B-rep geometry was transferred. This file's storage variant is `float_packed_inner_no_fbb` (float-packed inner-no-FBB (object-stream b5 03 topology): freeform carrier decode supported); the applicable decoded record families transfer geometry in this codec.",
+        "severity": "blocking"
+      },
+      {
         "code": "topology_not_transferred",
-        "category": "topology",
-        "severity": "warning",
-        "message": "The B5 reference graph is closed; face sense and body kind use a deterministic topology gauge because their source fields remain unresolved."
+        "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
+        "severity": "blocking"
       }
     ],
     "notes": [
@@ -605,341 +447,33 @@
     ]
   },
   "source_fidelity": {
-    "version": "3",
     "annotations": {
-      "streams": [
-        "catia:MainDataStream+SurfacicReps",
-        "catia:object_stream_b5_03"
-      ],
+      "exactness": {
+        "catia:payload:unknown#brep-stream": {
+          "entity": "unknown"
+        }
+      },
       "provenance": {
-        "catia:b5:body#0": {
-          "stream": 1,
+        "catia:payload:unknown#brep-stream": {
           "offset": 0,
-          "tag": "single_body"
-        },
-        "catia:b5:coedge#400-0": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "serialized_loop_member"
-        },
-        "catia:b5:coedge#400-1": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "serialized_loop_member"
-        },
-        "catia:b5:coedge#400-2": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "serialized_loop_member"
-        },
-        "catia:b5:curve#300": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "pcurve_lifted_3d_curve"
-        },
-        "catia:b5:curve#301": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "pcurve_lifted_3d_curve"
-        },
-        "catia:b5:curve#302": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "pcurve_lifted_3d_curve"
-        },
-        "catia:b5:edge#300": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "5e_edge"
-        },
-        "catia:b5:edge#301": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "5e_edge"
-        },
-        "catia:b5:edge#302": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "5e_edge"
-        },
-        "catia:b5:face#500": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "5f_face"
-        },
-        "catia:b5:loop#400": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "62_loop"
-        },
-        "catia:b5:pcurve#200": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "21_pcurve"
-        },
-        "catia:b5:pcurve#201": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "21_pcurve"
-        },
-        "catia:b5:pcurve#202": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "21_pcurve"
-        },
-        "catia:b5:point#0": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "05_08_01_vertex"
-        },
-        "catia:b5:point#1": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "05_08_01_vertex"
-        },
-        "catia:b5:point#2": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "05_08_01_vertex"
-        },
-        "catia:b5:region#0": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "derived_region"
-        },
-        "catia:b5:shell#0": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "derived_shell"
-        },
-        "catia:b5:surface#100": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "face_surface"
-        },
-        "catia:b5:surface-curve#300": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "parametric_surface_curve"
-        },
-        "catia:b5:surface-curve#301": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "parametric_surface_curve"
-        },
-        "catia:b5:surface-curve#302": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "parametric_surface_curve"
-        },
-        "catia:b5:vertex#0": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "05_08_01_vertex"
-        },
-        "catia:b5:vertex#1": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "05_08_01_vertex"
-        },
-        "catia:b5:vertex#2": {
-          "stream": 1,
-          "offset": 0,
-          "tag": "05_08_01_vertex"
-        },
-        "catia:payload:unknown#freeform": {
           "stream": 0,
-          "offset": 0,
           "tag": "float_packed_inner_no_fbb"
         }
       },
-      "exactness": {
-        "catia:b5:body#0": {
-          "entity": "inferred",
-          "fields": {
-            "kind": "derived",
-            "regions": "derived"
-          }
-        },
-        "catia:b5:coedge#400-0": {
-          "entity": "byte_exact",
-          "fields": {
-            "edge": "derived",
-            "next": "derived",
-            "owner_loop": "derived",
-            "pcurves": "derived",
-            "previous": "derived",
-            "radial_next": "derived",
-            "sense": "derived"
-          }
-        },
-        "catia:b5:coedge#400-1": {
-          "entity": "byte_exact",
-          "fields": {
-            "edge": "derived",
-            "next": "derived",
-            "owner_loop": "derived",
-            "pcurves": "derived",
-            "previous": "derived",
-            "radial_next": "derived",
-            "sense": "derived"
-          }
-        },
-        "catia:b5:coedge#400-2": {
-          "entity": "byte_exact",
-          "fields": {
-            "edge": "derived",
-            "next": "derived",
-            "owner_loop": "derived",
-            "pcurves": "derived",
-            "previous": "derived",
-            "radial_next": "derived",
-            "sense": "derived"
-          }
-        },
-        "catia:b5:curve#300": {
-          "entity": "derived",
-          "fields": {
-            "geometry": "derived"
-          }
-        },
-        "catia:b5:curve#301": {
-          "entity": "derived",
-          "fields": {
-            "geometry": "derived"
-          }
-        },
-        "catia:b5:curve#302": {
-          "entity": "derived",
-          "fields": {
-            "geometry": "derived"
-          }
-        },
-        "catia:b5:edge#300": {
-          "entity": "byte_exact",
-          "fields": {
-            "end": "derived",
-            "start": "derived"
-          }
-        },
-        "catia:b5:edge#301": {
-          "entity": "byte_exact",
-          "fields": {
-            "end": "derived",
-            "start": "derived"
-          }
-        },
-        "catia:b5:edge#302": {
-          "entity": "byte_exact",
-          "fields": {
-            "end": "derived",
-            "start": "derived"
-          }
-        },
-        "catia:b5:face#500": {
-          "entity": "inferred",
-          "fields": {
-            "loops": "derived",
-            "sense": "derived",
-            "shell": "derived",
-            "surface": "derived"
-          }
-        },
-        "catia:b5:loop#400": {
-          "entity": "byte_exact",
-          "fields": {
-            "coedges": "derived",
-            "face": "derived"
-          }
-        },
-        "catia:b5:pcurve#200": {
-          "entity": "byte_exact",
-          "fields": {
-            "parameter_range": "derived"
-          }
-        },
-        "catia:b5:pcurve#201": {
-          "entity": "byte_exact",
-          "fields": {
-            "parameter_range": "derived"
-          }
-        },
-        "catia:b5:pcurve#202": {
-          "entity": "byte_exact",
-          "fields": {
-            "parameter_range": "derived"
-          }
-        },
-        "catia:b5:region#0": {
-          "entity": "inferred",
-          "fields": {
-            "body": "derived",
-            "shells": "derived"
-          }
-        },
-        "catia:b5:shell#0": {
-          "entity": "inferred",
-          "fields": {
-            "faces": "derived",
-            "region": "derived"
-          }
-        },
-        "catia:b5:surface-curve#300": {
-          "entity": "derived",
-          "fields": {
-            "curve": "derived",
-            "definition": "derived"
-          }
-        },
-        "catia:b5:surface-curve#301": {
-          "entity": "derived",
-          "fields": {
-            "curve": "derived",
-            "definition": "derived"
-          }
-        },
-        "catia:b5:surface-curve#302": {
-          "entity": "derived",
-          "fields": {
-            "curve": "derived",
-            "definition": "derived"
-          }
-        },
-        "catia:b5:vertex#0": {
-          "entity": "byte_exact",
-          "fields": {
-            "point": "derived"
-          }
-        },
-        "catia:b5:vertex#1": {
-          "entity": "byte_exact",
-          "fields": {
-            "point": "derived"
-          }
-        },
-        "catia:b5:vertex#2": {
-          "entity": "byte_exact",
-          "fields": {
-            "point": "derived"
-          }
-        },
-        "catia:payload:unknown#freeform": {
-          "entity": "unknown",
-          "fields": {
-            "links": "derived"
-          }
-        }
-      }
+      "streams": [
+        "catia:MainDataStream+SurfacicReps"
+      ]
     },
     "retained_records": [
       {
-        "id": "catia:payload:unknown#freeform",
-        "stream": "catia:MainDataStream+SurfacicReps",
-        "offset": 0,
         "byte_len": 416,
+        "data": "tQMnSWQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAtQMhQMgAAACBGGQAAQUAAAkIAQAAAAAAAAAAAAAAAAAA8D8JCQAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAABQUHtQMhQMkAAACBGGQAAQUAAAkIAQAAAAAAAAAAAAAAAAAA8D8JCQAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/BQUHtQMhQMoAAACBGGQAAQUAAAkIAQAAAAAAAAAAAAAAAAAA8D8JCQAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAABQUHtQNeACwBAAC1A14ALQEAALUDXgAuAQAAtQNiGZABAACHGMgAGCwBGMkAGC0BGMoAGC4BGGQAgwUFtQNfCPQBAACCGGQAGJABBQUIAQAAAAAAAAAAAAAAAAUIAQAAgD8AAAAAAAAAAAUIAQAAAAAAAIA/AAAAAAA=",
+        "id": "catia:payload:unknown#brep-stream",
+        "offset": 0,
         "sha256": "98a1afc06fb070d7e0f51e857e79d7a100b6e564321d2216831e321856e77386",
-        "data": "tQMnSWQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAtQMhQMgAAACBGGQAAQUAAAkIAQAAAAAAAAAAAAAAAAAA8D8JCQAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAABQUHtQMhQMkAAACBGGQAAQUAAAkIAQAAAAAAAAAAAAAAAAAA8D8JCQAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/BQUHtQMhQMoAAACBGGQAAQUAAAkIAQAAAAAAAAAAAAAAAAAA8D8JCQAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAABQUHtQNeACwBAAC1A14ALQEAALUDXgAuAQAAtQNiGZABAACHGMgAGCwBGMkAGC0BGMoAGC4BGGQAgwUFtQNfCPQBAACCGGQAGJABBQUIAQAAAAAAAAAAAAAAAAUIAQAAgD8AAAAAAAAAAAUIAQAAAAAAAIA/AAAAAAA="
+        "stream": "catia:MainDataStream+SurfacicReps"
       }
-    ]
+    ],
+    "version": "3"
   }
 }

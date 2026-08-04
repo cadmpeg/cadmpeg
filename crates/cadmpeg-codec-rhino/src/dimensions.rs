@@ -980,54 +980,60 @@ pub(crate) fn apply_userdata(
     Ok(())
 }
 
-/// Projects a decoded dimension into one native operation and one evaluated parameter.
+/// Projects a decoded dimension into one measured semantic annotation.
+///
+/// A Rhino dimension drives nothing: it references no design parameter and no
+/// regeneration graph reads it. Its neutral home is therefore
+/// `model.semantic_annotations` with `SemanticAnnotationKind::Dimension`, not a
+/// synthetic feature plus a `DesignParameter` whose owner is that same feature.
+///
+/// `object` is the identity of the 3DM object record that persists the
+/// annotation. In 3DM the application object and the source record are the same
+/// record, so `object` and `native_ref` coincide; `SemanticAnnotation` requires
+/// both to resolve against document identities, and the object record's native
+/// unknown identity is the only Rhino identity that does.
+///
+/// `order` must be a globally unique `u32`. Rhino's natural ordinal is the
+/// record's byte offset, which is a `u64` and not dense, so the caller supplies
+/// a dense arena index instead.
+///
+/// Returns the annotation and the codes for every reference the annotation could
+/// not carry.
 pub(crate) fn project(
     dimension: &Dimension,
     key: &str,
     name: Option<String>,
-    native_ref: String,
+    object: &str,
+    order: u32,
 ) -> (
-    cadmpeg_ir::features::Feature,
-    cadmpeg_ir::features::DesignParameter,
+    cadmpeg_ir::semantic_annotations::SemanticAnnotation,
+    Vec<crate::loss::RhinoLossCode>,
 ) {
-    use cadmpeg_ir::features::{
-        Angle, DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length,
-        ParameterId, ParameterValue,
+    use crate::loss::RhinoLossCode;
+    use cadmpeg_ir::semantic_annotations::{
+        SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind, SemanticAnnotationTarget,
     };
     use std::collections::BTreeMap;
 
-    let feature_id = FeatureId(format!("rhino:dimension:feature#{key}"));
-    let parameter_id = ParameterId(format!("rhino:dimension:parameter#{key}"));
-    let (kind, value, display) = match dimension.definition {
-        Definition::Linear { .. } => (
-            "linear_dimension",
-            ParameterValue::Length(Length(dimension.measurement)),
-            None,
-        ),
-        Definition::Angular { .. } => (
-            "angular_dimension",
-            ParameterValue::Angle(Angle(dimension.measurement)),
-            None,
-        ),
+    // The family token is the codec's exact typing of the decoded record. 3DM
+    // stores class UUIDs rather than runtime class names, so this is the most
+    // specific runtime type the archive supports; it keeps the radius/diameter
+    // distinction that `DimensionDisplay` used to carry.
+    let (runtime_type, value) = match dimension.definition {
+        Definition::Linear { .. } => ("linear_dimension", dimension.measurement),
+        Definition::Angular { .. } => ("angular_dimension", dimension.measurement),
         Definition::Radial { diameter, .. } => (
             if diameter {
                 "diameter_dimension"
             } else {
                 "radius_dimension"
             },
-            ParameterValue::Length(Length(dimension.measurement)),
-            Some(if diameter {
-                DimensionDisplay::Diameter
-            } else {
-                DimensionDisplay::Radius
-            }),
+            dimension.measurement,
         ),
-        Definition::Ordinate { .. } => (
-            "ordinate_dimension",
-            ParameterValue::Length(Length(dimension.measurement)),
-            None,
-        ),
-        Definition::CenterMark { .. } => ("center_mark", ParameterValue::Length(Length(0.0)), None),
+        Definition::Ordinate { .. } => ("ordinate_dimension", dimension.measurement),
+        // A center mark measures nothing, so `measurement` is zero by
+        // construction. Its radius is the one persisted numeric it does carry.
+        Definition::CenterMark { radius } => ("center_mark", radius),
     };
     let mut parameters =
         BTreeMap::from([("measurement".to_string(), dimension.measurement.to_string())]);
@@ -1231,66 +1237,101 @@ pub(crate) fn project(
             properties.insert("radius".to_string(), radius.to_string());
         }
     }
-    parameters.insert("parameter_id".to_string(), parameter_id.0.clone());
-    let feature = Feature {
-        id: feature_id.clone(),
-        ordinal: u64::try_from(dimension.source_range.start).expect("source offset fits u64"),
-        name,
-        suppressed: Some(false),
-        parent: None,
-        dependencies: Vec::new(),
-        source_properties: BTreeMap::new(),
-        source_tag: Some("RhinoDimension".to_string()),
-        source_text: None,
-        source_content: vec![cadmpeg_ir::features::FeatureSourceContent::Parameter(
-            parameter_id.clone(),
-        )],
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind: kind.to_string(),
-            parameters,
-            properties,
-        },
-        native_ref: Some(native_ref.clone()),
+    if let Some(name) = name {
+        parameters.insert("object_name".to_string(), name);
+    }
+    parameters.extend(properties);
+
+    // Model-space text point, composed through the dimension plane. Rhino
+    // persists it in plane coordinates, so lifting it with `z = 0.0` would be
+    // wrong for every plane that is not the world xy plane.
+    let position = (!dimension.use_default_text_point)
+        .then(|| {
+            let [u, v] = dimension.user_text_point;
+            let origin = dimension.plane.origin.0;
+            let x_axis = dimension.plane.xaxis.0;
+            let y_axis = dimension.plane.yaxis.0;
+            [0, 1, 2].map(|axis| origin[axis] + u * x_axis[axis] + v * y_axis[axis])
+        })
+        .filter(|point| point.iter().all(|value| value.is_finite()));
+
+    // `dimstyle_id` names a presentation record that `presentation::install`
+    // adds after candidate validation, and `detail_measured` names a layout
+    // detail this codec does not type, so neither target can be proven to
+    // resolve here. An unresolvable `target` is a hard `ReferentialIntegrity`
+    // error, so a nil UUID becomes an explicit null reference and a non-nil one
+    // is charged and left in `parameters` as the raw UUID.
+    let mut references = BTreeMap::new();
+    let mut unresolved = Vec::new();
+    let mut reference = |role: &str, id: Option<Uuid>, code: RhinoLossCode| match id {
+        None => {}
+        Some(id) if id.is_nil() => {
+            references.insert(
+                role.to_string(),
+                vec![SemanticAnnotationTarget {
+                    target: None,
+                    external_document: None,
+                    external_object: None,
+                    is_null: true,
+                    subelements: Vec::new(),
+                }],
+            );
+        }
+        Some(_) => unresolved.push(code),
     };
-    let parameter = DesignParameter {
-        id: parameter_id,
-        owner: Some(feature_id),
-        ordinal: 0,
-        name: "measurement".to_string(),
-        expression: if dimension.user_text.is_empty() {
-            dimension.measurement.to_string()
-        } else {
-            dimension.user_text.clone()
-        },
-        display,
+    reference(
+        "dimstyle_id",
+        dimension.dimstyle_id,
+        RhinoLossCode::DimensionStyleUnresolved,
+    );
+    reference(
+        "detail_measured",
+        Some(dimension.detail_measured),
+        RhinoLossCode::DimensionDetailReferenceUnresolved,
+    );
+
+    let annotation = SemanticAnnotation {
+        id: SemanticAnnotationId(format!("rhino:dimension:annotation#{key}")),
+        object: object.to_string(),
+        kind: SemanticAnnotationKind::Dimension,
+        runtime_type: runtime_type.to_string(),
+        order,
+        text: (!dimension.user_text.is_empty())
+            .then(|| dimension.user_text.clone())
+            .into_iter()
+            .collect(),
+        references,
         value: Some(value),
-        dependencies: Vec::new(),
-        properties: BTreeMap::new(),
-        pmi: None,
-        native_ref: Some(native_ref),
+        format: (!dimension.rich_text.is_empty()).then(|| dimension.rich_text.clone()),
+        position,
+        parameters,
+        assets: Vec::new(),
+        native_ref: object.to_string(),
     };
-    (feature, parameter)
+    (annotation, unresolved)
 }
 
 /// Serializes one decoded dimension without source-record identity.
+///
+/// History records embed a dimension inline rather than referencing an object
+/// record, so the projected annotation has no resolvable `object`. The
+/// serialized form therefore drops the identity fields and keeps the semantics.
 pub(crate) fn semantic_json(dimension: &Dimension) -> Option<String> {
-    let (feature, parameter) = project(
-        dimension,
-        "embedded-history-dimension",
-        None,
-        "rhino:history:embedded-dimension".to_string(),
-    );
+    let (annotation, _) = project(dimension, "embedded-history-dimension", None, "", 0);
     serde_json::to_string(&serde_json::json!({
         "kind": "dimension",
-        "definition": feature.definition,
-        "parameter": parameter,
+        "runtime_type": annotation.runtime_type,
+        "value": annotation.value,
+        "format": annotation.format,
+        "position": annotation.position,
+        "references": annotation.references,
+        "parameters": annotation.parameters,
     }))
     .ok()
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::archive_test_support::crc_chunk;
 
@@ -1326,21 +1367,56 @@ mod tests {
     }
 
     fn plane() -> Vec<u8> {
-        [
-            0.0, 0.0, 0.0, // origin
-            1.0, 0.0, 0.0, // x axis
-            0.0, 1.0, 0.0, // y axis
-            0.0, 0.0, 1.0, // z axis
-            0.0, 0.0, 1.0, 0.0, // equation
-        ]
-        .into_iter()
-        .flat_map(f64::to_le_bytes)
-        .collect()
+        plane_bytes(
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        )
+    }
+
+    /// One `ON_Plane` with an explicit origin, x axis, y axis, and equation.
+    ///
+    /// The z axis is the right-handed cross product of the supplied axes.
+    pub(crate) fn plane_bytes(
+        origin: [f64; 3],
+        x_axis: [f64; 3],
+        y_axis: [f64; 3],
+        equation: [f64; 4],
+    ) -> Vec<u8> {
+        let z_axis = [
+            x_axis[1] * y_axis[2] - x_axis[2] * y_axis[1],
+            x_axis[2] * y_axis[0] - x_axis[0] * y_axis[2],
+            x_axis[0] * y_axis[1] - x_axis[1] * y_axis[0],
+        ];
+        origin
+            .into_iter()
+            .chain(x_axis)
+            .chain(y_axis)
+            .chain(z_axis)
+            .chain(equation)
+            .flat_map(f64::to_le_bytes)
+            .collect()
     }
 
     fn payload(annotation_type: i32, family: &[u8]) -> Vec<u8> {
+        dimension_payload(annotation_type, family, [0; 16], &plane(), None)
+    }
+
+    /// One V6+ dimension record payload with parameterized identity and layout.
+    ///
+    /// `dimstyle_wire` is the mixed-endian style UUID, `plane` the dimension
+    /// plane, and `text_point` the authored plane-space text point; `None`
+    /// leaves `use_default_text_point` set.
+    pub(crate) fn dimension_payload(
+        annotation_type: i32,
+        family: &[u8],
+        dimstyle_wire: [u8; 16],
+        plane: &[u8],
+        text_point: Option<[f64; 2]>,
+    ) -> Vec<u8> {
         let mut text = utf16("<>\n");
-        text.extend(plane());
+        text.extend(self::plane());
         text.extend(0.0_f64.to_le_bytes());
         text.extend(0.0_f64.to_le_bytes());
         text.extend(0_i32.to_le_bytes());
@@ -1349,8 +1425,8 @@ mod tests {
         text.push(0);
 
         let mut annotation = anonymous(0, &text);
-        annotation.extend([0; 16]);
-        annotation.extend(plane());
+        annotation.extend(dimstyle_wire);
+        annotation.extend(plane);
         annotation.extend(annotation_type.to_le_bytes());
         annotation.extend(anonymous(1, &[0]));
         annotation.extend(1.0_f64.to_le_bytes());
@@ -1360,9 +1436,10 @@ mod tests {
         let mut common = anonymous(4, &annotation);
         common.extend(utf16(""));
         common.extend(0.0_f64.to_le_bytes());
-        common.push(1);
-        common.extend(0.0_f64.to_le_bytes());
-        common.extend(0.0_f64.to_le_bytes());
+        common.push(u8::from(text_point.is_none()));
+        for value in text_point.unwrap_or([0.0, 0.0]) {
+            common.extend(value.to_le_bytes());
+        }
         common.extend([0, 0]);
         common.extend(0_i32.to_le_bytes());
         common.extend([0; 16]);
@@ -1419,7 +1496,11 @@ mod tests {
             serde_json::from_str(&semantic_json(&linear).expect("required invariant"))
                 .expect("required invariant");
         assert_eq!(semantic["kind"], "dimension");
-        assert_eq!(semantic["definition"]["kind"], "linear_dimension");
+        assert_eq!(semantic["runtime_type"], "linear_dimension");
+        assert!(
+            (semantic["value"].as_f64().expect("required invariant") - 60.0).abs() < 1e-12,
+            "{semantic:?}"
+        );
 
         let radial_family = [3.0_f64, 4.0, 8.0, 9.0]
             .into_iter()

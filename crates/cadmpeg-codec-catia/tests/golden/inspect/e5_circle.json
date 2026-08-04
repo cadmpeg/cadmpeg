@@ -5,7 +5,8 @@
       "attributes": {
         "desc_offset": "16",
         "directory": "inner",
-        "extent_count": "1"
+        "extent_count": "1",
+        "extent_flags": "0x00000000"
       },
       "compressed_size": 279,
       "compression": "none",
@@ -17,7 +18,8 @@
       "attributes": {
         "desc_offset": "120",
         "directory": "inner",
-        "extent_count": "1"
+        "extent_count": "1",
+        "extent_flags": "0x00000000"
       },
       "compressed_size": 1,
       "compression": "none",

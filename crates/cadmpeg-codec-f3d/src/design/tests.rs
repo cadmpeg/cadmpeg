@@ -7982,6 +7982,45 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         FeatureDefinition::Native { ref kind, .. } if kind == "DeleteFace"
     ));
 
+    let mut surface_scope = delete_scope.clone();
+    let reference_bytes = 11 * surface_scope.reference_members.len() as u64;
+    surface_scope.kind = "SurfaceDeleteFace".into();
+    surface_scope.frame_length = 250 + reference_bytes;
+    surface_scope.kind_offset = surface_scope.byte_offset + 140 + reference_bytes;
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&surface_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert_eq!(
+        features[0].definition,
+        FeatureDefinition::DeleteFace {
+            faces: cadmpeg_ir::features::FaceSelection::Native(delete_group.id.clone()),
+            heal: false,
+        }
+    );
+    surface_scope.frame_length = 236 + reference_bytes;
+    surface_scope.kind_offset = surface_scope.byte_offset + 139 + reference_bytes;
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&surface_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        features[0].definition,
+        FeatureDefinition::Native { ref kind, .. } if kind == "SurfaceDeleteFace"
+    ));
+
     let mut remove_scope = scope.clone();
     remove_scope.kind = "RemoveBody".into();
     let mut remove_group = group;

@@ -240,7 +240,8 @@ pub fn decode_face_operands(
             == Some(DesignFeatureFamily::Mirror)
             && group.role == 0x0000_0008_0000_0000;
         let is_split_face_operand = scope.kind == "SplitFace";
-        let is_delete_face_operand = scope.kind == "DeleteFace";
+        let is_delete_face_operand =
+            matches!(scope.kind.as_str(), "DeleteFace" | "SurfaceDeleteFace");
         let is_thread_face = scope.kind == "Thread" && group.role == 0x0000_0010_0000_0000;
         let is_draft_operand =
             design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Draft);
@@ -609,6 +610,7 @@ pub fn decode_construction_operand_groups(
             || scope.kind == "RemoveBody"
             || scope.kind == "SurfaceStitch"
             || scope.kind == "DeleteFace"
+            || scope.kind == "SurfaceDeleteFace"
             || scope.kind == "Decal"
             || scope.kind == "Thread"
             || matches!(scope.kind.as_str(), "BaseFlange" | "EdgeFlange" | "Hem")

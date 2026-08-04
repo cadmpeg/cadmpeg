@@ -1,42 +1,11 @@
 {
   "ir": {
-    "ir_version": "4",
-    "source": {
-      "format": "creo",
-      "attributes": {
-        "crv_array_count": "6",
-        "expanded_section_byte_count": "0",
-        "expanded_section_count": "0",
-        "file_size": "469",
-        "layout": "unknown",
-        "section.0.length": "305",
-        "section.0.name": "VisibGeom",
-        "section.0.offset": "76",
-        "section.0.raw_name": "VisibGeom",
-        "section.0.role": "psb-geometry",
-        "section.1.length": "66",
-        "section.1.name": "AllFeatur",
-        "section.1.offset": "381",
-        "section.1.raw_name": "AllFeatur",
-        "section.1.role": "model-data",
-        "section.2.length": "22",
-        "section.2.name": "MdlStatus",
-        "section.2.offset": "447",
-        "section.2.raw_name": "MdlStatus",
-        "section.2.role": "metadata",
-        "section_count": "3",
-        "srf_array_count": "4",
-        "version_line": "#UGC:2 P c"
-      }
-    },
-    "units": {
-      "length": "millimeter"
-    },
-    "tolerances": {
-      "linear": 1e-6,
-      "angular": 1e-10
-    },
+    "ir_version": "5",
     "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
       "bodies": [
         {
           "id": "creo:visibgeom:body#1",
@@ -46,357 +15,700 @@
           ]
         }
       ],
-      "regions": [
+      "coedges": [
         {
-          "id": "creo:visibgeom:region#1",
-          "body": "creo:visibgeom:body#1",
-          "shells": [
-            "creo:visibgeom:shell#1"
-          ]
+          "edge": "creo:visibgeom:edge#10",
+          "id": "creo:visibgeom:coedge#10:0",
+          "next": "creo:visibgeom:coedge#12:0",
+          "owner_loop": "creo:visibgeom:loop#1",
+          "pcurves": [
+            {
+              "pcurve": "creo:visibgeom:pcurve#10:1"
+            }
+          ],
+          "previous": "creo:visibgeom:coedge#11:0",
+          "radial_next": "creo:visibgeom:coedge#10:1",
+          "sense": "forward"
+        },
+        {
+          "edge": "creo:visibgeom:edge#10",
+          "id": "creo:visibgeom:coedge#10:1",
+          "next": "creo:visibgeom:coedge#13:0",
+          "owner_loop": "creo:visibgeom:loop#2",
+          "pcurves": [
+            {
+              "pcurve": "creo:visibgeom:pcurve#10:2"
+            }
+          ],
+          "previous": "creo:visibgeom:coedge#14:0",
+          "radial_next": "creo:visibgeom:coedge#10:0",
+          "sense": "reversed"
+        },
+        {
+          "edge": "creo:visibgeom:edge#11",
+          "id": "creo:visibgeom:coedge#11:0",
+          "next": "creo:visibgeom:coedge#10:0",
+          "owner_loop": "creo:visibgeom:loop#1",
+          "pcurves": [
+            {
+              "pcurve": "creo:visibgeom:pcurve#11:1"
+            }
+          ],
+          "previous": "creo:visibgeom:coedge#12:0",
+          "radial_next": "creo:visibgeom:coedge#11:1",
+          "sense": "forward"
+        },
+        {
+          "edge": "creo:visibgeom:edge#11",
+          "id": "creo:visibgeom:coedge#11:1",
+          "next": "creo:visibgeom:coedge#15:0",
+          "owner_loop": "creo:visibgeom:loop#3",
+          "pcurves": [
+            {
+              "pcurve": "creo:visibgeom:pcurve#11:3"
+            }
+          ],
+          "previous": "creo:visibgeom:coedge#13:1",
+          "radial_next": "creo:visibgeom:coedge#11:0",
+          "sense": "reversed"
+        },
+        {
+          "edge": "creo:visibgeom:edge#12",
+          "id": "creo:visibgeom:coedge#12:0",
+          "next": "creo:visibgeom:coedge#11:0",
+          "owner_loop": "creo:visibgeom:loop#1",
+          "pcurves": [
+            {
+              "pcurve": "creo:visibgeom:pcurve#12:1"
+            }
+          ],
+          "previous": "creo:visibgeom:coedge#10:0",
+          "radial_next": "creo:visibgeom:coedge#12:1",
+          "sense": "forward"
+        },
+        {
+          "edge": "creo:visibgeom:edge#12",
+          "id": "creo:visibgeom:coedge#12:1",
+          "next": "creo:visibgeom:coedge#14:1",
+          "owner_loop": "creo:visibgeom:loop#4",
+          "pcurves": [
+            {
+              "pcurve": "creo:visibgeom:pcurve#12:4"
+            }
+          ],
+          "previous": "creo:visibgeom:coedge#15:1",
+          "radial_next": "creo:visibgeom:coedge#12:0",
+          "sense": "reversed"
+        },
+        {
+          "edge": "creo:visibgeom:edge#13",
+          "id": "creo:visibgeom:coedge#13:0",
+          "next": "creo:visibgeom:coedge#14:0",
+          "owner_loop": "creo:visibgeom:loop#2",
+          "pcurves": [
+            {
+              "pcurve": "creo:visibgeom:pcurve#13:2"
+            }
+          ],
+          "previous": "creo:visibgeom:coedge#10:1",
+          "radial_next": "creo:visibgeom:coedge#13:1",
+          "sense": "forward"
+        },
+        {
+          "edge": "creo:visibgeom:edge#13",
+          "id": "creo:visibgeom:coedge#13:1",
+          "next": "creo:visibgeom:coedge#11:1",
+          "owner_loop": "creo:visibgeom:loop#3",
+          "pcurves": [
+            {
+              "pcurve": "creo:visibgeom:pcurve#13:3"
+            }
+          ],
+          "previous": "creo:visibgeom:coedge#15:0",
+          "radial_next": "creo:visibgeom:coedge#13:0",
+          "sense": "reversed"
+        },
+        {
+          "edge": "creo:visibgeom:edge#14",
+          "id": "creo:visibgeom:coedge#14:0",
+          "next": "creo:visibgeom:coedge#10:1",
+          "owner_loop": "creo:visibgeom:loop#2",
+          "pcurves": [
+            {
+              "pcurve": "creo:visibgeom:pcurve#14:2"
+            }
+          ],
+          "previous": "creo:visibgeom:coedge#13:0",
+          "radial_next": "creo:visibgeom:coedge#14:1",
+          "sense": "forward"
+        },
+        {
+          "edge": "creo:visibgeom:edge#14",
+          "id": "creo:visibgeom:coedge#14:1",
+          "next": "creo:visibgeom:coedge#15:1",
+          "owner_loop": "creo:visibgeom:loop#4",
+          "pcurves": [
+            {
+              "pcurve": "creo:visibgeom:pcurve#14:4"
+            }
+          ],
+          "previous": "creo:visibgeom:coedge#12:1",
+          "radial_next": "creo:visibgeom:coedge#14:0",
+          "sense": "reversed"
+        },
+        {
+          "edge": "creo:visibgeom:edge#15",
+          "id": "creo:visibgeom:coedge#15:0",
+          "next": "creo:visibgeom:coedge#13:1",
+          "owner_loop": "creo:visibgeom:loop#3",
+          "pcurves": [
+            {
+              "pcurve": "creo:visibgeom:pcurve#15:3"
+            }
+          ],
+          "previous": "creo:visibgeom:coedge#11:1",
+          "radial_next": "creo:visibgeom:coedge#15:1",
+          "sense": "forward"
+        },
+        {
+          "edge": "creo:visibgeom:edge#15",
+          "id": "creo:visibgeom:coedge#15:1",
+          "next": "creo:visibgeom:coedge#12:1",
+          "owner_loop": "creo:visibgeom:loop#4",
+          "pcurves": [
+            {
+              "pcurve": "creo:visibgeom:pcurve#15:4"
+            }
+          ],
+          "previous": "creo:visibgeom:coedge#14:1",
+          "radial_next": "creo:visibgeom:coedge#15:0",
+          "sense": "reversed"
         }
       ],
-      "shells": [
+      "configurations": [],
+      "curves": [
         {
-          "id": "creo:visibgeom:shell#1",
-          "region": "creo:visibgeom:region#1",
-          "faces": [
-            "creo:visibgeom:face#1",
-            "creo:visibgeom:face#2",
-            "creo:visibgeom:face#3",
-            "creo:visibgeom:face#4"
-          ]
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 5.073268178784763e-18,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "creo:visibgeom:curve#10",
+          "source_object": {
+            "format": "creo",
+            "object_id": "VisibGeom:10"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": -1.0,
+              "z": -5.073268178784763e-18
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.5,
+              "z": 2.5366340893923816e-18
+            }
+          },
+          "id": "creo:visibgeom:curve#11",
+          "source_object": {
+            "format": "creo",
+            "object_id": "VisibGeom:11"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.7071067811865475,
+              "z": -0.7071067811865475
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 2.5366340893923816e-18,
+              "z": 0.5
+            }
+          },
+          "id": "creo:visibgeom:curve#12",
+          "source_object": {
+            "format": "creo",
+            "object_id": "VisibGeom:12"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": -2.819256915099733e-17
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "creo:visibgeom:curve#13",
+          "source_object": {
+            "format": "creo",
+            "object_id": "VisibGeom:13"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": -0.8944271909999159,
+              "y": 2.268834503169857e-18,
+              "z": 0.4472135954999578
+            },
+            "kind": "line",
+            "origin": {
+              "x": 1.0000000000000002,
+              "y": 0.0,
+              "z": -2.819256915099734e-17
+            }
+          },
+          "id": "creo:visibgeom:curve#14",
+          "source_object": {
+            "format": "creo",
+            "object_id": "VisibGeom:14"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.8944271909999159,
+              "y": -0.4472135954999578,
+              "z": -2.7485034935967283e-17
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.5,
+              "z": 2.5366340893923816e-18
+            }
+          },
+          "id": "creo:visibgeom:curve#15",
+          "source_object": {
+            "format": "creo",
+            "object_id": "VisibGeom:15"
+          }
+        }
+      ],
+      "drawings": [],
+      "edges": [
+        {
+          "curve": "creo:visibgeom:curve#10",
+          "end": "creo:visibgeom:vertex#2",
+          "id": "creo:visibgeom:edge#10",
+          "param_range": [
+            0.0,
+            0.5
+          ],
+          "start": "creo:visibgeom:vertex#1"
+        },
+        {
+          "curve": "creo:visibgeom:curve#11",
+          "end": "creo:visibgeom:vertex#1",
+          "id": "creo:visibgeom:edge#11",
+          "param_range": [
+            0.0,
+            0.5
+          ],
+          "start": "creo:visibgeom:vertex#3"
+        },
+        {
+          "curve": "creo:visibgeom:curve#12",
+          "end": "creo:visibgeom:vertex#3",
+          "id": "creo:visibgeom:edge#12",
+          "param_range": [
+            0.0,
+            0.7071067811865476
+          ],
+          "start": "creo:visibgeom:vertex#2"
+        },
+        {
+          "curve": "creo:visibgeom:curve#13",
+          "end": "creo:visibgeom:vertex#4",
+          "id": "creo:visibgeom:edge#13",
+          "param_range": [
+            0.0,
+            1.0000000000000002
+          ],
+          "start": "creo:visibgeom:vertex#1"
+        },
+        {
+          "curve": "creo:visibgeom:curve#14",
+          "end": "creo:visibgeom:vertex#2",
+          "id": "creo:visibgeom:edge#14",
+          "param_range": [
+            0.0,
+            1.1180339887498951
+          ],
+          "start": "creo:visibgeom:vertex#4"
+        },
+        {
+          "curve": "creo:visibgeom:curve#15",
+          "end": "creo:visibgeom:vertex#4",
+          "id": "creo:visibgeom:edge#15",
+          "param_range": [
+            0.0,
+            1.1180339887498951
+          ],
+          "start": "creo:visibgeom:vertex#3"
         }
       ],
       "faces": [
         {
           "id": "creo:visibgeom:face#1",
-          "shell": "creo:visibgeom:shell#1",
-          "surface": "creo:visibgeom:surface#1",
-          "sense": "reversed",
           "loops": [
             "creo:visibgeom:loop#1"
-          ]
+          ],
+          "sense": "reversed",
+          "shell": "creo:visibgeom:shell#1",
+          "surface": "creo:visibgeom:surface#1"
         },
         {
           "id": "creo:visibgeom:face#2",
-          "shell": "creo:visibgeom:shell#1",
-          "surface": "creo:visibgeom:surface#2",
-          "sense": "forward",
           "loops": [
             "creo:visibgeom:loop#2"
-          ]
+          ],
+          "sense": "forward",
+          "shell": "creo:visibgeom:shell#1",
+          "surface": "creo:visibgeom:surface#2"
         },
         {
           "id": "creo:visibgeom:face#3",
-          "shell": "creo:visibgeom:shell#1",
-          "surface": "creo:visibgeom:surface#3",
-          "sense": "forward",
           "loops": [
             "creo:visibgeom:loop#3"
-          ]
+          ],
+          "sense": "forward",
+          "shell": "creo:visibgeom:shell#1",
+          "surface": "creo:visibgeom:surface#3"
         },
         {
           "id": "creo:visibgeom:face#4",
-          "shell": "creo:visibgeom:shell#1",
-          "surface": "creo:visibgeom:surface#4",
-          "sense": "forward",
           "loops": [
             "creo:visibgeom:loop#4"
-          ]
+          ],
+          "sense": "forward",
+          "shell": "creo:visibgeom:shell#1",
+          "surface": "creo:visibgeom:surface#4"
+        }
+      ],
+      "features": [
+        {
+          "definition": {
+            "definition": "fillet",
+            "groups": [
+              {
+                "edges": {
+                  "kind": "resolved",
+                  "value": {
+                    "edges": [
+                      "creo:visibgeom:edge#10",
+                      "creo:visibgeom:edge#11"
+                    ],
+                    "native": "creo:allfeatur:edgs_affected#4:10,11"
+                  }
+                },
+                "radius": {
+                  "kind": "unresolved"
+                }
+              }
+            ]
+          },
+          "id": "creo:model:feature#4",
+          "name": "Round id 4",
+          "ordinal": 0,
+          "outputs": [
+            "creo:visibgeom:body#1"
+          ],
+          "source_properties": {
+            "featdefs_row_schema_classes": "913",
+            "featdefs_schema_class": "913",
+            "native_parameter.affected_edge_ids": "10,11",
+            "native_parameter.affected_geometry_ids": "99"
+          },
+          "suppressed": false
         }
       ],
       "loops": [
         {
-          "id": "creo:visibgeom:loop#1",
-          "face": "creo:visibgeom:face#1",
           "boundary_role": "outer",
           "coedges": [
             "creo:visibgeom:coedge#10:0",
             "creo:visibgeom:coedge#12:0",
             "creo:visibgeom:coedge#11:0"
-          ]
+          ],
+          "face": "creo:visibgeom:face#1",
+          "id": "creo:visibgeom:loop#1"
         },
         {
-          "id": "creo:visibgeom:loop#2",
-          "face": "creo:visibgeom:face#2",
           "boundary_role": "outer",
           "coedges": [
             "creo:visibgeom:coedge#10:1",
             "creo:visibgeom:coedge#13:0",
             "creo:visibgeom:coedge#14:0"
-          ]
+          ],
+          "face": "creo:visibgeom:face#2",
+          "id": "creo:visibgeom:loop#2"
         },
         {
-          "id": "creo:visibgeom:loop#3",
-          "face": "creo:visibgeom:face#3",
           "boundary_role": "outer",
           "coedges": [
             "creo:visibgeom:coedge#11:1",
             "creo:visibgeom:coedge#15:0",
             "creo:visibgeom:coedge#13:1"
-          ]
+          ],
+          "face": "creo:visibgeom:face#3",
+          "id": "creo:visibgeom:loop#3"
         },
         {
-          "id": "creo:visibgeom:loop#4",
-          "face": "creo:visibgeom:face#4",
           "boundary_role": "outer",
           "coedges": [
             "creo:visibgeom:coedge#12:1",
             "creo:visibgeom:coedge#14:1",
             "creo:visibgeom:coedge#15:1"
-          ]
+          ],
+          "face": "creo:visibgeom:face#4",
+          "id": "creo:visibgeom:loop#4"
         }
       ],
-      "coedges": [
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [
         {
-          "id": "creo:visibgeom:coedge#10:0",
-          "owner_loop": "creo:visibgeom:loop#1",
-          "edge": "creo:visibgeom:edge#10",
-          "next": "creo:visibgeom:coedge#12:0",
-          "previous": "creo:visibgeom:coedge#11:0",
-          "radial_next": "creo:visibgeom:coedge#10:1",
-          "sense": "forward",
-          "pcurves": [
-            {
-              "pcurve": "creo:visibgeom:pcurve#10:1"
+          "geometry": {
+            "direction": {
+              "u": 5.073268178784763e-18,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
             }
-          ]
-        },
-        {
-          "id": "creo:visibgeom:coedge#10:1",
-          "owner_loop": "creo:visibgeom:loop#2",
-          "edge": "creo:visibgeom:edge#10",
-          "next": "creo:visibgeom:coedge#13:0",
-          "previous": "creo:visibgeom:coedge#14:0",
-          "radial_next": "creo:visibgeom:coedge#10:0",
-          "sense": "reversed",
-          "pcurves": [
-            {
-              "pcurve": "creo:visibgeom:pcurve#10:2"
-            }
-          ]
-        },
-        {
-          "id": "creo:visibgeom:coedge#11:0",
-          "owner_loop": "creo:visibgeom:loop#1",
-          "edge": "creo:visibgeom:edge#11",
-          "next": "creo:visibgeom:coedge#10:0",
-          "previous": "creo:visibgeom:coedge#12:0",
-          "radial_next": "creo:visibgeom:coedge#11:1",
-          "sense": "forward",
-          "pcurves": [
-            {
-              "pcurve": "creo:visibgeom:pcurve#11:1"
-            }
-          ]
-        },
-        {
-          "id": "creo:visibgeom:coedge#11:1",
-          "owner_loop": "creo:visibgeom:loop#3",
-          "edge": "creo:visibgeom:edge#11",
-          "next": "creo:visibgeom:coedge#15:0",
-          "previous": "creo:visibgeom:coedge#13:1",
-          "radial_next": "creo:visibgeom:coedge#11:0",
-          "sense": "reversed",
-          "pcurves": [
-            {
-              "pcurve": "creo:visibgeom:pcurve#11:3"
-            }
-          ]
-        },
-        {
-          "id": "creo:visibgeom:coedge#12:0",
-          "owner_loop": "creo:visibgeom:loop#1",
-          "edge": "creo:visibgeom:edge#12",
-          "next": "creo:visibgeom:coedge#11:0",
-          "previous": "creo:visibgeom:coedge#10:0",
-          "radial_next": "creo:visibgeom:coedge#12:1",
-          "sense": "forward",
-          "pcurves": [
-            {
-              "pcurve": "creo:visibgeom:pcurve#12:1"
-            }
-          ]
-        },
-        {
-          "id": "creo:visibgeom:coedge#12:1",
-          "owner_loop": "creo:visibgeom:loop#4",
-          "edge": "creo:visibgeom:edge#12",
-          "next": "creo:visibgeom:coedge#14:1",
-          "previous": "creo:visibgeom:coedge#15:1",
-          "radial_next": "creo:visibgeom:coedge#12:0",
-          "sense": "reversed",
-          "pcurves": [
-            {
-              "pcurve": "creo:visibgeom:pcurve#12:4"
-            }
-          ]
-        },
-        {
-          "id": "creo:visibgeom:coedge#13:0",
-          "owner_loop": "creo:visibgeom:loop#2",
-          "edge": "creo:visibgeom:edge#13",
-          "next": "creo:visibgeom:coedge#14:0",
-          "previous": "creo:visibgeom:coedge#10:1",
-          "radial_next": "creo:visibgeom:coedge#13:1",
-          "sense": "forward",
-          "pcurves": [
-            {
-              "pcurve": "creo:visibgeom:pcurve#13:2"
-            }
-          ]
-        },
-        {
-          "id": "creo:visibgeom:coedge#13:1",
-          "owner_loop": "creo:visibgeom:loop#3",
-          "edge": "creo:visibgeom:edge#13",
-          "next": "creo:visibgeom:coedge#11:1",
-          "previous": "creo:visibgeom:coedge#15:0",
-          "radial_next": "creo:visibgeom:coedge#13:0",
-          "sense": "reversed",
-          "pcurves": [
-            {
-              "pcurve": "creo:visibgeom:pcurve#13:3"
-            }
-          ]
-        },
-        {
-          "id": "creo:visibgeom:coedge#14:0",
-          "owner_loop": "creo:visibgeom:loop#2",
-          "edge": "creo:visibgeom:edge#14",
-          "next": "creo:visibgeom:coedge#10:1",
-          "previous": "creo:visibgeom:coedge#13:0",
-          "radial_next": "creo:visibgeom:coedge#14:1",
-          "sense": "forward",
-          "pcurves": [
-            {
-              "pcurve": "creo:visibgeom:pcurve#14:2"
-            }
-          ]
-        },
-        {
-          "id": "creo:visibgeom:coedge#14:1",
-          "owner_loop": "creo:visibgeom:loop#4",
-          "edge": "creo:visibgeom:edge#14",
-          "next": "creo:visibgeom:coedge#15:1",
-          "previous": "creo:visibgeom:coedge#12:1",
-          "radial_next": "creo:visibgeom:coedge#14:0",
-          "sense": "reversed",
-          "pcurves": [
-            {
-              "pcurve": "creo:visibgeom:pcurve#14:4"
-            }
-          ]
-        },
-        {
-          "id": "creo:visibgeom:coedge#15:0",
-          "owner_loop": "creo:visibgeom:loop#3",
-          "edge": "creo:visibgeom:edge#15",
-          "next": "creo:visibgeom:coedge#13:1",
-          "previous": "creo:visibgeom:coedge#11:1",
-          "radial_next": "creo:visibgeom:coedge#15:1",
-          "sense": "forward",
-          "pcurves": [
-            {
-              "pcurve": "creo:visibgeom:pcurve#15:3"
-            }
-          ]
-        },
-        {
-          "id": "creo:visibgeom:coedge#15:1",
-          "owner_loop": "creo:visibgeom:loop#4",
-          "edge": "creo:visibgeom:edge#15",
-          "next": "creo:visibgeom:coedge#12:1",
-          "previous": "creo:visibgeom:coedge#14:1",
-          "radial_next": "creo:visibgeom:coedge#15:0",
-          "sense": "reversed",
-          "pcurves": [
-            {
-              "pcurve": "creo:visibgeom:pcurve#15:4"
-            }
-          ]
-        }
-      ],
-      "edges": [
-        {
-          "id": "creo:visibgeom:edge#10",
-          "curve": "creo:visibgeom:curve#10",
-          "start": "creo:visibgeom:vertex#1",
-          "end": "creo:visibgeom:vertex#2",
-          "param_range": [
+          },
+          "id": "creo:visibgeom:pcurve#10:1",
+          "parameter_range": [
             0.0,
             0.5
           ]
         },
         {
-          "id": "creo:visibgeom:edge#11",
-          "curve": "creo:visibgeom:curve#11",
-          "start": "creo:visibgeom:vertex#3",
-          "end": "creo:visibgeom:vertex#1",
-          "param_range": [
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "creo:visibgeom:pcurve#10:2",
+          "parameter_range": [
             0.0,
             0.5
           ]
         },
         {
-          "id": "creo:visibgeom:edge#12",
-          "curve": "creo:visibgeom:curve#12",
-          "start": "creo:visibgeom:vertex#2",
-          "end": "creo:visibgeom:vertex#3",
-          "param_range": [
+          "geometry": {
+            "direction": {
+              "u": -1.0,
+              "v": -5.073268178784763e-18
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.5,
+              "v": 2.5366340893923816e-18
+            }
+          },
+          "id": "creo:visibgeom:pcurve#11:1",
+          "parameter_range": [
+            0.0,
+            0.5
+          ]
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.5
+            }
+          },
+          "id": "creo:visibgeom:pcurve#11:3",
+          "parameter_range": [
+            0.0,
+            0.5
+          ]
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.7071067811865475,
+              "v": -0.7071067811865475
+            },
+            "kind": "line",
+            "origin": {
+              "u": 2.5366340893923816e-18,
+              "v": 0.5
+            }
+          },
+          "id": "creo:visibgeom:pcurve#12:1",
+          "parameter_range": [
             0.0,
             0.7071067811865476
           ]
         },
         {
-          "id": "creo:visibgeom:edge#13",
-          "curve": "creo:visibgeom:curve#13",
-          "start": "creo:visibgeom:vertex#1",
-          "end": "creo:visibgeom:vertex#4",
-          "param_range": [
+          "geometry": {
+            "direction": {
+              "u": -0.7071067811865475,
+              "v": -0.7071067811865475
+            },
+            "kind": "line",
+            "origin": {
+              "u": 1.0,
+              "v": -0.5
+            }
+          },
+          "id": "creo:visibgeom:pcurve#12:4",
+          "parameter_range": [
+            0.0,
+            0.7071067811865476
+          ]
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -2.819256915099733e-17,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "creo:visibgeom:pcurve#13:2",
+          "parameter_range": [
             0.0,
             1.0000000000000002
           ]
         },
         {
-          "id": "creo:visibgeom:edge#14",
-          "curve": "creo:visibgeom:curve#14",
-          "start": "creo:visibgeom:vertex#4",
-          "end": "creo:visibgeom:vertex#2",
-          "param_range": [
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "creo:visibgeom:pcurve#13:3",
+          "parameter_range": [
+            0.0,
+            1.0000000000000002
+          ]
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.4472135954999578,
+              "v": -0.8944271909999159
+            },
+            "kind": "line",
+            "origin": {
+              "u": -2.819256915099734e-17,
+              "v": 1.0000000000000002
+            }
+          },
+          "id": "creo:visibgeom:pcurve#14:2",
+          "parameter_range": [
             0.0,
             1.1180339887498951
           ]
         },
         {
-          "id": "creo:visibgeom:edge#15",
-          "curve": "creo:visibgeom:curve#15",
-          "start": "creo:visibgeom:vertex#3",
-          "end": "creo:visibgeom:vertex#4",
-          "param_range": [
+          "geometry": {
+            "direction": {
+              "u": 0.8944271909999157,
+              "v": -0.4472135954999579
+            },
+            "kind": "line",
+            "origin": {
+              "u": -1.6682478271735242e-16,
+              "v": 1.386322135663551e-16
+            }
+          },
+          "id": "creo:visibgeom:pcurve#14:4",
+          "parameter_range": [
+            0.0,
+            1.1180339887498951
+          ]
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.8944271909999159,
+              "v": -0.4472135954999578
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.5
+            }
+          },
+          "id": "creo:visibgeom:pcurve#15:3",
+          "parameter_range": [
+            0.0,
+            1.1180339887498951
+          ]
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -0.447213595499958,
+              "v": 0.8944271909999157
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.5,
+              "v": -1.0
+            }
+          },
+          "id": "creo:visibgeom:pcurve#15:4",
+          "parameter_range": [
             0.0,
             1.1180339887498951
           ]
         }
       ],
-      "vertices": [
-        {
-          "id": "creo:visibgeom:vertex#1",
-          "point": "creo:visibgeom:point#1"
-        },
-        {
-          "id": "creo:visibgeom:vertex#2",
-          "point": "creo:visibgeom:point#2"
-        },
-        {
-          "id": "creo:visibgeom:vertex#3",
-          "point": "creo:visibgeom:point#3"
-        },
-        {
-          "id": "creo:visibgeom:vertex#4",
-          "point": "creo:visibgeom:point#4"
-        }
-      ],
+      "pmi": [],
       "points": [
         {
           "id": "creo:visibgeom:point#1",
@@ -431,18 +743,51 @@
           }
         }
       ],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [
+        {
+          "body": "creo:visibgeom:body#1",
+          "id": "creo:visibgeom:region#1",
+          "shells": [
+            "creo:visibgeom:shell#1"
+          ]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "faces": [
+            "creo:visibgeom:face#1",
+            "creo:visibgeom:face#2",
+            "creo:visibgeom:face#3",
+            "creo:visibgeom:face#4"
+          ],
+          "id": "creo:visibgeom:shell#1",
+          "region": "creo:visibgeom:region#1"
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
       "surfaces": [
         {
-          "id": "creo:visibgeom:surface#1",
           "geometry": {
             "kind": "plane",
-            "origin": {
-              "x": 0.0,
+            "normal": {
+              "x": 1.0,
               "y": 0.0,
               "z": 0.0
             },
-            "normal": {
-              "x": 1.0,
+            "origin": {
+              "x": 0.0,
               "y": 0.0,
               "z": 0.0
             },
@@ -452,23 +797,23 @@
               "z": 0.0
             }
           },
+          "id": "creo:visibgeom:surface#1",
           "source_object": {
             "format": "creo",
             "object_id": "VisibGeom:1"
           }
         },
         {
-          "id": "creo:visibgeom:surface#2",
           "geometry": {
             "kind": "plane",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
             "normal": {
               "x": -0.0,
               "y": 1.0,
+              "z": 0.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
               "z": 0.0
             },
             "u_axis": {
@@ -477,24 +822,24 @@
               "z": 1.0
             }
           },
+          "id": "creo:visibgeom:surface#2",
           "source_object": {
             "format": "creo",
             "object_id": "VisibGeom:2"
           }
         },
         {
-          "id": "creo:visibgeom:surface#3",
           "geometry": {
             "kind": "plane",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
             "normal": {
               "x": 0.0,
               "y": 0.0,
               "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
             },
             "u_axis": {
               "x": 1.0,
@@ -502,24 +847,24 @@
               "z": 0.0
             }
           },
+          "id": "creo:visibgeom:surface#3",
           "source_object": {
             "format": "creo",
             "object_id": "VisibGeom:3"
           }
         },
         {
-          "id": "creo:visibgeom:surface#4",
           "geometry": {
             "kind": "plane",
-            "origin": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
             "normal": {
               "x": 0.3333333333333333,
               "y": 0.6666666666666666,
               "z": 0.6666666666666666
+            },
+            "origin": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
             },
             "u_axis": {
               "x": -0.6666666666666666,
@@ -527,426 +872,43 @@
               "z": 0.6666666666666666
             }
           },
+          "id": "creo:visibgeom:surface#4",
           "source_object": {
             "format": "creo",
             "object_id": "VisibGeom:4"
           }
         }
       ],
-      "curves": [
-        {
-          "id": "creo:visibgeom:curve#10",
-          "geometry": {
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "direction": {
-              "x": 0.0,
-              "y": 5.073268178784763e-18,
-              "z": 1.0
-            }
-          },
-          "source_object": {
-            "format": "creo",
-            "object_id": "VisibGeom:10"
-          }
-        },
-        {
-          "id": "creo:visibgeom:curve#11",
-          "geometry": {
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.5,
-              "z": 2.5366340893923816e-18
-            },
-            "direction": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": -5.073268178784763e-18
-            }
-          },
-          "source_object": {
-            "format": "creo",
-            "object_id": "VisibGeom:11"
-          }
-        },
-        {
-          "id": "creo:visibgeom:curve#12",
-          "geometry": {
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 2.5366340893923816e-18,
-              "z": 0.5
-            },
-            "direction": {
-              "x": 0.0,
-              "y": 0.7071067811865475,
-              "z": -0.7071067811865475
-            }
-          },
-          "source_object": {
-            "format": "creo",
-            "object_id": "VisibGeom:12"
-          }
-        },
-        {
-          "id": "creo:visibgeom:curve#13",
-          "geometry": {
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -2.819256915099733e-17
-            }
-          },
-          "source_object": {
-            "format": "creo",
-            "object_id": "VisibGeom:13"
-          }
-        },
-        {
-          "id": "creo:visibgeom:curve#14",
-          "geometry": {
-            "kind": "line",
-            "origin": {
-              "x": 1.0000000000000002,
-              "y": 0.0,
-              "z": -2.819256915099734e-17
-            },
-            "direction": {
-              "x": -0.8944271909999159,
-              "y": 2.268834503169857e-18,
-              "z": 0.4472135954999578
-            }
-          },
-          "source_object": {
-            "format": "creo",
-            "object_id": "VisibGeom:14"
-          }
-        },
-        {
-          "id": "creo:visibgeom:curve#15",
-          "geometry": {
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.5,
-              "z": 2.5366340893923816e-18
-            },
-            "direction": {
-              "x": 0.8944271909999159,
-              "y": -0.4472135954999578,
-              "z": -2.7485034935967283e-17
-            }
-          },
-          "source_object": {
-            "format": "creo",
-            "object_id": "VisibGeom:15"
-          }
-        }
-      ],
-      "subds": [],
-      "pcurves": [
-        {
-          "id": "creo:visibgeom:pcurve#10:1",
-          "geometry": {
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.0
-            },
-            "direction": {
-              "u": 5.073268178784763e-18,
-              "v": 1.0
-            }
-          },
-          "parameter_range": [
-            0.0,
-            0.5
-          ]
-        },
-        {
-          "id": "creo:visibgeom:pcurve#10:2",
-          "geometry": {
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.0
-            },
-            "direction": {
-              "u": 1.0,
-              "v": 0.0
-            }
-          },
-          "parameter_range": [
-            0.0,
-            0.5
-          ]
-        },
-        {
-          "id": "creo:visibgeom:pcurve#11:1",
-          "geometry": {
-            "kind": "line",
-            "origin": {
-              "u": 0.5,
-              "v": 2.5366340893923816e-18
-            },
-            "direction": {
-              "u": -1.0,
-              "v": -5.073268178784763e-18
-            }
-          },
-          "parameter_range": [
-            0.0,
-            0.5
-          ]
-        },
-        {
-          "id": "creo:visibgeom:pcurve#11:3",
-          "geometry": {
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.5
-            },
-            "direction": {
-              "u": 0.0,
-              "v": -1.0
-            }
-          },
-          "parameter_range": [
-            0.0,
-            0.5
-          ]
-        },
-        {
-          "id": "creo:visibgeom:pcurve#12:1",
-          "geometry": {
-            "kind": "line",
-            "origin": {
-              "u": 2.5366340893923816e-18,
-              "v": 0.5
-            },
-            "direction": {
-              "u": 0.7071067811865475,
-              "v": -0.7071067811865475
-            }
-          },
-          "parameter_range": [
-            0.0,
-            0.7071067811865476
-          ]
-        },
-        {
-          "id": "creo:visibgeom:pcurve#12:4",
-          "geometry": {
-            "kind": "line",
-            "origin": {
-              "u": 1.0,
-              "v": -0.5
-            },
-            "direction": {
-              "u": -0.7071067811865475,
-              "v": -0.7071067811865475
-            }
-          },
-          "parameter_range": [
-            0.0,
-            0.7071067811865476
-          ]
-        },
-        {
-          "id": "creo:visibgeom:pcurve#13:2",
-          "geometry": {
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.0
-            },
-            "direction": {
-              "u": -2.819256915099733e-17,
-              "v": 1.0
-            }
-          },
-          "parameter_range": [
-            0.0,
-            1.0000000000000002
-          ]
-        },
-        {
-          "id": "creo:visibgeom:pcurve#13:3",
-          "geometry": {
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.0
-            },
-            "direction": {
-              "u": 1.0,
-              "v": 0.0
-            }
-          },
-          "parameter_range": [
-            0.0,
-            1.0000000000000002
-          ]
-        },
-        {
-          "id": "creo:visibgeom:pcurve#14:2",
-          "geometry": {
-            "kind": "line",
-            "origin": {
-              "u": -2.819256915099734e-17,
-              "v": 1.0000000000000002
-            },
-            "direction": {
-              "u": 0.4472135954999578,
-              "v": -0.8944271909999159
-            }
-          },
-          "parameter_range": [
-            0.0,
-            1.1180339887498951
-          ]
-        },
-        {
-          "id": "creo:visibgeom:pcurve#14:4",
-          "geometry": {
-            "kind": "line",
-            "origin": {
-              "u": -1.6682478271735242e-16,
-              "v": 1.386322135663551e-16
-            },
-            "direction": {
-              "u": 0.8944271909999157,
-              "v": -0.4472135954999579
-            }
-          },
-          "parameter_range": [
-            0.0,
-            1.1180339887498951
-          ]
-        },
-        {
-          "id": "creo:visibgeom:pcurve#15:3",
-          "geometry": {
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.5
-            },
-            "direction": {
-              "u": 0.8944271909999159,
-              "v": -0.4472135954999578
-            }
-          },
-          "parameter_range": [
-            0.0,
-            1.1180339887498951
-          ]
-        },
-        {
-          "id": "creo:visibgeom:pcurve#15:4",
-          "geometry": {
-            "kind": "line",
-            "origin": {
-              "u": 0.5,
-              "v": -1.0
-            },
-            "direction": {
-              "u": -0.447213595499958,
-              "v": 0.8944271909999157
-            }
-          },
-          "parameter_range": [
-            0.0,
-            1.1180339887498951
-          ]
-        }
-      ],
-      "procedural_surfaces": [],
-      "procedural_curves": [],
-      "features": [
-        {
-          "id": "creo:model:feature#4",
-          "ordinal": 0,
-          "name": "Round id 4",
-          "suppressed": false,
-          "source_properties": {
-            "featdefs_row_schema_classes": "913",
-            "featdefs_schema_class": "913",
-            "native_parameter.affected_edge_ids": "10,11",
-            "native_parameter.affected_geometry_ids": "99"
-          },
-          "outputs": [
-            "creo:visibgeom:body#1"
-          ],
-          "definition": {
-            "definition": "fillet",
-            "groups": [
-              {
-                "edges": {
-                  "kind": "resolved",
-                  "value": {
-                    "edges": [
-                      "creo:visibgeom:edge#10",
-                      "creo:visibgeom:edge#11"
-                    ],
-                    "native": "creo:allfeatur:edgs_affected#4:10,11"
-                  }
-                },
-                "radius": {
-                  "kind": "unresolved"
-                }
-              }
-            ]
-          }
-        }
-      ],
-      "configurations": [],
-      "parameters": [],
-      "sketches": [],
-      "sketch_entities": [],
-      "sketch_constraints": [],
-      "spatial_sketches": [],
-      "spatial_sketch_entities": [],
-      "spreadsheets": [],
-      "components": [],
-      "occurrences": [],
-      "assembly_joints": [],
-      "drawings": [],
-      "semantic_annotations": [],
-      "presentation_documents": [],
-      "view_presentations": [],
       "tessellations": [],
-      "appearances": [],
-      "appearance_bindings": [],
-      "attributes": [],
-      "products": [],
-      "product_occurrences": [],
-      "pmi": [],
-      "presentation_layers": []
+      "vertices": [
+        {
+          "id": "creo:visibgeom:vertex#1",
+          "point": "creo:visibgeom:point#1"
+        },
+        {
+          "id": "creo:visibgeom:vertex#2",
+          "point": "creo:visibgeom:point#2"
+        },
+        {
+          "id": "creo:visibgeom:vertex#3",
+          "point": "creo:visibgeom:point#3"
+        },
+        {
+          "id": "creo:visibgeom:vertex#4",
+          "point": "creo:visibgeom:point#4"
+        }
+      ],
+      "view_presentations": []
     },
     "native": {
       "creo": {
-        "version": 1,
         "arenas": {
           "curve_parameters": [
             {
-              "id": "creo:visibgeom:curve_parameter#10",
               "body": [],
               "body_offset": 282,
               "curve_id": 10,
+              "id": "creo:visibgeom:curve_parameter#10",
               "offset": 277,
               "opaque_spans": [],
               "references": [],
@@ -960,10 +922,10 @@
               "type_byte": 8
             },
             {
-              "id": "creo:visibgeom:curve_parameter#11",
               "body": [],
               "body_offset": 299,
               "curve_id": 11,
+              "id": "creo:visibgeom:curve_parameter#11",
               "offset": 294,
               "opaque_spans": [],
               "references": [],
@@ -977,10 +939,10 @@
               "type_byte": 8
             },
             {
-              "id": "creo:visibgeom:curve_parameter#12",
               "body": [],
               "body_offset": 316,
               "curve_id": 12,
+              "id": "creo:visibgeom:curve_parameter#12",
               "offset": 311,
               "opaque_spans": [],
               "references": [],
@@ -994,10 +956,10 @@
               "type_byte": 8
             },
             {
-              "id": "creo:visibgeom:curve_parameter#13",
               "body": [],
               "body_offset": 333,
               "curve_id": 13,
+              "id": "creo:visibgeom:curve_parameter#13",
               "offset": 328,
               "opaque_spans": [],
               "references": [],
@@ -1011,10 +973,10 @@
               "type_byte": 8
             },
             {
-              "id": "creo:visibgeom:curve_parameter#14",
               "body": [],
               "body_offset": 350,
               "curve_id": 14,
+              "id": "creo:visibgeom:curve_parameter#14",
               "offset": 345,
               "opaque_spans": [],
               "references": [],
@@ -1028,10 +990,10 @@
               "type_byte": 8
             },
             {
-              "id": "creo:visibgeom:curve_parameter#15",
               "body": [],
               "body_offset": 367,
               "curve_id": 15,
+              "id": "creo:visibgeom:curve_parameter#15",
               "offset": 362,
               "opaque_spans": [],
               "references": [],
@@ -1047,7 +1009,6 @@
           ],
           "curve_topology_rows": [
             {
-              "id": "creo:visibgeom:curve_topology#10",
               "curve_id": 10,
               "directions": [
                 1,
@@ -1058,6 +1019,7 @@
                 2
               ],
               "feature_id": 4,
+              "id": "creo:visibgeom:curve_topology#10",
               "next_edges": [
                 12,
                 13
@@ -1067,7 +1029,6 @@
               "type_byte": 8
             },
             {
-              "id": "creo:visibgeom:curve_topology#11",
               "curve_id": 11,
               "directions": [
                 1,
@@ -1078,6 +1039,7 @@
                 3
               ],
               "feature_id": 4,
+              "id": "creo:visibgeom:curve_topology#11",
               "next_edges": [
                 10,
                 15
@@ -1087,7 +1049,6 @@
               "type_byte": 8
             },
             {
-              "id": "creo:visibgeom:curve_topology#12",
               "curve_id": 12,
               "directions": [
                 1,
@@ -1098,6 +1059,7 @@
                 4
               ],
               "feature_id": 4,
+              "id": "creo:visibgeom:curve_topology#12",
               "next_edges": [
                 11,
                 14
@@ -1107,7 +1069,6 @@
               "type_byte": 8
             },
             {
-              "id": "creo:visibgeom:curve_topology#13",
               "curve_id": 13,
               "directions": [
                 1,
@@ -1118,6 +1079,7 @@
                 3
               ],
               "feature_id": 4,
+              "id": "creo:visibgeom:curve_topology#13",
               "next_edges": [
                 14,
                 11
@@ -1127,7 +1089,6 @@
               "type_byte": 8
             },
             {
-              "id": "creo:visibgeom:curve_topology#14",
               "curve_id": 14,
               "directions": [
                 1,
@@ -1138,6 +1099,7 @@
                 4
               ],
               "feature_id": 4,
+              "id": "creo:visibgeom:curve_topology#14",
               "next_edges": [
                 10,
                 15
@@ -1147,7 +1109,6 @@
               "type_byte": 8
             },
             {
-              "id": "creo:visibgeom:curve_topology#15",
               "curve_id": 15,
               "directions": [
                 1,
@@ -1158,6 +1119,7 @@
                 4
               ],
               "feature_id": 4,
+              "id": "creo:visibgeom:curve_topology#15",
               "next_edges": [
                 13,
                 12
@@ -1169,7 +1131,6 @@
           ],
           "face_components": [
             {
-              "id": "creo:topology:face_component#1",
               "curve_ids": [
                 10,
                 11,
@@ -1183,7 +1144,8 @@
                 2,
                 3,
                 4
-              ]
+              ],
+              "id": "creo:topology:face_component#1"
             }
           ],
           "feature_affected_ids": [
@@ -1211,11 +1173,11 @@
           ],
           "feature_operation_states": [
             {
-              "id": "creo:mdlstatus:feature_state#4:0",
               "current": true,
               "display_name_stored": true,
               "family": "Round",
               "feature_id": 4,
+              "id": "creo:mdlstatus:feature_state#4:0",
               "identifier_keyword": "id",
               "offset": 458,
               "parent_feature_id": null,
@@ -1241,7 +1203,6 @@
           ],
           "feature_rows": [
             {
-              "id": "creo:allfeatur:feature_row#392",
               "body": [
                 235,
                 4,
@@ -1303,6 +1264,7 @@
                 235,
                 4
               ],
+              "id": "creo:allfeatur:feature_row#392",
               "offset": 392,
               "owner_feature_id": 4,
               "root_schema_class": 913,
@@ -1312,119 +1274,119 @@
           ],
           "half_edge_vertex_incidence": [
             {
+              "end_vertex_id": 2,
+              "half_edge": {
+                "curve_id": 10,
+                "side": 0
+              },
               "id": "creo:topology:half_edge_vertex_incidence#10:0",
-              "end_vertex_id": 2,
-              "half_edge": {
-                "curve_id": 10,
-                "side": 0
-              },
               "start_vertex_id": 1
             },
             {
+              "end_vertex_id": 1,
+              "half_edge": {
+                "curve_id": 10,
+                "side": 1
+              },
               "id": "creo:topology:half_edge_vertex_incidence#10:1",
-              "end_vertex_id": 1,
-              "half_edge": {
-                "curve_id": 10,
-                "side": 1
-              },
               "start_vertex_id": 2
             },
             {
+              "end_vertex_id": 1,
+              "half_edge": {
+                "curve_id": 11,
+                "side": 0
+              },
               "id": "creo:topology:half_edge_vertex_incidence#11:0",
-              "end_vertex_id": 1,
-              "half_edge": {
-                "curve_id": 11,
-                "side": 0
-              },
               "start_vertex_id": 3
             },
             {
+              "end_vertex_id": 3,
+              "half_edge": {
+                "curve_id": 11,
+                "side": 1
+              },
               "id": "creo:topology:half_edge_vertex_incidence#11:1",
-              "end_vertex_id": 3,
-              "half_edge": {
-                "curve_id": 11,
-                "side": 1
-              },
               "start_vertex_id": 1
             },
             {
-              "id": "creo:topology:half_edge_vertex_incidence#12:0",
               "end_vertex_id": 3,
               "half_edge": {
                 "curve_id": 12,
                 "side": 0
               },
+              "id": "creo:topology:half_edge_vertex_incidence#12:0",
               "start_vertex_id": 2
             },
             {
-              "id": "creo:topology:half_edge_vertex_incidence#12:1",
               "end_vertex_id": 2,
               "half_edge": {
                 "curve_id": 12,
                 "side": 1
               },
+              "id": "creo:topology:half_edge_vertex_incidence#12:1",
               "start_vertex_id": 3
             },
             {
-              "id": "creo:topology:half_edge_vertex_incidence#13:0",
               "end_vertex_id": 4,
               "half_edge": {
                 "curve_id": 13,
                 "side": 0
               },
+              "id": "creo:topology:half_edge_vertex_incidence#13:0",
               "start_vertex_id": 1
             },
             {
-              "id": "creo:topology:half_edge_vertex_incidence#13:1",
               "end_vertex_id": 1,
               "half_edge": {
                 "curve_id": 13,
                 "side": 1
               },
+              "id": "creo:topology:half_edge_vertex_incidence#13:1",
               "start_vertex_id": 4
             },
             {
-              "id": "creo:topology:half_edge_vertex_incidence#14:0",
               "end_vertex_id": 2,
               "half_edge": {
                 "curve_id": 14,
                 "side": 0
               },
+              "id": "creo:topology:half_edge_vertex_incidence#14:0",
               "start_vertex_id": 4
             },
             {
-              "id": "creo:topology:half_edge_vertex_incidence#14:1",
               "end_vertex_id": 4,
               "half_edge": {
                 "curve_id": 14,
                 "side": 1
               },
+              "id": "creo:topology:half_edge_vertex_incidence#14:1",
               "start_vertex_id": 2
             },
             {
-              "id": "creo:topology:half_edge_vertex_incidence#15:0",
               "end_vertex_id": 4,
               "half_edge": {
                 "curve_id": 15,
                 "side": 0
               },
+              "id": "creo:topology:half_edge_vertex_incidence#15:0",
               "start_vertex_id": 3
             },
             {
-              "id": "creo:topology:half_edge_vertex_incidence#15:1",
               "end_vertex_id": 3,
               "half_edge": {
                 "curve_id": 15,
                 "side": 1
               },
+              "id": "creo:topology:half_edge_vertex_incidence#15:1",
               "start_vertex_id": 4
             }
           ],
           "half_edges": [
             {
-              "id": "creo:topology:half_edge#10:0",
               "curve_id": 10,
               "face_id": 1,
+              "id": "creo:topology:half_edge#10:0",
               "next": {
                 "curve_id": 12,
                 "side": 0
@@ -1434,9 +1396,9 @@
               "source_section": "VisibGeom"
             },
             {
-              "id": "creo:topology:half_edge#10:1",
               "curve_id": 10,
               "face_id": 2,
+              "id": "creo:topology:half_edge#10:1",
               "next": {
                 "curve_id": 13,
                 "side": 0
@@ -1446,9 +1408,9 @@
               "source_section": "VisibGeom"
             },
             {
+              "curve_id": 11,
+              "face_id": 1,
               "id": "creo:topology:half_edge#11:0",
-              "curve_id": 11,
-              "face_id": 1,
               "next": {
                 "curve_id": 10,
                 "side": 0
@@ -1458,9 +1420,9 @@
               "source_section": "VisibGeom"
             },
             {
+              "curve_id": 11,
+              "face_id": 3,
               "id": "creo:topology:half_edge#11:1",
-              "curve_id": 11,
-              "face_id": 3,
               "next": {
                 "curve_id": 15,
                 "side": 0
@@ -1470,9 +1432,9 @@
               "source_section": "VisibGeom"
             },
             {
-              "id": "creo:topology:half_edge#12:0",
               "curve_id": 12,
               "face_id": 1,
+              "id": "creo:topology:half_edge#12:0",
               "next": {
                 "curve_id": 11,
                 "side": 0
@@ -1482,9 +1444,9 @@
               "source_section": "VisibGeom"
             },
             {
-              "id": "creo:topology:half_edge#12:1",
               "curve_id": 12,
               "face_id": 4,
+              "id": "creo:topology:half_edge#12:1",
               "next": {
                 "curve_id": 14,
                 "side": 1
@@ -1494,9 +1456,9 @@
               "source_section": "VisibGeom"
             },
             {
-              "id": "creo:topology:half_edge#13:0",
               "curve_id": 13,
               "face_id": 2,
+              "id": "creo:topology:half_edge#13:0",
               "next": {
                 "curve_id": 14,
                 "side": 0
@@ -1506,9 +1468,9 @@
               "source_section": "VisibGeom"
             },
             {
-              "id": "creo:topology:half_edge#13:1",
               "curve_id": 13,
               "face_id": 3,
+              "id": "creo:topology:half_edge#13:1",
               "next": {
                 "curve_id": 11,
                 "side": 1
@@ -1518,9 +1480,9 @@
               "source_section": "VisibGeom"
             },
             {
-              "id": "creo:topology:half_edge#14:0",
               "curve_id": 14,
               "face_id": 2,
+              "id": "creo:topology:half_edge#14:0",
               "next": {
                 "curve_id": 10,
                 "side": 1
@@ -1530,9 +1492,9 @@
               "source_section": "VisibGeom"
             },
             {
-              "id": "creo:topology:half_edge#14:1",
               "curve_id": 14,
               "face_id": 4,
+              "id": "creo:topology:half_edge#14:1",
               "next": {
                 "curve_id": 15,
                 "side": 1
@@ -1542,9 +1504,9 @@
               "source_section": "VisibGeom"
             },
             {
-              "id": "creo:topology:half_edge#15:0",
               "curve_id": 15,
               "face_id": 3,
+              "id": "creo:topology:half_edge#15:0",
               "next": {
                 "curve_id": 13,
                 "side": 1
@@ -1554,9 +1516,9 @@
               "source_section": "VisibGeom"
             },
             {
-              "id": "creo:topology:half_edge#15:1",
               "curve_id": 15,
               "face_id": 4,
+              "id": "creo:topology:half_edge#15:1",
               "next": {
                 "curve_id": 12,
                 "side": 1
@@ -1568,7 +1530,6 @@
           ],
           "loops": [
             {
-              "id": "creo:topology:loop#1",
               "face_id": 1,
               "half_edges": [
                 {
@@ -1583,10 +1544,10 @@
                   "curve_id": 11,
                   "side": 0
                 }
-              ]
+              ],
+              "id": "creo:topology:loop#1"
             },
             {
-              "id": "creo:topology:loop#2",
               "face_id": 2,
               "half_edges": [
                 {
@@ -1601,10 +1562,10 @@
                   "curve_id": 14,
                   "side": 0
                 }
-              ]
+              ],
+              "id": "creo:topology:loop#2"
             },
             {
-              "id": "creo:topology:loop#3",
               "face_id": 3,
               "half_edges": [
                 {
@@ -1619,10 +1580,10 @@
                   "curve_id": 13,
                   "side": 1
                 }
-              ]
+              ],
+              "id": "creo:topology:loop#3"
             },
             {
-              "id": "creo:topology:loop#4",
               "face_id": 4,
               "half_edges": [
                 {
@@ -1637,7 +1598,8 @@
                   "curve_id": 15,
                   "side": 1
                 }
-              ]
+              ],
+              "id": "creo:topology:loop#4"
             }
           ],
           "outline_planes": [
@@ -1707,7 +1669,6 @@
           ],
           "plane_envelopes": [
             {
-              "id": "creo:surface:plane_envelope#105:1",
               "body": [
                 15,
                 15,
@@ -1758,6 +1719,7 @@
                 ],
                 "kind": "standard"
               },
+              "id": "creo:surface:plane_envelope#105:1",
               "offset": 105,
               "row_offset": 99,
               "scalar_tokens": [
@@ -1804,7 +1766,6 @@
               "surface_id": 1
             },
             {
-              "id": "creo:surface:plane_envelope#143:2",
               "body": [
                 15,
                 15,
@@ -1853,6 +1814,7 @@
                 ],
                 "kind": "standard"
               },
+              "id": "creo:surface:plane_envelope#143:2",
               "offset": 143,
               "row_offset": 137,
               "scalar_tokens": [
@@ -1897,7 +1859,6 @@
               "surface_id": 2
             },
             {
-              "id": "creo:surface:plane_envelope#179:3",
               "body": [
                 15,
                 15,
@@ -1946,6 +1907,7 @@
                 ],
                 "kind": "standard"
               },
+              "id": "creo:surface:plane_envelope#179:3",
               "offset": 179,
               "row_offset": 173,
               "scalar_tokens": [
@@ -1990,7 +1952,6 @@
               "surface_id": 3
             },
             {
-              "id": "creo:surface:plane_envelope#215:4",
               "body": [
                 15,
                 15,
@@ -2033,6 +1994,7 @@
                 ],
                 "kind": "standard"
               },
+              "id": "creo:surface:plane_envelope#215:4",
               "offset": 215,
               "row_offset": 209,
               "scalar_tokens": [
@@ -2073,7 +2035,6 @@
           ],
           "plane_local_systems": [
             {
-              "id": "creo:surface:plane_local_system#124:1",
               "body": [
                 15,
                 228,
@@ -2089,6 +2050,7 @@
                 15
               ],
               "classification": "simple",
+              "id": "creo:surface:plane_local_system#124:1",
               "normal": [
                 1.0,
                 0.0,
@@ -2124,7 +2086,6 @@
               ]
             },
             {
-              "id": "creo:surface:plane_local_system#160:2",
               "body": [
                 15,
                 15,
@@ -2140,6 +2101,7 @@
                 15
               ],
               "classification": "simple",
+              "id": "creo:surface:plane_local_system#160:2",
               "normal": [
                 -0.0,
                 1.0,
@@ -2175,7 +2137,6 @@
               ]
             },
             {
-              "id": "creo:surface:plane_local_system#196:3",
               "body": [
                 228,
                 15,
@@ -2191,6 +2152,7 @@
                 15
               ],
               "classification": "unclassified",
+              "id": "creo:surface:plane_local_system#196:3",
               "normal": [
                 0.0,
                 0.0,
@@ -2226,7 +2188,6 @@
               ]
             },
             {
-              "id": "creo:surface:plane_local_system#226:4",
               "body": [
                 72,
                 0,
@@ -2252,6 +2213,7 @@
                 15
               ],
               "classification": "unclassified",
+              "id": "creo:surface:plane_local_system#226:4",
               "normal": [
                 0.3333333333333333,
                 0.6666666666666666,
@@ -2289,7 +2251,6 @@
           ],
           "surface_parameters": [
             {
-              "id": "creo:visibgeom:surface_parameter#1",
               "body": [
                 15,
                 15,
@@ -2314,6 +2275,7 @@
               "boundary": "compound_close",
               "cone_half_angle_override": null,
               "extrusion_direction": null,
+              "id": "creo:visibgeom:surface_parameter#1",
               "opaque_spans": [],
               "positional_cone_frame": null,
               "positional_cylinder_frame": null,
@@ -2610,7 +2572,6 @@
               "type26_split_coordinate_envelope": null
             },
             {
-              "id": "creo:visibgeom:surface_parameter#2",
               "body": [
                 15,
                 15,
@@ -2633,6 +2594,7 @@
               "boundary": "compound_close",
               "cone_half_angle_override": null,
               "extrusion_direction": null,
+              "id": "creo:visibgeom:surface_parameter#2",
               "opaque_spans": [],
               "positional_cone_frame": null,
               "positional_cylinder_frame": null,
@@ -2923,7 +2885,6 @@
               "type26_split_coordinate_envelope": null
             },
             {
-              "id": "creo:visibgeom:surface_parameter#3",
               "body": [
                 15,
                 15,
@@ -2946,6 +2907,7 @@
               "boundary": "compound_close",
               "cone_half_angle_override": null,
               "extrusion_direction": null,
+              "id": "creo:visibgeom:surface_parameter#3",
               "opaque_spans": [],
               "positional_cone_frame": null,
               "positional_cylinder_frame": null,
@@ -3236,7 +3198,6 @@
               "type26_split_coordinate_envelope": null
             },
             {
-              "id": "creo:visibgeom:surface_parameter#4",
               "body": [
                 15,
                 15,
@@ -3253,6 +3214,7 @@
               "boundary": "compound_close",
               "cone_half_angle_override": null,
               "extrusion_direction": null,
+              "id": "creo:visibgeom:surface_parameter#4",
               "opaque_spans": [],
               "positional_cone_frame": null,
               "positional_cylinder_frame": null,
@@ -3527,9 +3489,9 @@
           ],
           "surface_rows": [
             {
-              "id": "creo:visibgeom:surface_row#1",
               "boundary_type": 0,
               "feature_id": 4,
+              "id": "creo:visibgeom:surface_row#1",
               "next_surface": 0,
               "offset": 99,
               "reversed": true,
@@ -3540,9 +3502,9 @@
               "type_byte": 34
             },
             {
-              "id": "creo:visibgeom:surface_row#2",
               "boundary_type": 0,
               "feature_id": 4,
+              "id": "creo:visibgeom:surface_row#2",
               "next_surface": 0,
               "offset": 137,
               "reversed": false,
@@ -3553,9 +3515,9 @@
               "type_byte": 34
             },
             {
-              "id": "creo:visibgeom:surface_row#3",
               "boundary_type": 0,
               "feature_id": 4,
+              "id": "creo:visibgeom:surface_row#3",
               "next_surface": 0,
               "offset": 173,
               "reversed": false,
@@ -3566,9 +3528,9 @@
               "type_byte": 34
             },
             {
-              "id": "creo:visibgeom:surface_row#4",
               "boundary_type": 0,
               "feature_id": 4,
+              "id": "creo:visibgeom:surface_row#4",
               "next_surface": 0,
               "offset": 209,
               "reversed": false,
@@ -3581,7 +3543,6 @@
           ],
           "topological_vertices": [
             {
-              "id": "creo:topology:vertex#1",
               "half_edges": [
                 {
                   "curve_id": 10,
@@ -3596,10 +3557,10 @@
                   "side": 0
                 }
               ],
+              "id": "creo:topology:vertex#1",
               "vertex_id": 1
             },
             {
-              "id": "creo:topology:vertex#2",
               "half_edges": [
                 {
                   "curve_id": 10,
@@ -3614,10 +3575,10 @@
                   "side": 1
                 }
               ],
+              "id": "creo:topology:vertex#2",
               "vertex_id": 2
             },
             {
-              "id": "creo:topology:vertex#3",
               "half_edges": [
                 {
                   "curve_id": 11,
@@ -3632,10 +3593,10 @@
                   "side": 0
                 }
               ],
+              "id": "creo:topology:vertex#3",
               "vertex_id": 3
             },
             {
-              "id": "creo:topology:vertex#4",
               "half_edges": [
                 {
                   "curve_id": 13,
@@ -3650,6 +3611,7 @@
                   "side": 1
                 }
               ],
+              "id": "creo:topology:vertex#4",
               "vertex_id": 4
             }
           ],
@@ -3658,14 +3620,48 @@
               "id": "creo:VisibGeom:section#76"
             }
           ]
-        }
+        },
+        "version": 1
       }
+    },
+    "source": {
+      "attributes": {
+        "crv_array_count": "6",
+        "expanded_section_byte_count": "0",
+        "expanded_section_count": "0",
+        "file_size": "469",
+        "layout": "unknown",
+        "section.0.length": "305",
+        "section.0.name": "VisibGeom",
+        "section.0.offset": "76",
+        "section.0.raw_name": "VisibGeom",
+        "section.0.role": "psb-geometry",
+        "section.1.length": "66",
+        "section.1.name": "AllFeatur",
+        "section.1.offset": "381",
+        "section.1.raw_name": "AllFeatur",
+        "section.1.role": "model-data",
+        "section.2.length": "22",
+        "section.2.name": "MdlStatus",
+        "section.2.offset": "447",
+        "section.2.raw_name": "MdlStatus",
+        "section.2.role": "metadata",
+        "section_count": "3",
+        "srf_array_count": "4",
+        "version_line": "#UGC:2 P c"
+      },
+      "format": "creo"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
     }
   },
   "report": {
-    "format": "creo",
     "container_only": false,
-    "geometry_transferred": true,
     "coverage": {
       "active_curve_expression_assignment_count": 0,
       "active_feature_relation_constraint_count": 0,
@@ -3958,60 +3954,53 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 0
     },
+    "format": "creo",
+    "geometry_transferred": true,
     "losses": [
       {
         "code": "carrier_summary",
-        "category": "geometry",
-        "severity": "info",
-        "message": "PSB container decoded structurally: 3 section(s), unknown layout, VisibGeom namespace census srf_array=4 / crv_array=6; 4 typed surface rows, 0 labeled curve prototypes, 6 canonical curve-topology rows, and 4 closed native loops were decoded. Outline-backed planes, guarded non-axis support frames, complete ND first-instance plane, cylinder, cone, torus, and interpolation-spline prototypes, unbound straight positional surface-of-extrusion planes, topology-bound planes with analytic boundary carriers, `fc 05` cylinders with a resolved axis-normal cap plane, four-entry two-cap and blind circular-sweep cylinders, four-entry simple-hole cylinders with complete cap outlines, radius-anchored class-911 counterbore and bore patches, and compact simple-hole cylinders with complete positional carriers, complementary split-outline cylinders bound to an axis-normal plane, complete positional cylinder bodies, complete support-apex and planar-envelope positional cones, and complete local-system positional tori transfer as carriers; other parameter bodies remain structural records."
+        "message": "PSB container decoded structurally: 3 section(s), unknown layout, VisibGeom namespace census srf_array=4 / crv_array=6; 4 typed surface rows, 0 labeled curve prototypes, 6 canonical curve-topology rows, and 4 closed native loops were decoded. Outline-backed planes, guarded non-axis support frames, complete ND first-instance plane, cylinder, cone, torus, and interpolation-spline prototypes, unbound straight positional surface-of-extrusion planes, topology-bound planes with analytic boundary carriers, `fc 05` cylinders with a resolved axis-normal cap plane, four-entry two-cap and blind circular-sweep cylinders, four-entry simple-hole cylinders with complete cap outlines, radius-anchored class-911 counterbore and bore patches, and compact simple-hole cylinders with complete positional carriers, complementary split-outline cylinders bound to an axis-normal plane, complete positional cylinder bodies, complete support-apex and planar-envelope positional cones, and complete local-system positional tori transfer as carriers; other parameter bodies remain structural records.",
+        "severity": "info"
       },
       {
         "code": "geometry_not_transferred",
-        "category": "geometry",
-        "severity": "blocking",
-        "message": "General model B-rep transfer remains incomplete. Native face components transfer when every boundary edge has solved vertex orbits, face orientation is unique, and every loop is complete; a multi-loop planar face additionally requires one strict containment outer boundary. Selected cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete square cap outline establishes the complete axis placement and radius, or a compact class-911 table owns a complete positional cylinder carrier, a class-911 counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature patches have complementary square outline bounds on one axis-normal plane. Later positional instances do not inherit prototype placement or scalar defaults; they require their per-instance parameter bodies ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). 1 PSB geometry section(s) were preserved verbatim as unknown records."
+        "message": "General model B-rep transfer remains incomplete. Native face components transfer when every boundary edge has solved vertex orbits, face orientation is unique, and every loop is complete; a multi-loop planar face additionally requires one strict containment outer boundary. Selected cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete square cap outline establishes the complete axis placement and radius, or a compact class-911 table owns a complete positional cylinder carrier, a class-911 counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature patches have complementary square outline bounds on one axis-normal plane. Later positional instances do not inherit prototype placement or scalar defaults; they require their per-instance parameter bodies ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). 1 PSB geometry section(s) were preserved verbatim as unknown records.",
+        "severity": "blocking"
       },
       {
         "code": "carrier_summary",
-        "category": "geometry",
-        "severity": "info",
-        "message": "Transferred 4 model-space plane carrier(s) from complete VisibGeom local-system support frames."
+        "message": "Transferred 4 model-space plane carrier(s) from complete VisibGeom local-system support frames.",
+        "severity": "info"
       },
       {
         "code": "carrier_summary",
-        "category": "geometry",
-        "severity": "info",
-        "message": "Transferred 4 exact model-space point(s) for native topological vertex orbits from unique placed-carrier intersections or pcurve endpoint domains constrained by agreeing face maps and incident analytic edge carriers."
+        "message": "Transferred 4 exact model-space point(s) for native topological vertex orbits from unique placed-carrier intersections or pcurve endpoint domains constrained by agreeing face maps and incident analytic edge carriers.",
+        "severity": "info"
       },
       {
         "code": "carrier_summary",
-        "category": "topology",
-        "severity": "info",
-        "message": "Transferred 6 native topological edge(s) whose endpoint vertex orbits have exact model-space points."
+        "message": "Transferred 6 native topological edge(s) whose endpoint vertex orbits have exact model-space points.",
+        "severity": "info"
       },
       {
         "code": "geometry_not_transferred",
-        "category": "geometry",
-        "severity": "blocking",
-        "message": "Additional model-space carriers are gated by unresolved lane-specific scalar prefixes, feature-local transform bindings, placement-incomplete or untagged `0x26` torus/sphere variants, and the round/fillet feature evaluator. These gaps prevent transfer of the remaining non-plane per-instance surfaces, curves, and vertices."
+        "message": "Additional model-space carriers are gated by unresolved lane-specific scalar prefixes, feature-local transform bindings, placement-incomplete or untagged `0x26` torus/sphere variants, and the round/fillet feature evaluator. These gaps prevent transfer of the remaining non-plane per-instance surfaces, curves, and vertices.",
+        "severity": "blocking"
       },
       {
         "code": "topology_not_transferred",
-        "category": "topology",
-        "severity": "blocking",
-        "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates."
+        "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates.",
+        "severity": "blocking"
       },
       {
         "code": "feature_history_retained",
-        "category": "attribute",
-        "severity": "warning",
-        "message": "Named feature operations and their decoded dependency/input tables transfer as typed or native design records. Curve-equation assignments transfer with their source, dependencies, and closed numeric and string operator and deterministic function values. Full neutral operation semantics, configuration presence, graph, case-study, cabling, and cross-model relation functions, materials, and display data remain untransferred."
+        "message": "Named feature operations and their decoded dependency/input tables transfer as typed or native design records. Curve-equation assignments transfer with their source, dependencies, and closed numeric and string operator and deterministic function values. Full neutral operation semantics, configuration presence, graph, case-study, cabling, and cross-model relation functions, materials, and display data remain untransferred.",
+        "severity": "warning"
       },
       {
         "code": "feature_history_retained",
-        "category": "attribute",
-        "severity": "warning",
-        "message": "1 recognized non-sweep history feature(s) retain incomplete required construction operands (fillet=1)."
+        "message": "1 recognized non-sweep history feature(s) retain incomplete required construction operands (fillet=1).",
+        "severity": "warning"
       }
     ],
     "notes": [
@@ -4022,500 +4011,7 @@
     ]
   },
   "source_fidelity": {
-    "version": "3",
     "annotations": {
-      "streams": [
-        "creo:VisibGeom",
-        "creo:MdlStatus",
-        "creo:AllFeatur"
-      ],
-      "provenance": {
-        "creo:VisibGeom:section#76": {
-          "stream": 0,
-          "offset": 76,
-          "tag": "psb_geometry_section"
-        },
-        "creo:allfeatur:feature_row#392": {
-          "stream": 2,
-          "offset": 392,
-          "tag": "feature_row"
-        },
-        "creo:feature:affected_ids#405": {
-          "stream": 2,
-          "offset": 405,
-          "tag": "feature_affected_ids"
-        },
-        "creo:feature:affected_ids#425": {
-          "stream": 2,
-          "offset": 425,
-          "tag": "feature_affected_ids"
-        },
-        "creo:mdlstatus:feature_state#4:0": {
-          "stream": 1,
-          "offset": 458,
-          "tag": "feature_operation_state"
-        },
-        "creo:model:feature#4": {
-          "stream": 1,
-          "offset": 458,
-          "tag": "feature_operation_name"
-        },
-        "creo:topology:half_edge#10:0": {
-          "stream": 0,
-          "offset": 277,
-          "tag": "native_half_edge"
-        },
-        "creo:topology:half_edge#10:1": {
-          "stream": 0,
-          "offset": 277,
-          "tag": "native_half_edge"
-        },
-        "creo:topology:half_edge#11:0": {
-          "stream": 0,
-          "offset": 294,
-          "tag": "native_half_edge"
-        },
-        "creo:topology:half_edge#11:1": {
-          "stream": 0,
-          "offset": 294,
-          "tag": "native_half_edge"
-        },
-        "creo:topology:half_edge#12:0": {
-          "stream": 0,
-          "offset": 311,
-          "tag": "native_half_edge"
-        },
-        "creo:topology:half_edge#12:1": {
-          "stream": 0,
-          "offset": 311,
-          "tag": "native_half_edge"
-        },
-        "creo:topology:half_edge#13:0": {
-          "stream": 0,
-          "offset": 328,
-          "tag": "native_half_edge"
-        },
-        "creo:topology:half_edge#13:1": {
-          "stream": 0,
-          "offset": 328,
-          "tag": "native_half_edge"
-        },
-        "creo:topology:half_edge#14:0": {
-          "stream": 0,
-          "offset": 345,
-          "tag": "native_half_edge"
-        },
-        "creo:topology:half_edge#14:1": {
-          "stream": 0,
-          "offset": 345,
-          "tag": "native_half_edge"
-        },
-        "creo:topology:half_edge#15:0": {
-          "stream": 0,
-          "offset": 362,
-          "tag": "native_half_edge"
-        },
-        "creo:topology:half_edge#15:1": {
-          "stream": 0,
-          "offset": 362,
-          "tag": "native_half_edge"
-        },
-        "creo:visibgeom:body#1": {
-          "stream": 0,
-          "offset": 0,
-          "tag": "native_component_body"
-        },
-        "creo:visibgeom:coedge#10:0": {
-          "stream": 0,
-          "offset": 277,
-          "tag": "native_half_edge"
-        },
-        "creo:visibgeom:coedge#10:1": {
-          "stream": 0,
-          "offset": 277,
-          "tag": "native_half_edge"
-        },
-        "creo:visibgeom:coedge#11:0": {
-          "stream": 0,
-          "offset": 294,
-          "tag": "native_half_edge"
-        },
-        "creo:visibgeom:coedge#11:1": {
-          "stream": 0,
-          "offset": 294,
-          "tag": "native_half_edge"
-        },
-        "creo:visibgeom:coedge#12:0": {
-          "stream": 0,
-          "offset": 311,
-          "tag": "native_half_edge"
-        },
-        "creo:visibgeom:coedge#12:1": {
-          "stream": 0,
-          "offset": 311,
-          "tag": "native_half_edge"
-        },
-        "creo:visibgeom:coedge#13:0": {
-          "stream": 0,
-          "offset": 328,
-          "tag": "native_half_edge"
-        },
-        "creo:visibgeom:coedge#13:1": {
-          "stream": 0,
-          "offset": 328,
-          "tag": "native_half_edge"
-        },
-        "creo:visibgeom:coedge#14:0": {
-          "stream": 0,
-          "offset": 345,
-          "tag": "native_half_edge"
-        },
-        "creo:visibgeom:coedge#14:1": {
-          "stream": 0,
-          "offset": 345,
-          "tag": "native_half_edge"
-        },
-        "creo:visibgeom:coedge#15:0": {
-          "stream": 0,
-          "offset": 362,
-          "tag": "native_half_edge"
-        },
-        "creo:visibgeom:coedge#15:1": {
-          "stream": 0,
-          "offset": 362,
-          "tag": "native_half_edge"
-        },
-        "creo:visibgeom:curve#10": {
-          "stream": 0,
-          "offset": 277,
-          "tag": "plane_intersection_line"
-        },
-        "creo:visibgeom:curve#11": {
-          "stream": 0,
-          "offset": 294,
-          "tag": "plane_intersection_line"
-        },
-        "creo:visibgeom:curve#12": {
-          "stream": 0,
-          "offset": 311,
-          "tag": "plane_intersection_line"
-        },
-        "creo:visibgeom:curve#13": {
-          "stream": 0,
-          "offset": 328,
-          "tag": "plane_intersection_line"
-        },
-        "creo:visibgeom:curve#14": {
-          "stream": 0,
-          "offset": 345,
-          "tag": "plane_intersection_line"
-        },
-        "creo:visibgeom:curve#15": {
-          "stream": 0,
-          "offset": 362,
-          "tag": "plane_intersection_line"
-        },
-        "creo:visibgeom:curve_parameter#10": {
-          "stream": 0,
-          "offset": 277,
-          "tag": "curve_parameter_record"
-        },
-        "creo:visibgeom:curve_parameter#11": {
-          "stream": 0,
-          "offset": 294,
-          "tag": "curve_parameter_record"
-        },
-        "creo:visibgeom:curve_parameter#12": {
-          "stream": 0,
-          "offset": 311,
-          "tag": "curve_parameter_record"
-        },
-        "creo:visibgeom:curve_parameter#13": {
-          "stream": 0,
-          "offset": 328,
-          "tag": "curve_parameter_record"
-        },
-        "creo:visibgeom:curve_parameter#14": {
-          "stream": 0,
-          "offset": 345,
-          "tag": "curve_parameter_record"
-        },
-        "creo:visibgeom:curve_parameter#15": {
-          "stream": 0,
-          "offset": 362,
-          "tag": "curve_parameter_record"
-        },
-        "creo:visibgeom:curve_topology#10": {
-          "stream": 0,
-          "offset": 277,
-          "tag": "curve_topology_row"
-        },
-        "creo:visibgeom:curve_topology#11": {
-          "stream": 0,
-          "offset": 294,
-          "tag": "curve_topology_row"
-        },
-        "creo:visibgeom:curve_topology#12": {
-          "stream": 0,
-          "offset": 311,
-          "tag": "curve_topology_row"
-        },
-        "creo:visibgeom:curve_topology#13": {
-          "stream": 0,
-          "offset": 328,
-          "tag": "curve_topology_row"
-        },
-        "creo:visibgeom:curve_topology#14": {
-          "stream": 0,
-          "offset": 345,
-          "tag": "curve_topology_row"
-        },
-        "creo:visibgeom:curve_topology#15": {
-          "stream": 0,
-          "offset": 362,
-          "tag": "curve_topology_row"
-        },
-        "creo:visibgeom:edge#10": {
-          "stream": 0,
-          "offset": 277,
-          "tag": "curve_topology_edge"
-        },
-        "creo:visibgeom:edge#11": {
-          "stream": 0,
-          "offset": 294,
-          "tag": "curve_topology_edge"
-        },
-        "creo:visibgeom:edge#12": {
-          "stream": 0,
-          "offset": 311,
-          "tag": "curve_topology_edge"
-        },
-        "creo:visibgeom:edge#13": {
-          "stream": 0,
-          "offset": 328,
-          "tag": "curve_topology_edge"
-        },
-        "creo:visibgeom:edge#14": {
-          "stream": 0,
-          "offset": 345,
-          "tag": "curve_topology_edge"
-        },
-        "creo:visibgeom:edge#15": {
-          "stream": 0,
-          "offset": 362,
-          "tag": "curve_topology_edge"
-        },
-        "creo:visibgeom:face#1": {
-          "stream": 0,
-          "offset": 99,
-          "tag": "native_face"
-        },
-        "creo:visibgeom:face#2": {
-          "stream": 0,
-          "offset": 137,
-          "tag": "native_face"
-        },
-        "creo:visibgeom:face#3": {
-          "stream": 0,
-          "offset": 173,
-          "tag": "native_face"
-        },
-        "creo:visibgeom:face#4": {
-          "stream": 0,
-          "offset": 209,
-          "tag": "native_face"
-        },
-        "creo:visibgeom:loop#1": {
-          "stream": 0,
-          "offset": 99,
-          "tag": "native_face_loop"
-        },
-        "creo:visibgeom:loop#2": {
-          "stream": 0,
-          "offset": 137,
-          "tag": "native_face_loop"
-        },
-        "creo:visibgeom:loop#3": {
-          "stream": 0,
-          "offset": 173,
-          "tag": "native_face_loop"
-        },
-        "creo:visibgeom:loop#4": {
-          "stream": 0,
-          "offset": 209,
-          "tag": "native_face_loop"
-        },
-        "creo:visibgeom:pcurve#10:1": {
-          "stream": 0,
-          "offset": 277,
-          "tag": "projected_planar_pcurve"
-        },
-        "creo:visibgeom:pcurve#10:2": {
-          "stream": 0,
-          "offset": 277,
-          "tag": "projected_planar_pcurve"
-        },
-        "creo:visibgeom:pcurve#11:1": {
-          "stream": 0,
-          "offset": 294,
-          "tag": "projected_planar_pcurve"
-        },
-        "creo:visibgeom:pcurve#11:3": {
-          "stream": 0,
-          "offset": 294,
-          "tag": "projected_planar_pcurve"
-        },
-        "creo:visibgeom:pcurve#12:1": {
-          "stream": 0,
-          "offset": 311,
-          "tag": "projected_planar_pcurve"
-        },
-        "creo:visibgeom:pcurve#12:4": {
-          "stream": 0,
-          "offset": 311,
-          "tag": "projected_planar_pcurve"
-        },
-        "creo:visibgeom:pcurve#13:2": {
-          "stream": 0,
-          "offset": 328,
-          "tag": "projected_planar_pcurve"
-        },
-        "creo:visibgeom:pcurve#13:3": {
-          "stream": 0,
-          "offset": 328,
-          "tag": "projected_planar_pcurve"
-        },
-        "creo:visibgeom:pcurve#14:2": {
-          "stream": 0,
-          "offset": 345,
-          "tag": "projected_planar_pcurve"
-        },
-        "creo:visibgeom:pcurve#14:4": {
-          "stream": 0,
-          "offset": 345,
-          "tag": "projected_planar_pcurve"
-        },
-        "creo:visibgeom:pcurve#15:3": {
-          "stream": 0,
-          "offset": 362,
-          "tag": "projected_planar_pcurve"
-        },
-        "creo:visibgeom:pcurve#15:4": {
-          "stream": 0,
-          "offset": 362,
-          "tag": "projected_planar_pcurve"
-        },
-        "creo:visibgeom:point#1": {
-          "stream": 0,
-          "offset": 0,
-          "tag": "topological_vertex_point"
-        },
-        "creo:visibgeom:point#2": {
-          "stream": 0,
-          "offset": 0,
-          "tag": "topological_vertex_point"
-        },
-        "creo:visibgeom:point#3": {
-          "stream": 0,
-          "offset": 0,
-          "tag": "topological_vertex_point"
-        },
-        "creo:visibgeom:point#4": {
-          "stream": 0,
-          "offset": 0,
-          "tag": "topological_vertex_point"
-        },
-        "creo:visibgeom:region#1": {
-          "stream": 0,
-          "offset": 0,
-          "tag": "native_component_region"
-        },
-        "creo:visibgeom:shell#1": {
-          "stream": 0,
-          "offset": 0,
-          "tag": "native_component_shell"
-        },
-        "creo:visibgeom:surface#1": {
-          "stream": 0,
-          "offset": 124,
-          "tag": "plane_local_system"
-        },
-        "creo:visibgeom:surface#2": {
-          "stream": 0,
-          "offset": 160,
-          "tag": "plane_local_system"
-        },
-        "creo:visibgeom:surface#3": {
-          "stream": 0,
-          "offset": 196,
-          "tag": "plane_local_system"
-        },
-        "creo:visibgeom:surface#4": {
-          "stream": 0,
-          "offset": 226,
-          "tag": "plane_local_system"
-        },
-        "creo:visibgeom:surface_parameter#1": {
-          "stream": 0,
-          "offset": 105,
-          "tag": "surface_parameter_frame"
-        },
-        "creo:visibgeom:surface_parameter#2": {
-          "stream": 0,
-          "offset": 143,
-          "tag": "surface_parameter_frame"
-        },
-        "creo:visibgeom:surface_parameter#3": {
-          "stream": 0,
-          "offset": 179,
-          "tag": "surface_parameter_frame"
-        },
-        "creo:visibgeom:surface_parameter#4": {
-          "stream": 0,
-          "offset": 215,
-          "tag": "surface_parameter_frame"
-        },
-        "creo:visibgeom:surface_row#1": {
-          "stream": 0,
-          "offset": 99,
-          "tag": "surface_namespace_row"
-        },
-        "creo:visibgeom:surface_row#2": {
-          "stream": 0,
-          "offset": 137,
-          "tag": "surface_namespace_row"
-        },
-        "creo:visibgeom:surface_row#3": {
-          "stream": 0,
-          "offset": 173,
-          "tag": "surface_namespace_row"
-        },
-        "creo:visibgeom:surface_row#4": {
-          "stream": 0,
-          "offset": 209,
-          "tag": "surface_namespace_row"
-        },
-        "creo:visibgeom:vertex#1": {
-          "stream": 0,
-          "offset": 0,
-          "tag": "topological_vertex_orbit"
-        },
-        "creo:visibgeom:vertex#2": {
-          "stream": 0,
-          "offset": 0,
-          "tag": "topological_vertex_orbit"
-        },
-        "creo:visibgeom:vertex#3": {
-          "stream": 0,
-          "offset": 0,
-          "tag": "topological_vertex_orbit"
-        },
-        "creo:visibgeom:vertex#4": {
-          "stream": 0,
-          "offset": 0,
-          "tag": "topological_vertex_orbit"
-        }
-      },
       "exactness": {
         "creo:VisibGeom:section#76": {
           "entity": "unknown"
@@ -4733,17 +4229,510 @@
         "creo:visibgeom:vertex#4": {
           "entity": "derived"
         }
-      }
+      },
+      "provenance": {
+        "creo:VisibGeom:section#76": {
+          "offset": 76,
+          "stream": 0,
+          "tag": "psb_geometry_section"
+        },
+        "creo:allfeatur:feature_row#392": {
+          "offset": 392,
+          "stream": 2,
+          "tag": "feature_row"
+        },
+        "creo:feature:affected_ids#405": {
+          "offset": 405,
+          "stream": 2,
+          "tag": "feature_affected_ids"
+        },
+        "creo:feature:affected_ids#425": {
+          "offset": 425,
+          "stream": 2,
+          "tag": "feature_affected_ids"
+        },
+        "creo:mdlstatus:feature_state#4:0": {
+          "offset": 458,
+          "stream": 1,
+          "tag": "feature_operation_state"
+        },
+        "creo:model:feature#4": {
+          "offset": 458,
+          "stream": 1,
+          "tag": "feature_operation_name"
+        },
+        "creo:topology:half_edge#10:0": {
+          "offset": 277,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:topology:half_edge#10:1": {
+          "offset": 277,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:topology:half_edge#11:0": {
+          "offset": 294,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:topology:half_edge#11:1": {
+          "offset": 294,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:topology:half_edge#12:0": {
+          "offset": 311,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:topology:half_edge#12:1": {
+          "offset": 311,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:topology:half_edge#13:0": {
+          "offset": 328,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:topology:half_edge#13:1": {
+          "offset": 328,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:topology:half_edge#14:0": {
+          "offset": 345,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:topology:half_edge#14:1": {
+          "offset": 345,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:topology:half_edge#15:0": {
+          "offset": 362,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:topology:half_edge#15:1": {
+          "offset": 362,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:visibgeom:body#1": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "native_component_body"
+        },
+        "creo:visibgeom:coedge#10:0": {
+          "offset": 277,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:visibgeom:coedge#10:1": {
+          "offset": 277,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:visibgeom:coedge#11:0": {
+          "offset": 294,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:visibgeom:coedge#11:1": {
+          "offset": 294,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:visibgeom:coedge#12:0": {
+          "offset": 311,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:visibgeom:coedge#12:1": {
+          "offset": 311,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:visibgeom:coedge#13:0": {
+          "offset": 328,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:visibgeom:coedge#13:1": {
+          "offset": 328,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:visibgeom:coedge#14:0": {
+          "offset": 345,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:visibgeom:coedge#14:1": {
+          "offset": 345,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:visibgeom:coedge#15:0": {
+          "offset": 362,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:visibgeom:coedge#15:1": {
+          "offset": 362,
+          "stream": 0,
+          "tag": "native_half_edge"
+        },
+        "creo:visibgeom:curve#10": {
+          "offset": 277,
+          "stream": 0,
+          "tag": "plane_intersection_line"
+        },
+        "creo:visibgeom:curve#11": {
+          "offset": 294,
+          "stream": 0,
+          "tag": "plane_intersection_line"
+        },
+        "creo:visibgeom:curve#12": {
+          "offset": 311,
+          "stream": 0,
+          "tag": "plane_intersection_line"
+        },
+        "creo:visibgeom:curve#13": {
+          "offset": 328,
+          "stream": 0,
+          "tag": "plane_intersection_line"
+        },
+        "creo:visibgeom:curve#14": {
+          "offset": 345,
+          "stream": 0,
+          "tag": "plane_intersection_line"
+        },
+        "creo:visibgeom:curve#15": {
+          "offset": 362,
+          "stream": 0,
+          "tag": "plane_intersection_line"
+        },
+        "creo:visibgeom:curve_parameter#10": {
+          "offset": 277,
+          "stream": 0,
+          "tag": "curve_parameter_record"
+        },
+        "creo:visibgeom:curve_parameter#11": {
+          "offset": 294,
+          "stream": 0,
+          "tag": "curve_parameter_record"
+        },
+        "creo:visibgeom:curve_parameter#12": {
+          "offset": 311,
+          "stream": 0,
+          "tag": "curve_parameter_record"
+        },
+        "creo:visibgeom:curve_parameter#13": {
+          "offset": 328,
+          "stream": 0,
+          "tag": "curve_parameter_record"
+        },
+        "creo:visibgeom:curve_parameter#14": {
+          "offset": 345,
+          "stream": 0,
+          "tag": "curve_parameter_record"
+        },
+        "creo:visibgeom:curve_parameter#15": {
+          "offset": 362,
+          "stream": 0,
+          "tag": "curve_parameter_record"
+        },
+        "creo:visibgeom:curve_topology#10": {
+          "offset": 277,
+          "stream": 0,
+          "tag": "curve_topology_row"
+        },
+        "creo:visibgeom:curve_topology#11": {
+          "offset": 294,
+          "stream": 0,
+          "tag": "curve_topology_row"
+        },
+        "creo:visibgeom:curve_topology#12": {
+          "offset": 311,
+          "stream": 0,
+          "tag": "curve_topology_row"
+        },
+        "creo:visibgeom:curve_topology#13": {
+          "offset": 328,
+          "stream": 0,
+          "tag": "curve_topology_row"
+        },
+        "creo:visibgeom:curve_topology#14": {
+          "offset": 345,
+          "stream": 0,
+          "tag": "curve_topology_row"
+        },
+        "creo:visibgeom:curve_topology#15": {
+          "offset": 362,
+          "stream": 0,
+          "tag": "curve_topology_row"
+        },
+        "creo:visibgeom:edge#10": {
+          "offset": 277,
+          "stream": 0,
+          "tag": "curve_topology_edge"
+        },
+        "creo:visibgeom:edge#11": {
+          "offset": 294,
+          "stream": 0,
+          "tag": "curve_topology_edge"
+        },
+        "creo:visibgeom:edge#12": {
+          "offset": 311,
+          "stream": 0,
+          "tag": "curve_topology_edge"
+        },
+        "creo:visibgeom:edge#13": {
+          "offset": 328,
+          "stream": 0,
+          "tag": "curve_topology_edge"
+        },
+        "creo:visibgeom:edge#14": {
+          "offset": 345,
+          "stream": 0,
+          "tag": "curve_topology_edge"
+        },
+        "creo:visibgeom:edge#15": {
+          "offset": 362,
+          "stream": 0,
+          "tag": "curve_topology_edge"
+        },
+        "creo:visibgeom:face#1": {
+          "offset": 99,
+          "stream": 0,
+          "tag": "native_face"
+        },
+        "creo:visibgeom:face#2": {
+          "offset": 137,
+          "stream": 0,
+          "tag": "native_face"
+        },
+        "creo:visibgeom:face#3": {
+          "offset": 173,
+          "stream": 0,
+          "tag": "native_face"
+        },
+        "creo:visibgeom:face#4": {
+          "offset": 209,
+          "stream": 0,
+          "tag": "native_face"
+        },
+        "creo:visibgeom:loop#1": {
+          "offset": 99,
+          "stream": 0,
+          "tag": "native_face_loop"
+        },
+        "creo:visibgeom:loop#2": {
+          "offset": 137,
+          "stream": 0,
+          "tag": "native_face_loop"
+        },
+        "creo:visibgeom:loop#3": {
+          "offset": 173,
+          "stream": 0,
+          "tag": "native_face_loop"
+        },
+        "creo:visibgeom:loop#4": {
+          "offset": 209,
+          "stream": 0,
+          "tag": "native_face_loop"
+        },
+        "creo:visibgeom:pcurve#10:1": {
+          "offset": 277,
+          "stream": 0,
+          "tag": "projected_planar_pcurve"
+        },
+        "creo:visibgeom:pcurve#10:2": {
+          "offset": 277,
+          "stream": 0,
+          "tag": "projected_planar_pcurve"
+        },
+        "creo:visibgeom:pcurve#11:1": {
+          "offset": 294,
+          "stream": 0,
+          "tag": "projected_planar_pcurve"
+        },
+        "creo:visibgeom:pcurve#11:3": {
+          "offset": 294,
+          "stream": 0,
+          "tag": "projected_planar_pcurve"
+        },
+        "creo:visibgeom:pcurve#12:1": {
+          "offset": 311,
+          "stream": 0,
+          "tag": "projected_planar_pcurve"
+        },
+        "creo:visibgeom:pcurve#12:4": {
+          "offset": 311,
+          "stream": 0,
+          "tag": "projected_planar_pcurve"
+        },
+        "creo:visibgeom:pcurve#13:2": {
+          "offset": 328,
+          "stream": 0,
+          "tag": "projected_planar_pcurve"
+        },
+        "creo:visibgeom:pcurve#13:3": {
+          "offset": 328,
+          "stream": 0,
+          "tag": "projected_planar_pcurve"
+        },
+        "creo:visibgeom:pcurve#14:2": {
+          "offset": 345,
+          "stream": 0,
+          "tag": "projected_planar_pcurve"
+        },
+        "creo:visibgeom:pcurve#14:4": {
+          "offset": 345,
+          "stream": 0,
+          "tag": "projected_planar_pcurve"
+        },
+        "creo:visibgeom:pcurve#15:3": {
+          "offset": 362,
+          "stream": 0,
+          "tag": "projected_planar_pcurve"
+        },
+        "creo:visibgeom:pcurve#15:4": {
+          "offset": 362,
+          "stream": 0,
+          "tag": "projected_planar_pcurve"
+        },
+        "creo:visibgeom:point#1": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "topological_vertex_point"
+        },
+        "creo:visibgeom:point#2": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "topological_vertex_point"
+        },
+        "creo:visibgeom:point#3": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "topological_vertex_point"
+        },
+        "creo:visibgeom:point#4": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "topological_vertex_point"
+        },
+        "creo:visibgeom:region#1": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "native_component_region"
+        },
+        "creo:visibgeom:shell#1": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "native_component_shell"
+        },
+        "creo:visibgeom:surface#1": {
+          "offset": 124,
+          "stream": 0,
+          "tag": "plane_local_system"
+        },
+        "creo:visibgeom:surface#2": {
+          "offset": 160,
+          "stream": 0,
+          "tag": "plane_local_system"
+        },
+        "creo:visibgeom:surface#3": {
+          "offset": 196,
+          "stream": 0,
+          "tag": "plane_local_system"
+        },
+        "creo:visibgeom:surface#4": {
+          "offset": 226,
+          "stream": 0,
+          "tag": "plane_local_system"
+        },
+        "creo:visibgeom:surface_parameter#1": {
+          "offset": 105,
+          "stream": 0,
+          "tag": "surface_parameter_frame"
+        },
+        "creo:visibgeom:surface_parameter#2": {
+          "offset": 143,
+          "stream": 0,
+          "tag": "surface_parameter_frame"
+        },
+        "creo:visibgeom:surface_parameter#3": {
+          "offset": 179,
+          "stream": 0,
+          "tag": "surface_parameter_frame"
+        },
+        "creo:visibgeom:surface_parameter#4": {
+          "offset": 215,
+          "stream": 0,
+          "tag": "surface_parameter_frame"
+        },
+        "creo:visibgeom:surface_row#1": {
+          "offset": 99,
+          "stream": 0,
+          "tag": "surface_namespace_row"
+        },
+        "creo:visibgeom:surface_row#2": {
+          "offset": 137,
+          "stream": 0,
+          "tag": "surface_namespace_row"
+        },
+        "creo:visibgeom:surface_row#3": {
+          "offset": 173,
+          "stream": 0,
+          "tag": "surface_namespace_row"
+        },
+        "creo:visibgeom:surface_row#4": {
+          "offset": 209,
+          "stream": 0,
+          "tag": "surface_namespace_row"
+        },
+        "creo:visibgeom:vertex#1": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "topological_vertex_orbit"
+        },
+        "creo:visibgeom:vertex#2": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "topological_vertex_orbit"
+        },
+        "creo:visibgeom:vertex#3": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "topological_vertex_orbit"
+        },
+        "creo:visibgeom:vertex#4": {
+          "offset": 0,
+          "stream": 0,
+          "tag": "topological_vertex_orbit"
+        }
+      },
+      "streams": [
+        "creo:VisibGeom",
+        "creo:MdlStatus",
+        "creo:AllFeatur"
+      ]
     },
     "retained_records": [
       {
-        "id": "creo:VisibGeom:section#76",
-        "stream": "creo:VisibGeom",
-        "offset": 76,
         "byte_len": 305,
+        "data": "I1Zpc2liR2VvbQpzcmZfYXJyYXkA+AQBIgT2AAAPDw8PD0PwAEPwAA8vAAAvAADjD+QPDw/kDw8PDw8P4wIiBAEAAA8PDw9D8AAPQ/AA5A8vAADjDw/k5A8PDw8PDw8P4wMiBAEAAA8PDw9D8ABD8AAP5C8AAA/j5A8PD+QPDw8PDw8P4wQiBAEAAA8PDw8PDw8PDw/jSAAAQ/AALwAALwAASAAA5A8PD+QPD+NjcnZfYXJyYXkA8/gGdG9wb2xfcmVmX2RhdGEACggEAfYBAgwNAADj4fUF9uMLCAQB9gEDCg8AAOPh9QX24wwIBAH2AQQLDgAA4+H1BfbjDQgEAfYCAw4LAADj4fUF9uMOCAQB9gIECg8AAOPh9QX24w8IBAH2AwQNDAAA4+H1BfbjIwo=",
+        "id": "creo:VisibGeom:section#76",
+        "offset": 76,
         "sha256": "213fb003971aac96e78c5d1a5881cd023d7cbb3adc3af11cad8b98ee3d8e31b0",
-        "data": "I1Zpc2liR2VvbQpzcmZfYXJyYXkA+AQBIgT2AAAPDw8PD0PwAEPwAA8vAAAvAADjD+QPDw/kDw8PDw8P4wIiBAEAAA8PDw9D8AAPQ/AA5A8vAADjDw/k5A8PDw8PDw8P4wMiBAEAAA8PDw9D8ABD8AAP5C8AAA/j5A8PD+QPDw8PDw8P4wQiBAEAAA8PDw8PDw8PDw/jSAAAQ/AALwAALwAASAAA5A8PD+QPD+NjcnZfYXJyYXkA8/gGdG9wb2xfcmVmX2RhdGEACggEAfYBAgwNAADj4fUF9uMLCAQB9gEDCg8AAOPh9QX24wwIBAH2AQQLDgAA4+H1BfbjDQgEAfYCAw4LAADj4fUF9uMOCAQB9gIECg8AAOPh9QX24w8IBAH2AwQNDAAA4+H1BfbjIwo="
+        "stream": "creo:VisibGeom"
       }
-    ]
+    ],
+    "version": "3"
   }
 }

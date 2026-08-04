@@ -13,11 +13,17 @@ documentation = "https://docs.rs/cadmpeg-ir"
 keywords = ["cad", "brep", "geometry", "transcoding", "provenance"]
 categories = ["data-structures", "encoding", "graphics"]
 
+[features]
+# `schema` builds the `JsonSchema` derives. It is off by default: the
+# derives are only consumed by `cadmpeg_ir::cadir_json_schema()`, and
+# generating them costs 22% of this crate tree's compile time.
+schema = ["dep:schemars", "cadmpeg-codec-core/schema"]
+
 [dependencies]
 cadmpeg-codec-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-schemars.workspace = true
+schemars = { workspace = true, optional = true }
 thiserror.workspace = true
 sha2.workspace = true
 base64.workspace = true

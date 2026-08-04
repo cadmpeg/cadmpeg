@@ -806,16 +806,18 @@ fn exact_copy_paste_component_operation(
     let stream = native_stream(&scope.id)?;
     let start = usize::try_from(scope.byte_offset).ok()?;
     let relation_record_index = *scope.reference_members.first()?;
-    if scope.kind != "CopyPaste"
-        || scope.frame_length != 529
-        || scope.class_tag != "454"
-        || scope.paired_class_tag != "259"
-        || scope.reference_members.len() != 1
-    {
+    // The compact frame omits one four-byte prologue field, so both placements
+    // and every marked reference before them move four bytes earlier.
+    let source_at = match (scope.kind.as_str(), scope.frame_length) {
+        ("CopyPaste", 529) => 38,
+        ("CopyPaste", 525) => 34,
+        _ => return None,
+    };
+    if scope.reference_members.len() != 1 {
         return None;
     }
-    let source_transform = rigid_transform_at(bytes, start + 38)?;
-    let copied_transform = rigid_transform_at(bytes, start + 194)?;
+    let source_transform = rigid_transform_at(bytes, start + source_at)?;
+    let copied_transform = rigid_transform_at(bytes, start + source_at + 156)?;
     let relation_at = records.first_at_or_after(0, relation_record_index)?;
     if relation_at >= start
         || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 57

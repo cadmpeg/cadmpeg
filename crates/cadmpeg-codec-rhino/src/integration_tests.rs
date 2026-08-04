@@ -5,6 +5,8 @@
 use super::*;
 use crate::archive_test_support as support;
 use crate::{RhinoArchiveVersion, RhinoEncoder};
+use cadmpeg_ir::report::LossKind;
+use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind;
 use cadmpeg_ir::Encoder;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
@@ -242,4 +244,232 @@ fn recovery_pipeline_keeps_malformed_records_atomic_and_later_objects_decodable(
     attribute_userdata_recovers_after_malformed_bounded_record();
     malformed_bounded_object_is_retained_and_later_point_decodes();
     structural_framing_errors_keep_diagnostics();
+}
+
+/// Object types from `docs/formats/rhino_3dm.md` "object type values".
+const HATCH_OBJECT_TYPE: i64 = 0x0001_0000;
+const CURVE_OBJECT_TYPE: i64 = 0x0000_0004;
+
+/// A synthesized archive whose two records both reach a native-retention path.
+///
+/// Hatch and polyedge are the cheapest such records: neither needs a resolved
+/// B-rep, and both produce a `FeatureDefinition::Native` feature as their only
+/// carrier of construction state.
+fn native_retention_archive() -> Vec<u8> {
+    let hatch = support::object_record(
+        HATCH_OBJECT_TYPE,
+        crate::hatch::CLASS.to_wire(),
+        &crate::hatch::tests::version_two_hatch_payload(),
+    );
+    let polyedge = support::object_record(
+        CURVE_OBJECT_TYPE,
+        crate::polyedge::CURVE_CLASS.to_wire(),
+        &crate::polyedge::tests::polyedge_payload(),
+    );
+    support::archive(&[hatch, polyedge])
+}
+
+#[test]
+fn native_retentions_are_charged_and_excluded_from_the_decoded_census() {
+    let result = decode(native_retention_archive());
+    let losses = &result.report.losses;
+
+    // Neither record is "decoded": the only entity carrying their construction
+    // state is a native feature blob.
+    assert!(losses.iter().any(|loss| {
+        loss.code == LossKind::ObjectRecordsUntransferred
+            && loss.message.contains("decoded 0/2 Rhino object records")
+    }));
+
+    for code in [
+        crate::loss::RhinoLossCode::HatchFillNotTransferred,
+        crate::loss::RhinoLossCode::PolyedgeReferencesNotResolved,
+    ] {
+        let charged = losses
+            .iter()
+            .filter(|loss| loss.message.starts_with(code.code()))
+            .collect::<Vec<_>>();
+        assert_eq!(charged.len(), 1, "{} not charged once", code.code());
+        assert_eq!(charged[0].code, LossKind::RecordNotTyped);
+        assert_eq!(charged[0].severity, Severity::Warning);
+        assert!(charged[0]
+            .message
+            .contains("framed and read 1 object record"));
+        assert!(charged[0].provenance.is_some());
+    }
+
+    // A native retention must not also claim the payload was never read.
+    assert!(!losses
+        .iter()
+        .any(|loss| loss.code == LossKind::UnsupportedObjectFamily));
+
+    // The hatch loop curve is a real neutral carrier even though the fill is not.
+    assert!(!result.ir.model.curves.is_empty());
+    assert_eq!(result.ir.model.features.len(), 2);
+    assert!(result.report.geometry_transferred);
+    assert_valid(&result);
+}
+
+/// Object type for annotation records, per `docs/formats/rhino_3dm.md`.
+const ANNOTATION_OBJECT_TYPE: i64 = 0x0000_0200;
+/// `unit_value` 2 in `archive_test_support::archive` is millimeters.
+const MILLIMETERS_PER_UNIT: f64 = 1.0;
+
+/// A synthesized archive holding one linear dimension on a rotated plane.
+///
+/// `dimstyle_wire` selects whether the style reference is nil (an explicit null
+/// reference) or a non-nil UUID with no decoded style record (charged, and no
+/// dangling `target` emitted).
+fn dimension_archive(dimstyle_wire: [u8; 16], text_point: Option<[f64; 2]>) -> Vec<u8> {
+    // Definition point x drives the measurement; see the linear family layout.
+    let family = [3.0_f64, 4.0, 8.0, 9.0]
+        .into_iter()
+        .flat_map(f64::to_le_bytes)
+        .collect::<Vec<_>>();
+    let plane = crate::dimensions::tests::plane_bytes(
+        DIMENSION_PLANE_ORIGIN,
+        DIMENSION_PLANE_X,
+        DIMENSION_PLANE_Y,
+        [0.0, 0.0, 1.0, -DIMENSION_PLANE_ORIGIN[2]],
+    );
+    support::archive(&[support::object_record(
+        ANNOTATION_OBJECT_TYPE,
+        crate::dimensions::LINEAR.to_wire(),
+        &crate::dimensions::tests::dimension_payload(1, &family, dimstyle_wire, &plane, text_point),
+    )])
+}
+
+const DIMENSION_PLANE_ORIGIN: [f64; 3] = [10.0, 20.0, 30.0];
+const DIMENSION_PLANE_X: [f64; 3] = [0.0, 1.0, 0.0];
+const DIMENSION_PLANE_Y: [f64; 3] = [-1.0, 0.0, 0.0];
+
+#[test]
+fn dimension_becomes_a_measured_semantic_annotation_with_resolvable_identities() {
+    let text_point = [2.0, 3.0];
+    let result = decode(dimension_archive([0; 16], Some(text_point)));
+    assert_eq!(result.ir.model.semantic_annotations.len(), 1);
+    // The dimension is no longer projected as a driving parameter.
+    assert!(result.ir.model.parameters.is_empty());
+    assert!(result.ir.model.features.is_empty());
+
+    let annotation = &result.ir.model.semantic_annotations[0];
+    assert_eq!(annotation.kind, SemanticAnnotationKind::Dimension);
+    assert_eq!(annotation.runtime_type, "linear_dimension");
+
+    // Constraint 1: `object` and `native_ref` resolve against the document.
+    let record = &result
+        .ir
+        .native_unknowns("rhino")
+        .expect("required invariant")[0];
+    assert_eq!(annotation.object, record.id.to_string());
+    assert_eq!(annotation.native_ref, record.id.to_string());
+    assert!(record.links.contains(&annotation.id.0));
+
+    // Constraint 2: `order` is a dense u32 arena index, not the byte offset.
+    assert_eq!(annotation.order, 0);
+
+    // Constraint 3: a nil style UUID is an explicit null reference, never a
+    // dangling target.
+    for role in ["dimstyle_id", "detail_measured"] {
+        let targets = &annotation.references[role];
+        assert_eq!(targets.len(), 1);
+        assert!(targets[0].is_null);
+        assert!(targets[0].target.is_none());
+    }
+    assert!(annotation.assets.is_empty());
+
+    // Constraint 4: the plane-space text point is composed, not lifted with z=0.
+    let expected = [
+        DIMENSION_PLANE_ORIGIN[0] * MILLIMETERS_PER_UNIT
+            + text_point[0] * DIMENSION_PLANE_X[0]
+            + text_point[1] * DIMENSION_PLANE_Y[0],
+        DIMENSION_PLANE_ORIGIN[1] * MILLIMETERS_PER_UNIT
+            + text_point[0] * DIMENSION_PLANE_X[1]
+            + text_point[1] * DIMENSION_PLANE_Y[1],
+        DIMENSION_PLANE_ORIGIN[2] * MILLIMETERS_PER_UNIT
+            + text_point[0] * DIMENSION_PLANE_X[2]
+            + text_point[1] * DIMENSION_PLANE_Y[2],
+    ];
+    let position = annotation.position.expect("authored text point");
+    for axis in 0..3 {
+        assert!(
+            (position[axis] - expected[axis]).abs() < 1e-12,
+            "{position:?} != {expected:?}"
+        );
+    }
+
+    // The linear measurement is |definition_point.x| * distance_scale, with the
+    // family's 3.0 and the record's 2.0 scale.
+    let value = annotation.value.expect("persisted measurement");
+    assert!(
+        (value - 3.0 * 2.0 * MILLIMETERS_PER_UNIT).abs() < 1e-12,
+        "{value}"
+    );
+
+    assert_valid(&result);
+}
+
+#[test]
+fn unresolvable_dimension_style_is_charged_without_a_dangling_reference() {
+    let dimstyle = [0x11; 16];
+    let result = decode(dimension_archive(dimstyle, None));
+    let annotation = &result.ir.model.semantic_annotations[0];
+    assert!(!annotation.references.contains_key("dimstyle_id"));
+    assert_eq!(
+        annotation.parameters["dimstyle_id"],
+        crate::wire::Uuid::from_wire(dimstyle).to_string()
+    );
+    // An unauthored text point is omitted rather than invented.
+    assert!(annotation.position.is_none());
+
+    let charged = result
+        .report
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.message
+                .starts_with(crate::loss::RhinoLossCode::DimensionStyleUnresolved.code())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(charged.len(), 1);
+    assert_eq!(charged[0].code, LossKind::PmiOmitted);
+    assert_valid(&result);
+}
+
+#[test]
+fn several_dimensions_take_dense_unique_orders_independent_of_byte_offsets() {
+    let family = [3.0_f64, 4.0, 8.0, 9.0]
+        .into_iter()
+        .flat_map(f64::to_le_bytes)
+        .collect::<Vec<_>>();
+    let record = |annotation_type: i32| {
+        support::object_record(
+            ANNOTATION_OBJECT_TYPE,
+            crate::dimensions::LINEAR.to_wire(),
+            &crate::dimensions::tests::dimension_payload(
+                annotation_type,
+                &family,
+                [0; 16],
+                &crate::dimensions::tests::plane_bytes(
+                    DIMENSION_PLANE_ORIGIN,
+                    DIMENSION_PLANE_X,
+                    DIMENSION_PLANE_Y,
+                    [0.0, 0.0, 1.0, -DIMENSION_PLANE_ORIGIN[2]],
+                ),
+                None,
+            ),
+        )
+    };
+    // Annotation types 1 and 5 are both linear, so the two records differ in
+    // content and therefore in length: byte offsets are not a dense sequence.
+    let result = decode(support::archive(&[record(1), record(5), record(1)]));
+    let orders = result
+        .ir
+        .model
+        .semantic_annotations
+        .iter()
+        .map(|annotation| annotation.order)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(orders, std::collections::BTreeSet::from([0, 1, 2]));
+    assert_valid(&result);
 }

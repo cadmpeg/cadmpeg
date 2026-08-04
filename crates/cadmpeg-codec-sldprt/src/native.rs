@@ -2,6 +2,7 @@
 //! SOLIDWORKS native feature-history records.
 #![deny(clippy::disallowed_methods)]
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -230,7 +231,8 @@ const SLDPRT_CATALOGUE: Catalogue<'static, SldprtNative, (), cadmpeg_ir::NativeN
     Catalogue::new(SLDPRT_FAMILIES, SLDPRT_VERSION_CONTRACT);
 
 /// SOLIDWORKS records retained outside the format-neutral model.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SldprtNative {
     /// Schema version this namespace was written under; see [`SLDPRT_NATIVE_VERSION`].
     pub version: u32,

@@ -52,8 +52,7 @@ pub fn project_canvas_images(
     let mut assets = Vec::new();
     for image in images {
         let Some(scope) = scopes.iter().find(|scope| {
-            scope.kind == "Canvas"
-                && scope.record_index == image.scope_record_index
+            scope.record_index == image.scope_record_index
                 && crate::ids::native_stream(&scope.id) == crate::ids::native_stream(&image.id)
         }) else {
             continue;

@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use cadmpeg_codec_core::decode::{DecodeContext, View};
 use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity};
+use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::units::Units;
 
 use crate::chunks::{
@@ -645,29 +645,18 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
     let mut losses: Vec<_> = scan
         .warnings
         .iter()
-        .map(|message| LossNote {
-            code: LossKind::DecodeDiagnostic,
-            severity: Severity::Warning,
-            message: message.clone(),
-            provenance: None,
-        })
+        .map(|message| crate::loss::RhinoLossCode::ContainerScanDiagnostic.note(message.clone()))
         .collect();
-    losses.extend(
-        scan.definitions
-            .diagnostics
-            .iter()
-            .map(|diagnostic| LossNote {
-                code: LossKind::DecodeDiagnostic,
-                severity: Severity::Warning,
-                message: diagnostic.message.clone(),
-                provenance: Some(cadmpeg_ir::LossProvenance {
-                    format: "rhino".to_string(),
-                    stream: String::new(),
-                    offset: diagnostic.source_range.start as u64,
-                    tag: Some("INSTANCE_DEFINITION_TABLE".to_string()),
-                }),
-            }),
-    );
+    losses.extend(scan.definitions.diagnostics.iter().map(|diagnostic| {
+        crate::loss::RhinoLossCode::ContainerInstanceDefinitionDegraded
+            .note(diagnostic.message.clone())
+            .with_provenance(cadmpeg_ir::LossProvenance {
+                format: "rhino".to_string(),
+                stream: String::new(),
+                offset: diagnostic.source_range.start as u64,
+                tag: Some("INSTANCE_DEFINITION_TABLE".to_string()),
+            })
+    }));
     cadmpeg_ir::codec::DecodeResult::new(
         ir,
         DecodeReport {

@@ -716,6 +716,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the delimiter grammar to separate adjacent surface records without a false marker match.
 
+### FV-09. Recoverable geometry in the object-stream path
+
+**Question.** Does a float-packed inner-no-FBB file carry B-rep geometry and topology a decoder can recover, or does the object-stream path admit only retained payloads?
+
+**Known.** `catia.md` §11 "A nested-`V5_CFV2` file without a standard FBB spine" defines the object-stream grammar for this variant. The decoder transfers no geometry for it and says so with blocking `geometry_not_transferred` and `topology_not_transferred` losses. The decode snapshots committed before this tree had a reader disagree: they record a transferred surface for the cone input and a body with three edges, vertices, and procedural curves for the topology input. No commit between those snapshots and now changes this decode path, so the snapshots never matched the decoder they shipped with, and which side is right is unresolved.
+
+**Need.** We must know whether the variant admits recoverable geometry, to tell a capability that regressed from geometry a decoder should never have emitted.
+
 ## 8. Appearance
 
 ### AP-01. `FeatureForColor` face selection

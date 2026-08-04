@@ -1,69 +1,20 @@
 {
   "ir": {
-    "ir_version": "4",
-    "source": {
-      "format": "creo",
-      "attributes": {
-        "expanded_section_byte_count": "0",
-        "expanded_section_count": "0",
-        "file_size": "316",
-        "layout": "DEPDB",
-        "section.0.length": "140",
-        "section.0.name": "FeatDefs",
-        "section.0.offset": "76",
-        "section.0.raw_name": "FeatDefs",
-        "section.0.role": "model-data",
-        "section.1.length": "27",
-        "section.1.name": "MdlStatus",
-        "section.1.offset": "216",
-        "section.1.raw_name": "MdlStatus",
-        "section.1.role": "metadata",
-        "section.2.length": "73",
-        "section.2.name": "DEPDB_DATA",
-        "section.2.offset": "243",
-        "section.2.raw_name": "DEPDB_DATA",
-        "section.2.role": "metadata",
-        "section_count": "3",
-        "version_line": "#UGC:2 P c"
-      }
-    },
-    "units": {
-      "length": "millimeter"
-    },
-    "tolerances": {
-      "linear": 1e-6,
-      "angular": 1e-10
-    },
+    "ir_version": "5",
     "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
       "bodies": [],
-      "regions": [],
-      "shells": [],
-      "faces": [],
-      "loops": [],
       "coedges": [],
-      "edges": [],
-      "vertices": [],
-      "points": [],
-      "surfaces": [],
+      "configurations": [],
       "curves": [],
-      "subds": [],
-      "pcurves": [],
-      "procedural_surfaces": [],
-      "procedural_curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
       "features": [
         {
-          "id": "creo:depdb:curve_expression_feature#7-257",
-          "ordinal": 2,
-          "name": "Curve Equation 7",
-          "suppressed": false,
-          "source_tag": "crv_fr_eqn",
-          "source_text": "result=d42+1[deg]",
-          "source_content": [
-            {
-              "kind": "parameter",
-              "value": "creo:depdb:curve_expression_parameter#7-257-0"
-            }
-          ],
           "definition": {
             "definition": "native",
             "kind": "CurveFromEquation",
@@ -72,26 +23,23 @@
               "entity_id": "7"
             }
           },
-          "native_ref": "creo:depdb:curve_expression#active-7-257"
+          "id": "creo:depdb:curve_expression_feature#7-257",
+          "name": "Curve Equation 7",
+          "native_ref": "creo:depdb:curve_expression#active-7-257",
+          "ordinal": 2,
+          "source_content": [
+            {
+              "kind": "parameter",
+              "value": "creo:depdb:curve_expression_parameter#7-257-0"
+            }
+          ],
+          "source_tag": "crv_fr_eqn",
+          "source_text": "result=d42+1[deg]",
+          "suppressed": false
         },
         {
-          "id": "creo:model:feature#40",
-          "ordinal": 1,
-          "name": "Extrude id 40",
-          "suppressed": false,
-          "source_properties": {
-            "native_parameter.dimension_count": "2",
-            "native_parameter.sketch_segment_count": "0"
-          },
           "definition": {
             "definition": "extrude",
-            "profile": {
-              "kind": "native",
-              "value": "creo:featdefs:sketch#917"
-            },
-            "start": {
-              "kind": "profile_plane"
-            },
             "extent": {
               "kind": "one_sided",
               "side": {
@@ -100,15 +48,34 @@
                 }
               }
             },
-            "op": "unresolved"
+            "op": "unresolved",
+            "profile": {
+              "kind": "native",
+              "value": "creo:featdefs:sketch#917"
+            },
+            "start": {
+              "kind": "profile_plane"
+            }
           },
-          "native_ref": "creo:featdefs:feature_definition#917"
+          "id": "creo:model:feature#40",
+          "name": "Extrude id 40",
+          "native_ref": "creo:featdefs:feature_definition#917",
+          "ordinal": 1,
+          "source_properties": {
+            "native_parameter.dimension_count": "2",
+            "native_parameter.sketch_segment_count": "0"
+          },
+          "suppressed": false
         },
         {
+          "definition": {
+            "definition": "sketch",
+            "sketch": "creo:model:sketch#917",
+            "space": "planar"
+          },
           "id": "creo:model:sketch_feature#917",
+          "native_ref": "creo:featdefs:sketch#917",
           "ordinal": 0,
-          "suppressed": false,
-          "source_tag": "section",
           "source_content": [
             {
               "kind": "parameter",
@@ -119,43 +86,37 @@
               "value": "creo:featdefs:parameter#917:42:2"
             }
           ],
-          "definition": {
-            "definition": "sketch",
-            "space": "planar",
-            "sketch": "creo:model:sketch#917"
-          },
-          "native_ref": "creo:featdefs:sketch#917"
+          "source_tag": "section",
+          "suppressed": false
         }
       ],
-      "configurations": [],
+      "loops": [],
+      "occurrences": [],
       "parameters": [
         {
-          "id": "creo:depdb:curve_expression_parameter#7-257-0",
-          "owner": "creo:depdb:curve_expression_feature#7-257",
-          "ordinal": 0,
-          "name": "result",
           "expression": "d42+1[deg]",
-          "value": {
-            "kind": "angle",
-            "value": 1.0174532925199433
-          },
+          "id": "creo:depdb:curve_expression_parameter#7-257-0",
+          "name": "result",
+          "native_ref": "creo:depdb:curve_expression#active-7-257",
+          "ordinal": 0,
+          "owner": "creo:depdb:curve_expression_feature#7-257",
           "properties": {
             "activation": "active",
             "external_dependencies": "d42",
             "source_assignment_ordinal": "0"
           },
-          "native_ref": "creo:depdb:curve_expression#active-7-257"
-        },
-        {
-          "id": "creo:featdefs:parameter#917:42:1",
-          "owner": "creo:model:sketch_feature#917",
-          "ordinal": 0,
-          "name": "d917_42_1",
-          "expression": "1",
           "value": {
             "kind": "angle",
-            "value": 1.0
-          },
+            "value": 1.0174532925199433
+          }
+        },
+        {
+          "expression": "1",
+          "id": "creo:featdefs:parameter#917:42:1",
+          "name": "d917_42_1",
+          "native_ref": "creo:featdefs:sketch#917",
+          "ordinal": 0,
+          "owner": "creo:model:sketch_feature#917",
           "properties": {
             "auxiliary_value": "0",
             "definition_id": "917",
@@ -164,18 +125,18 @@
             "external_id": "42",
             "source_ordinal": "0"
           },
-          "native_ref": "creo:featdefs:sketch#917"
-        },
-        {
-          "id": "creo:featdefs:parameter#917:42:2",
-          "owner": "creo:model:sketch_feature#917",
-          "ordinal": 1,
-          "name": "d917_42_2",
-          "expression": "1",
           "value": {
             "kind": "angle",
             "value": 1.0
-          },
+          }
+        },
+        {
+          "expression": "1",
+          "id": "creo:featdefs:parameter#917:42:2",
+          "name": "d917_42_2",
+          "native_ref": "creo:featdefs:sketch#917",
+          "ordinal": 1,
+          "owner": "creo:model:sketch_feature#917",
           "properties": {
             "auxiliary_value": "0",
             "definition_id": "917",
@@ -184,46 +145,48 @@
             "external_id": "42",
             "source_ordinal": "1"
           },
-          "native_ref": "creo:featdefs:sketch#917"
+          "value": {
+            "kind": "angle",
+            "value": 1.0
+          }
         }
       ],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
       "sketches": [
         {
           "id": "creo:model:sketch#917",
+          "native_ref": "creo:featdefs:sketch#917",
           "placement": {
             "kind": "unresolved"
-          },
-          "native_ref": "creo:featdefs:sketch#917"
+          }
         }
       ],
-      "sketch_entities": [],
-      "sketch_constraints": [],
-      "spatial_sketches": [],
       "spatial_sketch_entities": [],
+      "spatial_sketches": [],
       "spreadsheets": [],
-      "components": [],
-      "occurrences": [],
-      "assembly_joints": [],
-      "drawings": [],
-      "semantic_annotations": [],
-      "presentation_documents": [],
-      "view_presentations": [],
+      "subds": [],
+      "surfaces": [],
       "tessellations": [],
-      "appearances": [],
-      "appearance_bindings": [],
-      "attributes": [],
-      "products": [],
-      "product_occurrences": [],
-      "pmi": [],
-      "presentation_layers": []
+      "vertices": [],
+      "view_presentations": []
     },
     "native": {
       "creo": {
-        "version": 1,
         "arenas": {
           "curve_expressions": [
             {
-              "id": "creo:depdb:curve_expression#active-7-257",
               "assignments": [
                 {
                   "activation": "active",
@@ -242,6 +205,7 @@
               ],
               "backup": false,
               "entity_id": 7,
+              "id": "creo:depdb:curve_expression#active-7-257",
               "lines": [
                 {
                   "offset": 298,
@@ -256,7 +220,6 @@
           ],
           "feature_definitions": [
             {
-              "id": "creo:featdefs:feature_definition#917",
               "body": [
                 102,
                 101,
@@ -390,6 +353,7 @@
                 10
               ],
               "definition_id": 917,
+              "id": "creo:featdefs:feature_definition#917",
               "offset": 86,
               "outlines": [],
               "owner_feature_id": 40,
@@ -399,11 +363,11 @@
           ],
           "feature_operation_states": [
             {
-              "id": "creo:mdlstatus:feature_state#40:0",
               "current": true,
               "display_name_stored": true,
               "family": "Extrude",
               "feature_id": 40,
+              "id": "creo:mdlstatus:feature_state#40:0",
               "identifier_keyword": "id",
               "offset": 227,
               "parent_feature_id": null,
@@ -432,7 +396,6 @@
           ],
           "sketches": [
             {
-              "id": "creo:featdefs:sketch#917",
               "bounded_curve_segments": [],
               "centered_line_segments": [],
               "circle_segments": [],
@@ -470,6 +433,7 @@
                   ]
                 }
               ],
+              "id": "creo:featdefs:sketch#917",
               "offset": 86,
               "opaque_segments": [],
               "order_rows": [],
@@ -502,14 +466,46 @@
             }
           ],
           "unknowns": []
-        }
+        },
+        "version": 1
       }
+    },
+    "source": {
+      "attributes": {
+        "expanded_section_byte_count": "0",
+        "expanded_section_count": "0",
+        "file_size": "316",
+        "layout": "DEPDB",
+        "section.0.length": "140",
+        "section.0.name": "FeatDefs",
+        "section.0.offset": "76",
+        "section.0.raw_name": "FeatDefs",
+        "section.0.role": "model-data",
+        "section.1.length": "27",
+        "section.1.name": "MdlStatus",
+        "section.1.offset": "216",
+        "section.1.raw_name": "MdlStatus",
+        "section.1.role": "metadata",
+        "section.2.length": "73",
+        "section.2.name": "DEPDB_DATA",
+        "section.2.offset": "243",
+        "section.2.raw_name": "DEPDB_DATA",
+        "section.2.role": "metadata",
+        "section_count": "3",
+        "version_line": "#UGC:2 P c"
+      },
+      "format": "creo"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
     }
   },
   "report": {
-    "format": "creo",
     "container_only": false,
-    "geometry_transferred": false,
     "coverage": {
       "active_curve_expression_assignment_count": 1,
       "active_feature_relation_constraint_count": 0,
@@ -813,48 +809,43 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 0
     },
+    "format": "creo",
+    "geometry_transferred": false,
     "losses": [
       {
         "code": "carrier_summary",
-        "category": "geometry",
-        "severity": "info",
-        "message": "PSB container decoded structurally: 3 section(s), DEPDB layout, VisibGeom namespace census srf_array=n/a / crv_array=n/a; 0 typed surface rows, 0 labeled curve prototypes, 0 canonical curve-topology rows, and 0 closed native loops were decoded. Outline-backed planes, guarded non-axis support frames, complete ND first-instance plane, cylinder, cone, torus, and interpolation-spline prototypes, unbound straight positional surface-of-extrusion planes, topology-bound planes with analytic boundary carriers, `fc 05` cylinders with a resolved axis-normal cap plane, four-entry two-cap and blind circular-sweep cylinders, four-entry simple-hole cylinders with complete cap outlines, radius-anchored class-911 counterbore and bore patches, and compact simple-hole cylinders with complete positional carriers, complementary split-outline cylinders bound to an axis-normal plane, complete positional cylinder bodies, complete support-apex and planar-envelope positional cones, and complete local-system positional tori transfer as carriers; other parameter bodies remain structural records."
+        "message": "PSB container decoded structurally: 3 section(s), DEPDB layout, VisibGeom namespace census srf_array=n/a / crv_array=n/a; 0 typed surface rows, 0 labeled curve prototypes, 0 canonical curve-topology rows, and 0 closed native loops were decoded. Outline-backed planes, guarded non-axis support frames, complete ND first-instance plane, cylinder, cone, torus, and interpolation-spline prototypes, unbound straight positional surface-of-extrusion planes, topology-bound planes with analytic boundary carriers, `fc 05` cylinders with a resolved axis-normal cap plane, four-entry two-cap and blind circular-sweep cylinders, four-entry simple-hole cylinders with complete cap outlines, radius-anchored class-911 counterbore and bore patches, and compact simple-hole cylinders with complete positional carriers, complementary split-outline cylinders bound to an axis-normal plane, complete positional cylinder bodies, complete support-apex and planar-envelope positional cones, and complete local-system positional tori transfer as carriers; other parameter bodies remain structural records.",
+        "severity": "info"
       },
       {
         "code": "geometry_not_transferred",
-        "category": "geometry",
-        "severity": "blocking",
-        "message": "General model B-rep transfer remains incomplete. Native face components transfer when every boundary edge has solved vertex orbits, face orientation is unique, and every loop is complete; a multi-loop planar face additionally requires one strict containment outer boundary. Selected cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete square cap outline establishes the complete axis placement and radius, or a compact class-911 table owns a complete positional cylinder carrier, a class-911 counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature patches have complementary square outline bounds on one axis-normal plane. Later positional instances do not inherit prototype placement or scalar defaults; they require their per-instance parameter bodies ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). 0 PSB geometry section(s) were preserved verbatim as unknown records."
+        "message": "General model B-rep transfer remains incomplete. Native face components transfer when every boundary edge has solved vertex orbits, face orientation is unique, and every loop is complete; a multi-loop planar face additionally requires one strict containment outer boundary. Selected cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete square cap outline establishes the complete axis placement and radius, or a compact class-911 table owns a complete positional cylinder carrier, a class-911 counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature patches have complementary square outline bounds on one axis-normal plane. Later positional instances do not inherit prototype placement or scalar defaults; they require their per-instance parameter bodies ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). 0 PSB geometry section(s) were preserved verbatim as unknown records.",
+        "severity": "blocking"
       },
       {
         "code": "geometry_not_transferred",
-        "category": "geometry",
-        "severity": "blocking",
-        "message": "Additional model-space carriers are gated by unresolved lane-specific scalar prefixes, feature-local transform bindings, placement-incomplete or untagged `0x26` torus/sphere variants, and the round/fillet feature evaluator. These gaps prevent transfer of the remaining non-plane per-instance surfaces, curves, and vertices."
+        "message": "Additional model-space carriers are gated by unresolved lane-specific scalar prefixes, feature-local transform bindings, placement-incomplete or untagged `0x26` torus/sphere variants, and the round/fillet feature evaluator. These gaps prevent transfer of the remaining non-plane per-instance surfaces, curves, and vertices.",
+        "severity": "blocking"
       },
       {
         "code": "topology_not_transferred",
-        "category": "topology",
-        "severity": "blocking",
-        "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates."
+        "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates.",
+        "severity": "blocking"
       },
       {
         "code": "feature_history_retained",
-        "category": "attribute",
-        "severity": "warning",
-        "message": "Named feature operations and their decoded dependency/input tables transfer as typed or native design records. Curve-equation assignments transfer with their source, dependencies, and closed numeric and string operator and deterministic function values. Full neutral operation semantics, configuration presence, graph, case-study, cabling, and cross-model relation functions, materials, and display data remain untransferred."
+        "message": "Named feature operations and their decoded dependency/input tables transfer as typed or native design records. Curve-equation assignments transfer with their source, dependencies, and closed numeric and string operator and deterministic function values. Full neutral operation semantics, configuration presence, graph, case-study, cabling, and cross-model relation functions, materials, and display data remain untransferred.",
+        "severity": "warning"
       },
       {
         "code": "feature_history_retained",
-        "category": "attribute",
-        "severity": "warning",
-        "message": "1 profile sweep history feature(s) retain incomplete required construction operands (extrude=1)."
+        "message": "1 profile sweep history feature(s) retain incomplete required construction operands (extrude=1).",
+        "severity": "warning"
       },
       {
         "code": "feature_history_retained",
-        "category": "attribute",
-        "severity": "warning",
-        "message": "1 history feature definition(s) retain only source-native semantics."
+        "message": "1 history feature definition(s) retain only source-native semantics.",
+        "severity": "warning"
       }
     ],
     "notes": [
@@ -865,70 +856,7 @@
     ]
   },
   "source_fidelity": {
-    "version": "3",
     "annotations": {
-      "streams": [
-        "creo:FeatDefs",
-        "creo:MdlStatus",
-        "creo:DEPDB_DATA"
-      ],
-      "provenance": {
-        "creo:depdb:curve_expression#active-7-257": {
-          "stream": 2,
-          "offset": 283,
-          "tag": "curve_expression_program"
-        },
-        "creo:depdb:curve_expression_feature#7-257": {
-          "stream": 2,
-          "offset": 283,
-          "tag": "curve_expression_feature"
-        },
-        "creo:depdb:curve_expression_parameter#7-257-0": {
-          "stream": 2,
-          "offset": 298,
-          "tag": "curve_expression_assignment"
-        },
-        "creo:featdefs:feature_definition#917": {
-          "stream": 0,
-          "offset": 86,
-          "tag": "feature_definition_record"
-        },
-        "creo:featdefs:parameter#917:42:1": {
-          "stream": 0,
-          "offset": 144,
-          "tag": "section_dimension"
-        },
-        "creo:featdefs:parameter#917:42:2": {
-          "stream": 0,
-          "offset": 197,
-          "tag": "section_dimension"
-        },
-        "creo:featdefs:sketch#917": {
-          "stream": 0,
-          "offset": 86,
-          "tag": "feature_sketch"
-        },
-        "creo:mdlstatus:feature_state#40:0": {
-          "stream": 1,
-          "offset": 227,
-          "tag": "feature_operation_state"
-        },
-        "creo:model:feature#40": {
-          "stream": 1,
-          "offset": 227,
-          "tag": "feature_operation_name"
-        },
-        "creo:model:sketch#917": {
-          "stream": 0,
-          "offset": 86,
-          "tag": "unplaced_section"
-        },
-        "creo:model:sketch_feature#917": {
-          "stream": 0,
-          "offset": 86,
-          "tag": "section_sketch_feature"
-        }
-      },
       "exactness": {
         "creo:depdb:curve_expression_feature#7-257": {
           "entity": "derived"
@@ -951,7 +879,70 @@
         "creo:model:sketch_feature#917": {
           "entity": "derived"
         }
-      }
-    }
+      },
+      "provenance": {
+        "creo:depdb:curve_expression#active-7-257": {
+          "offset": 283,
+          "stream": 2,
+          "tag": "curve_expression_program"
+        },
+        "creo:depdb:curve_expression_feature#7-257": {
+          "offset": 283,
+          "stream": 2,
+          "tag": "curve_expression_feature"
+        },
+        "creo:depdb:curve_expression_parameter#7-257-0": {
+          "offset": 298,
+          "stream": 2,
+          "tag": "curve_expression_assignment"
+        },
+        "creo:featdefs:feature_definition#917": {
+          "offset": 86,
+          "stream": 0,
+          "tag": "feature_definition_record"
+        },
+        "creo:featdefs:parameter#917:42:1": {
+          "offset": 144,
+          "stream": 0,
+          "tag": "section_dimension"
+        },
+        "creo:featdefs:parameter#917:42:2": {
+          "offset": 197,
+          "stream": 0,
+          "tag": "section_dimension"
+        },
+        "creo:featdefs:sketch#917": {
+          "offset": 86,
+          "stream": 0,
+          "tag": "feature_sketch"
+        },
+        "creo:mdlstatus:feature_state#40:0": {
+          "offset": 227,
+          "stream": 1,
+          "tag": "feature_operation_state"
+        },
+        "creo:model:feature#40": {
+          "offset": 227,
+          "stream": 1,
+          "tag": "feature_operation_name"
+        },
+        "creo:model:sketch#917": {
+          "offset": 86,
+          "stream": 0,
+          "tag": "unplaced_section"
+        },
+        "creo:model:sketch_feature#917": {
+          "offset": 86,
+          "stream": 0,
+          "tag": "section_sketch_feature"
+        }
+      },
+      "streams": [
+        "creo:FeatDefs",
+        "creo:MdlStatus",
+        "creo:DEPDB_DATA"
+      ]
+    },
+    "version": "3"
   }
 }

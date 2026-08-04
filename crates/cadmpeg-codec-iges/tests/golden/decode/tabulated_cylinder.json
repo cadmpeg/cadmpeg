@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "4",
+    "ir_version": "5",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -17,7 +17,6 @@
         }
       ],
       "coedges": [],
-      "components": [],
       "configurations": [],
       "curves": [
         {
@@ -109,8 +108,7 @@
           "surface": "iges:model:surface#D3"
         }
       ],
-      "product_occurrences": [],
-      "products": [],
+      "product_definitions": [],
       "regions": [
         {
           "body": "iges:model:body#free-geometry",

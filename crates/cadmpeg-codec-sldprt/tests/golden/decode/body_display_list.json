@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "4",
+    "ir_version": "5",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -44,7 +44,6 @@
           "sense": "forward"
         }
       ],
-      "components": [],
       "configurations": [
         {
           "active": true,
@@ -134,8 +133,7 @@
       "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_occurrences": [],
-      "products": [],
+      "product_definitions": [],
       "regions": [
         {
           "body": "sldprt:brep:body#0",
@@ -333,7 +331,7 @@
         "active_parasolid_block": "Contents/Config-0-Partition",
         "block_count": "2",
         "bmp_thumbnail_count": "0",
-        "brep_semantic_sha256": "b015d28146110e43442bf84e96dbdffa912522d2e4e5902854454c46e23edd94",
+        "brep_semantic_sha256": "28a2bf52d5fe140f5e4080e9a77d2f4615b3aac9d8daa73ecbc30c2774958149",
         "compound_stream_count": "0",
         "displaylist_triangles": "1",
         "displaylist_vertices": "3",
@@ -341,7 +339,7 @@
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
         "png_preview_count": "0",
-        "semantic_sha256": "556ab8f74fa6b8b450c1c2eaf799e8f5de91432a433402c91b2099b63ec98bc7",
+        "semantic_sha256": "8cd12916dbb7eec27be6e02101b86164e4122f60f3aa6770cd643b5fd0834629",
         "sldprt_configuration_feature_states_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_configuration_parameter_values_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#partition:0",
@@ -371,13 +369,11 @@
     "geometry_transferred": true,
     "losses": [
       {
-        "category": "topology",
         "code": "topology_gauge_substituted",
         "message": "No body record was available; one body/region/shell hierarchy was derived.",
         "severity": "warning"
       },
       {
-        "category": "other",
         "code": "feature_history_retained",
         "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
         "severity": "warning"

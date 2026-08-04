@@ -64,28 +64,26 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "cadmpeg-codec-catia"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cadmpeg-codec-core",
  "cadmpeg-ir",
  "memchr",
- "schemars",
  "serde",
  "sha2",
 ]
 
 [[package]]
 name = "cadmpeg-codec-core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
- "schemars",
  "serde",
  "thiserror",
 ]
 
 [[package]]
 name = "cadmpeg-codec-creo"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cadmpeg-codec-core",
  "cadmpeg-ir",
@@ -96,7 +94,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-f3d"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cadmpeg-codec-core",
  "cadmpeg-container",
@@ -104,7 +102,6 @@ dependencies = [
  "lzma-rs",
  "memchr",
  "roxmltree",
- "schemars",
  "serde",
  "serde-value",
  "serde_json",
@@ -116,7 +113,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-freecad"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cadmpeg-codec-core",
  "cadmpeg-container",
@@ -131,7 +128,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-iges"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cadmpeg-codec-core",
  "cadmpeg-ir",
@@ -143,7 +140,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-nx"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cadmpeg-codec-core",
  "cadmpeg-ir",
@@ -156,7 +153,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-rhino"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cadmpeg-codec-core",
  "cadmpeg-ir",
@@ -170,7 +167,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-sldprt"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cadmpeg-codec-core",
  "cadmpeg-container",
@@ -178,7 +175,6 @@ dependencies = [
  "crc32fast",
  "flate2",
  "roxmltree",
- "schemars",
  "serde",
  "serde_json",
  "sha2",
@@ -187,7 +183,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-step"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cadmpeg-codec-core",
  "cadmpeg-ir",
@@ -197,7 +193,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-container"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cadmpeg-codec-core",
  "crc32fast",
@@ -230,11 +226,10 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-ir"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "base64",
  "cadmpeg-codec-core",
- "schemars",
  "serde",
  "serde_json",
  "sha2",
@@ -317,12 +312,6 @@ dependencies = [
  "const-oid",
  "crypto-common",
 ]
-
-[[package]]
-name = "dyn-clone"
-version = "1.0.20"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "encoding_rs"
@@ -533,26 +522,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
-name = "ref-cast"
-version = "1.0.26"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "216e8f773d7923bcba9ceb86a86c93cabb3903a11872fc3f138c49630e50b96d"
-dependencies = [
- "ref-cast-impl",
-]
-
-[[package]]
-name = "ref-cast-impl"
-version = "1.0.26"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c9283685feec7d69af75fb0e858d5e7378f33fe4fc699383b2916ab9273e03c"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "regex"
 version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -604,31 +573,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "schemars"
-version = "1.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "687274d293b6cdc6e73e0fee520bf2049650090d7164f87672d212a3c530cf4a"
-dependencies = [
- "dyn-clone",
- "ref-cast",
- "schemars_derive",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "schemars_derive"
-version = "1.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d98c67716b46af2f0b8cf752abc930f6f9aecfbf671ecfb531db8a31dbe4e2ba"
-dependencies = [
- "proc-macro2",
- "quote",
- "serde_derive_internals",
- "syn",
-]
-
-[[package]]
 name = "serde"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -662,17 +606,6 @@ name = "serde_derive"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "serde_derive_internals"
-version = "0.30.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f852137cce035d6a4df67ccce505ff6b3e9fd3a10e3e52b24dc71e650bb1a9bd"
 dependencies = [
  "proc-macro2",
  "quote",

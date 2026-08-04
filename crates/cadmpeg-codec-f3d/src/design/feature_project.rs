@@ -817,7 +817,7 @@ pub fn project_parameter_design_with_edge_identities(
                                 properties: native_scope_properties(scope, native_scope),
                             }
                         })
-                    } else if scope.kind == "DeleteFace" {
+                    } else if matches!(scope.kind.as_str(), "DeleteFace" | "SurfaceDeleteFace") {
                         project_delete_face(scope, construction_groups, face_operands)
                             .unwrap_or_else(|| FeatureDefinition::Native {
                                 kind: scope.kind.clone(),
@@ -2355,7 +2355,7 @@ pub(crate) fn bind_form_cages(
         };
         if matches!(
             &feature.definition,
-            cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind == "Form"
+            cadmpeg_ir::features::FeatureDefinition::Native { .. }
         ) {
             feature.definition = cadmpeg_ir::features::FeatureDefinition::Form { cages: resolved };
         }
@@ -4591,13 +4591,12 @@ fn project_delete_face(
         .kind_offset
         .checked_sub(scope.byte_offset)?
         .checked_sub(reference_bytes)?;
-    if scope.kind != "DeleteFace"
-        || reference_count < 2
-        || !matches!(
-            (base_frame_length, base_kind_offset),
-            (236, 139) | (241, 143)
-        )
-    {
+    let heal = match (scope.kind.as_str(), (base_frame_length, base_kind_offset)) {
+        ("DeleteFace", (236, 139) | (241, 143)) => true,
+        ("SurfaceDeleteFace", (250, 140)) => false,
+        _ => return None,
+    };
+    if reference_count < 2 {
         return None;
     }
     let stream = native_stream(&scope.id)?;
@@ -4620,7 +4619,7 @@ fn project_delete_face(
     }
     let faces = resolved_historical_face_group(scope, group, face_operands)
         .unwrap_or_else(|| FaceSelection::Native(group.id.clone()));
-    Some(FeatureDefinition::DeleteFace { faces, heal: true })
+    Some(FeatureDefinition::DeleteFace { faces, heal })
 }
 
 pub(crate) fn project_extrude(

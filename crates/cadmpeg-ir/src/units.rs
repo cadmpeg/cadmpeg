@@ -4,11 +4,13 @@
 //! Stored lengths and coordinates use millimeters. Angular quantities use
 //! radians.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// The canonical IR length unit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum LengthUnit {
     /// Millimeter, the IR canonical length unit.
@@ -16,7 +18,8 @@ pub enum LengthUnit {
 }
 
 /// Unit declaration for stored document coordinates.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Units {
     /// Unit the stored coordinate values are expressed in.
     pub length: LengthUnit,
@@ -31,7 +34,8 @@ impl Default for Units {
 }
 
 /// Document-wide linear and angular tolerances.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Tolerances {
     /// Linear tolerance in millimeters.
     pub linear: f64,

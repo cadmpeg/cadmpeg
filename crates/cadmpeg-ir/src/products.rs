@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral product structure and occurrence instancing.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -10,12 +11,14 @@ use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::transform::Transform;
 
 /// Stable assembly-joint identity.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct JointId(#[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String);
 
 /// Role of a component definition in the product tree.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ProductDefinitionKind {
     /// Product part or assembly container.
@@ -29,7 +32,8 @@ pub enum ProductDefinitionKind {
 }
 
 /// A reusable product definition or structural container.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ProductDefinition {
     /// Globally unique definition identity.
     pub id: ProductDefinitionId,
@@ -59,7 +63,8 @@ pub struct ProductDefinition {
 }
 
 /// Local or unresolved external prototype of an occurrence.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "scope", rename_all = "snake_case")]
 pub enum PrototypeReference {
     /// Prototype resolves to a definition in this document.
@@ -80,7 +85,8 @@ pub enum PrototypeReference {
 }
 
 /// First-class external document reference without implicit loading.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ExternalDocumentReference {
     /// File path when the source explicitly stores a file attribute.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -93,7 +99,8 @@ pub struct ExternalDocumentReference {
 }
 
 /// Resolution state of an external product reference.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ExternalResolution {
     /// Target document was not loaded by this decode.
@@ -103,7 +110,8 @@ pub enum ExternalResolution {
 }
 
 /// Copy-on-change ownership behavior of a link.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "policy", content = "native_policy", rename_all = "snake_case")]
 pub enum CopyOnChangePolicy {
     /// Link follows its prototype without making an owned copy.
@@ -119,7 +127,8 @@ pub enum CopyOnChangePolicy {
 }
 
 /// Position of an occurrence in the canonical placed-instance tree.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum OccurrenceParent {
     /// A root occurrence has no containing occurrence.
@@ -132,7 +141,8 @@ pub enum OccurrenceParent {
 }
 
 /// One placed use, including an element of a link array.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Occurrence {
     /// Globally unique instance identity.
     pub id: OccurrenceId,
@@ -387,7 +397,8 @@ fn resolve_occurrence<'a>(
 }
 
 /// Neutral family of an assembly joint.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "native_kind", rename_all = "snake_case")]
 pub enum JointKind {
     /// Rigid connection with no relative degrees of freedom.
@@ -423,7 +434,8 @@ pub enum JointKind {
 }
 
 /// One connector operand and its selected native subelements.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct JointOperand {
     /// Local placed occurrence when the object resolves within this document.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -440,7 +452,8 @@ pub struct JointOperand {
 }
 
 /// Optional enabled interval for a joint degree of freedom.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct JointLimits {
     /// Lower bound when enabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -451,7 +464,8 @@ pub struct JointLimits {
 }
 
 /// Neutral assembly constraint between connector frames.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct AssemblyJoint {
     /// Globally unique joint identity.
     pub id: JointId,

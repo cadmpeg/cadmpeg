@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "4",
+    "ir_version": "5",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -44,7 +44,6 @@
           "sense": "forward"
         }
       ],
-      "components": [],
       "configurations": [
         {
           "active": true,
@@ -246,8 +245,7 @@
       "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_occurrences": [],
-      "products": [],
+      "product_definitions": [],
       "regions": [
         {
           "body": "sldprt:brep:body#0",
@@ -420,13 +418,13 @@
         "active_parasolid_block": "Contents/Config-0-Partition",
         "block_count": "2",
         "bmp_thumbnail_count": "0",
-        "brep_semantic_sha256": "cc485132daddcf80fb061a32a37e0627d44861b46bd5f98667e5a1b3d3e2b925",
+        "brep_semantic_sha256": "3d858a1bdd1a1f54ea043c3d2ce1a07964506ff1fe2897628378c5552daf49d9",
         "compound_stream_count": "0",
         "outer_version": "0x00000004",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
         "png_preview_count": "0",
-        "semantic_sha256": "272422b7edf9230e959c459be7ef7c6695e8b07124583dc9f0d3f3849821f666",
+        "semantic_sha256": "3fb7c0da1274379a1f7cadbedb0d803f4a800649311d96779502b6fddee037c6",
         "sldprt_configuration_feature_states_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_configuration_parameter_values_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#247:0",
@@ -456,25 +454,21 @@
     "geometry_transferred": true,
     "losses": [
       {
-        "category": "topology",
         "code": "topology_gauge_substituted",
         "message": "No body record was available; one body/region/shell hierarchy was derived.",
         "severity": "warning"
       },
       {
-        "category": "other",
         "code": "feature_history_retained",
         "message": "1 feature(s) retain non-empty native output scopes that do not resolve to model bodies.",
         "severity": "warning"
       },
       {
-        "category": "other",
         "code": "feature_history_retained",
         "message": "1 feature(s) retain their native kind without a complete neutral operation definition.",
         "severity": "warning"
       },
       {
-        "category": "other",
         "code": "feature_history_retained",
         "message": "1 typed feature(s) retain native or unresolved required operation operands.",
         "severity": "warning"

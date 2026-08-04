@@ -6,15 +6,15 @@
 //! must be stable and globally unique within a document. State-local IDs need
 //! only be unique within their owning state.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 macro_rules! id_type {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*
-        #[derive(
-            Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, JsonSchema,
-        )]
+        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
         #[serde(transparent)]
         pub struct $name(pub String);
 
@@ -51,9 +51,8 @@ macro_rules! id_type {
 macro_rules! local_id_type {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*
-        #[derive(
-            Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
-        )]
+        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
         #[serde(transparent)]
         pub struct $name(pub String);
 

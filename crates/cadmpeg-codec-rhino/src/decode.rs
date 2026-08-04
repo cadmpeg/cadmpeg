@@ -13,7 +13,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -27,6 +27,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::chunks::ArchiveVersion;
 use crate::container::Scan;
+use crate::loss::RhinoLossCode;
 use crate::objects::ObjectDescriptor;
 
 /// Maximum bytes retained for one Rhino object record.
@@ -38,15 +39,38 @@ pub(crate) const RETAINED_DOCUMENT_CAP: usize = 256 * 1024 * 1024;
 struct ClassOutcome {
     decoded: usize,
     retained: usize,
+    native_retained: usize,
+    native_code: Option<RhinoLossCode>,
     attribute_degraded: usize,
     failed_framed: usize,
     first_offset: u64,
     first_object_type: u32,
 }
 
+/// Per-record transfer state.
+///
+/// `NativeRetained` is distinct from both `Retained` and `Decoded`: the record
+/// was framed and its payload was read, but the only neutral entity it produced
+/// carries the construction state as a `FeatureDefinition::Native` blob. Such a
+/// record is not "decoded" for census purposes, and it is not "retained"
+/// either, because a `Retained` record reports
+/// `RhinoLossCode::ObjectFamilyNotTransferred`, which claims the payload was
+/// never read.
+/// Outcome of resolving one foreign object UUID against the object table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ObjectReference {
+    /// Exactly one record owns the UUID; the value is its source order.
+    Resolved(usize),
+    /// No record owns the UUID.
+    Missing,
+    /// Several records own the UUID, so no single record can be selected.
+    Ambiguous,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GeometryStatus {
     Retained,
+    NativeRetained,
     Decoded,
     Failed,
 }
@@ -71,6 +95,7 @@ struct ArenaLengths {
     procedural_surfaces: usize,
     features: usize,
     parameters: usize,
+    semantic_annotations: usize,
 }
 
 #[derive(Debug)]
@@ -116,6 +141,7 @@ impl ArenaLengths {
         procedural_surfaces: 0,
         features: 0,
         parameters: 0,
+        semantic_annotations: 0,
     };
 
     fn capture(ir: &CadIr) -> Self {
@@ -138,6 +164,7 @@ impl ArenaLengths {
             procedural_surfaces: ir.model.procedural_surfaces.len(),
             features: ir.model.features.len(),
             parameters: ir.model.parameters.len(),
+            semantic_annotations: ir.model.semantic_annotations.len(),
         }
     }
 
@@ -162,6 +189,9 @@ impl ArenaLengths {
             .truncate(self.procedural_surfaces);
         ir.model.features.truncate(self.features);
         ir.model.parameters.truncate(self.parameters);
+        ir.model
+            .semantic_annotations
+            .truncate(self.semantic_annotations);
     }
 
     fn added_since(self, before: Self) -> Option<usize> {
@@ -184,6 +214,7 @@ impl ArenaLengths {
             (self.procedural_surfaces, before.procedural_surfaces),
             (self.features, before.features),
             (self.parameters, before.parameters),
+            (self.semantic_annotations, before.semantic_annotations),
         ]
         .into_iter()
         .try_fold(0_usize, |total, (after, before)| {
@@ -285,6 +316,11 @@ impl ArenaLengths {
                 .iter()
                 .map(|entity| entity.id.0.clone()),
         );
+        ids.extend(
+            ir.model.semantic_annotations[self.semantic_annotations..]
+                .iter()
+                .map(|entity| entity.id.0.clone()),
+        );
         Some(ids)
     }
 
@@ -340,6 +376,9 @@ impl ArenaLengths {
             .retain(|entity| !ids.contains(&entity.id.to_string()));
         ir.model
             .parameters
+            .retain(|entity| !ids.contains(&entity.id.0));
+        ir.model
+            .semantic_annotations
             .retain(|entity| !ids.contains(&entity.id.0));
     }
 }
@@ -659,6 +698,79 @@ impl<'a> DecodeContext<'a> {
         self.transition(source_order, GeometryStatus::Failed)
     }
 
+    /// Marks one object as read but retained as native passthrough.
+    ///
+    /// `code` names the lane whose construction state did not reach a typed
+    /// neutral entity. It is recorded once per class; every record of one Rhino
+    /// class runs the same decoder branch, so the code is stable per class.
+    fn mark_native_retained(&mut self, source_order: usize, code: RhinoLossCode) -> bool {
+        if !self.transition(source_order, GeometryStatus::NativeRetained) {
+            return false;
+        }
+        let class = self.scan.objects[source_order].class_uuid.to_string();
+        let outcome = self.outcomes.get_mut(&class).expect("status class exists");
+        outcome.native_code = Some(code);
+        true
+    }
+
+    /// Resolves one foreign object UUID to the single record that owns it.
+    ///
+    /// A 3DM record names another object by UUID, and the object table is free
+    /// to omit that UUID or to repeat it. Both outcomes must stay distinct: an
+    /// omitted UUID is a broken link, a repeated one is an unusable link.
+    fn resolve_object(&self, id: crate::wire::Uuid) -> ObjectReference {
+        match self
+            .object_candidates
+            .get(&id)
+            .map_or(&[][..], Vec::as_slice)
+        {
+            [order] => ObjectReference::Resolved(*order),
+            [] => ObjectReference::Missing,
+            _ => ObjectReference::Ambiguous,
+        }
+    }
+
+    /// Resolves foreign object UUIDs to the native identities of their records.
+    ///
+    /// The result is positional: index `i` holds the identity for `ids[i]`, or
+    /// `None` when that UUID is nil, names no record, or names several. Every
+    /// non-nil UUID that does not resolve is charged against `role`.
+    fn resolve_object_records(
+        &mut self,
+        source_order: usize,
+        role: &str,
+        ids: &[crate::wire::Uuid],
+    ) -> Vec<Option<String>> {
+        let mut resolved = Vec::new();
+        let mut charges = Vec::new();
+        for id in ids {
+            if id.is_nil() {
+                resolved.push(None);
+                continue;
+            }
+            match self.resolve_object(*id) {
+                ObjectReference::Resolved(order) => {
+                    resolved.push(Some(Self::mint_unknown_id(order).to_string()));
+                }
+                ObjectReference::Missing => {
+                    resolved.push(None);
+                    charges.push((RhinoLossCode::ReferenceMemberUnresolved, *id));
+                }
+                ObjectReference::Ambiguous => {
+                    resolved.push(None);
+                    charges.push((RhinoLossCode::ReferenceMemberAmbiguous, *id));
+                }
+            }
+        }
+        for (code, id) in charges {
+            let note = code.note(format!(
+                "{role} in object record {source_order} references object {id}"
+            ));
+            self.typed_losses.push(note);
+        }
+        resolved
+    }
+
     /// Decode and atomically commit supported simple geometry.
     pub(crate) fn decode_geometry(&mut self) {
         if !matches!(
@@ -884,22 +996,38 @@ impl<'a> DecodeContext<'a> {
                         );
                         continue;
                     }
-                    let native_ref = Self::mint_unknown_id(source_order).to_string();
-                    let (feature, parameter) = crate::dimensions::project(
+                    // `SemanticAnnotation::order` must be globally unique and
+                    // is a `u32`. The arena length is the dense next index and
+                    // rolls back with the arena, unlike a standalone counter.
+                    let Ok(order) = u32::try_from(self.ir.model.semantic_annotations.len()) else {
+                        self.scan_warning(
+                            source_order,
+                            "dimension retained because the annotation arena exceeds u32 ordinals",
+                        );
+                        continue;
+                    };
+                    let object = Self::mint_unknown_id(source_order).to_string();
+                    let (annotation, unresolved) = crate::dimensions::project(
                         &dimension,
                         &key,
                         (!identity.name.is_empty()).then(|| identity.name.clone()),
-                        native_ref,
+                        &object,
+                        order,
                     );
-                    let links = [feature.id.to_string(), parameter.id.0.clone()];
+                    let links = [annotation.id.0.clone()];
                     let result = self.validate_candidate(|candidate, _annotations| {
-                        candidate.model.features.push(feature);
-                        candidate.model.parameters.push(parameter);
+                        candidate.model.semantic_annotations.push(annotation);
                     });
                     match result {
                         Ok(()) => {
                             self.append_links(source_order, &links);
                             self.mark_decoded(source_order);
+                            for code in unresolved {
+                                self.typed_losses.push(code.note(format!(
+                                    "dimension record {source_order} reference is not resolved to a \
+                                     decoded record"
+                                )));
+                            }
                         }
                         Err(error) => self.scan_warning(
                             source_order,
@@ -1049,7 +1177,7 @@ impl<'a> DecodeContext<'a> {
                 links.push(feature_id.to_string());
                 self.append_links(source_order, &links);
                 self.geometry_transferred = true;
-                self.mark_decoded(source_order);
+                self.mark_native_retained(source_order, RhinoLossCode::HatchFillNotTransferred);
             }
             Err(error) => {
                 self.scan_warning(source_order, &format!("hatch candidate rejected: {error}"));
@@ -1086,10 +1214,24 @@ impl<'a> DecodeContext<'a> {
         };
         let key = self.object_key(identity, source_order);
         let id = FeatureId(format!("rhino:polyedge:feature#{key}"));
+        let segment_objects = polyedge
+            .segments
+            .iter()
+            .map(|segment| segment.object_id)
+            .collect::<Vec<_>>();
+        let parameters = self
+            .resolve_object_records(source_order, "polyedge segment", &segment_objects)
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, resolved)| {
+                resolved.map(|record| (format!("segment_{index}_object"), record))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let name = (!identity.name.is_empty()).then(|| identity.name.clone());
         let feature = Feature {
             id: id.clone(),
             ordinal: u64::try_from(source_order).expect("source order fits u64"),
-            name: (!identity.name.is_empty()).then(|| identity.name.clone()),
+            name,
             suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
@@ -1100,7 +1242,7 @@ impl<'a> DecodeContext<'a> {
             outputs: Vec::new(),
             definition: FeatureDefinition::Native {
                 kind: "polyedge_reference".to_string(),
-                parameters: BTreeMap::new(),
+                parameters,
                 properties: BTreeMap::from([("construction".to_string(), construction)]),
             },
             native_ref: Some(Self::mint_unknown_id(source_order).to_string()),
@@ -1110,7 +1252,10 @@ impl<'a> DecodeContext<'a> {
         {
             Ok(()) => {
                 self.append_link(source_order, id.to_string());
-                self.mark_decoded(source_order);
+                self.mark_native_retained(
+                    source_order,
+                    RhinoLossCode::PolyedgeReferencesNotResolved,
+                );
             }
             Err(error) => self.scan_warning(
                 source_order,
@@ -1210,7 +1355,7 @@ impl<'a> DecodeContext<'a> {
             Ok(()) => {
                 self.append_links(source_order, &[curve_id, feature_id.to_string()]);
                 self.geometry_transferred = true;
-                self.mark_decoded(source_order);
+                self.mark_native_retained(source_order, RhinoLossCode::DetailViewNotTransferred);
             }
             Err(error) => {
                 self.scan_warning(source_order, &format!("detail candidate rejected: {error}"));
@@ -1337,7 +1482,7 @@ impl<'a> DecodeContext<'a> {
             Ok(()) => {
                 self.append_link(source_order, feature_id.to_string());
                 self.geometry_transferred = true;
-                self.mark_decoded(source_order);
+                self.mark_native_retained(source_order, RhinoLossCode::CageLatticeNotTransferred);
             }
             Err(error) => {
                 self.scan_warning(
@@ -1390,11 +1535,14 @@ impl<'a> DecodeContext<'a> {
             }
         };
         let key = self.object_key(identity, source_order);
+        let captives =
+            self.resolve_object_records(source_order, "morph captive", &morph.captive_ids);
         let feature = crate::morph::project(
             &morph,
             &key,
             (!identity.name.is_empty()).then(|| identity.name.clone()),
             self.unknowns[source_order].id.to_string(),
+            &captives,
         );
         let feature_id = feature.id.to_string();
         match self
@@ -1403,7 +1551,7 @@ impl<'a> DecodeContext<'a> {
             Ok(()) => {
                 self.append_link(source_order, feature_id);
                 self.geometry_transferred = true;
-                self.mark_decoded(source_order);
+                self.mark_native_retained(source_order, RhinoLossCode::MorphDeformationNotApplied);
             }
             Err(error) => {
                 self.scan_warning(source_order, &format!("morph candidate rejected: {error}"));
@@ -1549,7 +1697,10 @@ impl<'a> DecodeContext<'a> {
                 }
                 self.append_links(source_order, &links);
                 self.geometry_transferred = true;
-                self.mark_decoded(source_order);
+                self.mark_native_retained(
+                    source_order,
+                    RhinoLossCode::CurveOnSurfaceBindingNotTransferred,
+                );
             }
             Err(error) => {
                 self.scan_warning(
@@ -1586,10 +1737,7 @@ impl<'a> DecodeContext<'a> {
         identity: &crate::objects::SourceIdentity,
     ) -> String {
         if !identity.object_id.is_nil()
-            && self
-                .object_candidates
-                .get(&identity.object_id)
-                .is_some_and(|candidates| candidates.as_slice() == [source_order])
+            && self.resolve_object(identity.object_id) == ObjectReference::Resolved(source_order)
         {
             identity.object_id.to_string()
         } else {
@@ -1779,18 +1927,15 @@ impl<'a> DecodeContext<'a> {
         let mut links = Vec::new();
         for member_id in definition_members {
             self.expansion_budget.member()?;
-            let matches = self
-                .object_candidates
-                .get(&member_id)
-                .map_or(&[][..], Vec::as_slice);
-            let [member_order] = matches else {
-                return Err(if matches.is_empty() {
-                    format!("definition member {member_id} is missing")
-                } else {
-                    format!("definition member {member_id} is ambiguous")
-                });
+            let member_order = match self.resolve_object(member_id) {
+                ObjectReference::Resolved(order) => order,
+                ObjectReference::Missing => {
+                    return Err(format!("definition member {member_id} is missing"))
+                }
+                ObjectReference::Ambiguous => {
+                    return Err(format!("definition member {member_id} is ambiguous"))
+                }
             };
-            let member_order = *member_order;
             let member = &self.scan.objects[member_order];
             if crate::instances::is_reference_class(member.class_uuid) {
                 let nested = self.expand_reference_inner(member_order, transform, path, stack)?;
@@ -2122,73 +2267,79 @@ impl<'a> DecodeContext<'a> {
             .map(|outcome| outcome.decoded)
             .sum::<usize>();
         let total = self.scan.objects.len();
-        losses.push(LossNote {
-            code: LossKind::ObjectRecordsUntransferred,
-            severity: Severity::Info,
-            message: format!("decoded {decoded}/{total} Rhino object records"),
-            provenance: None,
-        });
+        losses.push(
+            RhinoLossCode::ObjectRecordCensus
+                .note(format!("decoded {decoded}/{total} Rhino object records")),
+        );
         let mut omissions: Vec<LossNote> = Vec::new();
         for (class, outcome) in &self.outcomes {
             if outcome.retained > 0 {
-                omissions.push(LossNote {
-                    code: LossKind::UnsupportedObjectFamily,
-                    severity: Severity::Warning,
-                    message: format!(
-                        "retained {} object record(s) for class {class}; geometry is not decoded",
-                        outcome.retained
-                    ),
-                    provenance: Some(loss_provenance(class, outcome)),
-                });
+                omissions.push(
+                    RhinoLossCode::ObjectFamilyNotTransferred
+                        .note(format!(
+                            "retained {} object record(s) for class {class}; geometry is not decoded",
+                            outcome.retained
+                        ))
+                        .with_provenance(loss_provenance(class, outcome)),
+                );
+            }
+            // `native_code` is set only by a transition that also incremented
+            // `native_retained`, so the count is nonzero whenever it is `Some`.
+            if let Some(code) = outcome.native_code {
+                omissions.push(
+                    code.note(format!(
+                        "framed and read {} object record(s) for class {class}; construction \
+                         state is retained as native passthrough",
+                        outcome.native_retained
+                    ))
+                    .with_provenance(loss_provenance(class, outcome)),
+                );
             }
             if outcome.attribute_degraded > 0 {
-                losses.push(LossNote {
-                    code: LossKind::AttributesNotTransferred,
-                    severity: Severity::Warning,
-                    message: format!(
-                        "{} object record(s) for class {class} have degraded attributes",
-                        outcome.attribute_degraded
-                    ),
-                    provenance: Some(loss_provenance(class, outcome)),
-                });
+                losses.push(
+                    RhinoLossCode::ObjectAttributesDegraded
+                        .note(format!(
+                            "{} object record(s) for class {class} have degraded attributes",
+                            outcome.attribute_degraded
+                        ))
+                        .with_provenance(loss_provenance(class, outcome)),
+                );
             }
             if outcome.failed_framed > 0 {
-                losses.push(LossNote {
-                    code: LossKind::DecodeDiagnostic,
-                    severity: Severity::Error,
-                    message: format!(
-                        "{} framed object record(s) for class {class} could not be decoded",
-                        outcome.failed_framed
-                    ),
-                    provenance: Some(loss_provenance(class, outcome)),
-                });
+                losses.push(
+                    RhinoLossCode::ObjectFramingUndecodable
+                        .note(format!(
+                            "{} framed object record(s) for class {class} could not be decoded",
+                            outcome.failed_framed
+                        ))
+                        .with_provenance(loss_provenance(class, outcome)),
+                );
             }
         }
         self.typed_losses.extend(omissions);
         if let Some(first) = self.scan.definitions.diagnostics.first() {
-            losses.push(LossNote {
-                code: LossKind::DecodeDiagnostic,
-                severity: Severity::Warning,
-                message: format!(
-                    "retained {} malformed, ambiguous, or checksum-degraded instance-definition record(s); first: {}",
-                    self.scan.definitions.diagnostics.len(),
-                    first.message
-                ),
-                provenance: Some(LossProvenance {
-                    format: "rhino".to_string(),
-                    stream: String::new(),
-                    offset: first.source_range.start as u64,
-                    tag: Some("INSTANCE_DEFINITION_TABLE".to_string()),
-                }),
-            });
+            losses.push(
+                RhinoLossCode::ContainerInstanceDefinitionDegraded
+                    .note(format!(
+                        "retained {} malformed, ambiguous, or checksum-degraded instance-definition record(s); first: {}",
+                        self.scan.definitions.diagnostics.len(),
+                        first.message
+                    ))
+                    .with_provenance(LossProvenance {
+                        format: "rhino".to_string(),
+                        stream: String::new(),
+                        offset: first.source_range.start as u64,
+                        tag: Some("INSTANCE_DEFINITION_TABLE".to_string()),
+                    }),
+            );
         }
         losses.append(&mut self.typed_losses);
-        losses.extend(self.scan.warnings.iter().map(|warning| LossNote {
-            code: LossKind::DecodeDiagnostic,
-            severity: Severity::Warning,
-            message: warning.clone(),
-            provenance: None,
-        }));
+        losses.extend(
+            self.scan
+                .warnings
+                .iter()
+                .map(|warning| RhinoLossCode::ContainerScanDiagnostic.note(warning.clone())),
+        );
         let mut phase_families = BTreeMap::<String, (usize, String)>::new();
         for warning in &self.phase_warnings {
             let (family, detail) = warning
@@ -2201,20 +2352,13 @@ impl<'a> DecodeContext<'a> {
                 .or_insert_with(|| (0, detail.to_string()));
             entry.0 += 1;
         }
-        losses.extend(
-            phase_families
-                .into_iter()
-                .map(|(family, (count, first))| LossNote {
-                    code: LossKind::DecodeDiagnostic,
-                    severity: Severity::Warning,
-                    message: if count == 1 {
-                        format!("{family}: {first}")
-                    } else {
-                        format!("{family}: {count} decode warnings; first: {first}")
-                    },
-                    provenance: None,
-                }),
-        );
+        losses.extend(phase_families.into_iter().map(|(family, (count, first))| {
+            RhinoLossCode::ObjectDecodeDiagnostic.note(if count == 1 {
+                format!("{family}: {first}")
+            } else {
+                format!("{family}: {count} decode warnings; first: {first}")
+            })
+        }));
         let byte_records = self
             .unknowns
             .iter()
@@ -2966,12 +3110,10 @@ impl<'a> DecodeContext<'a> {
                     self.append_links(source_order, &links);
                     for warning in warnings {
                         if let Some(cause) = warning.strip_prefix("Brep topology fallback: ") {
-                            self.typed_losses.push(LossNote {
-                                code: LossKind::TopologyNotTransferred,
-                                severity: Severity::Warning,
-                                message: format!("Brep topology fallback: {cause}"),
-                                provenance: None,
-                            });
+                            self.typed_losses.push(
+                                RhinoLossCode::TopologyBrepFallback
+                                    .note(format!("Brep topology fallback: {cause}")),
+                            );
                         } else {
                             self.scan_warning(source_order, &warning);
                         }
@@ -3006,7 +3148,12 @@ impl<'a> DecodeContext<'a> {
         let Some(current) = self.statuses.get(source_order).copied() else {
             return false;
         };
-        if current == next || matches!(current, GeometryStatus::Decoded | GeometryStatus::Failed) {
+        if current == next
+            || matches!(
+                current,
+                GeometryStatus::Decoded | GeometryStatus::Failed | GeometryStatus::NativeRetained
+            )
+        {
             return false;
         }
         let object = &self.scan.objects[source_order];
@@ -3014,10 +3161,13 @@ impl<'a> DecodeContext<'a> {
         let outcome = self.outcomes.get_mut(&class).expect("status class exists");
         match current {
             GeometryStatus::Retained => outcome.retained -= 1,
-            GeometryStatus::Decoded | GeometryStatus::Failed => unreachable!(),
+            GeometryStatus::Decoded | GeometryStatus::Failed | GeometryStatus::NativeRetained => {
+                unreachable!()
+            }
         }
         match next {
             GeometryStatus::Retained => outcome.retained += 1,
+            GeometryStatus::NativeRetained => outcome.native_retained += 1,
             GeometryStatus::Decoded => outcome.decoded += 1,
             GeometryStatus::Failed => outcome.failed_framed += 1,
         }
@@ -4917,7 +5067,27 @@ pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> De
             scale,
         )
     });
-    crate::history::project(&scan.history, geometry_context, &mut context.ir);
+    // History projection now appends carrier geometry, so it runs inside the
+    // same atomic transaction the object-record phases use. Before this it wrote
+    // straight into the document, and an invalid entity would have surfaced only
+    // at `cadmpeg validate` time.
+    let untyped = context.validate_candidate(|candidate, _annotations| {
+        crate::history::project(&scan.history, geometry_context, candidate)
+    });
+    match untyped {
+        Ok(0) => {}
+        Ok(untyped) => {
+            context
+                .typed_losses
+                .push(RhinoLossCode::HistoryGeometryNotTransferred.note(format!(
+                    "{untyped} history value(s) decoded without a neutral carrier"
+                )));
+        }
+        Err(error) => context.scan_warnings_for_class(
+            "history",
+            &format!("history projection rejected atomically by IR validation: {error}"),
+        ),
+    }
     context.commit()
 }
 
