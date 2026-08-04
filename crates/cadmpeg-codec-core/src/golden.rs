@@ -26,14 +26,15 @@
 //!
 //! A byte-exact comparison therefore reports a platform as a regression. That
 //! is the case the repository rule against comparing decoded doubles for exact
-//! equality already covers, so [`snapshots_agree`] compares parsed JSON with
-//! structure and strings exact and only fractional numbers tolerant. Byte
-//! equality remains the fast path, and the determinism check stays byte-exact
-//! because two runs in one process share one libm and must agree bit for bit.
+//! equality already covers, so [`snapshots_agree`] parses both sides and defers
+//! to [`crate::compare::values_agree`], which holds structure and strings exact
+//! and tolerates only fractional numbers. Byte equality remains the fast path,
+//! and the determinism check stays byte-exact because two runs in one process
+//! share one libm and must agree bit for bit.
 //!
-//! The tolerance hides drift below [`FLOAT_TOLERANCE`] relative magnitude. It
-//! does not make decode reproducible across platforms; it only stops the
-//! goldens from reporting that as codec drift.
+//! The tolerance hides drift below [`crate::compare::FLOAT_TOLERANCE`] relative
+//! magnitude. It does not make decode reproducible across platforms; it only
+//! stops the goldens from reporting that as codec drift.
 //!
 //! ## What this does not cover
 //!
@@ -51,16 +52,9 @@
 //!   compared values, so it cannot agree across platforms either. See
 //!   [`elide_digests`].
 
-use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-/// Relative tolerance for a fractional number in a snapshot comparison.
-///
-/// Applied against the larger magnitude of the two values, with a floor of one
-/// so small values compare absolutely. Platform libm disagreement is a few
-/// units in the last place, near `1e-16` relative, so this leaves four decimal
-/// orders of headroom while still catching any change with physical meaning.
-pub const FLOAT_TOLERANCE: f64 = 1e-12;
+use crate::compare::values_agree;
 
 /// One snapshot branch: a subdirectory of `tests/golden` and the function that
 /// produces the text pinned there.
@@ -287,15 +281,14 @@ fn read_golden(path: &Path) -> std::io::Result<String> {
 /// disagreement in fractional numbers.
 ///
 /// Byte equality short-circuits. Otherwise both sides parse as JSON and compare
-/// structurally: object key sets, array lengths, strings, booleans, nulls, and
-/// integers must match exactly, and a fractional number may differ by up to
-/// [`FLOAT_TOLERANCE`] relative to the larger magnitude. Text that does not
+/// structurally through [`crate::compare::values_agree`]. Text that does not
 /// parse as JSON falls back to a line diff.
 ///
 /// # Errors
 ///
 /// Returns a description locating the first disagreement, by JSON path when
-/// both sides parsed and by line number otherwise.
+/// both sides parsed and by line number otherwise. A path-located message reads
+/// `left` for the golden and `right` for the fresh snapshot.
 pub fn snapshots_agree(expected: &str, actual: &str) -> Result<(), String> {
     if expected == actual {
         return Ok(());
@@ -309,129 +302,7 @@ pub fn snapshots_agree(expected: &str, actual: &str) -> Result<(), String> {
             "at line {line}\n    golden: {golden_line}\n    actual: {actual_line}"
         ));
     };
-    let mut path = String::new();
-    values_agree(&expected_value, &actual_value, &mut path)
-}
-
-/// Walks two parsed snapshots in step, recording the path to the first
-/// disagreement.
-fn values_agree(
-    expected: &serde_json::Value,
-    actual: &serde_json::Value,
-    path: &mut String,
-) -> Result<(), String> {
-    use serde_json::Value;
-    match (expected, actual) {
-        (Value::Object(expected_map), Value::Object(actual_map)) => {
-            if let Some(key) = expected_map
-                .keys()
-                .find(|key| !actual_map.contains_key(*key))
-            {
-                return Err(disagreement(
-                    path,
-                    &format!("golden has key `{key}`, snapshot does not"),
-                ));
-            }
-            if let Some(key) = actual_map
-                .keys()
-                .find(|key| !expected_map.contains_key(*key))
-            {
-                return Err(disagreement(
-                    path,
-                    &format!("snapshot has key `{key}`, golden does not"),
-                ));
-            }
-            for (key, expected_child) in expected_map {
-                let restore = path.len();
-                path.push('.');
-                path.push_str(key);
-                values_agree(expected_child, &actual_map[key], path)?;
-                path.truncate(restore);
-            }
-            Ok(())
-        }
-        (Value::Array(expected_items), Value::Array(actual_items)) => {
-            if expected_items.len() != actual_items.len() {
-                return Err(disagreement(
-                    path,
-                    &format!(
-                        "golden has {} item(s), snapshot has {}",
-                        expected_items.len(),
-                        actual_items.len()
-                    ),
-                ));
-            }
-            for (index, (expected_child, actual_child)) in
-                expected_items.iter().zip(actual_items).enumerate()
-            {
-                let restore = path.len();
-                write!(path, "[{index}]").expect("writing to a String cannot fail");
-                values_agree(expected_child, actual_child, path)?;
-                path.truncate(restore);
-            }
-            Ok(())
-        }
-        (Value::Number(expected_number), Value::Number(actual_number)) => {
-            // Only a pair of fractional numbers can carry platform libm
-            // disagreement. Counts, indices, and versions serialize as integers
-            // and must match exactly, as must a value that changed between an
-            // integer and a fractional form.
-            let tolerant = match (expected_number.as_f64(), actual_number.as_f64()) {
-                (Some(left), Some(right)) if expected_number.is_f64() && actual_number.is_f64() => {
-                    floats_agree(left, right)
-                }
-                _ => expected_number == actual_number,
-            };
-            if tolerant {
-                Ok(())
-            } else {
-                Err(disagreement(
-                    path,
-                    &format!("golden {expected_number}, snapshot {actual_number}"),
-                ))
-            }
-        }
-        _ if expected == actual => Ok(()),
-        _ => Err(disagreement(
-            path,
-            &format!(
-                "golden {}, snapshot {}",
-                truncate_value(expected),
-                truncate_value(actual)
-            ),
-        )),
-    }
-}
-
-/// Renders one disagreement with the JSON path that located it.
-fn disagreement(path: &str, detail: &str) -> String {
-    let location = if path.is_empty() { "<root>" } else { path };
-    format!("at `{location}`: {detail}")
-}
-
-/// Whether two fractional numbers agree within [`FLOAT_TOLERANCE`] relative to
-/// the larger magnitude, with a floor of one so small values compare
-/// absolutely.
-fn floats_agree(left: f64, right: f64) -> bool {
-    if left == right {
-        return true;
-    }
-    if !left.is_finite() || !right.is_finite() {
-        return false;
-    }
-    let magnitude = left.abs().max(right.abs()).max(1.0);
-    (left - right).abs() <= FLOAT_TOLERANCE * magnitude
-}
-
-/// Renders a value for a failure message, bounded so a whole arena cannot land
-/// in a panic.
-fn truncate_value(value: &serde_json::Value) -> String {
-    let text = value.to_string();
-    if text.len() > 120 {
-        format!("{}…", &text[..120])
-    } else {
-        text
-    }
+    values_agree(&expected_value, &actual_value)
 }
 
 /// First differing line, 1-based, with both sides truncated for readability.
@@ -500,7 +371,8 @@ pub fn snapshot_text(value: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{floats_agree, snapshots_agree, FLOAT_TOLERANCE};
+    use super::snapshots_agree;
+    use crate::compare::FLOAT_TOLERANCE;
 
     /// The two values one `FreeCAD` conical face produces on Linux against
     /// Windows and macOS. Their difference is platform libm disagreement, not
@@ -508,65 +380,36 @@ mod tests {
     const LINUX_CONE_V: f64 = 1.802_581_857_082_682;
     const WINDOWS_CONE_V: f64 = 1.802_581_857_082_681_5;
 
+    // The comparator's own semantics are covered by `crate::compare`. What
+    // follows covers only what `snapshots_agree` adds on top: the byte-equal
+    // fast path, parsing both sides, and the line-diff fallback for text that is
+    // not JSON.
+
+    #[test]
+    fn byte_identical_text_agrees_without_parsing() {
+        assert!(snapshots_agree("not json at all\n", "not json at all\n").is_ok());
+    }
+
     #[test]
     fn last_place_platform_disagreement_agrees() {
-        assert_ne!(
-            LINUX_CONE_V.to_bits(),
-            WINDOWS_CONE_V.to_bits(),
-            "the fixture values must differ, or this test proves nothing"
-        );
-        assert!(floats_agree(LINUX_CONE_V, WINDOWS_CONE_V));
         let golden = format!("{{\"v\": {LINUX_CONE_V:?}}}");
         let snapshot = format!("{{\"v\": {WINDOWS_CONE_V:?}}}");
-        assert_ne!(golden, snapshot);
+        assert_ne!(
+            golden, snapshot,
+            "the texts must differ, or this test proves nothing"
+        );
         assert!(snapshots_agree(&golden, &snapshot).is_ok());
     }
 
     #[test]
     fn drift_beyond_the_tolerance_disagrees() {
         let moved = LINUX_CONE_V * (1.0 + 1000.0 * FLOAT_TOLERANCE);
-        assert!(!floats_agree(LINUX_CONE_V, moved));
         let error = snapshots_agree(
             &format!("{{\"v\": {LINUX_CONE_V:?}}}"),
             &format!("{{\"v\": {moved:?}}}"),
         )
         .expect_err("a change above the tolerance must be reported");
         assert!(error.contains(".v"), "{error}");
-    }
-
-    #[test]
-    fn structure_and_strings_stay_exact() {
-        for (golden, snapshot, expected_path) in [
-            (r#"{"a": "x"}"#, r#"{"a": "y"}"#, ".a"),
-            (r#"{"a": true}"#, r#"{"a": false}"#, ".a"),
-            (r#"{"a": [1, 2]}"#, r#"{"a": [1, 2, 3]}"#, ".a"),
-            (r#"{"a": {"b": 1}}"#, r#"{"a": {"c": 1}}"#, ".a"),
-            (r#"{"a": 1}"#, r#"{"a": 2}"#, ".a"),
-            (r#"{"a": 1.5}"#, r#"{"a": null}"#, ".a"),
-        ] {
-            let error = snapshots_agree(golden, snapshot)
-                .expect_err("an exact-match field must be reported");
-            assert!(
-                error.contains(expected_path),
-                "{golden} vs {snapshot}: {error}"
-            );
-        }
-    }
-
-    #[test]
-    fn a_nested_path_is_reported() {
-        let error = snapshots_agree(
-            r#"{"ir": {"model": {"pcurves": [{"v": 1.0}, {"v": 2.0}]}}}"#,
-            r#"{"ir": {"model": {"pcurves": [{"v": 1.0}, {"v": 9.0}]}}}"#,
-        )
-        .expect_err("a moved value must be reported");
-        assert!(error.contains(".ir.model.pcurves[1].v"), "{error}");
-    }
-
-    #[test]
-    fn small_values_compare_absolutely() {
-        assert!(floats_agree(0.0, FLOAT_TOLERANCE / 2.0));
-        assert!(!floats_agree(0.0, FLOAT_TOLERANCE * 10.0));
     }
 
     #[test]

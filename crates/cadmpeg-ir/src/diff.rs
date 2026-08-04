@@ -1,7 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Structural comparison of IR documents.
+//!
+//! Numbers compare through [`cadmpeg_codec_core::compare`], so a coordinate that
+//! differs only in the last place — what the same file decoded under two
+//! platforms' libm produces — is not reported as a change, while an integer
+//! count, index, or degree that moved by one always is. That module states the
+//! tolerance and its caveats, including that the relation is not transitive:
+//! every verdict here concerns exactly the two documents passed in.
+//!
+//! The comparison covers units, tolerances, and every model and native arena. It
+//! does not cover [`crate::document::SourceMeta`], so the digest attributes
+//! recorded there — `semantic_sha256` and its neighbours — cannot make a diff
+//! report a difference. That is the only coherent treatment of a digest here: a
+//! digest is a bitwise fingerprint of values this module compares tolerantly, so
+//! two decodes that agree to fourteen significant digits hash differently and no
+//! tolerance can reconcile them. A caller that needs to compare source metadata
+//! must compare it directly and decide for itself which attributes are
+//! bit-reproducible.
 
 use std::collections::BTreeMap;
+
+use cadmpeg_codec_core::compare::{floats_agree, values_agree};
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -58,6 +77,12 @@ impl IrDiff {
     }
 }
 
+/// Top-level field names whose values do not agree, tolerating last-place
+/// disagreement in fractional numbers at any depth beneath a field.
+///
+/// A field present on one side and absent on the other always counts as
+/// differing, so an `Option` that gained or lost a value is reported even when
+/// the value would have agreed.
 fn differing_fields<T: Serialize>(left: &T, right: &T) -> Vec<String> {
     let (Ok(Value::Object(left)), Ok(Value::Object(right))) =
         (serde_json::to_value(left), serde_json::to_value(right))
@@ -68,7 +93,11 @@ fn differing_fields<T: Serialize>(left: &T, right: &T) -> Vec<String> {
         .chain(right.keys())
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
-        .filter(|key| left.get(*key) != right.get(*key))
+        .filter(|key| match (left.get(*key), right.get(*key)) {
+            (Some(before), Some(after)) => values_agree(before, after).is_err(),
+            (None, None) => false,
+            _ => true,
+        })
         .cloned()
         .collect()
 }
@@ -100,9 +129,17 @@ where
         .iter()
         .filter_map(|(id, before)| {
             let after = right.get(id)?;
-            (*before != *after).then(|| ModifiedEntity {
+            // Exact equality is the fast path and skips serializing the pair.
+            // Anything else goes to the tolerant field comparison, which decides
+            // whether the entity moved at all: an empty field list means every
+            // difference was below the tolerance.
+            if *before == *after {
+                return None;
+            }
+            let fields = differing_fields(*before, *after);
+            (!fields.is_empty()).then(|| ModifiedEntity {
                 id: (*id).to_owned(),
-                fields: differing_fields(*before, *after),
+                fields,
             })
         })
         .collect();
@@ -163,12 +200,24 @@ fn diff_native_namespaces(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
         .collect()
 }
 
+/// Whether two tolerance declarations agree, each component within the
+/// comparator's tolerance.
+fn tolerances_agree(left: crate::units::Tolerances, right: crate::units::Tolerances) -> bool {
+    floats_agree(left.linear, right.linear) && floats_agree(left.angular, right.angular)
+}
+
 /// Compare units, tolerances, and every entity arena by stable entity ID.
+///
+/// Fractional numbers compare within the tolerance stated by
+/// [`cadmpeg_codec_core::compare`]; integers, strings, enums, and structure
+/// compare exactly.
 pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
+    // `Units` carries only the `LengthUnit` enum, so exact comparison is the
+    // correct relation for it; there is no float to tolerate.
     let unit_change =
         (left.units != right.units).then(|| (left.units.clone(), right.units.clone()));
-    let tolerance_change =
-        (left.tolerances != right.tolerances).then_some((left.tolerances, right.tolerances));
+    let tolerance_change = (!tolerances_agree(left.tolerances, right.tolerances))
+        .then_some((left.tolerances, right.tolerances));
     let mut per_arena = diff_arenas(left, right);
     per_arena.extend(diff_native_namespaces(left, right));
     IrDiff {
@@ -224,6 +273,143 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    /// Modified entity IDs in one arena of a diff.
+    fn modified(result: &super::IrDiff, kind: &str) -> Vec<String> {
+        result
+            .per_arena
+            .iter()
+            .find(|arena| arena.kind == kind)
+            .expect("every model arena appears in every diff")
+            .modified
+            .iter()
+            .map(|entity| entity.id.clone())
+            .collect()
+    }
+
+    /// Index of a point whose `x` is at unit magnitude or above, so a relative
+    /// perturbation of it is a real perturbation. A zero coordinate would make
+    /// either direction of these tests vacuous.
+    fn scaled_point(ir: &crate::CadIr) -> usize {
+        ir.model
+            .points
+            .iter()
+            .position(|point| point.position.x.abs() >= 1.0)
+            .expect("the cube fixture places points away from the origin")
+    }
+
+    /// A coordinate moved by one unit in the last place, which is what the same
+    /// file decoded under two platforms' libm produces.
+    #[test]
+    fn a_last_place_coordinate_move_is_not_a_difference() {
+        let left = unit_cube();
+        let mut right = left.clone();
+        let index = scaled_point(&left);
+        let before = right.model.points[index].position.x;
+        let after = f64::from_bits(before.to_bits() + 1);
+        assert_ne!(
+            before.to_bits(),
+            after.to_bits(),
+            "the coordinate must move, or this test proves nothing"
+        );
+        right.model.points[index].position.x = after;
+
+        assert_ne!(
+            serde_json::to_value(&left.model.points).unwrap(),
+            serde_json::to_value(&right.model.points).unwrap(),
+            "the serialized documents must differ, or exact equality would pass too"
+        );
+        let result = diff(&left, &right);
+        assert!(result.is_empty(), "{result:?}");
+    }
+
+    /// A tolerance declaration moved in the last place is the same declaration.
+    #[test]
+    fn a_last_place_tolerance_move_is_not_a_difference() {
+        let left = unit_cube();
+        let mut right = left.clone();
+        right.tolerances.linear = f64::from_bits(left.tolerances.linear.to_bits() + 1);
+        assert!(diff(&left, &right).is_empty());
+
+        right.tolerances.linear = left.tolerances.linear * 2.0;
+        assert!(diff(&left, &right).tolerance_change.is_some());
+    }
+
+    /// A change with physical meaning stays reported. A relative `1e-6` on a
+    /// coordinate is six orders above the tolerance.
+    #[test]
+    fn a_genuine_coordinate_change_is_still_reported() {
+        let left = unit_cube();
+        let mut right = left.clone();
+        let index = scaled_point(&left);
+        let point = &mut right.model.points[index].position;
+        point.x = point.x.mul_add(1e-6, point.x);
+
+        let result = diff(&left, &right);
+        assert!(!result.is_empty());
+        assert_eq!(
+            modified(&result, "points"),
+            [left.model.points[index].id.0.clone()]
+        );
+    }
+
+    /// An integer field is never tolerated, however large its magnitude and
+    /// however small the change relative to it.
+    #[test]
+    fn an_integer_field_differing_by_one_is_always_reported() {
+        use crate::geometry::{Curve, CurveGeometry, NurbsCurve};
+        use crate::ids::CurveId;
+        use crate::math::Point3;
+
+        let nurbs = |degree: u32| Curve {
+            id: CurveId("synthetic:tolerance:curve#nurbs".into()),
+            geometry: CurveGeometry::Nurbs(NurbsCurve {
+                degree,
+                knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                control_points: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(2.0, 0.0, 0.0),
+                ],
+                weights: None,
+                periodic: false,
+            }),
+            source_object: None,
+        };
+
+        let mut left = unit_cube();
+        let mut right = left.clone();
+        left.model.curves.push(nurbs(2));
+        right.model.curves.push(nurbs(3));
+
+        let result = diff(&left, &right);
+        assert!(!result.is_empty());
+        assert_eq!(
+            modified(&result, "curves"),
+            ["synthetic:tolerance:curve#nurbs"]
+        );
+    }
+
+    /// `source` metadata, including the digest attributes, is outside what this
+    /// comparison covers, so a digest that cannot agree across platforms cannot
+    /// make a diff report a difference either.
+    #[test]
+    fn source_metadata_is_outside_the_comparison() {
+        let left = unit_cube();
+        let mut right = left.clone();
+        let source = right
+            .source
+            .get_or_insert_with(|| crate::document::SourceMeta {
+                format: "synthetic".into(),
+                ..Default::default()
+            });
+        source
+            .attributes
+            .insert("semantic_sha256".into(), "0".repeat(64));
+
+        assert_ne!(left.source, right.source);
+        assert!(diff(&left, &right).is_empty());
     }
 
     #[test]
