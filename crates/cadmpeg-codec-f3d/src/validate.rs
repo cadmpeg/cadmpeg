@@ -1198,13 +1198,18 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         design_stream(&occurrence.id) == native_stream
                             && occurrence.record_index == operation.copied_occurrence_record_index
                     });
+                let source_at = match scope.frame_length {
+                    529 => 38,
+                    525 => 34,
+                    _ => 0,
+                };
                 scope.kind == "CopyPaste"
-                    && scope.frame_length == 529
+                    && source_at != 0
                     && scope.reference_members == [operation.relation_record_index]
                     && operation.source_occurrence_record_index
                         != operation.copied_occurrence_record_index
-                    && operation.source_transform_offset == scope.byte_offset + 38
-                    && operation.copied_transform_offset == scope.byte_offset + 194
+                    && operation.source_transform_offset == scope.byte_offset + source_at
+                    && operation.copied_transform_offset == scope.byte_offset + source_at + 156
                     && design::decode::sketch::valid_sketch_transform(&operation.source_transform)
                     && design::decode::sketch::valid_sketch_transform(&operation.copied_transform)
                     && source.is_some_and(|source| {
@@ -1630,7 +1635,6 @@ fn validate_component_occurrences(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && occurrence.component_guid_offset == occurrence.byte_offset + 48
             && occurrence.occurrence_guid_offset == occurrence.byte_offset + 124
             && occurrence.occurrence_ordinal > 0
-            && matches!(occurrence.class_tag.as_str(), "256" | "327")
             && match (occurrence.transform, occurrence.transform_offset) {
                 (None, None) => occurrence.occurrence_ordinal == 1,
                 (Some(transform), Some(offset)) => {

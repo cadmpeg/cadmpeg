@@ -399,6 +399,16 @@ The same documents do not hold the two path records. The record indices five and
 
 **Need.** The projector accepts an alignment only when both the operand frames and the operand paths resolve, so an `Assemble` feature of this generation stays a native node even though its two transforms are readable. Widening the frame gate alone makes the scope fail validation instead, because the alignment then carries frames without paths. We must find the owning record and the count field of the GUID run, and the rule that assigns each run to one operand frame, before either layer can change.
 
+### DR-32A. Component records that share one component GUID
+
+**Question.** May two local component-occurrence carriers in one Design stream carry equal component GUIDs and unequal component-record references?
+
+**Known.** `f3d.md` §8.1 "A local component occurrence is an indexed carrier" states that equal component GUIDs name the same reusable local component definition, and each carrier stores the same u64 component-record reference twice. The validator holds one component-record reference per component GUID per stream and reports a carrier that contradicts an earlier one.
+
+Documents exist with two unplaced ordinal-one carriers whose component GUIDs are equal, whose occurrence GUIDs differ, and whose component-record references differ. Both carriers satisfy every fixed member of the 229-byte frame, and both duplicate their own component-record reference across offsets 24 and 197, so neither is a misread frame.
+
+**Need.** The reading decides whether the component GUID or the component-record reference is the component definition's identity. If several records may describe one definition, the validator claim is too strong and the neutral component identity must come from the GUID alone. If not, one of the two carriers belongs to a second definition and the GUID is not an identity. Nothing yet separates the two readings, so the validator keeps the stronger claim and reports the second carrier.
+
 ### DR-33. Joined occurrences of a 772-byte class-261 `Assemble` scope
 
 **Question.** What names the two joined component occurrences of a 772-byte class-261 `Assemble` scope?

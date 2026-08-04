@@ -38,14 +38,15 @@ pub fn decode_component_occurrences(
     Ok(occurrences)
 }
 
-/// Decode one fixed class-256 or class-327 component-occurrence carrier.
+/// Decode one fixed component-occurrence carrier. The class tag is a per-file
+/// dynamic value, so the fixed frame identifies the carrier.
 pub(crate) fn exact_component_occurrence(
     bytes: &[u8],
     start: usize,
     stream: &str,
 ) -> Option<DesignComponentOccurrence> {
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
-    if !matches!(class_tag.as_str(), "256" | "327") || after_tag != start.checked_add(7)? {
+    if after_tag != start.checked_add(7)? {
         return None;
     }
     let record_index = u32_at(bytes, after_tag)?;
@@ -217,5 +218,29 @@ mod tests {
                 .expect("legacy placed occurrence");
         assert_eq!(legacy_placed.occurrence_ordinal, 1);
         assert_eq!(legacy_placed.transform, Some(transform));
+
+        // The carrier class tag is a per-file dynamic value, so the fixed frame
+        // alone identifies the carrier and a third tag reads the same members.
+        let mut dynamic_tag = common(357, 1);
+        dynamic_tag[4..7].copy_from_slice(b"336");
+        for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+            dynamic_tag[209 + ordinal * 8..217 + ordinal * 8].copy_from_slice(&value.to_le_bytes());
+        }
+        dynamic_tag[346] = 1;
+        header(&mut dynamic_tag, b"325", 21);
+        let dynamic_tag = exact_component_occurrence(&dynamic_tag, 0, "f3d:Design/BulkStream.dat")
+            .expect("dynamic-tag placed occurrence");
+        assert_eq!(dynamic_tag.class_tag, "336");
+        assert_eq!(dynamic_tag.occurrence_ordinal, 1);
+        assert_eq!(dynamic_tag.transform, Some(transform));
+
+        // A class-256 carrier still cannot use a placed frame for ordinal one.
+        let mut placed_seed = common(357, 1);
+        for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+            placed_seed[209 + ordinal * 8..217 + ordinal * 8].copy_from_slice(&value.to_le_bytes());
+        }
+        placed_seed[346] = 1;
+        header(&mut placed_seed, b"325", 21);
+        assert!(exact_component_occurrence(&placed_seed, 0, "f3d:Design/BulkStream.dat").is_none());
     }
 }
