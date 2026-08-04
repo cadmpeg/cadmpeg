@@ -34,6 +34,22 @@
 //! The tolerance hides drift below [`FLOAT_TOLERANCE`] relative magnitude. It
 //! does not make decode reproducible across platforms; it only stops the
 //! goldens from reporting that as codec drift.
+//!
+//! ## What this does not cover
+//!
+//! Perturbing every libm transcendental by one unit in the last place, which
+//! stands in for the disagreement between platforms, leaves seven of the eight
+//! codecs' snapshot suites passing. Two kinds of golden remain exposed, and
+//! neither has a fix at this layer:
+//!
+//! - A **byte-exact binary golden over written geometry** admits no tolerance,
+//!   because a container's bytes have no numeric structure to compare. Fusion's
+//!   `tests/golden/generate/*.bin` move under the shim while every JSON
+//!   comparison holds. Comparing such a golden semantically — per archive entry,
+//!   with geometry compared numerically — is the only real remedy.
+//! - A **digest over decoded geometry** is a bitwise fingerprint of tolerantly
+//!   compared values, so it cannot agree across platforms either. See
+//!   [`elide_digests`].
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -435,6 +451,33 @@ fn first_line_diff(expected: &str, actual: &str) -> (usize, String, String) {
                 };
                 return (line, truncate(left), truncate(right));
             }
+        }
+    }
+}
+
+/// Stands in for a digest a snapshot cannot pin across platforms.
+pub const ELIDED_DIGEST: &str = "<elided: digest over tolerantly compared geometry>";
+
+/// Replaces the named source attributes with [`ELIDED_DIGEST`].
+///
+/// A digest of decoded geometry is a bitwise fingerprint of the very values this
+/// harness compares tolerantly, so pinning one contradicts the comparison: the
+/// same document decoded on another platform agrees to fourteen significant
+/// digits and still hashes differently, and no tolerance can rescue a hash.
+/// Perturbing every libm transcendental by one unit in the last place moves
+/// `semantic_sha256` on ten Fusion goldens and `brep_semantic_sha256` on two
+/// `SolidWorks` goldens while leaving every geometry comparison satisfied.
+///
+/// Eliding costs almost nothing, because the model each digest covers is pinned
+/// in the same snapshot; what remains uncovered is a change to the digest
+/// algorithm itself, which belongs to `cadmpeg-ir`'s own tests rather than to a
+/// codec snapshot. Pass only attributes proven to move — the retained-lane
+/// digests beside these hold still, and pinning them is what catches a native
+/// write regression.
+pub fn elide_digests(attributes: &mut std::collections::BTreeMap<String, String>, keys: &[&str]) {
+    for key in keys {
+        if let Some(value) = attributes.get_mut(*key) {
+            ELIDED_DIGEST.clone_into(value);
         }
     }
 }

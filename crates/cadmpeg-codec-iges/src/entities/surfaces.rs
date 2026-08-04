@@ -153,13 +153,15 @@ struct AngularBasis {
 
 fn angular_basis(start: f64, end: f64) -> Option<AngularBasis> {
     let sweep = end - start;
-    let tolerance = std::f64::consts::TAU * 1.0e-12;
-    if !sweep.is_finite() || sweep <= 0.0 || sweep > std::f64::consts::TAU + tolerance {
+    if !sweep.is_finite()
+        || sweep <= 0.0
+        || sweep > std::f64::consts::TAU + super::curve_conversion::ANGULAR_TOLERANCE
+    {
         return None;
     }
     let sweep = sweep.min(std::f64::consts::TAU);
     let end = start + sweep;
-    let segment_count = (sweep / std::f64::consts::FRAC_PI_2).ceil() as usize;
+    let segment_count = super::curve_conversion::quarter_turn_spans(sweep);
     let segment_angle = sweep / segment_count as f64;
     let mut knots = vec![start; 3];
     let mut controls = Vec::with_capacity(segment_count * 2 + 1);

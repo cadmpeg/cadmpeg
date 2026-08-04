@@ -10,7 +10,7 @@
         "product_family": "Autodesk Neutron",
         "product_version": "ASM 231.6.3.65535 OSX",
         "save_date": "Tue Mar 31 16:16:19 2026",
-        "semantic_sha256": "4d4d7fcb6412aed1aefaf44d070c6dd8f27738af2347bdd5189afd8bf15b098e",
+        "semantic_sha256": "<elided: digest over tolerantly compared geometry>",
         "solved_record_len": "2892",
         "zip_entry_count": "2"
       }
