@@ -5,13 +5,13 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::provenance::Provenance;
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Severity of a loss note or validation finding.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {
     /// Informational; no action needed.
@@ -36,9 +36,8 @@ impl fmt::Display for Severity {
 }
 
 /// What subsystem a loss pertains to.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum LossCategory {
     /// Geometry (surfaces/curves/points) not transferred or approximated.
@@ -78,9 +77,8 @@ impl fmt::Display for LossCategory {
 }
 
 /// Strict-mode handling for a loss code.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum StrictConsequence {
     /// Strict mode must refuse the operation.
@@ -90,9 +88,8 @@ pub enum StrictConsequence {
 }
 
 /// Stable machine-readable loss kinds.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum LossKind {
@@ -308,7 +305,8 @@ impl fmt::Display for LossKind {
 }
 
 /// One attributable instance of incomplete or approximate transfer.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct LossNote {
     /// Stable machine-readable loss kind.
     pub code: LossKind,
@@ -356,7 +354,8 @@ impl LossNote {
 }
 
 /// Transfer status and loss details from a successful decode.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DecodeReport {
     /// Source format id.
     pub format: String,
@@ -377,7 +376,8 @@ pub struct DecodeReport {
 }
 
 /// Final disposition of one source record or semantic object.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TransferDisposition {
     /// Transferred as an exact neutral or native entity.
@@ -391,7 +391,8 @@ pub enum TransferDisposition {
 }
 
 /// One source object's transfer disposition.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct TransferRecord {
     /// Stable source identity or source-local record key.
     pub source: String,
@@ -406,7 +407,8 @@ pub struct TransferRecord {
 }
 
 /// Complete source-to-result accounting for a decode.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct TransferLedger {
     /// Entries in deterministic source traversal order.
     pub entries: Vec<TransferRecord>,
@@ -494,7 +496,8 @@ impl DecodeReport {
 }
 
 /// Entity census and fidelity details from a successful export.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ExportReport {
     /// Target format id.
     pub format: String,
@@ -509,7 +512,8 @@ pub struct ExportReport {
 }
 
 /// How an encoder resolved optional source fidelity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "status")]
 pub enum FidelityResolution {
     /// The input had no decode-time fidelity state.
@@ -526,7 +530,8 @@ pub enum FidelityResolution {
 }
 
 /// The model against which export entity counts were measured.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CensusBasis {
     /// Counts describe records emitted in the target format.
@@ -536,7 +541,8 @@ pub enum CensusBasis {
 }
 
 /// Explicitly based entity counts for one export.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct EntityCensus {
     /// Semantic basis of `counts`.
     pub basis: CensusBasis,
@@ -562,9 +568,8 @@ impl ExportReport {
 }
 
 /// Which invariant a validation finding concerns.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Check {
     /// The document schema version is not the version accepted by this build.
@@ -646,7 +651,8 @@ impl fmt::Display for Check {
 }
 
 /// A single validation finding.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Finding {
     /// Which check produced this finding.
     pub check: Check,
@@ -660,7 +666,8 @@ pub struct Finding {
 }
 
 /// Entity counts, findings, and propagated decode losses for one document.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ValidationReport {
     /// Count of entities per arena, keyed by entity kind (sorted).
     pub entity_counts: BTreeMap<String, usize>,

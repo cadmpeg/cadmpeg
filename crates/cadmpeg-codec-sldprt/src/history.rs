@@ -1133,17 +1133,25 @@ fn bare_text_parameter_literal(expression: &str) -> Option<ParameterValue> {
     Some(ParameterValue::String(expression.to_owned()))
 }
 
+/// Features whose parameters are document-global equation-manager values.
+///
+/// The equations container reaches the neutral arena either as a typed
+/// feature-tree node or, when no role evidence identifies it, as a retained
+/// native record carrying the operation-family token. Both forms own global
+/// parameters, so both must be recognized here; otherwise the write path
+/// recomputes dependency edges against an empty owner set and rejects the
+/// document.
 pub(crate) fn global_parameter_owners(
     features: &[cadmpeg_ir::features::Feature],
 ) -> HashSet<FeatureId> {
     features
         .iter()
-        .filter(|feature| {
-            matches!(
-                &feature.definition,
-                FeatureDefinition::Native { kind, .. }
-                    if kind.eq_ignore_ascii_case("EquationDriven")
-            )
+        .filter(|feature| match &feature.definition {
+            FeatureDefinition::Native { kind, .. } => {
+                kind.eq_ignore_ascii_case(EQUATION_DRIVEN_TOKEN)
+            }
+            FeatureDefinition::TreeNode { role, .. } => *role == FeatureTreeNodeRole::Equations,
+            _ => false,
         })
         .map(|feature| feature.id.clone())
         .collect()
@@ -6509,6 +6517,24 @@ fn feature_tree_node_role(
 ) -> Option<FeatureTreeNodeRole> {
     reserved_feature_tree_node_role(feature, history_features)
         .or_else(|| native_object_class(feature.input_class.as_deref()?).tree_node)
+        .or_else(|| equation_container_role(feature))
+}
+
+/// Keywords operation-family token of the equations container.
+const EQUATION_DRIVEN_TOKEN: &str = "EquationDriven";
+
+/// The equations container identified by its Keywords operation-family token.
+///
+/// The token is a role code, so it identifies the container without a native
+/// class or a reserved source identifier. Both the decode projection and the
+/// writer's retained-role map resolve node roles through
+/// [`feature_tree_node_role`], so the token satisfies the read and write sides
+/// together.
+fn equation_container_role(feature: &Feature) -> Option<FeatureTreeNodeRole> {
+    (feature.input_class.is_none()
+        && feature.xml_tag.eq_ignore_ascii_case("Feature")
+        && feature.kind.eq_ignore_ascii_case(EQUATION_DRIVEN_TOKEN))
+    .then_some(FeatureTreeNodeRole::Equations)
 }
 
 fn reserved_feature_tree_node_role(
@@ -7000,9 +7026,10 @@ fn project_extrude(
         {
             one_sided(Termination::Unresolved)
         }
-        None | Some("Blind") => one_sided(Termination::Blind {
-            length: length("Depth").or_else(sole_length)?,
-        }),
+        None | Some("Blind") => match length("Depth").or_else(sole_length) {
+            Some(length) => one_sided(Termination::Blind { length }),
+            None => one_sided(Termination::Unresolved),
+        },
         Some("Symmetric") => match length("Depth").or_else(sole_length) {
             Some(length) => ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
@@ -7057,7 +7084,7 @@ fn project_extrude(
             }),
             None => one_sided(Termination::Unresolved),
         },
-        Some(_) => return None,
+        Some(_) => one_sided(Termination::Unresolved),
     };
     let direction = match feature.properties.get("Direction") {
         Some(value) => cadmpeg_ir::features::ExtrudeDirection::Explicit(parse_vector3(value)?),
@@ -8520,13 +8547,15 @@ fn project_draft(feature: &Feature) -> Option<FeatureDefinition> {
             .cloned()
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         pull_direction: Some(pull_direction),
-        angle: Some(Angle(
-            feature
-                .parameters
-                .get("Angle")
-                .and_then(|value| parse_angle_rad(value))?,
-        )),
-        outward: Some(parse_bool(feature.properties.get("Outward")?)?),
+        angle: feature
+            .parameters
+            .get("Angle")
+            .and_then(|value| parse_angle_rad(value))
+            .map(Angle),
+        outward: feature
+            .properties
+            .get("Outward")
+            .and_then(|value| parse_bool(value)),
     })
 }
 

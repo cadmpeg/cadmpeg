@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +11,8 @@ use crate::ids::{AppearanceId, BodyId, EdgeId, FaceId, VertexId};
 use crate::topology::Color;
 
 /// A decoded appearance/material asset.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Appearance {
     /// Stable arena id.
     pub id: AppearanceId,
@@ -48,7 +50,8 @@ pub struct Appearance {
 }
 
 /// One texture asset connected to an appearance shader slot.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct TextureRef {
     /// Stable source asset GUID.
     pub asset_guid: String,
@@ -70,7 +73,8 @@ pub struct TextureRef {
 }
 
 /// Neutral two-dimensional texture-coordinate mapping.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct TextureMap2d {
     /// Source mapping channel.
     pub map_channel: u32,
@@ -101,7 +105,8 @@ pub struct TextureMap2d {
 }
 
 /// Bump-map interpretation and amplitudes.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct BumpMap {
     /// Whether the bitmap stores tangent-space normals instead of heights.
     pub normal_map: bool,
@@ -112,7 +117,8 @@ pub struct BumpMap {
 }
 
 /// A topology entity which receives an appearance.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
 pub enum AppearanceTarget {
     /// Whole-body appearance.
@@ -139,7 +145,8 @@ pub enum AppearanceTarget {
 }
 
 /// An explicit appearance assignment.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct AppearanceBinding {
     /// Globally unique deterministic assignment identity.
     pub id: String,

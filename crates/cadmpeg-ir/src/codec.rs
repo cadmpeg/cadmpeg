@@ -24,13 +24,13 @@ use cadmpeg_codec_core::decode::{
     DecodeArena, DecodeContext, DecodeMode, DecodePolicy, InspectOptions, View,
 };
 use cadmpeg_codec_core::{CodecError, ContainerSummary, ReadSeek};
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// How confident a codec is that it can handle a given byte prefix.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Confidence {
     /// Definitely not this format.
@@ -55,7 +55,8 @@ impl fmt::Display for Confidence {
 }
 
 /// Options controlling source decoding.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DecodeOptions {
     /// Stop after the container layer; do not attempt entity decode.
     pub container_only: bool,

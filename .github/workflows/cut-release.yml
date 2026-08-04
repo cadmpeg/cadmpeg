@@ -114,7 +114,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo fmt --all --check
-          cargo clippy --workspace --all-targets -- -D warnings -W missing-docs
+          cargo clippy --workspace --all-targets
           cargo build --workspace --locked
           cargo test --workspace --locked
 

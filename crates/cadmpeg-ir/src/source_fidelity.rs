@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source annotations and retained native records produced during decode.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -18,7 +19,8 @@ pub const SOURCE_FIDELITY_VERSION: &str = "3";
 pub const DECODE_SIDECAR_VERSION: &str = "1";
 
 /// A decode report and source fidelity bound to exact CADIR bytes.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DecodeSidecar {
     /// Serialized sidecar format version.
     pub version: String,
@@ -98,7 +100,8 @@ pub enum DecodeSidecarParseError {
 }
 
 /// Source bytes retained for native recovery or replay.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct RetainedSourceRecord {
     /// Stable record identifier.
     pub id: String,
@@ -116,7 +119,7 @@ pub struct RetainedSourceRecord {
         skip_serializing_if = "Option::is_none",
         with = "crate::bytes::option"
     )]
-    #[schemars(with = "Option<String>")]
+    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
     pub data: Option<Vec<u8>>,
 }
 
@@ -154,7 +157,8 @@ pub enum FidelityError {
 }
 
 /// Decode-time source annotations and retained native records.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SourceFidelity {
     /// Serialized representation version.
     pub version: String,
