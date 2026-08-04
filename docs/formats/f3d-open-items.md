@@ -221,13 +221,15 @@ The hem-form discriminator at offset `85 + S` is `3` for the flat form. The open
 
 **Need.** A writer must emit the `refType` that matches the inputs it writes, and a neutral model that edits an input must know which rule re-solves the point.
 
-### DR-14. `SurfacePatch` boundary-settings values
+### DR-14. `SurfacePatch` boundary-side and scale values
 
-**Question.** What do the values of `PatchContinuity` and `PatchFlip` mean?
+**Question.** Which field holds the boundary side of a `SurfacePatch` component? What does `PatchScale` hold?
 
-**Known.** `f3d.md` §8.1 "A surface-patch boundary-settings record has" gives the member order, the offsets, and the types. The decoder reads `IsSeedSel`, `PatchContinuity`, `PatchFlip`, `PatchScale`, and the `rPatchModelRef` record index onto the owning scope; every stored value is retained. `PatchScale` is `-1.0` and `PatchContinuity` is `0` in every record. `PatchFlip` takes `0` and `2`, `IsSeedSel` takes `0` and `1`, and all four of their combinations occur.
+**Known.** `f3d.md` §8.1 "A surface-patch boundary-settings record has" gives the member order, the offsets, and the types. `PatchContinuity` value `0` imposes positional continuity, `1` imposes tangency, and `2` imposes curvature; the value is stored per boundary component, and one patch can impose a different condition on each of its boundaries.
 
-**Need.** Each retained value needs a neutral meaning before it can drive a neutral patch. `PatchContinuity` carries one value, so no mapping from it to a neutral continuity is decidable in either direction, and the neutral patch leaves continuity absent. `PatchFlip` carries two values whose difference is not decidable from the records either, because no pair of patches differs only in the boundary side.
+`PatchFlip` does not hold the boundary side. It carries the value `2` in every record, including in patches that differ only in the authored boundary side. `PatchScale` is `-1.0` in every record, so no mapping from it to a neutral value is decidable in either direction. `IsSeedSel` is set on exactly one boundary component of a patch.
+
+**Need.** A neutral patch needs the boundary side to place its generated surface, and the neutral operation carries one continuity, so a patch imposing more than one condition needs a per-boundary neutral carrier before its continuity transfers completely. A tangency or curvature weight authored away from its default separates `PatchScale` from a constant.
 
 ### DR-15. Recipe fields for ambiguous edge operands
 

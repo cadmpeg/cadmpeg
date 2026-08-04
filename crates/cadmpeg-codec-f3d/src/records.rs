@@ -1941,6 +1941,45 @@ pub struct DesignRuledSurfaceOperation {
     pub direction_entity_id: Option<String>,
 }
 
+/// Boundary condition a `SurfacePatch` component imposes against its adjacent
+/// face.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignPatchContinuity {
+    /// Positional continuity only.
+    Connected,
+    /// First-derivative continuity.
+    Tangent,
+    /// Second-derivative continuity.
+    Curvature,
+    /// A serialized value whose continuity meaning is not settled.
+    Unknown(u32),
+}
+
+impl DesignPatchContinuity {
+    /// Decode the serialized continuity ordinal without discarding unknown values.
+    #[must_use]
+    pub fn from_code(code: u32) -> Self {
+        match code {
+            0 => Self::Connected,
+            1 => Self::Tangent,
+            2 => Self::Curvature,
+            code => Self::Unknown(code),
+        }
+    }
+
+    /// Return the serialized ordinal.
+    #[must_use]
+    pub fn code(self) -> u32 {
+        match self {
+            Self::Connected => 0,
+            Self::Tangent => 1,
+            Self::Curvature => 2,
+            Self::Unknown(code) => code,
+        }
+    }
+}
+
 /// Settings a `SurfacePatch` scope carries for one boundary component.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignSurfacePatchBoundary {
@@ -1950,8 +1989,8 @@ pub struct DesignSurfacePatchBoundary {
     pub record_index: u32,
     /// Source `IsSeedSel` flag.
     pub is_seed_selection: bool,
-    /// Source `PatchContinuity` ordinal. Retained without a neutral meaning.
-    pub continuity: u32,
+    /// Boundary condition this component imposes against its adjacent face.
+    pub continuity: DesignPatchContinuity,
     /// Source `PatchFlip` ordinal. Retained without a neutral meaning.
     pub flip: u32,
     /// Source `PatchScale` value.

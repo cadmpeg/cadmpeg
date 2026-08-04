@@ -8118,6 +8118,59 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
 }
 
 #[test]
+fn surface_patch_continuity_needs_every_boundary_to_agree() {
+    use crate::records::{DesignParameterScope, DesignPatchContinuity, DesignSurfacePatchBoundary};
+    use cadmpeg_ir::features::SurfaceContinuity;
+
+    let boundary = |continuity: DesignPatchContinuity| DesignSurfacePatchBoundary {
+        scope_reference_ordinal: 0,
+        record_index: 0,
+        is_seed_selection: false,
+        continuity,
+        flip: 2,
+        scale: -1.0,
+        model_reference: 0,
+    };
+    let scope_with = |boundaries: Vec<DesignSurfacePatchBoundary>| {
+        let mut scope = DesignParameterScope::empty("f3d:test:scope#1", "SurfacePatch", 1);
+        scope.surface_patch_boundaries = boundaries;
+        scope
+    };
+
+    for (code, expected) in [
+        (DesignPatchContinuity::Connected, SurfaceContinuity::Contact),
+        (DesignPatchContinuity::Tangent, SurfaceContinuity::Tangent),
+        (
+            DesignPatchContinuity::Curvature,
+            SurfaceContinuity::Curvature,
+        ),
+    ] {
+        let scope = scope_with(vec![boundary(code), boundary(code)]);
+        assert_eq!(
+            crate::design::feature_project::surface_patch_continuity(&scope),
+            Some(expected)
+        );
+    }
+
+    // A patch whose boundaries impose different conditions has no single neutral
+    // continuity, and one with no boundary record has none to report.
+    let mixed = scope_with(vec![
+        boundary(DesignPatchContinuity::Tangent),
+        boundary(DesignPatchContinuity::Connected),
+    ]);
+    assert!(crate::design::feature_project::surface_patch_continuity(&mixed).is_none());
+    assert!(
+        crate::design::feature_project::surface_patch_continuity(&scope_with(Vec::new())).is_none()
+    );
+    assert!(
+        crate::design::feature_project::surface_patch_continuity(&scope_with(vec![boundary(
+            DesignPatchContinuity::Unknown(9)
+        )]))
+        .is_none()
+    );
+}
+
+#[test]
 fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
     fn reference(bytes: &mut [u8], at: usize, record_index: u32) {
         bytes[at] = 1;

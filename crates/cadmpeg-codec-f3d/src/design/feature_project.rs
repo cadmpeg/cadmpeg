@@ -4169,6 +4169,34 @@ fn project_fixed_pipe(
     })
 }
 
+/// Map the boundary-settings continuity of a `SurfacePatch` scope onto one
+/// neutral continuity.
+///
+/// Continuity is stored per boundary and the neutral operation carries one
+/// value, so only a scope whose boundaries agree has a neutral continuity. A
+/// scope mixing continuities keeps the field absent rather than reporting the
+/// condition of one boundary as the condition of the patch.
+pub(crate) fn surface_patch_continuity(
+    scope: &DesignParameterScope,
+) -> Option<cadmpeg_ir::features::SurfaceContinuity> {
+    use cadmpeg_ir::features::SurfaceContinuity;
+
+    let boundaries = scope.surface_patch_boundaries.as_slice();
+    let (first, rest) = boundaries.split_first()?;
+    if rest
+        .iter()
+        .any(|other| other.continuity != first.continuity)
+    {
+        return None;
+    }
+    match first.continuity {
+        crate::records::DesignPatchContinuity::Connected => Some(SurfaceContinuity::Contact),
+        crate::records::DesignPatchContinuity::Tangent => Some(SurfaceContinuity::Tangent),
+        crate::records::DesignPatchContinuity::Curvature => Some(SurfaceContinuity::Curvature),
+        crate::records::DesignPatchContinuity::Unknown(_) => None,
+    }
+}
+
 pub(crate) fn project_surface_patch(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
@@ -4219,7 +4247,7 @@ pub(crate) fn project_surface_patch(
                 scope,
             )),
             support_faces: FaceSelection::Faces(Vec::new()),
-            continuity: None,
+            continuity: surface_patch_continuity(scope),
             merge_result: None,
         });
     }
@@ -4265,7 +4293,7 @@ pub(crate) fn project_surface_patch(
     Some(FeatureDefinition::FilledSurface {
         boundary: SurfaceBoundary::Path(boundary),
         support_faces: FaceSelection::Faces(Vec::new()),
-        continuity: None,
+        continuity: surface_patch_continuity(scope),
         merge_result: None,
     })
 }
