@@ -618,6 +618,59 @@ fn decode_selects_tolerant_coedge_extension_from_save_format() {
     }
 }
 
+/// A tolerant coedge whose payload carries identifier tokens outside the
+/// embedded scope: the freestanding embedded-curve type name before the sense
+/// flag and trailing `null_curve` placeholders after the extension fields.
+/// Identifiers are not fields, so the extension decodes exactly as it does
+/// without them and the serialized token count stays defined over the value
+/// tokens.
+#[test]
+fn tolerant_coedge_extension_ignores_payload_identifiers() {
+    let mut smbh = synthetic_geometry_smbh();
+    smbh[15..19].copy_from_slice(&23000u32.to_le_bytes());
+    let mut tail = Vec::new();
+    t_dbl(&mut tail, -0.5);
+    t_dbl(&mut tail, 1.5);
+    t_ref(&mut tail, -1);
+    t_long(&mut tail, 1);
+    t_ident(&mut tail, "intcurve");
+    tail.extend_from_slice(&[0x0a, 0x0f]);
+    t_ident(&mut tail, "par_int_cur");
+    t_long(&mut tail, 22800);
+    tail.extend_from_slice(&[0x10, 0x0a]);
+    t_dbl(&mut tail, -2.0);
+    tail.push(0x0a);
+    t_dbl(&mut tail, 3.0);
+    t_long(&mut tail, 0);
+    t_ident(&mut tail, "null_curve");
+    t_ident(&mut tail, "null_curve");
+    append_generated_record_tail(&mut smbh, "coedge", &tail);
+    replace_generated_record_head(&mut smbh, "coedge", "tcoedge");
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh_and_protein(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("ident-bearing tolerant coedges must decode");
+    assert_eq!(
+        f3d_native(&decoded.ir)
+            .tolerant_coedge_parameters
+            .iter()
+            .map(|parameters| parameters.extension.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            crate::records::TolerantCoedgeExtension::EmbeddedCurve {
+                target: None,
+                curve_reversed: true,
+                payload_token_count: 1,
+                parameter_range: Some([-2.0, 3.0]),
+            };
+            3
+        ]
+    );
+}
+
 #[test]
 fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     let mut smbh = synthetic_geometry_smbh();
@@ -20567,9 +20620,8 @@ fn a_nested_construction_cache_is_not_the_enclosing_scope_cache() {
 #[test]
 fn a_nested_construction_does_not_claim_its_enclosing_record() {
     use crate::nurbs::proc_surface::{
-        decode_procedural_surface_resolving_refs, DecodedProceduralSurfaceDefinition,
+        procedural_surface_resolving_refs, DecodedProceduralSurfaceDefinition,
     };
-    use crate::nurbs::subtypes::SubtypeTables;
 
     let bytes = synthetic_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -20577,10 +20629,9 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
     let record = &records[9];
     let owned = bytes[record.offset..record.offset + record.len].to_vec();
-    let decoded = decode_procedural_surface_resolving_refs(
-        &owned,
-        &owned,
-        &SubtypeTables::from_stream(&owned),
+    let decoded = procedural_surface_resolving_refs(
+        &record.tokens,
+        &crate::nurbs::toks::SubtypeTable::from_records(std::slice::from_ref(record)),
     )
     .expect("the record owns its extrusion");
     assert!(matches!(
@@ -20599,10 +20650,10 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     nested.splice(at..at, *b"\x0f\x0d\x14srf_srf_v_bl_spl_sur");
     let terminator = nested.len() - 1;
     nested.insert(terminator, 0x10);
-    assert!(decode_procedural_surface_resolving_refs(
-        &nested,
-        &nested,
-        &SubtypeTables::from_stream(&nested)
+    let nested_records = crate::sab::frame(&nested, 0, nested.len(), 8).unwrap();
+    assert!(procedural_surface_resolving_refs(
+        &nested_records[0].tokens,
+        &crate::nurbs::toks::SubtypeTable::from_records(&nested_records),
     )
     .is_none());
 }

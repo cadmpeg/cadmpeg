@@ -450,12 +450,6 @@ pub(crate) fn attribute_chain_name(
     None
 }
 
-/// The raw bytes of a record within the decompressed stream.
-pub(crate) fn record_slice<'a>(rec: &Record, bytes: &'a [u8]) -> &'a [u8] {
-    let end = (rec.offset + rec.len).min(bytes.len());
-    &bytes[rec.offset..end]
-}
-
 /// The `UnknownId` for a preserved carrier record. Shared by the passthrough
 /// `UnknownRecord` and any `SurfaceGeometry::Unknown` that links to it, so the
 /// reference resolves under validation.

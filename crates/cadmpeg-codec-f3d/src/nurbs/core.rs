@@ -163,7 +163,6 @@ pub(crate) fn surface_cache(toks: &[Token]) -> Option<NurbsSurface> {
 
 /// Decode the surface cache a subtype scope itself owns: the first surface
 /// block outside every construction the scope nests.
-#[allow(dead_code)] // Consumed when the procedural decoders port onto tokens.
 pub(crate) fn owned_surface_cache(scope: &[Token]) -> Option<NurbsSurface> {
     toks::owned_marker_positions(scope)
         .into_iter()
@@ -181,7 +180,6 @@ pub(crate) fn curve_cache(toks: &[Token]) -> Option<NurbsCurve> {
 
 /// Decode the 3D curve cache a subtype scope itself owns: the first curve
 /// block outside every construction the scope nests.
-#[allow(dead_code)] // Consumed when the procedural decoders port onto tokens.
 pub(crate) fn owned_curve_cache(scope: &[Token]) -> Option<NurbsCurve> {
     toks::owned_marker_positions(scope)
         .into_iter()
@@ -222,7 +220,6 @@ pub(crate) fn surface_cache_resolving_refs(
 }
 
 /// [`owned_surface_cache`], following subtype-table references.
-#[allow(dead_code)] // Consumed when the procedural decoders port onto tokens.
 pub(crate) fn owned_surface_cache_resolving_refs(
     toks: &[Token],
     table: &toks::SubtypeTable,
@@ -239,7 +236,6 @@ pub(crate) fn curve_cache_resolving_refs(
 }
 
 /// [`owned_curve_cache`], following subtype-table references.
-#[allow(dead_code)] // Consumed when the procedural decoders port onto tokens.
 pub(crate) fn owned_curve_cache_resolving_refs(
     toks: &[Token],
     table: &toks::SubtypeTable,

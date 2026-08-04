@@ -2,25 +2,19 @@
 //! Procedural spline-surface embedded types and their `_spl_sur` decoders.
 
 use crate::nurbs::blend::{
-    decode_cyl_spl_sur_at, decode_full_rb_blend_spl_sur, decode_rb_blend_spl_sur_fallback,
-    decode_rolling_ball_side, decode_var_blend_spl_sur, decode_vertex_blend_spl_sur,
+    cyl_spl_sur, full_rb_blend_spl_sur, rb_blend_spl_sur_fallback, rolling_ball_side,
+    var_blend_spl_sur, vertex_blend_spl_sur,
 };
-use crate::nurbs::core::{decode_curve_block, decode_surface_block};
-use crate::nurbs::pcurve::{decode_pcurve_block_with_end, NurbsPcurve};
+use crate::nurbs::core::{curve_block, surface_block};
+use crate::nurbs::pcurve::{decode_pcurve_block_with_end, pcurve_block_with_end, NurbsPcurve};
 use crate::nurbs::proc_curve::{
-    decode_embedded_base_curve_resolving_refs, decode_embedded_surface,
-    decode_optional_embedded_surface_with_bounds, take_optional_helix_revision,
+    embedded_base_curve_resolving_refs, embedded_surface, optional_embedded_surface_with_bounds,
+    optional_helix_revision,
 };
-use crate::nurbs::reader::{
-    marker_positions, normalized, take_bool, take_f64, take_float_array, take_native_ident,
-    take_native_string, take_native_vec3, take_optional_range_value, take_range_value,
-    take_tagged_int, INT_WIDTHS, LEN_TO_MM, NUBS_MARKER,
-};
-use crate::nurbs::subtypes::{
-    find_owned_subtype_marker, owned_subtype_defs, subtype_refs, subtype_span, SubtypeTables,
-};
+use crate::nurbs::reader::{normalized, take_native_ident, LEN_TO_MM};
+use crate::nurbs::toks::{self, Cur, SubtypeTable};
+use crate::sab::Token;
 use cadmpeg_codec_core::cursor::bounded_len;
-use cadmpeg_codec_core::le::f64_at as read_f64;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry,
 };
@@ -399,111 +393,99 @@ pub(crate) fn decode_nullable_embedded_pcurve(
     Some(Some(pcurve))
 }
 
-fn decode_g2_side(bytes: &[u8], position: &mut usize, int_width: usize) -> Option<EmbeddedG2Side> {
-    let label = take_native_string(bytes, position)?;
-    let surface = decode_embedded_surface(bytes, position, int_width)?;
-    let curve = decode_curve_block(bytes, *position, int_width)?;
-    *position = curve.end;
-    let first = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
-    let direction = take_native_vec3(bytes, position, 0x14)?;
-    let second = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+/// Decode a `nullbs`-or-2D-block pcurve slot. Token-space counterpart of
+/// [`decode_nullable_embedded_pcurve`].
+#[allow(clippy::option_option)] // Outer None is parse failure; inner None is native nullbs.
+pub(crate) fn nullable_embedded_pcurve(cur: &mut Cur<'_>) -> Option<Option<NurbsPcurve>> {
+    let saved = cur.pos();
+    if cur.take_ident() == Some("nullbs") {
+        return Some(None);
+    }
+    cur.set_pos(saved);
+    let (pcurve, end) = pcurve_block_with_end(cur.toks(), cur.pos())?;
+    cur.set_pos(end);
+    Some(Some(pcurve))
+}
+
+fn g2_side(cur: &mut Cur<'_>) -> Option<EmbeddedG2Side> {
+    let label = cur.take_str()?.to_string();
+    let surface = embedded_surface(cur)?;
+    let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
+    cur.set_pos(curve_end);
+    let first = nullable_embedded_pcurve(cur)?;
+    let direction = cur.take_vector3()?;
+    let second = nullable_embedded_pcurve(cur)?;
     Some(EmbeddedG2Side {
         label,
         surface,
-        curve: curve.curve,
+        curve,
         pcurves: [first, second],
         direction: Vector3::new(direction[0], direction[1], direction[2]),
     })
 }
 
-fn take_bridge_token(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-) -> Option<cadmpeg_ir::geometry::LoftBridgeToken> {
+fn bridge_token(cur: &mut Cur<'_>) -> Option<cadmpeg_ir::geometry::LoftBridgeToken> {
     use cadmpeg_ir::geometry::LoftBridgeToken;
-    match *bytes.get(*position)? {
-        0x0a | 0x0b => Some(LoftBridgeToken::Boolean(take_bool(bytes, position)?)),
-        0x04 => Some(LoftBridgeToken::Integer(take_tagged_int(
-            bytes, position, 0x04, int_width,
-        )?)),
-        0x06 => Some(LoftBridgeToken::Double(take_f64(bytes, position)?)),
-        0x15 => Some(LoftBridgeToken::Enum(take_tagged_int(
-            bytes, position, 0x15, int_width,
-        )?)),
-        0x07..=0x09 => Some(LoftBridgeToken::Text(take_native_string(bytes, position)?)),
+    match cur.peek()? {
+        Token::True | Token::False => Some(LoftBridgeToken::Boolean(cur.take_bool()?)),
+        Token::Long(_) => Some(LoftBridgeToken::Integer(cur.take_long()?)),
+        Token::Double(_) => Some(LoftBridgeToken::Double(cur.take_f64()?)),
+        Token::Enum(_) => Some(LoftBridgeToken::Enum(cur.take_enum()?)),
+        Token::Str(_) => Some(LoftBridgeToken::Text(cur.take_str()?.to_string())),
         _ => None,
     }
 }
 
-fn decode_g2_blend_spl_sur(
-    record_bytes: &[u8],
-    int_width: usize,
-    resolver: Option<(&[u8], &SubtypeTables)>,
+fn g2_blend_spl_sur(
+    toks: &[Token],
+    resolver: Option<&SubtypeTable>,
 ) -> Option<DecodedProceduralSurface> {
-    let names: [&[u8]; 2] = [b"g2_blend_spl_sur", b"g2blnsur"];
-    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
-    let name_len = name.len();
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name_len + 3;
-    if span.get(position) == Some(&0x04) {
+    let names = ["g2_blend_spl_sur", "g2blnsur"];
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
+    if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated layout: revision integer, two scalars, two sides in
         // the variable-blend side layout, center curve with endpoints, two
         // radii, radius selector, optional U/V bounds, shape prologue,
         // shared tail, and three trailing integers. Only the modern name
         // stores it.
-        (name == b"g2_blend_spl_sur".as_slice()).then_some(())?;
-        let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        (name == "g2_blend_spl_sur").then_some(())?;
+        let revision = cur.take_long()?;
         (revision > 0).then_some(())?;
-        let leading_parameters = [
-            take_f64(span, &mut position)?,
-            take_f64(span, &mut position)?,
-        ];
+        let leading_parameters = [cur.take_f64()?, cur.take_f64()?];
         let sides = Box::new([
-            decode_rolling_ball_side(span, &mut position, int_width, resolver)?,
-            decode_rolling_ball_side(span, &mut position, int_width, resolver)?,
+            rolling_ball_side(&mut cur, resolver)?,
+            rolling_ball_side(&mut cur, resolver)?,
         ]);
-        let (active_bytes, tables) = resolver?;
-        let center = decode_embedded_base_curve_resolving_refs(
-            span,
-            &mut position,
-            int_width,
-            active_bytes,
-            tables,
-        )?;
+        let table = resolver?;
+        let center = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let center_range = [
-            take_optional_range_value(span, &mut position)?,
-            take_optional_range_value(span, &mut position)?,
+            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?,
         ];
-        let radii = [
-            take_f64(span, &mut position)? * LEN_TO_MM,
-            take_f64(span, &mut position)? * LEN_TO_MM,
-        ];
-        let radius_selector = take_tagged_int(span, &mut position, 0x15, int_width)?;
+        let radii = [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM];
+        let radius_selector = cur.take_enum()?;
         let u_range = [
-            take_optional_range_value(span, &mut position)?,
-            take_optional_range_value(span, &mut position)?,
+            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?,
         ];
         let v_range = [
-            take_optional_range_value(span, &mut position)?,
-            take_optional_range_value(span, &mut position)?,
+            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?,
         ];
-        let shape_prefix = take_tagged_int(span, &mut position, 0x04, int_width)?;
-        let shape_parameter = take_f64(span, &mut position)?;
-        let shape_length = take_f64(span, &mut position)? * LEN_TO_MM;
-        let shape_tail = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        let shape_prefix = cur.take_long()?;
+        let shape_parameter = cur.take_f64()?;
+        let shape_length = cur.take_f64()? * LEN_TO_MM;
+        let shape_tail = cur.take_long()?;
         let RevisionSurfaceTail {
             enumeration: tail_enum,
             fit_tolerance,
             parameterization,
             discontinuities,
             tail_flag,
-        } = decode_revision_surface_tail(span, &mut position, int_width)?;
-        let tail_extensions = [
-            take_tagged_int(span, &mut position, 0x04, int_width)?,
-            take_tagged_int(span, &mut position, 0x04, int_width)?,
-            take_tagged_int(span, &mut position, 0x04, int_width)?,
-        ];
+        } = revision_surface_tail(&mut cur)?;
+        let tail_extensions = [cur.take_long()?, cur.take_long()?, cur.take_long()?];
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::RevisionG2Blend(Box::new(
                 EmbeddedRevisionG2Blend {
@@ -530,34 +512,35 @@ fn decode_g2_blend_spl_sur(
             cache_fit_tolerance: fit_tolerance,
         });
     }
-    let first = decode_g2_side(span, &mut position, int_width)?;
-    let singularity = take_tagged_int(span, &mut position, 0x15, int_width)?;
-    let first_shape = if matches!(span.get(position), Some(0x0d | 0x0e)) {
-        let saved = position;
-        if take_native_ident(span, &mut position).as_deref() == Some("nullbs") {
+    let first = g2_side(&mut cur)?;
+    let singularity = cur.take_enum()?;
+    let first_shape = if cur.peek().is_some_and(Token::is_payload_ident) {
+        let saved = cur.pos();
+        if cur.take_ident() == Some("nullbs") {
             EmbeddedG2FirstShape::Full {
                 surface: None,
                 tolerance: None,
             }
         } else {
-            position = saved;
-            let surface = decode_surface_block(span, position, int_width)?;
-            position = surface.end;
+            cur.set_pos(saved);
+            let (surface, surface_end) = surface_block(span, cur.pos())?;
+            cur.set_pos(surface_end);
             EmbeddedG2FirstShape::Full {
-                surface: Some(surface.surface),
-                tolerance: Some(take_f64(span, &mut position)? * LEN_TO_MM),
+                surface: Some(surface),
+                tolerance: Some(cur.take_f64()? * LEN_TO_MM),
             }
         }
     } else {
         let mut coefficients = [0.0; 9];
         for coefficient in &mut coefficients {
-            *coefficient = take_f64(span, &mut position)?;
+            *coefficient = cur.take_f64()?;
         }
-        let tolerance = take_f64(span, &mut position)? * LEN_TO_MM;
-        let extension = (!matches!(span.get(position), Some(0x07..=0x09 | 0x0d | 0x0e)))
-            .then(|| take_bridge_token(span, &mut position, int_width))
-            .flatten();
-        let pcurve = decode_nullable_embedded_pcurve(span, &mut position, int_width)?;
+        let tolerance = cur.take_f64()? * LEN_TO_MM;
+        let extension = (!matches!(cur.peek(), Some(token)
+            if matches!(token, Token::Str(_)) || token.is_payload_ident()))
+        .then(|| bridge_token(&mut cur))
+        .flatten();
+        let pcurve = nullable_embedded_pcurve(&mut cur)?;
         EmbeddedG2FirstShape::None {
             coefficients,
             tolerance,
@@ -565,39 +548,31 @@ fn decode_g2_blend_spl_sur(
             pcurve,
         }
     };
-    let second = decode_g2_side(span, &mut position, int_width)?;
-    let second_exact = decode_surface_block(span, position, int_width)?;
-    position = second_exact.end;
-    let center = decode_curve_block(span, position, int_width)?;
-    position = center.end;
-    let center_parameters = [
-        take_f64(span, &mut position)?,
-        take_f64(span, &mut position)?,
-    ];
-    let center_flag = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let second = g2_side(&mut cur)?;
+    let (second_exact, second_exact_end) = surface_block(span, cur.pos())?;
+    cur.set_pos(second_exact_end);
+    let (center, center_end) = curve_block(span, cur.pos())?;
+    cur.set_pos(center_end);
+    let center_parameters = [cur.take_f64()?, cur.take_f64()?];
+    let center_flag = cur.take_long()?;
     let parameter_ranges = [
-        [
-            take_f64(span, &mut position)?,
-            take_f64(span, &mut position)?,
-        ],
-        [
-            take_f64(span, &mut position)?,
-            take_f64(span, &mut position)?,
-        ],
+        [cur.take_f64()?, cur.take_f64()?],
+        [cur.take_f64()?, cur.take_f64()?],
     ];
     let mut trailing_parameters = [0.0; 4];
     for parameter in &mut trailing_parameters {
-        *parameter = take_f64(span, &mut position)?;
+        *parameter = cur.take_f64()?;
     }
-    let cache = decode_surface_block(span, position, int_width)?;
-    let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
-        .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
-        .flatten();
-    position = cache.end + usize::from(cache_fit_tolerance.is_some()) * 9;
+    let (_, cache_end) = surface_block(span, cur.pos())?;
+    let cache_fit_tolerance = match span.get(cache_end) {
+        Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
+        _ => None,
+    };
+    cur.set_pos(cache_end + usize::from(cache_fit_tolerance.is_some()));
     let discontinuities = [
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::G2Blend(Box::new(EmbeddedG2Blend {
@@ -605,8 +580,8 @@ fn decode_g2_blend_spl_sur(
             singularity,
             first_shape,
             second,
-            second_exact_surface: second_exact.surface,
-            center_curve: center.curve,
+            second_exact_surface: second_exact,
+            center_curve: center,
             center_parameters,
             center_flag,
             parameter_ranges,
@@ -995,51 +970,43 @@ pub(crate) enum EmbeddedDeformableSurfaceData {
 }
 
 #[allow(clippy::option_option)] // Outer None is parse failure; inner None is an absent scale slot.
-fn decode_compound_loft_scale(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-) -> Option<Option<EmbeddedCompoundLoftScale>> {
-    if matches!(bytes.get(*position), Some(0x0a | 0x0b)) {
+fn compound_loft_scale(cur: &mut Cur<'_>) -> Option<Option<EmbeddedCompoundLoftScale>> {
+    if matches!(cur.peek(), Some(Token::True | Token::False)) {
         return Some(None);
     }
-    let count = usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
+    let count = usize::try_from(cur.take_long()?).ok()?;
     if count > 100_000 {
         return None;
     }
     let mut members = Vec::with_capacity(count);
     for _ in 0..count {
-        let type_code = take_tagged_int(bytes, position, 0x04, int_width)?;
-        let curve = decode_curve_block(bytes, *position, int_width)?;
-        *position = curve.end;
-        let data = decode_loft_profile_data(bytes, position, int_width)?;
+        let type_code = cur.take_long()?;
+        let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
+        cur.set_pos(curve_end);
+        let data = loft_profile_data(cur)?;
         members.push(EmbeddedLoftProfileMember {
             type_code,
-            curve: curve.curve,
+            curve,
             endpoints: None,
             data,
         });
     }
-    let path = decode_curve_block(bytes, *position, int_width)?;
-    *position = path.end;
-    let auxiliary_count =
-        usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
+    let (path, path_end) = curve_block(cur.toks(), cur.pos())?;
+    cur.set_pos(path_end);
+    let auxiliary_count = usize::try_from(cur.take_long()?).ok()?;
     if auxiliary_count > 100_000 {
         return None;
     }
     let mut auxiliaries = Vec::with_capacity(auxiliary_count);
     for _ in 0..auxiliary_count {
-        let curve = decode_curve_block(bytes, *position, int_width)?;
-        *position = curve.end;
-        auxiliaries.push(curve.curve);
+        let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
+        cur.set_pos(curve_end);
+        auxiliaries.push(curve);
     }
-    let tail = [
-        take_tagged_int(bytes, position, 0x04, int_width)?,
-        take_tagged_int(bytes, position, 0x04, int_width)?,
-    ];
+    let tail = [cur.take_long()?, cur.take_long()?];
     Some(Some(EmbeddedCompoundLoftScale {
         members,
-        path: path.curve,
+        path,
         auxiliaries,
         tail,
     }))
@@ -1131,50 +1098,41 @@ const LOFT_ASM_EXTENSION_ABSENT_THROUGH: u32 = 22600;
 /// integer. The gate keys on the stream save format, not on the record's own
 /// serializer revision stamp: one revision stamp takes the integer in a later
 /// stream and omits it in an earlier one.
-fn revision_loft_carries_asm_extension(active_bytes: &[u8]) -> bool {
-    crate::asm_header::parse(active_bytes)
-        .and_then(|header| header.save_format_version)
+fn revision_loft_carries_asm_extension(table: &SubtypeTable) -> bool {
+    table
+        .save_format_version()
         .is_none_or(|version| version > LOFT_ASM_EXTENSION_ABSENT_THROUGH)
 }
 
 /// Revision-gated loft profile data: the type-selected member payload, an
 /// optional ASM integer, and constraint subdata with trailing row pairs.
-fn decode_revision_loft_profile_data(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+fn revision_loft_profile_data(
+    cur: &mut Cur<'_>,
+    table: &SubtypeTable,
     form: RevisionLoftMemberForm,
     asm_extension_present: bool,
 ) -> Option<EmbeddedLoftProfileData> {
     let (surface, support_bounds, pcurve, secondary_pcurve, first_flag) = match form {
         RevisionLoftMemberForm::Support => {
-            let (surface, support_bounds) = decode_optional_embedded_surface_with_bounds(
-                bytes,
-                position,
-                int_width,
-                active_bytes,
-                tables,
-            )?;
-            let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
-            let first_flag = take_bool(bytes, position)?;
+            let (surface, support_bounds) = optional_embedded_surface_with_bounds(cur, table)?;
+            let pcurve = nullable_embedded_pcurve(cur)?;
+            let first_flag = cur.take_bool()?;
             (surface, support_bounds, pcurve, None, Some(first_flag))
         }
         RevisionLoftMemberForm::PcurvePair => {
-            let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
-            let secondary_pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+            let pcurve = nullable_embedded_pcurve(cur)?;
+            let secondary_pcurve = nullable_embedded_pcurve(cur)?;
             (None, [None; 4], pcurve, secondary_pcurve, None)
         }
     };
     let asm_extension = if asm_extension_present {
-        Some(take_tagged_int(bytes, position, 0x04, int_width)?)
+        Some(cur.take_long()?)
     } else {
         None
     };
-    let subdata = decode_loft_subdata_form(bytes, position, int_width, true)?;
-    let direction = if take_bool(bytes, position)? {
-        let value = take_native_vec3(bytes, position, 0x14)?;
+    let subdata = loft_subdata_form(cur, true)?;
+    let direction = if cur.take_bool()? {
+        let value = cur.take_vector3()?;
         Some(Vector3::new(value[0], value[1], value[2]))
     } else {
         None
@@ -1191,46 +1149,31 @@ fn decode_revision_loft_profile_data(
     })
 }
 
-fn decode_revision_loft_section(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+fn revision_loft_section(
+    cur: &mut Cur<'_>,
+    table: &SubtypeTable,
     asm_extension_present: bool,
 ) -> Option<Vec<EmbeddedLoftSectionEntry>> {
-    let count = usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
-    let count = bounded_len(count as u64, 9, bytes.len().saturating_sub(*position))?;
+    let count = usize::try_from(cur.take_long()?).ok()?;
+    // Each entry consumes at least one double token for its parameter.
+    let count = bounded_len(count as u64, 1, cur.rest().len())?;
     let mut entries = Vec::with_capacity(count);
     for _ in 0..count {
-        let parameter = take_f64(bytes, position)?;
-        let member_count =
-            usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
-        let member_count = bounded_len(
-            member_count as u64,
-            1 + int_width,
-            bytes.len().saturating_sub(*position),
-        )?;
+        let parameter = cur.take_f64()?;
+        let member_count = usize::try_from(cur.take_long()?).ok()?;
+        // Each member consumes at least its type-code token.
+        let member_count = bounded_len(member_count as u64, 1, cur.rest().len())?;
         let mut profile = Vec::with_capacity(member_count);
         for _ in 0..member_count {
-            let type_code = take_tagged_int(bytes, position, 0x04, int_width)?;
-            let curve = decode_embedded_base_curve_resolving_refs(
-                bytes,
-                position,
-                int_width,
-                active_bytes,
-                tables,
-            )?;
+            let type_code = cur.take_long()?;
+            let curve = embedded_base_curve_resolving_refs(cur, table)?;
             let endpoints = [
-                take_optional_range_value(bytes, position)?,
-                take_optional_range_value(bytes, position)?,
+                cur.take_optional_range_value()?,
+                cur.take_optional_range_value()?,
             ];
-            let data = decode_revision_loft_profile_data(
-                bytes,
-                position,
-                int_width,
-                active_bytes,
-                tables,
+            let data = revision_loft_profile_data(
+                cur,
+                table,
                 RevisionLoftMemberForm::of(type_code),
                 asm_extension_present,
             )?;
@@ -1241,39 +1184,28 @@ fn decode_revision_loft_section(
                 data,
             });
         }
-        let saved = *position;
-        let (path_curve, path_endpoints) =
-            if take_native_ident(bytes, position).as_deref() == Some("null_curve") {
-                (None, None)
-            } else {
-                *position = saved;
-                let curve = decode_embedded_base_curve_resolving_refs(
-                    bytes,
-                    position,
-                    int_width,
-                    active_bytes,
-                    tables,
-                )?;
-                let endpoints = [
-                    take_optional_range_value(bytes, position)?,
-                    take_optional_range_value(bytes, position)?,
-                ];
-                (Some(curve), Some(endpoints))
-            };
-        let auxiliary_count =
-            usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
-        let auxiliary_count = bounded_len(
-            auxiliary_count as u64,
-            6,
-            bytes.len().saturating_sub(*position),
-        )?;
+        let saved = cur.pos();
+        let (path_curve, path_endpoints) = if cur.take_ident() == Some("null_curve") {
+            (None, None)
+        } else {
+            cur.set_pos(saved);
+            let curve = embedded_base_curve_resolving_refs(cur, table)?;
+            let endpoints = [
+                cur.take_optional_range_value()?,
+                cur.take_optional_range_value()?,
+            ];
+            (Some(curve), Some(endpoints))
+        };
+        let auxiliary_count = usize::try_from(cur.take_long()?).ok()?;
+        // Each auxiliary consumes at least its curve-block marker token.
+        let auxiliary_count = bounded_len(auxiliary_count as u64, 1, cur.rest().len())?;
         let mut auxiliaries = Vec::with_capacity(auxiliary_count);
         for _ in 0..auxiliary_count {
-            let auxiliary = decode_curve_block(bytes, *position, int_width)?;
-            *position = auxiliary.end;
-            auxiliaries.push(auxiliary.curve);
+            let (auxiliary, auxiliary_end) = curve_block(cur.toks(), cur.pos())?;
+            cur.set_pos(auxiliary_end);
+            auxiliaries.push(auxiliary);
         }
-        let flag = take_tagged_int(bytes, position, 0x04, int_width)?;
+        let flag = cur.take_long()?;
         entries.push(EmbeddedLoftSectionEntry {
             parameter,
             profile,
@@ -1288,48 +1220,38 @@ fn decode_revision_loft_section(
     Some(entries)
 }
 
-fn decode_loft_subdata(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-) -> Option<cadmpeg_ir::geometry::LoftSubdata> {
-    decode_loft_subdata_form(bytes, position, int_width, false)
+fn loft_subdata(cur: &mut Cur<'_>) -> Option<cadmpeg_ir::geometry::LoftSubdata> {
+    loft_subdata_form(cur, false)
 }
 
-fn decode_loft_subdata_form(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
+fn loft_subdata_form(
+    cur: &mut Cur<'_>,
     revision: bool,
 ) -> Option<cadmpeg_ir::geometry::LoftSubdata> {
     use cadmpeg_ir::geometry::{LoftSubdata, LoftSubdataRow};
-    let type_code = take_tagged_int(bytes, position, 0x04, int_width)?;
-    let row_count = take_tagged_int(bytes, position, 0x04, int_width)?;
-    let column_count = take_tagged_int(bytes, position, 0x04, int_width)?;
+    let type_code = cur.take_long()?;
+    let row_count = cur.take_long()?;
+    let column_count = cur.take_long()?;
     let rows_to_read = if type_code == 211 {
         1
     } else {
         usize::try_from(row_count).ok()?
     };
     let columns_to_read = usize::try_from(column_count).ok()?;
-    // Each row consumes two tagged doubles (2 * 9 bytes) for its parameters.
-    let rows_to_read = bounded_len(
-        rows_to_read as u64,
-        18,
-        bytes.len().saturating_sub(*position),
-    )?;
+    // Each row consumes two double tokens for its parameters.
+    let rows_to_read = bounded_len(rows_to_read as u64, 2, cur.rest().len())?;
     let mut rows = Vec::with_capacity(rows_to_read);
     for _ in 0..rows_to_read {
-        let parameters = [take_f64(bytes, position)?, take_f64(bytes, position)?];
+        let parameters = [cur.take_f64()?, cur.take_f64()?];
         let mut columns = Vec::new();
         if type_code != 211 {
             columns.reserve(columns_to_read);
             for _ in 0..columns_to_read {
-                columns.push([take_f64(bytes, position)?, take_f64(bytes, position)?]);
+                columns.push([cur.take_f64()?, cur.take_f64()?]);
             }
         }
         let extra = if revision && type_code != 211 {
-            Some([take_f64(bytes, position)?, take_f64(bytes, position)?])
+            Some([cur.take_f64()?, cur.take_f64()?])
         } else {
             None
         };
@@ -1347,26 +1269,22 @@ fn decode_loft_subdata_form(
     })
 }
 
-fn decode_loft_profile_data(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-) -> Option<EmbeddedLoftProfileData> {
-    let surface = decode_embedded_surface(bytes, position, int_width)?;
-    let saved = *position;
-    let pcurve = if take_native_ident(bytes, position).as_deref() == Some("nullbs") {
+fn loft_profile_data(cur: &mut Cur<'_>) -> Option<EmbeddedLoftProfileData> {
+    let surface = embedded_surface(cur)?;
+    let saved = cur.pos();
+    let pcurve = if cur.take_ident() == Some("nullbs") {
         None
     } else {
-        *position = saved;
-        let (pcurve, end) = decode_pcurve_block_with_end(bytes, *position, int_width)?;
-        *position = end;
+        cur.set_pos(saved);
+        let (pcurve, end) = pcurve_block_with_end(cur.toks(), cur.pos())?;
+        cur.set_pos(end);
         Some(pcurve)
     };
-    let first_flag = take_bool(bytes, position)?;
-    let asm_extension = take_tagged_int(bytes, position, 0x04, int_width)?;
-    let subdata = decode_loft_subdata(bytes, position, int_width)?;
-    let direction = if take_bool(bytes, position)? {
-        let value = take_native_vec3(bytes, position, 0x14)?;
+    let first_flag = cur.take_bool()?;
+    let asm_extension = cur.take_long()?;
+    let subdata = loft_subdata(cur)?;
+    let direction = if cur.take_bool()? {
+        let value = cur.take_vector3()?;
         Some(Vector3::new(value[0], value[1], value[2]))
     } else {
         None
@@ -1383,60 +1301,46 @@ fn decode_loft_profile_data(
     })
 }
 
-fn decode_loft_section(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-) -> Option<Vec<EmbeddedLoftSectionEntry>> {
-    let count = usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
-    // Each entry consumes at least one tagged double (9 bytes) for its parameter.
-    let count = bounded_len(count as u64, 9, bytes.len().saturating_sub(*position))?;
+fn loft_section(cur: &mut Cur<'_>) -> Option<Vec<EmbeddedLoftSectionEntry>> {
+    let count = usize::try_from(cur.take_long()?).ok()?;
+    // Each entry consumes at least one double token for its parameter.
+    let count = bounded_len(count as u64, 1, cur.rest().len())?;
     let mut entries = Vec::with_capacity(count);
     for _ in 0..count {
-        let parameter = take_f64(bytes, position)?;
-        let member_count =
-            usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
-        // Each member consumes at least a tagged type code (1 + int_width bytes).
-        let member_count = bounded_len(
-            member_count as u64,
-            1 + int_width,
-            bytes.len().saturating_sub(*position),
-        )?;
+        let parameter = cur.take_f64()?;
+        let member_count = usize::try_from(cur.take_long()?).ok()?;
+        // Each member consumes at least its type-code token.
+        let member_count = bounded_len(member_count as u64, 1, cur.rest().len())?;
         let mut profile = Vec::with_capacity(member_count);
         for _ in 0..member_count {
-            let type_code = take_tagged_int(bytes, position, 0x04, int_width)?;
-            let curve = decode_curve_block(bytes, *position, int_width)?;
-            *position = curve.end;
-            let data = decode_loft_profile_data(bytes, position, int_width)?;
+            let type_code = cur.take_long()?;
+            let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
+            cur.set_pos(curve_end);
+            let data = loft_profile_data(cur)?;
             profile.push(EmbeddedLoftProfileMember {
                 type_code,
-                curve: curve.curve,
+                curve,
                 endpoints: None,
                 data,
             });
         }
-        let curve = decode_curve_block(bytes, *position, int_width)?;
-        *position = curve.end;
-        let auxiliary_count =
-            usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
-        // Each auxiliary consumes at least a curve-block marker (6 bytes).
-        let auxiliary_count = bounded_len(
-            auxiliary_count as u64,
-            6,
-            bytes.len().saturating_sub(*position),
-        )?;
+        let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
+        cur.set_pos(curve_end);
+        let auxiliary_count = usize::try_from(cur.take_long()?).ok()?;
+        // Each auxiliary consumes at least its curve-block marker token.
+        let auxiliary_count = bounded_len(auxiliary_count as u64, 1, cur.rest().len())?;
         let mut auxiliaries = Vec::with_capacity(auxiliary_count);
         for _ in 0..auxiliary_count {
-            let auxiliary = decode_curve_block(bytes, *position, int_width)?;
-            *position = auxiliary.end;
-            auxiliaries.push(auxiliary.curve);
+            let (auxiliary, auxiliary_end) = curve_block(cur.toks(), cur.pos())?;
+            cur.set_pos(auxiliary_end);
+            auxiliaries.push(auxiliary);
         }
-        let flag = take_tagged_int(bytes, position, 0x04, int_width)?;
+        let flag = cur.take_long()?;
         entries.push(EmbeddedLoftSectionEntry {
             parameter,
             profile,
             path: EmbeddedLoftPath {
-                curve: Some(curve.curve),
+                curve: Some(curve),
                 endpoints: None,
                 auxiliaries,
                 flag,
@@ -1446,59 +1350,42 @@ fn decode_loft_section(
     Some(entries)
 }
 
-fn decode_revision_loft(
-    span: &[u8],
-    mut position: usize,
-    int_width: usize,
-    resolver: Option<(&[u8], &SubtypeTables)>,
+fn revision_loft(
+    span: &[Token],
+    position: usize,
+    resolver: Option<&SubtypeTable>,
 ) -> Option<DecodedProceduralSurface> {
-    let (active_bytes, tables) = resolver?;
-    let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let table = resolver?;
+    let mut cur = Cur::at(span, position);
+    let revision = cur.take_long()?;
     (revision > 0).then_some(())?;
-    let asm_extension_present = revision_loft_carries_asm_extension(active_bytes);
+    let asm_extension_present = revision_loft_carries_asm_extension(table);
     let sections = [
-        decode_revision_loft_section(
-            span,
-            &mut position,
-            int_width,
-            active_bytes,
-            tables,
-            asm_extension_present,
-        )?,
-        decode_revision_loft_section(
-            span,
-            &mut position,
-            int_width,
-            active_bytes,
-            tables,
-            asm_extension_present,
-        )?,
+        revision_loft_section(&mut cur, table, asm_extension_present)?,
+        revision_loft_section(&mut cur, table, asm_extension_present)?,
     ];
     let wrap_ranges = [
         [
-            take_optional_range_value(span, &mut position)?,
-            take_optional_range_value(span, &mut position)?,
+            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?,
         ],
         [
-            take_optional_range_value(span, &mut position)?,
-            take_optional_range_value(span, &mut position)?,
+            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?,
         ],
     ];
     let mut flags = [false; 4];
     for flag in &mut flags {
-        *flag = take_bool(span, &mut position)?;
+        *flag = cur.take_bool()?;
     }
-    let ints = [
-        take_tagged_int(span, &mut position, 0x04, int_width)?,
-        take_tagged_int(span, &mut position, 0x04, int_width)?,
-    ];
+    let ints = [cur.take_long()?, cur.take_long()?];
     let RevisionSurfaceTail {
         enumeration: tail_enum,
         fit_tolerance,
         parameterization,
         discontinuities,
         tail_flag,
-    } = decode_revision_surface_tail(span, &mut position, int_width)?;
+    } = revision_surface_tail(&mut cur)?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
             sections,
@@ -1523,79 +1410,50 @@ fn decode_revision_loft(
     })
 }
 
-fn decode_loft_spl_sur(
-    record_bytes: &[u8],
-    int_width: usize,
-    resolver: Option<(&[u8], &SubtypeTables)>,
+fn loft_spl_sur(
+    toks: &[Token],
+    resolver: Option<&SubtypeTable>,
 ) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::LoftBridgeToken;
-    let names: [&[u8]; 2] = [b"loft_spl_sur", b"loftsur"];
-    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
-    let name_len = name.len();
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name_len + 3;
+    let names = ["loft_spl_sur", "loftsur"];
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
     // Only the modern name stores the revision-gated layout.
-    if span.get(position) == Some(&0x04) && name == b"loft_spl_sur".as_slice() {
-        if let Some(decoded) = decode_revision_loft(span, position, int_width, resolver) {
+    if matches!(cur.peek(), Some(Token::Long(_))) && name == "loft_spl_sur" {
+        if let Some(decoded) = revision_loft(span, cur.pos(), resolver) {
             return Some(decoded);
         }
     }
-    let sections = [
-        decode_loft_section(span, &mut position, int_width)?,
-        decode_loft_section(span, &mut position, int_width)?,
-    ];
+    let sections = [loft_section(&mut cur)?, loft_section(&mut cur)?];
     let parameter_ranges = [
-        [
-            take_f64(span, &mut position)?,
-            take_f64(span, &mut position)?,
-        ],
-        [
-            take_f64(span, &mut position)?,
-            take_f64(span, &mut position)?,
-        ],
+        [cur.take_f64()?, cur.take_f64()?],
+        [cur.take_f64()?, cur.take_f64()?],
     ];
-    let closures = [
-        take_tagged_int(span, &mut position, 0x15, int_width)?,
-        take_tagged_int(span, &mut position, 0x15, int_width)?,
-    ];
-    let singularities = [
-        take_tagged_int(span, &mut position, 0x15, int_width)?,
-        take_tagged_int(span, &mut position, 0x15, int_width)?,
-    ];
-    let mode = take_tagged_int(span, &mut position, 0x04, int_width)?;
-    let (cache_at, cache) = marker_positions(span)
+    let closures = [cur.take_enum()?, cur.take_enum()?];
+    let singularities = [cur.take_enum()?, cur.take_enum()?];
+    let mode = cur.take_long()?;
+    let (cache_at, cache_end) = toks::marker_positions(span)
         .into_iter()
-        .filter_map(|at| decode_surface_block(span, at, int_width).map(|cache| (at, cache)))
+        .filter_map(|at| surface_block(span, at).map(|(_, end)| (at, end)))
         .next_back()?;
     let mut bridge = Vec::new();
-    while position < cache_at {
-        match *span.get(position)? {
-            0x0a | 0x0b => bridge.push(LoftBridgeToken::Boolean(take_bool(span, &mut position)?)),
-            0x04 => bridge.push(LoftBridgeToken::Integer(take_tagged_int(
-                span,
-                &mut position,
-                0x04,
-                int_width,
-            )?)),
-            0x06 => bridge.push(LoftBridgeToken::Double(take_f64(span, &mut position)?)),
-            0x15 => bridge.push(LoftBridgeToken::Enum(take_tagged_int(
-                span,
-                &mut position,
-                0x15,
-                int_width,
-            )?)),
-            0x07..=0x09 => {
-                bridge.push(LoftBridgeToken::Text(take_native_string(
-                    span,
-                    &mut position,
-                )?));
+    while cur.pos() < cache_at {
+        match cur.peek()? {
+            Token::True | Token::False => {
+                bridge.push(LoftBridgeToken::Boolean(cur.take_bool()?));
             }
+            Token::Long(_) => bridge.push(LoftBridgeToken::Integer(cur.take_long()?)),
+            Token::Double(_) => bridge.push(LoftBridgeToken::Double(cur.take_f64()?)),
+            Token::Enum(_) => bridge.push(LoftBridgeToken::Enum(cur.take_enum()?)),
+            Token::Str(_) => bridge.push(LoftBridgeToken::Text(cur.take_str()?.to_string())),
             _ => return None,
         }
     }
-    let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
-        .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
-        .flatten();
+    let cache_fit_tolerance = match span.get(cache_end) {
+        Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
+        _ => None,
+    };
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
             sections,
@@ -1615,40 +1473,25 @@ fn decode_loft_spl_sur(
 /// One revision-gated compound-loft scale block: counted profile members,
 /// nullable path curve with optional endpoints, counted auxiliary BS3
 /// curves, and one tail integer.
-fn decode_revision_cl_scale(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+fn revision_cl_scale(
+    cur: &mut Cur<'_>,
+    table: &SubtypeTable,
     asm_extension_present: bool,
 ) -> Option<(Vec<EmbeddedLoftProfileMember>, EmbeddedLoftPath)> {
-    let member_count = usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
-    let member_count = bounded_len(
-        member_count as u64,
-        1 + int_width,
-        bytes.len().saturating_sub(*position),
-    )?;
+    let member_count = usize::try_from(cur.take_long()?).ok()?;
+    // Each member consumes at least its type-code token.
+    let member_count = bounded_len(member_count as u64, 1, cur.rest().len())?;
     let mut profile = Vec::with_capacity(member_count);
     for _ in 0..member_count {
-        let type_code = take_tagged_int(bytes, position, 0x04, int_width)?;
-        let curve = decode_embedded_base_curve_resolving_refs(
-            bytes,
-            position,
-            int_width,
-            active_bytes,
-            tables,
-        )?;
+        let type_code = cur.take_long()?;
+        let curve = embedded_base_curve_resolving_refs(cur, table)?;
         let endpoints = [
-            take_optional_range_value(bytes, position)?,
-            take_optional_range_value(bytes, position)?,
+            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?,
         ];
-        let data = decode_revision_loft_profile_data(
-            bytes,
-            position,
-            int_width,
-            active_bytes,
-            tables,
+        let data = revision_loft_profile_data(
+            cur,
+            table,
             RevisionLoftMemberForm::of(type_code),
             asm_extension_present,
         )?;
@@ -1659,39 +1502,28 @@ fn decode_revision_cl_scale(
             data,
         });
     }
-    let saved = *position;
-    let (path_curve, path_endpoints) =
-        if take_native_ident(bytes, position).as_deref() == Some("null_curve") {
-            (None, None)
-        } else {
-            *position = saved;
-            let curve = decode_embedded_base_curve_resolving_refs(
-                bytes,
-                position,
-                int_width,
-                active_bytes,
-                tables,
-            )?;
-            let endpoints = [
-                take_optional_range_value(bytes, position)?,
-                take_optional_range_value(bytes, position)?,
-            ];
-            (Some(curve), Some(endpoints))
-        };
-    let auxiliary_count =
-        usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
-    let auxiliary_count = bounded_len(
-        auxiliary_count as u64,
-        6,
-        bytes.len().saturating_sub(*position),
-    )?;
+    let saved = cur.pos();
+    let (path_curve, path_endpoints) = if cur.take_ident() == Some("null_curve") {
+        (None, None)
+    } else {
+        cur.set_pos(saved);
+        let curve = embedded_base_curve_resolving_refs(cur, table)?;
+        let endpoints = [
+            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?,
+        ];
+        (Some(curve), Some(endpoints))
+    };
+    let auxiliary_count = usize::try_from(cur.take_long()?).ok()?;
+    // Each auxiliary consumes at least its curve-block marker token.
+    let auxiliary_count = bounded_len(auxiliary_count as u64, 1, cur.rest().len())?;
     let mut auxiliaries = Vec::with_capacity(auxiliary_count);
     for _ in 0..auxiliary_count {
-        let auxiliary = decode_curve_block(bytes, *position, int_width)?;
-        *position = auxiliary.end;
-        auxiliaries.push(auxiliary.curve);
+        let (auxiliary, auxiliary_end) = curve_block(cur.toks(), cur.pos())?;
+        cur.set_pos(auxiliary_end);
+        auxiliaries.push(auxiliary);
     }
-    let flag = take_tagged_int(bytes, position, 0x04, int_width)?;
+    let flag = cur.take_long()?;
     Some((
         profile,
         EmbeddedLoftPath {
@@ -1703,15 +1535,13 @@ fn decode_revision_cl_scale(
     ))
 }
 
-fn decode_revision_compound_loft(
-    span: &[u8],
-    int_width: usize,
-    resolver: Option<(&[u8], &SubtypeTables)>,
+fn revision_compound_loft(
+    span: &[Token],
+    resolver: Option<&SubtypeTable>,
 ) -> Option<DecodedProceduralSurface> {
-    let (active_bytes, tables) = resolver?;
-    let name = b"cl_loft_spl_sur";
-    let mut position = name.len() + 3;
-    let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let table = resolver?;
+    let mut cur = Cur::at(span, 2);
+    let revision = cur.take_long()?;
     (revision > 0).then_some(())?;
     let RevisionSurfaceTail {
         enumeration: tail_enum,
@@ -1719,75 +1549,51 @@ fn decode_revision_compound_loft(
         parameterization,
         discontinuities,
         tail_flag,
-    } = decode_revision_surface_tail(span, &mut position, int_width)?;
-    let asm_extension_present = revision_loft_carries_asm_extension(active_bytes);
-    let (base_profile, base_path) = decode_revision_cl_scale(
-        span,
-        &mut position,
-        int_width,
-        active_bytes,
-        tables,
-        asm_extension_present,
-    )?;
-    let entry_count =
-        usize::try_from(take_tagged_int(span, &mut position, 0x04, int_width)?).ok()?;
-    let entry_count = bounded_len(
-        entry_count as u64,
-        1 + int_width,
-        span.len().saturating_sub(position),
-    )?;
+    } = revision_surface_tail(&mut cur)?;
+    let asm_extension_present = revision_loft_carries_asm_extension(table);
+    let (base_profile, base_path) = revision_cl_scale(&mut cur, table, asm_extension_present)?;
+    let entry_count = usize::try_from(cur.take_long()?).ok()?;
+    // Each entry consumes at least its member-count token.
+    let entry_count = bounded_len(entry_count as u64, 1, cur.rest().len())?;
     let mut entries = Vec::with_capacity(entry_count);
     for _ in 0..entry_count {
-        let (profile, path) = decode_revision_cl_scale(
-            span,
-            &mut position,
-            int_width,
-            active_bytes,
-            tables,
-            asm_extension_present,
-        )?;
-        let parameter = take_f64(span, &mut position)?;
+        let (profile, path) = revision_cl_scale(&mut cur, table, asm_extension_present)?;
+        let parameter = cur.take_f64()?;
         entries.push(EmbeddedLoftSectionEntry {
             parameter,
             profile,
             path,
         });
     }
-    let flags = [
-        take_bool(span, &mut position)?,
-        take_bool(span, &mut position)?,
-    ];
-    let kind = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let flags = [cur.take_bool()?, cur.take_bool()?];
+    let kind = cur.take_long()?;
     // Only the kind-zero payload is defined for the revision layout.
     (kind == 0).then_some(())?;
-    let kind_flags = [
-        take_bool(span, &mut position)?,
-        take_bool(span, &mut position)?,
-    ];
-    let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let kind_flags = [cur.take_bool()?, cur.take_bool()?];
+    let selector = cur.take_long()?;
     let (direction, direction_curve) = if selector == 0 {
-        let value = take_native_vec3(span, &mut position, 0x14)?;
+        let value = cur.take_vector3()?;
         (Some(Vector3::new(value[0], value[1], value[2])), None)
     } else {
-        let curve = decode_curve_block(span, position, int_width)?;
-        position = curve.end;
-        (None, Some(curve.curve))
+        let (curve, curve_end) = curve_block(span, cur.pos())?;
+        cur.set_pos(curve_end);
+        (None, Some(curve))
     };
     let interval = [
-        take_optional_range_value(span, &mut position)?,
-        take_optional_range_value(span, &mut position)?,
+        cur.take_optional_range_value()?,
+        cur.take_optional_range_value()?,
     ];
     // The trailing curve is present exactly when both parameter values are
-    // present. Nothing in the byte stream marks its absence; the parameter pair
+    // present. Nothing in the stream marks its absence; the parameter pair
     // is what selects it.
     let trailing_curve = if interval.iter().all(Option::is_some) {
-        let curve = decode_curve_block(span, position, int_width)?;
-        position = curve.end;
-        Some(curve.curve)
+        let (curve, curve_end) = curve_block(span, cur.pos())?;
+        cur.set_pos(curve_end);
+        Some(curve)
     } else {
         None
     };
-    (span.get(position) == Some(&0x10)).then_some(())?;
+    matches!(span.get(cur.pos()), Some(Token::SubtypeClose)).then_some(())?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::RevisionCompoundLoft(Box::new(
             EmbeddedRevisionCompoundLoft {
@@ -1813,73 +1619,57 @@ fn decode_revision_compound_loft(
     })
 }
 
-fn decode_compound_loft_spl_sur(
-    record_bytes: &[u8],
-    int_width: usize,
-    resolver: Option<(&[u8], &SubtypeTables)>,
+fn compound_loft_spl_sur(
+    toks: &[Token],
+    resolver: Option<&SubtypeTable>,
 ) -> Option<DecodedProceduralSurface> {
-    let name: &[u8] = b"cl_loft_spl_sur";
-    let (start, _) = find_owned_subtype_marker(record_bytes, &[name], int_width)?;
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name.len() + 3;
-    if span.get(position) == Some(&0x04) {
-        return decode_revision_compound_loft(span, int_width, resolver);
+    let (start, _) = toks::find_owned_subtype_marker(toks, &["cl_loft_spl_sur"])?;
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
+    if matches!(cur.peek(), Some(Token::Long(_))) {
+        return revision_compound_loft(span, resolver);
     }
-    let cache = decode_surface_block(span, position, int_width)?;
-    position = cache.end;
-    let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
+    let (_, cache_end) = surface_block(span, cur.pos())?;
+    cur.set_pos(cache_end);
+    let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
     let scales = Box::new([
-        decode_compound_loft_scale(span, &mut position, int_width)?,
-        decode_compound_loft_scale(span, &mut position, int_width)?,
-        decode_compound_loft_scale(span, &mut position, int_width)?,
-        decode_compound_loft_scale(span, &mut position, int_width)?,
+        compound_loft_scale(&mut cur)?,
+        compound_loft_scale(&mut cur)?,
+        compound_loft_scale(&mut cur)?,
+        compound_loft_scale(&mut cur)?,
     ]);
-    let fifth_scale = if span.get(position) == Some(&0x04) {
-        decode_compound_loft_scale(span, &mut position, int_width)?.map(Box::new)
+    let fifth_scale = if matches!(cur.peek(), Some(Token::Long(_))) {
+        compound_loft_scale(&mut cur)?.map(Box::new)
     } else {
         None
     };
-    let flags = [
-        take_bool(span, &mut position)?,
-        take_bool(span, &mut position)?,
-    ];
-    let kind = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let flags = [cur.take_bool()?, cur.take_bool()?];
+    let kind = cur.take_long()?;
     let tail = match kind {
         6 => {
-            let tail_flags = [
-                take_bool(span, &mut position)?,
-                take_bool(span, &mut position)?,
-            ];
-            let scale = Box::new(decode_compound_loft_scale(span, &mut position, int_width)??);
-            let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
-            let direction = take_native_vec3(span, &mut position, 0x14)?;
-            let parameter_range = [
-                take_range_value(span, &mut position)?,
-                take_range_value(span, &mut position)?,
-            ];
-            let curve = decode_curve_block(span, position, int_width)?;
+            let tail_flags = [cur.take_bool()?, cur.take_bool()?];
+            let scale = Box::new(compound_loft_scale(&mut cur)??);
+            let selector = cur.take_long()?;
+            let direction = cur.take_vector3()?;
+            let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
+            let (curve, _) = curve_block(span, cur.pos())?;
             EmbeddedCompoundLoftTail::Six {
                 flags: tail_flags,
                 scale,
                 selector,
                 direction: Vector3::new(direction[0], direction[1], direction[2]),
                 parameter_range,
-                curve: curve.curve,
+                curve,
             }
         }
         7 => {
-            let first_flag = take_bool(span, &mut position)?;
-            let first_scale =
-                decode_compound_loft_scale(span, &mut position, int_width)?.map(Box::new);
-            let second_flag = take_bool(span, &mut position)?;
-            let second_scale =
-                Box::new(decode_compound_loft_scale(span, &mut position, int_width)??);
-            let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
-            let direction = take_native_vec3(span, &mut position, 0x14)?;
-            let trailing_flags = [
-                take_bool(span, &mut position)?,
-                take_bool(span, &mut position)?,
-            ];
+            let first_flag = cur.take_bool()?;
+            let first_scale = compound_loft_scale(&mut cur)?.map(Box::new);
+            let second_flag = cur.take_bool()?;
+            let second_scale = Box::new(compound_loft_scale(&mut cur)??);
+            let selector = cur.take_long()?;
+            let direction = cur.take_vector3()?;
+            let trailing_flags = [cur.take_bool()?, cur.take_bool()?];
             EmbeddedCompoundLoftTail::Seven {
                 first_flag,
                 first_scale,
@@ -1891,23 +1681,17 @@ fn decode_compound_loft_spl_sur(
             }
         }
         0 => {
-            let tail_flags = [
-                take_bool(span, &mut position)?,
-                take_bool(span, &mut position)?,
-            ];
-            let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
+            let tail_flags = [cur.take_bool()?, cur.take_bool()?];
+            let selector = cur.take_long()?;
             let direction = if selector == 0 {
-                let value = take_native_vec3(span, &mut position, 0x14)?;
+                let value = cur.take_vector3()?;
                 EmbeddedCompoundLoftDirection::Vector(Vector3::new(value[0], value[1], value[2]))
             } else {
-                let curve = decode_curve_block(span, position, int_width)?;
-                position = curve.end;
-                EmbeddedCompoundLoftDirection::Curve(curve.curve)
+                let (curve, curve_end) = curve_block(span, cur.pos())?;
+                cur.set_pos(curve_end);
+                EmbeddedCompoundLoftDirection::Curve(curve)
             };
-            let trailing_flags = [
-                take_bool(span, &mut position)?,
-                take_bool(span, &mut position)?,
-            ];
+            let trailing_flags = [cur.take_bool()?, cur.take_bool()?];
             EmbeddedCompoundLoftTail::Zero {
                 flags: tail_flags,
                 selector,
@@ -1930,35 +1714,23 @@ fn decode_compound_loft_spl_sur(
     })
 }
 
-fn decode_scaled_compound_loft_spl_sur(
-    record_bytes: &[u8],
-    int_width: usize,
-) -> Option<DecodedProceduralSurface> {
-    let names: [&[u8]; 2] = [b"scaled_cloft_spl_sur", b"sclclftsur"];
-    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name.len() + 3;
-    let singularity = take_tagged_int(span, &mut position, 0x15, int_width)?;
-    let (shape, cache_fit_tolerance) = if matches!(span.get(position), Some(0x0d | 0x0e)) {
-        let cache = decode_surface_block(span, position, int_width)?;
-        position = cache.end;
-        let tolerance = take_f64(span, &mut position)? * LEN_TO_MM;
+fn scaled_compound_loft_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
+    let names = ["scaled_cloft_spl_sur", "sclclftsur"];
+    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
+    let singularity = cur.take_enum()?;
+    let (shape, cache_fit_tolerance) = if cur.peek().is_some_and(Token::is_payload_ident) {
+        let (_, cache_end) = surface_block(span, cur.pos())?;
+        cur.set_pos(cache_end);
+        let tolerance = cur.take_f64()? * LEN_TO_MM;
         (EmbeddedScaledCompoundLoftShape::Full, Some(tolerance))
     } else {
         let parameter_ranges = [
-            [
-                take_range_value(span, &mut position)?,
-                take_range_value(span, &mut position)?,
-            ],
-            [
-                take_range_value(span, &mut position)?,
-                take_range_value(span, &mut position)?,
-            ],
+            [cur.take_range_value()?, cur.take_range_value()?],
+            [cur.take_range_value()?, cur.take_range_value()?],
         ];
-        let parameters = [
-            take_float_array(span, &mut position, int_width)?,
-            take_float_array(span, &mut position, int_width)?,
-        ];
+        let parameters = [cur.take_float_array()?, cur.take_float_array()?];
         (
             EmbeddedScaledCompoundLoftShape::None {
                 parameter_ranges,
@@ -1968,32 +1740,28 @@ fn decode_scaled_compound_loft_spl_sur(
         )
     };
     let discontinuities = [
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
-    let discontinuity_flag = take_bool(span, &mut position)?;
+    let discontinuity_flag = cur.take_bool()?;
     let scales = Box::new([
-        decode_compound_loft_scale(span, &mut position, int_width)?,
-        decode_compound_loft_scale(span, &mut position, int_width)?,
-        decode_compound_loft_scale(span, &mut position, int_width)?,
+        compound_loft_scale(&mut cur)?,
+        compound_loft_scale(&mut cur)?,
+        compound_loft_scale(&mut cur)?,
     ]);
-    let flags = [
-        take_bool(span, &mut position)?,
-        take_bool(span, &mut position)?,
-    ];
-    let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
-    let extended = take_bool(span, &mut position)?;
+    let flags = [cur.take_bool()?, cur.take_bool()?];
+    let selector = cur.take_long()?;
+    let extended = cur.take_bool()?;
     let branch = if extended {
-        let first_scale = decode_compound_loft_scale(span, &mut position, int_width)?.map(Box::new);
-        if take_bool(span, &mut position)? {
-            let second_scale =
-                Box::new(decode_compound_loft_scale(span, &mut position, int_width)??);
-            let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
-            let direction = take_native_vec3(span, &mut position, 0x14)?;
+        let first_scale = compound_loft_scale(&mut cur)?.map(Box::new);
+        if cur.take_bool()? {
+            let second_scale = Box::new(compound_loft_scale(&mut cur)??);
+            let selector = cur.take_long()?;
+            let direction = cur.take_vector3()?;
             EmbeddedScaledCompoundLoftBranch::ExtendedVector {
                 first_scale,
                 second_scale,
@@ -2001,31 +1769,31 @@ fn decode_scaled_compound_loft_spl_sur(
                 direction: Vector3::new(direction[0], direction[1], direction[2]),
             }
         } else {
-            let flag = take_bool(span, &mut position)?;
-            let singularity = take_tagged_int(span, &mut position, 0x15, int_width)?;
-            let curve = decode_curve_block(span, position, int_width)?;
-            position = curve.end;
+            let flag = cur.take_bool()?;
+            let singularity = cur.take_enum()?;
+            let (curve, curve_end) = curve_block(span, cur.pos())?;
+            cur.set_pos(curve_end);
             EmbeddedScaledCompoundLoftBranch::ExtendedCurve {
                 scale: first_scale,
                 flag,
                 singularity,
-                curve: curve.curve,
+                curve,
             }
         }
     } else {
-        let flag = take_bool(span, &mut position)?;
-        let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        let flag = cur.take_bool()?;
+        let selector = cur.take_long()?;
         let direction = if selector == 0 {
-            let direction = take_native_vec3(span, &mut position, 0x14)?;
+            let direction = cur.take_vector3()?;
             EmbeddedCompoundLoftDirection::Vector(Vector3::new(
                 direction[0],
                 direction[1],
                 direction[2],
             ))
         } else {
-            let curve = decode_curve_block(span, position, int_width)?;
-            position = curve.end;
-            EmbeddedCompoundLoftDirection::Curve(curve.curve)
+            let (curve, curve_end) = curve_block(span, cur.pos())?;
+            cur.set_pos(curve_end);
+            EmbeddedCompoundLoftDirection::Curve(curve)
         };
         EmbeddedScaledCompoundLoftBranch::Direct {
             flag,
@@ -2033,15 +1801,12 @@ fn decode_scaled_compound_loft_spl_sur(
             direction,
         }
     };
-    let trailing_flags = [
-        take_bool(span, &mut position)?,
-        take_bool(span, &mut position)?,
-    ];
-    let tail_kind = take_tagged_int(span, &mut position, 0x04, int_width)?;
-    let first = take_native_vec3(span, &mut position, 0x14)?;
-    let second = take_native_vec3(span, &mut position, 0x14)?;
-    let tail_singularity = take_tagged_int(span, &mut position, 0x15, int_width)?;
-    let tail_curve = decode_curve_block(span, position, int_width)?;
+    let trailing_flags = [cur.take_bool()?, cur.take_bool()?];
+    let tail_kind = cur.take_long()?;
+    let first = cur.take_vector3()?;
+    let second = cur.take_vector3()?;
+    let tail_singularity = cur.take_enum()?;
+    let (tail_curve, _) = curve_block(span, cur.pos())?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::ScaledCompoundLoft(Box::new(
             EmbeddedScaledCompoundLoft {
@@ -2060,71 +1825,59 @@ fn decode_scaled_compound_loft_spl_sur(
                     Vector3::new(second[0], second[1], second[2]),
                 ],
                 tail_singularity,
-                tail_curve: tail_curve.curve,
+                tail_curve,
             },
         )),
         cache_fit_tolerance,
     })
 }
 
-pub(crate) fn decode_law_expression(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-    depth: usize,
-) -> Option<EmbeddedLawExpression> {
-    decode_law_expression_resolving(bytes, position, int_width, depth, None)
+/// Decode one recursive law expression.
+pub(crate) fn law_expression(cur: &mut Cur<'_>, depth: usize) -> Option<EmbeddedLawExpression> {
+    law_expression_resolving(cur, depth, None)
 }
 
-fn decode_law_expression_resolving(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
+fn law_expression_resolving(
+    cur: &mut Cur<'_>,
     depth: usize,
-    resolver: Option<(&[u8], &SubtypeTables)>,
+    resolver: Option<&SubtypeTable>,
 ) -> Option<EmbeddedLawExpression> {
     if depth > 64 {
         return None;
     }
-    match *bytes.get(*position)? {
-        0x04 => {
-            return Some(EmbeddedLawExpression::Integer(take_tagged_int(
-                bytes, position, 0x04, int_width,
-            )?));
+    match cur.peek()? {
+        Token::Long(_) => {
+            return Some(EmbeddedLawExpression::Integer(cur.take_long()?));
         }
-        0x06 => return Some(EmbeddedLawExpression::Double(take_f64(bytes, position)?)),
-        0x13 => {
-            let value = take_native_vec3(bytes, position, 0x13)?;
+        Token::Double(_) => return Some(EmbeddedLawExpression::Double(cur.take_f64()?)),
+        Token::Position(_) => {
+            let value = cur.take_position()?;
             return Some(EmbeddedLawExpression::Point(Point3::new(
                 value[0] * LEN_TO_MM,
                 value[1] * LEN_TO_MM,
                 value[2] * LEN_TO_MM,
             )));
         }
-        0x14 => {
-            let value = take_native_vec3(bytes, position, 0x14)?;
+        Token::Vector3(_) => {
+            let value = cur.take_vector3()?;
             return Some(EmbeddedLawExpression::Vector(Vector3::new(
                 value[0], value[1], value[2],
             )));
         }
         _ => {}
     }
-    let operator = take_native_string(bytes, position)?;
+    let operator = cur.take_str()?.to_string();
     match operator.as_str() {
         "null_law" => Some(EmbeddedLawExpression::Null),
         "TRANS" => {
-            if bytes.get(*position) == Some(&0x14) {
+            if matches!(cur.peek(), Some(Token::Vector3(_))) {
                 let mut vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
                 for vector in &mut vectors {
-                    let value = take_native_vec3(bytes, position, 0x14)?;
+                    let value = cur.take_vector3()?;
                     *vector = Vector3::new(value[0], value[1], value[2]);
                 }
-                let scale = take_f64(bytes, position)?;
-                let flags = [
-                    take_bool(bytes, position)?,
-                    take_bool(bytes, position)?,
-                    take_bool(bytes, position)?,
-                ];
+                let scale = cur.take_f64()?;
+                let flags = [cur.take_bool()?, cur.take_bool()?, cur.take_bool()?];
                 return Some(EmbeddedLawExpression::TransformVec {
                     vectors,
                     scale,
@@ -2133,44 +1886,34 @@ fn decode_law_expression_resolving(
             }
             let mut scalars = [0.0; 13];
             for scalar in &mut scalars {
-                *scalar = take_f64(bytes, position)?;
+                *scalar = cur.take_f64()?;
             }
-            let enums = [
-                take_tagged_int(bytes, position, 0x15, int_width)?,
-                take_tagged_int(bytes, position, 0x15, int_width)?,
-                take_tagged_int(bytes, position, 0x15, int_width)?,
-            ];
+            let enums = [cur.take_enum()?, cur.take_enum()?, cur.take_enum()?];
             Some(EmbeddedLawExpression::Transform { scalars, enums })
         }
         "EDGE" => {
-            let (curve, endpoints) =
-                if let Some(block) = decode_curve_block(bytes, *position, int_width) {
-                    *position = block.end;
-                    let endpoints = matches!(bytes.get(*position), Some(0x0a | 0x0b))
-                        .then(|| {
-                            Some([
-                                take_optional_range_value(bytes, position)?,
-                                take_optional_range_value(bytes, position)?,
-                            ])
-                        })
-                        .flatten();
-                    (block.curve, endpoints)
-                } else {
-                    let (active_bytes, tables) = resolver?;
-                    let curve = decode_embedded_base_curve_resolving_refs(
-                        bytes,
-                        position,
-                        int_width,
-                        active_bytes,
-                        tables,
-                    )?;
-                    let endpoints = Some([
-                        take_optional_range_value(bytes, position)?,
-                        take_optional_range_value(bytes, position)?,
-                    ]);
-                    (curve, endpoints)
-                };
-            let parameters = [take_f64(bytes, position)?, take_f64(bytes, position)?];
+            let (curve, endpoints) = if let Some((curve, end)) = curve_block(cur.toks(), cur.pos())
+            {
+                cur.set_pos(end);
+                let endpoints = matches!(cur.peek(), Some(Token::True | Token::False))
+                    .then(|| {
+                        Some([
+                            cur.take_optional_range_value()?,
+                            cur.take_optional_range_value()?,
+                        ])
+                    })
+                    .flatten();
+                (curve, endpoints)
+            } else {
+                let table = resolver?;
+                let curve = embedded_base_curve_resolving_refs(cur, table)?;
+                let endpoints = Some([
+                    cur.take_optional_range_value()?,
+                    cur.take_optional_range_value()?,
+                ]);
+                (curve, endpoints)
+            };
+            let parameters = [cur.take_f64()?, cur.take_f64()?];
             Some(EmbeddedLawExpression::Edge {
                 curve,
                 endpoints,
@@ -2178,10 +1921,10 @@ fn decode_law_expression_resolving(
             })
         }
         "SPLINE_LAW" => {
-            let native_id = take_tagged_int(bytes, position, 0x04, int_width)?;
-            let knots = take_float_array(bytes, position, int_width)?;
-            let controls = take_float_array(bytes, position, int_width)?;
-            let point = take_native_vec3(bytes, position, 0x13)?;
+            let native_id = cur.take_long()?;
+            let knots = cur.take_float_array()?;
+            let controls = cur.take_float_array()?;
+            let point = cur.take_position()?;
             Some(EmbeddedLawExpression::Spline {
                 native_id,
                 knots,
@@ -2205,70 +1948,63 @@ fn decode_law_expression_resolving(
                 _ => return None,
             };
             let operands = (0..arity)
-                .map(|_| {
-                    decode_law_expression_resolving(bytes, position, int_width, depth + 1, resolver)
-                })
+                .map(|_| law_expression_resolving(cur, depth + 1, resolver))
                 .collect::<Option<Vec<_>>>()?;
             Some(EmbeddedLawExpression::Algebraic { operator, operands })
         }
     }
 }
 
-pub(crate) fn decode_law_formula(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-) -> Option<EmbeddedLawFormula> {
-    decode_law_formula_resolving(bytes, position, int_width, None)
+/// Decode one named law formula and its counted variables.
+pub(crate) fn law_formula(cur: &mut Cur<'_>) -> Option<EmbeddedLawFormula> {
+    law_formula_resolving(cur, None)
 }
 
-fn decode_law_formula_resolving(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-    resolver: Option<(&[u8], &SubtypeTables)>,
+fn law_formula_resolving(
+    cur: &mut Cur<'_>,
+    resolver: Option<&SubtypeTable>,
 ) -> Option<EmbeddedLawFormula> {
-    let name = take_native_string(bytes, position)?;
+    let name = cur.take_str()?.to_string();
     if name == "null_law" {
         return Some(EmbeddedLawFormula {
             name,
             variables: Vec::new(),
         });
     }
-    let count = usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
+    let count = usize::try_from(cur.take_long()?).ok()?;
     if count > 100_000 {
         return None;
     }
     let variables = (0..count)
-        .map(|_| decode_law_expression_resolving(bytes, position, int_width, 0, resolver))
+        .map(|_| law_expression_resolving(cur, 0, resolver))
         .collect::<Option<Vec<_>>>()?;
     Some(EmbeddedLawFormula { name, variables })
 }
 
-fn decode_skin_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
-    let names: [&[u8]; 2] = [b"skin_spl_sur", b"skinsur"];
-    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name.len() + 3;
-    let surface_boolean = take_tagged_int(span, &mut position, 0x15, int_width)?;
-    let surface_normal = take_tagged_int(span, &mut position, 0x15, int_width)?;
-    let surface_direction = take_tagged_int(span, &mut position, 0x15, int_width)?;
-    let count = take_tagged_int(span, &mut position, 0x04, int_width)?;
-    let parameter = take_f64(span, &mut position)?;
-    let inner_count = take_tagged_int(span, &mut position, 0x04, int_width)?;
-    let layout = if matches!(span.get(position), Some(0x0d | 0x0e)) {
-        let curve = decode_curve_block(span, position, int_width)?;
-        position = curve.end;
-        let subdata = decode_loft_subdata(span, &mut position, int_width)?;
-        let first_tail = take_tagged_int(span, &mut position, 0x04, int_width)?;
-        let secondary_curve = decode_curve_block(span, position, int_width)?;
-        position = secondary_curve.end;
-        let second_tail = take_tagged_int(span, &mut position, 0x04, int_width)?;
+fn skin_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
+    let names = ["skin_spl_sur", "skinsur"];
+    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
+    let surface_boolean = cur.take_enum()?;
+    let surface_normal = cur.take_enum()?;
+    let surface_direction = cur.take_enum()?;
+    let count = cur.take_long()?;
+    let parameter = cur.take_f64()?;
+    let inner_count = cur.take_long()?;
+    let layout = if cur.peek().is_some_and(Token::is_payload_ident) {
+        let (curve, curve_end) = curve_block(span, cur.pos())?;
+        cur.set_pos(curve_end);
+        let subdata = loft_subdata(&mut cur)?;
+        let first_tail = cur.take_long()?;
+        let (secondary_curve, secondary_end) = curve_block(span, cur.pos())?;
+        cur.set_pos(secondary_end);
+        let second_tail = cur.take_long()?;
         EmbeddedSkinSurfaceLayout::Compact {
-            curve: curve.curve,
+            curve,
             subdata,
             first_tail,
-            secondary_curve: secondary_curve.curve,
+            secondary_curve,
             second_tail,
         }
     } else {
@@ -2278,46 +2014,43 @@ fn decode_skin_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
         }
         let mut profiles = Vec::with_capacity(profile_count);
         for _ in 0..profile_count {
-            let type_code = take_tagged_int(span, &mut position, 0x04, int_width)?;
-            let curve = decode_curve_block(span, position, int_width)?;
-            position = curve.end;
-            let data = decode_loft_profile_data(span, &mut position, int_width)?;
+            let type_code = cur.take_long()?;
+            let (curve, curve_end) = curve_block(span, cur.pos())?;
+            cur.set_pos(curve_end);
+            let data = loft_profile_data(&mut cur)?;
             profiles.push(EmbeddedLoftProfileMember {
                 type_code,
-                curve: curve.curve,
+                curve,
                 endpoints: None,
                 data,
             });
         }
-        let path = decode_curve_block(span, position, int_width)?;
-        position = path.end;
-        let tail = [
-            take_tagged_int(span, &mut position, 0x04, int_width)?,
-            take_tagged_int(span, &mut position, 0x04, int_width)?,
-        ];
+        let (path, path_end) = curve_block(span, cur.pos())?;
+        cur.set_pos(path_end);
+        let tail = [cur.take_long()?, cur.take_long()?];
         EmbeddedSkinSurfaceLayout::Profiles {
             profiles,
-            path: path.curve,
+            path,
             tail,
         }
     };
-    let direction = take_native_vec3(span, &mut position, 0x14)?;
-    let trailing_parameter = take_f64(span, &mut position)?;
-    let formula = decode_law_formula(span, &mut position, int_width)?;
-    let parameter_curve = decode_curve_block(span, position, int_width)?;
-    position = parameter_curve.end;
-    let cache = decode_surface_block(span, position, int_width)?;
-    position = cache.end;
-    let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
+    let direction = cur.take_vector3()?;
+    let trailing_parameter = cur.take_f64()?;
+    let formula = law_formula(&mut cur)?;
+    let (parameter_curve, parameter_curve_end) = curve_block(span, cur.pos())?;
+    cur.set_pos(parameter_curve_end);
+    let (_, cache_end) = surface_block(span, cur.pos())?;
+    cur.set_pos(cache_end);
+    let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
     let discontinuities = [
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
-    let discontinuity_flag = take_bool(span, &mut position)?;
+    let discontinuity_flag = cur.take_bool()?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Skin(Box::new(EmbeddedSkinSurface {
             surface_boolean,
@@ -2330,7 +2063,7 @@ fn decode_skin_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
             direction: Vector3::new(direction[0], direction[1], direction[2]),
             trailing_parameter,
             formula,
-            parameter_curve: parameter_curve.curve,
+            parameter_curve,
             discontinuities,
             discontinuity_flag,
         })),
@@ -2338,64 +2071,48 @@ fn decode_skin_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
     })
 }
 
-pub(crate) fn decode_law_spl_sur(
-    record_bytes: &[u8],
-    int_width: usize,
-) -> Option<DecodedProceduralSurface> {
-    let names: [&[u8]; 2] = [b"law_spl_sur", b"lawsur"];
-    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name.len() + 3;
-    let parameter_ranges = if span.get(position) == Some(&0x06) {
+pub(crate) fn law_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
+    let names = ["law_spl_sur", "lawsur"];
+    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
+    let parameter_ranges = if matches!(cur.peek(), Some(Token::Double(_))) {
         Some([
-            [
-                take_f64(span, &mut position)?,
-                take_f64(span, &mut position)?,
-            ],
-            [
-                take_f64(span, &mut position)?,
-                take_f64(span, &mut position)?,
-            ],
+            [cur.take_f64()?, cur.take_f64()?],
+            [cur.take_f64()?, cur.take_f64()?],
         ])
     } else {
         None
     };
-    let primary = decode_law_formula(span, &mut position, int_width)?;
-    let count = usize::try_from(take_tagged_int(span, &mut position, 0x04, int_width)?).ok()?;
+    let primary = law_formula(&mut cur)?;
+    let count = usize::try_from(cur.take_long()?).ok()?;
     if count > 100_000 {
         return None;
     }
     let additional = (0..count)
-        .map(|_| decode_law_formula(span, &mut position, int_width))
+        .map(|_| law_formula(&mut cur))
         .collect::<Option<Vec<_>>>()?;
-    let selector = if parameter_ranges.is_some() && span.get(position..)?.starts_with(NUBS_MARKER) {
+    let selector = if parameter_ranges.is_some()
+        && toks::marker_at(span, cur.pos()) == Some(toks::BsplineMarker::Nubs)
+    {
         0
     } else {
-        take_tagged_int(span, &mut position, 0x15, int_width)?
+        cur.take_enum()?
     };
     let (tail, cache_fit_tolerance) = match selector {
         0 => {
-            let cache = decode_surface_block(span, position, int_width)?;
-            position = cache.end;
+            let (_, cache_end) = surface_block(span, cur.pos())?;
+            cur.set_pos(cache_end);
             (
                 cadmpeg_ir::geometry::LawSurfaceTail::Full,
-                Some(take_f64(span, &mut position)? * LEN_TO_MM),
+                Some(cur.take_f64()? * LEN_TO_MM),
             )
         }
         1 => {
-            let parameters = [
-                take_float_array(span, &mut position, int_width)?,
-                take_float_array(span, &mut position, int_width)?,
-            ];
-            let fit_tolerance = take_f64(span, &mut position)? * LEN_TO_MM;
-            let closures = [
-                take_tagged_int(span, &mut position, 0x15, int_width)?,
-                take_tagged_int(span, &mut position, 0x15, int_width)?,
-            ];
-            let singularities = [
-                take_tagged_int(span, &mut position, 0x15, int_width)?,
-                take_tagged_int(span, &mut position, 0x15, int_width)?,
-            ];
+            let parameters = [cur.take_float_array()?, cur.take_float_array()?];
+            let fit_tolerance = cur.take_f64()? * LEN_TO_MM;
+            let closures = [cur.take_enum()?, cur.take_enum()?];
+            let singularities = [cur.take_enum()?, cur.take_enum()?];
             (
                 cadmpeg_ir::geometry::LawSurfaceTail::Summary {
                     parameters,
@@ -2408,23 +2125,11 @@ pub(crate) fn decode_law_spl_sur(
         }
         2 => {
             let parameter_ranges = [
-                [
-                    take_f64(span, &mut position)?,
-                    take_f64(span, &mut position)?,
-                ],
-                [
-                    take_f64(span, &mut position)?,
-                    take_f64(span, &mut position)?,
-                ],
+                [cur.take_f64()?, cur.take_f64()?],
+                [cur.take_f64()?, cur.take_f64()?],
             ];
-            let closures = [
-                take_tagged_int(span, &mut position, 0x15, int_width)?,
-                take_tagged_int(span, &mut position, 0x15, int_width)?,
-            ];
-            let singularities = [
-                take_tagged_int(span, &mut position, 0x15, int_width)?,
-                take_tagged_int(span, &mut position, 0x15, int_width)?,
-            ];
+            let closures = [cur.take_enum()?, cur.take_enum()?];
+            let singularities = [cur.take_enum()?, cur.take_enum()?];
             (
                 cadmpeg_ir::geometry::LawSurfaceTail::None {
                     parameter_ranges,
@@ -2439,12 +2144,12 @@ pub(crate) fn decode_law_spl_sur(
         _ => return None,
     };
     let discontinuities = [
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Law(Box::new(EmbeddedLawSurface {
@@ -2458,25 +2163,16 @@ pub(crate) fn decode_law_spl_sur(
     })
 }
 
-pub(crate) fn decode_sub_spl_sur(
-    record_bytes: &[u8],
-    int_width: usize,
-) -> Option<DecodedProceduralSurface> {
-    let names: [&[u8]; 2] = [b"sub_spl_sur", b"subsur"];
-    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name.len() + 3;
+pub(crate) fn sub_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
+    let names = ["sub_spl_sur", "subsur"];
+    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
     let parameter_ranges = [
-        [
-            take_f64(span, &mut position)?,
-            take_f64(span, &mut position)?,
-        ],
-        [
-            take_f64(span, &mut position)?,
-            take_f64(span, &mut position)?,
-        ],
+        [cur.take_f64()?, cur.take_f64()?],
+        [cur.take_f64()?, cur.take_f64()?],
     ];
-    let support = decode_embedded_surface(span, &mut position, int_width)?;
+    let support = embedded_surface(&mut cur)?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::SubSurface {
             support,
@@ -2486,42 +2182,39 @@ pub(crate) fn decode_sub_spl_sur(
     })
 }
 
-fn decode_net_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
-    let names: [&[u8]; 2] = [b"net_spl_sur", b"netsur"];
-    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name.len() + 3;
-    let sections = Box::new([
-        decode_loft_section(span, &mut position, int_width)?,
-        decode_loft_section(span, &mut position, int_width)?,
-    ]);
+fn net_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
+    let names = ["net_spl_sur", "netsur"];
+    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
+    let sections = Box::new([loft_section(&mut cur)?, loft_section(&mut cur)?]);
     let mut frame_parameters = [0.0; 12];
     for parameter in &mut frame_parameters {
-        *parameter = take_f64(span, &mut position)?;
+        *parameter = cur.take_f64()?;
     }
-    let flag = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let flag = cur.take_long()?;
     let mut directions = [Vector3::new(0.0, 0.0, 0.0); 4];
     for direction in &mut directions {
-        let value = take_native_vec3(span, &mut position, 0x14)?;
+        let value = cur.take_vector3()?;
         *direction = Vector3::new(value[0], value[1], value[2]);
     }
     let formulas = (0..4)
-        .map(|_| decode_law_formula(span, &mut position, int_width))
+        .map(|_| law_formula(&mut cur))
         .collect::<Option<Vec<_>>>()?
         .try_into()
         .ok()?;
-    let cache = decode_surface_block(span, position, int_width)?;
-    position = cache.end;
-    let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
+    let (_, cache_end) = surface_block(span, cur.pos())?;
+    cur.set_pos(cache_end);
+    let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
     let discontinuities = [
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
-    let discontinuity_flag = take_bool(span, &mut position)?;
+    let discontinuity_flag = cur.take_bool()?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Net(Box::new(EmbeddedNetSurface {
             sections,
@@ -2536,46 +2229,44 @@ fn decode_net_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedPr
     })
 }
 
-fn decode_sweep_spl_sur(
-    record_bytes: &[u8],
-    int_width: usize,
-    resolver: Option<(&[u8], &SubtypeTables)>,
+fn sweep_spl_sur(
+    toks: &[Token],
+    resolver: Option<&SubtypeTable>,
 ) -> Option<DecodedProceduralSurface> {
-    let names: [&[u8]; 3] = [b"sweep_spl_sur", b"sweep_sur", b"sweepsur"];
-    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
-    let name_len = name.len();
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name_len + 3;
-    if span.get(position) == Some(&0x04) {
+    let names = ["sweep_spl_sur", "sweep_sur", "sweepsur"];
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
+    if matches!(cur.peek(), Some(Token::Long(_))) {
         // Only `sweep_sur` stores the revision-gated layout.
-        (name == b"sweep_sur".as_slice()).then_some(())?;
-        return decode_revision_sweep_sur(span, position, int_width, resolver?);
+        (name == "sweep_sur").then_some(())?;
+        return revision_sweep_sur(span, cur.pos(), resolver?);
     }
-    let primary_kind = take_tagged_int(span, &mut position, 0x15, int_width)?;
-    let layout = if matches!(span.get(position), Some(0x0d | 0x0e)) {
-        let profile = decode_curve_block(span, position, int_width)?;
-        position = profile.end;
-        let spine = decode_curve_block(span, position, int_width)?;
-        position = spine.end;
-        let secondary_kind = take_tagged_int(span, &mut position, 0x15, int_width)?;
+    let primary_kind = cur.take_enum()?;
+    let layout = if cur.peek().is_some_and(Token::is_payload_ident) {
+        let (profile, profile_end) = curve_block(span, cur.pos())?;
+        cur.set_pos(profile_end);
+        let (spine, spine_end) = curve_block(span, cur.pos())?;
+        cur.set_pos(spine_end);
+        let secondary_kind = cur.take_enum()?;
         let mut directions = [Vector3::new(0.0, 0.0, 0.0); 5];
         for direction in &mut directions {
-            let value = take_native_vec3(span, &mut position, 0x14)?;
+            let value = cur.take_vector3()?;
             *direction = Vector3::new(value[0], value[1], value[2]);
         }
-        let origin = take_native_vec3(span, &mut position, 0x13)?;
+        let origin = cur.take_position()?;
         let mut parameters = [0.0; 4];
         for parameter in &mut parameters {
-            *parameter = take_f64(span, &mut position)?;
+            *parameter = cur.take_f64()?;
         }
         let formulas = (0..3)
-            .map(|_| decode_law_formula(span, &mut position, int_width))
+            .map(|_| law_formula(&mut cur))
             .collect::<Option<Vec<_>>>()?
             .try_into()
             .ok()?;
         EmbeddedSweepSurfaceLayout::ProfileFirst {
-            profile: profile.curve,
-            spine: spine.curve,
+            profile,
+            spine,
             secondary_kind,
             directions,
             origin: Point3::new(
@@ -2587,16 +2278,13 @@ fn decode_sweep_spl_sur(
             formulas: Box::new(formulas),
         }
     } else {
-        let mode = take_tagged_int(span, &mut position, 0x04, int_width)?;
-        let profile = decode_curve_block(span, position, int_width)?;
-        position = profile.end;
-        let profile_range = [
-            take_f64(span, &mut position)?,
-            take_f64(span, &mut position)?,
-        ];
-        let profile_frame = if take_bool(span, &mut position)? {
-            let point = take_native_vec3(span, &mut position, 0x13)?;
-            let vector = take_native_vec3(span, &mut position, 0x14)?;
+        let mode = cur.take_long()?;
+        let (profile, profile_end) = curve_block(span, cur.pos())?;
+        cur.set_pos(profile_end);
+        let profile_range = [cur.take_f64()?, cur.take_f64()?];
+        let profile_frame = if cur.take_bool()? {
+            let point = cur.take_position()?;
+            let vector = cur.take_vector3()?;
             Some((
                 Point3::new(
                     point[0] * LEN_TO_MM,
@@ -2608,7 +2296,7 @@ fn decode_sweep_spl_sur(
         } else {
             None
         };
-        let point = take_native_vec3(span, &mut position, 0x13)?;
+        let point = cur.take_position()?;
         let origin = Point3::new(
             point[0] * LEN_TO_MM,
             point[1] * LEN_TO_MM,
@@ -2616,33 +2304,30 @@ fn decode_sweep_spl_sur(
         );
         let mut directions = [Vector3::new(0.0, 0.0, 0.0); 3];
         for direction in &mut directions {
-            let value = take_native_vec3(span, &mut position, 0x14)?;
+            let value = cur.take_vector3()?;
             *direction = Vector3::new(value[0], value[1], value[2]);
         }
-        if span.get(position) == Some(&0x04) {
-            let branch = take_tagged_int(span, &mut position, 0x04, int_width)?;
-            let trajectory_flag = take_bool(span, &mut position)?;
-            let path = decode_curve_block(span, position, int_width)?;
-            position = path.end;
-            let path_range = [
-                take_f64(span, &mut position)? * LEN_TO_MM,
-                take_f64(span, &mut position)? * LEN_TO_MM,
-            ];
-            let path_parameter = take_f64(span, &mut position)?;
+        if matches!(cur.peek(), Some(Token::Long(_))) {
+            let branch = cur.take_long()?;
+            let trajectory_flag = cur.take_bool()?;
+            let (path, path_end) = curve_block(span, cur.pos())?;
+            cur.set_pos(path_end);
+            let path_range = [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM];
+            let path_parameter = cur.take_f64()?;
             match branch {
                 1 => {
-                    let formula_flag = take_bool(span, &mut position)?;
-                    let formula = decode_law_formula(span, &mut position, int_width)?;
-                    let trailing_flag = take_bool(span, &mut position)?;
+                    let formula_flag = cur.take_bool()?;
+                    let formula = law_formula(&mut cur)?;
+                    let trailing_flag = cur.take_bool()?;
                     EmbeddedSweepSurfaceLayout::ExplicitFormula {
-                        profile: profile.curve,
+                        profile,
                         mode,
                         profile_range,
                         profile_frame,
                         origin,
                         directions,
                         trajectory_flag,
-                        path: path.curve,
+                        path,
                         path_range,
                         path_parameter,
                         formula_flag,
@@ -2651,42 +2336,29 @@ fn decode_sweep_spl_sur(
                     }
                 }
                 2 => {
-                    let guide_flags = [
-                        take_bool(span, &mut position)?,
-                        take_bool(span, &mut position)?,
-                    ];
-                    let guide_curve = decode_curve_block(span, position, int_width)?;
-                    position = guide_curve.end;
-                    let guide_range = [
-                        take_f64(span, &mut position)?,
-                        take_f64(span, &mut position)?,
-                    ];
-                    let guide_modes = [
-                        take_tagged_int(span, &mut position, 0x04, int_width)?,
-                        take_tagged_int(span, &mut position, 0x04, int_width)?,
-                    ];
+                    let guide_flags = [cur.take_bool()?, cur.take_bool()?];
+                    let (guide_curve, guide_end) = curve_block(span, cur.pos())?;
+                    cur.set_pos(guide_end);
+                    let guide_range = [cur.take_f64()?, cur.take_f64()?];
+                    let guide_modes = [cur.take_long()?, cur.take_long()?];
                     let mut guide_parameters = [0.0; 6];
                     for parameter in &mut guide_parameters {
-                        *parameter = take_f64(span, &mut position)?;
+                        *parameter = cur.take_f64()?;
                     }
-                    let trailing_flags = [
-                        take_bool(span, &mut position)?,
-                        take_bool(span, &mut position)?,
-                        take_bool(span, &mut position)?,
-                    ];
+                    let trailing_flags = [cur.take_bool()?, cur.take_bool()?, cur.take_bool()?];
                     EmbeddedSweepSurfaceLayout::ExplicitGuide {
-                        profile: profile.curve,
+                        profile,
                         mode,
                         profile_range,
                         profile_frame,
                         origin,
                         directions,
                         trajectory_flag,
-                        path: path.curve,
+                        path,
                         path_range,
                         path_parameter,
                         guide_flags,
-                        guide_curve: guide_curve.curve,
+                        guide_curve,
                         guide_range,
                         guide_modes,
                         guide_parameters,
@@ -2694,28 +2366,28 @@ fn decode_sweep_spl_sur(
                     }
                 }
                 3 => {
-                    let singularity = take_tagged_int(span, &mut position, 0x15, int_width)?;
-                    let support_surface = decode_embedded_surface(span, &mut position, int_width)?;
-                    let auxiliary_curve = if take_bool(span, &mut position)? {
-                        let curve = decode_curve_block(span, position, int_width)?;
-                        position = curve.end;
-                        Some(curve.curve)
+                    let singularity = cur.take_enum()?;
+                    let support_surface = embedded_surface(&mut cur)?;
+                    let auxiliary_curve = if cur.take_bool()? {
+                        let (curve, curve_end) = curve_block(span, cur.pos())?;
+                        cur.set_pos(curve_end);
+                        Some(curve)
                     } else {
                         None
                     };
-                    let support_flag = take_bool(span, &mut position)?;
-                    let legacy_flag = matches!(span.get(position), Some(0x0a | 0x0b))
-                        .then(|| take_bool(span, &mut position))
+                    let support_flag = cur.take_bool()?;
+                    let legacy_flag = matches!(cur.peek(), Some(Token::True | Token::False))
+                        .then(|| cur.take_bool())
                         .flatten();
                     EmbeddedSweepSurfaceLayout::ExplicitSurface {
-                        profile: profile.curve,
+                        profile,
                         mode,
                         profile_range,
                         profile_frame,
                         origin,
                         directions,
                         trajectory_flag,
-                        path: path.curve,
+                        path,
                         path_range,
                         path_parameter,
                         singularity,
@@ -2728,30 +2400,24 @@ fn decode_sweep_spl_sur(
                 _ => return None,
             }
         } else {
-            let first_law = decode_law_expression(span, &mut position, int_width, 0)?;
-            let first_mode = take_tagged_int(span, &mut position, 0x04, int_width)?;
-            let first_range = [
-                take_f64(span, &mut position)?,
-                take_f64(span, &mut position)?,
-            ];
-            let vector = take_native_vec3(span, &mut position, 0x14)?;
+            let first_law = law_expression(&mut cur, 0)?;
+            let first_mode = cur.take_long()?;
+            let first_range = [cur.take_f64()?, cur.take_f64()?];
+            let vector = cur.take_vector3()?;
             let law_direction = Vector3::new(vector[0], vector[1], vector[2]);
-            let path_mode = take_tagged_int(span, &mut position, 0x04, int_width)?;
-            let path_flag = take_bool(span, &mut position)?;
-            let path = decode_curve_block(span, position, int_width)?;
-            position = path.end;
-            let path_range = [
-                take_f64(span, &mut position)?,
-                take_f64(span, &mut position)?,
-            ];
-            let path_parameter = take_f64(span, &mut position)?;
-            let second_law_flag = take_bool(span, &mut position)?;
-            let second_law = decode_law_expression(span, &mut position, int_width, 0)?;
-            let formula_mode = take_tagged_int(span, &mut position, 0x04, int_width)?;
-            let formula = decode_law_formula(span, &mut position, int_width)?;
-            let trailing_flag = take_bool(span, &mut position)?;
+            let path_mode = cur.take_long()?;
+            let path_flag = cur.take_bool()?;
+            let (path, path_end) = curve_block(span, cur.pos())?;
+            cur.set_pos(path_end);
+            let path_range = [cur.take_f64()?, cur.take_f64()?];
+            let path_parameter = cur.take_f64()?;
+            let second_law_flag = cur.take_bool()?;
+            let second_law = law_expression(&mut cur, 0)?;
+            let formula_mode = cur.take_long()?;
+            let formula = law_formula(&mut cur)?;
+            let trailing_flag = cur.take_bool()?;
             EmbeddedSweepSurfaceLayout::LawDriven {
-                profile: profile.curve,
+                profile,
                 mode,
                 profile_range,
                 profile_frame,
@@ -2763,7 +2429,7 @@ fn decode_sweep_spl_sur(
                 law_direction,
                 path_mode,
                 path_flag,
-                path: path.curve,
+                path,
                 path_range,
                 path_parameter,
                 second_law_flag,
@@ -2774,18 +2440,18 @@ fn decode_sweep_spl_sur(
             }
         }
     };
-    let cache = decode_surface_block(span, position, int_width)?;
-    position = cache.end;
-    let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
+    let (_, cache_end) = surface_block(span, cur.pos())?;
+    cur.set_pos(cache_end);
+    let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
     let discontinuities = [
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
-    let discontinuity_flag = take_bool(span, &mut position)?;
+    let discontinuity_flag = cur.take_bool()?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Sweep(Box::new(EmbeddedSweepSurface {
             primary_kind,
@@ -2799,34 +2465,28 @@ fn decode_sweep_spl_sur(
 }
 
 /// Revision-gated `sweep_sur` explicit-formula layout.
-fn decode_revision_sweep_sur(
-    span: &[u8],
-    mut position: usize,
-    int_width: usize,
-    (active_bytes, tables): (&[u8], &SubtypeTables),
+fn revision_sweep_sur(
+    span: &[Token],
+    position: usize,
+    table: &SubtypeTable,
 ) -> Option<DecodedProceduralSurface> {
-    let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let mut cur = Cur::at(span, position);
+    let revision = cur.take_long()?;
     (revision > 0).then_some(())?;
-    let primary_flag = take_bool(span, &mut position)?;
-    let mode = take_tagged_int(span, &mut position, 0x04, int_width)?;
-    let profile = decode_embedded_base_curve_resolving_refs(
-        span,
-        &mut position,
-        int_width,
-        active_bytes,
-        tables,
-    )?;
+    let primary_flag = cur.take_bool()?;
+    let mode = cur.take_long()?;
+    let profile = embedded_base_curve_resolving_refs(&mut cur, table)?;
     let profile_endpoints = [
-        take_optional_range_value(span, &mut position)?,
-        take_optional_range_value(span, &mut position)?,
+        cur.take_optional_range_value()?,
+        cur.take_optional_range_value()?,
     ];
     let profile_range = [
-        take_optional_range_value(span, &mut position)??,
-        take_optional_range_value(span, &mut position)??,
+        cur.take_optional_range_value()??,
+        cur.take_optional_range_value()??,
     ];
-    let profile_frame = if take_bool(span, &mut position)? {
-        let point = take_native_vec3(span, &mut position, 0x13)?;
-        let vector = take_native_vec3(span, &mut position, 0x14)?;
+    let profile_frame = if cur.take_bool()? {
+        let point = cur.take_position()?;
+        let vector = cur.take_vector3()?;
         Some((
             Point3::new(
                 point[0] * LEN_TO_MM,
@@ -2838,7 +2498,7 @@ fn decode_revision_sweep_sur(
     } else {
         None
     };
-    let point = take_native_vec3(span, &mut position, 0x13)?;
+    let point = cur.take_position()?;
     let origin = Point3::new(
         point[0] * LEN_TO_MM,
         point[1] * LEN_TO_MM,
@@ -2846,44 +2506,37 @@ fn decode_revision_sweep_sur(
     );
     let mut directions = [Vector3::new(0.0, 0.0, 0.0); 3];
     for direction in &mut directions {
-        let value = take_native_vec3(span, &mut position, 0x14)?;
+        let value = cur.take_vector3()?;
         *direction = Vector3::new(value[0], value[1], value[2]);
     }
-    (take_tagged_int(span, &mut position, 0x04, int_width)? == 1).then_some(())?;
-    let trajectory_flag = take_bool(span, &mut position)?;
-    let path = decode_embedded_base_curve_resolving_refs(
-        span,
-        &mut position,
-        int_width,
-        active_bytes,
-        tables,
-    )?;
+    (cur.take_long()? == 1).then_some(())?;
+    let trajectory_flag = cur.take_bool()?;
+    let path = embedded_base_curve_resolving_refs(&mut cur, table)?;
     let path_endpoints = [
-        take_optional_range_value(span, &mut position)?,
-        take_optional_range_value(span, &mut position)?,
+        cur.take_optional_range_value()?,
+        cur.take_optional_range_value()?,
     ];
     let path_range = [
-        take_optional_range_value(span, &mut position)?? * LEN_TO_MM,
-        take_optional_range_value(span, &mut position)?? * LEN_TO_MM,
+        cur.take_optional_range_value()?? * LEN_TO_MM,
+        cur.take_optional_range_value()?? * LEN_TO_MM,
     ];
-    let path_parameter = take_f64(span, &mut position)?;
-    let formula_flag = take_bool(span, &mut position)?;
-    let formula =
-        decode_law_formula_resolving(span, &mut position, int_width, Some((active_bytes, tables)))?;
-    let trailing_flag = take_bool(span, &mut position)?;
-    let tail_enum = take_tagged_int(span, &mut position, 0x15, int_width)?;
-    let cache = decode_surface_block(span, position, int_width)?;
-    position = cache.end;
-    let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
+    let path_parameter = cur.take_f64()?;
+    let formula_flag = cur.take_bool()?;
+    let formula = law_formula_resolving(&mut cur, Some(table))?;
+    let trailing_flag = cur.take_bool()?;
+    let tail_enum = cur.take_enum()?;
+    let (_, cache_end) = surface_block(span, cur.pos())?;
+    cur.set_pos(cache_end);
+    let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
     let discontinuities = [
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
-    let discontinuity_flag = take_bool(span, &mut position)?;
+    let discontinuity_flag = cur.take_bool()?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Sweep(Box::new(EmbeddedSweepSurface {
             primary_kind: 0,
@@ -2916,70 +2569,56 @@ fn decode_revision_sweep_sur(
     })
 }
 
-fn decode_taper_spl_sur(
-    record_bytes: &[u8],
-    int_width: usize,
-    resolver: Option<(&[u8], &SubtypeTables)>,
+fn taper_spl_sur(
+    toks: &[Token],
+    resolver: Option<&SubtypeTable>,
 ) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::TaperSurfaceKind;
-    let names: &[(&[u8], u8)] = &[
-        (b"taper_spl_sur", 0),
-        (b"ortho_spl_sur", 1),
-        (b"orthosur", 1),
-        (b"edge_tpr_spl_sur", 2),
-        (b"shadow_tpr_spl_sur", 3),
-        (b"shadowtapersur", 3),
-        (b"ruled_tpr_spl_sur", 4),
-        (b"ruledtapersur", 4),
-        (b"swept_tpr_spl_sur", 5),
-        (b"swepttapersur", 5),
+    let names: &[(&str, u8)] = &[
+        ("taper_spl_sur", 0),
+        ("ortho_spl_sur", 1),
+        ("orthosur", 1),
+        ("edge_tpr_spl_sur", 2),
+        ("shadow_tpr_spl_sur", 3),
+        ("shadowtapersur", 3),
+        ("ruled_tpr_spl_sur", 4),
+        ("ruledtapersur", 4),
+        ("swept_tpr_spl_sur", 5),
+        ("swepttapersur", 5),
     ];
-    let candidates: Vec<&[u8]> = names.iter().map(|(name, _)| *name).collect();
-    let (start, name) = find_owned_subtype_marker(record_bytes, &candidates, int_width)?;
+    let candidates: Vec<&str> = names.iter().map(|(name, _)| *name).collect();
+    let (start, name) = toks::find_owned_subtype_marker(toks, &candidates)?;
     let kind = names
         .iter()
         .find_map(|(candidate, kind)| (*candidate == name).then_some(*kind))?;
-    let name_len = name.len();
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name_len + 3;
-    if span.get(position) == Some(&0x04) {
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
+    if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated form, stored by the orthogonal subtype's modern name.
-        (name == b"ortho_spl_sur".as_slice()).then_some(())?;
-        let (active_bytes, tables) = resolver?;
-        let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        (name == "ortho_spl_sur").then_some(())?;
+        let table = resolver?;
+        let revision = cur.take_long()?;
         (revision > 0).then_some(())?;
-        let (support, support_bounds) = decode_optional_embedded_surface_with_bounds(
-            span,
-            &mut position,
-            int_width,
-            active_bytes,
-            tables,
-        )?;
+        let (support, support_bounds) = optional_embedded_surface_with_bounds(&mut cur, table)?;
         let support = support?;
-        let reference = decode_embedded_base_curve_resolving_refs(
-            span,
-            &mut position,
-            int_width,
-            active_bytes,
-            tables,
-        )?;
+        let reference = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let reference_endpoints = [
-            take_optional_range_value(span, &mut position)?,
-            take_optional_range_value(span, &mut position)?,
+            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?,
         ];
-        let pcurve = decode_nullable_embedded_pcurve(span, &mut position, int_width)?;
-        let parameter = take_f64(span, &mut position)?;
+        let pcurve = nullable_embedded_pcurve(&mut cur)?;
+        let parameter = cur.take_f64()?;
         let RevisionSurfaceTail {
             enumeration: tail_enum,
             fit_tolerance,
             parameterization,
             discontinuities,
             tail_flag,
-        } = decode_revision_surface_tail(span, &mut position, int_width)?;
+        } = revision_surface_tail(&mut cur)?;
         // The single trailing logical after the shared tail is the record's own
         // orthogonal-sense field, positionally matching the text form's single
         // boolean. `tail_flag` above is the shared-tail illegal-region flag.
-        let sense = take_bool(span, &mut position)?;
+        let sense = cur.take_bool()?;
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::Taper {
                 support,
@@ -3003,61 +2642,62 @@ fn decode_taper_spl_sur(
             cache_fit_tolerance: fit_tolerance,
         });
     }
-    let support = decode_embedded_surface(span, &mut position, int_width)?;
-    let reference = decode_curve_block(span, position, int_width)?;
-    position = reference.end;
-    let saved = position;
-    let pcurve = if take_native_ident(span, &mut position).as_deref() == Some("nullbs") {
+    let support = embedded_surface(&mut cur)?;
+    let (reference, reference_end) = curve_block(span, cur.pos())?;
+    cur.set_pos(reference_end);
+    let saved = cur.pos();
+    let pcurve = if cur.take_ident() == Some("nullbs") {
         None
     } else {
-        position = saved;
-        let (pcurve, end) = decode_pcurve_block_with_end(span, position, int_width)?;
-        position = end;
+        cur.set_pos(saved);
+        let (pcurve, end) = pcurve_block_with_end(span, cur.pos())?;
+        cur.set_pos(end);
         Some(pcurve)
     };
-    let parameter = take_f64(span, &mut position)?;
-    let cache = marker_positions(span)
+    let parameter = cur.take_f64()?;
+    let (_, cache_end) = toks::marker_positions(span)
         .into_iter()
-        .filter_map(|at| decode_surface_block(span, at, int_width))
+        .filter_map(|at| surface_block(span, at))
         .next_back()?;
-    let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
-        .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
-        .flatten();
-    position = cache.end + usize::from(cache_fit_tolerance.is_some()) * 9;
-    let take_draft = |position: &mut usize| {
-        let draft = take_native_vec3(span, position, 0x14)?;
+    let cache_fit_tolerance = match span.get(cache_end) {
+        Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
+        _ => None,
+    };
+    cur.set_pos(cache_end + usize::from(cache_fit_tolerance.is_some()));
+    let take_draft = |cur: &mut Cur<'_>| {
+        let draft = cur.take_vector3()?;
         Some(Vector3::new(draft[0], draft[1], draft[2]))
     };
     let taper = match kind {
         0 => TaperSurfaceKind::Standard,
         1 => TaperSurfaceKind::Orthogonal {
-            sense: take_bool(span, &mut position)?,
+            sense: cur.take_bool()?,
         },
         2 => TaperSurfaceKind::Edge {
-            draft: take_draft(&mut position)?,
+            draft: take_draft(&mut cur)?,
         },
         3 => TaperSurfaceKind::Shadow {
-            draft: take_draft(&mut position)?,
-            sine: take_f64(span, &mut position)?,
-            cosine: take_f64(span, &mut position)?,
+            draft: take_draft(&mut cur)?,
+            sine: cur.take_f64()?,
+            cosine: cur.take_f64()?,
         },
         4 => TaperSurfaceKind::Ruled {
-            draft: take_draft(&mut position)?,
-            sine: take_f64(span, &mut position)?,
-            cosine: take_f64(span, &mut position)?,
-            factor: take_f64(span, &mut position)?,
+            draft: take_draft(&mut cur)?,
+            sine: cur.take_f64()?,
+            cosine: cur.take_f64()?,
+            factor: cur.take_f64()?,
         },
         5 => TaperSurfaceKind::Swept {
-            draft: take_draft(&mut position)?,
-            sine: take_f64(span, &mut position)?,
-            cosine: take_f64(span, &mut position)?,
+            draft: take_draft(&mut cur)?,
+            sine: cur.take_f64()?,
+            cosine: cur.take_f64()?,
         },
         _ => return None,
     };
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Taper {
             support,
-            reference: reference.curve,
+            reference,
             pcurve,
             parameter,
             taper,
@@ -3067,21 +2707,21 @@ fn decode_taper_spl_sur(
     })
 }
 
-fn decode_comp_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
-    let (start, _) =
-        find_owned_subtype_marker(record_bytes, &[b"comp_spl_sur".as_slice()], int_width)?;
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let cache = marker_positions(span)
+fn comp_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
+    let (start, _) = toks::find_owned_subtype_marker(toks, &["comp_spl_sur"])?;
+    let span = toks::subtype_span(toks, start)?;
+    let (_, cache_end) = toks::marker_positions(span)
         .into_iter()
-        .find_map(|at| decode_surface_block(span, at, int_width))?;
-    let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
-        .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
-        .flatten();
-    let mut position = cache.end + usize::from(cache_fit_tolerance.is_some()) * 9;
-    let parameters = take_float_array(span, &mut position, int_width)?;
+        .find_map(|at| surface_block(span, at))?;
+    let cache_fit_tolerance = match span.get(cache_end) {
+        Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
+        _ => None,
+    };
+    let mut cur = Cur::at(span, cache_end + usize::from(cache_fit_tolerance.is_some()));
+    let parameters = cur.take_float_array()?;
     let mut components = Vec::with_capacity(parameters.len());
     for _ in 0..parameters.len() {
-        components.push(decode_embedded_surface(span, &mut position, int_width)?);
+        components.push(embedded_surface(&mut cur)?);
     }
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Compound {
@@ -3116,50 +2756,46 @@ pub(crate) struct RevisionSurfaceTail {
 /// counted discontinuity arrays and one boolean. Other values have no defined
 /// grammar; they fail so the containing record is retained verbatim through the
 /// native-preservation path rather than misparsed.
-pub(crate) fn decode_revision_surface_tail(
-    span: &[u8],
-    position: &mut usize,
-    int_width: usize,
-) -> Option<RevisionSurfaceTail> {
-    let enumeration = take_tagged_int(span, position, 0x15, int_width)?;
+pub(crate) fn revision_surface_tail(cur: &mut Cur<'_>) -> Option<RevisionSurfaceTail> {
+    let enumeration = cur.take_enum()?;
     let (fit_tolerance, parameterization) = match enumeration {
         0 => {
-            let cache = decode_surface_block(span, *position, int_width)?;
-            *position = cache.end;
-            (Some(take_f64(span, position)? * LEN_TO_MM), None)
+            let (_, cache_end) = surface_block(cur.toks(), cur.pos())?;
+            cur.set_pos(cache_end);
+            (Some(cur.take_f64()? * LEN_TO_MM), None)
         }
         2 => {
             let u_interval = [
-                take_optional_range_value(span, position)?,
-                take_optional_range_value(span, position)?,
+                cur.take_optional_range_value()?,
+                cur.take_optional_range_value()?,
             ];
             let v_interval = [
-                take_optional_range_value(span, position)?,
-                take_optional_range_value(span, position)?,
+                cur.take_optional_range_value()?,
+                cur.take_optional_range_value()?,
             ];
             (
                 None,
                 Some(cadmpeg_ir::geometry::RevisionSurfaceParameterization {
                     u_interval,
                     v_interval,
-                    u_closure: take_tagged_int(span, position, 0x15, int_width)?,
-                    v_closure: take_tagged_int(span, position, 0x15, int_width)?,
-                    u_singularity: take_tagged_int(span, position, 0x15, int_width)?,
-                    v_singularity: take_tagged_int(span, position, 0x15, int_width)?,
+                    u_closure: cur.take_enum()?,
+                    v_closure: cur.take_enum()?,
+                    u_singularity: cur.take_enum()?,
+                    v_singularity: cur.take_enum()?,
                 }),
             )
         }
         _ => return None,
     };
     let discontinuities = [
-        take_float_array(span, position, int_width)?,
-        take_float_array(span, position, int_width)?,
-        take_float_array(span, position, int_width)?,
-        take_float_array(span, position, int_width)?,
-        take_float_array(span, position, int_width)?,
-        take_float_array(span, position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
-    let tail_flag = take_bool(span, position)?;
+    let tail_flag = cur.take_bool()?;
     Some(RevisionSurfaceTail {
         enumeration,
         fit_tolerance,
@@ -3169,32 +2805,24 @@ pub(crate) fn decode_revision_surface_tail(
     })
 }
 
-fn decode_off_spl_sur(
-    record_bytes: &[u8],
-    int_width: usize,
-    resolver: Option<(&[u8], &SubtypeTables)>,
+fn off_spl_sur(
+    toks: &[Token],
+    resolver: Option<&SubtypeTable>,
 ) -> Option<DecodedProceduralSurface> {
-    let names: [&[u8]; 2] = [b"off_spl_sur", b"offsur"];
-    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
-    let name_len = name.len();
-    let modern = name == b"off_spl_sur";
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name_len + 3;
-    if span.get(position) == Some(&0x04) {
+    let names = ["off_spl_sur", "offsur"];
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let modern = name == "off_spl_sur";
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
+    if matches!(cur.peek(), Some(Token::Long(_))) {
         // Only the modern name stores the revision-gated layout.
         modern.then_some(())?;
-        let (active_bytes, tables) = resolver?;
-        let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        let table = resolver?;
+        let revision = cur.take_long()?;
         (revision > 0).then_some(())?;
-        let (support, support_bounds) = decode_optional_embedded_surface_with_bounds(
-            span,
-            &mut position,
-            int_width,
-            active_bytes,
-            tables,
-        )?;
+        let (support, support_bounds) = optional_embedded_surface_with_bounds(&mut cur, table)?;
         let support = support?;
-        let distance = take_f64(span, &mut position)? * LEN_TO_MM;
+        let distance = cur.take_f64()? * LEN_TO_MM;
         // One four-boolean carrier run: the leading pair carrying record-level
         // progenitor orientation state, then the two-boolean ASM extension
         // prefix. The first boolean repeats the support reference's sense flag
@@ -3204,7 +2832,7 @@ fn decode_off_spl_sur(
         // so it travels in the revision form rather than those IR slots.
         let mut flags = Vec::with_capacity(4);
         for _ in 0..4 {
-            flags.push(take_bool(span, &mut position)?);
+            flags.push(cur.take_bool()?);
         }
         let RevisionSurfaceTail {
             enumeration: tail_enum,
@@ -3212,7 +2840,7 @@ fn decode_off_spl_sur(
             parameterization,
             discontinuities,
             tail_flag,
-        } = decode_revision_surface_tail(span, &mut position, int_width)?;
+        } = revision_surface_tail(&mut cur)?;
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::Offset {
                 support,
@@ -3236,28 +2864,29 @@ fn decode_off_spl_sur(
             cache_fit_tolerance: fit_tolerance,
         });
     }
-    let support = decode_embedded_surface(span, &mut position, int_width)?;
-    let distance = take_f64(span, &mut position)? * LEN_TO_MM;
-    let u_sense = Some(take_tagged_int(span, &mut position, 0x15, int_width)?);
-    let v_sense = Some(take_tagged_int(span, &mut position, 0x15, int_width)?);
+    let support = embedded_surface(&mut cur)?;
+    let distance = cur.take_f64()? * LEN_TO_MM;
+    let u_sense = Some(cur.take_enum()?);
+    let v_sense = Some(cur.take_enum()?);
     let mut extension_flags = Vec::new();
     if modern {
-        let first = take_bool(span, &mut position)?;
+        let first = cur.take_bool()?;
         extension_flags.push(first);
         if first {
-            extension_flags.push(take_bool(span, &mut position)?);
-            if matches!(span.get(position), Some(0x0a | 0x0b)) {
-                extension_flags.push(take_bool(span, &mut position)?);
+            extension_flags.push(cur.take_bool()?);
+            if matches!(cur.peek(), Some(Token::True | Token::False)) {
+                extension_flags.push(cur.take_bool()?);
             }
         }
     }
-    let cache = marker_positions(span)
+    let (_, cache_end) = toks::marker_positions(span)
         .into_iter()
-        .filter_map(|at| decode_surface_block(span, at, int_width))
+        .filter_map(|at| surface_block(span, at))
         .next_back()?;
-    let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
-        .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
-        .flatten();
+    let cache_fit_tolerance = match span.get(cache_end) {
+        Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
+        _ => None,
+    };
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Offset {
             support,
@@ -3271,52 +2900,41 @@ fn decode_off_spl_sur(
     })
 }
 
-fn decode_rot_spl_sur(
-    record_bytes: &[u8],
-    int_width: usize,
-    resolver: Option<(&[u8], &SubtypeTables)>,
+fn rot_spl_sur(
+    toks: &[Token],
+    resolver: Option<&SubtypeTable>,
 ) -> Option<DecodedProceduralSurface> {
-    let names: [&[u8]; 2] = [b"rot_spl_sur", b"rotsur"];
-    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
-    let name_len = name.len();
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name_len + 3;
-    if span.get(position) == Some(&0x04) {
+    let names = ["rot_spl_sur", "rotsur"];
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
+    if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated layout: revision integer, profile curve with two
         // optional endpoints, axis origin and direction, shared tail. Only the
         // modern name stores it.
-        (name == b"rot_spl_sur".as_slice()).then_some(())?;
-        let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        (name == "rot_spl_sur").then_some(())?;
+        let revision = cur.take_long()?;
         (revision > 0).then_some(())?;
-        let (active_bytes, tables) = resolver?;
-        let profile = decode_embedded_base_curve_resolving_refs(
-            span,
-            &mut position,
-            int_width,
-            active_bytes,
-            tables,
-        )?;
+        let table = resolver?;
+        let profile = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let profile_endpoints = [
-            take_optional_range_value(span, &mut position)?,
-            take_optional_range_value(span, &mut position)?,
+            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?,
         ];
-        let origin = take_native_vec3(span, &mut position, 0x13)?;
-        let axis = take_native_vec3(span, &mut position, 0x14)?;
+        let origin = cur.take_position()?;
+        let axis = cur.take_vector3()?;
         let RevisionSurfaceTail {
             enumeration: tail_enum,
             fit_tolerance,
             parameterization,
             discontinuities,
             tail_flag,
-        } = decode_revision_surface_tail(span, &mut position, int_width)?;
-        let cache = marker_positions(span)
+        } = revision_surface_tail(&mut cur)?;
+        let cache = toks::marker_positions(span)
             .into_iter()
-            .filter_map(|at| decode_surface_block(span, at, int_width))
+            .filter_map(|at| surface_block(span, at).map(|(surface, _)| surface))
             .next_back()?;
-        let angular_interval = [
-            *cache.surface.v_knots.first()?,
-            *cache.surface.v_knots.last()?,
-        ];
+        let angular_interval = [*cache.v_knots.first()?, *cache.v_knots.last()?];
         let parameter_interval = [
             profile_endpoints[0].unwrap_or(*profile.knots.first()?),
             profile_endpoints[1].unwrap_or(*profile.knots.last()?),
@@ -3348,36 +2966,31 @@ fn decode_rot_spl_sur(
             cache_fit_tolerance: fit_tolerance,
         });
     }
-    let directrix = marker_positions(span)
+    let (directrix, directrix_end) = toks::marker_positions(span)
         .into_iter()
-        .find_map(|at| decode_curve_block(span, at, int_width))?;
-    let parameter_interval = [
-        *directrix.curve.knots.first()?,
-        *directrix.curve.knots.last()?,
-    ];
-    let mut position = directrix.end;
-    let origin = take_native_vec3(span, &mut position, 0x13)?;
+        .find_map(|at| curve_block(span, at))?;
+    let parameter_interval = [*directrix.knots.first()?, *directrix.knots.last()?];
+    let mut cur = Cur::at(span, directrix_end);
+    let origin = cur.take_position()?;
     let axis_origin = Point3::new(
         origin[0] * LEN_TO_MM,
         origin[1] * LEN_TO_MM,
         origin[2] * LEN_TO_MM,
     );
-    let axis = take_native_vec3(span, &mut position, 0x14)?;
+    let axis = cur.take_vector3()?;
     let axis_direction = normalized(axis)?;
-    let cache = marker_positions(span)
+    let (cache, cache_end) = toks::marker_positions(span)
         .into_iter()
-        .filter_map(|at| decode_surface_block(span, at, int_width))
+        .filter_map(|at| surface_block(span, at))
         .next_back()?;
-    let angular_interval = [
-        *cache.surface.v_knots.first()?,
-        *cache.surface.v_knots.last()?,
-    ];
-    let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
-        .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
-        .flatten();
+    let angular_interval = [*cache.v_knots.first()?, *cache.v_knots.last()?];
+    let cache_fit_tolerance = match span.get(cache_end) {
+        Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
+        _ => None,
+    };
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Revolution {
-            directrix: CurveGeometry::Nurbs(directrix.curve),
+            directrix: CurveGeometry::Nurbs(directrix),
             axis_origin,
             axis_direction,
             angular_interval,
@@ -3388,54 +3001,40 @@ fn decode_rot_spl_sur(
     })
 }
 
-fn decode_sum_spl_sur(
-    record_bytes: &[u8],
-    int_width: usize,
-    resolver: Option<(&[u8], &SubtypeTables)>,
+fn sum_spl_sur(
+    toks: &[Token],
+    resolver: Option<&SubtypeTable>,
 ) -> Option<DecodedProceduralSurface> {
-    let names: [&[u8]; 2] = [b"sum_spl_sur", b"sumsur"];
-    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
-    let name_len = name.len();
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name_len + 3;
-    if span.get(position) == Some(&0x04) {
+    let names = ["sum_spl_sur", "sumsur"];
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
+    if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated layout: revision integer, two curves each with two
         // optional endpoints, model-space origin, shared tail. Only the modern
         // name stores it.
-        (name == b"sum_spl_sur".as_slice()).then_some(())?;
-        let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        (name == "sum_spl_sur").then_some(())?;
+        let revision = cur.take_long()?;
         (revision > 0).then_some(())?;
-        let (active_bytes, tables) = resolver?;
-        let first = decode_embedded_base_curve_resolving_refs(
-            span,
-            &mut position,
-            int_width,
-            active_bytes,
-            tables,
-        )?;
+        let table = resolver?;
+        let first = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let first_endpoints = [
-            take_optional_range_value(span, &mut position)?,
-            take_optional_range_value(span, &mut position)?,
+            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?,
         ];
-        let second = decode_embedded_base_curve_resolving_refs(
-            span,
-            &mut position,
-            int_width,
-            active_bytes,
-            tables,
-        )?;
+        let second = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let second_endpoints = [
-            take_optional_range_value(span, &mut position)?,
-            take_optional_range_value(span, &mut position)?,
+            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?,
         ];
-        let origin = take_native_vec3(span, &mut position, 0x13)?;
+        let origin = cur.take_position()?;
         let RevisionSurfaceTail {
             enumeration: tail_enum,
             fit_tolerance,
             parameterization,
             discontinuities,
             tail_flag,
-        } = decode_revision_surface_tail(span, &mut position, int_width)?;
+        } = revision_surface_tail(&mut cur)?;
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::Sum {
                 first: CurveGeometry::Nurbs(first),
@@ -3461,31 +3060,30 @@ fn decode_sum_spl_sur(
             cache_fit_tolerance: fit_tolerance,
         });
     }
-    let mut decoded_curves = marker_positions(span)
+    let mut decoded_curves = toks::marker_positions(span)
         .into_iter()
-        .filter_map(|at| decode_curve_block(span, at, int_width));
+        .filter_map(|at| curve_block(span, at));
     let first = decoded_curves.next()?;
-    let second = decoded_curves.next()?;
-    let mut position = second.end;
-    let origin = take_native_vec3(span, &mut position, 0x13)?;
+    let (second, second_end) = decoded_curves.next()?;
+    let mut cur = Cur::at(span, second_end);
+    let origin = cur.take_position()?;
     let basepoint = Vector3::new(
         origin[0] * LEN_TO_MM,
         origin[1] * LEN_TO_MM,
         origin[2] * LEN_TO_MM,
     );
-    let cache = marker_positions(span)
+    let cache = toks::marker_positions(span)
         .into_iter()
-        .filter_map(|at| decode_surface_block(span, at, int_width))
+        .filter_map(|at| surface_block(span, at))
         .next_back();
-    let cache_fit_tolerance = cache.and_then(|cache| {
-        (span.get(cache.end) == Some(&0x06))
-            .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
-            .flatten()
+    let cache_fit_tolerance = cache.and_then(|(_, cache_end)| match span.get(cache_end) {
+        Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
+        _ => None,
     });
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Sum {
-            first: CurveGeometry::Nurbs(first.curve),
-            second: CurveGeometry::Nurbs(second.curve),
+            first: CurveGeometry::Nurbs(first.0),
+            second: CurveGeometry::Nurbs(second),
             basepoint,
             revision_form: None,
         },
@@ -3493,23 +3091,22 @@ fn decode_sum_spl_sur(
     })
 }
 
-fn decode_ruled_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
-    let names: [&[u8]; 2] = [b"rule_sur", b"rulesur"];
-    let (start, _) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut curves = marker_positions(span)
+fn ruled_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
+    let names = ["rule_sur", "rulesur"];
+    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
+    let span = toks::subtype_span(toks, start)?;
+    let mut curves = toks::marker_positions(span)
         .into_iter()
-        .filter_map(|at| decode_curve_block(span, at, int_width).map(|decoded| decoded.curve));
+        .filter_map(|at| curve_block(span, at).map(|(curve, _)| curve));
     let first = curves.next()?;
     let second = curves.next()?;
-    let cache = marker_positions(span)
+    let cache = toks::marker_positions(span)
         .into_iter()
-        .filter_map(|at| decode_surface_block(span, at, int_width))
+        .filter_map(|at| surface_block(span, at))
         .next_back();
-    let cache_fit_tolerance = cache.and_then(|cache| {
-        (span.get(cache.end) == Some(&0x06))
-            .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
-            .flatten()
+    let cache_fit_tolerance = cache.and_then(|(_, cache_end)| match span.get(cache_end) {
+        Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
+        _ => None,
     });
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Ruled { first, second },
@@ -3517,17 +3114,17 @@ fn decode_ruled_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
     })
 }
 
-fn decode_exact_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
-    let names: [&[u8]; 2] = [b"exact_spl_sur", b"exactsur"];
-    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name.len() + 3;
-    if span.get(position) == Some(&0x04) {
+fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
+    let names = ["exact_spl_sur", "exactsur"];
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
+    if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated layout: revision integer, shared tail, four optional
         // parameter values, and the extension as an enum. Only the modern name
         // stores it.
-        (name == b"exact_spl_sur".as_slice()).then_some(())?;
-        let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        (name == "exact_spl_sur").then_some(())?;
+        let revision = cur.take_long()?;
         (revision > 0).then_some(())?;
         let RevisionSurfaceTail {
             enumeration: tail_enum,
@@ -3535,7 +3132,7 @@ fn decode_exact_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
             parameterization,
             discontinuities,
             tail_flag,
-        } = decode_revision_surface_tail(span, &mut position, int_width)?;
+        } = revision_surface_tail(&mut cur)?;
         // The two unextended parameter intervals, each an ordered [lo, hi] pair
         // of optional bounds. This subtype serializes them U-then-V; the loft
         // wrap ranges sharing `RevisionRanges` serialize V-then-U, so the order
@@ -3543,15 +3140,15 @@ fn decode_exact_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
         // here and labelled only by the specification.
         let unextended_ranges = [
             [
-                take_optional_range_value(span, &mut position)?,
-                take_optional_range_value(span, &mut position)?,
+                cur.take_optional_range_value()?,
+                cur.take_optional_range_value()?,
             ],
             [
-                take_optional_range_value(span, &mut position)?,
-                take_optional_range_value(span, &mut position)?,
+                cur.take_optional_range_value()?,
+                cur.take_optional_range_value()?,
             ],
         ];
-        let extension = take_tagged_int(span, &mut position, 0x15, int_width)?;
+        let extension = cur.take_enum()?;
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::Exact {
                 parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionRanges {
@@ -3574,25 +3171,20 @@ fn decode_exact_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
             cache_fit_tolerance: fit_tolerance,
         });
     }
-    let cache = marker_positions(span)
+    let (_, cache_end) = toks::marker_positions(span)
         .into_iter()
-        .filter_map(|at| decode_surface_block(span, at, int_width))
+        .filter_map(|at| surface_block(span, at))
         .next_back()?;
-    let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
-        .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
-        .flatten();
-    let mut position = cache.end + usize::from(cache_fit_tolerance.is_some()) * 9;
+    let cache_fit_tolerance = match span.get(cache_end) {
+        Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
+        _ => None,
+    };
+    cur.set_pos(cache_end + usize::from(cache_fit_tolerance.is_some()));
     let parameter_ranges = [
-        [
-            take_range_value(span, &mut position)?,
-            take_range_value(span, &mut position)?,
-        ],
-        [
-            take_range_value(span, &mut position)?,
-            take_range_value(span, &mut position)?,
-        ],
+        [cur.take_range_value()?, cur.take_range_value()?],
+        [cur.take_range_value()?, cur.take_range_value()?],
     ];
-    let extension = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let extension = cur.take_long()?;
     let _ = name;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Exact {
@@ -3606,13 +3198,12 @@ fn decode_exact_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
     })
 }
 
-fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::{TSplineSubtransform, TSplineSurfaceConstruction};
 
-    let name: &[u8] = b"t_spl_sur";
-    let (start, _) = find_owned_subtype_marker(record_bytes, &[name], int_width)?;
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name.len() + 3;
+    let (start, _) = toks::find_owned_subtype_marker(toks, &["t_spl_sur"])?;
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
     let (
         cache_fit_tolerance,
         discontinuities,
@@ -3621,11 +3212,11 @@ fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProc
         type_code,
         revision_form,
     );
-    if span.get(position) == Some(&0x04) {
+    if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated layout: revision integer, shared tail, four optional
         // parameter values, the type code as an enum, then the nested
         // subtransform scope and trailing integer.
-        let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        let revision = cur.take_long()?;
         (revision > 0).then_some(())?;
         let RevisionSurfaceTail {
             enumeration: tail_enum,
@@ -3633,10 +3224,10 @@ fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProc
             parameterization,
             discontinuities: tail_discontinuities,
             tail_flag,
-        } = decode_revision_surface_tail(span, &mut position, int_width)?;
+        } = revision_surface_tail(&mut cur)?;
         let mut bounds = [None; 4];
         for bound in &mut bounds {
-            *bound = take_optional_range_value(span, &mut position)?;
+            *bound = cur.take_optional_range_value()?;
         }
         cache_fit_tolerance = fit_tolerance;
         discontinuities = tail_discontinuities.clone();
@@ -3645,7 +3236,7 @@ fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProc
             [bounds[0].unwrap_or(0.0), bounds[1].unwrap_or(0.0)],
             [bounds[2].unwrap_or(0.0), bounds[3].unwrap_or(0.0)],
         ];
-        type_code = take_tagged_int(span, &mut position, 0x15, int_width)?;
+        type_code = cur.take_enum()?;
         revision_form = Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
             revision,
             support_bounds: bounds,
@@ -3659,45 +3250,39 @@ fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProc
             trailing_flags: Vec::new(),
         });
     } else {
-        let cache = decode_surface_block(span, position, int_width)?;
-        position = cache.end;
-        cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
+        let (_, cache_end) = surface_block(span, cur.pos())?;
+        cur.set_pos(cache_end);
+        cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
         discontinuities = [
-            take_float_array(span, &mut position, int_width)?,
-            take_float_array(span, &mut position, int_width)?,
-            take_float_array(span, &mut position, int_width)?,
-            take_float_array(span, &mut position, int_width)?,
-            take_float_array(span, &mut position, int_width)?,
-            take_float_array(span, &mut position, int_width)?,
+            cur.take_float_array()?,
+            cur.take_float_array()?,
+            cur.take_float_array()?,
+            cur.take_float_array()?,
+            cur.take_float_array()?,
+            cur.take_float_array()?,
         ];
-        discontinuity_flag = take_bool(span, &mut position)?;
+        discontinuity_flag = cur.take_bool()?;
         parameter_ranges = [
-            [
-                take_f64(span, &mut position)? * LEN_TO_MM,
-                take_f64(span, &mut position)? * LEN_TO_MM,
-            ],
-            [
-                take_f64(span, &mut position)? * LEN_TO_MM,
-                take_f64(span, &mut position)? * LEN_TO_MM,
-            ],
+            [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM],
+            [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM],
         ];
-        type_code = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        type_code = cur.take_long()?;
         revision_form = None;
     }
-    if span.get(position) != Some(&0x0f) {
+    if !matches!(cur.peek(), Some(Token::SubtypeOpen)) {
         return None;
     }
-    position += 1;
-    let source_kind = take_native_ident(span, &mut position)?;
-    let subtransform = match source_kind.as_str() {
+    cur.bump();
+    let source_kind = cur.take_ident()?;
+    let subtransform = match source_kind {
         "t_spl_subtrans_object" => {
-            let program = take_native_string(span, &mut position)?;
-            let separator = if span.get(position) == Some(&0x08) {
+            let program = cur.take_str()?.to_string();
+            let separator = if matches!(cur.peek(), Some(Token::Str(_))) {
                 None
             } else {
-                Some(take_bool(span, &mut position)?)
+                Some(cur.take_bool()?)
             };
-            let values = take_native_string(span, &mut position)?;
+            let values = cur.take_str()?.to_string();
             TSplineSubtransform::Inline {
                 program,
                 separator,
@@ -3705,16 +3290,16 @@ fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProc
             }
         }
         "ref" => TSplineSubtransform::Reference {
-            index: take_tagged_int(span, &mut position, 0x04, int_width)?,
+            index: cur.take_long()?,
             resolved: None,
         },
         _ => return None,
     };
-    if span.get(position) != Some(&0x10) {
+    if !matches!(cur.peek(), Some(Token::SubtypeClose)) {
         return None;
     }
-    position += 1;
-    let trailing_value = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    cur.bump();
+    let trailing_value = cur.take_long()?;
     let program_graph = match &subtransform {
         TSplineSubtransform::Inline { program, .. } => {
             Some(cadmpeg_ir::geometry::TSplineProgram::parse(program))
@@ -3745,35 +3330,30 @@ fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProc
     })
 }
 
-fn decode_deformable_surface_frame(
-    bytes: &[u8],
-    position: &mut usize,
+fn deformable_surface_frame(
+    cur: &mut Cur<'_>,
 ) -> Option<cadmpeg_ir::geometry::DeformableSurfaceFrame> {
     let mut leading_vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
     for vector in &mut leading_vectors {
-        let value = take_native_vec3(bytes, position, 0x14)?;
+        let value = cur.take_vector3()?;
         *vector = Vector3::new(value[0], value[1], value[2]);
     }
-    let leading_parameter = take_f64(bytes, position)?;
-    let leading_flags = [
-        take_bool(bytes, position)?,
-        take_bool(bytes, position)?,
-        take_bool(bytes, position)?,
-    ];
+    let leading_parameter = cur.take_f64()?;
+    let leading_flags = [cur.take_bool()?, cur.take_bool()?, cur.take_bool()?];
     let mut secondary_vectors = [Vector3::new(0.0, 0.0, 0.0); 3];
     for vector in &mut secondary_vectors {
-        let value = take_native_vec3(bytes, position, 0x14)?;
+        let value = cur.take_vector3()?;
         *vector = Vector3::new(value[0], value[1], value[2]);
     }
-    let secondary_parameter = take_f64(bytes, position)?;
-    let secondary_flags = [take_bool(bytes, position)?, take_bool(bytes, position)?];
-    let point = take_native_vec3(bytes, position, 0x13)?;
+    let secondary_parameter = cur.take_f64()?;
+    let secondary_flags = [cur.take_bool()?, cur.take_bool()?];
+    let point = cur.take_position()?;
     let trailing_flags = [
-        take_bool(bytes, position)?,
-        take_bool(bytes, position)?,
-        take_bool(bytes, position)?,
-        take_bool(bytes, position)?,
-        take_bool(bytes, position)?,
+        cur.take_bool()?,
+        cur.take_bool()?,
+        cur.take_bool()?,
+        cur.take_bool()?,
+        cur.take_bool()?,
     ];
     Some(cadmpeg_ir::geometry::DeformableSurfaceFrame {
         leading_vectors,
@@ -3791,48 +3371,35 @@ fn decode_deformable_surface_frame(
     })
 }
 
-fn decode_deformable_vector_frame(
-    bytes: &[u8],
-    position: &mut usize,
+fn deformable_vector_frame(
+    cur: &mut Cur<'_>,
 ) -> Option<cadmpeg_ir::geometry::DeformableVectorFrame> {
     let mut vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
     for vector in &mut vectors {
-        let value = take_native_vec3(bytes, position, 0x14)?;
+        let value = cur.take_vector3()?;
         *vector = Vector3::new(value[0], value[1], value[2]);
     }
     Some(cadmpeg_ir::geometry::DeformableVectorFrame {
         vectors,
-        parameter: take_f64(bytes, position)?,
-        flags: [
-            take_bool(bytes, position)?,
-            take_bool(bytes, position)?,
-            take_bool(bytes, position)?,
-        ],
+        parameter: cur.take_f64()?,
+        flags: [cur.take_bool()?, cur.take_bool()?, cur.take_bool()?],
     })
 }
 
-fn decode_defm_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::DeformableSurfaceData;
-    let names: [&[u8]; 2] = [b"defm_spl_sur", b"defmsur"];
-    let (start, name_len) = find_owned_subtype_marker(record_bytes, &names, int_width)
-        .map(|(start, name)| (start, name.len()))?;
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name_len + 3;
-    let support = decode_embedded_surface(span, &mut position, int_width)?;
-    let mode = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let names = ["defm_spl_sur", "defmsur"];
+    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
+    let support = embedded_surface(&mut cur)?;
+    let mode = cur.take_long()?;
     let data = match mode {
         1 => {
-            let frame = Box::new(decode_deformable_surface_frame(span, &mut position)?);
-            let count =
-                usize::try_from(take_tagged_int(span, &mut position, 0x04, int_width)?).ok()?;
+            let frame = Box::new(deformable_surface_frame(&mut cur)?);
+            let count = usize::try_from(cur.take_long()?).ok()?;
             let parameter_triples = (0..count)
-                .map(|_| {
-                    Some([
-                        take_f64(span, &mut position)?,
-                        take_f64(span, &mut position)?,
-                        take_f64(span, &mut position)?,
-                    ])
-                })
+                .map(|_| Some([cur.take_f64()?, cur.take_f64()?, cur.take_f64()?]))
                 .collect::<Option<Vec<_>>>()?;
             EmbeddedDeformableSurfaceData::Resolved(DeformableSurfaceData::Plain {
                 frame,
@@ -3840,40 +3407,29 @@ fn decode_defm_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
             })
         }
         3 => EmbeddedDeformableSurfaceData::Resolved(DeformableSurfaceData::Guided {
-            frame: Box::new(decode_deformable_surface_frame(span, &mut position)?),
-            selector: take_tagged_int(span, &mut position, 0x04, int_width)?,
-            guide_parameter: take_f64(span, &mut position)?,
+            frame: Box::new(deformable_surface_frame(&mut cur)?),
+            selector: cur.take_long()?,
+            guide_parameter: cur.take_f64()?,
         }),
         5 => {
-            let surface = decode_embedded_surface(span, &mut position, int_width)?;
-            let native_id = take_tagged_int(span, &mut position, 0x04, int_width)?;
-            let flag = take_bool(span, &mut position)?;
-            let first_parameter = take_f64(span, &mut position)?;
-            let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
-            let second_parameter = take_f64(span, &mut position)?;
-            let curve = decode_curve_block(span, position, int_width)?;
-            position = curve.end;
+            let surface = embedded_surface(&mut cur)?;
+            let native_id = cur.take_long()?;
+            let flag = cur.take_bool()?;
+            let first_parameter = cur.take_f64()?;
+            let selector = cur.take_long()?;
+            let second_parameter = cur.take_f64()?;
+            let (curve, curve_end) = curve_block(span, cur.pos())?;
+            cur.set_pos(curve_end);
             let mut vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
             for vector in &mut vectors {
-                let value = take_native_vec3(span, &mut position, 0x14)?;
+                let value = cur.take_vector3()?;
                 *vector = Vector3::new(value[0], value[1], value[2]);
             }
-            let frame_parameter = take_f64(span, &mut position)?;
-            let flags = [
-                take_bool(span, &mut position)?,
-                take_bool(span, &mut position)?,
-                take_bool(span, &mut position)?,
-            ];
-            let count =
-                usize::try_from(take_tagged_int(span, &mut position, 0x04, int_width)?).ok()?;
+            let frame_parameter = cur.take_f64()?;
+            let flags = [cur.take_bool()?, cur.take_bool()?, cur.take_bool()?];
+            let count = usize::try_from(cur.take_long()?).ok()?;
             let parameter_triples = (0..count)
-                .map(|_| {
-                    Some([
-                        take_f64(span, &mut position)?,
-                        take_f64(span, &mut position)?,
-                        take_f64(span, &mut position)?,
-                    ])
-                })
+                .map(|_| Some([cur.take_f64()?, cur.take_f64()?, cur.take_f64()?]))
                 .collect::<Option<Vec<_>>>()?;
             EmbeddedDeformableSurfaceData::SurfaceCurve {
                 surface,
@@ -3882,7 +3438,7 @@ fn decode_defm_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
                 first_parameter,
                 selector,
                 second_parameter,
-                curve: curve.curve,
+                curve,
                 vectors,
                 frame_parameter,
                 flags,
@@ -3892,29 +3448,25 @@ fn decode_defm_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
         6 => {
             let mut leading_vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
             for vector in &mut leading_vectors {
-                let value = take_native_vec3(span, &mut position, 0x14)?;
+                let value = cur.take_vector3()?;
                 *vector = Vector3::new(value[0], value[1], value[2]);
             }
-            let leading_parameter = take_f64(span, &mut position)?;
-            let leading_flags = [
-                take_bool(span, &mut position)?,
-                take_bool(span, &mut position)?,
-                take_bool(span, &mut position)?,
-            ];
-            let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
-            let surface = decode_embedded_surface(span, &mut position, int_width)?;
-            let native_id = take_tagged_int(span, &mut position, 0x04, int_width)?;
-            let flag = take_bool(span, &mut position)?;
-            let first_parameter = take_f64(span, &mut position)?;
-            let version_value = (span.get(position) == Some(&0x04))
-                .then(|| take_tagged_int(span, &mut position, 0x04, int_width))
+            let leading_parameter = cur.take_f64()?;
+            let leading_flags = [cur.take_bool()?, cur.take_bool()?, cur.take_bool()?];
+            let selector = cur.take_long()?;
+            let surface = embedded_surface(&mut cur)?;
+            let native_id = cur.take_long()?;
+            let flag = cur.take_bool()?;
+            let first_parameter = cur.take_f64()?;
+            let version_value = matches!(cur.peek(), Some(Token::Long(_)))
+                .then(|| cur.take_long())
                 .flatten();
-            let second_parameter = take_f64(span, &mut position)?;
-            let curve = decode_curve_block(span, position, int_width)?;
-            position = curve.end;
+            let second_parameter = cur.take_f64()?;
+            let (curve, curve_end) = curve_block(span, cur.pos())?;
+            cur.set_pos(curve_end);
             let frames = Box::new([
-                decode_deformable_vector_frame(span, &mut position)?,
-                decode_deformable_vector_frame(span, &mut position)?,
+                deformable_vector_frame(&mut cur)?,
+                deformable_vector_frame(&mut cur)?,
             ]);
             EmbeddedDeformableSurfaceData::Full {
                 leading_vectors,
@@ -3927,36 +3479,36 @@ fn decode_defm_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
                 first_parameter,
                 version_value,
                 second_parameter,
-                curve: curve.curve,
+                curve,
                 frames,
-                trailing_value: take_tagged_int(span, &mut position, 0x04, int_width)?,
+                trailing_value: cur.take_long()?,
             }
         }
         8 => {
             let mut vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
             for vector in &mut vectors {
-                let value = take_native_vec3(span, &mut position, 0x14)?;
+                let value = cur.take_vector3()?;
                 *vector = Vector3::new(value[0], value[1], value[2]);
             }
             EmbeddedDeformableSurfaceData::Resolved(DeformableSurfaceData::Minimal {
                 vectors,
-                selector: take_tagged_int(span, &mut position, 0x04, int_width)?,
+                selector: cur.take_long()?,
             })
         }
         _ => return None,
     };
-    let cache = decode_surface_block(span, position, int_width)?;
-    position = cache.end;
-    let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
+    let (_, cache_end) = surface_block(span, cur.pos())?;
+    cur.set_pos(cache_end);
+    let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
     let discontinuities = [
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
-    let discontinuity_flag = take_bool(span, &mut position)?;
+    let discontinuity_flag = cur.take_bool()?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Deformable(Box::new(
             EmbeddedDeformableSurface {
@@ -3970,46 +3522,42 @@ fn decode_defm_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
     })
 }
 
-pub(crate) fn decode_helix_spl_sur(
-    record_bytes: &[u8],
-    int_width: usize,
-) -> Option<DecodedProceduralSurface> {
+pub(crate) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::{
         HelixPathConstruction, HelixSurfaceConstruction, HelixSurfaceProfile,
     };
 
-    let names: [&[u8]; 2] = [b"helix_spl_circ", b"helix_spl_line"];
-    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
-    let name_len = name.len();
-    let circular = name == b"helix_spl_circ";
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name_len + 3;
-    let current_layout = take_optional_helix_revision(span, &mut position, int_width)?;
-    let angle_range = [
-        take_range_value(span, &mut position)?,
-        take_range_value(span, &mut position)?,
-    ];
+    let names = ["helix_spl_circ", "helix_spl_line"];
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let circular = name == "helix_spl_circ";
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
+    let current_layout = optional_helix_revision(&mut cur)?;
+    let angle_range = [cur.take_range_value()?, cur.take_range_value()?];
     let dimension_scale = if circular { LEN_TO_MM } else { 1.0 };
     let dimension_range = [
-        take_range_value(span, &mut position)? * dimension_scale,
-        take_range_value(span, &mut position)? * dimension_scale,
+        cur.take_range_value()? * dimension_scale,
+        cur.take_range_value()? * dimension_scale,
     ];
     let length = circular
-        .then(|| take_f64(span, &mut position).map(|v| v * LEN_TO_MM))
+        .then(|| cur.take_f64().map(|v| v * LEN_TO_MM))
         .flatten();
-    let path_angle_range = [
-        take_range_value(span, &mut position)?,
-        take_range_value(span, &mut position)?,
-    ];
-    let center = take_native_vec3(span, &mut position, 0x13)?;
-    let vector_tag = if current_layout { 0x14 } else { 0x13 };
-    let major = take_native_vec3(span, &mut position, vector_tag)?;
-    let minor = take_native_vec3(span, &mut position, vector_tag)?;
-    let pitch = take_native_vec3(span, &mut position, vector_tag)?;
-    let apex_factor = take_f64(span, &mut position)?;
-    let axis = normalized(take_native_vec3(span, &mut position, 0x14)?)?;
+    let path_angle_range = [cur.take_range_value()?, cur.take_range_value()?];
+    let center = cur.take_position()?;
+    let take_frame_vector = |cur: &mut Cur<'_>| {
+        if current_layout {
+            cur.take_vector3()
+        } else {
+            cur.take_position()
+        }
+    };
+    let major = take_frame_vector(&mut cur)?;
+    let minor = take_frame_vector(&mut cur)?;
+    let pitch = take_frame_vector(&mut cur)?;
+    let apex_factor = cur.take_f64()?;
+    let axis = normalized(cur.take_vector3()?)?;
     for sentinel in ["null_surface", "null_surface", "nullbs", "nullbs"] {
-        if take_native_ident(span, &mut position)?.as_str() != sentinel {
+        if cur.take_ident()? != sentinel {
             return None;
         }
     }
@@ -4041,14 +3589,10 @@ pub(crate) fn decode_helix_spl_sur(
     let profile = if let Some(length) = length {
         HelixSurfaceProfile::Circle {
             length,
-            radius: take_f64(span, &mut position)? * LEN_TO_MM,
+            radius: cur.take_f64()? * LEN_TO_MM,
         }
     } else {
-        let direction = take_native_vec3(
-            span,
-            &mut position,
-            if current_layout { 0x14 } else { 0x13 },
-        )?;
+        let direction = take_frame_vector(&mut cur)?;
         HelixSurfaceProfile::Line {
             direction: Vector3::new(
                 direction[0] * LEN_TO_MM,
@@ -4068,22 +3612,20 @@ pub(crate) fn decode_helix_spl_sur(
     })
 }
 
-fn decode_t_spline_subtransform(
-    bytes: &[u8],
-    int_width: usize,
-) -> Option<cadmpeg_ir::geometry::TSplineSubtransform> {
+fn t_spline_subtransform(span: &[Token]) -> Option<cadmpeg_ir::geometry::TSplineSubtransform> {
     use cadmpeg_ir::geometry::TSplineSubtransform;
 
-    let mut position = usize::from(bytes.first() == Some(&0x0f));
-    match take_native_ident(bytes, &mut position)?.as_str() {
+    let start = usize::from(matches!(span.first(), Some(Token::SubtypeOpen)));
+    let mut cur = Cur::at(span, start);
+    match cur.take_ident()? {
         "t_spl_subtrans_object" => {
-            let program = take_native_string(bytes, &mut position)?;
-            let separator = if bytes.get(position) == Some(&0x08) {
+            let program = cur.take_str()?.to_string();
+            let separator = if matches!(cur.peek(), Some(Token::Str(_))) {
                 None
             } else {
-                Some(take_bool(bytes, &mut position)?)
+                Some(cur.take_bool()?)
             };
-            let values = take_native_string(bytes, &mut position)?;
+            let values = cur.take_str()?.to_string();
             Some(TSplineSubtransform::Inline {
                 program,
                 separator,
@@ -4091,7 +3633,7 @@ fn decode_t_spline_subtransform(
             })
         }
         "ref" => Some(TSplineSubtransform::Reference {
-            index: take_tagged_int(bytes, &mut position, 0x04, int_width)?,
+            index: cur.take_long()?,
             resolved: None,
         }),
         _ => None,
@@ -4100,10 +3642,8 @@ fn decode_t_spline_subtransform(
 
 fn resolve_t_spline_subtransform(
     index: usize,
-    active_bytes: &[u8],
-    table: &[usize],
+    table: &SubtypeTable,
     seen: &mut Vec<usize>,
-    int_width: usize,
 ) -> Option<cadmpeg_ir::geometry::TSplineSubtransform> {
     use cadmpeg_ir::geometry::TSplineSubtransform;
 
@@ -4111,69 +3651,52 @@ fn resolve_t_spline_subtransform(
         return None;
     }
     seen.push(index);
-    let target = *table.get(index)?;
-    let decoded =
-        decode_t_spline_subtransform(subtype_span(active_bytes, target, int_width)?, int_width)?;
+    let decoded = t_spline_subtransform(table.span(index)?)?;
     match decoded {
         inline @ TSplineSubtransform::Inline { .. } => Some(inline),
-        TSplineSubtransform::Reference { index, .. } => resolve_t_spline_subtransform(
-            usize::try_from(index).ok()?,
-            active_bytes,
-            table,
-            seen,
-            int_width,
-        ),
+        TSplineSubtransform::Reference { index, .. } => {
+            resolve_t_spline_subtransform(usize::try_from(index).ok()?, table, seen)
+        }
     }
 }
 
 /// Decode a native procedural definition, following nested subtype-table references.
-pub fn decode_procedural_surface_resolving_refs(
-    record_bytes: &[u8],
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+pub(crate) fn procedural_surface_resolving_refs(
+    toks: &[Token],
+    table: &SubtypeTable,
 ) -> Option<DecodedProceduralSurface> {
-    INT_WIDTHS.into_iter().find_map(|int_width| {
-        decode_procedural_resolving_refs(
-            record_bytes,
-            active_bytes,
-            tables,
-            &mut Vec::new(),
-            int_width,
-        )
-    })
+    procedural_resolving_refs(toks, table, &mut Vec::new())
 }
 
-fn decode_procedural_resolving_refs(
-    bytes: &[u8],
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+fn procedural_resolving_refs(
+    toks: &[Token],
+    table: &SubtypeTable,
     seen: &mut Vec<usize>,
-    int_width: usize,
 ) -> Option<DecodedProceduralSurface> {
-    if let Some(mut decoded) = decode_defm_spl_sur(bytes, int_width)
-        .or_else(|| decode_helix_spl_sur(bytes, int_width))
-        .or_else(|| decode_t_spl_sur(bytes, int_width))
-        .or_else(|| decode_exact_spl_sur(bytes, int_width))
-        .or_else(|| decode_comp_spl_sur(bytes, int_width))
-        .or_else(|| decode_taper_spl_sur(bytes, int_width, Some((active_bytes, tables))))
-        .or_else(|| decode_loft_spl_sur(bytes, int_width, Some((active_bytes, tables))))
-        .or_else(|| decode_compound_loft_spl_sur(bytes, int_width, Some((active_bytes, tables))))
-        .or_else(|| decode_scaled_compound_loft_spl_sur(bytes, int_width))
-        .or_else(|| decode_sub_spl_sur(bytes, int_width))
-        .or_else(|| decode_law_spl_sur(bytes, int_width))
-        .or_else(|| decode_skin_spl_sur(bytes, int_width))
-        .or_else(|| decode_net_spl_sur(bytes, int_width))
-        .or_else(|| decode_sweep_spl_sur(bytes, int_width, Some((active_bytes, tables))))
-        .or_else(|| decode_g2_blend_spl_sur(bytes, int_width, Some((active_bytes, tables))))
-        .or_else(|| decode_ruled_spl_sur(bytes, int_width))
-        .or_else(|| decode_sum_spl_sur(bytes, int_width, Some((active_bytes, tables))))
-        .or_else(|| decode_rot_spl_sur(bytes, int_width, Some((active_bytes, tables))))
-        .or_else(|| decode_off_spl_sur(bytes, int_width, Some((active_bytes, tables))))
-        .or_else(|| decode_cyl_spl_sur_at(bytes, int_width, Some((active_bytes, tables))))
-        .or_else(|| decode_var_blend_spl_sur(bytes, int_width, Some((active_bytes, tables))))
-        .or_else(|| decode_vertex_blend_spl_sur(bytes, int_width, Some((active_bytes, tables))))
-        .or_else(|| decode_full_rb_blend_spl_sur(bytes, int_width, active_bytes, tables))
-        .or_else(|| decode_rb_blend_spl_sur_fallback(bytes, int_width))
+    if let Some(mut decoded) = defm_spl_sur(toks)
+        .or_else(|| helix_spl_sur(toks))
+        .or_else(|| t_spl_sur(toks))
+        .or_else(|| exact_spl_sur(toks))
+        .or_else(|| comp_spl_sur(toks))
+        .or_else(|| taper_spl_sur(toks, Some(table)))
+        .or_else(|| loft_spl_sur(toks, Some(table)))
+        .or_else(|| compound_loft_spl_sur(toks, Some(table)))
+        .or_else(|| scaled_compound_loft_spl_sur(toks))
+        .or_else(|| sub_spl_sur(toks))
+        .or_else(|| law_spl_sur(toks))
+        .or_else(|| skin_spl_sur(toks))
+        .or_else(|| net_spl_sur(toks))
+        .or_else(|| sweep_spl_sur(toks, Some(table)))
+        .or_else(|| g2_blend_spl_sur(toks, Some(table)))
+        .or_else(|| ruled_spl_sur(toks))
+        .or_else(|| sum_spl_sur(toks, Some(table)))
+        .or_else(|| rot_spl_sur(toks, Some(table)))
+        .or_else(|| off_spl_sur(toks, Some(table)))
+        .or_else(|| cyl_spl_sur(toks, Some(table)))
+        .or_else(|| var_blend_spl_sur(toks, Some(table)))
+        .or_else(|| vertex_blend_spl_sur(toks, Some(table)))
+        .or_else(|| full_rb_blend_spl_sur(toks, table))
+        .or_else(|| rb_blend_spl_sur_fallback(toks))
     {
         if let DecodedProceduralSurfaceDefinition::TSpline(construction) = &mut decoded.definition {
             if let cadmpeg_ir::geometry::TSplineSubtransform::Reference { index, resolved } =
@@ -4181,10 +3704,8 @@ fn decode_procedural_resolving_refs(
             {
                 let inline = resolve_t_spline_subtransform(
                     usize::try_from(*index).ok()?,
-                    active_bytes,
-                    tables.for_width(int_width),
+                    table,
                     &mut Vec::new(),
-                    int_width,
                 )?;
                 let program = match &inline {
                     cadmpeg_ir::geometry::TSplineSubtransform::Inline { program, .. } => program,
@@ -4207,26 +3728,19 @@ fn decode_procedural_resolving_refs(
     // its own. A record that owns one but failed to decode it is a refusal:
     // its references are that construction's supports, and decoding one of them
     // would report a support as the record's own surface.
-    if owned_subtype_defs(bytes, int_width)
+    if toks::owned_subtype_defs(toks)
         .iter()
-        .any(|(_, name)| *name != b"ref")
+        .any(|(_, name)| *name != "ref")
     {
         return None;
     }
-    let table = tables.for_width(int_width);
-    for index in subtype_refs(bytes, int_width) {
+    for index in toks::subtype_refs(toks) {
         if seen.contains(&index) {
             continue;
         }
-        let target = *table.get(index)?;
+        let target = table.span(index)?;
         seen.push(index);
-        if let Some(decoded) = decode_procedural_resolving_refs(
-            subtype_span(active_bytes, target, int_width)?,
-            active_bytes,
-            tables,
-            seen,
-            int_width,
-        ) {
+        if let Some(decoded) = procedural_resolving_refs(target, table, seen) {
             return Some(decoded);
         }
     }
@@ -4258,13 +3772,15 @@ mod tail_selector_tests {
     /// containing record is retained verbatim rather than misparsed.
     #[test]
     fn undefined_tail_form_is_rejected_for_verbatim_retention() {
-        // 0x15-tagged four-byte enum with value 1, followed by bytes that
-        // could otherwise be mistaken for a solved cache block.
-        let span = [
-            0x15, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        ];
-        let mut position = 0usize;
-        assert!(decode_revision_surface_tail(&span, &mut position, 4).is_none());
+        // Enum with value 1, followed by a value that could otherwise open a
+        // solved cache block's fields.
+        let mut span = Vec::new();
+        push_enum(&mut span, 1);
+        span.push(0x06);
+        span.extend_from_slice(&0.0f64.to_le_bytes());
+        let toks = toks::lex_test_span(&span, 4);
+        let mut cur = Cur::at(&toks, 0);
+        assert!(revision_surface_tail(&mut cur).is_none());
     }
 
     /// Tail form `2` stores no cache and no fit tolerance: the U parameter
@@ -4294,10 +3810,10 @@ mod tail_selector_tests {
         }
         span.push(0x0b);
 
-        let mut position = 0usize;
-        let tail =
-            decode_revision_surface_tail(&span, &mut position, 4).expect("parameterized tail");
-        assert_eq!(position, span.len());
+        let toks = toks::lex_test_span(&span, 4);
+        let mut cur = Cur::at(&toks, 0);
+        let tail = revision_surface_tail(&mut cur).expect("parameterized tail");
+        assert_eq!(cur.pos(), toks.len());
         assert_eq!(tail.enumeration, 2);
         assert_eq!(tail.fit_tolerance, None);
         let parameterization = tail.parameterization.expect("parameterization");

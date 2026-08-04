@@ -30,8 +30,4 @@ pub mod proc_curve;
 pub mod proc_surface;
 pub mod reader;
 pub mod subtypes;
-// Dead-code allow: the cursor lands before its consumers so each decoder
-// module can port onto it in its own reviewed commit. Removed when the last
-// decode-path module stops taking raw bytes.
-#[allow(dead_code)]
 pub mod toks;

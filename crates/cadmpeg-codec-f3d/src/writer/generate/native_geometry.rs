@@ -6334,11 +6334,11 @@ mod revision_surface_tail_tests {
             .expect("tail discontinuities");
         bytes.push(native_bool(false));
 
-        let mut position = 0usize;
-        let tail =
-            crate::nurbs::proc_surface::decode_revision_surface_tail(&bytes, &mut position, 8)
-                .expect("decoded parameterized tail");
-        assert_eq!(position, bytes.len());
+        let toks = crate::nurbs::toks::lex_test_span(&bytes, 8);
+        let mut cur = crate::nurbs::toks::Cur::at(&toks, 0);
+        let tail = crate::nurbs::proc_surface::revision_surface_tail(&mut cur)
+            .expect("decoded parameterized tail");
+        assert_eq!(cur.pos(), toks.len());
         assert_eq!(tail.enumeration, 2);
         assert_eq!(tail.fit_tolerance, None);
         assert_eq!(tail.parameterization, Some(parameterization));

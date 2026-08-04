@@ -706,9 +706,12 @@ fn decode_with_purpose(
     // Index records by RecordTable index (== position for a framed slice).
     let by_index: HashMap<i64, &Record> = records.iter().map(|r| (r.index as i64, r)).collect();
     // Subtype-definition positions, built once for every carrier resolution.
-    let subtype_tables = nurbs::subtypes::SubtypeTables::from_records(records, bytes);
-    let token_table = nurbs::toks::SubtypeTable::from_records(records);
     let header = asm_header::parse(bytes);
+    let token_table = nurbs::toks::SubtypeTable::from_records(records).with_save_format_version(
+        header
+            .as_ref()
+            .and_then(|header| header.save_format_version),
+    );
     let save_format_major = header
         .as_ref()
         .and_then(crate::asm_header::AsmHeader::save_format_major);
@@ -720,9 +723,7 @@ fn decode_with_purpose(
     keep_faces_and_carriers(
         &mut out,
         records,
-        bytes,
         &by_index,
-        &subtype_tables,
         &token_table,
         &mut carriers,
         &mut reach,
@@ -731,8 +732,6 @@ fn decode_with_purpose(
     walk_reachable_topology(
         &mut out,
         &by_index,
-        bytes,
-        &subtype_tables,
         &token_table,
         &mut carriers,
         &mut reach,
@@ -743,7 +742,6 @@ fn decode_with_purpose(
         records,
         &by_index,
         bytes,
-        &subtype_tables,
         &token_table,
         &mut carriers,
         &mut reach,
@@ -755,7 +753,6 @@ fn decode_with_purpose(
     emit_carrier_records(
         &mut out,
         records,
-        bytes,
         &mut carriers,
         &reach,
         &reversed_curve_refs,

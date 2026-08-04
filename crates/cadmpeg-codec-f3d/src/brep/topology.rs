@@ -13,7 +13,7 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::topology::Sense;
 use std::collections::{HashMap, HashSet};
 
-use super::attributes::{record_slice, unknown_record_id};
+use super::attributes::unknown_record_id;
 use super::geometry::{
     analytic_procedural_surface, decode_curve, decode_surface, is_analytic_curve,
     is_analytic_surface, is_coedge_record, is_edge_record, is_vertex_record,
@@ -61,15 +61,12 @@ pub(crate) fn decode_analytic_carriers(records: &[Record]) -> (Carriers, HashSet
 pub(crate) fn keep_faces_and_carriers(
     out: &mut Brep,
     records: &[Record],
-    bytes: &[u8],
     by_index: &HashMap<i64, &Record>,
-    subtype_tables: &nurbs::subtypes::SubtypeTables,
     token_table: &nurbs::toks::SubtypeTable,
     carriers: &mut Carriers,
     reach: &mut Reachable,
     purpose: DecodePurpose,
 ) {
-    let ref_width = crate::asm_header::stream_ref_width(bytes);
     let Carriers {
         surface_geo,
         procedural_surface_defs,
@@ -105,24 +102,16 @@ pub(crate) fn keep_faces_and_carriers(
         kept_faces.insert(r.index as i64);
         if purpose == DecodePurpose::History {
             let native_kind = (surf_rec.head == "spline")
-                .then(|| {
-                    nurbs::subtypes::owned_construction_subtype(
-                        record_slice(surf_rec, bytes),
-                        ref_width,
-                    )
-                })
+                .then(|| nurbs::toks::owned_construction_subtype(&surf_rec.tokens))
                 .flatten();
             if native_kind
                 .as_deref()
                 .is_some_and(|kind| kind.contains("blend"))
             {
-                if let Some(procedural) =
-                    nurbs::proc_surface::decode_procedural_surface_resolving_refs(
-                        record_slice(surf_rec, bytes),
-                        bytes,
-                        subtype_tables,
-                    )
-                {
+                if let Some(procedural) = nurbs::proc_surface::procedural_surface_resolving_refs(
+                    &surf_rec.tokens,
+                    token_table,
+                ) {
                     procedural_surface_defs.insert(surf_ref, procedural);
                 }
             }
@@ -132,11 +121,9 @@ pub(crate) fn keep_faces_and_carriers(
             kept_surfaces.insert(surf_ref);
             continue;
         }
-        if let Some(procedural) = nurbs::proc_surface::decode_procedural_surface_resolving_refs(
-            record_slice(surf_rec, bytes),
-            bytes,
-            subtype_tables,
-        ) {
+        if let Some(procedural) =
+            nurbs::proc_surface::procedural_surface_resolving_refs(&surf_rec.tokens, token_table)
+        {
             procedural_surface_defs.insert(surf_ref, procedural);
         }
         if let Some(geometry) = procedural_surface_defs
@@ -243,8 +230,6 @@ pub(crate) fn keep_faces_and_carriers(
 pub(crate) fn walk_reachable_topology(
     out: &mut Brep,
     by_index: &HashMap<i64, &Record>,
-    bytes: &[u8],
-    subtype_tables: &nurbs::subtypes::SubtypeTables,
     token_table: &nurbs::toks::SubtypeTable,
     carriers: &mut Carriers,
     reach: &mut Reachable,
@@ -461,10 +446,9 @@ pub(crate) fn walk_reachable_topology(
                                             // A procedural curve carries an inline
                                             // 3D B-spline cache in most subtypes.
                                             } else if let Some(decoded) =
-                                                nurbs::proc_curve::decode_procedural_curve_resolving_refs(
-                                                    record_slice(crec, bytes),
-                                                    bytes,
-                                                    subtype_tables,
+                                                nurbs::proc_curve::procedural_curve_resolving_refs(
+                                                    &crec.tokens,
+                                                    token_table,
                                                 )
                                             {
                                                 let mut curve = decoded.curve;
@@ -500,10 +484,9 @@ pub(crate) fn walk_reachable_topology(
                                                 out.stats.nurbs_curves += 1;
                                                 kept_curves.insert(cv);
                                             } else if let Some((native_kind, mut definition)) =
-                                                nurbs::proc_curve::decode_cacheless_procedural_curve_resolving_refs(
-                                                    record_slice(crec, bytes),
-                                                    bytes,
-                                                    subtype_tables,
+                                                nurbs::proc_curve::cacheless_procedural_curve_resolving_refs(
+                                                    &crec.tokens,
+                                                    token_table,
                                                 )
                                             {
                                                 if record_reversed(crec) {
@@ -566,7 +549,6 @@ pub(crate) fn collect_wire_topology(
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     bytes: &[u8],
-    subtype_tables: &nurbs::subtypes::SubtypeTables,
     token_table: &nurbs::toks::SubtypeTable,
     carriers: &mut Carriers,
     reach: &mut Reachable,
@@ -589,8 +571,6 @@ pub(crate) fn collect_wire_topology(
                 out,
                 edge_index,
                 by_index,
-                bytes,
-                subtype_tables,
                 token_table,
                 carriers,
                 reach,
@@ -643,8 +623,6 @@ pub(crate) fn collect_wire_topology(
                                 out,
                                 edge_index,
                                 by_index,
-                                bytes,
-                                subtype_tables,
                                 token_table,
                                 carriers,
                                 reach,
@@ -708,9 +686,7 @@ fn keep_wire_edge(
     out: &mut Brep,
     edge_index: i64,
     by_index: &HashMap<i64, &Record>,
-    bytes: &[u8],
-    subtype_tables: &nurbs::subtypes::SubtypeTables,
-    _token_table: &nurbs::toks::SubtypeTable,
+    token_table: &nurbs::toks::SubtypeTable,
     carriers: &mut Carriers,
     reach: &mut Reachable,
     purpose: DecodePurpose,
@@ -769,10 +745,9 @@ fn keep_wire_edge(
                 kept_curves.insert(curve_index);
                 return;
             }
-            if let Some(decoded) = nurbs::proc_curve::decode_procedural_curve_resolving_refs(
-                record_slice(curve_record, bytes),
-                bytes,
-                subtype_tables,
+            if let Some(decoded) = nurbs::proc_curve::procedural_curve_resolving_refs(
+                &curve_record.tokens,
+                token_table,
             ) {
                 let mut curve = decoded.curve;
                 if record_reversed(curve_record) {
@@ -803,10 +778,9 @@ fn keep_wire_edge(
                 kept_curves.insert(curve_index);
                 out.stats.nurbs_curves += 1;
             } else if let Some((native_kind, mut definition)) =
-                nurbs::proc_curve::decode_cacheless_procedural_curve_resolving_refs(
-                    record_slice(curve_record, bytes),
-                    bytes,
-                    subtype_tables,
+                nurbs::proc_curve::cacheless_procedural_curve_resolving_refs(
+                    &curve_record.tokens,
+                    token_table,
                 )
             {
                 if record_reversed(curve_record) {

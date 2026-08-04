@@ -11,7 +11,6 @@
 //! to one serialization.
 
 use crate::sab::Token;
-use cadmpeg_ir::math::Vector3;
 
 /// A cursor over one record's payload tokens.
 ///
@@ -25,10 +24,6 @@ pub(crate) struct Cur<'a> {
 }
 
 impl<'a> Cur<'a> {
-    pub(crate) fn new(toks: &'a [Token]) -> Self {
-        Self { toks, pos: 0 }
-    }
-
     pub(crate) fn at(toks: &'a [Token], pos: usize) -> Self {
         Self { toks, pos }
     }
@@ -36,6 +31,16 @@ impl<'a> Cur<'a> {
     /// Current token index.
     pub(crate) fn pos(&self) -> usize {
         self.pos
+    }
+
+    /// Move the cursor to token index `pos`.
+    pub(crate) fn set_pos(&mut self, pos: usize) {
+        self.pos = pos;
+    }
+
+    /// The full token slice the cursor walks.
+    pub(crate) fn toks(&self) -> &'a [Token] {
+        self.toks
     }
 
     /// The token at the cursor, without consuming it.
@@ -142,28 +147,6 @@ impl<'a> Cur<'a> {
         }
     }
 
-    /// Consume one `0x16` `(u, v)` pair.
-    pub(crate) fn take_vector2(&mut self) -> Option<[f64; 2]> {
-        match self.peek()? {
-            Token::Vector2(value) => {
-                self.pos += 1;
-                Some(*value)
-            }
-            _ => None,
-        }
-    }
-
-    /// Consume one entity reference, `-1` included.
-    pub(crate) fn take_ref(&mut self) -> Option<i64> {
-        match self.peek()? {
-            Token::Ref(value) => {
-                self.pos += 1;
-                Some(*value)
-            }
-            _ => None,
-        }
-    }
-
     /// Consume a `Long` count followed by that many `Double`s.
     pub(crate) fn take_float_array(&mut self) -> Option<Vec<f64>> {
         let mark = self.pos;
@@ -219,11 +202,6 @@ impl<'a> Cur<'a> {
             _ => None,
         }
     }
-}
-
-/// Return `v` normalized to unit length, or `None` when degenerate.
-pub(crate) fn normalized(value: [f64; 3]) -> Option<Vector3> {
-    crate::nurbs::reader::normalized(value)
 }
 
 /// Read a knot table of `n` `(knot, multiplicity)` pairs from the cursor,
@@ -508,6 +486,10 @@ pub(crate) fn payload_subtype_toks<'r>(
 /// back to the record table.
 pub(crate) struct SubtypeTable {
     defs: Vec<(std::sync::Arc<[Token]>, usize)>,
+    /// The stream's ASM save format version, from the `asmheader` record. Some
+    /// revision-gated grammars key on it; the framer does not carry it in the
+    /// tokens, so the table transports it into token-space decoders.
+    save_format_version: Option<u32>,
 }
 
 impl SubtypeTable {
@@ -527,7 +509,21 @@ impl SubtypeTable {
                 }
             }
         }
-        Self { defs }
+        Self {
+            defs,
+            save_format_version: None,
+        }
+    }
+
+    /// Attach the stream's ASM save format version.
+    pub(crate) fn with_save_format_version(mut self, version: Option<u32>) -> Self {
+        self.save_format_version = version;
+        self
+    }
+
+    /// The stream's ASM save format version, when known.
+    pub(crate) fn save_format_version(&self) -> Option<u32> {
+        self.save_format_version
     }
 
     /// The token span of definition `index`, sliced from its owning record.
@@ -574,7 +570,7 @@ mod tests {
     #[test]
     fn cursor_take_methods_do_not_advance_on_mismatch() {
         let toks = [Token::Double(2.5), Token::True, Token::Long(7)];
-        let mut cur = Cur::new(&toks);
+        let mut cur = Cur::at(&toks, 0);
         assert_eq!(cur.take_long(), None);
         assert_eq!(cur.take_f64(), Some(2.5));
         assert_eq!(cur.take_bool(), Some(true));
@@ -585,7 +581,7 @@ mod tests {
     #[test]
     fn float_array_restores_position_on_a_truncated_body() {
         let toks = [Token::Long(2), Token::Double(1.0), Token::True];
-        let mut cur = Cur::new(&toks);
+        let mut cur = Cur::at(&toks, 0);
         assert_eq!(cur.take_float_array(), None);
         assert_eq!(cur.pos(), 0);
     }

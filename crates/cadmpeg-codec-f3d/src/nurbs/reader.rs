@@ -268,23 +268,6 @@ pub(crate) fn take_native_ident(bytes: &[u8], position: &mut usize) -> Option<St
     Some(value)
 }
 
-pub(crate) fn take_float_array(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-) -> Option<Vec<f64>> {
-    let count = usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
-    let mut values = Vec::with_capacity(count);
-    for _ in 0..count {
-        if bytes.get(*position) != Some(&0x06) {
-            return None;
-        }
-        values.push(read_f64(bytes, *position + 1)?);
-        *position += 9;
-    }
-    Some(values)
-}
-
 pub(crate) fn take_native_string(bytes: &[u8], position: &mut usize) -> Option<String> {
     let (length, header) = match *bytes.get(*position)? {
         0x07 => (usize::from(*bytes.get(*position + 1)?), 2),

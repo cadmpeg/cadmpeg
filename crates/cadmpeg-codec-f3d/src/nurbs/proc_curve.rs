@@ -3,25 +3,27 @@
 
 use crate::nurbs::blend::{
     decode_optional_rolling_ball_surface, decode_rolling_ball_side, decode_surface_ranges,
+    optional_rolling_ball_surface, surface_ranges,
 };
 use crate::nurbs::core::{
-    decode_curve_block, decode_owned_curve_cache_resolving_refs_at,
-    decode_owned_surface_cache_resolving_refs_at, decode_surface_block,
+    curve_block, decode_curve_block, decode_surface_block, owned_curve_cache_resolving_refs,
+    owned_surface_cache_resolving_refs, surface_block,
 };
-use crate::nurbs::pcurve::{decode_pcurve_block_with_end, NurbsPcurve};
+use crate::nurbs::pcurve::{decode_pcurve_block_with_end, pcurve_block_with_end, NurbsPcurve};
 use crate::nurbs::proc_surface::{
-    decode_law_formula, decode_nullable_embedded_pcurve, ellipse_to_nurbs, EmbeddedLawFormula,
+    decode_nullable_embedded_pcurve, ellipse_to_nurbs, law_formula, nullable_embedded_pcurve,
+    EmbeddedLawFormula,
 };
 use crate::nurbs::reader::{
-    marker_positions, normalized, take_bool, take_double_payload, take_f64, take_float_array,
-    take_float_array_payloads, take_native_ident, take_native_string, take_native_vec3,
-    take_optional_range_value, take_range_value, take_tagged_int, Nullable, INT_WIDTHS, LEN_TO_MM,
+    normalized, take_bool, take_double_payload, take_f64, take_float_array_payloads,
+    take_native_ident, take_native_string, take_native_vec3, take_range_value, take_tagged_int,
+    Nullable, LEN_TO_MM,
 };
 use crate::nurbs::subtypes::{
-    find_owned_intcurve_subtype, find_owned_subtype_marker, owned_construction_subtype,
-    subtype_refs, subtype_span, SubtypeTables,
+    find_owned_intcurve_subtype, find_owned_subtype_marker, subtype_span, SubtypeTables,
 };
-use cadmpeg_codec_core::le::{f64_at as read_f64, int_at as read_int};
+use crate::nurbs::toks::{Cur, SubtypeTable};
+use crate::sab::Token;
 use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -64,24 +66,25 @@ enum NativeSupportChart {
     Cone { axial_scale: f64 },
 }
 
-fn native_support_chart(bytes: &[u8], position: usize) -> NativeSupportChart {
-    let mut position = position;
-    let Some(kind) = take_native_ident(bytes, &mut position) else {
+/// The native parameter chart of the support serialized at token `position`.
+fn native_support_chart(toks: &[Token], position: usize) -> NativeSupportChart {
+    let mut cur = Cur::at(toks, position);
+    let Some(kind) = cur.take_ident() else {
         return NativeSupportChart::Canonical;
     };
-    match kind.as_str() {
+    match kind {
         "plane" => NativeSupportChart::PlaneLengths,
         "cone" => {
             let parsed = (|| {
-                take_native_vec3(bytes, &mut position, 0x13)?;
-                take_native_vec3(bytes, &mut position, 0x14)?;
-                take_native_vec3(bytes, &mut position, 0x14)?;
-                take_f64(bytes, &mut position)?;
-                take_bool(bytes, &mut position)?;
-                take_bool(bytes, &mut position)?;
-                let sine = take_f64(bytes, &mut position)?;
-                let cosine = take_f64(bytes, &mut position)?;
-                let u_scale = take_f64(bytes, &mut position)?;
+                cur.take_position()?;
+                cur.take_vector3()?;
+                cur.take_vector3()?;
+                cur.take_f64()?;
+                cur.take_bool()?;
+                cur.take_bool()?;
+                let sine = cur.take_f64()?;
+                let cosine = cur.take_f64()?;
+                let u_scale = cur.take_f64()?;
                 let direction = if sine * cosine < 0.0 { -1.0 } else { 1.0 };
                 Some(NativeSupportChart::Cone {
                     axial_scale: direction * u_scale * LEN_TO_MM,
@@ -112,26 +115,21 @@ fn normalize_support_pcurve(chart: NativeSupportChart, pcurve: &mut NurbsPcurve)
     }
 }
 
-fn decode_required_support_pair(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-) -> Option<([SurfaceGeometry; 2], [NurbsPcurve; 2])> {
-    let first_surface_start = *position;
-    let first_surface = decode_embedded_surface(bytes, position, int_width)?;
-    let second_surface_start = *position;
-    let second_surface = decode_embedded_surface(bytes, position, int_width)?;
-    let (mut first_pcurve, first_end) = decode_pcurve_block_with_end(bytes, *position, int_width)?;
-    *position = first_end;
-    let (mut second_pcurve, second_end) =
-        decode_pcurve_block_with_end(bytes, *position, int_width)?;
-    *position = second_end;
+fn required_support_pair(cur: &mut Cur<'_>) -> Option<([SurfaceGeometry; 2], [NurbsPcurve; 2])> {
+    let first_surface_start = cur.pos();
+    let first_surface = embedded_surface(cur)?;
+    let second_surface_start = cur.pos();
+    let second_surface = embedded_surface(cur)?;
+    let (mut first_pcurve, first_end) = pcurve_block_with_end(cur.toks(), cur.pos())?;
+    cur.set_pos(first_end);
+    let (mut second_pcurve, second_end) = pcurve_block_with_end(cur.toks(), cur.pos())?;
+    cur.set_pos(second_end);
     normalize_support_pcurve(
-        native_support_chart(bytes, first_surface_start),
+        native_support_chart(cur.toks(), first_surface_start),
         &mut first_pcurve,
     );
     normalize_support_pcurve(
-        native_support_chart(bytes, second_surface_start),
+        native_support_chart(cur.toks(), second_surface_start),
         &mut second_pcurve,
     );
     Some((
@@ -295,218 +293,163 @@ pub struct DecodedProceduralCurve {
 }
 
 /// Decode a procedural 3D curve cache while following subtype-table references.
-pub fn decode_procedural_curve_resolving_refs(
-    record_bytes: &[u8],
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+pub(crate) fn procedural_curve_resolving_refs(
+    toks: &[Token],
+    table: &SubtypeTable,
 ) -> Option<DecodedProceduralCurve> {
-    INT_WIDTHS.into_iter().find_map(|int_width| {
-        decode_procedural_curve_recursive(
-            record_bytes,
-            active_bytes,
-            tables,
-            &mut Vec::new(),
-            int_width,
-        )
-    })
+    procedural_curve_recursive(toks, table, &mut Vec::new())
 }
 
 /// Decode an exact procedural curve construction that has no solved cache.
-pub(crate) fn decode_cacheless_procedural_curve_resolving_refs(
-    record_bytes: &[u8],
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+pub(crate) fn cacheless_procedural_curve_resolving_refs(
+    toks: &[Token],
+    table: &SubtypeTable,
 ) -> Option<(String, cadmpeg_ir::geometry::ProceduralCurveDefinition)> {
-    INT_WIDTHS.into_iter().find_map(|int_width| {
-        decode_cacheless_procedural_curve_recursive(
-            record_bytes,
-            active_bytes,
-            tables,
-            &mut Vec::new(),
-            int_width,
-        )
-    })
+    cacheless_procedural_curve_recursive(toks, table, &mut Vec::new())
 }
 
-fn decode_cacheless_procedural_curve_recursive(
-    bytes: &[u8],
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+fn cacheless_procedural_curve_recursive(
+    toks: &[Token],
+    table: &SubtypeTable,
     seen: &mut Vec<usize>,
-    int_width: usize,
 ) -> Option<(String, cadmpeg_ir::geometry::ProceduralCurveDefinition)> {
-    if let Some(definition) = decode_helix_definition(bytes, int_width) {
+    if let Some(definition) = helix_definition(toks) {
         return Some(("helix_int_cur".into(), definition));
     }
-    let table = tables.for_width(int_width);
-    for index in subtype_refs(bytes, int_width) {
+    for index in crate::nurbs::toks::subtype_refs(toks) {
         if seen.contains(&index) {
             continue;
         }
         seen.push(index);
-        let target = *table.get(index)?;
-        if let Some(decoded) = decode_cacheless_procedural_curve_recursive(
-            subtype_span(active_bytes, target, int_width)?,
-            active_bytes,
-            tables,
-            seen,
-            int_width,
-        ) {
+        let target = table.span(index)?;
+        if let Some(decoded) = cacheless_procedural_curve_recursive(target, table, seen) {
             return Some(decoded);
         }
     }
     None
 }
 
-fn decode_procedural_curve_recursive(
-    bytes: &[u8],
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+fn procedural_curve_recursive(
+    toks: &[Token],
+    table: &SubtypeTable,
     seen: &mut Vec<usize>,
-    int_width: usize,
 ) -> Option<DecodedProceduralCurve> {
-    let vector_offset = decode_vector_offset_definition(bytes, int_width);
-    let subset = decode_subset_definition(bytes, int_width);
-    let compound = decode_compound_definition(bytes, int_width);
+    let vector_offset = vector_offset_definition(toks);
+    let subset = subset_definition(toks);
+    let compound = compound_definition(toks);
     // Wrapper constructions serialize their source curves before the record's
     // own cache, so the cache is the last decodable curve block. Every other
     // intcurve opens with its cache — the first block, followed by the fit
     // tolerance; later blocks belong to nested construction machinery
     // (support surfaces, blend spines, progenitors) and are not the carrier.
-    let positions = marker_positions(bytes);
+    let positions = crate::nurbs::toks::marker_positions(toks);
     let solved = if vector_offset.is_some() || subset.is_some() || compound.is_some() {
         positions
             .into_iter()
             .rev()
-            .find_map(|position| decode_curve_block(bytes, position, int_width))
+            .find_map(|position| curve_block(toks, position))
     } else {
         positions
             .into_iter()
-            .find_map(|position| decode_curve_block(bytes, position, int_width))
+            .find_map(|position| curve_block(toks, position))
     };
-    if let Some(decoded) = solved {
-        let cache_fit_tolerance = (bytes.get(decoded.end) == Some(&0x06))
-            .then(|| read_f64(bytes, decoded.end + 1).map(|value| value * LEN_TO_MM))
-            .flatten();
-        let native_kind =
-            owned_construction_subtype(bytes, int_width).unwrap_or_else(|| "intcurve".to_string());
+    if let Some((curve, end)) = solved {
+        let cache_fit_tolerance = match toks.get(end) {
+            Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
+            _ => None,
+        };
+        let native_kind = crate::nurbs::toks::owned_construction_subtype(toks)
+            .unwrap_or_else(|| "intcurve".to_string());
         let definition = if native_kind == "exact_int_cur" {
             Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact)
         } else {
-            decode_helix_definition(bytes, int_width)
-                .or_else(|| decode_two_sided_offset(bytes, int_width))
+            helix_definition(toks).or_else(|| two_sided_offset(toks))
         };
-        let embedded_intersection =
-            decode_embedded_intersection(bytes, int_width, &decoded.curve, active_bytes, tables);
-        let embedded_surface_curve =
-            decode_embedded_surface_curve(bytes, int_width, &decoded.curve, active_bytes, tables);
-        let embedded_surface_offset =
-            decode_embedded_surface_offset(bytes, int_width, &decoded.curve, active_bytes, tables);
-        let embedded_spring =
-            decode_embedded_spring(bytes, int_width, &decoded.curve, active_bytes, tables);
-        let embedded_deformable =
-            decode_embedded_deformable(bytes, int_width, &decoded.curve, active_bytes, tables);
+        let embedded_intersection = embedded_intersection(toks, &curve, table);
+        let embedded_surface_curve = embedded_surface_curve(toks, &curve, table);
+        let embedded_surface_offset = embedded_surface_offset(toks, &curve, table);
+        let embedded_spring = embedded_spring(toks, &curve, table);
+        let embedded_deformable = embedded_deformable(toks, &curve, table);
         return Some(DecodedProceduralCurve {
-            curve: decoded.curve,
+            curve,
             native_kind,
             definition,
             vector_offset,
             subset,
             compound,
-            embedded_two_sided_offset: decode_embedded_two_sided_offset(bytes, int_width),
+            embedded_two_sided_offset: embedded_two_sided_offset(toks),
             embedded_intersection,
-            embedded_three_surface_intersection: decode_embedded_three_surface_intersection(
-                bytes, int_width,
-            ),
+            embedded_three_surface_intersection: embedded_three_surface_intersection(toks),
             embedded_surface_curve,
-            embedded_silhouette: decode_embedded_silhouette(bytes, int_width),
+            embedded_silhouette: embedded_silhouette(toks),
             embedded_surface_offset,
             embedded_spring,
             embedded_deformable,
-            embedded_projection: decode_embedded_projection(bytes, int_width),
-            embedded_law: decode_embedded_law_curve(bytes, int_width),
+            embedded_projection: embedded_projection(toks),
+            embedded_law: embedded_law_curve(toks),
             cache_fit_tolerance,
         });
     }
-    let table = tables.for_width(int_width);
-    for index in subtype_refs(bytes, int_width) {
+    for index in crate::nurbs::toks::subtype_refs(toks) {
         if seen.contains(&index) {
             continue;
         }
-        let target = *table.get(index)?;
         seen.push(index);
-        if let Some(decoded) = decode_procedural_curve_recursive(
-            subtype_span(active_bytes, target, int_width)?,
-            active_bytes,
-            tables,
-            seen,
-            int_width,
-        ) {
+        let target = table.span(index)?;
+        if let Some(decoded) = procedural_curve_recursive(target, table, seen) {
             return Some(decoded);
         }
     }
     None
 }
 
-fn decode_embedded_deformable(
-    bytes: &[u8],
-    int_width: usize,
+fn embedded_deformable(
+    toks: &[Token],
     solved: &NurbsCurve,
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+    table: &SubtypeTable,
 ) -> Option<EmbeddedDeformable> {
-    let name = b"defm_int_cur";
-    let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
-    let mut position = marker + name.len() + 3;
-    let context = decode_cache_first_curve_context(
-        bytes,
-        &mut position,
-        int_width,
-        solved,
-        active_bytes,
-        tables,
-    )?;
-    let source_start = position;
-    let source = if let Some(curve) = decode_embedded_base_curve_resolving_refs(
-        bytes,
-        &mut position,
-        int_width,
-        active_bytes,
-        tables,
-    ) {
+    let marker = crate::nurbs::toks::find_owned_subtype_marker(toks, &["defm_int_cur"])
+        .map(|(marker, _)| marker)?;
+    let mut cur = Cur::at(toks, marker + 2);
+    let context = cache_first_curve_context(&mut cur, solved, table)?;
+    let source_start = cur.pos();
+    let source = if let Some(curve) = embedded_base_curve_resolving_refs(&mut cur, table) {
         EmbeddedDeformableSource::Curve(curve)
     } else {
-        position = source_start;
-        (take_native_ident(bytes, &mut position)?.as_str() == "intcurve").then_some(())?;
-        let flag = take_bool(bytes, &mut position)?;
-        let reference = position;
-        let marker = b"\x0f\x0d\x03ref\x04";
-        bytes.get(reference..)?.starts_with(marker).then_some(())?;
-        let index = read_int(bytes, reference + marker.len(), int_width)?;
-        let reference_span = subtype_span(bytes, reference, int_width)?;
-        position = reference + reference_span.len();
-        EmbeddedDeformableSource::NativeReference { flag, index }
+        cur.set_pos(source_start);
+        (cur.take_ident()? == "intcurve").then_some(())?;
+        let flag = cur.take_bool()?;
+        let reference = cur.pos();
+        matches!(toks.get(reference), Some(Token::SubtypeOpen)).then_some(())?;
+        matches!(toks.get(reference + 1), Some(Token::Ident(name)) if name == "ref")
+            .then_some(())?;
+        let Some(Token::Long(index)) = toks.get(reference + 2) else {
+            return None;
+        };
+        let reference_span = crate::nurbs::toks::subtype_span(toks, reference)?;
+        cur.set_pos(reference + reference_span.len());
+        EmbeddedDeformableSource::NativeReference {
+            flag,
+            index: *index,
+        }
     };
     let source_parameter_range = [
-        take_optional_range_value(bytes, &mut position)?,
-        take_optional_range_value(bytes, &mut position)?,
+        cur.take_optional_range_value()?,
+        cur.take_optional_range_value()?,
     ];
-    let mode = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+    let mode = cur.take_long()?;
     let data = match mode {
         8 => {
             let mut vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
             for vector in &mut vectors {
-                let value = take_native_vec3(bytes, &mut position, 0x14)?;
+                let value = cur.take_vector3()?;
                 *vector = Vector3::new(value[0], value[1], value[2]);
             }
-            let count = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+            let count = cur.take_long()?;
             let count = usize::try_from(count).ok()?;
             let mut parameter_pairs = Vec::with_capacity(count);
             for _ in 0..count {
-                parameter_pairs.push([
-                    take_f64(bytes, &mut position)?,
-                    take_f64(bytes, &mut position)?,
-                ]);
+                parameter_pairs.push([cur.take_f64()?, cur.take_f64()?]);
             }
             EmbeddedDeformableData::VectorField {
                 vectors,
@@ -516,16 +459,12 @@ fn decode_embedded_deformable(
         3 => {
             let mut leading_vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
             for vector in &mut leading_vectors {
-                let value = take_native_vec3(bytes, &mut position, 0x14)?;
+                let value = cur.take_vector3()?;
                 *vector = Vector3::new(value[0], value[1], value[2]);
             }
-            let leading_parameter = take_f64(bytes, &mut position)?;
-            let leading_flags = [
-                take_bool(bytes, &mut position)?,
-                take_bool(bytes, &mut position)?,
-                take_bool(bytes, &mut position)?,
-            ];
-            let value = take_native_vec3(bytes, &mut position, 0x13)?;
+            let leading_parameter = cur.take_f64()?;
+            let leading_flags = [cur.take_bool()?, cur.take_bool()?, cur.take_bool()?];
+            let value = cur.take_position()?;
             let trailing_point = Point3::new(
                 value[0] * LEN_TO_MM,
                 value[1] * LEN_TO_MM,
@@ -533,28 +472,21 @@ fn decode_embedded_deformable(
             );
             let mut trailing_vectors = [Vector3::new(0.0, 0.0, 0.0); 2];
             for vector in &mut trailing_vectors {
-                let value = take_native_vec3(bytes, &mut position, 0x14)?;
+                let value = cur.take_vector3()?;
                 *vector = Vector3::new(value[0], value[1], value[2]);
             }
-            let frame_parameter = take_f64(bytes, &mut position)?;
-            let frame_flags = [
-                take_bool(bytes, &mut position)?,
-                take_bool(bytes, &mut position)?,
-            ];
-            let parameters = [
-                take_f64(bytes, &mut position)?,
-                take_f64(bytes, &mut position)?,
-                take_f64(bytes, &mut position)?,
-            ];
+            let frame_parameter = cur.take_f64()?;
+            let frame_flags = [cur.take_bool()?, cur.take_bool()?];
+            let parameters = [cur.take_f64()?, cur.take_f64()?, cur.take_f64()?];
             let trailing_flags = [
-                take_bool(bytes, &mut position)?,
-                take_bool(bytes, &mut position)?,
-                take_bool(bytes, &mut position)?,
-                take_bool(bytes, &mut position)?,
-                take_bool(bytes, &mut position)?,
+                cur.take_bool()?,
+                cur.take_bool()?,
+                cur.take_bool()?,
+                cur.take_bool()?,
+                cur.take_bool()?,
             ];
-            let trailing_parameter = take_f64(bytes, &mut position)?;
-            let trailing_value = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+            let trailing_parameter = cur.take_f64()?;
+            let trailing_value = cur.take_long()?;
             EmbeddedDeformableData::Mode3 {
                 leading_vectors,
                 leading_parameter,
@@ -571,7 +503,7 @@ fn decode_embedded_deformable(
         }
         _ => return None,
     };
-    (bytes.get(position) == Some(&0x10)).then_some(EmbeddedDeformable {
+    matches!(toks.get(cur.pos()), Some(Token::SubtypeClose)).then_some(EmbeddedDeformable {
         form: context.form,
         surfaces: context.surfaces,
         pcurves: context.pcurves,
@@ -586,82 +518,76 @@ fn decode_embedded_deformable(
 /// Decode one law support surface, mapping the `null_surface` sentinel to an
 /// absent side.
 #[allow(clippy::option_option)] // Outer None is parse failure; inner None is a null carrier.
-fn decode_nullable_law_surface(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-) -> Option<Option<SurfaceGeometry>> {
-    let saved = *position;
-    if take_native_ident(bytes, position).as_deref() == Some("null_surface") {
+fn nullable_law_surface(cur: &mut Cur<'_>) -> Option<Option<SurfaceGeometry>> {
+    let saved = cur.pos();
+    if cur.take_ident() == Some("null_surface") {
         return Some(None);
     }
-    *position = saved;
-    Some(Some(decode_embedded_surface(bytes, position, int_width)?))
+    cur.set_pos(saved);
+    Some(Some(embedded_surface(cur)?))
 }
 
-/// Consume one version-form interval bound: a bare `0x0b` unbounded sentinel or
-/// a `0x0a`-prefixed double. Any other encoding fails the strict match so the
-/// record falls back to verbatim retention.
+/// Consume one version-form interval bound: a bare `false` unbounded sentinel
+/// or a `true`-prefixed double. Any other encoding fails the strict match so
+/// the record falls back to verbatim retention.
 #[allow(clippy::option_option)] // Outer None is parse failure; inner None is an unbounded bound.
-fn take_law_version_bound(bytes: &[u8], position: &mut usize) -> Option<Option<f64>> {
-    match bytes.get(*position)? {
-        0x0b => {
-            *position += 1;
+fn law_version_bound(cur: &mut Cur<'_>) -> Option<Option<f64>> {
+    match cur.peek()? {
+        Token::False => {
+            cur.bump();
             Some(None)
         }
-        0x0a => {
-            *position += 1;
-            take_f64(bytes, position).map(Some)
+        Token::True => {
+            cur.bump();
+            cur.take_f64().map(Some)
         }
         _ => None,
     }
 }
 
-fn decode_embedded_law_curve(bytes: &[u8], int_width: usize) -> Option<EmbeddedLawCurve> {
-    let (marker, name_len) = find_owned_intcurve_subtype(bytes, b"law_int_cur", int_width)?;
-    let mut position = marker + name_len + 3;
-    // The stamped serializer form opens with `04 <stamp> 15 <enum>` before the
-    // solved cache; the legacy form opens directly with the cache marker.
-    let stamp_start = position;
-    let stamp = (bytes.get(position) == Some(&0x04))
+fn embedded_law_curve(toks: &[Token]) -> Option<EmbeddedLawCurve> {
+    let marker = crate::nurbs::toks::find_owned_intcurve_subtype(toks, "law_int_cur")?;
+    let mut cur = Cur::at(toks, marker + 2);
+    // The stamped serializer form opens with an integer stamp and an enum
+    // before the solved cache; the legacy form opens directly with the cache
+    // marker.
+    let stamp_start = cur.pos();
+    let stamp = matches!(cur.peek(), Some(Token::Long(_)))
         .then(|| {
-            let stamp = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
-            let post_enum = take_tagged_int(bytes, &mut position, 0x15, int_width)?;
+            let stamp = cur.take_long()?;
+            let post_enum = cur.take_enum()?;
             Some((stamp, post_enum))
         })
         .flatten();
     if stamp.is_none() {
-        // Restore any bytes consumed by a partially-matched stamp prefix so the
-        // legacy path (and, on its failure, verbatim retention) sees the record
-        // from the cache marker rather than mid-prefix.
-        position = stamp_start;
+        // Restore any tokens consumed by a partially-matched stamp prefix so
+        // the legacy path (and, on its failure, verbatim retention) sees the
+        // record from the cache marker rather than mid-prefix.
+        cur.set_pos(stamp_start);
     }
-    let solved = decode_curve_block(bytes, position, int_width)?;
-    position = solved.end;
-    take_f64(bytes, &mut position)?;
-    let first_surface_start = position;
-    let first_surface = decode_nullable_law_surface(bytes, &mut position, int_width)?;
-    let second_surface_start = position;
-    let second_surface = decode_nullable_law_surface(bytes, &mut position, int_width)?;
+    let (solved, solved_end) = curve_block(toks, cur.pos())?;
+    cur.set_pos(solved_end);
+    cur.take_f64()?;
+    let first_surface_start = cur.pos();
+    let first_surface = nullable_law_surface(&mut cur)?;
+    let second_surface_start = cur.pos();
+    let second_surface = nullable_law_surface(&mut cur)?;
     let surfaces = [first_surface, second_surface];
     let mut pcurves = [
-        decode_nullable_embedded_pcurve(bytes, &mut position, int_width)?,
-        decode_nullable_embedded_pcurve(bytes, &mut position, int_width)?,
+        nullable_embedded_pcurve(&mut cur)?,
+        nullable_embedded_pcurve(&mut cur)?,
     ];
     for (pcurve, chart) in pcurves.iter_mut().zip([
-        native_support_chart(bytes, first_surface_start),
-        native_support_chart(bytes, second_surface_start),
+        native_support_chart(toks, first_surface_start),
+        native_support_chart(toks, second_surface_start),
     ]) {
         if let Some(pcurve) = pcurve {
             normalize_support_pcurve(chart, pcurve);
         }
     }
     let (parameter_range, version) = if let Some((stamp, post_enum)) = stamp {
-        let bounds = [
-            take_law_version_bound(bytes, &mut position)?,
-            take_law_version_bound(bytes, &mut position)?,
-        ];
-        let domain = nurbs_curve_parameter_domain(&solved.curve).unwrap_or([0.0, 0.0]);
+        let bounds = [law_version_bound(&mut cur)?, law_version_bound(&mut cur)?];
+        let domain = nurbs_curve_parameter_domain(&solved).unwrap_or([0.0, 0.0]);
         let parameter_range = [
             bounds[0].unwrap_or(domain[0]),
             bounds[1].unwrap_or(domain[1]),
@@ -675,25 +601,22 @@ fn decode_embedded_law_curve(bytes: &[u8], int_width: usize) -> Option<EmbeddedL
             }),
         )
     } else {
-        let parameter_range = [
-            take_range_value(bytes, &mut position)?,
-            take_range_value(bytes, &mut position)?,
-        ];
+        let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
         (parameter_range, None)
     };
     let discontinuities = [
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
-    let extension = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
-    let primary = decode_law_formula(bytes, &mut position, int_width)?;
-    let count = usize::try_from(take_tagged_int(bytes, &mut position, 0x04, int_width)?).ok()?;
+    let extension = cur.take_long()?;
+    let primary = law_formula(&mut cur)?;
+    let count = usize::try_from(cur.take_long()?).ok()?;
     if count > 100_000 {
         return None;
     }
     let additional = (0..count)
-        .map(|_| decode_law_formula(bytes, &mut position, int_width))
+        .map(|_| law_formula(&mut cur))
         .collect::<Option<Vec<_>>>()?;
     Some(EmbeddedLawCurve {
         context: EmbeddedIntersection {
@@ -709,26 +632,16 @@ fn decode_embedded_law_curve(bytes: &[u8], int_width: usize) -> Option<EmbeddedL
     })
 }
 
-fn decode_embedded_spring(
-    bytes: &[u8],
-    int_width: usize,
+fn embedded_spring(
+    toks: &[Token],
     solved: &NurbsCurve,
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+    table: &SubtypeTable,
 ) -> Option<EmbeddedSpring> {
-    let name = b"spring_int_cur";
-    let (marker, name_len) = find_owned_intcurve_subtype(bytes, name, int_width)?;
-    let mut position = marker + name_len + 3;
-    if bytes.get(position) == Some(&0x04) {
-        let context = decode_cache_first_curve_context(
-            bytes,
-            &mut position,
-            int_width,
-            solved,
-            active_bytes,
-            tables,
-        )?;
-        let direction = take_tagged_int(bytes, &mut position, 0x15, int_width)?;
+    let marker = crate::nurbs::toks::find_owned_intcurve_subtype(toks, "spring_int_cur")?;
+    let mut cur = Cur::at(toks, marker + 2);
+    if matches!(cur.peek(), Some(Token::Long(_))) {
+        let context = cache_first_curve_context(&mut cur, solved, table)?;
+        let direction = cur.take_enum()?;
         return Some(EmbeddedSpring {
             surfaces: context.surfaces,
             pcurves: context.pcurves,
@@ -745,47 +658,38 @@ fn decode_embedded_spring(
     let mut surface_charts = [NativeSupportChart::Canonical; 2];
     let mut surface_parameter_ranges = [None, None];
     for side in 0..2 {
-        let saved = position;
-        if take_native_ident(bytes, &mut position).as_deref() == Some("null_surface") {
+        let saved = cur.pos();
+        if cur.take_ident() == Some("null_surface") {
             surface_parameter_ranges[side] = Some([
-                [
-                    take_range_value(bytes, &mut position)?,
-                    take_range_value(bytes, &mut position)?,
-                ],
-                [
-                    take_range_value(bytes, &mut position)?,
-                    take_range_value(bytes, &mut position)?,
-                ],
+                [cur.take_range_value()?, cur.take_range_value()?],
+                [cur.take_range_value()?, cur.take_range_value()?],
             ]);
         } else {
-            position = saved;
-            surface_charts[side] = native_support_chart(bytes, position);
-            surfaces[side] = Some(decode_embedded_surface(bytes, &mut position, int_width)?);
+            cur.set_pos(saved);
+            surface_charts[side] = native_support_chart(toks, cur.pos());
+            surfaces[side] = Some(embedded_surface(&mut cur)?);
         }
     }
     let first_pcurve;
     let first_pcurve_parameter_range;
-    let saved = position;
-    if take_native_ident(bytes, &mut position).as_deref() == Some("nullbs") {
+    let saved = cur.pos();
+    if cur.take_ident() == Some("nullbs") {
         first_pcurve = None;
-        first_pcurve_parameter_range = Some([
-            take_range_value(bytes, &mut position)?,
-            take_range_value(bytes, &mut position)?,
-        ]);
+        first_pcurve_parameter_range = Some([cur.take_range_value()?, cur.take_range_value()?]);
     } else {
-        position = saved;
-        let (pcurve, end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
-        position = end;
+        cur.set_pos(saved);
+        let (pcurve, end) = pcurve_block_with_end(toks, cur.pos())?;
+        cur.set_pos(end);
         first_pcurve = Some(pcurve);
         first_pcurve_parameter_range = None;
     }
-    let saved = position;
-    let second_pcurve = if take_native_ident(bytes, &mut position).as_deref() == Some("nullbs") {
+    let saved = cur.pos();
+    let second_pcurve = if cur.take_ident() == Some("nullbs") {
         None
     } else {
-        position = saved;
-        let (pcurve, end) = decode_pcurve_block_with_end(bytes, position, int_width)?;
-        position = end;
+        cur.set_pos(saved);
+        let (pcurve, end) = pcurve_block_with_end(toks, cur.pos())?;
+        cur.set_pos(end);
         Some(pcurve)
     };
     let mut pcurves = [first_pcurve, second_pcurve];
@@ -794,17 +698,14 @@ fn decode_embedded_spring(
             normalize_support_pcurve(chart, pcurve);
         }
     }
-    let parameter_range = [
-        take_range_value(bytes, &mut position)?,
-        take_range_value(bytes, &mut position)?,
-    ];
+    let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
-    let discontinuity_flag = take_bool(bytes, &mut position)?;
-    let direction = take_tagged_int(bytes, &mut position, 0x15, int_width)?;
+    let discontinuity_flag = cur.take_bool()?;
+    let direction = cur.take_enum()?;
     Some(EmbeddedSpring {
         surfaces,
         pcurves,
@@ -1081,38 +982,34 @@ pub(crate) fn rolling_ball_patch_layout(
 
 /// Embedded cache-first base curve: a direct NURBS block, an analytic
 /// `straight`, or a referenced `intcurve` resolved to its solved cache.
-pub(crate) fn decode_embedded_base_curve_resolving_refs(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+pub(crate) fn embedded_base_curve_resolving_refs(
+    cur: &mut Cur<'_>,
+    table: &SubtypeTable,
 ) -> Option<NurbsCurve> {
-    if let Some(block) = decode_curve_block(bytes, *position, int_width) {
-        *position = block.end;
-        return Some(block.curve);
+    let toks = cur.toks();
+    if let Some((curve, end)) = curve_block(toks, cur.pos()) {
+        cur.set_pos(end);
+        return Some(curve);
     }
-    let saved = *position;
+    let saved = cur.pos();
     // Some revision-gated owners omit the redundant `intcurve` identifier and
     // store only its sense followed by the compact subtype-table reference.
-    if matches!(bytes.get(*position), Some(0x0a | 0x0b)) {
-        take_bool(bytes, position)?;
-        let reference = *position;
-        if bytes.get(reference) == Some(&0x0f) {
-            let scope = subtype_span(bytes, reference, int_width)?;
-            if let Some(curve) =
-                decode_owned_curve_cache_resolving_refs_at(scope, active_bytes, tables, int_width)
-            {
-                *position = reference + scope.len();
+    if matches!(cur.peek(), Some(Token::True | Token::False)) {
+        cur.take_bool()?;
+        let reference = cur.pos();
+        if matches!(toks.get(reference), Some(Token::SubtypeOpen)) {
+            let scope = crate::nurbs::toks::subtype_span(toks, reference)?;
+            if let Some(curve) = owned_curve_cache_resolving_refs(scope, table) {
+                cur.set_pos(reference + scope.len());
                 return Some(curve);
             }
         }
-        *position = saved;
+        cur.set_pos(saved);
     }
-    match take_native_ident(bytes, position)?.as_str() {
+    match cur.take_ident()? {
         "straight" => {
-            let origin = take_native_vec3(bytes, position, 0x13)?;
-            let direction = take_native_vec3(bytes, position, 0x14)?;
+            let origin = cur.take_position()?;
+            let direction = cur.take_vector3()?;
             let start = Point3::new(
                 origin[0] * LEN_TO_MM,
                 origin[1] * LEN_TO_MM,
@@ -1132,14 +1029,14 @@ pub(crate) fn decode_embedded_base_curve_resolving_refs(
             })
         }
         "ellipse" => {
-            let center = take_native_vec3(bytes, position, 0x13)?;
-            let normal = take_native_vec3(bytes, position, 0x14)?;
-            let major = take_native_vec3(bytes, position, 0x14)?;
-            let ratio = take_f64(bytes, position)?;
+            let center = cur.take_position()?;
+            let normal = cur.take_vector3()?;
+            let major = cur.take_vector3()?;
+            let ratio = cur.take_f64()?;
             ellipse_to_nurbs(center, normal, major, ratio)
         }
         "degenerate_curve" => {
-            let point = take_native_vec3(bytes, position, 0x13)?;
+            let point = cur.take_position()?;
             let at = Point3::new(
                 point[0] * LEN_TO_MM,
                 point[1] * LEN_TO_MM,
@@ -1154,90 +1051,64 @@ pub(crate) fn decode_embedded_base_curve_resolving_refs(
             })
         }
         "intcurve" => {
-            take_bool(bytes, position)?;
-            let reference = *position;
-            let marker = b"\x0f\x0d\x03ref\x04";
-            if !bytes.get(reference..)?.starts_with(marker) {
-                if bytes.get(reference) == Some(&0x0f) {
+            cur.take_bool()?;
+            let reference = cur.pos();
+            let compact_ref = matches!(toks.get(reference), Some(Token::SubtypeOpen))
+                && matches!(toks.get(reference + 1), Some(Token::Ident(name)) if name == "ref")
+                && matches!(toks.get(reference + 2), Some(Token::Long(_)));
+            if !compact_ref {
+                if matches!(toks.get(reference), Some(Token::SubtypeOpen)) {
                     // Inline subtype scope: resolve its solved curve cache.
-                    let scope = subtype_span(bytes, reference, int_width)?;
-                    let curve = decode_owned_curve_cache_resolving_refs_at(
-                        scope,
-                        active_bytes,
-                        tables,
-                        int_width,
-                    )?;
-                    *position = reference + scope.len();
+                    let scope = crate::nurbs::toks::subtype_span(toks, reference)?;
+                    let curve = owned_curve_cache_resolving_refs(scope, table)?;
+                    cur.set_pos(reference + scope.len());
                     return Some(curve);
                 }
-                *position = saved;
+                cur.set_pos(saved);
                 return None;
             }
-            let index =
-                usize::try_from(read_int(bytes, reference + marker.len(), int_width)?).ok()?;
-            let reference_span = subtype_span(bytes, reference, int_width)?;
-            *position = reference + reference_span.len();
-            tables
-                .for_width(int_width)
-                .get(index)
-                .and_then(|target| subtype_span(active_bytes, *target, int_width))
-                .and_then(|target| {
-                    decode_owned_curve_cache_resolving_refs_at(
-                        target,
-                        active_bytes,
-                        tables,
-                        int_width,
-                    )
-                })
+            let Some(Token::Long(index)) = toks.get(reference + 2) else {
+                return None;
+            };
+            let index = usize::try_from(*index).ok()?;
+            let reference_span = crate::nurbs::toks::subtype_span(toks, reference)?;
+            cur.set_pos(reference + reference_span.len());
+            table
+                .span(index)
+                .and_then(|target| owned_curve_cache_resolving_refs(target, table))
         }
         _ => {
-            *position = saved;
+            cur.set_pos(saved);
             None
         }
     }
 }
 
-fn decode_embedded_surface_offset(
-    bytes: &[u8],
-    int_width: usize,
+fn embedded_surface_offset(
+    toks: &[Token],
     solved: &NurbsCurve,
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+    table: &SubtypeTable,
 ) -> Option<EmbeddedSurfaceOffset> {
-    let name = b"off_surf_int_cur";
-    let (marker, name_len) = find_owned_intcurve_subtype(bytes, name, int_width)?;
-    let mut position = marker + name_len + 3;
-    if bytes.get(position) == Some(&0x04) {
-        let context = decode_cache_first_curve_context(
-            bytes,
-            &mut position,
-            int_width,
-            solved,
-            active_bytes,
-            tables,
-        )?;
+    let marker = crate::nurbs::toks::find_owned_intcurve_subtype(toks, "off_surf_int_cur")?;
+    let mut cur = Cur::at(toks, marker + 2);
+    if matches!(cur.peek(), Some(Token::Long(_))) {
+        let context = cache_first_curve_context(&mut cur, solved, table)?;
         let base_u_range = [
-            take_optional_range_value(bytes, &mut position)??,
-            take_optional_range_value(bytes, &mut position)??,
+            cur.take_optional_range_value()??,
+            cur.take_optional_range_value()??,
         ];
         let base_v_range = [
-            take_optional_range_value(bytes, &mut position)??,
-            take_optional_range_value(bytes, &mut position)??,
+            cur.take_optional_range_value()??,
+            cur.take_optional_range_value()??,
         ];
-        let base = decode_embedded_base_curve_resolving_refs(
-            bytes,
-            &mut position,
-            int_width,
-            active_bytes,
-            tables,
-        )?;
+        let base = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let base_endpoints = [
-            take_optional_range_value(bytes, &mut position)?,
-            take_optional_range_value(bytes, &mut position)?,
+            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?,
         ];
         let base_range = [
-            take_optional_range_value(bytes, &mut position)??,
-            take_optional_range_value(bytes, &mut position)??,
+            cur.take_optional_range_value()??,
+            cur.take_optional_range_value()??,
         ];
         return Some(EmbeddedSurfaceOffset {
             context: EmbeddedIntersection {
@@ -1253,36 +1124,24 @@ fn decode_embedded_surface_offset(
             base_range,
             base_endpoints,
             cache_first: Some(context.form),
-            distance: take_f64(bytes, &mut position)? * LEN_TO_MM,
-            shift: take_f64(bytes, &mut position)?,
-            scale: take_f64(bytes, &mut position)?,
+            distance: cur.take_f64()? * LEN_TO_MM,
+            shift: cur.take_f64()?,
+            scale: cur.take_f64()?,
         });
     }
-    let (surfaces, pcurves) = decode_required_support_pair(bytes, &mut position, int_width)?;
-    let parameter_range = [
-        take_range_value(bytes, &mut position)?,
-        take_range_value(bytes, &mut position)?,
-    ];
+    let (surfaces, pcurves) = required_support_pair(&mut cur)?;
+    let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
-    let discontinuity_flag = take_bool(bytes, &mut position)?;
-    let base_u_range = [
-        take_range_value(bytes, &mut position)?,
-        take_range_value(bytes, &mut position)?,
-    ];
-    let base_v_range = [
-        take_range_value(bytes, &mut position)?,
-        take_range_value(bytes, &mut position)?,
-    ];
-    let base = decode_curve_block(bytes, position, int_width)?;
-    position = base.end;
-    let base_range = [
-        take_range_value(bytes, &mut position)?,
-        take_range_value(bytes, &mut position)?,
-    ];
+    let discontinuity_flag = cur.take_bool()?;
+    let base_u_range = [cur.take_range_value()?, cur.take_range_value()?];
+    let base_v_range = [cur.take_range_value()?, cur.take_range_value()?];
+    let (base, base_end) = curve_block(toks, cur.pos())?;
+    cur.set_pos(base_end);
+    let base_range = [cur.take_range_value()?, cur.take_range_value()?];
     Some(EmbeddedSurfaceOffset {
         context: EmbeddedIntersection {
             surfaces: surfaces.map(Some),
@@ -1293,13 +1152,13 @@ fn decode_embedded_surface_offset(
         discontinuity_flag,
         base_u_range,
         base_v_range,
-        base: base.curve,
+        base,
         base_range,
         base_endpoints: [None, None],
         cache_first: None,
-        distance: take_f64(bytes, &mut position)? * LEN_TO_MM,
-        shift: take_f64(bytes, &mut position)?,
-        scale: take_f64(bytes, &mut position)?,
+        distance: cur.take_f64()? * LEN_TO_MM,
+        shift: cur.take_f64()?,
+        scale: cur.take_f64()?,
     })
 }
 
@@ -1367,39 +1226,36 @@ pub(crate) fn surface_offset_patch_layout(
     })
 }
 
-fn decode_embedded_silhouette(bytes: &[u8], int_width: usize) -> Option<EmbeddedSilhouette> {
+fn embedded_silhouette(toks: &[Token]) -> Option<EmbeddedSilhouette> {
     use cadmpeg_ir::geometry::SilhouetteKind;
     let names = [
-        (b"silh_int_cur".as_slice(), SilhouetteKind::Standard),
-        (b"para_silh_int_cur".as_slice(), SilhouetteKind::Parametric),
-        (b"parasil".as_slice(), SilhouetteKind::Parametric),
+        ("silh_int_cur", SilhouetteKind::Standard),
+        ("para_silh_int_cur", SilhouetteKind::Parametric),
+        ("parasil", SilhouetteKind::Parametric),
         (
-            b"taper_silh_int_cur".as_slice(),
+            "taper_silh_int_cur",
             SilhouetteKind::Taper { draft_factor: 0.0 },
         ),
     ];
-    let candidates: Vec<&[u8]> = names.iter().map(|(name, _)| *name).collect();
-    let (marker, name) = find_owned_subtype_marker(bytes, &candidates, int_width)?;
+    let candidates: Vec<&str> = names.iter().map(|(name, _)| *name).collect();
+    let (marker, name) = crate::nurbs::toks::find_owned_subtype_marker(toks, &candidates)?;
     let mut silhouette = names
         .iter()
         .find_map(|(candidate, silhouette)| (*candidate == name).then(|| silhouette.clone()))?;
-    let mut position = marker + name.len() + 3;
-    let (surfaces, pcurves) = decode_required_support_pair(bytes, &mut position, int_width)?;
-    let parameter_range = [
-        take_range_value(bytes, &mut position)?,
-        take_range_value(bytes, &mut position)?,
-    ];
+    let mut cur = Cur::at(toks, marker + 2);
+    let (surfaces, pcurves) = required_support_pair(&mut cur)?;
+    let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
-    let cast_surface = decode_embedded_surface(bytes, &mut position, int_width)?;
-    let light = take_native_vec3(bytes, &mut position, 0x14)?;
+    let cast_surface = embedded_surface(&mut cur)?;
+    let light = cur.take_vector3()?;
     let light_direction = normalized(light)?;
     if matches!(silhouette, SilhouetteKind::Taper { .. }) {
         silhouette = SilhouetteKind::Taper {
-            draft_factor: take_f64(bytes, &mut position)?,
+            draft_factor: cur.take_f64()?,
         };
     }
     Some(EmbeddedSilhouette {
@@ -1460,12 +1316,10 @@ pub(crate) fn silhouette_patch_layout(
     })
 }
 
-fn decode_embedded_surface_curve(
-    bytes: &[u8],
-    int_width: usize,
+fn embedded_surface_curve(
+    toks: &[Token],
     solved: &NurbsCurve,
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+    table: &SubtypeTable,
 ) -> Option<(
     cadmpeg_ir::geometry::SurfaceCurveFamily,
     EmbeddedIntersection,
@@ -1473,38 +1327,23 @@ fn decode_embedded_surface_curve(
 )> {
     use cadmpeg_ir::geometry::SurfaceCurveFamily;
     let names = [
-        (b"blend_int_cur".as_slice(), SurfaceCurveFamily::Blend),
-        (b"bldcur".as_slice(), SurfaceCurveFamily::Blend),
-        (
-            b"surf_int_cur".as_slice(),
-            SurfaceCurveFamily::SurfaceConstrained,
-        ),
-        (
-            b"surfcur".as_slice(),
-            SurfaceCurveFamily::SurfaceConstrained,
-        ),
-        (b"par_int_cur".as_slice(), SurfaceCurveFamily::Parametric),
-        (b"parcur".as_slice(), SurfaceCurveFamily::Parametric),
-        (b"skin_int_cur".as_slice(), SurfaceCurveFamily::Skin),
-        (b"d5c2_cur".as_slice(), SurfaceCurveFamily::Skin),
+        ("blend_int_cur", SurfaceCurveFamily::Blend),
+        ("bldcur", SurfaceCurveFamily::Blend),
+        ("surf_int_cur", SurfaceCurveFamily::SurfaceConstrained),
+        ("surfcur", SurfaceCurveFamily::SurfaceConstrained),
+        ("par_int_cur", SurfaceCurveFamily::Parametric),
+        ("parcur", SurfaceCurveFamily::Parametric),
+        ("skin_int_cur", SurfaceCurveFamily::Skin),
+        ("d5c2_cur", SurfaceCurveFamily::Skin),
     ];
-    let candidates: Vec<&[u8]> = names.iter().map(|(name, _)| *name).collect();
-    let (marker, name) = find_owned_subtype_marker(bytes, &candidates, int_width)?;
+    let candidates: Vec<&str> = names.iter().map(|(name, _)| *name).collect();
+    let (marker, name) = crate::nurbs::toks::find_owned_subtype_marker(toks, &candidates)?;
     let family = names
         .iter()
         .find_map(|(candidate, family)| (*candidate == name).then(|| family.clone()))?;
-    let position = marker + name.len() + 3;
-    decode_context_first_surface_curve(bytes, position, int_width, family.clone()).or_else(|| {
-        decode_cache_first_surface_curve(
-            bytes,
-            position,
-            int_width,
-            family,
-            solved,
-            active_bytes,
-            tables,
-        )
-    })
+    let position = marker + 2;
+    context_first_surface_curve(toks, position, family.clone())
+        .or_else(|| cache_first_surface_curve(toks, position, family, solved, table))
 }
 
 /// Decode a form-2 `par_int_cur` scope into the curve it denotes.
@@ -1539,6 +1378,44 @@ pub(crate) fn decode_par_int_cur_isoline(
     let pcurves = [
         decode_nullable_embedded_pcurve(scope, &mut position, int_width)?,
         decode_nullable_embedded_pcurve(scope, &mut position, int_width)?,
+    ];
+    // The support-slot selector puts the parametric support and its parameter
+    // curve in the same slot and nulls the other; a support without its pcurve,
+    // or two occupied slots, is not this construction.
+    let occupied: Vec<usize> = (0..2)
+        .filter(|slot| supports[*slot].is_some() || pcurves[*slot].is_some())
+        .collect();
+    let [slot] = occupied.as_slice() else {
+        return None;
+    };
+    let (Some(SurfaceGeometry::Nurbs(support)), Some(pcurve)) = (&supports[*slot], &pcurves[*slot])
+    else {
+        return None;
+    };
+    surface_isoline_along(support, pcurve)
+}
+
+/// Decode a form-2 `par_int_cur` scope into the curve it denotes. Token-space
+/// counterpart of [`decode_par_int_cur_isoline`].
+pub(crate) fn par_int_cur_isoline(
+    scope: &[Token],
+    reference_context: Option<&SubtypeTable>,
+) -> Option<NurbsCurve> {
+    let (start, _) =
+        crate::nurbs::toks::find_owned_subtype_marker(scope, &["par_int_cur", "parcur"])?;
+    let mut cur = Cur::at(scope, start + 2);
+    (cur.take_long()? > 0).then_some(())?;
+    (cur.take_enum()? == 2).then_some(())?;
+    cur.take_range_value()?;
+    cur.take_range_value()?;
+    cur.take_enum()?;
+    let supports = [
+        optional_rolling_ball_surface(&mut cur, reference_context)?.0,
+        optional_rolling_ball_surface(&mut cur, reference_context)?.0,
+    ];
+    let pcurves = [
+        nullable_embedded_pcurve(&mut cur)?,
+        nullable_embedded_pcurve(&mut cur)?,
     ];
     // The support-slot selector puts the parametric support and its parameter
     // curve in the same slot and nulls the other; a support without its pcurve,
@@ -1620,66 +1497,58 @@ struct CacheFirstCurveContext {
     discontinuities: [Vec<f64>; 3],
 }
 
-fn decode_cache_first_curve_context(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
+fn cache_first_curve_context(
+    cur: &mut Cur<'_>,
     solved: &NurbsCurve,
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+    table: &SubtypeTable,
 ) -> Option<CacheFirstCurveContext> {
-    let revision = take_tagged_int(bytes, position, 0x04, int_width)?;
+    let revision = cur.take_long()?;
     (revision > 0).then_some(())?;
     // The leading enum selects the approximation-cache form. `0` stores the
     // solved curve cache and its fit tolerance; `2` stores neither and instead
     // stores a bool-gated curve interval and a closed-form enum. No other value
     // has a defined grammar, so it fails and the containing record is retained
     // verbatim.
-    let cache_enum = take_tagged_int(bytes, position, 0x15, int_width)?;
+    let cache_enum = cur.take_enum()?;
     let parameterization = match cache_enum {
         0 => {
-            *position = decode_curve_block(bytes, *position, int_width)?.end;
-            take_f64(bytes, position)?;
+            let (_, end) = curve_block(cur.toks(), cur.pos())?;
+            cur.set_pos(end);
+            cur.take_f64()?;
             None
         }
         2 => Some(cadmpeg_ir::geometry::CacheFirstCurveParameterization {
             interval: [
-                take_optional_range_value(bytes, position)?,
-                take_optional_range_value(bytes, position)?,
+                cur.take_optional_range_value()?,
+                cur.take_optional_range_value()?,
             ],
-            closed_form: take_tagged_int(bytes, position, 0x15, int_width)?,
+            closed_form: cur.take_enum()?,
         }),
         _ => return None,
     };
-    let first_surface_start = *position;
-    let (first_surface, first_bounds) = decode_optional_embedded_surface_with_bounds(
-        bytes,
-        position,
-        int_width,
-        active_bytes,
-        tables,
-    )?;
-    let second_surface_start = *position;
-    let (second_surface, second_bounds) = decode_optional_embedded_surface_with_bounds(
-        bytes,
-        position,
-        int_width,
-        active_bytes,
-        tables,
-    )?;
+    let first_surface_start = cur.pos();
+    let (first_surface, first_bounds) = optional_embedded_surface_with_bounds(cur, table)?;
+    let second_surface_start = cur.pos();
+    let (second_surface, second_bounds) = optional_embedded_surface_with_bounds(cur, table)?;
     let mut pcurves = [
-        decode_nullable_embedded_pcurve(bytes, position, int_width)?,
-        decode_nullable_embedded_pcurve(bytes, position, int_width)?,
+        nullable_embedded_pcurve(cur)?,
+        nullable_embedded_pcurve(cur)?,
     ];
     if let Some(pcurve) = &mut pcurves[0] {
-        normalize_support_pcurve(native_support_chart(bytes, first_surface_start), pcurve);
+        normalize_support_pcurve(
+            native_support_chart(cur.toks(), first_surface_start),
+            pcurve,
+        );
     }
     if let Some(pcurve) = &mut pcurves[1] {
-        normalize_support_pcurve(native_support_chart(bytes, second_surface_start), pcurve);
+        normalize_support_pcurve(
+            native_support_chart(cur.toks(), second_surface_start),
+            pcurve,
+        );
     }
     let solved_range = [
-        take_optional_range_value(bytes, position)?,
-        take_optional_range_value(bytes, position)?,
+        cur.take_optional_range_value()?,
+        cur.take_optional_range_value()?,
     ];
     let domain = nurbs_curve_parameter_domain(solved)?;
     let parameter_range = [
@@ -1687,11 +1556,11 @@ fn decode_cache_first_curve_context(
         solved_range[1].unwrap_or(domain[1]),
     ];
     let discontinuities = [
-        take_float_array(bytes, position, int_width)?,
-        take_float_array(bytes, position, int_width)?,
-        take_float_array(bytes, position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
-    let extension = take_tagged_int(bytes, position, 0x04, int_width)?;
+    let extension = cur.take_long()?;
     Some(CacheFirstCurveContext {
         form: cadmpeg_ir::geometry::CacheFirstCurveForm {
             revision,
@@ -1708,25 +1577,22 @@ fn decode_cache_first_curve_context(
     })
 }
 
-fn decode_context_first_surface_curve(
-    bytes: &[u8],
-    mut position: usize,
-    int_width: usize,
+fn context_first_surface_curve(
+    toks: &[Token],
+    position: usize,
     family: cadmpeg_ir::geometry::SurfaceCurveFamily,
 ) -> Option<(
     cadmpeg_ir::geometry::SurfaceCurveFamily,
     EmbeddedIntersection,
     Option<cadmpeg_ir::geometry::SurfaceCurveTail>,
 )> {
-    let (surfaces, pcurves) = decode_required_support_pair(bytes, &mut position, int_width)?;
-    let parameter_range = [
-        take_range_value(bytes, &mut position)?,
-        take_range_value(bytes, &mut position)?,
-    ];
+    let mut cur = Cur::at(toks, position);
+    let (surfaces, pcurves) = required_support_pair(&mut cur)?;
+    let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
     Some((
         family,
@@ -1740,30 +1606,22 @@ fn decode_context_first_surface_curve(
     ))
 }
 
-fn decode_cache_first_surface_curve(
-    bytes: &[u8],
-    mut position: usize,
-    int_width: usize,
+fn cache_first_surface_curve(
+    toks: &[Token],
+    position: usize,
     family: cadmpeg_ir::geometry::SurfaceCurveFamily,
     solved: &NurbsCurve,
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+    table: &SubtypeTable,
 ) -> Option<(
     cadmpeg_ir::geometry::SurfaceCurveFamily,
     EmbeddedIntersection,
     Option<cadmpeg_ir::geometry::SurfaceCurveTail>,
 )> {
-    let context = decode_cache_first_curve_context(
-        bytes,
-        &mut position,
-        int_width,
-        solved,
-        active_bytes,
-        tables,
-    )?;
-    let flag = take_bool(bytes, &mut position)?;
-    let second_flag = matches!(bytes.get(position), Some(0x0a | 0x0b))
-        .then(|| take_bool(bytes, &mut position))
+    let mut cur = Cur::at(toks, position);
+    let context = cache_first_curve_context(&mut cur, solved, table)?;
+    let flag = cur.take_bool()?;
+    let second_flag = matches!(cur.peek(), Some(Token::True | Token::False))
+        .then(|| cur.take_bool())
         .flatten();
     Some((
         family,
@@ -1826,30 +1684,23 @@ pub(crate) fn surface_curve_patch_layout(
     })
 }
 
-fn decode_embedded_three_surface_intersection(
-    bytes: &[u8],
-    int_width: usize,
-) -> Option<EmbeddedThreeSurfaceIntersection> {
-    let name = b"sss_int_cur";
-    let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
-    let mut position = marker + name.len() + 3;
-    let ([first, second], [first_pcurve, second_pcurve]) =
-        decode_required_support_pair(bytes, &mut position, int_width)?;
-    let parameter_range = [
-        take_range_value(bytes, &mut position)?,
-        take_range_value(bytes, &mut position)?,
-    ];
+fn embedded_three_surface_intersection(toks: &[Token]) -> Option<EmbeddedThreeSurfaceIntersection> {
+    let marker = crate::nurbs::toks::find_owned_subtype_marker(toks, &["sss_int_cur"])
+        .map(|(marker, _)| marker)?;
+    let mut cur = Cur::at(toks, marker + 2);
+    let ([first, second], [first_pcurve, second_pcurve]) = required_support_pair(&mut cur)?;
+    let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
-    let selector = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
-    let third_surface_start = position;
-    let third = decode_embedded_surface(bytes, &mut position, int_width)?;
-    let (mut third_pcurve, _) = decode_pcurve_block_with_end(bytes, position, int_width)?;
+    let selector = cur.take_long()?;
+    let third_surface_start = cur.pos();
+    let third = embedded_surface(&mut cur)?;
+    let (mut third_pcurve, _) = pcurve_block_with_end(toks, cur.pos())?;
     normalize_support_pcurve(
-        native_support_chart(bytes, third_surface_start),
+        native_support_chart(toks, third_surface_start),
         &mut third_pcurve,
     );
     Some(EmbeddedThreeSurfaceIntersection {
@@ -1899,34 +1750,27 @@ pub(crate) fn three_surface_patch_layout(
     })
 }
 
-fn decode_embedded_projection(bytes: &[u8], int_width: usize) -> Option<EmbeddedProjection> {
-    let name = b"proj_int_cur";
-    let (marker, name_len) = find_owned_intcurve_subtype(bytes, name, int_width)?;
-    let mut position = marker + name_len + 3;
-    let (surfaces, pcurves) = decode_required_support_pair(bytes, &mut position, int_width)?;
-    let parameter_range = [
-        take_range_value(bytes, &mut position)?,
-        take_range_value(bytes, &mut position)?,
-    ];
+fn embedded_projection(toks: &[Token]) -> Option<EmbeddedProjection> {
+    let marker = crate::nurbs::toks::find_owned_intcurve_subtype(toks, "proj_int_cur")?;
+    let mut cur = Cur::at(toks, marker + 2);
+    let (surfaces, pcurves) = required_support_pair(&mut cur)?;
+    let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
-    let discontinuity_flag = take_bool(bytes, &mut position)?;
-    let source = decode_curve_block(bytes, position, int_width)?;
-    position = source.end;
-    let flag = take_bool(bytes, &mut position)?;
-    let tail = if bytes.get(position) == Some(&0x10) {
+    let discontinuity_flag = cur.take_bool()?;
+    let (source, source_end) = curve_block(toks, cur.pos())?;
+    cur.set_pos(source_end);
+    let flag = cur.take_bool()?;
+    let tail = if matches!(cur.peek(), Some(Token::SubtypeClose)) {
         cadmpeg_ir::geometry::ProjectionTail::EarlyClose { flag }
     } else {
         cadmpeg_ir::geometry::ProjectionTail::Ranged {
             flag,
-            parameter_range: [
-                take_range_value(bytes, &mut position)?,
-                take_range_value(bytes, &mut position)?,
-            ],
-            role: take_native_string(bytes, &mut position)?,
+            parameter_range: [cur.take_range_value()?, cur.take_range_value()?],
+            role: cur.take_str()?.to_string(),
         }
     };
     Some(EmbeddedProjection {
@@ -1935,7 +1779,7 @@ fn decode_embedded_projection(bytes: &[u8], int_width: usize) -> Option<Embedded
         parameter_range,
         discontinuities,
         discontinuity_flag,
-        source: source.curve,
+        source,
         tail,
     })
 }
@@ -2010,37 +1854,31 @@ pub(crate) fn projection_patch_layout(
     })
 }
 
-fn decode_embedded_intersection(
-    bytes: &[u8],
-    int_width: usize,
+fn embedded_intersection(
+    toks: &[Token],
     solved: &NurbsCurve,
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+    table: &SubtypeTable,
 ) -> Option<(EmbeddedIntersection, bool)> {
-    let names: [&[u8]; 3] = [b"int_int_cur", b"surf_surf_int_cur", b"surfintcur"];
-    let (marker, name) = find_owned_subtype_marker(bytes, &names, int_width)?;
-    let position = marker + name.len() + 3;
-    decode_context_first_intersection(bytes, position, int_width).or_else(|| {
-        decode_cache_first_intersection(bytes, position, int_width, solved, active_bytes, tables)
-    })
+    let names = ["int_int_cur", "surf_surf_int_cur", "surfintcur"];
+    let (marker, _) = crate::nurbs::toks::find_owned_subtype_marker(toks, &names)?;
+    let position = marker + 2;
+    context_first_intersection(toks, position)
+        .or_else(|| cache_first_intersection(toks, position, solved, table))
 }
 
-fn decode_context_first_intersection(
-    bytes: &[u8],
-    mut position: usize,
-    int_width: usize,
+fn context_first_intersection(
+    toks: &[Token],
+    position: usize,
 ) -> Option<(EmbeddedIntersection, bool)> {
-    let (surfaces, pcurves) = decode_required_support_pair(bytes, &mut position, int_width)?;
-    let parameter_range = [
-        take_range_value(bytes, &mut position)?,
-        take_range_value(bytes, &mut position)?,
-    ];
+    let mut cur = Cur::at(toks, position);
+    let (surfaces, pcurves) = required_support_pair(&mut cur)?;
+    let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
-    let discontinuity_flag = take_bool(bytes, &mut position)?;
+    let discontinuity_flag = cur.take_bool()?;
     Some((
         EmbeddedIntersection {
             surfaces: surfaces.map(Some),
@@ -2052,56 +1890,44 @@ fn decode_context_first_intersection(
     ))
 }
 
-fn decode_cache_first_intersection(
-    bytes: &[u8],
-    mut position: usize,
-    int_width: usize,
+fn cache_first_intersection(
+    toks: &[Token],
+    position: usize,
     solved: &NurbsCurve,
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+    table: &SubtypeTable,
 ) -> Option<(EmbeddedIntersection, bool)> {
-    (take_tagged_int(bytes, &mut position, 0x04, int_width)? > 0).then_some(())?;
-    (take_tagged_int(bytes, &mut position, 0x15, int_width)? == 0).then_some(())?;
-    position = decode_curve_block(bytes, position, int_width)?.end;
-    take_f64(bytes, &mut position)?;
-    let first_surface_start = position;
-    let first_surface = decode_optional_embedded_surface_resolving_ref(
-        bytes,
-        &mut position,
-        int_width,
-        active_bytes,
-        tables,
-    )?;
-    let second_surface_start = position;
-    let second_surface = decode_optional_embedded_surface_resolving_ref(
-        bytes,
-        &mut position,
-        int_width,
-        active_bytes,
-        tables,
-    )?;
+    let mut cur = Cur::at(toks, position);
+    (cur.take_long()? > 0).then_some(())?;
+    (cur.take_enum()? == 0).then_some(())?;
+    let (_, cache_end) = curve_block(toks, cur.pos())?;
+    cur.set_pos(cache_end);
+    cur.take_f64()?;
+    let first_surface_start = cur.pos();
+    let first_surface = optional_embedded_surface_resolving_ref(&mut cur, table)?;
+    let second_surface_start = cur.pos();
+    let second_surface = optional_embedded_surface_resolving_ref(&mut cur, table)?;
     let surfaces = [first_surface, second_surface];
     let mut pcurves = [
-        decode_nullable_embedded_pcurve(bytes, &mut position, int_width)?,
-        decode_nullable_embedded_pcurve(bytes, &mut position, int_width)?,
+        nullable_embedded_pcurve(&mut cur)?,
+        nullable_embedded_pcurve(&mut cur)?,
     ];
     if let Some(pcurve) = &mut pcurves[0] {
-        normalize_support_pcurve(native_support_chart(bytes, first_surface_start), pcurve);
+        normalize_support_pcurve(native_support_chart(toks, first_surface_start), pcurve);
     }
     if let Some(pcurve) = &mut pcurves[1] {
-        normalize_support_pcurve(native_support_chart(bytes, second_surface_start), pcurve);
+        normalize_support_pcurve(native_support_chart(toks, second_surface_start), pcurve);
     }
     let domain = nurbs_curve_parameter_domain(solved)?;
     let parameter_range = [
-        take_optional_range_value(bytes, &mut position)?.unwrap_or(domain[0]),
-        take_optional_range_value(bytes, &mut position)?.unwrap_or(domain[1]),
+        cur.take_optional_range_value()?.unwrap_or(domain[0]),
+        cur.take_optional_range_value()?.unwrap_or(domain[1]),
     ];
     let discontinuities = [
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
-    let discontinuity_flag = take_tagged_int(bytes, &mut position, 0x04, int_width)? != 0;
+    let discontinuity_flag = cur.take_long()? != 0;
     Some((
         EmbeddedIntersection {
             surfaces,
@@ -2150,42 +1976,35 @@ pub(crate) fn intersection_patch_layout(
     })
 }
 
-fn decode_embedded_two_sided_offset(
-    bytes: &[u8],
-    int_width: usize,
-) -> Option<EmbeddedTwoSidedOffset> {
-    let name = b"off_int_cur";
-    let (marker, name_len) = find_owned_intcurve_subtype(bytes, name, int_width)?;
-    let mut position = marker + name_len + 3;
-    let first_surface_start = position;
-    let first_surface = decode_optional_embedded_surface(bytes, &mut position, int_width)?.value();
-    let second_surface_start = position;
-    let second_surface = decode_optional_embedded_surface(bytes, &mut position, int_width)?.value();
+fn embedded_two_sided_offset(toks: &[Token]) -> Option<EmbeddedTwoSidedOffset> {
+    let marker = crate::nurbs::toks::find_owned_intcurve_subtype(toks, "off_int_cur")?;
+    let mut cur = Cur::at(toks, marker + 2);
+    let first_surface_start = cur.pos();
+    let first_surface = optional_embedded_surface(&mut cur)?.value();
+    let second_surface_start = cur.pos();
+    let second_surface = optional_embedded_surface(&mut cur)?.value();
     let surfaces = [first_surface, second_surface];
-    let first_pcurve = decode_optional_pcurve(bytes, &mut position, int_width)?.value();
-    let second_pcurve = decode_optional_pcurve(bytes, &mut position, int_width)?.value();
+    let first_pcurve = optional_pcurve(&mut cur)?.value();
+    let second_pcurve = optional_pcurve(&mut cur)?.value();
     let mut pcurves = [first_pcurve, second_pcurve];
     for (pcurve, chart) in pcurves.iter_mut().zip([
-        native_support_chart(bytes, first_surface_start),
-        native_support_chart(bytes, second_surface_start),
+        native_support_chart(toks, first_surface_start),
+        native_support_chart(toks, second_surface_start),
     ]) {
         if let Some(pcurve) = pcurve {
             normalize_support_pcurve(chart, pcurve);
         }
     }
-    let parameter_range = [
-        take_range_value(bytes, &mut position)?,
-        take_range_value(bytes, &mut position)?,
-    ];
+    let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
-    let discontinuity_flag = take_bool(bytes, &mut position)?;
+    let discontinuity_flag = cur.take_bool()?;
     let offsets = [
-        take_range_value(bytes, &mut position)? * LEN_TO_MM,
-        take_range_value(bytes, &mut position)? * LEN_TO_MM,
+        cur.take_range_value()? * LEN_TO_MM,
+        cur.take_range_value()? * LEN_TO_MM,
     ];
     Some(EmbeddedTwoSidedOffset {
         surfaces,
@@ -2197,30 +2016,22 @@ fn decode_embedded_two_sided_offset(
     })
 }
 
-fn decode_optional_embedded_surface(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-) -> Option<Nullable<SurfaceGeometry>> {
-    let start = *position;
-    if take_native_ident(bytes, position)?.as_str() == "null_surface" {
+fn optional_embedded_surface(cur: &mut Cur<'_>) -> Option<Nullable<SurfaceGeometry>> {
+    let start = cur.pos();
+    if cur.take_ident()? == "null_surface" {
         return Some(Nullable::Null);
     }
-    *position = start;
-    decode_embedded_surface(bytes, position, int_width).map(Nullable::Value)
+    cur.set_pos(start);
+    embedded_surface(cur).map(Nullable::Value)
 }
 
-fn decode_optional_pcurve(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-) -> Option<Nullable<NurbsPcurve>> {
-    let start = *position;
-    if take_native_ident(bytes, position)?.as_str() == "nullbs" {
+fn optional_pcurve(cur: &mut Cur<'_>) -> Option<Nullable<NurbsPcurve>> {
+    let start = cur.pos();
+    if cur.take_ident()? == "nullbs" {
         return Some(Nullable::Null);
     }
-    let (pcurve, end) = decode_pcurve_block_with_end(bytes, start, int_width)?;
-    *position = end;
+    let (pcurve, end) = pcurve_block_with_end(cur.toks(), start)?;
+    cur.set_pos(end);
     Some(Nullable::Value(pcurve))
 }
 
@@ -2292,6 +2103,160 @@ pub(crate) fn decode_embedded_surface(
     int_width: usize,
 ) -> Option<SurfaceGeometry> {
     decode_embedded_surface_fields(bytes, position, int_width, false).map(|(surface, _)| surface)
+}
+
+/// Decode one embedded analytic or spline support surface. Token-space
+/// counterpart of [`decode_embedded_surface`].
+pub(crate) fn embedded_surface(cur: &mut Cur<'_>) -> Option<SurfaceGeometry> {
+    embedded_surface_fields(cur, false).map(|(surface, _)| surface)
+}
+
+/// [`embedded_surface`], preserving the four trailing U/V range fields.
+/// Token-space counterpart of [`decode_embedded_surface_with_ranges`].
+pub(crate) fn embedded_surface_with_ranges(
+    cur: &mut Cur<'_>,
+) -> Option<(SurfaceGeometry, [[Option<f64>; 2]; 2])> {
+    embedded_surface_fields(cur, true)
+}
+
+fn embedded_surface_fields(
+    cur: &mut Cur<'_>,
+    preserve_ranges: bool,
+) -> Option<(SurfaceGeometry, [[Option<f64>; 2]; 2])> {
+    let no_ranges = [[None, None], [None, None]];
+    let kind = cur.take_ident()?;
+    if kind == "spline" {
+        let (decoded, end) = surface_block(cur.toks(), cur.pos())?;
+        cur.set_pos(end);
+        let ranges = if preserve_ranges {
+            surface_ranges(cur)?
+        } else {
+            no_ranges
+        };
+        return Some((SurfaceGeometry::Nurbs(decoded), ranges));
+    }
+    let point = cur.take_position()?;
+    let point = Point3::new(
+        point[0] * LEN_TO_MM,
+        point[1] * LEN_TO_MM,
+        point[2] * LEN_TO_MM,
+    );
+    match kind {
+        "plane" => {
+            let normal = normalized(cur.take_vector3()?)?;
+            let u_axis = normalized(cur.take_vector3()?)?;
+            cur.take_bool()?;
+            let ranges = if preserve_ranges {
+                surface_ranges(cur)?
+            } else {
+                no_ranges
+            };
+            Some((
+                SurfaceGeometry::Plane {
+                    origin: point,
+                    normal,
+                    u_axis,
+                },
+                ranges,
+            ))
+        }
+        "cone" => {
+            let native_axis = normalized(cur.take_vector3()?)?;
+            let major = cur.take_vector3()?;
+            let radius = (major[0] * major[0] + major[1] * major[1] + major[2] * major[2]).sqrt()
+                * LEN_TO_MM;
+            let ref_direction = normalized(major)?;
+            let ratio = cur.take_f64()?;
+            cur.take_bool()?;
+            cur.take_bool()?;
+            let sine = cur.take_f64()?;
+            let cosine = cur.take_f64()?;
+            cur.take_f64()?;
+            cur.take_bool()?;
+            let ranges = if preserve_ranges {
+                surface_ranges(cur)?
+            } else {
+                for _ in 0..4 {
+                    cur.take_bool()?;
+                }
+                no_ranges
+            };
+            let surface = if sine.abs() <= f64::EPSILON && ratio == 1.0 {
+                SurfaceGeometry::Cylinder {
+                    origin: point,
+                    axis: native_axis,
+                    ref_direction,
+                    radius,
+                }
+            } else {
+                let axis = if sine * cosine < 0.0 {
+                    Vector3::new(-native_axis.x, -native_axis.y, -native_axis.z)
+                } else {
+                    native_axis
+                };
+                SurfaceGeometry::Cone {
+                    origin: point,
+                    axis,
+                    ref_direction,
+                    radius,
+                    ratio,
+                    // See `brep/geometry.rs`: `atan2` keeps half-angle recovery
+                    // stable across libm implementations.
+                    half_angle: sine.abs().atan2(cosine.abs()),
+                }
+            };
+            Some((surface, ranges))
+        }
+        "sphere" => {
+            let radius = cur.take_f64()? * LEN_TO_MM;
+            let ref_direction = normalized(cur.take_vector3()?)?;
+            let axis = normalized(cur.take_vector3()?)?;
+            cur.take_bool()?;
+            let ranges = if preserve_ranges {
+                surface_ranges(cur)?
+            } else {
+                for _ in 0..4 {
+                    cur.take_bool()?;
+                }
+                no_ranges
+            };
+            Some((
+                SurfaceGeometry::Sphere {
+                    center: point,
+                    axis,
+                    ref_direction,
+                    radius,
+                },
+                ranges,
+            ))
+        }
+        "torus" => {
+            let axis = normalized(cur.take_vector3()?)?;
+            let major_radius = cur.take_f64()? * LEN_TO_MM;
+            let minor_radius = cur.take_f64()? * LEN_TO_MM;
+            let ref_direction = normalized(cur.take_vector3()?)?;
+            cur.take_bool()?;
+            let ranges = if preserve_ranges {
+                surface_ranges(cur)?
+            } else {
+                for _ in 0..4 {
+                    cur.take_bool()?;
+                }
+                no_ranges
+            };
+            Some((
+                SurfaceGeometry::Torus {
+                    center: point,
+                    axis,
+                    ref_direction,
+                    major_radius,
+                    minor_radius,
+                },
+                ranges,
+            ))
+        }
+        _ => None,
+    }
 }
 
 pub(crate) fn decode_embedded_surface_with_ranges(
@@ -2445,68 +2410,57 @@ fn decode_embedded_surface_fields(
 }
 
 #[allow(clippy::option_option)] // Outer None is parse failure; inner None is an unresolved ref.
-fn decode_optional_embedded_surface_resolving_ref(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+fn optional_embedded_surface_resolving_ref(
+    cur: &mut Cur<'_>,
+    table: &SubtypeTable,
 ) -> Option<Option<SurfaceGeometry>> {
-    decode_optional_embedded_surface_with_bounds(bytes, position, int_width, active_bytes, tables)
-        .map(|(surface, _)| surface)
+    optional_embedded_surface_with_bounds(cur, table).map(|(surface, _)| surface)
 }
 
 /// Optional embedded support surface plus its four optional U/V bound fields.
 #[allow(clippy::type_complexity)]
-pub(crate) fn decode_optional_embedded_surface_with_bounds(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+pub(crate) fn optional_embedded_surface_with_bounds(
+    cur: &mut Cur<'_>,
+    table: &SubtypeTable,
 ) -> Option<(Option<SurfaceGeometry>, [Option<f64>; 4])> {
-    let saved = *position;
-    let kind = take_native_ident(bytes, position);
-    if kind.as_deref() == Some("null_surface") {
+    let toks = cur.toks();
+    let saved = cur.pos();
+    let kind = cur.take_ident();
+    if kind == Some("null_surface") {
         return Some((None, [None; 4]));
     }
-    if kind.as_deref() == Some("spline") {
-        if matches!(bytes.get(*position), Some(0x0a | 0x0b)) {
-            take_bool(bytes, position)?;
+    if kind == Some("spline") {
+        if matches!(cur.peek(), Some(Token::True | Token::False)) {
+            cur.take_bool()?;
         }
-        let reference = *position;
-        let marker = b"\x0f\x0d\x03ref\x04";
-        if bytes.get(reference..)?.starts_with(marker) {
-            let index =
-                usize::try_from(read_int(bytes, reference + marker.len(), int_width)?).ok()?;
-            let reference_span = subtype_span(bytes, reference, int_width)?;
-            *position = reference + reference_span.len();
-            let surface = tables
-                .for_width(int_width)
-                .get(index)
-                .and_then(|target| subtype_span(active_bytes, *target, int_width))
-                .and_then(|target| {
-                    decode_owned_surface_cache_resolving_refs_at(
-                        target,
-                        active_bytes,
-                        tables,
-                        int_width,
-                    )
-                })
+        let reference = cur.pos();
+        let compact_ref = matches!(toks.get(reference), Some(Token::SubtypeOpen))
+            && matches!(toks.get(reference + 1), Some(Token::Ident(name)) if name == "ref")
+            && matches!(toks.get(reference + 2), Some(Token::Long(_)));
+        if compact_ref {
+            let Some(Token::Long(index)) = toks.get(reference + 2) else {
+                return None;
+            };
+            let index = usize::try_from(*index).ok()?;
+            let reference_span = crate::nurbs::toks::subtype_span(toks, reference)?;
+            cur.set_pos(reference + reference_span.len());
+            let surface = table
+                .span(index)
+                .and_then(|target| owned_surface_cache_resolving_refs(target, table))
                 .map(SurfaceGeometry::Nurbs);
             let mut bounds = [None; 4];
             for bound in &mut bounds {
-                *bound = take_optional_range_value(bytes, position)?;
+                *bound = cur.take_optional_range_value()?;
             }
             return Some((surface, bounds));
         }
     }
-    *position = saved;
-    if let Some(surface) = decode_embedded_surface(bytes, position, int_width) {
+    cur.set_pos(saved);
+    if let Some(surface) = embedded_surface(cur) {
         let mut bounds = [None; 4];
-        if kind.as_deref() == Some("plane") || kind.as_deref() == Some("spline") {
+        if kind == Some("plane") || kind == Some("spline") {
             for bound in &mut bounds {
-                *bound = take_optional_range_value(bytes, position)?;
+                *bound = cur.take_optional_range_value()?;
             }
         }
         return Some((Some(surface), bounds));
@@ -2516,61 +2470,49 @@ pub(crate) fn decode_optional_embedded_surface_with_bounds(
     // subtypes: resolve the scope's solved surface cache (following nested
     // subtype-table references) and consume the scope, then read the four
     // optional bound fields.
-    *position = saved;
-    if kind.as_deref() == Some("spline") {
-        take_native_ident(bytes, position)?;
-        if matches!(bytes.get(*position), Some(0x0a | 0x0b)) {
-            take_bool(bytes, position)?;
+    cur.set_pos(saved);
+    if kind == Some("spline") {
+        cur.take_ident()?;
+        if matches!(cur.peek(), Some(Token::True | Token::False)) {
+            cur.take_bool()?;
         }
-        if bytes.get(*position) == Some(&0x0f) {
-            let scope = subtype_span(bytes, *position, int_width)?;
-            let surface = decode_owned_surface_cache_resolving_refs_at(
-                scope,
-                active_bytes,
-                tables,
-                int_width,
-            )?;
-            *position += scope.len();
+        if matches!(cur.peek(), Some(Token::SubtypeOpen)) {
+            let scope = crate::nurbs::toks::subtype_span(toks, cur.pos())?;
+            let surface = owned_surface_cache_resolving_refs(scope, table)?;
+            cur.set_pos(cur.pos() + scope.len());
             let mut bounds = [None; 4];
             for bound in &mut bounds {
-                *bound = take_optional_range_value(bytes, position)?;
+                *bound = cur.take_optional_range_value()?;
             }
             return Some((Some(SurfaceGeometry::Nurbs(surface)), bounds));
         }
     }
-    *position = saved;
+    cur.set_pos(saved);
     None
 }
 
-fn decode_two_sided_offset(
-    bytes: &[u8],
-    int_width: usize,
-) -> Option<cadmpeg_ir::geometry::ProceduralCurveDefinition> {
+fn two_sided_offset(toks: &[Token]) -> Option<cadmpeg_ir::geometry::ProceduralCurveDefinition> {
     use cadmpeg_ir::geometry::{
         IntcurveSupportContext, IntcurveSupportSide, ProceduralCurveDefinition,
     };
 
-    let name = b"off_int_cur";
-    let (marker, name_len) = find_owned_intcurve_subtype(bytes, name, int_width)?;
-    let mut position = marker + name_len + 3;
+    let marker = crate::nurbs::toks::find_owned_intcurve_subtype(toks, "off_int_cur")?;
+    let mut cur = Cur::at(toks, marker + 2);
     for expected in ["null_surface", "null_surface", "nullbs", "nullbs"] {
-        if take_native_ident(bytes, &mut position)?.as_str() != expected {
+        if cur.take_ident()? != expected {
             return None;
         }
     }
-    let parameter_range = [
-        take_range_value(bytes, &mut position)?,
-        take_range_value(bytes, &mut position)?,
-    ];
+    let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
-        take_float_array(bytes, &mut position, int_width)?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
+        cur.take_float_array()?,
     ];
-    let discontinuity_flag = take_bool(bytes, &mut position)?;
+    let discontinuity_flag = cur.take_bool()?;
     let offsets = [
-        take_range_value(bytes, &mut position)? * LEN_TO_MM,
-        take_range_value(bytes, &mut position)? * LEN_TO_MM,
+        cur.take_range_value()? * LEN_TO_MM,
+        cur.take_range_value()? * LEN_TO_MM,
     ];
     Some(ProceduralCurveDefinition::TwoSidedOffset {
         context: IntcurveSupportContext {
@@ -2594,78 +2536,71 @@ fn decode_two_sided_offset(
     })
 }
 
-fn decode_compound_definition(bytes: &[u8], int_width: usize) -> Option<CompoundDefinition> {
-    let name = b"comp_int_cur";
-    let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
-    let mut position = marker + name.len() + 3;
-    let parameters = take_float_array(bytes, &mut position, int_width)?;
-    let count = usize::try_from(take_tagged_int(bytes, &mut position, 0x04, int_width)?).ok()?;
+fn compound_definition(toks: &[Token]) -> Option<CompoundDefinition> {
+    let marker = crate::nurbs::toks::find_owned_subtype_marker(toks, &["comp_int_cur"])
+        .map(|(marker, _)| marker)?;
+    let mut cur = Cur::at(toks, marker + 2);
+    let parameters = cur.take_float_array()?;
+    let count = usize::try_from(cur.take_long()?).ok()?;
     if count == 0 {
         return None;
     }
     let mut component_parameters = Vec::with_capacity(count);
     for _ in 0..count {
-        if bytes.get(position) != Some(&0x06) {
-            return None;
-        }
-        component_parameters.push(read_f64(bytes, position + 1)?);
-        position += 9;
+        component_parameters.push(cur.take_f64()?);
     }
-    if !matches!(bytes.get(position), Some(0x0a | 0x0b)) {
+    if !matches!(cur.peek(), Some(Token::True | Token::False)) {
         return None;
     }
-    position += 1;
+    cur.bump();
     let mut components = Vec::with_capacity(count);
     for _ in 0..count {
-        let relative = marker_positions(bytes.get(position..)?)
+        let position = cur.pos();
+        let relative = crate::nurbs::toks::marker_positions(toks.get(position..)?)
             .into_iter()
             .next()?;
-        let decoded = decode_curve_block(bytes, position + relative, int_width)?;
-        components.push(decoded.curve);
-        position = decoded.end;
+        let (curve, end) = curve_block(toks, position + relative)?;
+        components.push(curve);
+        cur.set_pos(end);
     }
     Some((parameters, component_parameters, components))
 }
 
-fn decode_subset_definition(bytes: &[u8], int_width: usize) -> Option<SubsetDefinition> {
-    let name = b"subset_int_cur";
-    let (marker, name_len) = find_owned_intcurve_subtype(bytes, name, int_width)?;
-    let start = marker + name_len + 3;
-    let source_marker = marker_positions(&bytes[start..]).into_iter().next()? + start;
-    let source = decode_curve_block(bytes, source_marker, int_width)?;
-    let mut position = source.end;
-    let range = [
-        take_range_value(bytes, &mut position)?,
-        take_range_value(bytes, &mut position)?,
-    ];
-    Some((source.curve, range))
+fn subset_definition(toks: &[Token]) -> Option<SubsetDefinition> {
+    let marker = crate::nurbs::toks::find_owned_intcurve_subtype(toks, "subset_int_cur")?;
+    let start = marker + 2;
+    let source_marker = crate::nurbs::toks::marker_positions(toks.get(start..)?)
+        .into_iter()
+        .next()?
+        + start;
+    let (source, source_end) = curve_block(toks, source_marker)?;
+    let mut cur = Cur::at(toks, source_end);
+    let range = [cur.take_range_value()?, cur.take_range_value()?];
+    Some((source, range))
 }
 
-fn decode_vector_offset_definition(
-    bytes: &[u8],
-    int_width: usize,
-) -> Option<VectorOffsetDefinition> {
-    let name = b"offset_int_cur";
-    let (marker, name_len) = find_owned_intcurve_subtype(bytes, name, int_width)?;
-    let start = marker + name_len + 3;
-    let source_marker = marker_positions(&bytes[start..]).into_iter().next()? + start;
-    let source = decode_curve_block(bytes, source_marker, int_width)?;
-    let mut position = source.end;
-    if bytes.get(position) != Some(&0x06) || bytes.get(position + 9) != Some(&0x06) {
+fn vector_offset_definition(toks: &[Token]) -> Option<VectorOffsetDefinition> {
+    let marker = crate::nurbs::toks::find_owned_intcurve_subtype(toks, "offset_int_cur")?;
+    let start = marker + 2;
+    let source_marker = crate::nurbs::toks::marker_positions(toks.get(start..)?)
+        .into_iter()
+        .next()?
+        + start;
+    let (source, source_end) = curve_block(toks, source_marker)?;
+    let mut cur = Cur::at(toks, source_end);
+    if !matches!(toks.get(cur.pos()), Some(Token::Double(_)))
+        || !matches!(toks.get(cur.pos() + 1), Some(Token::Double(_)))
+    {
         return None;
     }
-    let parameter_range = [
-        read_f64(bytes, position + 1)?,
-        read_f64(bytes, position + 10)?,
-    ];
-    position += 18;
-    let offset = take_native_vec3(bytes, &mut position, 0x14)?;
-    let first_label = take_native_string(bytes, &mut position)?;
-    let first_code = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
-    let second_label = take_native_string(bytes, &mut position)?;
-    let second_code = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+    let parameter_range = [cur.take_f64()?, cur.take_f64()?];
+    let offset = cur.take_vector3()?;
+    let first_label = cur.take_str()?.to_string();
+    let first_code = cur.take_long()?;
+    let second_label = cur.take_str()?.to_string();
+    let second_code = cur.take_long()?;
     Some((
-        source.curve,
+        source,
         parameter_range,
         Vector3::new(
             offset[0] * LEN_TO_MM,
@@ -2677,27 +2612,30 @@ fn decode_vector_offset_definition(
     ))
 }
 
-pub(crate) fn decode_helix_definition(
-    bytes: &[u8],
-    int_width: usize,
+/// Decode the `helix_int_cur` construction fields. Token-space counterpart of
+/// the byte helix walk retained by [`helix_patch_layout`].
+pub(crate) fn helix_definition(
+    toks: &[Token],
 ) -> Option<cadmpeg_ir::geometry::ProceduralCurveDefinition> {
-    let name = b"helix_int_cur";
-    let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
-    let mut position = marker + name.len() + 3;
-    let current_layout = take_optional_helix_revision(bytes, &mut position, int_width)?;
-    let lower = take_range_value(bytes, &mut position)?;
-    let upper = take_range_value(bytes, &mut position)?;
-    let center = take_native_vec3(bytes, &mut position, 0x13)?;
-    let vector_tag = if current_layout { 0x14 } else { 0x13 };
-    let major = take_native_vec3(bytes, &mut position, vector_tag)?;
-    let minor = take_native_vec3(bytes, &mut position, vector_tag)?;
-    let pitch = take_native_vec3(bytes, &mut position, vector_tag)?;
-    if bytes.get(position) != Some(&0x06) {
-        return None;
-    }
-    let apex_factor = read_f64(bytes, position + 1)?;
-    position += 9;
-    let axis = take_native_vec3(bytes, &mut position, 0x14)?;
+    let marker = crate::nurbs::toks::find_owned_subtype_marker(toks, &["helix_int_cur"])
+        .map(|(marker, _)| marker)?;
+    let mut cur = Cur::at(toks, marker + 2);
+    let current_layout = optional_helix_revision(&mut cur)?;
+    let lower = cur.take_range_value()?;
+    let upper = cur.take_range_value()?;
+    let center = cur.take_position()?;
+    let take_frame_vector = |cur: &mut Cur<'_>| {
+        if current_layout {
+            cur.take_vector3()
+        } else {
+            cur.take_position()
+        }
+    };
+    let major = take_frame_vector(&mut cur)?;
+    let minor = take_frame_vector(&mut cur)?;
+    let pitch = take_frame_vector(&mut cur)?;
+    let apex_factor = cur.take_f64()?;
+    let axis = cur.take_vector3()?;
     Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
         angle_range: [lower, upper],
         center: Point3::new(
@@ -2739,46 +2677,56 @@ pub(crate) fn take_optional_helix_revision(
     (20_000..=99_999).contains(&revision).then_some(true)
 }
 
-/// Four optional U/V parameter bounds following a surface record's first
-/// top-level subtype scope, or `None` when the record stores no bound
-/// fields. `record_bytes` starts at the record's name chain.
-pub fn record_trailing_surface_bounds(record_bytes: &[u8]) -> Option<[Option<f64>; 4]> {
-    INT_WIDTHS
-        .into_iter()
-        .find_map(|int_width| record_trailing_surface_bounds_at(record_bytes, int_width))
+/// Consume the current helix subtype's ASM release word when present. The
+/// earlier form begins directly with an optional range-bound flag or double.
+/// Token-space counterpart of [`take_optional_helix_revision`].
+pub(crate) fn optional_helix_revision(cur: &mut Cur<'_>) -> Option<bool> {
+    if !matches!(cur.peek(), Some(Token::Long(_))) {
+        return Some(false);
+    }
+    let revision = cur.take_long()?;
+    (20_000..=99_999).contains(&revision).then_some(true)
 }
 
-fn record_trailing_surface_bounds_at(
-    record_bytes: &[u8],
-    int_width: usize,
-) -> Option<[Option<f64>; 4]> {
-    // Walk the fixed spline-record header: name tokens, attrib ref, history
-    // int, geometry ref, sense boolean, then the subtype scope.
+/// Four optional U/V parameter bounds following a surface record's first
+/// top-level subtype scope, or `None` when the record stores no bound fields.
+/// `toks` is the record's payload tokens.
+pub(crate) fn record_trailing_surface_bounds(toks: &[Token]) -> Option<[Option<f64>; 4]> {
+    // Walk the fixed spline-record header: any leading payload identifiers,
+    // attrib ref, history int, geometry ref, sense boolean, then the subtype
+    // scope.
     let mut position = 0usize;
-    while matches!(record_bytes.get(position), Some(0x0d | 0x0e)) {
-        position += 2 + usize::from(*record_bytes.get(position + 1)?);
+    while toks.get(position).is_some_and(Token::is_payload_ident) {
+        position += 1;
     }
-    for tag in [0x0c, 0x04, 0x0c] {
-        if record_bytes.get(position) != Some(&tag) {
-            return None;
-        }
-        position += 1 + int_width;
-    }
-    if !matches!(record_bytes.get(position), Some(0x0a | 0x0b)) {
+    if !matches!(toks.get(position), Some(Token::Ref(_))) {
         return None;
     }
     position += 1;
-    if record_bytes.get(position) != Some(&0x0f) {
+    if !matches!(toks.get(position), Some(Token::Long(_))) {
         return None;
     }
-    let scope = subtype_span(record_bytes, position, int_width)?;
+    position += 1;
+    if !matches!(toks.get(position), Some(Token::Ref(_))) {
+        return None;
+    }
+    position += 1;
+    if !matches!(toks.get(position), Some(Token::True | Token::False)) {
+        return None;
+    }
+    position += 1;
+    if !matches!(toks.get(position), Some(Token::SubtypeOpen)) {
+        return None;
+    }
+    let scope = crate::nurbs::toks::subtype_span(toks, position)?;
     position += scope.len();
-    if !matches!(record_bytes.get(position), Some(0x0a | 0x0b)) {
+    if !matches!(toks.get(position), Some(Token::True | Token::False)) {
         return None;
     }
+    let mut cur = Cur::at(toks, position);
     let mut bounds = [None; 4];
     for bound in &mut bounds {
-        *bound = take_optional_range_value(record_bytes, &mut position)?;
+        *bound = cur.take_optional_range_value()?;
     }
     Some(bounds)
 }
@@ -2882,20 +2830,16 @@ mod cache_form_tests {
             push_cache_first_remainder(&mut bytes, int_width);
 
             let solved = solved_curve();
-            let tables = SubtypeTables::from_stream(&bytes);
-            let mut position = 0usize;
-            let context = decode_cache_first_curve_context(
-                &bytes,
-                &mut position,
-                int_width,
-                &solved,
-                &bytes,
-                &tables,
-            )
-            .unwrap_or_else(|| panic!("parameterized cache-first context at width {int_width}"));
+            let toks = crate::nurbs::toks::lex_test_span(&bytes, int_width);
+            let table = crate::nurbs::toks::test_table(&bytes, int_width);
+            let mut cur = Cur::at(&toks, 0);
+            let context =
+                cache_first_curve_context(&mut cur, &solved, &table).unwrap_or_else(|| {
+                    panic!("parameterized cache-first context at width {int_width}")
+                });
             // Every field of the context is read: the walk ends on the last
-            // byte of the ASM extension integer.
-            assert_eq!(position, bytes.len());
+            // token of the ASM extension integer.
+            assert_eq!(cur.pos(), toks.len());
             assert_eq!(context.form.revision, 23_100);
             assert_eq!(context.form.cache_enum, 2);
             let parameterization = context.form.parameterization.expect("parameterization");
@@ -2919,17 +2863,10 @@ mod cache_form_tests {
             push_cache_first_remainder(&mut bytes, int_width);
 
             let solved = solved_curve();
-            let tables = SubtypeTables::from_stream(&bytes);
-            let mut position = 0usize;
-            assert!(decode_cache_first_curve_context(
-                &bytes,
-                &mut position,
-                int_width,
-                &solved,
-                &bytes,
-                &tables,
-            )
-            .is_none());
+            let toks = crate::nurbs::toks::lex_test_span(&bytes, int_width);
+            let table = crate::nurbs::toks::test_table(&bytes, int_width);
+            let mut cur = Cur::at(&toks, 0);
+            assert!(cache_first_curve_context(&mut cur, &solved, &table).is_none());
         }
     }
 }

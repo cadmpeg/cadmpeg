@@ -5,36 +5,6 @@ use crate::nurbs::reader::INT_WIDTHS;
 use crate::sab::Record;
 use cadmpeg_codec_core::le::int_at as read_int;
 
-/// The construction `bytes` is, under its modern name: the first subtype
-/// definition `bytes` owns other than `ref`, canonicalized.
-pub(crate) fn owned_construction_subtype(bytes: &[u8], int_width: usize) -> Option<String> {
-    owned_subtype_defs(bytes, int_width)
-        .into_iter()
-        .map(|(_, name)| name)
-        .find(|name| *name != b"ref")
-        .map(|name| canonical_intcurve_kind(name).into())
-}
-
-fn canonical_intcurve_kind(name: &[u8]) -> &str {
-    match name {
-        b"bldcur" => "blend_int_cur",
-        b"blndsprngcur" => "spring_int_cur",
-        b"exactcur" => "exact_int_cur",
-        b"lawintcur" => "law_int_cur",
-        b"offintcur" => "off_int_cur",
-        b"offsetintcur" => "offset_int_cur",
-        b"offsurfintcur" => "off_surf_int_cur",
-        b"parasil" => "para_silh_int_cur",
-        b"parcur" => "par_int_cur",
-        b"projcur" => "proj_int_cur",
-        b"surfcur" => "surf_int_cur",
-        b"surfintcur" => "int_int_cur",
-        b"d5c2_cur" => "skin_int_cur",
-        b"subsetintcur" => "subset_int_cur",
-        _ => std::str::from_utf8(name).unwrap_or("intcurve"),
-    }
-}
-
 /// Byte offsets and names of the subtype definitions `bytes` itself owns: the
 /// `0x0f` openings at the outermost nesting level, in stream order, `ref`
 /// included. A definition inside a nested scope belongs to that scope's
@@ -355,7 +325,10 @@ mod ownership_tests {
                 None
             );
             assert_eq!(
-                owned_construction_subtype(&bytes, int_width).as_deref(),
+                crate::nurbs::toks::owned_construction_subtype(&crate::nurbs::toks::lex_test_span(
+                    &bytes, int_width
+                ))
+                .as_deref(),
                 Some("defm_int_cur")
             );
         }

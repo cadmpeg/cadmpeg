@@ -45,8 +45,8 @@ use std::collections::{HashMap, HashSet};
 
 use super::attributes::{
     attribute_chain_color, attribute_chain_name, collect_attributes, creation_timestamp,
-    decode_transform, persistent_design_links, persistent_subentity_tags, record_slice,
-    sketch_curve_link, source_attribute, unknown_record_id,
+    decode_transform, persistent_design_links, persistent_subentity_tags, sketch_curve_link,
+    source_attribute, unknown_record_id,
 };
 use super::geometry::{
     collect_carrier, double_at, is_asm_stream_delimiter, is_coedge_record, is_edge_record,
@@ -67,7 +67,6 @@ fn emit_carrier_surface(
     out: &mut Brep,
     r: &Record,
     i: i64,
-    bytes: &[u8],
     carriers: &mut Carriers,
     reach: &Reachable,
 ) {
@@ -343,9 +342,7 @@ fn emit_carrier_surface(
             surface: SurfaceId(id(i)),
             definition,
             cache_fit_tolerance: procedural.cache_fit_tolerance,
-            record_bounds: nurbs::proc_curve::record_trailing_surface_bounds(record_slice(
-                r, bytes,
-            )),
+            record_bounds: nurbs::proc_curve::record_trailing_surface_bounds(&r.tokens),
         });
     } else if cached_unknown_procedural_surfaces.contains(&i) {
         out.procedural_surfaces.push(ProceduralSurface {
@@ -3227,7 +3224,6 @@ fn emit_law_curve(
 pub(crate) fn emit_carrier_records(
     out: &mut Brep,
     records: &[Record],
-    bytes: &[u8],
     carriers: &mut Carriers,
     reach: &Reachable,
     reversed_curve_refs: &HashSet<i64>,
@@ -3237,7 +3233,7 @@ pub(crate) fn emit_carrier_records(
         let i = r.index as i64;
         match r.head.as_str() {
             _ if reach.surfaces.contains(&i) => {
-                emit_carrier_surface(out, r, i, bytes, carriers, reach);
+                emit_carrier_surface(out, r, i, carriers, reach);
             }
             _ if reach.unknown_surface_records.contains(&i) => {
                 // Topology-known face on an undecoded surface: emit an opaque
