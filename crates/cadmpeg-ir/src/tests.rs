@@ -3,6 +3,8 @@
 //! Unit tests for the IR: the worked cube validates clean, JSON round-trips,
 //! and each validation check actually fires when its invariant is broken.
 
+use std::collections::BTreeMap;
+
 use crate::annotations::{ExactnessNote, Provenance};
 use crate::codec::{CadirEncoder, Encoder};
 use crate::document::Model;
@@ -5811,15 +5813,15 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
-        source_properties: Default::default(),
+        source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "producer".into(),
-            parameters: Default::default(),
-            properties: Default::default(),
+            parameters: BTreeMap::default(),
+            properties: BTreeMap::default(),
         },
         native_ref: None,
     });
@@ -5841,7 +5843,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         suppressed: Some(false),
         parent: None,
         dependencies: vec![producer.clone()],
-        source_properties: Default::default(),
+        source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: Vec::new(),

@@ -11,7 +11,6 @@ Multi-agent repository etiquette:
 - Unstaged changes you did not make belong to another agent. Do not commit them, revert them, or bypass hooks because of them.
 - Use `--no-verify` only with the reason stated in the commit body.
 - In a conflicted merge, restore a file from a merge stage with `scripts/restore-merge-stage.sh`, not with `git checkout` or `git restore`.
-- When several agents build concurrently, isolate build artifacts: set a per-worktree `CARGO_TARGET_DIR`, or export `RUSTFLAGS="-C metadata=$(git branch --show-current)"` so a shared target directory stays collision-free.
 
 Build and test operations:
 

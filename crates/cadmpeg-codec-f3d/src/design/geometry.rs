@@ -2907,3 +2907,612 @@ fn union_endpoint_nodes(parents: &mut [usize], first: usize, second: usize) {
         parents[second] = first;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        analytic_segment_intersections, arrangement_region_containing_points,
+        region_containing_points, sketch_arrangement_faces, ProfileBoundary,
+        ProfileBoundarySegment,
+    };
+    use cadmpeg_ir::features::{Angle, Length, SketchProfileRegion};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+    };
+    #[test]
+    fn historical_point_inside_unique_closed_line_profile_selects_region() {
+        let sketch_id = SketchId("sketch".into());
+        let mut entities = Vec::new();
+        let mut profile = Vec::new();
+        for (ordinal, (start, end)) in [
+            (Point2::new(0.0, 0.0), Point2::new(4.0, 0.0)),
+            (Point2::new(4.0, 0.0), Point2::new(4.0, 3.0)),
+            (Point2::new(4.0, 3.0), Point2::new(0.0, 3.0)),
+            (Point2::new(0.0, 3.0), Point2::new(0.0, 0.0)),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let id = SketchEntityId(format!("line-{ordinal}"));
+            profile.push(SketchEntityUse {
+                entity: id.clone(),
+                reversed: false,
+            });
+            entities.push(SketchEntity {
+                id,
+                sketch: sketch_id.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line { start, end },
+            });
+        }
+        let circle_id = SketchEntityId("unrelated-circle".into());
+        let profiles = vec![
+            profile,
+            vec![SketchEntityUse {
+                entity: circle_id.clone(),
+                reversed: false,
+            }],
+        ];
+        entities.push(SketchEntity {
+            id: circle_id,
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Circle {
+                center: Point2::new(20.0, 20.0),
+                radius: Length(1.0),
+            },
+        });
+        let sketch = Sketch {
+            id: sketch_id,
+            name: None,
+            configuration: None,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(10.0, 20.0, 5.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            profiles,
+            native_ref: None,
+        };
+
+        assert_eq!(
+            region_containing_points(&sketch, &entities, &[Point3::new(12.0, 21.0, 12.0)], 1.0e-6,),
+            Some(SketchProfileRegion::Loops {
+                outer: 0,
+                holes: Vec::new(),
+            })
+        );
+        assert_eq!(
+            region_containing_points(&sketch, &entities, &[Point3::new(15.0, 21.0, 12.0)], 1.0e-6,),
+            None
+        );
+
+        let mut incomplete = sketch.clone();
+        let ellipse = SketchEntityId("unsupported-ellipse".into());
+        incomplete.profiles.push(vec![SketchEntityUse {
+            entity: ellipse.clone(),
+            reversed: false,
+        }]);
+        entities.push(SketchEntity {
+            id: ellipse,
+            sketch: incomplete.id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Ellipse {
+                center: Point2::new(30.0, 30.0),
+                major_angle: Angle(0.0),
+                major_radius: Length(2.0),
+                minor_radius: Length(1.0),
+                start_angle: None,
+                end_angle: None,
+            },
+        });
+        assert_eq!(
+            region_containing_points(
+                &incomplete,
+                &entities,
+                &[Point3::new(12.0, 21.0, 12.0)],
+                1.0e-6,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
+        let sketch_id = SketchId("sketch".into());
+        let mut entities = Vec::new();
+        let mut profiles = Vec::new();
+        for (profile_index, (minimum, maximum)) in [
+            (Point2::new(0.0, 0.0), Point2::new(10.0, 10.0)),
+            (Point2::new(2.0, 2.0), Point2::new(8.0, 8.0)),
+            (Point2::new(4.0, 4.0), Point2::new(6.0, 6.0)),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let corners = [
+                minimum,
+                Point2::new(maximum.u, minimum.v),
+                maximum,
+                Point2::new(minimum.u, maximum.v),
+            ];
+            let mut profile = Vec::new();
+            for edge_index in 0..corners.len() {
+                let id = SketchEntityId(format!("line-{profile_index}-{edge_index}"));
+                profile.push(SketchEntityUse {
+                    entity: id.clone(),
+                    reversed: false,
+                });
+                entities.push(SketchEntity {
+                    id,
+                    sketch: sketch_id.clone(),
+                    construction: false,
+                    native_ref: None,
+                    geometry_ref: None,
+                    endpoint_refs: Vec::new(),
+                    geometry: SketchGeometry::Line {
+                        start: corners[edge_index],
+                        end: corners[(edge_index + 1) % corners.len()],
+                    },
+                });
+            }
+            profiles.push(profile);
+        }
+        let sketch = Sketch {
+            id: sketch_id,
+            name: None,
+            configuration: None,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            profiles,
+            native_ref: None,
+        };
+
+        assert_eq!(
+            region_containing_points(&sketch, &entities, &[Point3::new(1.0, 1.0, 0.0)], 1.0e-6,),
+            Some(SketchProfileRegion::Loops {
+                outer: 0,
+                holes: vec![1],
+            })
+        );
+        assert_eq!(
+            region_containing_points(&sketch, &entities, &[Point3::new(3.0, 3.0, 0.0)], 1.0e-6,),
+            Some(SketchProfileRegion::Loops {
+                outer: 1,
+                holes: vec![2],
+            })
+        );
+        assert_eq!(
+            region_containing_points(&sketch, &entities, &[Point3::new(5.0, 5.0, 0.0)], 1.0e-6,),
+            Some(SketchProfileRegion::Loops {
+                outer: 2,
+                holes: Vec::new(),
+            })
+        );
+        assert_eq!(
+            region_containing_points(
+                &sketch,
+                &entities,
+                &[Point3::new(0.0, 5.0, 0.0), Point3::new(2.0, 5.0, 0.0)],
+                1.0e-6,
+            ),
+            Some(SketchProfileRegion::Loops {
+                outer: 0,
+                holes: vec![1],
+            })
+        );
+        assert_eq!(
+            region_containing_points(&sketch, &entities, &[Point3::new(2.0, 5.0, 0.0)], 1.0e-6),
+            None
+        );
+    }
+
+    #[test]
+    fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
+        let sketch_id = SketchId("sketch".into());
+        let definitions = [
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(10.0, 0.0),
+            },
+            SketchGeometry::Line {
+                start: Point2::new(10.0, 0.0),
+                end: Point2::new(10.0, 10.0),
+            },
+            SketchGeometry::Nurbs {
+                degree: 2,
+                knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                control_points: vec![
+                    Point2::new(10.0, 10.0),
+                    Point2::new(5.0, 12.0),
+                    Point2::new(0.0, 10.0),
+                ],
+                weights: Some(vec![1.0, 0.75, 1.0]),
+                periodic: false,
+            },
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 10.0),
+                end: Point2::new(0.0, 0.0),
+            },
+        ];
+        let mut entities = Vec::new();
+        let outer = definitions
+            .into_iter()
+            .enumerate()
+            .map(|(index, geometry)| {
+                let id = SketchEntityId(format!("outer-{index}"));
+                entities.push(SketchEntity {
+                    id: id.clone(),
+                    sketch: sketch_id.clone(),
+                    construction: false,
+                    native_ref: None,
+                    geometry_ref: None,
+                    endpoint_refs: Vec::new(),
+                    geometry,
+                });
+                SketchEntityUse {
+                    entity: id,
+                    reversed: false,
+                }
+            })
+            .collect::<Vec<_>>();
+        let corners = [
+            Point2::new(3.0, 3.0),
+            Point2::new(7.0, 3.0),
+            Point2::new(7.0, 7.0),
+            Point2::new(3.0, 7.0),
+        ];
+        let inner = (0..corners.len())
+            .map(|index| {
+                let id = SketchEntityId(format!("inner-{index}"));
+                entities.push(SketchEntity {
+                    id: id.clone(),
+                    sketch: sketch_id.clone(),
+                    construction: false,
+                    native_ref: None,
+                    geometry_ref: None,
+                    endpoint_refs: Vec::new(),
+                    geometry: SketchGeometry::Line {
+                        start: corners[index],
+                        end: corners[(index + 1) % corners.len()],
+                    },
+                });
+                SketchEntityUse {
+                    entity: id,
+                    reversed: false,
+                }
+            })
+            .collect::<Vec<_>>();
+        let sketch = Sketch {
+            id: sketch_id,
+            name: None,
+            configuration: None,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            profiles: vec![outer, inner],
+            native_ref: None,
+        };
+
+        assert_eq!(
+            region_containing_points(&sketch, &entities, &[Point3::new(1.0, 1.0, 0.0)], 1.0e-6),
+            Some(SketchProfileRegion::Loops {
+                outer: 0,
+                holes: vec![1],
+            })
+        );
+    }
+
+    #[test]
+    fn coincident_circle_arc_arrangement_resolves_trimmed_faces() {
+        use cadmpeg_ir::features::{SketchProfileBoundaryUse, SketchProfileRegion};
+
+        let sketch_id = SketchId("sketch".into());
+        let line_id = SketchEntityId("diameter".into());
+        let arc_id = SketchEntityId("left-arc".into());
+        let circle_id = SketchEntityId("circle".into());
+        let entity = |id, geometry| SketchEntity {
+            id,
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        };
+        let entities = vec![
+            entity(
+                line_id.clone(),
+                SketchGeometry::Line {
+                    start: Point2::new(0.0, -1.0),
+                    end: Point2::new(0.0, 1.0),
+                },
+            ),
+            entity(
+                arc_id.clone(),
+                SketchGeometry::Arc {
+                    center: Point2::new(0.0, 0.0),
+                    radius: Length(1.0),
+                    start_angle: Angle(std::f64::consts::FRAC_PI_2),
+                    end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
+                },
+            ),
+            entity(
+                circle_id.clone(),
+                SketchGeometry::Circle {
+                    center: Point2::new(0.0, 0.0),
+                    radius: Length(1.0),
+                },
+            ),
+        ];
+        let sketch = Sketch {
+            id: sketch_id,
+            name: None,
+            configuration: None,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            profiles: vec![
+                vec![
+                    SketchEntityUse {
+                        entity: line_id.clone(),
+                        reversed: false,
+                    },
+                    SketchEntityUse {
+                        entity: arc_id.clone(),
+                        reversed: false,
+                    },
+                ],
+                vec![SketchEntityUse {
+                    entity: circle_id,
+                    reversed: false,
+                }],
+            ],
+            native_ref: None,
+        };
+
+        let faces = sketch_arrangement_faces(&sketch, &entities, 1.0e-7)
+            .expect("endpoint arrangement faces");
+        assert_eq!(faces.len(), 2);
+        let selected = arrangement_region_containing_points(
+            &sketch,
+            &entities,
+            &[
+                Point2::new(0.0, -1.0),
+                Point2::new(0.0, 1.0),
+                Point2::new(-1.0, 0.0),
+            ],
+            1.0e-7,
+        )
+        .expect("left half-disk arrangement face");
+        let SketchProfileRegion::Trimmed {
+            outer_boundary,
+            hole_boundaries,
+        } = selected
+        else {
+            panic!("arrangement selection must emit a trimmed boundary")
+        };
+        assert!(hole_boundaries.is_empty());
+        assert_eq!(outer_boundary.len(), 2);
+        assert!(outer_boundary.iter().any(|use_| use_.entity == line_id));
+        assert!(outer_boundary.iter().any(|use_| use_.entity == arc_id));
+        assert!(outer_boundary.iter().all(|use_| matches!(
+            use_,
+            SketchProfileBoundaryUse {
+                parameter_range: [start, end],
+                ..
+            } if start != end
+        )));
+    }
+
+    #[test]
+    fn analytic_arrangement_intersections_include_hidden_second_crossing() {
+        let line = ProfileBoundarySegment::Line {
+            start: Point2::new(-2.0, 0.0),
+            end: Point2::new(2.0, 0.0),
+        };
+        let circle = ProfileBoundarySegment::Arc {
+            center: Point2::new(0.0, 0.0),
+            radius: 1.0,
+            start_angle: 0.0,
+            end_angle: std::f64::consts::TAU,
+        };
+
+        assert_eq!(
+            analytic_segment_intersections(&line, &circle)
+                .expect("analytic intersection family")
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
+        let sketch_id = SketchId("sketch".into());
+        let corners = [
+            Point2::new(-5.0, -5.0),
+            Point2::new(5.0, -5.0),
+            Point2::new(5.0, 5.0),
+            Point2::new(-5.0, 5.0),
+        ];
+        let mut entities = Vec::new();
+        let mut outer = Vec::new();
+        for index in 0..corners.len() {
+            let id = SketchEntityId(format!("line-{index}"));
+            outer.push(SketchEntityUse {
+                entity: id.clone(),
+                reversed: false,
+            });
+            entities.push(SketchEntity {
+                id,
+                sketch: sketch_id.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: corners[index],
+                    end: corners[(index + 1) % corners.len()],
+                },
+            });
+        }
+        let circle = SketchEntityId("circle".into());
+        entities.push(SketchEntity {
+            id: circle.clone(),
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Circle {
+                center: Point2::new(0.0, 0.0),
+                radius: Length(2.0),
+            },
+        });
+        let sketch = Sketch {
+            id: sketch_id,
+            name: None,
+            configuration: None,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            profiles: vec![
+                outer,
+                vec![SketchEntityUse {
+                    entity: circle,
+                    reversed: false,
+                }],
+            ],
+            native_ref: None,
+        };
+        let expected = SketchProfileRegion::Loops {
+            outer: 0,
+            holes: vec![1],
+        };
+
+        assert_eq!(
+            region_containing_points(&sketch, &entities, &[Point3::new(4.0, 0.0, 0.0)], 1.0e-6,),
+            Some(expected.clone())
+        );
+        assert_eq!(
+            region_containing_points(&sketch, &entities, &[Point3::new(0.0, 0.0, 0.0)], 1.0e-6,),
+            Some(SketchProfileRegion::Loops {
+                outer: 1,
+                holes: Vec::new(),
+            })
+        );
+    }
+
+    #[test]
+    fn circular_arc_loop_uses_analytic_containment_and_distance() {
+        let segments = vec![
+            ProfileBoundarySegment::Line {
+                start: Point2::new(0.0, -2.0),
+                end: Point2::new(0.0, 2.0),
+            },
+            ProfileBoundarySegment::Arc {
+                center: Point2::new(0.0, 0.0),
+                radius: 2.0,
+                start_angle: std::f64::consts::FRAC_PI_2,
+                end_angle: 3.0 * std::f64::consts::FRAC_PI_2,
+            },
+        ];
+        let boundary = ProfileBoundary::CircularArcLoop(segments);
+        let hole = ProfileBoundary::Circle {
+            center: Point2::new(-1.0, 0.0),
+            radius: 0.5,
+        };
+
+        assert!(boundary.contains_point(Point2::new(-1.0, 0.0)));
+        assert!(!boundary.contains_point(Point2::new(1.0, 0.0)));
+        assert!(!boundary.contains_point(Point2::new(-1.0, -2.0)));
+        assert!(!boundary.contains_point(Point2::new(-1.0, 2.0)));
+        assert!(boundary.strictly_contains(&hole));
+    }
+
+    #[test]
+    fn polygon_and_arc_loop_containment_requires_disjoint_boundaries() {
+        let polygon = ProfileBoundary::Polygon(vec![
+            Point2::new(-2.0, -2.0),
+            Point2::new(2.0, -2.0),
+            Point2::new(2.0, 2.0),
+            Point2::new(-2.0, 2.0),
+        ]);
+        let arc_loop = ProfileBoundary::CircularArcLoop(vec![
+            ProfileBoundarySegment::Line {
+                start: Point2::new(-1.0, 0.0),
+                end: Point2::new(1.0, 0.0),
+            },
+            ProfileBoundarySegment::Arc {
+                center: Point2::new(0.0, 0.0),
+                radius: 1.0,
+                start_angle: 0.0,
+                end_angle: std::f64::consts::PI,
+            },
+        ]);
+
+        assert!(polygon.strictly_contains(&arc_loop));
+        assert!(!arc_loop.strictly_contains(&polygon));
+
+        let crossing = ProfileBoundary::CircularArcLoop(vec![
+            ProfileBoundarySegment::Line {
+                start: Point2::new(-3.0, 0.0),
+                end: Point2::new(3.0, 0.0),
+            },
+            ProfileBoundarySegment::Arc {
+                center: Point2::new(0.0, 0.0),
+                radius: 3.0,
+                start_angle: 0.0,
+                end_angle: std::f64::consts::PI,
+            },
+        ]);
+        assert!(!polygon.strictly_contains(&crossing));
+        assert!(!crossing.strictly_contains(&polygon));
+    }
+
+    #[test]
+    fn arc_loop_containment_rejects_crossing_and_touching_segments() {
+        let d_loop = |center_u: f64, radius: f64| {
+            ProfileBoundary::CircularArcLoop(vec![
+                ProfileBoundarySegment::Line {
+                    start: Point2::new(center_u, -radius),
+                    end: Point2::new(center_u, radius),
+                },
+                ProfileBoundarySegment::Arc {
+                    center: Point2::new(center_u, 0.0),
+                    radius,
+                    start_angle: std::f64::consts::FRAC_PI_2,
+                    end_angle: 3.0 * std::f64::consts::FRAC_PI_2,
+                },
+            ])
+        };
+        let outer = d_loop(0.0, 2.0);
+        let inner = d_loop(-0.5, 0.5);
+        let crossing = d_loop(-1.5, 1.0);
+        let touching = d_loop(-1.0, 1.0);
+
+        assert!(outer.strictly_contains(&inner));
+        assert!(!inner.strictly_contains(&outer));
+        assert!(!outer.strictly_contains(&crossing));
+        assert!(!outer.strictly_contains(&touching));
+    }
+}

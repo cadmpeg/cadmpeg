@@ -568,7 +568,10 @@ fn read_counted_raw(
     Ok(Some(data))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+)]
 fn read_buffer<'a>(
     expand: MeshExpand<'a>,
     reader: &mut BoundedReader<'_>,

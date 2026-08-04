@@ -1,5 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+#![allow(
+    clippy::cloned_ref_to_slice_refs,
+    clippy::default_trait_access,
+    clippy::if_not_else,
+    clippy::needless_pass_by_value,
+    clippy::range_plus_one,
+    clippy::semicolon_if_nothing_returned,
+    clippy::trivially_copy_pass_by_ref
+)]
 //! Tests over synthetic byte fixtures. No real CAD files exist in this repo and
 //! none may be added, so every fixture is hand-built here to exercise a real
 //! decode path that can fail if the code regresses.
