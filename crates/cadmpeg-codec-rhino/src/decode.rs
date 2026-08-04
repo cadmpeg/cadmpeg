@@ -5067,7 +5067,27 @@ pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> De
             scale,
         )
     });
-    crate::history::project(&scan.history, geometry_context, &mut context.ir);
+    // History projection now appends carrier geometry, so it runs inside the
+    // same atomic transaction the object-record phases use. Before this it wrote
+    // straight into the document, and an invalid entity would have surfaced only
+    // at `cadmpeg validate` time.
+    let untyped = context.validate_candidate(|candidate, _annotations| {
+        crate::history::project(&scan.history, geometry_context, candidate)
+    });
+    match untyped {
+        Ok(0) => {}
+        Ok(untyped) => {
+            context
+                .typed_losses
+                .push(RhinoLossCode::HistoryGeometryNotTransferred.note(format!(
+                    "{untyped} history value(s) decoded without a neutral carrier"
+                )));
+        }
+        Err(error) => context.scan_warnings_for_class(
+            "history",
+            &format!("history projection rejected atomically by IR validation: {error}"),
+        ),
+    }
     context.commit()
 }
 

@@ -1156,6 +1156,19 @@ fn extended_geometry_json(
     serde_json::to_string(&semantic).ok()
 }
 
+/// Accounting for geometry decoded out of a history record's values.
+///
+/// History values carry complete `ON_Curve` and `ON_Surface` payloads that this
+/// codec decodes and then stringifies into a native property. Pushing them into
+/// `model.curves` and `model.surfaces` is a hard `Check::CarrierReachability`
+/// error: a free-standing carrier is only reachable through a native *unknown*
+/// record's `links`, and a history record lives in the `history_records` arena.
+/// `untyped` counts every such value so the caller charges the retention once
+/// instead of reporting a clean transfer.
+struct GeometrySink {
+    untyped: usize,
+}
+
 fn structured_value_properties(
     key: &str,
     value: &Value,
@@ -1166,6 +1179,7 @@ fn structured_value_properties(
         f64,
     )>,
     properties: &mut BTreeMap<String, String>,
+    sink: &mut GeometrySink,
 ) {
     match value {
         Value::ObjectReferences(values) => {
@@ -1190,6 +1204,7 @@ fn structured_value_properties(
                         scale,
                         archive,
                     ) {
+                        sink.untyped += 1;
                         let semantic = match decoded {
                             crate::curves::DecodedGeometry::Point { position, .. } => {
                                 serde_json::to_string(&position)
@@ -1215,6 +1230,7 @@ fn structured_value_properties(
                     } else if let Some(semantic) =
                         extended_geometry_json(expand, value, archive, writer_version, scale)
                     {
+                        sink.untyped += 1;
                         properties.insert(format!("{key}.{index}.geometry"), semantic);
                     }
                 }
@@ -1282,6 +1298,10 @@ fn structured_value_properties(
 }
 
 /// Projects source history into ordered neutral native operations.
+/// Projects history records into native features and carrier geometry.
+///
+/// Returns the number of decoded history values that reached no neutral carrier.
+/// The caller charges them; see [`GeometrySink`].
 pub(crate) fn project(
     records: &[HistoryRecord],
     geometry_context: Option<(
@@ -1291,7 +1311,7 @@ pub(crate) fn project(
         f64,
     )>,
     ir: &mut cadmpeg_ir::document::CadIr,
-) {
+) -> usize {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 
     #[derive(serde::Serialize)]
@@ -1308,6 +1328,7 @@ pub(crate) fn project(
         value_count: usize,
     }
 
+    let mut sink = GeometrySink { untyped: 0 };
     let mut ids = Vec::with_capacity(records.len());
     let mut native_ids = Vec::with_capacity(records.len());
     let mut seen_record_ids = HashSet::new();
@@ -1359,7 +1380,13 @@ pub(crate) fn project(
                 format!("value_{}_{}", value.id, occurrence)
             };
             *occurrence += 1;
-            structured_value_properties(&key, &value.value, geometry_context, &mut properties);
+            structured_value_properties(
+                &key,
+                &value.value,
+                geometry_context,
+                &mut properties,
+                &mut sink,
+            );
             if let Some(text) = value_text(&value.value) {
                 parameters.insert(key, text);
             } else if let Value::Opaque { type_code, range } = &value.value {
@@ -1428,6 +1455,7 @@ pub(crate) fn project(
         .namespace_mut("rhino")
         .set_arena("history_records", &native)
         .expect("Rhino history records serialize");
+    sink.untyped
 }
 
 #[cfg(test)]
@@ -1475,7 +1503,7 @@ mod tests {
     fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
         let records = [record(1, 11, &[], &[40]), record(2, 12, &[40], &[41])];
         let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
-        project(&records, None, &mut ir);
+        assert_eq!(project(&records, None, &mut ir), 0);
 
         assert_eq!(ir.model.features.len(), 2);
         assert_eq!(
@@ -1508,7 +1536,7 @@ mod tests {
         });
         let records = [producer, record(2, 12, &[40], &[41])];
         let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
-        project(&records, None, &mut ir);
+        assert_eq!(project(&records, None, &mut ir), 0);
 
         assert_eq!(
             ir.model.features[1].dependencies,
@@ -1521,6 +1549,44 @@ mod tests {
         };
         assert_eq!(parameters["value_7"], "2.5");
         assert_eq!(parameters["value_7_1"], "3.5");
+    }
+
+    #[test]
+    fn decoded_history_geometry_is_counted_as_untyped_while_it_stays_stringified() {
+        for (class, payload) in [
+            (
+                crate::archive_test_support::LINE_CLASS,
+                crate::archive_test_support::line_payload(
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0],
+                ),
+            ),
+            (
+                crate::archive_test_support::POINT_CLASS,
+                crate::archive_test_support::point_payload([1.0, 2.0, 3.0]),
+            ),
+        ] {
+            let mut geometry_payload = 1_i32.to_le_bytes().to_vec();
+            geometry_payload.extend(crate::archive_test_support::class_wrapper(class, &payload));
+            let geometry_value = value(10, &anonymous_value(0, &geometry_payload));
+            let (parsed, _) =
+                parse_value(&geometry_value, 0, geometry_value.len(), ArchiveVersion::V8)
+                    .expect("embedded geometry");
+            let mut properties = BTreeMap::new();
+            let mut sink = GeometrySink { untyped: 0 };
+            crate::decode::with_expand_bytes(&geometry_value, |expand| {
+                structured_value_properties(
+                    "value_7",
+                    &parsed.value,
+                    Some((expand, ArchiveVersion::V8, None, 2.0)),
+                    &mut properties,
+                    &mut sink,
+                );
+            });
+            assert_eq!(sink.untyped, 1);
+            assert!(properties.contains_key("value_7.0.geometry"));
+        }
     }
 
     #[test]
@@ -1540,14 +1606,19 @@ mod tests {
             if values.len() == 1
                 && values[0].class_id == Uuid::from_wire(crate::archive_test_support::POINT_CLASS)));
         let mut properties = BTreeMap::new();
+        let mut sink = GeometrySink { untyped: 0 };
         crate::decode::with_expand_bytes(&geometry_value, |expand| {
             structured_value_properties(
                 "value_7",
                 &parsed.value,
                 Some((expand, ArchiveVersion::V8, None, 2.0)),
                 &mut properties,
+                &mut sink,
             );
         });
+        // A point has no neutral carrier, so it stays a stringified coordinate
+        // and is counted as untyped.
+        assert_eq!(sink.untyped, 1);
         assert_eq!(
             properties["value_7.0.geometry"],
             r#"{"x":2.0,"y":4.0,"z":6.0}"#
