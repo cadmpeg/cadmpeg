@@ -2674,7 +2674,10 @@ fn validate_fillet_radius_groups<'a>(
         let tangency_weight = assignment
             .tangency_weight_parameter_record_index
             .and_then(&assignment_parameter);
-        let valid = scope.is_some_and(|scope| matches!(scope.kind.as_str(), "Fillet" | "Congé"))
+        let is_fillet = |scope: &&records::DesignParameterScope| {
+            design::design_feature_family(&scope.kind) == Some(design::DesignFeatureFamily::Fillet)
+        };
+        let valid = scope.is_some_and(is_fillet)
             && group.is_some_and(|group| {
                 group.scope_record_index == assignment.scope_record_index
                     && group.members == assignment.edge_operand_record_indices

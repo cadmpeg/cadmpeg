@@ -2216,7 +2216,7 @@ pub(crate) fn bind_form_cages(
         };
         if matches!(
             &feature.definition,
-            cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind == "Form"
+            cadmpeg_ir::features::FeatureDefinition::Native { .. }
         ) {
             feature.definition = cadmpeg_ir::features::FeatureDefinition::Form { cages: resolved };
         }
