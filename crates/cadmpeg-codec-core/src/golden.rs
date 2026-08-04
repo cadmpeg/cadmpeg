@@ -477,7 +477,7 @@ pub const ELIDED_DIGEST: &str = "<elided: digest over tolerantly compared geomet
 pub fn elide_digests(attributes: &mut std::collections::BTreeMap<String, String>, keys: &[&str]) {
     for key in keys {
         if let Some(value) = attributes.get_mut(*key) {
-            *value = ELIDED_DIGEST.to_owned();
+            ELIDED_DIGEST.clone_into(value);
         }
     }
 }
