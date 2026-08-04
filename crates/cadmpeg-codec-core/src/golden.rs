@@ -50,11 +50,11 @@
 //!   with geometry compared numerically — is the only real remedy.
 //! - A **digest over decoded geometry** is a bitwise fingerprint of tolerantly
 //!   compared values, so it cannot agree across platforms either. See
-//!   [`elide_digests`].
+//!   [`elide_local_digests`].
 
 use std::path::{Path, PathBuf};
 
-use crate::compare::values_agree;
+use crate::compare::{is_local_digest_attribute, values_agree};
 
 /// One snapshot branch: a subdirectory of `tests/golden` and the function that
 /// produces the text pinned there.
@@ -329,25 +329,29 @@ fn first_line_diff(expected: &str, actual: &str) -> (usize, String, String) {
 /// Stands in for a digest a snapshot cannot pin across platforms.
 pub const ELIDED_DIGEST: &str = "<elided: digest over tolerantly compared geometry>";
 
-/// Replaces the named source attributes with [`ELIDED_DIGEST`].
+/// Replaces every machine-local digest attribute with [`ELIDED_DIGEST`].
 ///
 /// A digest of decoded geometry is a bitwise fingerprint of the very values this
 /// harness compares tolerantly, so pinning one contradicts the comparison: the
 /// same document decoded on another platform agrees to fourteen significant
 /// digits and still hashes differently, and no tolerance can rescue a hash.
 /// Perturbing every libm transcendental by one unit in the last place moves
-/// `semantic_sha256` on ten Fusion goldens and `brep_semantic_sha256` on two
+/// `document_local_sha256` on ten Fusion goldens and `brep_local_sha256` on two
 /// `SolidWorks` goldens while leaving every geometry comparison satisfied.
+///
+/// Which attributes those are is decided by
+/// [`is_local_digest_attribute`], not by a per-codec list: a codec that adds a
+/// digest over decoded content names it by the convention and is elided without
+/// touching this harness. A digest over retained source bytes does not carry the
+/// suffix, holds still under the shim, and stays pinned — pinning it is what
+/// catches a native write regression.
 ///
 /// Eliding costs almost nothing, because the model each digest covers is pinned
 /// in the same snapshot; what remains uncovered is a change to the digest
-/// algorithm itself, which belongs to `cadmpeg-ir`'s own tests rather than to a
-/// codec snapshot. Pass only attributes proven to move — the retained-lane
-/// digests beside these hold still, and pinning them is what catches a native
-/// write regression.
-pub fn elide_digests(attributes: &mut std::collections::BTreeMap<String, String>, keys: &[&str]) {
-    for key in keys {
-        if let Some(value) = attributes.get_mut(*key) {
+/// algorithm itself, which `cadmpeg-ir`'s own pinned-digest test covers.
+pub fn elide_local_digests(attributes: &mut std::collections::BTreeMap<String, String>) {
+    for (key, value) in attributes.iter_mut() {
+        if is_local_digest_attribute(key) {
             ELIDED_DIGEST.clone_into(value);
         }
     }

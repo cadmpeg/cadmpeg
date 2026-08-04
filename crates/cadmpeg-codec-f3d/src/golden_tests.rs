@@ -18,7 +18,7 @@
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use cadmpeg_codec_core::golden::{elide_digests, snapshots_agree};
+use cadmpeg_codec_core::golden::{elide_local_digests, snapshots_agree};
 use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, DecodeResult, EncodeInput, Encoder};
 use cadmpeg_ir::examples;
@@ -318,7 +318,7 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     match decode_result(bytes) {
         Ok(mut result) => {
             if let Some(source) = result.ir.source.as_mut() {
-                elide_digests(&mut source.attributes, &["semantic_sha256"]);
+                elide_local_digests(&mut source.attributes);
             }
             let ir = result
                 .ir

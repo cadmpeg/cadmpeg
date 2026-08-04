@@ -20251,8 +20251,8 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
         native_ref: None,
     });
     assert_ne!(
-        decoded.ir.source.as_ref().unwrap().attributes["semantic_sha256"],
-        crate::decode::semantic_hash(&decoded.ir)
+        decoded.ir.source.as_ref().unwrap().attributes["document_local_sha256"],
+        crate::decode::document_local_sha256(&decoded.ir)
     );
 
     let error = SldprtCodec
@@ -21658,16 +21658,19 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let brep_hash = crate::decode::brep_semantic_hash(&decoded.ir);
-    let semantic_hash = crate::decode::semantic_hash(&decoded.ir);
+    let brep_hash = crate::decode::brep_local_sha256(&decoded.ir);
+    let document_hash = crate::decode::document_local_sha256(&decoded.ir);
     update_sldprt_native(&mut decoded.ir, |native| {
         native.feature_histories[0].features[0]
             .parameters
             .insert("Depth".into(), "30mm".into());
     });
     decoded.source_fidelity.annotations.exactness.clear();
-    assert_eq!(crate::decode::brep_semantic_hash(&decoded.ir), brep_hash);
-    assert_ne!(crate::decode::semantic_hash(&decoded.ir), semantic_hash);
+    assert_eq!(crate::decode::brep_local_sha256(&decoded.ir), brep_hash);
+    assert_ne!(
+        crate::decode::document_local_sha256(&decoded.ir),
+        document_hash
+    );
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -21990,8 +21993,8 @@ fn source_less_cube_reaches_encode_decode_fixpoint() {
         .unwrap()
         .ir;
 
-    let first_hash = crate::decode::semantic_hash(&first.ir);
-    let second_hash = crate::decode::semantic_hash(&second);
+    let first_hash = crate::decode::document_local_sha256(&first.ir);
+    let second_hash = crate::decode::document_local_sha256(&second);
     assert_eq!(first_hash, second_hash, "round trip is not a fixed point");
 
     // Value golden: the cube's record families and counts, asserted directly.

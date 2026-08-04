@@ -10,7 +10,7 @@
 //!
 //! The comparison covers units, tolerances, and every model and native arena. It
 //! does not cover [`crate::document::SourceMeta`], so the digest attributes
-//! recorded there — `semantic_sha256` and its neighbours — cannot make a diff
+//! recorded there — `document_local_sha256` and its neighbours — cannot make a diff
 //! report a difference. That is the only coherent treatment of a digest here: a
 //! digest is a bitwise fingerprint of values this module compares tolerantly, so
 //! two decodes that agree to fourteen significant digits hash differently and no
@@ -406,7 +406,7 @@ mod tests {
             });
         source
             .attributes
-            .insert("semantic_sha256".into(), "0".repeat(64));
+            .insert("document_local_sha256".into(), "0".repeat(64));
 
         assert_ne!(left.source, right.source);
         assert!(diff(&left, &right).is_empty());

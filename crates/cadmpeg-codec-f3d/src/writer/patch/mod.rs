@@ -51,6 +51,13 @@ use records::{
 /// function validates changed topology, geometry, design, sketch, history, and
 /// appearance fields before patching records. Unsupported edits return
 /// [`CodecError::NotImplemented`].
+///
+/// Completeness of the patch is checked by rebuilding the document from the
+/// baseline plus the supported edits and comparing its machine-local content
+/// digest to the target's. Both sides are computed here, in this process, from
+/// this binary, which is the only setting in which
+/// [`decode::document_local_sha256`] means anything; the comparison is bitwise
+/// because the question is whether an unsupported field moved at all.
 pub fn write_semantic(
     target: &CadIr,
     source_image: &[u8],
@@ -360,7 +367,7 @@ pub fn write_semantic(
             .clone_from(&target_native.wire_topologies);
         supported.store(supported_target.native.namespace_mut("f3d"))?;
     }
-    if decode::semantic_hash(&supported_target) != decode::semantic_hash(target) {
+    if decode::document_local_sha256(&supported_target) != decode::document_local_sha256(target) {
         return Err(CodecError::NotImplemented(
             "modified F3D IR contains edits beyond supported point, line, and plane carriers"
                 .into(),

@@ -10555,6 +10555,13 @@ pub(crate) fn apply_feature_name_changes(
 }
 
 /// Resolve neutral/native feature edit authority and update the write history.
+///
+/// The neutral baseline is a machine-local content digest and the comparison
+/// against it is bitwise, which is what an edit-detection question needs and all
+/// it can be; see [`cadmpeg_ir::hash::document_local_sha256`]. An absent baseline
+/// means the question cannot be answered, and the no-baseline branch below
+/// synchronizes the lanes from the neutral side rather than assuming either side
+/// is unedited.
 pub fn prepare_features_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
@@ -10566,7 +10573,7 @@ pub fn prepare_features_for_write(
     let baseline_neutral = ir
         .source
         .as_ref()
-        .and_then(|source| source.attributes.get("sldprt_neutral_feature_sha256"));
+        .and_then(|source| source.attributes.get("sldprt_neutral_feature_local_sha256"));
     let baseline_native = ir
         .source
         .as_ref()
@@ -11006,6 +11013,13 @@ fn validate_compact_surface_selection_edits(
 }
 
 /// Resolve neutral/native configuration edit authority before writing.
+///
+/// The neutral baseline is a machine-local content digest and the comparison
+/// against it is bitwise, which is what an edit-detection question needs and all
+/// it can be; see [`cadmpeg_ir::hash::document_local_sha256`]. An absent baseline
+/// means the question cannot be answered, and the no-baseline branch below
+/// synchronizes the lanes from the neutral side rather than assuming either side
+/// is unedited.
 pub fn prepare_configurations_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
@@ -11043,10 +11057,11 @@ pub fn prepare_configurations_for_write(
     let native_hash = native
         .as_ref()
         .map(|value| native_configuration_hash(&value.feature_histories));
-    let baseline_neutral = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("sldprt_neutral_configuration_sha256"));
+    let baseline_neutral = ir.source.as_ref().and_then(|source| {
+        source
+            .attributes
+            .get("sldprt_neutral_configuration_local_sha256")
+    });
     let baseline_native = ir
         .source
         .as_ref()
@@ -11312,6 +11327,13 @@ fn patch_configuration_parameter_scalars(
 }
 
 /// Resolve neutral/native parameter edit authority before writing.
+///
+/// The neutral baseline is a machine-local content digest and the comparison
+/// against it is bitwise, which is what an edit-detection question needs and all
+/// it can be; see [`cadmpeg_ir::hash::document_local_sha256`]. An absent baseline
+/// means the question cannot be answered, and the no-baseline branch below
+/// synchronizes the lanes from the neutral side rather than assuming either side
+/// is unedited.
 pub fn prepare_parameters_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
@@ -11321,10 +11343,11 @@ pub fn prepare_parameters_for_write(
     let native_hash = native
         .as_ref()
         .map(|value| native_parameter_hash(&value.feature_histories));
-    let baseline_neutral = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("sldprt_neutral_parameter_sha256"));
+    let baseline_neutral = ir.source.as_ref().and_then(|source| {
+        source
+            .attributes
+            .get("sldprt_neutral_parameter_local_sha256")
+    });
     let baseline_native = ir
         .source
         .as_ref()

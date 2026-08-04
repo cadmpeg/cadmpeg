@@ -378,10 +378,18 @@ fn retained_cache_cells(
         .collect()
 }
 
+/// The retained Parasolid partition to replay, when the decoded B-rep is
+/// untouched since the decode that recorded its baseline.
+///
+/// The comparison is bitwise against the `brep_local_sha256` baseline, which is
+/// what an edit-detection question needs and all it can be; see
+/// [`crate::decode::brep_local_sha256`]. A document without the baseline — one
+/// synthesized rather than decoded, or decoded by a binary that named the
+/// attribute differently — has no partition to replay and is written out in full.
 fn retained_partition(ir: &CadIr, records: &[SourceRecord<'_>]) -> Option<(String, Vec<u8>)> {
     let source = ir.source.as_ref()?;
-    let expected = source.attributes.get("brep_semantic_sha256")?;
-    if crate::decode::brep_semantic_hash(ir) != *expected {
+    let expected = source.attributes.get("brep_local_sha256")?;
+    if crate::decode::brep_local_sha256(ir) != *expected {
         return None;
     }
     let source_image = source_image(records)?;
