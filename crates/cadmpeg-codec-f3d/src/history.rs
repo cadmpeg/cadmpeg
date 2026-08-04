@@ -2123,7 +2123,8 @@ pub(crate) fn bind_face_operand_history_candidates(
             topology,
             &changed_faces,
         );
-        let preserves_stable_face_set = scope.kind == "Shell"
+        let preserves_stable_face_set = crate::design::design_feature_family(&scope.kind)
+            == Some(crate::design::DesignFeatureFamily::Shell)
             || operand
                 .group_record_index
                 .is_some_and(|group_record_index| {
@@ -2196,7 +2197,8 @@ pub(crate) fn bind_face_operand_history_candidates(
                 .into_iter()
                 .collect();
         }
-        if scope.kind == "Loft"
+        if crate::design::design_feature_family(&scope.kind)
+            == Some(crate::design::DesignFeatureFamily::Loft)
             && operand.recipe_kind == crate::records::ConstructionRecipeKind::BoundedFace
             && state
                 .transition

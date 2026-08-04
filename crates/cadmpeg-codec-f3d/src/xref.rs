@@ -313,10 +313,7 @@ pub fn bind_component_insert_features(
         else {
             continue;
         };
-        if matches!(
-            &feature.definition,
-            FeatureDefinition::Native { kind, .. } if kind == "Component Insert"
-        ) {
+        if matches!(&feature.definition, FeatureDefinition::Native { .. }) {
             feature.definition = FeatureDefinition::InsertComponent {
                 occurrence: crate::ids::neutral_xref_occurrence_id(
                     reference.ordinal,

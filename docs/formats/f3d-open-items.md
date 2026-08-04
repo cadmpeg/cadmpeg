@@ -260,9 +260,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DR-19. Construction-group fields
 
-**Question.** What do the construction-group scalar fields hold? What does the variant byte control? What do the group-role values outside the defined feature-specific sets mean?
+**Question.** What do the construction-group scalar fields hold? What does the variant byte control? What do the group-role values outside the defined feature-specific sets mean? What does the boolean of the compact flag record a trailing reference names select?
 
-**Known.** `f3d.md` §8.1 "Every `Extrude`, `Extrusion`, `Fillet`," gives the member order and the value limits. The group holds a nonzero u32 `ordinal`, a nonnegative finite f64 `scalar`, and a second copy of `ordinal` that one container generation omits. The value of `variant` is zero or one. The same paragraph defines the Extrude roles `0x08`, `0x41`, and `0x11` only. Roles `0x81` and `0x100` name no defined operand family, and `0x100` does not fit in one byte. `scalar` is not equal to a compact-parameter value in the same feature scope, with or without unit scaling. `ordinal` is below 256, has one value for all groups of one feature scope, and does not decrease with the record index. A `variant` value of one occurs only on a scope that has no history state. The two optional references that follow the member run, and the count that opens the identity run, have no reader.
+**Known.** `f3d.md` §8.1 "Every `Extrude`, `Extrusion`, `Fillet`," gives the member order and the value limits. The group holds a nonzero u32 `ordinal`, a nonnegative finite f64 `scalar`, and a second copy of `ordinal` that one container generation omits. The value of `variant` is zero or one. The same paragraph defines the Extrude roles `0x08`, `0x41`, and `0x11` only. Roles `0x81` and `0x100` name no defined operand family, and `0x100` does not fit in one byte. `scalar` is not equal to a compact-parameter value in the same feature scope, with or without unit scaling. `ordinal` is below 256, has one value for all groups of one feature scope, and does not decrease with the record index. A `variant` value of one occurs only on a scope that has no history state. The two optional references that follow the member run, and the count that opens the identity run, have no reader. The compact flag record occurs on `SplitFace` and `SurfaceDeleteFace` groups; the decoder retains its boolean, and the scope kind, not that boolean, selects the operation, so the boolean carries no read meaning.
 
 **Note.** The u32 word before `role` is zero in every record, so a reader that takes `role` as a u64 starting at that word and a reader that takes it as a u32 starting after it name the same value. The decoder takes the u64. Nothing separates the two readings.
 
@@ -386,6 +386,38 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 **Known.** Primary-header offset 29 value `1` selects a circular section and offset 30 value `1` selects a filled section. For that form, scalar ordinal two is the outside diameter and scalar ordinal three is an inactive positive thickness. The section is one filled disk and has no inner boundary. The settings reference contains a u32 and one finite double.
 
 **Need.** A writer needs the selector values and dimension conventions for every supported generated section. Hollow forms also need the direction in which thickness changes the section boundary. **Blocked on specimens:** settling these forms needs otherwise equal pipes with each section shape and with the hollow option both off and on.
+
+### DR-32. `Assemble` operand occurrence paths of the second container generation
+
+**Question.** Where does the second container generation store the two `Assemble` operand occurrence paths, and how does each path join to its operand frame?
+
+**Known.** `f3d.md` §8.1 "An `Assemble` scope stores two operand frames" gives the operand-frame layout of the 627-, 633-, 637-, 692-, 732-, and 772-byte forms, and `f3d.md` §8.1 "Except in the 772-byte class-261 form" gives the two occurrence-path records, their record indices five and two below the first operand construction in a four-owner scope, and 39 and 36 below it in an eight-owner scope.
+
+The paired class tag does not select the frame layout. `f3d.md` §8.1 "A parameter scope is one logical indexed record" already states that both class tags are per-file dynamic values. Documents exist whose `Assemble` scopes pair with class 262 and whose 633- and 637-byte frames satisfy every fixed member of the 633- and 637-byte layouts: the marked operand references stand at scope offsets 24 and 164 and at 28 and 168, the two rigid row-major transforms stand at offsets 36 and 176 and at 40 and 180, and every zero-byte run between them holds zero. So frame length alone selects the layout.
+
+The same documents do not hold the two path records. The record indices five and two below the first frame's construction record are absent from the Design stream, and no indexed record stands between the scope's paired header and that construction record. The occurrence GUIDs of those scopes instead occur as a run of length-prefixed UTF-16LE 36-character values at a 76-byte stride inside the region the paired header opens, which the record-header index does not enter.
+
+**Need.** The projector accepts an alignment only when both the operand frames and the operand paths resolve, so an `Assemble` feature of this generation stays a native node even though its two transforms are readable. Widening the frame gate alone makes the scope fail validation instead, because the alignment then carries frames without paths. We must find the owning record and the count field of the GUID run, and the rule that assigns each run to one operand frame, before either layer can change.
+
+### DR-32A. Component records that share one component GUID
+
+**Question.** May two local component-occurrence carriers in one Design stream carry equal component GUIDs and unequal component-record references?
+
+**Known.** `f3d.md` §8.1 "A local component occurrence is an indexed carrier" states that equal component GUIDs name the same reusable local component definition, and each carrier stores the same u64 component-record reference twice. The validator holds one component-record reference per component GUID per stream and reports a carrier that contradicts an earlier one.
+
+Documents exist with two unplaced ordinal-one carriers whose component GUIDs are equal, whose occurrence GUIDs differ, and whose component-record references differ. Both carriers satisfy every fixed member of the 229-byte frame, and both duplicate their own component-record reference across offsets 24 and 197, so neither is a misread frame.
+
+**Need.** The reading decides whether the component GUID or the component-record reference is the component definition's identity. If several records may describe one definition, the validator claim is too strong and the neutral component identity must come from the GUID alone. If not, one of the two carriers belongs to a second definition and the GUID is not an identity. Nothing yet separates the two readings, so the validator keeps the stronger claim and reports the second carrier.
+
+### DR-33. Joined occurrences of a 772-byte class-261 `Assemble` scope
+
+**Question.** What names the two joined component occurrences of a 772-byte class-261 `Assemble` scope?
+
+**Known.** `f3d.md` §8.1 "An `Assemble` scope stores two operand frames" gives the form's two operand references, its two rigid connector transforms, and its ten owner lanes. `f3d.md` §8.1 "Except in the 772-byte class-261 form" states that this form stores no occurrence-path records. The decoder reads both connector transforms and the alignment angle and offset, and the validator accepts the form with frames and no paths.
+
+A neutral assembly joint needs one occurrence per operand. Every other form supplies it from the first occurrence GUID of the operand's path record. This form has no path record, so each operand is identified only by the marked reference the frame stores, which names a construction record after the scope's paired header.
+
+**Need.** The projector needs one occurrence identity per operand. Without it the feature stays a native node although its two connector frames and its alignment values are complete. Emitting a joint whose operands are empty would assert a join between unnamed bodies, so the operand identity has to come from the construction record the frame reference names, and that record's members are not resolved.
 
 ## 3. External references
 
