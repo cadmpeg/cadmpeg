@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product-manufacturing information independent of design history.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -8,7 +9,8 @@ use crate::ids::{BodyId, EdgeId, FaceId, OccurrenceId, PmiId, ProductDefinitionI
 use crate::transform::Transform;
 
 /// A model object qualified by an annotation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PmiTarget {
     /// Entire shape body.
@@ -49,7 +51,8 @@ pub enum PmiTarget {
 }
 
 /// Numeric semantic-PMI quantity in canonical units.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PmiValue {
     /// Numeric value in millimeters, radians, or unitless ratio as selected by
     /// `quantity`.
@@ -59,7 +62,8 @@ pub struct PmiValue {
 }
 
 /// Physical quantity carried by a PMI value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum PmiQuantity {
     /// Length in millimeters.
@@ -71,7 +75,8 @@ pub enum PmiQuantity {
 }
 
 /// Semantic dimensional characteristic.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DimensionKind {
     /// Size of one shape aspect.
@@ -89,7 +94,8 @@ pub enum DimensionKind {
 }
 
 /// Semantic geometric-tolerance characteristic.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum GeometricToleranceKind {
     /// Straightness.
@@ -125,7 +131,8 @@ pub enum GeometricToleranceKind {
 }
 
 /// One datum in an ordered datum system.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DatumReference {
     /// Referenced datum annotation.
     pub datum: PmiId,
@@ -141,7 +148,8 @@ pub struct DatumReference {
 }
 
 /// ISO limits-and-fits tolerance class attached to a dimension.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct LimitsAndFits {
     /// Form-variance designation.
     pub form_variance: String,
@@ -154,7 +162,8 @@ pub struct LimitsAndFits {
 }
 
 /// Semantic or presentation PMI payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PmiDefinition {
     /// Datum identification attached to a datum feature.
@@ -209,7 +218,8 @@ pub enum PmiDefinition {
 }
 
 /// One document-level PMI annotation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PmiAnnotation {
     /// Stable annotation identity.
     pub id: PmiId,

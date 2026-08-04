@@ -3,12 +3,14 @@
 
 use std::collections::HashSet;
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::value_block;
 /// One source-schema selector in a complete `7C06` definition prefix.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DefinitionSchemaSelector {
     /// Stored zero-based source-schema ordinal following `0x32`.
     pub value: u32,
@@ -17,7 +19,8 @@ pub struct DefinitionSchemaSelector {
 }
 
 /// One fully consumed nullable numeric-pair production in a nested `7C07` payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct NumericPair {
     /// Two one-byte compact atoms preceding the nested value frame.
     pub prefix_atoms: [u32; 2],
@@ -26,7 +29,8 @@ pub struct NumericPair {
 }
 
 /// One slot in a complete [`NumericPair`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum NumericPairSlot {
     /// `0xE6` followed by the exact IEEE-754 binary64 bits.
     Binary64 {
@@ -43,7 +47,8 @@ pub enum NumericPairSlot {
 }
 
 /// One item in an embedded numeric value packet.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum NumericPacketItem {
     /// `0xE6` followed by the exact IEEE-754 binary64 bits.
     Binary64 {
@@ -62,7 +67,8 @@ pub enum NumericPacketItem {
 }
 
 /// Symbol in a reference-signature descriptor program.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ReferenceSignatureSymbol {
     /// Symbol `E`.
     E,
@@ -73,7 +79,8 @@ pub enum ReferenceSignatureSymbol {
 }
 
 /// Variable prefix form of a complete reference-signature packet.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ReferenceSignaturePrefix {
     /// Compact atom `2`.
     #[default]
@@ -83,7 +90,8 @@ pub enum ReferenceSignaturePrefix {
 }
 
 /// One instruction in a complete reference-signature descriptor program.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ReferenceSignatureInstruction {
     /// One descriptor symbol: `E`, `S`, or `T`.
     Symbol {
@@ -131,7 +139,8 @@ pub enum ReferenceSignatureInstruction {
 }
 
 /// One fully consumed reference-signature production in a nested `7C07` payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ReferenceSignature {
     /// First fixed-width reference.
     pub first_reference: u32,
@@ -278,7 +287,8 @@ fn reference_signature_has_one_outer_call(program: &[ReferenceSignatureInstructi
 }
 
 /// One exact packet in a tokenized `7C07` value program.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum EntityValuePacket {
     /// `<compact_atom> <compact_atom> E8 <selector:u16le> 37 <atom> <atom>
     /// (<E6:f64>|<E7..E9>)+ FE+`.

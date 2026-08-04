@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +14,8 @@ use crate::provenance::Exactness;
 /// entity id.
 ///
 /// An entity absent from `exactness` is byte-exact.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Annotations {
     /// Interned source stream names.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -27,7 +29,8 @@ pub struct Annotations {
 }
 
 /// Source location using an index into [`Annotations::streams`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Provenance {
     /// Index of the source stream in [`Annotations::streams`].
     pub stream: u32,
@@ -39,7 +42,8 @@ pub struct Provenance {
 }
 
 /// Exactness for an entity and sparse overrides for its serialized fields.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ExactnessNote {
     /// Exactness of the entity except where overridden by `fields`.
     pub entity: Exactness,

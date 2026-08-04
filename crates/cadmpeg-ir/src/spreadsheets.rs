@@ -1,22 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral spreadsheet structure and layout.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::features::{FeatureId, ParameterId};
 
 /// Stable spreadsheet identity.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct SpreadsheetId(
     #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
 );
 
 /// One sheet and its ordered cell/layout state.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Spreadsheet {
     /// Globally unique sheet id.
     pub id: SpreadsheetId,
@@ -39,7 +40,8 @@ pub struct Spreadsheet {
 }
 
 /// One explicitly sized spreadsheet row or column.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SpreadsheetDimension {
     /// Row number or column label exactly as persisted.
     pub name: String,
@@ -48,7 +50,8 @@ pub struct SpreadsheetDimension {
 }
 
 /// Inclusive rectangular spreadsheet range.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SpreadsheetRange {
     /// Top-left cell address.
     pub start: String,

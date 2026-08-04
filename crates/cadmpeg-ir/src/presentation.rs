@@ -1,19 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral persisted document and view presentation state.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Stable presentation-document identity.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct PresentationId(
     #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
 );
 
 /// Persisted camera pose.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CameraState {
     /// Camera position in document coordinates.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -27,7 +30,8 @@ pub struct CameraState {
 }
 
 /// Ordered non-provider GUI state such as clipping or section state.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PresentationState {
     /// Persisted state element name.
     pub kind: String,
@@ -42,7 +46,8 @@ pub struct PresentationState {
 }
 
 /// Document-wide persisted GUI state.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PresentationDocument {
     /// Globally unique presentation identity.
     pub id: PresentationId,
@@ -64,7 +69,8 @@ pub struct PresentationDocument {
 }
 
 /// Presentation state owned by one persisted view provider.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ViewPresentation {
     /// Globally unique view-provider identity.
     pub id: PresentationId,
@@ -107,7 +113,8 @@ use crate::ids::{
 };
 
 /// A model or presentation object assigned to a layer.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PresentationItem {
     /// Shape body.
@@ -173,7 +180,8 @@ pub enum PresentationItem {
 }
 
 /// One named presentation layer.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PresentationLayer {
     /// Stable layer identity.
     pub id: LayerId,
