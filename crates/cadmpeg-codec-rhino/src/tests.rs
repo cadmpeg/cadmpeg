@@ -2724,7 +2724,8 @@ fn static_instance_suppresses_member_and_two_references_expand_with_distinct_ids
         .report
         .losses
         .iter()
-        .any(|loss| loss.message == "decoded 3/3 Rhino object records"));
+        .any(|loss| loss.code == LossKind::ObjectRecordsUntransferred
+            && loss.message.contains("decoded 3/3 Rhino object records")));
     assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
 }
 
@@ -3294,8 +3295,10 @@ fn invalid_instance_families_are_atomic_and_later_reference_recovers() {
         1
     );
     assert!(result.report.losses.iter().any(|loss| {
-        loss.message
-            .starts_with("f9cfb638-b9d4-4340-87e3-c56e7865d96a:")
+        loss.code == LossKind::DecodeDiagnostic
+            && loss
+                .message
+                .contains("f9cfb638-b9d4-4340-87e3-c56e7865d96a:")
             && loss.message.contains("decode warnings")
     }));
     assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
@@ -3351,7 +3354,8 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
         .report
         .losses
         .iter()
-        .any(|loss| loss.message == "decoded 1/1 Rhino object records"));
+        .any(|loss| loss.code == LossKind::ObjectRecordsUntransferred
+            && loss.message.contains("decoded 1/1 Rhino object records")));
     assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
 }
 
@@ -3393,7 +3397,8 @@ fn malformed_subd_is_atomic_and_later_object_recovers() {
         .report
         .losses
         .iter()
-        .any(|loss| loss.message == "decoded 1/2 Rhino object records"));
+        .any(|loss| loss.code == LossKind::ObjectRecordsUntransferred
+            && loss.message.contains("decoded 1/2 Rhino object records")));
     assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
 }
 

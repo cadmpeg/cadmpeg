@@ -13,7 +13,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -27,6 +27,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::chunks::ArchiveVersion;
 use crate::container::Scan;
+use crate::loss::RhinoLossCode;
 use crate::objects::ObjectDescriptor;
 
 /// Maximum bytes retained for one Rhino object record.
@@ -38,15 +39,27 @@ pub(crate) const RETAINED_DOCUMENT_CAP: usize = 256 * 1024 * 1024;
 struct ClassOutcome {
     decoded: usize,
     retained: usize,
+    native_retained: usize,
+    native_code: Option<RhinoLossCode>,
     attribute_degraded: usize,
     failed_framed: usize,
     first_offset: u64,
     first_object_type: u32,
 }
 
+/// Per-record transfer state.
+///
+/// `NativeRetained` is distinct from both `Retained` and `Decoded`: the record
+/// was framed and its payload was read, but the only neutral entity it produced
+/// carries the construction state as a `FeatureDefinition::Native` blob. Such a
+/// record is not "decoded" for census purposes, and it is not "retained"
+/// either, because a `Retained` record reports
+/// `RhinoLossCode::ObjectFamilyNotTransferred`, which claims the payload was
+/// never read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GeometryStatus {
     Retained,
+    NativeRetained,
     Decoded,
     Failed,
 }
@@ -659,6 +672,21 @@ impl<'a> DecodeContext<'a> {
         self.transition(source_order, GeometryStatus::Failed)
     }
 
+    /// Marks one object as read but retained as native passthrough.
+    ///
+    /// `code` names the lane whose construction state did not reach a typed
+    /// neutral entity. It is recorded once per class; every record of one Rhino
+    /// class runs the same decoder branch, so the code is stable per class.
+    fn mark_native_retained(&mut self, source_order: usize, code: RhinoLossCode) -> bool {
+        if !self.transition(source_order, GeometryStatus::NativeRetained) {
+            return false;
+        }
+        let class = self.scan.objects[source_order].class_uuid.to_string();
+        let outcome = self.outcomes.get_mut(&class).expect("status class exists");
+        outcome.native_code = Some(code);
+        true
+    }
+
     /// Decode and atomically commit supported simple geometry.
     pub(crate) fn decode_geometry(&mut self) {
         if !matches!(
@@ -1049,7 +1077,7 @@ impl<'a> DecodeContext<'a> {
                 links.push(feature_id.to_string());
                 self.append_links(source_order, &links);
                 self.geometry_transferred = true;
-                self.mark_decoded(source_order);
+                self.mark_native_retained(source_order, RhinoLossCode::HatchFillNotTransferred);
             }
             Err(error) => {
                 self.scan_warning(source_order, &format!("hatch candidate rejected: {error}"));
@@ -1110,7 +1138,10 @@ impl<'a> DecodeContext<'a> {
         {
             Ok(()) => {
                 self.append_link(source_order, id.to_string());
-                self.mark_decoded(source_order);
+                self.mark_native_retained(
+                    source_order,
+                    RhinoLossCode::PolyedgeReferencesNotResolved,
+                );
             }
             Err(error) => self.scan_warning(
                 source_order,
@@ -1210,7 +1241,7 @@ impl<'a> DecodeContext<'a> {
             Ok(()) => {
                 self.append_links(source_order, &[curve_id, feature_id.to_string()]);
                 self.geometry_transferred = true;
-                self.mark_decoded(source_order);
+                self.mark_native_retained(source_order, RhinoLossCode::DetailViewNotTransferred);
             }
             Err(error) => {
                 self.scan_warning(source_order, &format!("detail candidate rejected: {error}"));
@@ -1337,7 +1368,7 @@ impl<'a> DecodeContext<'a> {
             Ok(()) => {
                 self.append_link(source_order, feature_id.to_string());
                 self.geometry_transferred = true;
-                self.mark_decoded(source_order);
+                self.mark_native_retained(source_order, RhinoLossCode::CageLatticeNotTransferred);
             }
             Err(error) => {
                 self.scan_warning(
@@ -1403,7 +1434,7 @@ impl<'a> DecodeContext<'a> {
             Ok(()) => {
                 self.append_link(source_order, feature_id);
                 self.geometry_transferred = true;
-                self.mark_decoded(source_order);
+                self.mark_native_retained(source_order, RhinoLossCode::MorphDeformationNotApplied);
             }
             Err(error) => {
                 self.scan_warning(source_order, &format!("morph candidate rejected: {error}"));
@@ -1549,7 +1580,10 @@ impl<'a> DecodeContext<'a> {
                 }
                 self.append_links(source_order, &links);
                 self.geometry_transferred = true;
-                self.mark_decoded(source_order);
+                self.mark_native_retained(
+                    source_order,
+                    RhinoLossCode::CurveOnSurfaceBindingNotTransferred,
+                );
             }
             Err(error) => {
                 self.scan_warning(
@@ -2122,73 +2156,79 @@ impl<'a> DecodeContext<'a> {
             .map(|outcome| outcome.decoded)
             .sum::<usize>();
         let total = self.scan.objects.len();
-        losses.push(LossNote {
-            code: LossKind::ObjectRecordsUntransferred,
-            severity: Severity::Info,
-            message: format!("decoded {decoded}/{total} Rhino object records"),
-            provenance: None,
-        });
+        losses.push(
+            RhinoLossCode::ObjectRecordCensus
+                .note(format!("decoded {decoded}/{total} Rhino object records")),
+        );
         let mut omissions: Vec<LossNote> = Vec::new();
         for (class, outcome) in &self.outcomes {
             if outcome.retained > 0 {
-                omissions.push(LossNote {
-                    code: LossKind::UnsupportedObjectFamily,
-                    severity: Severity::Warning,
-                    message: format!(
-                        "retained {} object record(s) for class {class}; geometry is not decoded",
-                        outcome.retained
-                    ),
-                    provenance: Some(loss_provenance(class, outcome)),
-                });
+                omissions.push(
+                    RhinoLossCode::ObjectFamilyNotTransferred
+                        .note(format!(
+                            "retained {} object record(s) for class {class}; geometry is not decoded",
+                            outcome.retained
+                        ))
+                        .with_provenance(loss_provenance(class, outcome)),
+                );
+            }
+            // `native_code` is set only by a transition that also incremented
+            // `native_retained`, so the count is nonzero whenever it is `Some`.
+            if let Some(code) = outcome.native_code {
+                omissions.push(
+                    code.note(format!(
+                        "framed and read {} object record(s) for class {class}; construction \
+                         state is retained as native passthrough",
+                        outcome.native_retained
+                    ))
+                    .with_provenance(loss_provenance(class, outcome)),
+                );
             }
             if outcome.attribute_degraded > 0 {
-                losses.push(LossNote {
-                    code: LossKind::AttributesNotTransferred,
-                    severity: Severity::Warning,
-                    message: format!(
-                        "{} object record(s) for class {class} have degraded attributes",
-                        outcome.attribute_degraded
-                    ),
-                    provenance: Some(loss_provenance(class, outcome)),
-                });
+                losses.push(
+                    RhinoLossCode::ObjectAttributesDegraded
+                        .note(format!(
+                            "{} object record(s) for class {class} have degraded attributes",
+                            outcome.attribute_degraded
+                        ))
+                        .with_provenance(loss_provenance(class, outcome)),
+                );
             }
             if outcome.failed_framed > 0 {
-                losses.push(LossNote {
-                    code: LossKind::DecodeDiagnostic,
-                    severity: Severity::Error,
-                    message: format!(
-                        "{} framed object record(s) for class {class} could not be decoded",
-                        outcome.failed_framed
-                    ),
-                    provenance: Some(loss_provenance(class, outcome)),
-                });
+                losses.push(
+                    RhinoLossCode::ObjectFramingUndecodable
+                        .note(format!(
+                            "{} framed object record(s) for class {class} could not be decoded",
+                            outcome.failed_framed
+                        ))
+                        .with_provenance(loss_provenance(class, outcome)),
+                );
             }
         }
         self.typed_losses.extend(omissions);
         if let Some(first) = self.scan.definitions.diagnostics.first() {
-            losses.push(LossNote {
-                code: LossKind::DecodeDiagnostic,
-                severity: Severity::Warning,
-                message: format!(
-                    "retained {} malformed, ambiguous, or checksum-degraded instance-definition record(s); first: {}",
-                    self.scan.definitions.diagnostics.len(),
-                    first.message
-                ),
-                provenance: Some(LossProvenance {
-                    format: "rhino".to_string(),
-                    stream: String::new(),
-                    offset: first.source_range.start as u64,
-                    tag: Some("INSTANCE_DEFINITION_TABLE".to_string()),
-                }),
-            });
+            losses.push(
+                RhinoLossCode::ContainerInstanceDefinitionDegraded
+                    .note(format!(
+                        "retained {} malformed, ambiguous, or checksum-degraded instance-definition record(s); first: {}",
+                        self.scan.definitions.diagnostics.len(),
+                        first.message
+                    ))
+                    .with_provenance(LossProvenance {
+                        format: "rhino".to_string(),
+                        stream: String::new(),
+                        offset: first.source_range.start as u64,
+                        tag: Some("INSTANCE_DEFINITION_TABLE".to_string()),
+                    }),
+            );
         }
         losses.append(&mut self.typed_losses);
-        losses.extend(self.scan.warnings.iter().map(|warning| LossNote {
-            code: LossKind::DecodeDiagnostic,
-            severity: Severity::Warning,
-            message: warning.clone(),
-            provenance: None,
-        }));
+        losses.extend(
+            self.scan
+                .warnings
+                .iter()
+                .map(|warning| RhinoLossCode::ContainerScanDiagnostic.note(warning.clone())),
+        );
         let mut phase_families = BTreeMap::<String, (usize, String)>::new();
         for warning in &self.phase_warnings {
             let (family, detail) = warning
@@ -2201,20 +2241,13 @@ impl<'a> DecodeContext<'a> {
                 .or_insert_with(|| (0, detail.to_string()));
             entry.0 += 1;
         }
-        losses.extend(
-            phase_families
-                .into_iter()
-                .map(|(family, (count, first))| LossNote {
-                    code: LossKind::DecodeDiagnostic,
-                    severity: Severity::Warning,
-                    message: if count == 1 {
-                        format!("{family}: {first}")
-                    } else {
-                        format!("{family}: {count} decode warnings; first: {first}")
-                    },
-                    provenance: None,
-                }),
-        );
+        losses.extend(phase_families.into_iter().map(|(family, (count, first))| {
+            RhinoLossCode::ObjectDecodeDiagnostic.note(if count == 1 {
+                format!("{family}: {first}")
+            } else {
+                format!("{family}: {count} decode warnings; first: {first}")
+            })
+        }));
         let byte_records = self
             .unknowns
             .iter()
@@ -2966,12 +2999,10 @@ impl<'a> DecodeContext<'a> {
                     self.append_links(source_order, &links);
                     for warning in warnings {
                         if let Some(cause) = warning.strip_prefix("Brep topology fallback: ") {
-                            self.typed_losses.push(LossNote {
-                                code: LossKind::TopologyNotTransferred,
-                                severity: Severity::Warning,
-                                message: format!("Brep topology fallback: {cause}"),
-                                provenance: None,
-                            });
+                            self.typed_losses.push(
+                                RhinoLossCode::TopologyBrepFallback
+                                    .note(format!("Brep topology fallback: {cause}")),
+                            );
                         } else {
                             self.scan_warning(source_order, &warning);
                         }
@@ -3006,7 +3037,12 @@ impl<'a> DecodeContext<'a> {
         let Some(current) = self.statuses.get(source_order).copied() else {
             return false;
         };
-        if current == next || matches!(current, GeometryStatus::Decoded | GeometryStatus::Failed) {
+        if current == next
+            || matches!(
+                current,
+                GeometryStatus::Decoded | GeometryStatus::Failed | GeometryStatus::NativeRetained
+            )
+        {
             return false;
         }
         let object = &self.scan.objects[source_order];
@@ -3014,10 +3050,13 @@ impl<'a> DecodeContext<'a> {
         let outcome = self.outcomes.get_mut(&class).expect("status class exists");
         match current {
             GeometryStatus::Retained => outcome.retained -= 1,
-            GeometryStatus::Decoded | GeometryStatus::Failed => unreachable!(),
+            GeometryStatus::Decoded | GeometryStatus::Failed | GeometryStatus::NativeRetained => {
+                unreachable!()
+            }
         }
         match next {
             GeometryStatus::Retained => outcome.retained += 1,
+            GeometryStatus::NativeRetained => outcome.native_retained += 1,
             GeometryStatus::Decoded => outcome.decoded += 1,
             GeometryStatus::Failed => outcome.failed_framed += 1,
         }

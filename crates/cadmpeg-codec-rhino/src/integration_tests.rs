@@ -5,6 +5,7 @@
 use super::*;
 use crate::archive_test_support as support;
 use crate::{RhinoArchiveVersion, RhinoEncoder};
+use cadmpeg_ir::report::LossKind;
 use cadmpeg_ir::Encoder;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
@@ -242,4 +243,68 @@ fn recovery_pipeline_keeps_malformed_records_atomic_and_later_objects_decodable(
     attribute_userdata_recovers_after_malformed_bounded_record();
     malformed_bounded_object_is_retained_and_later_point_decodes();
     structural_framing_errors_keep_diagnostics();
+}
+
+/// Object types from `docs/formats/rhino_3dm.md` "object type values".
+const HATCH_OBJECT_TYPE: i64 = 0x0001_0000;
+const CURVE_OBJECT_TYPE: i64 = 0x0000_0004;
+
+/// A synthesized archive whose two records both reach a native-retention path.
+///
+/// Hatch and polyedge are the cheapest such records: neither needs a resolved
+/// B-rep, and both produce a `FeatureDefinition::Native` feature as their only
+/// carrier of construction state.
+fn native_retention_archive() -> Vec<u8> {
+    let hatch = support::object_record(
+        HATCH_OBJECT_TYPE,
+        crate::hatch::CLASS.to_wire(),
+        &crate::hatch::tests::version_two_hatch_payload(),
+    );
+    let polyedge = support::object_record(
+        CURVE_OBJECT_TYPE,
+        crate::polyedge::CURVE_CLASS.to_wire(),
+        &crate::polyedge::tests::polyedge_payload(),
+    );
+    support::archive(&[hatch, polyedge])
+}
+
+#[test]
+fn native_retentions_are_charged_and_excluded_from_the_decoded_census() {
+    let result = decode(native_retention_archive());
+    let losses = &result.report.losses;
+
+    // Neither record is "decoded": the only entity carrying their construction
+    // state is a native feature blob.
+    assert!(losses.iter().any(|loss| {
+        loss.code == LossKind::ObjectRecordsUntransferred
+            && loss.message.contains("decoded 0/2 Rhino object records")
+    }));
+
+    for code in [
+        crate::loss::RhinoLossCode::HatchFillNotTransferred,
+        crate::loss::RhinoLossCode::PolyedgeReferencesNotResolved,
+    ] {
+        let charged = losses
+            .iter()
+            .filter(|loss| loss.message.starts_with(code.code()))
+            .collect::<Vec<_>>();
+        assert_eq!(charged.len(), 1, "{} not charged once", code.code());
+        assert_eq!(charged[0].code, LossKind::RecordNotTyped);
+        assert_eq!(charged[0].severity, Severity::Warning);
+        assert!(charged[0]
+            .message
+            .contains("framed and read 1 object record"));
+        assert!(charged[0].provenance.is_some());
+    }
+
+    // A native retention must not also claim the payload was never read.
+    assert!(!losses
+        .iter()
+        .any(|loss| loss.code == LossKind::UnsupportedObjectFamily));
+
+    // The hatch loop curve is a real neutral carrier even though the fill is not.
+    assert!(!result.ir.model.curves.is_empty());
+    assert_eq!(result.ir.model.features.len(), 2);
+    assert!(result.report.geometry_transferred);
+    assert_valid(&result);
 }
