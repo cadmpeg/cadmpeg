@@ -387,6 +387,28 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 
 **Need.** A writer needs the selector values and dimension conventions for every supported generated section. Hollow forms also need the direction in which thickness changes the section boundary. **Blocked on specimens:** settling these forms needs otherwise equal pipes with each section shape and with the hollow option both off and on.
 
+### DR-32. `Assemble` operand occurrence paths of the second container generation
+
+**Question.** Where does the second container generation store the two `Assemble` operand occurrence paths, and how does each path join to its operand frame?
+
+**Known.** `f3d.md` §8.1 "An `Assemble` scope stores two operand frames" gives the operand-frame layout of the 627-, 633-, 637-, 692-, 732-, and 772-byte forms, and `f3d.md` §8.1 "Except in the 772-byte class-261 form" gives the two occurrence-path records, their record indices five and two below the first operand construction in a four-owner scope, and 39 and 36 below it in an eight-owner scope.
+
+The paired class tag does not select the frame layout. `f3d.md` §8.1 "A parameter scope is one logical indexed record" already states that both class tags are per-file dynamic values. Documents exist whose `Assemble` scopes pair with class 262 and whose 633- and 637-byte frames satisfy every fixed member of the 633- and 637-byte layouts: the marked operand references stand at scope offsets 24 and 164 and at 28 and 168, the two rigid row-major transforms stand at offsets 36 and 176 and at 40 and 180, and every zero-byte run between them holds zero. So frame length alone selects the layout.
+
+The same documents do not hold the two path records. The record indices five and two below the first frame's construction record are absent from the Design stream, and no indexed record stands between the scope's paired header and that construction record. The occurrence GUIDs of those scopes instead occur as a run of length-prefixed UTF-16LE 36-character values at a 76-byte stride inside the region the paired header opens, which the record-header index does not enter.
+
+**Need.** The projector accepts an alignment only when both the operand frames and the operand paths resolve, so an `Assemble` feature of this generation stays a native node even though its two transforms are readable. Widening the frame gate alone makes the scope fail validation instead, because the alignment then carries frames without paths. We must find the owning record and the count field of the GUID run, and the rule that assigns each run to one operand frame, before either layer can change.
+
+### DR-33. Joined occurrences of a 772-byte class-261 `Assemble` scope
+
+**Question.** What names the two joined component occurrences of a 772-byte class-261 `Assemble` scope?
+
+**Known.** `f3d.md` §8.1 "An `Assemble` scope stores two operand frames" gives the form's two operand references, its two rigid connector transforms, and its ten owner lanes. `f3d.md` §8.1 "Except in the 772-byte class-261 form" states that this form stores no occurrence-path records. The decoder reads both connector transforms and the alignment angle and offset, and the validator accepts the form with frames and no paths.
+
+A neutral assembly joint needs one occurrence per operand. Every other form supplies it from the first occurrence GUID of the operand's path record. This form has no path record, so each operand is identified only by the marked reference the frame stores, which names a construction record after the scope's paired header.
+
+**Need.** The projector needs one occurrence identity per operand. Without it the feature stays a native node although its two connector frames and its alignment values are complete. Emitting a joint whose operands are empty would assert a join between unnamed bodies, so the operand identity has to come from the construction record the frame reference names, and that record's members are not resolved.
+
 ## 3. External references
 
 ### XR-01. `neutronData` with a different GUID
