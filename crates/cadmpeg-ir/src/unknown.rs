@@ -5,12 +5,14 @@
 use crate::ids::UnknownId;
 use crate::native::NativeRecord;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value};
 
 /// A format-specific product record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct NativeUnknownRecord {
     /// Arena id.
     pub id: UnknownId,
@@ -30,7 +32,8 @@ impl From<&UnknownRecord> for NativeUnknownRecord {
 
 /// A recognized source record represented by location, digest, links, and
 /// optional retained bytes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct UnknownRecord {
     /// Arena id.
     pub id: UnknownId,
@@ -46,7 +49,7 @@ pub struct UnknownRecord {
         skip_serializing_if = "Option::is_none",
         with = "crate::bytes::option"
     )]
-    #[schemars(with = "Option<String>")]
+    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
     pub data: Option<Vec<u8>>,
     /// Related entity IDs from any document arena.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

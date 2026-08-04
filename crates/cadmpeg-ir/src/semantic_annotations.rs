@@ -1,19 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Format-neutral semantic dimensions, notes, symbols, and callouts.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Stable semantic-annotation identity.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct SemanticAnnotationId(
     #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
 );
 
 /// Semantic role of an annotation independent of its drawing presentation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SemanticAnnotationKind {
     /// Measured linear, angular, radial, or other dimension.
@@ -35,7 +38,8 @@ pub enum SemanticAnnotationKind {
 }
 
 /// One model, drawing, or external reference used by an annotation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SemanticAnnotationTarget {
     /// Resolved local model, drawing, or application-object identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -55,7 +59,8 @@ pub struct SemanticAnnotationTarget {
 }
 
 /// Semantic content of a persisted annotation, separate from drawing appearance.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SemanticAnnotation {
     /// Stable semantic identity.
     pub id: SemanticAnnotationId,

@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Format-neutral drawing sheets, resources, views, and annotations.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 /// Stable identity of one neutral drawing entity.
 pub struct DrawingId(#[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String);
 
 /// Semantic role of a drawing entity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DrawingKind {
     /// Sheet containing ordered views.
@@ -43,7 +46,8 @@ pub enum DrawingKind {
 }
 
 /// One role-preserving drawing or model reference.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DrawingTarget {
     /// Resolved local drawing, model, or application-object identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -63,7 +67,8 @@ pub struct DrawingTarget {
 }
 
 /// A page, template, view, projection, section, or drawing annotation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Drawing {
     /// Stable drawing identity.
     pub id: DrawingId,

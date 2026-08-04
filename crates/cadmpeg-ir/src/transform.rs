@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rigid transforms.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +11,8 @@ use crate::math::{Point3, Vector3};
 ///
 /// The explicit matrix preserves source coefficients. Validation checks the
 /// affine bottom row.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct Transform {
     /// Row-major 4×4 matrix; `rows[3]` is normally `[0, 0, 0, 1]`.

@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
@@ -10,7 +11,8 @@ use serde_json::Value;
 use crate::CadIr;
 
 /// A modified entity and its differing top-level fields.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ModifiedEntity {
     /// Diff key of the entity, as produced by the arena's key function.
     pub id: String,
@@ -20,7 +22,8 @@ pub struct ModifiedEntity {
 }
 
 /// Changes within one entity arena.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ArenaDiff {
     /// Arena name, matching the field name in [`crate::CadIr`] (e.g. `"faces"`).
     pub kind: String,
@@ -33,7 +36,8 @@ pub struct ArenaDiff {
 }
 
 /// Structural changes between two IR documents.
-#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct IrDiff {
     /// `(left, right)` units, present only when the two documents' units differ.
     pub unit_change: Option<(crate::units::Units, crate::units::Units)>,

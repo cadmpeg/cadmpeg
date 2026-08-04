@@ -64,6 +64,18 @@ jobs:
       - name: Documentation tests
         run: cargo test --workspace --doc
 
+      - name: Schema feature
+        # `schema` is off by default, so the steps above never build the
+        # `JsonSchema` derives. This step is the only thing that compiles them
+        # and runs the schema assertions, so a derive that stops matching its
+        # type fails here rather than at release time.
+        run: |
+          set -euo pipefail
+          cargo test -p cadmpeg-ir --features schema --lib
+          cargo clippy -p cadmpeg-codec-core -p cadmpeg-codec-f3d \
+            -p cadmpeg-codec-catia -p cadmpeg-codec-sldprt --all-targets \
+            --features cadmpeg-codec-core/schema,cadmpeg-codec-f3d/schema,cadmpeg-codec-catia/schema,cadmpeg-codec-sldprt/schema
+
       - name: Fuzz targets compile
         # The fuzz crate declares its own `[workspace]`, so every step above
         # skips it; a refactor that moves a codec's internals silently rots the

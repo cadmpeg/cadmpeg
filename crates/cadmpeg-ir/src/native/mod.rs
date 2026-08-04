@@ -4,6 +4,7 @@
 
 use std::collections::BTreeMap;
 
+#[cfg(feature = "schema")]
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
@@ -12,7 +13,8 @@ pub mod catalogue;
 mod replay;
 
 /// One non-empty native arena reported as an exporter loss.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct LossCount {
     /// Source-format namespace this arena belongs to.
     pub format: String,
@@ -58,7 +60,8 @@ impl From<NativeConvertError> for cadmpeg_codec_core::CodecError {
 // instead of every path that builds, serializes, or describes a record. Its doc
 // comments are the ones that reach the generated JSON Schema.
 /// One source-native record with a stable identity and codec-owned fields.
-#[derive(Serialize, JsonSchema)]
+#[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename = "NativeRecord")]
 struct RecordShape<'a> {
     /// Globally unique record identity.
@@ -187,6 +190,7 @@ impl<'de> Deserialize<'de> for NativeRecord {
     }
 }
 
+#[cfg(feature = "schema")]
 impl JsonSchema for NativeRecord {
     fn schema_name() -> std::borrow::Cow<'static, str> {
         "NativeRecord".into()
@@ -202,7 +206,8 @@ impl JsonSchema for NativeRecord {
 }
 
 /// Independently versioned source-format arena collection.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct NativeNamespace {
     /// Codec-owned namespace schema version.
     pub version: u32,
@@ -264,7 +269,8 @@ impl NativeNamespace {
 }
 
 /// Native records grouped by source-format namespace id.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct Native(pub BTreeMap<String, NativeNamespace>);
 

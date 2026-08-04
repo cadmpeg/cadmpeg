@@ -30,7 +30,7 @@ crc32fast.workspace = true
 roxmltree.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-schemars.workspace = true
+schemars = { workspace = true, optional = true }
 
 [dev-dependencies]
 # Tests build `cadmpeg_ir::examples`; the feature keeps those fixtures out of
@@ -38,6 +38,10 @@ schemars.workspace = true
 cadmpeg-ir = { workspace = true }
 
 [features]
+# `schema` builds the `JsonSchema` derives. It is off by default: the
+# derives are only consumed by `cadmpeg_ir::cadir_json_schema()`, and
+# generating them costs 22% of this crate tree's compile time.
+schema = ["dep:schemars", "cadmpeg-codec-core/schema", "cadmpeg-ir/schema"]
 # Exposes `pub mod fuzzing`, thin wrappers that drive the crate-private `brep`
 # leaf scanners so the fuzz crate can reach them without widening the stable API.
 fuzzing = []

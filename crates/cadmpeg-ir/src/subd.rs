@@ -4,11 +4,13 @@
 use crate::ids::SubdId;
 use crate::math::Point3;
 use crate::provenance::SourceObjectAssociation;
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A subdivision surface represented by its control cage.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SubdSurface {
     /// Arena identity.
     pub id: SubdId,
@@ -26,7 +28,8 @@ pub struct SubdSurface {
 }
 
 /// Subdivision scheme used by a control cage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SubdScheme {
     /// Catmull-Clark subdivision.
@@ -34,7 +37,8 @@ pub enum SubdScheme {
 }
 
 /// A control-cage vertex and its subdivision tag.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SubdVertex {
     /// Vertex position.
     pub point: Point3,
@@ -43,7 +47,8 @@ pub struct SubdVertex {
 }
 
 /// A control-cage vertex tag.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SubdVertexTag {
     /// Smooth vertex.
@@ -57,7 +62,8 @@ pub enum SubdVertexTag {
 }
 
 /// A control-cage edge with endpoint sharpness and sector coefficients.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SubdEdge {
     /// Indices of the two distinct endpoint vertices.
     pub vertices: [u32; 2],
@@ -70,7 +76,8 @@ pub struct SubdEdge {
 }
 
 /// A control-cage edge tag.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SubdEdgeTag {
     /// Smooth edge.
@@ -82,14 +89,16 @@ pub enum SubdEdgeTag {
 }
 
 /// A subdivision face bounded by a directed edge ring.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SubdFace {
     /// Ordered directed edge uses forming the face boundary.
     pub edges: Vec<SubdEdgeUse>,
 }
 
 /// One directed use of a subdivision edge in a face ring.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SubdEdgeUse {
     /// Index into the parent surface's edge array.
     pub edge: u32,
