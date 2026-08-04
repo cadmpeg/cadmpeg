@@ -3838,7 +3838,10 @@ fn parse_class_1a_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+)]
 fn rational_arc_pcurve(
     record: &B5Record,
     surface: u32,

@@ -7,7 +7,6 @@ use std::io::{Seek, SeekFrom, Write};
 
 use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use zip::write::SimpleFileOptions;
 
 use crate::writer::primitives::{
     f3d_native, validate_assembly_projection, validate_configuration_projection,
@@ -66,7 +65,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
     let smbh = encode_planar_triangle_smbh(target, &native, &attributes)?;
     let mut staged = tempfile::tempfile()?;
     let mut archive = zip::ZipWriter::new(&mut staged);
-    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     archive
         .start_file("Manifest.dat", options)
         .map_err(|error| CodecError::Malformed(format!("cannot create F3D manifest: {error}")))?;

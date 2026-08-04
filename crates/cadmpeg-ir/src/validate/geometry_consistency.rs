@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometric consistency checks: evaluated carrier geometry must land on the
 //! topology it supports.
-#![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
+#![allow(
+    clippy::wildcard_imports,
+    reason = "Split checks share private orchestration context."
+)]
 
 use super::*;
 use crate::eval::{curve_point, model_curve_point_by_id, pcurve_uv, surface_point};

@@ -133,8 +133,7 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
     ] {
         push_lp(&mut catalog, value)?;
     }
-    let options =
-        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     zip.start_file("AssetData/InstanceProperties.bin", options)
         .map_err(|error| {
@@ -226,8 +225,7 @@ pub(crate) fn patch_protein_appearances(
             CodecError::Malformed(format!("cannot read nested Protein entry: {error}"))
         })?;
         let name = entry.name().to_owned();
-        let options =
-            zip::write::SimpleFileOptions::default().compression_method(entry.compression());
+        let options = crate::zip_write::file_options(entry.compression());
         let declared_size = entry.size();
         total_inflated = total_inflated.checked_add(declared_size).ok_or_else(|| {
             CodecError::Malformed("Protein ZIP total inflated size overflows u64".into())

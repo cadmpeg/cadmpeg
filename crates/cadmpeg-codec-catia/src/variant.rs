@@ -15,7 +15,8 @@ pub enum Variant {
     /// decodes geometry for.
     StandardNested,
     /// Nested `V5_CFV2` with an FBB spine and `05 08 01` vertices but no standard
-    /// edge-table delimiter (its post-FBB edge rows use `u24be` handles).
+    /// edge-table delimiter (its post-FBB edge rows use width-selected handles
+    /// `W∈{1,2,3}` as `u8`/`u16be`/`u24be`).
     FbbOnly,
     /// No nested `V5_CFV2`; the outer preamble carries `a9 03` record families.
     ZeroEntity,
@@ -53,8 +54,8 @@ impl Variant {
                  decode supported"
             }
             Variant::FbbOnly => {
-                "FBB-only partial spine (u24be edge tables, no standard delimiter): vertex and \
-                 analytic carrier decode supported"
+                "FBB-only partial spine (width-selected W∈{1,2,3} edge handles, no standard \
+                 delimiter): vertex and analytic carrier decode supported"
             }
             Variant::ZeroEntity => {
                 "zero-entity a9 03 (no nested container): analytic carriers decoded"

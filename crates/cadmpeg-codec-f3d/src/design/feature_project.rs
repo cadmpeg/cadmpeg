@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+#![allow(
+    clippy::items_after_test_module,
+    reason = "Feature projection helpers are grouped by operation after their focused form tests."
+)]
 //! Project parameter-design features and dispatch per feature family.
 
 use crate::bytes::lp_utf16_bounded;
@@ -56,7 +60,10 @@ pub struct ProjectInputs<'a> {
 // Faithful reduced-arg entry point over the same slices as `ProjectInputs`;
 // its many test callers pass positional slices, so it defaults the fixed
 // edge-identity and body-binding tables and forwards through the bundle.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+)]
 pub fn project_parameter_design(
     native: &[DesignParameter],
     owners: &[DesignParameterOwner],
@@ -2493,6 +2500,8 @@ fn form_cage_serializers(
 
 #[cfg(test)]
 mod form_tests {
+    #![allow(clippy::trivially_copy_pass_by_ref)]
+
     fn indexed_frame(class: &[u8; 3], record_index: u32, length: usize) -> Vec<u8> {
         let mut frame = vec![0; length];
         frame[..4].copy_from_slice(&3u32.to_le_bytes());

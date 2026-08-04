@@ -495,3 +495,7 @@ pub(crate) fn decode(
     }
     .run()
 }
+
+#[cfg(test)]
+#[path = "jt_topology_tests.rs"]
+mod tests;

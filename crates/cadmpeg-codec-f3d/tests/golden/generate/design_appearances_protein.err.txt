@@ -1,1 +1,1 @@
-malformed container: F3D ACT GUID ordinals must be contiguous in stream order
+not implemented yet: source-less F3D generation cannot preserve this ACT GUID pool ordering
