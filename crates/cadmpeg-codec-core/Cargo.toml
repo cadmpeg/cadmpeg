@@ -15,9 +15,15 @@ rust-version.workspace = true
 # generating them costs 22% of this crate tree's compile time.
 schema = ["dep:schemars"]
 
+# `golden` builds the shared snapshot harness the codec crates' golden tests
+# use. It is off by default and enabled through a dev-dependency, because the
+# harness reads a repository checkout and a registry consumer cannot run it.
+golden = ["dep:serde_json"]
+
 [dependencies]
 serde.workspace = true
 schemars = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 thiserror.workspace = true
 
 [dev-dependencies]

@@ -30,5 +30,11 @@ tempfile.workspace = true
 name = "fcstd-profile"
 path = "src/bin/fcstd_profile.rs"
 
+[dev-dependencies]
+# Enables `cadmpeg_codec_core::golden`, the shared snapshot harness.
+# Feature unification applies it to the test build only, so the published
+# library is unchanged.
+cadmpeg-codec-core = { workspace = true, features = ["golden"] }
+
 [lints]
 workspace = true
