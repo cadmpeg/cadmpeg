@@ -34,7 +34,7 @@ fn golden_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
 }
 
-/// The FreeCAD goldens have no `tests/golden/fixtures/` tree. Their inputs are
+/// The `FreeCAD` goldens have no `tests/golden/fixtures/` tree. Their inputs are
 /// the charter fixtures under `corpus/freecad_fcstd/fixtures/`, one `.FCStd`
 /// per golden basename.
 fn fixture_dir() -> PathBuf {
@@ -86,9 +86,8 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 
 /// Read a golden with `\r\n` folded to `\n`.
 ///
-/// `.gitattributes` pins only the NX goldens to LF and CI runs the fast suite
-/// on Windows, so a Windows checkout hands these files CRLF while the harness
-/// emits LF. Folding on read keeps the comparison platform-neutral.
+/// `.gitattributes` pins these goldens to LF, but folding on read keeps the
+/// comparison platform-neutral even in a tree checked out without it.
 fn read_golden(path: &Path) -> std::io::Result<String> {
     Ok(std::fs::read_to_string(path)?.replace("\r\n", "\n"))
 }

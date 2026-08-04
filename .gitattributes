@@ -1,5 +1,14 @@
-crates/cadmpeg-codec-nx/tests/golden/*.json text eol=lf
-crates/cadmpeg-codec-f3d/tests/golden/**/*.json text eol=lf
-crates/cadmpeg-codec-f3d/tests/golden/**/*.err.txt text eol=lf
-crates/cadmpeg-codec-f3d/tests/golden/**/*.bin binary
-crates/cadmpeg-codec-f3d/tests/golden/fixtures/** binary
+# Golden snapshots are compared byte for byte and CI runs the suite on
+# windows-latest, where Git for Windows converts unmarked text on checkout. Pin
+# every codec's golden tree rather than the two that happened to have readers,
+# because a newly wired tree otherwise fails only on Windows.
+crates/*/tests/golden/**/*.json text eol=lf
+crates/*/tests/golden/**/*.txt text eol=lf
+crates/*/tests/golden/**/*.step text eol=lf
+crates/*/tests/golden/**/*.bin binary
+
+# Fixture inputs are read as bytes and decoded, so conversion changes the
+# decode, not just the file. IGES cards are 80 columns wide and its reader
+# records which line ending each card carried, so a converted `.igs` decodes
+# to a different document.
+crates/*/tests/golden/fixtures/** binary
