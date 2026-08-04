@@ -64,7 +64,8 @@
 //! document model; `.smb` and `.smbh` extensions do not choose either model or
 //! history role. [`container`] locates history streams by the ASM header flag.
 //! Without body-map bindings, a unique history-bearing stream or a single BREP
-//! is the only fallback. [`sab`] frames each selected active record slice.
+//! is the only fallback. [`cadmpeg_asm::sab`] frames each selected active
+//! record slice.
 //! [`brep`] builds each topology chain from bodies through vertices and points,
 //! while [`nurbs`] decodes cached spline carriers.
 //! [`design`], [`history`], and [`materials`] populate source-native records and
@@ -80,7 +81,6 @@
 //! [`cadmpeg_ir::unknown::UnknownRecord`] values.
 
 mod act;
-pub mod asm_header;
 pub mod brep;
 mod bytes;
 pub mod container;
@@ -96,7 +96,6 @@ pub mod nurbs;
 mod paramesh;
 mod protein;
 pub mod records;
-pub mod sab;
 mod tsm;
 pub mod validate;
 mod value_tree;

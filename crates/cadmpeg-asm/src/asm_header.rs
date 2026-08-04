@@ -24,7 +24,7 @@
 use cadmpeg_codec_core::le::u32_at;
 use cadmpeg_codec_core::le::u64_at as read_le_u64;
 
-/// The recognized header fields of a Fusion ASM BREP stream.
+/// The recognized header fields of an ASM binary model stream.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AsmHeader {
     /// Integer width the stream declares (`4` or `8`), from `ASM BinaryFileN`.
@@ -122,7 +122,7 @@ pub fn has_asm_magic(bytes: &[u8]) -> bool {
 /// The integer and reference width `bytes` declares, in bytes. A slice without
 /// a readable header is read at the `BinaryFile8` width, which is the width of
 /// every construction the decoder synthesizes.
-pub(crate) fn stream_ref_width(bytes: &[u8]) -> usize {
+pub fn stream_ref_width(bytes: &[u8]) -> usize {
     parse(bytes).map_or(8, |header| usize::from(header.width))
 }
 
@@ -136,7 +136,7 @@ fn string_region_start(bytes: &[u8]) -> Option<usize> {
     }
 }
 
-/// Parse the header of a decompressed BREP stream. Returns `None` if the magic
+/// Parse the header of a decompressed ASM stream. Returns `None` if the magic
 /// is absent. Fields that cannot be read (short stream or unexpected tags) are
 /// left `None` rather than guessed.
 pub fn parse(bytes: &[u8]) -> Option<AsmHeader> {

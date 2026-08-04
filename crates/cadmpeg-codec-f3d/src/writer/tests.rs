@@ -7,11 +7,11 @@ use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Sense;
 
-use crate::sab;
 use crate::writer::patch::geometry::{
     patch_framed_geometry, patch_tagged_integer_at, GeometryEdits,
 };
 use crate::writer::primitives::normalized_face_sense_to_native;
+use cadmpeg_asm::sab;
 
 #[test]
 fn generated_face_sense_edit_preserves_native_normalization_relation() {

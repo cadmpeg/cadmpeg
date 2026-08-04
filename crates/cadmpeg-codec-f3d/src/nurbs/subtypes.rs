@@ -2,7 +2,7 @@
 //! Subtype reference tables, intcurve subtype classification, and token walkers.
 
 use crate::nurbs::reader::INT_WIDTHS;
-use crate::sab::Record;
+use cadmpeg_asm::sab::Record;
 use cadmpeg_codec_core::le::int_at as read_int;
 
 /// Byte offsets and names of the subtype definitions `bytes` itself owns: the

@@ -29,7 +29,7 @@ use crate::nurbs::reader::{
 };
 use crate::nurbs::subtypes::{subtype_span, SubtypeTables};
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
-use crate::sab::Token;
+use cadmpeg_asm::sab::Token;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, SurfaceGeometry,
 };

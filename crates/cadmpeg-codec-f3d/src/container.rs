@@ -19,7 +19,7 @@ use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_ir::hash::sha256_hex;
 
-use crate::asm_header;
+use cadmpeg_asm::asm_header;
 
 pub(crate) const MAX_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
 pub(crate) const MAX_INFLATED_ENTRY_BYTES: u64 = 128 * 1024 * 1024;

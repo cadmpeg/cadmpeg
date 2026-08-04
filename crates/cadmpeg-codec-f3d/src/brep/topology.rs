@@ -4,7 +4,7 @@
 
 use crate::nurbs;
 use crate::records::{MeshSurfaceSentinel, WireSide, WireTopology};
-use crate::sab::{Record, Token};
+use cadmpeg_asm::sab::{Record, Token};
 use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     CoedgeId, EdgeId, FaceId, LoopId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId,
@@ -557,7 +557,7 @@ pub(crate) fn collect_wire_topology(
     let mut wire_edges_by_shell = HashMap::<i64, Vec<i64>>::new();
     let mut free_vertices_by_shell = HashMap::<i64, Vec<i64>>::new();
     let mut saved_free_edges = Vec::new();
-    let saved_entity_limit = crate::asm_header::parse(bytes)
+    let saved_entity_limit = cadmpeg_asm::asm_header::parse(bytes)
         .and_then(|header| header.entity_count)
         .and_then(|count| i64::try_from(count).ok());
     if let Some(limit) = saved_entity_limit {

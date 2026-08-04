@@ -10,7 +10,7 @@
 //! byte offsets served — ordering and identity — without binding the decoder
 //! to one serialization.
 
-use crate::sab::Token;
+use cadmpeg_asm::sab::Token;
 
 /// A cursor over one record's payload tokens.
 ///
@@ -445,9 +445,9 @@ pub(crate) fn subtype_refs(toks: &[Token]) -> Vec<usize> {
 /// The interior tokens of the subtype scope at payload chunk `chunk_index`
 /// when its immediately following identifier is `expected`: everything after
 /// that identifier up to (excluding) the matching close. Token-space
-/// counterpart of [`crate::sab::payload_subtype_span`].
+/// counterpart of [`cadmpeg_asm::sab::payload_subtype_span`].
 pub(crate) fn payload_subtype_toks<'r>(
-    record: &'r crate::sab::Record,
+    record: &'r cadmpeg_asm::sab::Record,
     chunk_index: usize,
     expected: &str,
 ) -> Option<&'r [Token]> {
@@ -494,7 +494,7 @@ pub(crate) struct SubtypeTable {
 
 impl SubtypeTable {
     /// Build the table over each framed record's payload tokens, in order.
-    pub(crate) fn from_records(records: &[crate::sab::Record]) -> Self {
+    pub(crate) fn from_records(records: &[cadmpeg_asm::sab::Record]) -> Self {
         let mut defs = Vec::new();
         for record in records {
             for (pos, token) in record.tokens.iter().enumerate() {
@@ -541,14 +541,14 @@ pub(crate) fn lex_test_span(bytes: &[u8], ref_width: usize) -> std::sync::Arc<[T
     wrapped.extend_from_slice(bytes);
     wrapped.push(0x11);
     let records =
-        crate::sab::frame(&wrapped, 0, wrapped.len(), ref_width).expect("test span lexes");
+        cadmpeg_asm::sab::frame(&wrapped, 0, wrapped.len(), ref_width).expect("test span lexes");
     records.into_iter().next().expect("one record").tokens
 }
 
 /// Build a [`SubtypeTable`] over a bare byte span, for tests.
 #[cfg(test)]
 pub(crate) fn test_table(bytes: &[u8], ref_width: usize) -> SubtypeTable {
-    let record = crate::sab::Record {
+    let record = cadmpeg_asm::sab::Record {
         index: 0,
         name: String::new(),
         head: String::new(),

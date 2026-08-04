@@ -6,7 +6,7 @@ use crate::nurbs::reader::{
     is_periodic, marker_at, marker_positions, read_knots, take_tagged_int, INT_WIDTHS,
 };
 use crate::nurbs::toks::{self, Cur};
-use crate::sab::Token;
+use cadmpeg_asm::sab::Token;
 use cadmpeg_codec_core::le::f64_at as read_f64;
 use cadmpeg_ir::math::Point2;
 

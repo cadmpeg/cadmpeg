@@ -14,10 +14,10 @@ use super::edits::{
     HistoryEdits, PersistentReferenceEdit, SketchCurveEdit, SketchPointEdit, SketchRelationEdit,
 };
 use super::geometry::{patch_integer_field, required_payload_field};
-use crate::asm_header::stream_ref_width;
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::native_bool;
-use crate::{asm_header, sab};
+use cadmpeg_asm::asm_header::stream_ref_width;
+use cadmpeg_asm::{asm_header, sab};
 
 pub(crate) fn patch_material_assignments(
     bytes: &mut [u8],

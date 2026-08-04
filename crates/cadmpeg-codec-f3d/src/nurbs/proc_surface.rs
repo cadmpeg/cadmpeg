@@ -13,7 +13,7 @@ use crate::nurbs::proc_curve::{
 };
 use crate::nurbs::reader::{normalized, take_native_ident, LEN_TO_MM};
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
-use crate::sab::Token;
+use cadmpeg_asm::sab::Token;
 use cadmpeg_codec_core::cursor::bounded_len;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry,

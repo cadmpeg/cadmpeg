@@ -7,7 +7,7 @@
 //!
 //! [`crate::container`] scans the ZIP, reads ASM headers, finds the history
 //! boundary. This module resolves Design body-to-blob bindings, frames every
-//! referenced B-rep with [`crate::sab`], builds topology and geometry through
+//! referenced B-rep with [`cadmpeg_asm::sab`], builds topology and geometry through
 //! [`crate::brep`], then
 //! adds design, sketch, history, ACT, and appearance data.
 //!
@@ -29,7 +29,8 @@ use cadmpeg_ir::unknown::UnknownRecord;
 
 use crate::brep::{self, Brep};
 use crate::container::{self, BrepFacts, ContainerScan};
-use crate::{asm_header, materials, sab};
+use crate::materials;
+use cadmpeg_asm::{asm_header, sab};
 
 fn container_only_dimension_parameters(
     native: &F3dNative,

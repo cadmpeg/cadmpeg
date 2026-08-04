@@ -7,7 +7,7 @@ use crate::records::{
     sketch_link_sense_is_unconstrained, CreationTimestamp, PersistentDesignLink,
     PersistentSubentityTag, SketchCurveLink,
 };
-use crate::sab::{Record, Token};
+use cadmpeg_asm::sab::{Record, Token};
 use cadmpeg_codec_core::cursor::bounded_len;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::AttributeId;

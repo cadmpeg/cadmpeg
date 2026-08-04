@@ -14,7 +14,7 @@ use crate::nurbs::reader::{
 use crate::nurbs::subtypes::{decode_cache_resolving_refs, SubtypeTables};
 use crate::nurbs::toks;
 use crate::nurbs::toks::Cur;
-use crate::sab::Token;
+use cadmpeg_asm::sab::Token;
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::Point3;
 

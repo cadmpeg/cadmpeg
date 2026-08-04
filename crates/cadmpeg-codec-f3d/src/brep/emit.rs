@@ -25,7 +25,7 @@ use crate::records::{
     TolerantCoedgeExtension, TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail,
     TransformHints, VertexOwnership,
 };
-use crate::sab::{Record, Token};
+use cadmpeg_asm::sab::{Record, Token};
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, NurbsCurve, Pcurve,

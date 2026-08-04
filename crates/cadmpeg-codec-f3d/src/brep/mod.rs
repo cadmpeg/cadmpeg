@@ -21,7 +21,6 @@ mod emit;
 pub(crate) mod geometry;
 mod topology;
 
-use crate::asm_header;
 use crate::nurbs;
 use crate::nurbs::proc_curve::{
     CompoundDefinition, EmbeddedDeformable, EmbeddedIntersection, EmbeddedLawCurve,
@@ -36,7 +35,8 @@ use crate::records::{
     TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail, TransformHints,
     VertexOwnership, WireTopology,
 };
-use crate::sab::Record;
+use cadmpeg_asm::asm_header;
+use cadmpeg_asm::sab::Record;
 use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralSurface, Surface,
@@ -714,7 +714,7 @@ fn decode_with_purpose(
     );
     let save_format_major = header
         .as_ref()
-        .and_then(crate::asm_header::AsmHeader::save_format_major);
+        .and_then(cadmpeg_asm::asm_header::AsmHeader::save_format_major);
     let header_scale = header.and_then(|header| header.scale).unwrap_or(1.0);
 
     let (mut carriers, inward_normal_surfaces) = decode_analytic_carriers(records);

@@ -12,10 +12,10 @@ use cadmpeg_ir::transform::Transform;
 use super::edits::{
     NurbsCurveEdit, NurbsPcurveEdit, NurbsSurfaceEdit, ProceduralCurveEdit, ProceduralSurfaceEdit,
 };
-use crate::asm_header::stream_ref_width;
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::{finite_vector, native_bool, unique_knot_count};
-use crate::{asm_header, sab};
+use cadmpeg_asm::asm_header::stream_ref_width;
+use cadmpeg_asm::{asm_header, sab};
 
 pub(crate) fn valid_edited_curve_structure(before: &NurbsCurve, after: &NurbsCurve) -> bool {
     valid_edited_nurbs_direction(

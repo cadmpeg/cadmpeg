@@ -7,9 +7,9 @@
 //! Record names join a chain of `0x0e` sub-identifiers ending in one `0x0d`
 //! identifier.
 //!
-//! [`frame`] returns the indexed [`Record`] table consumed by
-//! [`crate::brep`]. Framing every token preserves byte synchronization and
-//! record extents without requiring semantic decoding of each payload.
+//! [`frame`] returns an indexed [`Record`] table. Framing every token preserves
+//! byte synchronization and record extents without requiring semantic decoding
+//! of each payload.
 
 use cadmpeg_codec_core::le::{f64_at as read_f64, int_at as read_i, vec3_at as read_vec3};
 use std::sync::Arc;
@@ -124,7 +124,7 @@ impl Record {
 
 /// Return the absolute byte range inside payload subtype `token_index` when
 /// its immediately following identifier is `expected`.
-pub(crate) fn payload_subtype_range(
+pub fn payload_subtype_range(
     bytes: &[u8],
     record: &Record,
     token_index: usize,
@@ -188,7 +188,7 @@ pub(crate) fn payload_subtype_range(
 }
 
 /// Return the absolute byte offset of one payload token by its framed index.
-pub(crate) fn payload_token_offset(
+pub fn payload_token_offset(
     bytes: &[u8],
     record: &Record,
     ref_width: usize,
@@ -389,8 +389,7 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
 }
 
 /// Byte offsets of payload tokens with `tag` inside one framed record.
-#[cfg(test)]
-pub(crate) fn payload_token_offsets(
+pub fn payload_token_offsets(
     bytes: &[u8],
     record: &Record,
     ref_width: usize,
@@ -429,7 +428,7 @@ pub fn frame(
 
 /// Frame a history-section slice whose final record ends at the enclosing
 /// stream boundary without an explicit `0x11` terminator.
-pub(crate) fn frame_history(
+pub fn frame_history(
     bytes: &[u8],
     start: usize,
     limit: usize,
@@ -1082,15 +1081,11 @@ mod tests {
     }
 
     #[test]
-    fn generated_payload_subtype_lookup_uses_declared_integer_width() {
-        use crate::nurbs::toks::payload_subtype_toks;
+    fn generated_payload_offsets_use_declared_integer_width() {
         for ref_width in [4, 8] {
             let bytes = generated_pcurve_record(ref_width);
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated record");
             let record = records.first().expect("generated pcurve");
-            assert!(payload_subtype_toks(record, 5, "exp_par_cur").is_some());
-            assert!(payload_subtype_toks(record, 4, "exp_par_cur").is_none());
-            assert!(payload_subtype_toks(record, 5, "bad_par_cur").is_none());
             assert_eq!(
                 bytes[payload_token_offset(&bytes, record, ref_width, 4)
                     .expect("required invariant")],

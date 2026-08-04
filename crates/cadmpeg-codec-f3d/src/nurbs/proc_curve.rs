@@ -23,7 +23,7 @@ use crate::nurbs::subtypes::{
     find_owned_intcurve_subtype, find_owned_subtype_marker, subtype_span, SubtypeTables,
 };
 use crate::nurbs::toks::{Cur, SubtypeTable};
-use crate::sab::Token;
+use cadmpeg_asm::sab::Token;
 use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 

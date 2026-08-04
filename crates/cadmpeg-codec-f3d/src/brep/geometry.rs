@@ -8,7 +8,7 @@ use crate::nurbs::proc_surface::{
 };
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::records::TolerantCoedgeExtension;
-use crate::sab::{Record, Token};
+use cadmpeg_asm::sab::{Record, Token};
 use cadmpeg_ir::eval;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::ids::EdgeId;

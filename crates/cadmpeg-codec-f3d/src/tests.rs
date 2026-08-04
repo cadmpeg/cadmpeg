@@ -21,10 +21,10 @@ use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 use cadmpeg_ir::report::{LossKind as LossCode, Severity};
 use zip::CompressionMethod;
 
-use crate::asm_header;
 use crate::bytes::lp_utf16_bytes;
 use crate::container::{self, role};
 use crate::F3dCodec;
+use cadmpeg_asm::asm_header;
 
 trait TestEncode {
     fn encode(
@@ -483,7 +483,7 @@ fn append_generated_record_tail(bytes: &mut Vec<u8>, head: &str, tail: &[u8]) {
         .windows(b"\x0d\x09asmheader".len())
         .position(|window| window == b"\x0d\x09asmheader")
         .expect("generated ASM record table");
-    let offsets = crate::sab::frame(bytes, record_start, bytes.len(), 8)
+    let offsets = cadmpeg_asm::sab::frame(bytes, record_start, bytes.len(), 8)
         .expect("generated ASM records must frame")
         .into_iter()
         .filter(|record| record.head == head)
@@ -824,7 +824,7 @@ fn decode_frames_history_less_stream_whose_final_record_ends_at_eof() {
         t_subident(&mut smbh, name);
     }
     t_ident(&mut smbh, "data"); // no trailing 0x11
-    assert!(crate::asm_header::solved_record_limit(&smbh).is_none());
+    assert!(cadmpeg_asm::asm_header::solved_record_limit(&smbh).is_none());
 
     let decoded = F3dCodec
         .decode(
@@ -903,12 +903,12 @@ fn synthetic_geometry_with_history_smbh() -> Vec<u8> {
 
 fn synthetic_geometry_with_transform_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let limit = crate::asm_header::solved_record_limit(&bytes).expect("history boundary");
-    let start = crate::asm_header::record_stream_start(&bytes).expect("record stream");
-    let records = crate::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
+    let limit = cadmpeg_asm::asm_header::solved_record_limit(&bytes).expect("history boundary");
+    let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
     let body = &records[1];
-    let transform_ref =
-        crate::sab::payload_token_offsets(&bytes, body, 8, 0x0c).expect("body reference tokens")[4];
+    let transform_ref = cadmpeg_asm::sab::payload_token_offsets(&bytes, body, 8, 0x0c)
+        .expect("body reference tokens")[4];
     bytes[transform_ref + 1..transform_ref + 9].copy_from_slice(&19i64.to_le_bytes());
 
     let mut transform = Vec::new();
@@ -930,12 +930,12 @@ fn synthetic_geometry_with_transform_smbh() -> Vec<u8> {
 
 fn synthetic_geometry_with_body_color_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let limit = crate::asm_header::solved_record_limit(&bytes).expect("history boundary");
-    let start = crate::asm_header::record_stream_start(&bytes).expect("record stream");
-    let records = crate::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
+    let limit = cadmpeg_asm::asm_header::solved_record_limit(&bytes).expect("history boundary");
+    let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
     let body = &records[1];
-    let attribute_ref =
-        crate::sab::payload_token_offsets(&bytes, body, 8, 0x0c).expect("body reference tokens")[0];
+    let attribute_ref = cadmpeg_asm::sab::payload_token_offsets(&bytes, body, 8, 0x0c)
+        .expect("body reference tokens")[0];
     bytes[attribute_ref + 1..attribute_ref + 9].copy_from_slice(&19i64.to_le_bytes());
 
     let mut attribute = Vec::new();
@@ -953,12 +953,12 @@ fn synthetic_geometry_with_body_color_smbh() -> Vec<u8> {
 
 fn synthetic_geometry_with_face_color_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let limit = crate::asm_header::solved_record_limit(&bytes).expect("history boundary");
-    let start = crate::asm_header::record_stream_start(&bytes).expect("record stream");
-    let records = crate::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
+    let limit = cadmpeg_asm::asm_header::solved_record_limit(&bytes).expect("history boundary");
+    let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
     let face = &records[4];
-    let attribute_ref =
-        crate::sab::payload_token_offsets(&bytes, face, 8, 0x0c).expect("face reference tokens")[0];
+    let attribute_ref = cadmpeg_asm::sab::payload_token_offsets(&bytes, face, 8, 0x0c)
+        .expect("face reference tokens")[0];
     bytes[attribute_ref + 1..attribute_ref + 9].copy_from_slice(&19i64.to_le_bytes());
 
     let mut attribute = Vec::new();
@@ -976,9 +976,9 @@ fn synthetic_geometry_with_face_color_smbh() -> Vec<u8> {
 
 fn synthetic_geometry_with_mesh_surface_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let limit = crate::asm_header::solved_record_limit(&bytes).expect("history boundary");
-    let start = crate::asm_header::record_stream_start(&bytes).expect("record stream");
-    let records = crate::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
+    let limit = cadmpeg_asm::asm_header::solved_record_limit(&bytes).expect("history boundary");
+    let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
     let plane = records
         .iter()
         .find(|record| record.head == "plane")
@@ -1041,7 +1041,7 @@ fn synthetic_inline_pcurve_with_referenced_support_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let asmheader_end = records[0].offset + records[0].len - 1;
 
     let mut target = vec![0x0f];
@@ -1070,7 +1070,7 @@ fn synthetic_inline_pcurve_with_referenced_support_smbh() -> Vec<u8> {
 fn replace_generated_face_with_nurbs_surface(mut bytes: Vec<u8>) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[6];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -1137,7 +1137,7 @@ fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let coedge = &records[7];
     let record = &mut bytes[coedge.offset..coedge.offset + coedge.len];
     let pcurve_ref_tag = record.iter().rposition(|b| *b == 0x0c).unwrap();
@@ -1185,7 +1185,7 @@ fn synthetic_geometry_with_ref_pcurve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let coedge = &records[7];
     let record = &mut bytes[coedge.offset..coedge.offset + coedge.len];
     let pcurve_ref_tag = record.iter().rposition(|byte| *byte == 0x0c).unwrap();
@@ -1221,12 +1221,12 @@ fn synthetic_geometry_with_ref_pcurve_smbh() -> Vec<u8> {
 fn with_pcurve_discriminator(mut bytes: Vec<u8>, discriminator: i64) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let pcurve = records
         .iter()
         .find(|record| record.head == "pcurve")
         .expect("generated pcurve record");
-    let offsets = crate::sab::payload_token_offsets(&bytes, pcurve, 8, 0x04)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, pcurve, 8, 0x04)
         .expect("generated pcurve integer offsets");
     bytes[offsets[1] + 1..offsets[1] + 9].copy_from_slice(&discriminator.to_le_bytes());
     bytes
@@ -1235,12 +1235,12 @@ fn with_pcurve_discriminator(mut bytes: Vec<u8>, discriminator: i64) -> Vec<u8> 
 fn with_inline_pcurve_non_boolean_wrapper(mut bytes: Vec<u8>) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let pcurve = records
         .iter()
         .find(|record| record.head == "pcurve")
         .expect("generated pcurve record");
-    let integers = crate::sab::payload_token_offsets(&bytes, pcurve, 8, 0x04)
+    let integers = cadmpeg_asm::sab::payload_token_offsets(&bytes, pcurve, 8, 0x04)
         .expect("generated pcurve integer offsets");
     let wrapper = integers[1] + 9;
     assert_eq!(bytes[wrapper], 0x0b, "generated inline wrapper boolean");
@@ -1251,7 +1251,7 @@ fn with_inline_pcurve_non_boolean_wrapper(mut bytes: Vec<u8>) -> Vec<u8> {
 fn with_ref_pcurve_companion_name(mut bytes: Vec<u8>, name: &[u8; 8]) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let pcurve = records
         .iter()
         .find(|record| record.head == "pcurve")
@@ -1271,7 +1271,7 @@ fn synthetic_geometry_with_procedural_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let record = &mut bytes[edge.offset..edge.offset + edge.len];
     let curve_ref_tag = record.iter().rposition(|byte| *byte == 0x0c).unwrap();
@@ -1302,9 +1302,9 @@ fn synthetic_geometry_with_helix_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
 
@@ -1343,7 +1343,7 @@ fn synthetic_geometry_with_cacheless_helix_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_with_helix_curve_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let helix = records.iter().find(|record| record.index == 19).unwrap();
     let block = generated_curve_block();
     let relative = bytes[helix.offset..helix.offset + helix.len]
@@ -1359,9 +1359,9 @@ fn synthetic_geometry_with_law_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c).unwrap();
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c).unwrap();
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
         .windows(b"delta_state".len())
@@ -1475,9 +1475,9 @@ fn synthetic_geometry_with_stamped_law_curve_smbh(subtype: &[u8]) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c).unwrap();
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c).unwrap();
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
         .windows(b"delta_state".len())
@@ -1638,9 +1638,9 @@ fn synthetic_geometry_with_vector_offset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
 
@@ -1678,9 +1678,9 @@ fn synthetic_geometry_with_subset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
@@ -1711,9 +1711,9 @@ fn synthetic_geometry_with_exact_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
@@ -1765,9 +1765,9 @@ fn synthetic_geometry_with_compound_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
@@ -1805,9 +1805,9 @@ fn synthetic_geometry_with_two_sided_offset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
@@ -1849,9 +1849,9 @@ fn synthetic_geometry_with_embedded_offset_supports_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
@@ -1893,9 +1893,9 @@ fn synthetic_geometry_with_analytic_offset_supports_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
@@ -2137,9 +2137,9 @@ fn synthetic_geometry_with_null_support_spring_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
@@ -2205,9 +2205,9 @@ fn synthetic_geometry_with_cache_first_curve_smbh(
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
@@ -2505,7 +2505,7 @@ fn synthetic_revision_surface_smbh(subtype: &str, body: impl FnOnce(&mut Vec<u8>
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -2893,7 +2893,7 @@ fn regenerated_procedural_surface_span(ir: &cadmpeg_ir::document::CadIr) -> Vec<
 fn synthetic_revision_surface_subtype_span(smbh: &[u8]) -> Vec<u8> {
     let start = asm_header::record_stream_start(smbh).unwrap();
     let limit = asm_header::solved_record_limit(smbh).unwrap();
-    let records = crate::sab::frame(smbh, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(smbh, start, limit, 8).unwrap();
     let record = &records[9];
     let slice = &smbh[record.offset..record.offset + record.len];
     let inner = slice.iter().position(|&byte| byte == 0x0f).unwrap();
@@ -3069,7 +3069,7 @@ fn synthetic_geometry_with_attribute_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let body = &records[1];
     let record = &mut bytes[body.offset..body.offset + body.len];
     let attribute_ref = record.iter().position(|byte| *byte == 0x0c).unwrap();
@@ -3122,7 +3122,7 @@ fn synthetic_geometry_with_sketch_link_smbh(form: SketchLinkForm<'_>) -> Vec<u8>
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let coedge = &records[7];
     let record = &mut bytes[coedge.offset..coedge.offset + coedge.len];
     let attribute_ref = record.iter().position(|byte| *byte == 0x0c).unwrap();
@@ -3318,15 +3318,15 @@ fn synthetic_mixed_face_wire_body_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     for (record_index, reference_ordinal) in [(1usize, 3usize), (3, 5)] {
         let record = &records[record_index];
-        let offsets = crate::sab::payload_token_offsets(&bytes, record, 8, 0x0c)
+        let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, record, 8, 0x0c)
             .expect("generated reference offsets");
         let offset = offsets[reference_ordinal];
         bytes[offset + 1..offset + 9].copy_from_slice(&19i64.to_le_bytes());
     }
-    let updated = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let updated = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     assert_eq!(updated[1].ref_at(4), Some(19));
     assert_eq!(updated[3].ref_at(6), Some(19));
 
@@ -3405,17 +3405,17 @@ fn synthetic_geometry_with_degenerate_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[3] + 1..offsets[3] + 9].copy_from_slice(&13i64.to_le_bytes());
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let vertex = &records[14];
-    let owner = crate::sab::payload_token_offsets(&bytes, vertex, 8, 0x0c)
+    let owner = cadmpeg_asm::sab::payload_token_offsets(&bytes, vertex, 8, 0x0c)
         .expect("generated vertex reference offsets")[2];
     bytes[owner + 1..owner + 9].copy_from_slice(&11i64.to_le_bytes());
-    let endpoint = crate::sab::payload_token_offsets(&bytes, vertex, 8, 0x04)
+    let endpoint = cadmpeg_asm::sab::payload_token_offsets(&bytes, vertex, 8, 0x04)
         .expect("generated vertex integer offsets")[1];
     bytes[endpoint + 1..endpoint + 9].copy_from_slice(&0i64.to_le_bytes());
 
@@ -3618,7 +3618,7 @@ fn synthetic_versioned_cyl_spl_sur_with_tail_smbh(tail_form: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old_offset = records[9].offset;
     let old_len = records[9].len;
 
@@ -3661,7 +3661,7 @@ fn synthetic_cyl_spl_sur_with_cache_smbh(include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old_offset = records[9].offset;
     let old_len = records[9].len;
 
@@ -3692,7 +3692,7 @@ fn synthetic_exact_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -3730,7 +3730,7 @@ fn synthetic_ruled_spl_sur_smbh(name: &str, include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -3757,7 +3757,7 @@ fn synthetic_sum_spl_sur_smbh(name: &str, include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -3785,7 +3785,7 @@ fn synthetic_rot_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -3811,7 +3811,7 @@ fn synthetic_off_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -3847,7 +3847,7 @@ fn synthetic_comp_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -3880,7 +3880,7 @@ fn synthetic_taper_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -3957,7 +3957,7 @@ fn synthetic_loft_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -3995,7 +3995,7 @@ fn synthetic_net_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4038,7 +4038,7 @@ fn synthetic_profile_first_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4086,7 +4086,7 @@ fn synthetic_t_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4126,7 +4126,7 @@ fn synthetic_helix_surface_smbh(circular: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4176,7 +4176,7 @@ fn synthetic_minimal_deformable_surface_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4217,7 +4217,7 @@ fn synthetic_framed_deformable_surface_smbh(mode: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4275,7 +4275,7 @@ fn synthetic_surface_curve_deformable_smbh() -> Vec<u8> {
     let mut bytes = synthetic_minimal_deformable_surface_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4331,7 +4331,7 @@ fn synthetic_full_deformable_surface_smbh(version_value: Option<i64>) -> Vec<u8>
     let mut bytes = synthetic_minimal_deformable_surface_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4400,7 +4400,7 @@ fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old_offset = records[9].offset;
     let old_len = records[9].len;
     let mut surface = Vec::new();
@@ -4436,7 +4436,7 @@ fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
     surface.push(0x10);
     t_end(&mut surface);
     bytes.splice(old_offset..old_offset + old_len, surface);
-    let records = crate::sab::frame(
+    let records = cadmpeg_asm::sab::frame(
         &bytes,
         asm_header::record_stream_start(&bytes).unwrap(),
         asm_header::solved_record_limit(&bytes).unwrap(),
@@ -4456,7 +4456,7 @@ fn synthetic_explicit_formula_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4504,7 +4504,7 @@ fn synthetic_explicit_guide_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4557,7 +4557,7 @@ fn synthetic_explicit_surface_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4611,7 +4611,7 @@ fn synthetic_law_driven_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4690,7 +4690,7 @@ fn synthetic_compound_loft_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4729,7 +4729,7 @@ fn synthetic_scaled_compound_loft_smbh(full: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4781,7 +4781,7 @@ fn synthetic_skin_spl_sur_smbh(law_case: u8, expanded: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4890,7 +4890,7 @@ fn synthetic_law_spl_sur_smbh(name: &str, legacy_ranges: bool, tail_selector: i6
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4967,7 +4967,7 @@ fn synthetic_sub_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -5008,7 +5008,7 @@ fn synthetic_g2_blend_spl_sur_smbh(name: &str, full: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -5070,7 +5070,7 @@ fn synthetic_ref_cyl_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let asmheader = &records[0];
     let surface = &records[9];
     let marker = b"\x0f\x0d\x0bcyl_spl_sur";
@@ -5096,7 +5096,7 @@ fn synthetic_revision_ref_directrix_cyl_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_versioned_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let asmheader = &records[0];
 
     let mut target = Vec::new();
@@ -5124,7 +5124,7 @@ fn synthetic_rb_blend_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -5185,7 +5185,7 @@ fn synthetic_full_rolling_ball_with_tail_smbh(name: &str, tail_form: i64) -> Vec
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -5413,7 +5413,7 @@ fn synthetic_variable_blend_smbh_inner(
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -5528,7 +5528,7 @@ fn synthetic_vertex_blend_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -6270,7 +6270,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         .windows(b"\x0d\x09asmheader".len())
         .position(|window| window == b"\x0d\x09asmheader")
         .expect("generated ASM record table");
-    let records = crate::sab::frame(&smbh, record_start, smbh.len(), 8)
+    let records = cadmpeg_asm::sab::frame(&smbh, record_start, smbh.len(), 8)
         .expect("generated ASM records must frame");
     let point_records = records
         .iter()
@@ -8210,22 +8210,22 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
             .unwrap()
             .read_to_end(&mut stream)
             .unwrap();
-        let records = crate::sab::frame(&stream, 47, stream.len(), 8).unwrap();
+        let records = cadmpeg_asm::sab::frame(&stream, 47, stream.len(), 8).unwrap();
         let tolerant = records
             .iter()
             .find(|record| record.head == "tcoedge")
             .expect("canonical tolerant coedge record");
         assert!(matches!(
             tolerant.chunk(13),
-            Some(crate::sab::Token::Ref(-1))
+            Some(cadmpeg_asm::sab::Token::Ref(-1))
         ));
         assert!(matches!(
             tolerant.chunk(14),
-            Some(crate::sab::Token::Long(0))
+            Some(cadmpeg_asm::sab::Token::Long(0))
         ));
         assert!(matches!(
             tolerant.chunk(15),
-            Some(crate::sab::Token::Long(0))
+            Some(cadmpeg_asm::sab::Token::Long(0))
         ));
     }
     let round_trip = F3dCodec
@@ -12658,7 +12658,7 @@ fn synthetic_geometry_bf4_nurbs_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_bf4_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 4).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 4).unwrap();
     let ellipse_range = records[19].offset..records[19].offset + records[19].len;
 
     let mut curve = Vec::new();
@@ -13059,7 +13059,7 @@ fn history_preamble_record_is_the_modern_partition_boundary() {
 
     assert_eq!(asm_header::solved_record_limit(&bytes), Some(expected));
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let solved = crate::sab::frame(&bytes, start, expected, 8).unwrap();
+    let solved = cadmpeg_asm::sab::frame(&bytes, start, expected, 8).unwrap();
     assert_eq!(
         solved.last().map(|record| record.name.as_str()),
         Some("body")
@@ -13349,7 +13349,7 @@ fn sab_framer_indexes_records_from_asmheader() {
     let bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).expect("record stream start");
     let limit = asm_header::solved_record_limit(&bytes).unwrap_or(bytes.len());
-    let records = crate::sab::frame(&bytes, start, limit, 8).expect("framing succeeds");
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).expect("framing succeeds");
 
     // asmheader occupies index 0; the topology records follow in order.
     assert_eq!(records[0].index, 0);
@@ -13457,7 +13457,7 @@ fn history_topology_decode_matches_full_brep_graph() {
     ] {
         let start = asm_header::record_stream_start(&bytes).expect("record stream start");
         let limit = asm_header::solved_record_limit(&bytes).expect("solved record limit");
-        let records = crate::sab::frame(&bytes, start, limit, 8).expect("frame BREP");
+        let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).expect("frame BREP");
 
         let full =
             crate::history::historical_topology(&crate::brep::decode(&records, &bytes, "full"))
@@ -14267,7 +14267,7 @@ fn generated_source_less_writes_multi_shell_wire_region() {
 #[test]
 fn analytic_carrier_decode_covers_each_shape() {
     use crate::brep::geometry::{decode_curve, decode_surface};
-    use crate::sab::{Record, Token};
+    use cadmpeg_asm::sab::{Record, Token};
     use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 
     fn rec(head: &str, tokens: Vec<Token>) -> Record {
@@ -14612,7 +14612,7 @@ fn decode_reports_faces_with_missing_surface_references() {
         let mut smbh = synthetic_mixed_smbh();
         let start = asm_header::record_stream_start(&smbh).unwrap();
         let limit = asm_header::solved_record_limit(&smbh).unwrap();
-        let records = crate::sab::frame(&smbh, start, limit, 8).unwrap();
+        let records = cadmpeg_asm::sab::frame(&smbh, start, limit, 8).unwrap();
         let face = records
             .iter()
             .filter(|record| record.head == "face")
@@ -14676,7 +14676,7 @@ fn decode_reports_dangling_edge_curve_references() {
     let mut smbh = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&smbh).unwrap();
     let limit = asm_header::solved_record_limit(&smbh).unwrap();
-    let records = crate::sab::frame(&smbh, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&smbh, start, limit, 8).unwrap();
     let edge = &records[10];
     let record = &mut smbh[edge.offset..edge.offset + edge.len];
     let curve_ref = record.iter().rposition(|byte| *byte == 0x0c).unwrap();
@@ -20626,7 +20626,7 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     let bytes = synthetic_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let record = &records[9];
     let owned = bytes[record.offset..record.offset + record.len].to_vec();
     let decoded = procedural_surface_resolving_refs(
@@ -20650,7 +20650,7 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     nested.splice(at..at, *b"\x0f\x0d\x14srf_srf_v_bl_spl_sur");
     let terminator = nested.len() - 1;
     nested.insert(terminator, 0x10);
-    let nested_records = crate::sab::frame(&nested, 0, nested.len(), 8).unwrap();
+    let nested_records = cadmpeg_asm::sab::frame(&nested, 0, nested.len(), 8).unwrap();
     assert!(procedural_surface_resolving_refs(
         &nested_records[0].tokens,
         &crate::nurbs::toks::SubtypeTable::from_records(&nested_records),
@@ -20696,7 +20696,7 @@ fn rgb_attribute_chain_decodes_body_color() {
     t_dbl(&mut bytes, 0.3);
     t_end(&mut bytes);
 
-    let records = crate::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
     let color = crate::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!((color.r, color.g, color.b, color.a), (0.1, 0.2, 0.3, 1.0));
@@ -20718,7 +20718,7 @@ fn truecolor_attribute_chain_decodes_argb() {
     bytes.extend_from_slice(&(0x8040_80c0i64).to_le_bytes());
     t_end(&mut bytes);
 
-    let records = crate::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
     let color = crate::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!(
@@ -20742,7 +20742,7 @@ fn bt_text_color_attribute_chain_decodes_rgb() {
     push_u8_string(&mut bytes, "4227264"); // 0x4080c0
     t_end(&mut bytes);
 
-    let records = crate::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
     let color = crate::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!(
@@ -20767,7 +20767,7 @@ fn bt_text_color_rejects_non_decimal_and_overwide_values() {
         push_u8_string(&mut bytes, value);
         t_end(&mut bytes);
 
-        let records = crate::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
+        let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
         let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
         assert!(crate::brep::attributes::attribute_chain_color(&records[0], &by_index).is_none());
     }
@@ -20796,7 +20796,7 @@ fn invalid_color_attribute_does_not_hide_later_chain_color() {
     t_dbl(&mut bytes, 0.3);
     t_end(&mut bytes);
 
-    let records = crate::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
     let color = crate::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!((color.r, color.g, color.b, color.a), (0.1, 0.2, 0.3, 1.0));
@@ -20804,7 +20804,7 @@ fn invalid_color_attribute_does_not_hide_later_chain_color() {
 
 #[test]
 fn transform_decodes_column_major_basis_and_scaled_translation() {
-    use crate::sab::{Record, Token};
+    use cadmpeg_asm::sab::{Record, Token};
 
     let record = Record {
         index: 0,
@@ -21455,8 +21455,9 @@ fn generated_spline_carriers_write_explicit_forward_sense() {
             .windows(b"\x0d\x09asmheader".len())
             .position(|window| window == b"\x0d\x09asmheader")
             .expect("generated ASM record table");
-        let records = crate::sab::frame(&generated_smbh, record_start, generated_smbh.len(), 8)
-            .expect("generated ASM records must frame");
+        let records =
+            cadmpeg_asm::sab::frame(&generated_smbh, record_start, generated_smbh.len(), 8)
+                .expect("generated ASM records must frame");
         let record = records
             .iter()
             .find(|record| record.head == head)
@@ -21464,10 +21465,10 @@ fn generated_spline_carriers_write_explicit_forward_sense() {
         let subtype = record
             .tokens
             .iter()
-            .position(|token| matches!(token, crate::sab::Token::SubtypeOpen))
+            .position(|token| matches!(token, cadmpeg_asm::sab::Token::SubtypeOpen))
             .expect("spline carrier subtype scope");
         assert!(subtype > 0);
-        assert_eq!(record.tokens[subtype - 1], crate::sab::Token::False);
+        assert_eq!(record.tokens[subtype - 1], cadmpeg_asm::sab::Token::False);
     }
 }
 
@@ -23479,7 +23480,7 @@ fn generated_pcurve_reports_dangling_carrier_reference() {
     let mut smbh = synthetic_geometry_with_pcurve_smbh();
     let start = asm_header::record_stream_start(&smbh).unwrap();
     let limit = asm_header::solved_record_limit(&smbh).unwrap();
-    let records = crate::sab::frame(&smbh, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&smbh, start, limit, 8).unwrap();
     let coedge = &records[7];
     let record = &mut smbh[coedge.offset..coedge.offset + coedge.len];
     let pcurve_ref = record.iter().rposition(|byte| *byte == 0x0c).unwrap();
