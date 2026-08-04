@@ -5,8 +5,10 @@
 //! [`sab`] frames binary ASM records. [`asm_header`] parses the binary stream
 //! header and locates the solved and construction-history partitions.
 //! [`nurbs`] decodes cached B-spline blocks and procedural curve and surface
-//! definitions from spline SAB records.
+//! definitions from spline SAB records. [`ids`] carries the format component
+//! of emitted entity IDs.
 
 pub mod asm_header;
+pub mod ids;
 pub mod nurbs;
 pub mod sab;

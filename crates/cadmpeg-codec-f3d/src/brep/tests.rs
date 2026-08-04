@@ -358,7 +358,8 @@ fn brep_qualification_rewrites_owned_ids_and_cross_references() {
         ..Brep::default()
     };
 
-    brep.qualify_ids("source").expect("qualify BREP");
+    brep.qualify_ids(crate::ids::ID_FORMAT, "source")
+        .expect("qualify BREP");
 
     let qualified = BodyId("f3d:brep/source/brep:entity#1".into());
     assert_eq!(brep.bodies[0].id, qualified);
@@ -569,13 +570,21 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
     bytes.extend_from_slice(&2u32.to_le_bytes());
     bytes.extend_from_slice(&0u32.to_le_bytes());
 
-    let brep = decode(&records, &bytes, "BREP.saved-edge.smbh");
+    let brep = decode(
+        &records,
+        &bytes,
+        "BREP.saved-edge.smbh",
+        crate::ids::ID_FORMAT,
+    );
 
     assert_eq!(brep.bodies.len(), 1);
     assert_eq!(brep.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Wire);
     assert_eq!(brep.regions.len(), 1);
     assert_eq!(brep.shells.len(), 1);
-    assert_eq!(brep.shells[0].wire_edges, vec![EdgeId(id(1))]);
+    assert_eq!(
+        brep.shells[0].wire_edges,
+        vec![EdgeId(id(crate::ids::ID_FORMAT, 1))]
+    );
     assert_eq!(brep.edges.len(), 1);
     assert_eq!(brep.vertices.len(), 2);
     assert_eq!(brep.points.len(), 2);
@@ -709,14 +718,14 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     ];
     let mut brep = Brep {
         shells: vec![Shell {
-            id: ShellId(id(3)),
+            id: ShellId(id(crate::ids::ID_FORMAT, 3)),
             region: RegionId("region".into()),
             faces: Vec::new(),
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         }],
         loops: vec![Loop {
-            id: LoopId(id(4)),
+            id: LoopId(id(crate::ids::ID_FORMAT, 4)),
             face: FaceId("face".into()),
             boundary_role: LoopBoundaryRole::Unspecified,
             coedges: Vec::new(),
@@ -734,17 +743,22 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     };
 
     assert_eq!(
-        emit_attributes(&mut brep, &records, &by_index, &reach),
+        emit_attributes(
+            &mut brep,
+            &records,
+            &by_index,
+            &reach,
+            crate::ids::ID_FORMAT
+        ),
         HashSet::from([1, 2])
     );
+    assert!(brep.attributes.iter().any(|attribute| attribute.target
+        == AttributeTarget::Shell(ShellId(id(crate::ids::ID_FORMAT, 3)))));
     assert!(brep
         .attributes
         .iter()
-        .any(|attribute| attribute.target == AttributeTarget::Shell(ShellId(id(3)))));
-    assert!(brep
-        .attributes
-        .iter()
-        .any(|attribute| attribute.target == AttributeTarget::Loop(LoopId(id(4)))));
+        .any(|attribute| attribute.target
+            == AttributeTarget::Loop(LoopId(id(crate::ids::ID_FORMAT, 4)))));
 }
 
 fn ident(bytes: &mut Vec<u8>, name: &str) {
@@ -785,7 +799,7 @@ fn generated_subshell_hierarchy_flattens_faces_onto_shell() {
     let kept = [4, 5].into_iter().collect::<HashSet<_>>();
 
     assert_eq!(
-        shell_faces(&records[1], &by_index, &kept),
+        shell_faces(&records[1], &by_index, &kept, crate::ids::ID_FORMAT),
         vec![
             FaceId("f3d:brep:entity#4".into()),
             FaceId("f3d:brep:entity#5".into())

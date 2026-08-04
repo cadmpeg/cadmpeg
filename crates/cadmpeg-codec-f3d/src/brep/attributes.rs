@@ -6,6 +6,7 @@ use crate::records::{
     sketch_link_sense_is_unconstrained, CreationTimestamp, PersistentDesignLink,
     PersistentSubentityTag, SketchCurveLink,
 };
+use cadmpeg_asm::ids::IdFormat;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 use cadmpeg_asm::sab::{Record, Token};
 use cadmpeg_codec_core::cursor::bounded_len;
@@ -265,6 +266,7 @@ pub(crate) fn collect_attributes(
     by_index: &HashMap<i64, &Record>,
     emitted: &mut HashSet<i64>,
     out: &mut Vec<SourceAttribute>,
+    format: IdFormat<'_>,
 ) {
     let mut current = entity.ref_at(0);
     let mut chain = HashSet::new();
@@ -273,7 +275,7 @@ pub(crate) fn collect_attributes(
             break;
         };
         if emitted.insert(index) {
-            out.push(source_attribute(record, target.clone()));
+            out.push(source_attribute(record, target.clone(), format));
         }
         current = record.ref_at(0);
     }
@@ -291,19 +293,26 @@ fn attribute_key(attribute: &SourceAttribute) -> &str {
         .unwrap_or(attribute.id.0.as_str())
 }
 
-pub(crate) fn source_attribute(record: &Record, target: AttributeTarget) -> SourceAttribute {
+pub(crate) fn source_attribute(
+    record: &Record,
+    target: AttributeTarget,
+    format: IdFormat<'_>,
+) -> SourceAttribute {
     SourceAttribute {
-        id: AttributeId(format!("f3d:brep:attribute#{}", record.index)),
+        id: AttributeId(format!("{format}:brep:attribute#{}", record.index)),
         target,
         name: record.name.clone(),
         // Chunks, not raw tokens: the serialized value list is defined over the
         // value tokens, and a payload identifier names an embedded construction
         // rather than carrying an attribute value.
-        values: record.chunks().map(attribute_value).collect(),
+        values: record
+            .chunks()
+            .map(|token| attribute_value(token, format))
+            .collect(),
     }
 }
 
-fn attribute_value(token: &Token) -> AttributeValue {
+fn attribute_value(token: &Token, format: IdFormat<'_>) -> AttributeValue {
     match token {
         Token::Char(value) => AttributeValue::Integer(i64::from(*value)),
         Token::Short(value) => AttributeValue::Integer(i64::from(*value)),
@@ -315,7 +324,7 @@ fn attribute_value(token: &Token) -> AttributeValue {
         Token::Str(value) => AttributeValue::String(value.clone()),
         Token::True => AttributeValue::Boolean(true),
         Token::False => AttributeValue::Boolean(false),
-        Token::Ref(value) => AttributeValue::Reference(format!("f3d:brep:entity#{value}")),
+        Token::Ref(value) => AttributeValue::Reference(format!("{format}:brep:entity#{value}")),
         Token::SubtypeOpen => AttributeValue::String("subtype_open".into()),
         Token::SubtypeClose => AttributeValue::String("subtype_close".into()),
         Token::Position(value) | Token::Vector3(value) => AttributeValue::Vector(value.to_vec()),
@@ -453,6 +462,6 @@ pub(crate) fn attribute_chain_name(
 /// The `UnknownId` for a preserved carrier record. Shared by the passthrough
 /// `UnknownRecord` and any `SurfaceGeometry::Unknown` that links to it, so the
 /// reference resolves under validation.
-pub(crate) fn unknown_record_id(rec: &Record) -> String {
-    format!("f3d:brep:{}#{}", rec.head, rec.index)
+pub(crate) fn unknown_record_id(rec: &Record, format: IdFormat<'_>) -> String {
+    format!("{format}:brep:{}#{}", rec.head, rec.index)
 }

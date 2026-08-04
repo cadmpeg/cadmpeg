@@ -1269,7 +1269,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                         candidate.name
                     ))
                 })?;
-                part.qualify_ids(namespace)?;
+                part.qualify_ids(crate::ids::ID_FORMAT, namespace)?;
                 body_selectors = match selected_body_keys.get(blob_name) {
                     Some(keys) => part.body_selectors_for(keys)?,
                     None => part.body_selectors(),
@@ -3258,7 +3258,7 @@ fn try_decode_brep(
         _ => return Ok(None),
     };
 
-    let decoded = brep::decode(&records, bytes, &brep_entry.name);
+    let decoded = brep::decode(&records, bytes, &brep_entry.name, crate::ids::ID_FORMAT);
     if decoded.surfaces.is_empty() && decoded.points.is_empty() && decoded.faces.is_empty() {
         return Ok(None);
     }

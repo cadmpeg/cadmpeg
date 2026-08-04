@@ -393,9 +393,11 @@ fn bind_complete_record_tables(
         let Some(records) = materialize_record_table(state, &archive) else {
             return false;
         };
-        let Some(topology) =
-            historical_topology(&crate::brep::decode_history_topology(&records, bytes))
-        else {
+        let Some(topology) = historical_topology(&crate::brep::decode_history_topology(
+            &records,
+            bytes,
+            crate::ids::ID_FORMAT,
+        )) else {
             return false;
         };
         state.record_table_complete = true;

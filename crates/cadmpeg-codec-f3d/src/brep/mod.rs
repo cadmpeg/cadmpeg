@@ -28,6 +28,7 @@ use crate::records::{
     VertexOwnership, WireTopology,
 };
 use cadmpeg_asm::asm_header;
+use cadmpeg_asm::ids::IdFormat;
 use cadmpeg_asm::nurbs;
 use cadmpeg_asm::nurbs::proc_curve::{
     CompoundDefinition, EmbeddedDeformable, EmbeddedIntersection, EmbeddedLawCurve,
@@ -302,19 +303,24 @@ impl Brep {
 
     /// Qualify every entity owned by this graph so several BREP blobs can
     /// coexist in one document model without record-index collisions.
-    pub fn qualify_ids(&mut self, namespace: &str) -> Result<(), cadmpeg_codec_core::CodecError> {
+    pub fn qualify_ids(
+        &mut self,
+        format: IdFormat<'_>,
+        namespace: &str,
+    ) -> Result<(), cadmpeg_codec_core::CodecError> {
         let annotations = std::mem::take(&mut self.annotation_records);
         let mut value = serde_value::to_value(&*self).map_err(|error| {
             cadmpeg_codec_core::CodecError::Malformed(format!("BREP serialization failed: {error}"))
         })?;
         let mut owned = HashSet::new();
         collect_owned_ids(&value, &mut owned);
+        let scheme_prefix = format!("{format}:");
         let replacements = owned
             .into_iter()
             .map(|id| {
                 let replacement = format!(
-                    "f3d:brep/{namespace}/{}",
-                    id.strip_prefix("f3d:").unwrap_or(&id)
+                    "{format}:brep/{namespace}/{}",
+                    id.strip_prefix(&scheme_prefix).unwrap_or(&id)
                 );
                 (id, replacement)
             })
@@ -599,8 +605,8 @@ pub(crate) fn count_kind(counts: &mut std::collections::BTreeMap<String, usize>,
 // ---- geometry carrier decode -------------------------------------------------
 
 /// Formats the stable IR id for the entity emitted from record `index`.
-pub(crate) fn id(index: i64) -> String {
-    format!("f3d:brep:entity#{index}")
+pub(crate) fn id(format: IdFormat<'_>, index: i64) -> String {
+    format!("{format}:brep:entity#{index}")
 }
 
 /// Decoded procedural-curve construction fields captured for a cached
@@ -675,16 +681,20 @@ pub(crate) struct WireShellTopology {
 /// Decode a framed active slice into the IR B-rep graph.
 ///
 /// `stream` names the source ZIP entry for provenance. Ids are minted as
-/// `f3d:brep:entity#<record-index>`, unique across the `RecordTable`.
-pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
-    decode_with_purpose(records, bytes, stream, DecodePurpose::Model)
+/// `<format>:brep:entity#<record-index>`, unique across the `RecordTable`.
+pub fn decode(records: &[Record], bytes: &[u8], stream: &str, format: IdFormat<'_>) -> Brep {
+    decode_with_purpose(records, bytes, stream, format, DecodePurpose::Model)
 }
 
 /// Decode only the topology and analytic measurements used to bind ASM
 /// history. Free-form carrier shapes are not materialized because historical
 /// binding consumes their stable record identities, not their control data.
-pub(crate) fn decode_history_topology(records: &[Record], bytes: &[u8]) -> Brep {
-    decode_with_purpose(records, bytes, "history", DecodePurpose::History)
+pub(crate) fn decode_history_topology(
+    records: &[Record],
+    bytes: &[u8],
+    format: IdFormat<'_>,
+) -> Brep {
+    decode_with_purpose(records, bytes, "history", format, DecodePurpose::History)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -699,6 +709,7 @@ fn decode_with_purpose(
     records: &[Record],
     bytes: &[u8],
     stream: &str,
+    format: IdFormat<'_>,
     purpose: DecodePurpose,
 ) -> Brep {
     let mut out = Brep::default();
@@ -728,6 +739,7 @@ fn decode_with_purpose(
         &mut carriers,
         &mut reach,
         purpose,
+        format,
     );
     walk_reachable_topology(
         &mut out,
@@ -736,6 +748,7 @@ fn decode_with_purpose(
         &mut carriers,
         &mut reach,
         purpose,
+        format,
     );
     let wire = collect_wire_topology(
         &mut out,
@@ -746,6 +759,7 @@ fn decode_with_purpose(
         &mut carriers,
         &mut reach,
         purpose,
+        format,
     );
 
     let (reversed_curve_refs, forward_curve_refs) = classify_edge_curve_senses(records, &reach);
@@ -757,10 +771,11 @@ fn decode_with_purpose(
         &reach,
         &reversed_curve_refs,
         &forward_curve_refs,
+        format,
     );
-    emit_pcurves(&mut out, records, &mut carriers, &reach);
-    emit_points(&mut out, records, &reach);
-    emit_vertices(&mut out, records, &by_index, &reach);
+    emit_pcurves(&mut out, records, &mut carriers, &reach, format);
+    emit_points(&mut out, records, &reach, format);
+    emit_vertices(&mut out, records, &by_index, &reach, format);
     emit_edges(
         &mut out,
         records,
@@ -768,6 +783,7 @@ fn decode_with_purpose(
         &reach,
         &reversed_curve_refs,
         &forward_curve_refs,
+        format,
     );
     emit_coedges(
         &mut out,
@@ -776,14 +792,16 @@ fn decode_with_purpose(
         save_format_major,
         &carriers,
         &reach,
+        format,
     );
-    emit_loops(&mut out, records, &by_index, &reach);
+    emit_loops(&mut out, records, &by_index, &reach, format);
     emit_faces(
         &mut out,
         records,
         &by_index,
         &reach,
         &inward_normal_surfaces,
+        format,
     );
     emit_containers(
         &mut out,
@@ -793,13 +811,14 @@ fn decode_with_purpose(
         &wire,
         stream,
         header_scale,
+        format,
     );
-    project_subshell_faces(&mut out, records, &by_index);
+    project_subshell_faces(&mut out, records, &by_index, format);
     if purpose == DecodePurpose::Model {
-        let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach);
-        emit_passthrough_unknowns(&mut out, records, bytes, &reach);
+        let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach, format);
+        emit_passthrough_unknowns(&mut out, records, bytes, &reach, format);
         count_other_records(&mut out, records, &reach, &emitted_attributes);
-        emit_annotation_records(&mut out, records, &by_index, stream);
+        emit_annotation_records(&mut out, records, &by_index, stream, format);
 
         classify_body_kinds(&mut out);
         clamp_edge_ranges_to_carrier_domains(&mut out);
