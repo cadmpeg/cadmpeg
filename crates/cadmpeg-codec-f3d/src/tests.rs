@@ -24925,6 +24925,67 @@ fn colliding_body_keys_bind_the_smallest_body() {
     assert_eq!(crate::materials::body_for_key(&body_keys, 11), None);
 }
 
+/// Push one same-segment reference: the `01` tag, a `u64` target, and the
+/// two-byte tail that names no other segment.
+fn push_design_reference(bytes: &mut Vec<u8>, target: u64) {
+    bytes.push(1);
+    bytes.extend(target.to_le_bytes());
+    bytes.extend([0, 0]);
+}
+
+/// Build a modern body-scope appearance-assignment record.
+///
+/// `node` is the record's browser-node entity, which is the owning body's
+/// design-entity suffix plus one.
+fn modern_appearance_record(node: u64, visual: &str, trailer: bool, token: bool) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend(lp_utf16_bytes("C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C"));
+    if token {
+        bytes.extend(lp_utf16_bytes("PrismMaterial-022"));
+    }
+    push_design_reference(&mut bytes, 7);
+    bytes.push(0);
+    push_design_reference(&mut bytes, node);
+    bytes.extend(lp_utf16_bytes("BodyName"));
+    bytes.extend(1.0f32.to_le_bytes());
+    bytes.extend([1, 1]);
+    bytes.extend(lp_utf16_bytes(visual));
+    bytes.extend(lp_utf16_bytes("08861000-1D69-CF2A-C082-CBD98E7E5D7F"));
+    if trailer {
+        bytes.extend(lp_utf16_bytes("005E1000-55CE-AFB6-81A1-36E3EF077C5F"));
+    }
+    bytes
+}
+
+const MODERN_VISUAL_GUID: &str = "251E92E9-B7B8-D3F3-C174-753263AF8709";
+
+#[test]
+fn modern_body_appearance_record_binds_through_its_browser_node_reference() {
+    let bytes = modern_appearance_record(292, MODERN_VISUAL_GUID, true, true);
+    assert_eq!(
+        crate::materials::browser_body_appearances(&bytes),
+        vec![(291, MODERN_VISUAL_GUID.to_owned())]
+    );
+}
+
+#[test]
+fn modern_appearance_record_without_its_trailer_binds_nothing() {
+    let bytes = modern_appearance_record(292, MODERN_VISUAL_GUID, false, true);
+    assert!(crate::materials::browser_body_appearances(&bytes).is_empty());
+}
+
+#[test]
+fn modern_appearance_record_without_a_physical_token_is_not_body_scoped() {
+    let bytes = modern_appearance_record(292, MODERN_VISUAL_GUID, true, false);
+    assert!(crate::materials::browser_body_appearances(&bytes).is_empty());
+}
+
+#[test]
+fn modern_appearance_record_refuses_a_browser_node_entity_of_zero() {
+    let bytes = modern_appearance_record(0, MODERN_VISUAL_GUID, true, true);
+    assert!(crate::materials::browser_body_appearances(&bytes).is_empty());
+}
+
 /// A report carrying the unconditional appearance loss that
 /// `build_container_report` and `build_geometry_report` state before appearance
 /// decoding runs.

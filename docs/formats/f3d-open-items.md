@@ -464,6 +464,14 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 
 **Need.** A writer must emit the same member set the reader expects, and the two choices shift every following member by four bytes. A texture asset authored with a map channel other than `1`, or with a non-default advanced channel id, separates them.
 
+### MA-09. Face identity of a browser-node-reference appearance assignment
+
+**Question.** How does a face-scoped appearance assignment in the browser-node-reference generation name its face?
+
+**Known.** `f3d.md` §8.1 "A browser body record carries" gives the record and its body-scope form. A face-scoped record of this generation carries no physical-material preset name and no `299`-tagged head, so neither body-identity form applies. Its presentation envelope holds two lowercase GUIDs before the visual GUID. Neither GUID appears in the B-rep stream, and the stream carries no `NEUTRON_Material_attrib_def` attribute, so the §8.2 face appearance join has no operand. A document that assigns one face appearance writes two such records naming the same visual GUID, alongside one body-scope record.
+
+**Need.** Face colour cannot transfer for this generation without the face operand. A document assigning distinct appearances to two named faces of one body separates the two GUIDs and fixes which one carries face identity.
+
 ### MA-05. Canvas visibility, mirroring, and crop
 
 **Question.** Which Canvas fields hold the visibility state, the mirroring state, and the crop state?

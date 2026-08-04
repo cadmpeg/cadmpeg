@@ -21,11 +21,26 @@ use cadmpeg_ir::topology::Color;
 
 use crate::bytes::{
     is_guid_prefix, lp_ascii_filtered, lp_utf16_bounded, lp_utf16_bytes, take_lp_utf8,
+    take_reference,
 };
 use crate::container::{role, ContainerScan};
 
 const PAGE_SIZE: usize = 0x88;
 const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
+/// The appearance library identifier that closes a presentation envelope in
+/// the `Design1` segment generation.
+const APPEARANCE_LIBRARY_ID: &str = "BA5EE55E-9982-449B-9D66-9F036540E140";
+/// The appearance library identifier pair that closes a presentation envelope
+/// in the `FusionDesignSegmentType1` segment generation.
+const APPEARANCE_LIBRARY_ID_PAIR: [&str; 2] = [
+    "08861000-1D69-CF2A-C082-CBD98E7E5D7F",
+    "005E1000-55CE-AFB6-81A1-36E3EF077C5F",
+];
+/// A stored appearance or physical-material GUID is 36 characters.
+const GUID_LEN: usize = 36;
+/// Strings before the marker that a body-scope record's physical-material
+/// token can occupy.
+const ASSIGNMENT_TOKEN_LOOKBACK: usize = 5;
 /// The `AssetLibID` [`encode_protein`] writes for an appearance that names no
 /// library. A stored library identifier is a library GUID or a library path;
 /// the null GUID names neither.
@@ -725,7 +740,7 @@ pub(crate) fn decode_design_assignments(
         let body_map = decode_body_map(bytes);
         let strings = lp_utf16_strings(bytes);
         for (index, (_, value)) in strings.iter().enumerate() {
-            if !value.starts_with("PrismMaterial") || value.contains("_physmat_aspects") {
+            if !is_physical_material_token(value) {
                 continue;
             }
             let entity_field = strings[..index]
@@ -744,9 +759,7 @@ pub(crate) fn decode_design_assignments(
                 .enumerate()
                 .skip(index + 1)
                 .take(15)
-                .find_map(|(i, (_, candidate))| {
-                    (candidate == "BA5EE55E-9982-449B-9D66-9F036540E140").then_some(i)
-                })
+                .find_map(|(i, (_, candidate))| (candidate == APPEARANCE_LIBRARY_ID).then_some(i))
             else {
                 continue;
             };
@@ -868,12 +881,11 @@ fn decode_face_appearance_assignments(
 /// Scan one Design `BulkStream` for face appearance assignments; see
 /// [`decode_face_appearance_assignments`].
 pub(crate) fn face_appearance_assignments(bytes: &[u8]) -> Vec<FaceAppearanceAssignment> {
-    const MARKER: &str = "BA5EE55E-9982-449B-9D66-9F036540E140";
     let strings = lp_utf16_strings(bytes);
     let browser_nodes = crate::design::decode::body::browser_node_entities(bytes);
     let mut out = Vec::new();
     for (index, (_, value)) in strings.iter().enumerate() {
-        if value != MARKER || index < 2 {
+        if value != APPEARANCE_LIBRARY_ID || index < 2 {
             continue;
         }
         // A body-presentation record also terminates at this marker, but its
@@ -944,28 +956,88 @@ pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
 ///
 /// The terminating visual marker is shared with face-presentation records.
 /// A record is body-owned only when exactly one GUID in its bounded prefix
-/// resolves through a browser-node record to one Design entity suffix.
+/// resolves through a browser-node record to one Design entity suffix, or when
+/// the record's reference run names the browser node directly.
 fn browser_node_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
-    const VISUAL_MARKER: &str = "BA5EE55E-9982-449B-9D66-9F036540E140";
     let nodes = crate::design::decode::body::browser_node_entities(bytes);
-    if nodes.is_empty() {
-        return Vec::new();
-    }
     let strings = lp_utf16_strings(bytes);
     let mut out = Vec::new();
     for (index, (_, marker)) in strings.iter().enumerate() {
-        if marker != VISUAL_MARKER || index == 0 {
+        if index == 0 {
             continue;
         }
+        let generation = if marker == APPEARANCE_LIBRARY_ID {
+            AssignmentGeneration::Legacy
+        } else if marker == APPEARANCE_LIBRARY_ID_PAIR[0]
+            && strings
+                .get(index + 1)
+                .is_some_and(|(_, next)| next == APPEARANCE_LIBRARY_ID_PAIR[1])
+        {
+            AssignmentGeneration::Modern
+        } else {
+            continue;
+        };
         let visual = &strings[index - 1].1;
         if !is_guid_prefix(visual) {
             continue;
         }
-        if let Some(entity_suffix) = body_node_candidate(&strings, index, &nodes) {
-            out.push((entity_suffix, visual[..36].to_string()));
+        let entity_suffix = match generation {
+            AssignmentGeneration::Legacy => body_node_candidate(&strings, index, &nodes),
+            AssignmentGeneration::Modern => referenced_body_suffix(bytes, &strings, index),
+        };
+        if let Some(entity_suffix) = entity_suffix {
+            out.push((entity_suffix, visual[..GUID_LEN].to_string()));
         }
     }
     out
+}
+
+/// The Design segment generation an appearance-assignment record belongs to.
+///
+/// Both generations write the same record fields and differ in the GUID that
+/// terminates the record and in how the record names its browser node.
+enum AssignmentGeneration {
+    /// The record ends at [`APPEARANCE_LIBRARY_ID`] and names its browser
+    /// node by GUID.
+    Legacy,
+    /// The record ends at [`APPEARANCE_LIBRARY_ID_PAIR`] and
+    /// names its browser node by entity reference.
+    Modern,
+}
+
+/// Resolve the body of a modern body-scope appearance record through the
+/// reference run that follows the record's physical-material token.
+///
+/// The run is one reference, one null reference, then the record's browser
+/// node. A browser node's entity is the owning body's design-entity suffix plus
+/// one, so the node reference names the body
+/// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
+/// A record that carries no physical-material token is face-scoped and resolves
+/// to no body.
+fn referenced_body_suffix(
+    bytes: &[u8],
+    strings: &[(usize, String)],
+    marker_index: usize,
+) -> Option<u64> {
+    let lookback = marker_index.saturating_sub(ASSIGNMENT_TOKEN_LOOKBACK);
+    let (offset, token) = strings[lookback..marker_index]
+        .iter()
+        .rev()
+        .find(|(_, value)| is_physical_material_token(value))?;
+    let mut at = offset + 4 + token.encode_utf16().count() * 2;
+    take_reference(bytes, &mut at)?.target?;
+    if take_reference(bytes, &mut at)?.target.is_some() {
+        return None;
+    }
+    take_reference(bytes, &mut at)?.target?.checked_sub(1)
+}
+
+/// Whether a stored string is an assignable physical-material token.
+///
+/// The `_physmat_aspects` suffix names a shader aspect of a material rather
+/// than the material a body carries.
+fn is_physical_material_token(value: &str) -> bool {
+    value.starts_with("PrismMaterial") && !value.contains("_physmat_aspects")
 }
 
 fn body_node_candidate(
