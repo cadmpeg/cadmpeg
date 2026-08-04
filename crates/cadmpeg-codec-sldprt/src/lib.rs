@@ -352,4 +352,6 @@ fn source_records<'a>(
 }
 
 #[cfg(test)]
+mod spatial_write_tests;
+#[cfg(test)]
 mod tests;

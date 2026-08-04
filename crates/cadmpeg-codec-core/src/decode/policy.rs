@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode modes, resource ceilings, and input-proportional allowances.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -8,7 +9,8 @@ const MIB: u64 = 1024 * 1024;
 const GIB: u64 = 1024 * MIB;
 
 /// Whether a successful decode may report mandatory transfer losses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DecodeMode {
     /// Reject a completed decode that reports a mandatory transfer loss.
@@ -19,7 +21,8 @@ pub enum DecodeMode {
 }
 
 /// Absolute resource ceilings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ResourceLimits {
     /// Maximum physical input bytes read at the root.
     pub max_input_bytes: u64,
@@ -86,7 +89,8 @@ impl Default for ResourceLimits {
 }
 
 /// Decode mode and resource ceilings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DecodePolicy {
     /// How mandatory transfer losses are handled.
     pub mode: DecodeMode,
@@ -119,7 +123,8 @@ impl Default for DecodePolicy {
 }
 
 /// Resource options for container inspection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct InspectOptions {
     /// The absolute ceilings applied during inspection.
     pub limits: ResourceLimits,

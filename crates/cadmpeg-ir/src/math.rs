@@ -5,11 +5,13 @@
 //! validation pass is responsible for sanity checks such as "a direction is
 //! non-degenerate" where the IR is expected to hold geometry.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A point in 3D model space, in the document's length unit.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Point3 {
     /// X coordinate.
     pub x: f64,
@@ -53,7 +55,8 @@ impl Point3 {
 
 /// A 3D vector. Depending on context this may be a direction (often but not
 /// always unit length) or a length-bearing displacement.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Vector3 {
     /// X component.
     pub x: f64,
@@ -122,7 +125,8 @@ impl std::ops::Sub for Vector3 {
 }
 
 /// A point in 2D surface parameter (u, v) space.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Point2 {
     /// U parameter.
     pub u: f64,
@@ -138,7 +142,8 @@ impl Point2 {
 }
 
 /// An axis-aligned bounding box, in the document's length unit.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Aabb {
     /// Minimum corner.
     pub min: Point3,

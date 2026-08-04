@@ -5,6 +5,7 @@
 //! documents store exactness and source locations in
 //! [`crate::annotations::Annotations`].
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -18,7 +19,8 @@ use crate::topology::Color;
 /// layer identifier. `instance_path` contains native instance identifiers in
 /// outermost-to-innermost order; an empty path means that the object is not
 /// nested in an instance.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SourceObjectAssociation {
     /// Source format identifier.
     pub format: String,
@@ -45,7 +47,8 @@ pub struct SourceObjectAssociation {
 ///
 /// `offset` is relative to `stream`; `tag` identifies the source record class
 /// when known.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Provenance {
     /// Source container format.
     pub format: String,
@@ -59,7 +62,8 @@ pub struct Provenance {
 }
 
 /// How an entity or field value was established from its source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Exactness {
     /// Read verbatim from the source stream with no transformation beyond
