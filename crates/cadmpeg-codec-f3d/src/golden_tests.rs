@@ -1,10 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Golden-snapshot harness for decode, inspect, and encode branches.
 //!
-//! On update, rebuilds `tests/golden/fixtures/*.f3d` from the synthetic builders
-//! in `tests.rs`, then freezes decode/inspect/encode artifacts from those
-//! committed bytes. Regenerate with
-//! `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`.
+//! `tests/golden/fixtures/*.f3d` are frozen inputs, and every snapshot here is
+//! produced from the committed bytes. Regenerate the artifacts with
+//! `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden` and review the
+//! diff.
+//!
+//! `UPDATE_GOLDEN=1` deliberately cannot write a fixture. A snapshot separates
+//! a codec change from an input change only while the input holds still: once
+//! the same command rewrites both sides, a drifting artifact no longer says
+//! whether the decoder moved or the bytes under it did, and the tree stops
+//! being evidence. Regenerating an input is a separate decision, so it needs
+//! the separate `UPDATE_GOLDEN_FIXTURES=1`, and a builder that no longer
+//! reproduces its committed input fails
+//! [`golden_fixtures_match_builders`] rather than being papered over.
 
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -40,6 +49,10 @@ use super::{
 };
 
 /// Covering fixture set as `(golden name, full .f3d bytes)`.
+// Fifty-three entries, one per line block, appended in the order a reader adds a
+// new fixture. A `vec![]` literal would hold the same content behind one more
+// level of indentation and gain nothing.
+#[allow(clippy::vec_init_then_push)]
 fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
     let mut f: Vec<(&'static str, Vec<u8>)> = Vec::new();
 
@@ -266,11 +279,18 @@ fn update_requested() -> bool {
     std::env::var_os("UPDATE_GOLDEN").is_some()
 }
 
+/// Whether the caller asked to rewrite the frozen `tests/golden/fixtures/*.f3d`
+/// inputs from the builders. Separate from [`update_requested`] on purpose; see
+/// the module documentation.
+fn fixture_update_requested() -> bool {
+    std::env::var_os("UPDATE_GOLDEN_FIXTURES").is_some()
+}
+
 fn read_fixture(name: &str) -> Result<Vec<u8>, String> {
     let path = golden_root().join("fixtures").join(format!("{name}.f3d"));
     std::fs::read(&path).map_err(|error| {
         format!(
-            "fixture `{name}`: cannot read {} ({error}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`",
+            "fixture `{name}`: cannot read {} ({error}); restore the committed input, or rebuild it from its builder with `UPDATE_GOLDEN_FIXTURES=1 cargo test -p cadmpeg-codec-f3d golden`",
             path.display()
         )
     })
@@ -515,22 +535,20 @@ fn golden_snapshots_are_byte_identical() {
     let root = golden_root();
     let mut failures = Vec::new();
     for (name, builder_bytes) in fixtures() {
-        let fixture_path = root.join("fixtures").join(format!("{name}.f3d"));
-        if update {
+        if fixture_update_requested() {
+            let fixture_path = root.join("fixtures").join(format!("{name}.f3d"));
             std::fs::create_dir_all(fixture_path.parent().expect("fixtures dir"))
                 .expect("create fixtures dir");
             std::fs::write(&fixture_path, &builder_bytes)
                 .unwrap_or_else(|error| panic!("write fixture {name}: {error}"));
         }
-        let input = if update {
-            builder_bytes
-        } else {
-            match read_fixture(name) {
-                Ok(value) => value,
-                Err(message) => {
-                    failures.push(message);
-                    continue;
-                }
+        // Always snapshot the committed bytes, never the builder's, so an
+        // artifact is pinned to the input a reviewer can read off disk.
+        let input = match read_fixture(name) {
+            Ok(value) => value,
+            Err(message) => {
+                failures.push(message);
+                continue;
             }
         };
 
@@ -616,26 +634,32 @@ fn golden_output_is_deterministic() {
     }
 }
 
+/// The tripwire that makes a frozen input auditable: every committed fixture
+/// must still be exactly what its builder produces, so a builder edit surfaces
+/// here instead of silently invalidating the artifacts pinned against the old
+/// bytes.
 #[test]
 fn golden_fixtures_match_builders() {
-    if update_requested() {
+    if fixture_update_requested() {
         return;
     }
     let mut failures: Vec<String> = Vec::new();
     for (name, builder_bytes) in fixtures() {
         match read_fixture(name) {
             Ok(bytes) if bytes == builder_bytes => {}
+            // Report the first differing offset, not just the lengths: a
+            // builder can rewrite a record in place and leave the length alone,
+            // and a length-only message reads as "no difference".
             Ok(bytes) => failures.push(format!(
-                "fixture `{name}`: committed {} bytes, builder produces {} bytes",
-                bytes.len(),
-                builder_bytes.len()
+                "fixture `{name}`: {}",
+                first_byte_diff(&bytes, &builder_bytes)
             )),
             Err(message) => failures.push(message),
         }
     }
     assert!(
         failures.is_empty(),
-        "committed fixtures diverged from their builders; regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`:\n\n{}",
+        "committed fixtures diverged from their builders; either restore the inputs or, if the builder change is intended, rebuild them with `UPDATE_GOLDEN_FIXTURES=1 cargo test -p cadmpeg-codec-f3d golden` and regenerate every artifact in the same commit:\n\n{}",
         failures.join("\n")
     );
 }
