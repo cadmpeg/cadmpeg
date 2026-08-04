@@ -41,5 +41,11 @@ schemars = { workspace = true, optional = true }
 roxmltree.workspace = true
 memchr.workspace = true
 
+[dev-dependencies]
+# Enables `cadmpeg_codec_core::golden`, the shared snapshot harness.
+# Feature unification applies it to the test build only, so the published
+# library is unchanged.
+cadmpeg-codec-core = { workspace = true, features = ["golden"] }
+
 [lints]
 workspace = true

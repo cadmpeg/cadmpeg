@@ -18,6 +18,7 @@
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
+use cadmpeg_codec_core::golden::{elide_digests, snapshots_agree};
 use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, DecodeResult, EncodeInput, Encoder};
 use cadmpeg_ir::examples;
@@ -315,7 +316,10 @@ fn indent_block(block: &str) -> String {
 
 fn decode_snapshot(bytes: &[u8]) -> String {
     match decode_result(bytes) {
-        Ok(result) => {
+        Ok(mut result) => {
+            if let Some(source) = result.ir.source.as_mut() {
+                elide_digests(&mut source.attributes, &["semantic_sha256"]);
+            }
             let ir = result
                 .ir
                 .to_canonical_json()
@@ -450,14 +454,9 @@ fn compare_text(update: bool, path: &Path, actual: &str, failures: &mut Vec<Stri
         Ok(expected) => {
             let expected = expected.replace("\r\n", "\n");
             let actual = actual.replace("\r\n", "\n");
-            if expected == actual {
-                return;
+            if let Err(mismatch) = snapshots_agree(&expected, &actual) {
+                failures.push(format!("{}: diverged {mismatch}", path.display()));
             }
-            let (line, expected_line, actual_line) = first_line_diff(&expected, &actual);
-            failures.push(format!(
-                "{}: diverged at line {line}\n    golden: {expected_line}\n    actual: {actual_line}",
-                path.display()
-            ));
         }
         Err(error) => failures.push(format!(
             "{}: cannot read golden ({error}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`",
