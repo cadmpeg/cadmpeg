@@ -392,6 +392,34 @@ mod tests {
     /// reduces the named format's unknown arena to identities and links and
     /// drops the retained source image, so it is pinned alongside the plain
     /// document digest.
+    ///
+    /// # Why two hex literals are pasted here
+    ///
+    /// This repository's rule is that an expectation comes from a specification
+    /// or an approximate comparison, never from a failing run. These two
+    /// literals are the sanctioned exception, and they must be read as such: a
+    /// digest algorithm has no specification outside its own output, so the only
+    /// possible source for the expected value is the algorithm as it stands. The
+    /// values below were captured once, deliberately, from the algorithm being
+    /// pinned.
+    ///
+    /// What this pins is the algorithm, not a correctness property. It says
+    /// nothing about whether either digest covers the right fields; the tests
+    /// above and beside it do that. The document it hashes is built from integer
+    /// and fractional literals only, with no transcendental anywhere in its
+    /// construction, so it is platform-independent by construction and these
+    /// literals hold on glibc, MSVC, and Apple's libm alike.
+    ///
+    /// A failure here means the digest algorithm changed: this function, the
+    /// serialized shape of any hashed type, the unknown reduction, or the
+    /// canonical JSON rendering underneath. Every baseline recorded in every
+    /// existing document is then stale, so every such document loses its
+    /// write-path fast path and takes the no-baseline branch. That is a decision
+    /// to state and accept out loud, never a side effect of an unrelated edit.
+    /// To make it deliberately: change the algorithm, run
+    /// `cargo test -p cadmpeg-ir --lib pins_document_digests` to read the two new
+    /// digests out of the failure, paste them here, and say in the commit body
+    /// that stored baselines are invalidated.
     #[test]
     fn pins_document_digests() {
         let ir = pinned_document();
@@ -402,6 +430,39 @@ mod tests {
         assert_eq!(
             document_local_sha256(&ir, "pin", "pin:source-image#0"),
             "83fa753fb39360b9e51859c9c07ddac6ff23ec17b179fa548cf33c4331170180"
+        );
+    }
+
+    /// The pinned document with the source metadata a decoded document carries:
+    /// one recorded baseline the digest must drop, and one ordinary attribute it
+    /// must keep.
+    fn pinned_document_with_source() -> CadIr {
+        let mut ir = pinned_document();
+        ir.source = Some(crate::document::SourceMeta {
+            format: "pin".into(),
+            attributes: [
+                ("document_local_sha256".to_owned(), "stale".to_owned()),
+                ("file_size".to_owned(), "4096".to_owned()),
+            ]
+            .into_iter()
+            .collect(),
+        });
+        ir
+    }
+
+    /// The digest over a document that carries source metadata, pinned for the
+    /// same reason and under the same rules as [`pins_document_digests`] — which
+    /// states why a pasted literal is legitimate here and what a failure means.
+    ///
+    /// This one additionally pins the normalization: the recorded baseline
+    /// attribute is dropped before hashing and every other attribute is kept, so
+    /// changing which attribute the digest ignores fails here.
+    #[test]
+    fn pins_document_digest_over_source_metadata() {
+        let ir = pinned_document_with_source();
+        assert_eq!(
+            document_local_sha256(&ir, "pin", "pin:source-image#0"),
+            "3750864814cc4d83c355df4e8c6942c3b7c682dc15c193b5c836540ad8c07d64"
         );
     }
 
