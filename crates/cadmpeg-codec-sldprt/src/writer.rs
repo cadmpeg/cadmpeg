@@ -62,7 +62,7 @@ pub(crate) fn write_semantic_with_records(
     );
     let ir = &normalized;
     crate::history::prepare_features_for_write(ir, &mut native)?;
-    crate::resolved_features::prepare_sketches_for_write(ir, &mut native)?;
+    crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native)?;
     crate::history::prepare_parameters_for_write(
         ir,
         &mut native,
@@ -865,14 +865,15 @@ fn resolved_feature_payload(
 ) -> Result<Vec<u8>, CodecError> {
     const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
     let expected_classes =
-        crate::resolved_features::class_declarations(&lane.native_payload, &lane.id);
+        crate::resolved_features::names::class_declarations(&lane.native_payload, &lane.id);
     if lane.classes != expected_classes {
         return Err(CodecError::NotImplemented(format!(
             "feature-input lane {} has edited class declarations",
             lane.id
         )));
     }
-    let expected_names = crate::resolved_features::object_names(&lane.native_payload, &lane.id);
+    let expected_names =
+        crate::resolved_features::names::object_names(&lane.native_payload, &lane.id);
     if lane.names.len() != expected_names.len()
         || lane
             .names
@@ -891,19 +892,26 @@ fn resolved_feature_payload(
         )));
     }
     let mut expected_lane = lane.clone();
-    expected_lane.scalars =
-        crate::resolved_features::named_scalars(&lane.native_payload, &lane.id, &lane.names);
-    expected_lane.relation_bindings = crate::resolved_features::relation_bindings(
+    expected_lane.scalars = crate::resolved_features::scalars::named_scalars(
+        &lane.native_payload,
+        &lane.id,
+        &lane.names,
+    );
+    expected_lane.relation_bindings = crate::resolved_features::markers::relation_bindings(
         &lane.id,
         &lane.classes,
         &expected_lane.scalars,
     );
-    expected_lane.references = crate::resolved_features::reference_cells(&expected_lane.scalars);
-    crate::resolved_features::bind_scalar_operands(
+    expected_lane.references =
+        crate::resolved_features::markers::reference_cells(&expected_lane.scalars);
+    crate::resolved_features::bindings::bind_scalar_operands(
         histories,
         std::slice::from_mut(&mut expected_lane),
     );
-    if !crate::resolved_features::scalar_indices_match(&lane.scalars, &expected_lane.scalars) {
+    if !crate::resolved_features::scalars::scalar_indices_match(
+        &lane.scalars,
+        &expected_lane.scalars,
+    ) {
         return Err(CodecError::NotImplemented(format!(
             "feature-input lane {} has edited named scalars",
             lane.id
@@ -954,12 +962,15 @@ fn resolved_feature_payload(
             || entity.links != expected_entity.links
             || entity.link_selector != expected_entity.link_selector
             || entity.object_index
-                != crate::resolved_features::marker_object_index(
+                != crate::resolved_features::markers::marker_object_index(
                     &lane.native_payload,
                     *expected_offset,
                 )
             || entity.local_id
-                != crate::resolved_features::marker_local_id(&lane.native_payload, *expected_offset)
+                != crate::resolved_features::markers::marker_local_id(
+                    &lane.native_payload,
+                    *expected_offset,
+                )
         {
             return Err(CodecError::Malformed(format!(
                 "feature-input lane {} has inconsistent marker order",
@@ -1013,7 +1024,8 @@ fn resolved_feature_payload(
                     "feature-input marker coordinates must be finite".into(),
                 ));
             }
-            if crate::resolved_features::marker_coordinates(&lane.native_payload, offset).is_none()
+            if crate::resolved_features::markers::marker_coordinates(&lane.native_payload, offset)
+                .is_none()
             {
                 return Err(CodecError::NotImplemented(
                     "feature-input marker does not carry editable coordinate fields".into(),

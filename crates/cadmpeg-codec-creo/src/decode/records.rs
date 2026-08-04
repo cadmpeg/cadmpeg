@@ -2,7 +2,10 @@
 //! Record shadow-layer structs and their `ContainerScan` mappers, moved
 //! verbatim from `decode.rs`.
 
-#[allow(clippy::wildcard_imports)]
+#[allow(
+    clippy::wildcard_imports,
+    reason = "Split check modules share a private orchestration prelude via wildcard import."
+)]
 use super::*;
 
 #[derive(Serialize)]

@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(
+    test,
+    allow(clippy::default_trait_access, clippy::field_reassign_with_default)
+)]
 //! Assemble a `.f3d` archive into a [`CadIr`] document and [`DecodeReport`].
 //!
 //! [`crate::container`] scans the ZIP, reads ASM headers, finds the history

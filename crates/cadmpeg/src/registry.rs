@@ -20,7 +20,7 @@ pub enum TargetOptions {
     /// No format-specific target options.
     Neutral,
     /// STEP header and schema options.
-    Step(cadmpeg_step::StepWriteOptions),
+    Step(cadmpeg_codec_step::StepWriteOptions),
     /// Rhino archive version.
     Rhino(cadmpeg_codec_rhino::RhinoArchiveVersion),
 }
@@ -145,7 +145,7 @@ impl Registry {
                     "step",
                     "STEP",
                     &["step", "stp"],
-                    Some(Box::new(cadmpeg_step::StepCodec::default())),
+                    Some(Box::new(cadmpeg_codec_step::StepCodec::default())),
                     Some(step),
                     None,
                     false,
@@ -305,7 +305,7 @@ fn neutral_cadir(options: TargetOptions) -> Result<Box<dyn Encoder>, CodecError>
 
 fn step(options: TargetOptions) -> Result<Box<dyn Encoder>, CodecError> {
     match options {
-        TargetOptions::Step(options) => Ok(Box::new(cadmpeg_step::StepCodec { options })),
+        TargetOptions::Step(options) => Ok(Box::new(cadmpeg_codec_step::StepCodec { options })),
         _ => Err(CodecError::Malformed(
             "STEP encoder requires STEP target options".into(),
         )),

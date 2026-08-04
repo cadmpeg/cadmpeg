@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(test, allow(clippy::default_trait_access, clippy::unwrap_used))]
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! The `cadmpeg` command-line interface.
 //!
 //! The CLI detects supported native CAD containers, decodes model data through
@@ -31,14 +31,14 @@ enum StepTarget {
 }
 
 impl StepTarget {
-    fn schema(self) -> cadmpeg_step::StepSchema {
+    fn schema(self) -> cadmpeg_codec_step::StepSchema {
         match self {
-            Self::Ap203e1 => cadmpeg_step::StepSchema::Ap203Edition1,
-            Self::Ap203e2 => cadmpeg_step::StepSchema::Ap203Edition2,
-            Self::Ap214 => cadmpeg_step::StepSchema::Ap214,
-            Self::Ap242e1 => cadmpeg_step::StepSchema::Ap242Edition1,
-            Self::Ap242e2 => cadmpeg_step::StepSchema::Ap242Edition2,
-            Self::Ap242e3 => cadmpeg_step::StepSchema::Ap242Edition3,
+            Self::Ap203e1 => cadmpeg_codec_step::StepSchema::Ap203Edition1,
+            Self::Ap203e2 => cadmpeg_codec_step::StepSchema::Ap203Edition2,
+            Self::Ap214 => cadmpeg_codec_step::StepSchema::Ap214,
+            Self::Ap242e1 => cadmpeg_codec_step::StepSchema::Ap242Edition1,
+            Self::Ap242e2 => cadmpeg_codec_step::StepSchema::Ap242Edition2,
+            Self::Ap242e3 => cadmpeg_codec_step::StepSchema::Ap242Edition3,
         }
     }
 }
@@ -54,13 +54,13 @@ struct StepOutputArgs {
 }
 
 impl StepOutputArgs {
-    fn options(&self) -> cadmpeg_step::StepWriteOptions {
-        cadmpeg_step::StepWriteOptions {
+    fn options(&self) -> cadmpeg_codec_step::StepWriteOptions {
+        cadmpeg_codec_step::StepWriteOptions {
             schema: self.step_target.schema(),
             unsupported: if self.reject_step_losses {
-                cadmpeg_step::StepUnsupportedPolicy::Reject
+                cadmpeg_codec_step::StepUnsupportedPolicy::Reject
             } else {
-                cadmpeg_step::StepUnsupportedPolicy::Report
+                cadmpeg_codec_step::StepUnsupportedPolicy::Report
             },
             ..Default::default()
         }

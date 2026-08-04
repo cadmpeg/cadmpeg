@@ -176,4 +176,4 @@ The `native.iges` namespace version is `2`. Its `colors` arena stores typed Type
 
 ## Byte accounting
 
-Every source byte belongs to one nonempty half-open ledger span. Typed spans cover values with decoded semantics. Structural spans cover framing, delimiters, padding, and sequence fields. Opaque spans name the native record that retains their bytes or their length and digest. Canonical ledger order is ascending start offset. Adjacent spans may be coalesced only when class, owner, and meaning are identical. Coverage starts at zero, ends at source length, and has neither gaps nor overlaps.
+The Fixed ASCII reader retains every physical card and every Directory/Parameter entity in `native.iges`, including typed domain arenas where projected and generic entity records otherwise. Card payloads, line endings, Directory fields, Parameter tokens, links, and source identities remain available through that namespace. The reader does not emit a closed `transfer_ledger` and does not populate `SourceFidelity` retained opaque byte records or SHA-256 digests.

@@ -1,17 +1,17 @@
 {
   "ir": {
-    "ir_version": "4",
+    "ir_version": "5",
     "source": {
       "format": "f3d",
       "attributes": {
         "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
         "active_brep_sha256": "64f819c0b37d6bae4372d05e493108aa21d3e61fe54625bfd3d3167a5835da52",
-        "active_slice_len": "1971",
         "asset_folder": "FusionAssetName[Active]",
         "product_family": "Autodesk Neutron",
         "product_version": "ASM 231.6.3.65535 OSX",
         "save_date": "Tue Mar 31 16:16:19 2026",
-        "semantic_sha256": "63b0a1f141558385205ae6e7dfe87827aa3752ad0e0ba26903a5a26f77786edf",
+        "semantic_sha256": "7cb2aea3df12c0de845c3e5f612735fc5ef0b8b69238cf2067351e5ea51d69a8",
+        "solved_record_len": "1969",
         "zip_entry_count": "2"
       }
     },
@@ -246,7 +246,7 @@
       "spatial_sketches": [],
       "spatial_sketch_entities": [],
       "spreadsheets": [],
-      "components": [],
+      "product_definitions": [],
       "occurrences": [],
       "assembly_joints": [],
       "drawings": [],
@@ -257,14 +257,12 @@
       "appearances": [],
       "appearance_bindings": [],
       "attributes": [],
-      "products": [],
-      "product_occurrences": [],
       "pmi": [],
       "presentation_layers": []
     },
     "native": {
       "f3d": {
-        "version": 5,
+        "version": 11,
         "arenas": {
           "act_entities": [],
           "act_guids": [],
@@ -291,6 +289,8 @@
           "design_body_bounds": [],
           "design_body_members": [],
           "design_body_recipe_operands": [],
+          "design_canvas_images": [],
+          "design_component_occurrences": [],
           "design_configurations": [],
           "design_construction_operand_groups": [],
           "design_construction_operand_identities": [],
@@ -308,13 +308,13 @@
           "design_face_operands": [],
           "design_fillet_radius_groups": [],
           "design_material_assignments": [],
-          "design_objects": [],
           "design_parameter_companions": [],
           "design_parameter_owners": [],
           "design_parameter_scopes": [],
           "design_parameters": [],
           "design_record_headers": [],
           "design_sketch_placements": [],
+          "design_types": [],
           "edge_continuities": [
             {
               "id": "f3d:asm:edge-continuity#10",
@@ -417,14 +417,14 @@
     "losses": [
       {
         "code": "material_not_transferred",
-        "category": "material",
         "severity": "warning",
         "message": "Materials/appearances (.protein assets, ACT/design assignments) were not transferred."
       }
     ],
     "notes": [
       "asset folder (from entry paths): FusionAssetName[Active]",
-      "active BREP candidate: FusionAssetName[Active]/Breps.BlobParts/Body1.smbh (1982 bytes uncompressed, authoritative .smbh history stream)"
+      "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
+      "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/Body1.smbh (1982 bytes uncompressed)"
     ]
   },
   "source_fidelity": {

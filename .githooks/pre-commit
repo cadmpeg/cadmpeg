@@ -40,18 +40,18 @@ else
 fi
 
 if [ "$scope" = "WORKSPACE" ]; then
-  echo "pre-commit: cargo clippy --workspace -- -D warnings -W missing-docs"
-  cargo clippy --workspace -- -D warnings -W missing-docs
+  echo "pre-commit: cargo clippy --workspace --all-targets -- -D warnings -W missing-docs"
+  cargo clippy --workspace --all-targets -- -D warnings -W missing-docs
   echo "pre-commit: cargo test-fast"
   cargo test-fast
 elif [ -n "$scope" ]; then
   pkg_flags=$(printf ' -p %s' $scope)
-  echo "pre-commit: cargo clippy$pkg_flags -- -D warnings -W missing-docs"
-  cargo clippy $pkg_flags -- -D warnings -W missing-docs
   # `--all-targets` rather than `--lib --bins --tests`, because `--lib` is an
   # error when no selected package has a library target. A commit that stages
   # only `crates/cadmpeg`, which is a binary-only package, could not pass the
-  # gate at all.
+  # gate at all. Clippy uses the same flag so test targets cannot hide style debt.
+  echo "pre-commit: cargo clippy$pkg_flags --all-targets -- -D warnings -W missing-docs"
+  cargo clippy $pkg_flags --all-targets -- -D warnings -W missing-docs
   echo "pre-commit: cargo test$pkg_flags --all-targets"
   cargo test $pkg_flags --all-targets
 else

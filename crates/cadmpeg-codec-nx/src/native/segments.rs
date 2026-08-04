@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Segment-index, stream-link, and body-lineage extractors and record types.
 
-#[allow(clippy::wildcard_imports)]
+#[allow(
+    clippy::wildcard_imports,
+    reason = "Split check modules share a private orchestration prelude via wildcard import."
+)]
 use super::*;
 use crate::native::features::{
     FeatureBodyDataBlockUse, FeatureBodyReference, FeatureBooleanOperation,

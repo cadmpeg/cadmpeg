@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(test, allow(clippy::cloned_ref_to_slice_refs))]
 //! Decode and project Design configuration records.
 
 use crate::container::{role, ContainerScan};
@@ -382,4 +383,285 @@ pub(crate) fn unresolved_configuration_member_count(native: &[DesignConfiguratio
             }
         })
         .sum()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        bind_configuration_parameter_overrides, bind_configuration_suppressed_features,
+        project_configurations, unresolved_configuration_member_count,
+        unresolved_configuration_parameter_override_count, unresolved_configuration_rule_count,
+        unresolved_configuration_suppressed_feature_count, validate_configuration_payload,
+    };
+    use crate::records::{DesignConfiguration, DesignConfigurationKind};
+    use cadmpeg_ir::features::{
+        DesignParameter as NeutralParameter, Feature, FeatureDefinition, FeatureId, ParameterId,
+    };
+    use std::collections::{BTreeMap, HashSet};
+
+    #[test]
+    fn configuration_identity_is_stable_across_table_order_and_delimiter_names() {
+        let table = |entry_name: &str, variant_name: &str| DesignConfiguration {
+            id: format!("f3d:configuration:entry#{entry_name}"),
+            entry_name: entry_name.into(),
+            kind: DesignConfigurationKind::Table,
+            payload: serde_json::json!({"configurations": {variant_name: {}}}),
+        };
+        let first = table("asset/a#b.dsgcfg", "c");
+        let second = table("asset/a.dsgcfg", "b#c");
+        let first_id = first.id.clone();
+
+        let forward = project_configurations(&[first.clone(), second.clone()]);
+        let reversed = project_configurations(&[second, first]);
+        let forward_ids = forward
+            .iter()
+            .map(|configuration| configuration.id.clone())
+            .collect::<HashSet<_>>();
+        let reversed_ids = reversed
+            .iter()
+            .map(|configuration| configuration.id.clone())
+            .collect::<HashSet<_>>();
+
+        assert_eq!(forward_ids, reversed_ids);
+        assert_eq!(forward_ids.len(), 2);
+        assert_ne!(forward[0].id, forward[1].id);
+        assert_eq!(forward[0].native_ref.as_deref(), Some(first_id.as_str()));
+    }
+
+    #[test]
+    fn configuration_parameter_overrides_require_scalar_values() {
+        let scalar_parameters = serde_json::json!({
+            "configurations": {
+                "variant": {
+                    "parameters": {
+                        "string": "25 mm",
+                        "number": 2.5,
+                        "boolean": true,
+                        "null": null
+                    }
+                }
+            }
+        });
+        assert!(validate_configuration_payload(
+            "table.dsgcfg",
+            DesignConfigurationKind::Table,
+            &scalar_parameters,
+        )
+        .is_ok());
+
+        for value in [
+            serde_json::json!(["25 mm"]),
+            serde_json::json!({"value": "25 mm"}),
+        ] {
+            let payload = serde_json::json!({
+                "configurations": {"variant": {"parameters": {"width": value}}}
+            });
+            assert!(validate_configuration_payload(
+                "table.dsgcfg",
+                DesignConfigurationKind::Table,
+                &payload,
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn configuration_unknown_members_are_counted_at_each_semantic_level() {
+        let native = [
+            DesignConfiguration {
+                id: "f3d:configuration:entry#table.dsgcfg".into(),
+                entry_name: "table.dsgcfg".into(),
+                kind: DesignConfigurationKind::Table,
+                payload: serde_json::json!({
+                    "active": "variant",
+                    "table_unknown": 1,
+                    "configurations": {
+                        "variant": {
+                            "parameters": {},
+                            "suppressed": [],
+                            "material": "steel",
+                            "variant_unknown": true
+                        }
+                    }
+                }),
+            },
+            DesignConfiguration {
+                id: "f3d:configuration:entry#rule.dsgcfgrule".into(),
+                entry_name: "rule.dsgcfgrule".into(),
+                kind: DesignConfigurationKind::Rule,
+                payload: serde_json::json!({
+                    "when": "width > 20 mm",
+                    "activate": "variant",
+                    "rule_unknown": null
+                }),
+            },
+        ];
+        assert_eq!(unresolved_configuration_member_count(&native), 3);
+    }
+
+    #[test]
+    fn configuration_rule_without_the_typed_pair_is_retained_not_rejected() {
+        let native = [DesignConfiguration {
+            id: "f3d:configuration:entry#partial.dsgcfgrule".into(),
+            entry_name: "partial.dsgcfgrule".into(),
+            kind: DesignConfigurationKind::Rule,
+            payload: serde_json::json!({"when": "width > 20 mm", "vendorExtension": 7}),
+        }];
+        assert!(validate_configuration_payload(
+            "partial.dsgcfgrule",
+            DesignConfigurationKind::Rule,
+            &native[0].payload,
+        )
+        .is_ok());
+        let projected = project_configurations(&native);
+        assert!(projected.is_empty());
+        assert_eq!(unresolved_configuration_rule_count(&native, &projected), 1);
+    }
+
+    #[test]
+    fn configuration_rules_bind_only_one_named_variant() {
+        let table = |entry_name: &str, variant_name: &str| DesignConfiguration {
+            id: format!("f3d:configuration:entry#{entry_name}"),
+            entry_name: entry_name.into(),
+            kind: DesignConfigurationKind::Table,
+            payload: serde_json::json!({"configurations": {variant_name: {}}}),
+        };
+        let rule = DesignConfiguration {
+            id: "f3d:configuration:entry#rule.dsgcfgrule".into(),
+            entry_name: "rule.dsgcfgrule".into(),
+            kind: DesignConfigurationKind::Rule,
+            payload: serde_json::json!({"when": "width > 20 mm", "activate": "wide"}),
+        };
+        let native = [table("table.dsgcfg", "wide"), rule.clone()];
+        let projected = project_configurations(&native);
+        assert_eq!(
+            projected[0].properties["activation_rule:rule.dsgcfgrule"],
+            "width > 20 mm"
+        );
+        assert_eq!(unresolved_configuration_rule_count(&native, &projected), 0);
+
+        let ambiguous = [
+            table("first.dsgcfg", "wide"),
+            table("second.dsgcfg", "wide"),
+            rule,
+        ];
+        let projected = project_configurations(&ambiguous);
+        assert!(projected
+            .iter()
+            .all(|configuration| configuration.properties.is_empty()));
+        assert_eq!(
+            unresolved_configuration_rule_count(&ambiguous, &projected),
+            1
+        );
+    }
+
+    #[test]
+    fn configuration_parameter_overrides_bind_only_unique_parameter_names() {
+        let table = DesignConfiguration {
+            id: "f3d:configuration:entry#table.dsgcfg".into(),
+            entry_name: "table.dsgcfg".into(),
+            kind: DesignConfigurationKind::Table,
+            payload: serde_json::json!({
+                "configurations": {"wide": {"parameters": {"width": "25 mm"}}}
+            }),
+        };
+        let parameter = NeutralParameter {
+            id: ParameterId("f3d:model:parameter#width".into()),
+            owner: None,
+            ordinal: 0,
+            name: "width".into(),
+            expression: "10 mm".into(),
+            display: None,
+            value: None,
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        };
+        let mut projected = project_configurations(&[table]);
+        bind_configuration_parameter_overrides(&mut projected, std::slice::from_ref(&parameter));
+        assert_eq!(projected[0].parameter_overrides[&parameter.id], "25 mm");
+        assert!(projected[0].properties.is_empty());
+        assert_eq!(
+            unresolved_configuration_parameter_override_count(&projected),
+            0
+        );
+
+        let duplicate = NeutralParameter {
+            id: ParameterId("f3d:model:parameter#other-width".into()),
+            ..parameter.clone()
+        };
+        let mut ambiguous = project_configurations(&[DesignConfiguration {
+            id: "f3d:configuration:entry#other.dsgcfg".into(),
+            entry_name: "other.dsgcfg".into(),
+            kind: DesignConfigurationKind::Table,
+            payload: serde_json::json!({
+                "configurations": {"wide": {"parameters": {"width": "25 mm"}}}
+            }),
+        }]);
+        bind_configuration_parameter_overrides(&mut ambiguous, &[parameter, duplicate]);
+        assert!(ambiguous[0].parameter_overrides.is_empty());
+        assert_eq!(
+            unresolved_configuration_parameter_override_count(&ambiguous),
+            1
+        );
+    }
+
+    #[test]
+    fn configuration_suppression_binds_only_unique_feature_names() {
+        let table = DesignConfiguration {
+            id: "f3d:configuration:entry#table.dsgcfg".into(),
+            entry_name: "table.dsgcfg".into(),
+            kind: DesignConfigurationKind::Table,
+            payload: serde_json::json!({
+                "configurations": {"alternate": {"suppressed": ["Fillet 1"]}}
+            }),
+        };
+        let feature = Feature {
+            id: FeatureId("f3d:model:feature#fillet-1".into()),
+            ordinal: 0,
+            name: Some("Fillet 1".into()),
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "Fillet".into(),
+                parameters: BTreeMap::new(),
+                properties: BTreeMap::new(),
+            },
+            native_ref: None,
+        };
+        let mut projected = project_configurations(&[table]);
+        bind_configuration_suppressed_features(&mut projected, std::slice::from_ref(&feature));
+        assert_eq!(projected[0].suppressed_features, [feature.id.clone()]);
+        assert!(projected[0].properties.is_empty());
+        assert_eq!(
+            unresolved_configuration_suppressed_feature_count(&projected),
+            0
+        );
+
+        let duplicate = Feature {
+            id: FeatureId("f3d:model:feature#other-fillet-1".into()),
+            ..feature.clone()
+        };
+        let mut ambiguous = project_configurations(&[DesignConfiguration {
+            id: "f3d:configuration:entry#other.dsgcfg".into(),
+            entry_name: "other.dsgcfg".into(),
+            kind: DesignConfigurationKind::Table,
+            payload: serde_json::json!({
+                "configurations": {"alternate": {"suppressed": ["Fillet 1"]}}
+            }),
+        }]);
+        bind_configuration_suppressed_features(&mut ambiguous, &[feature, duplicate]);
+        assert!(ambiguous[0].suppressed_features.is_empty());
+        assert_eq!(
+            unresolved_configuration_suppressed_feature_count(&ambiguous),
+            1
+        );
+    }
 }

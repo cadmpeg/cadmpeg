@@ -1,12 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(
-    test,
-    allow(
-        clippy::default_trait_access,
-        clippy::doc_markdown,
-        clippy::unwrap_used
-    )
-)]
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Read and write ZIP-packaged `FreeCAD` `.FCStd` documents.
 //!
 //! [`FcstdCodec`] implements [`Codec`] and [`Encoder`]. Retained writes preserve
@@ -15,7 +8,7 @@
 //! schema-4/file-1 application graphs. Other target bands and edits without a
 //! lossless serializer are rejected explicitly.
 //!
-//! Support level: [L9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+//! Support level: [L5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
 //! on the cadmpeg support ladder.
 
 mod annotation;
