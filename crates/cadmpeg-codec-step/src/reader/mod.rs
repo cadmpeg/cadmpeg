@@ -181,15 +181,7 @@ fn decode_exchange_mode(
             .records
             .values()
             .filter(|record| !typed_records.contains(&record.id))
-            .map(|record| {
-                let kind = record
-                    .partials
-                    .iter()
-                    .map(|partial| partial.name.to_ascii_lowercase())
-                    .collect::<Vec<_>>()
-                    .join("_");
-                (record.id, format!("step:data:{kind}#{}", record.id))
-            })
+            .map(|record| (record.id, opaque_record_id(record).0))
             .collect::<BTreeMap<_, _>>();
         let mut opaque = Vec::with_capacity(exchange.records.len());
         for record in exchange.records.values() {
@@ -270,6 +262,16 @@ fn decode_exchange_mode(
         DecodeResult::new(ir, report, cadmpeg_ir::SourceFidelity::default()),
         opaque_offsets,
     )
+}
+
+fn opaque_record_id(record: &parse::RawRecord) -> UnknownId {
+    let kind = record
+        .partials
+        .iter()
+        .map(|partial| partial.name.to_ascii_lowercase())
+        .collect::<Vec<_>>()
+        .join("_");
+    UnknownId(format!("step:data:{kind}#{}", record.id))
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

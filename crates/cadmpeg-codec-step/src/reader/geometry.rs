@@ -20,6 +20,8 @@ use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::parse::{Exchange, RawRecord, Value};
 
+use super::opaque_record_id;
+
 pub(super) struct GeometryResult {
     pub typed_records: BTreeSet<u64>,
     pub warnings: Vec<String>,
@@ -1987,16 +1989,6 @@ fn curve_carrier_record(id: u64, exchange: &Exchange) -> Option<u64> {
     } else {
         Some(id)
     }
-}
-
-fn opaque_record_id(record: &RawRecord) -> cadmpeg_ir::ids::UnknownId {
-    let kind = record
-        .partials
-        .iter()
-        .map(|partial| partial.name.to_ascii_lowercase())
-        .collect::<Vec<_>>()
-        .join("_");
-    cadmpeg_ir::ids::UnknownId(format!("step:data:{kind}#{}", record.id))
 }
 
 fn numbers(value: &Value) -> Option<Vec<f64>> {
