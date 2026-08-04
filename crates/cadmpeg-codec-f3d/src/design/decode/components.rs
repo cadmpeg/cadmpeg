@@ -127,6 +127,8 @@ pub(crate) fn exact_component_occurrence(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::trivially_copy_pass_by_ref)]
+
     use super::exact_component_occurrence;
 
     const COMPONENT: &str = "a989beb9-467b-4afa-9e90-a9329a2ca258";

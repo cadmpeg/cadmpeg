@@ -52,7 +52,9 @@ jobs:
       - name: Clippy
         # -W missing-docs keeps the documentation debt visible without
         # blocking; drop it once the workspace is fully documented.
-        run: cargo clippy --workspace -- -D warnings -W missing-docs
+        # `--all-targets` covers lib, bins, tests, and benches so test-only
+        # style debt cannot hide behind crate-root cfg(test) mute lists.
+        run: cargo clippy --workspace --all-targets -- -D warnings -W missing-docs
 
       - name: Unit and integration tests
         # Builds the full workspace (libs, bins, test harnesses) before

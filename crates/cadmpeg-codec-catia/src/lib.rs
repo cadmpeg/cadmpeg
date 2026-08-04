@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg_attr(test, allow(clippy::doc_markdown))]
 //! Reads CATIA V5 `.CATPart` files into [`cadmpeg_ir::CadIr`].
 //!
 //! [`CatiaCodec`] is the normal public decode API. The optional `fuzzing`

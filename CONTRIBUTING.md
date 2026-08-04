@@ -72,7 +72,7 @@ Run the stable CI gate from the repository root:
 
 ```sh
 cargo fmt --all --check
-cargo clippy --workspace -- -D warnings -W missing-docs
+cargo clippy --workspace --all-targets -- -D warnings -W missing-docs
 cargo build --workspace
 cargo test-fast
 ```
@@ -92,7 +92,7 @@ See [`seeds/README.md`](seeds/README.md) for seed regeneration and local fuzz-ru
 - [ ] Commits are signed off (`git commit -s`).
 - [ ] For decoder/spec PRs: the provenance declaration is in the description.
 - [ ] `cargo fmt --all --check` passes.
-- [ ] `cargo clippy --workspace -- -D warnings -W missing-docs` passes.
+- [ ] `cargo clippy --workspace --all-targets -- -D warnings -W missing-docs` passes.
 - [ ] `cargo build --workspace` passes.
 - [ ] `cargo test-fast` and `cargo test --workspace --doc` pass.
 - [ ] No CAD binaries committed outside the corpus donation pipeline or the generated fuzz seeds (see [`seeds/README.md`](seeds/README.md)).
