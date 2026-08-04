@@ -46,7 +46,7 @@ jobs:
             cadmpeg-codec-nx
             cadmpeg-codec-rhino
             cadmpeg-codec-sldprt
-            cadmpeg-step
+            cadmpeg-codec-step
             cadmpeg
           )
           version="${GITHUB_REF_NAME#v}"

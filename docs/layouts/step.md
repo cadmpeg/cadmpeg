@@ -10,7 +10,7 @@ Table source: `docs/layouts/step.toml`.
 STEP has no record layout to tabulate. It is an ISO 10303-21 clear-text
 grammar: no magic bytes, no fixed-width fields, no column positions, no
 endianness, and no record sizes anywhere in `docs/formats/step.md` or
-`crates/cadmpeg-step/`. The specification states the rule outright — a lexer
+`crates/cadmpeg-codec-step/`. The specification states the rule outright — a lexer
 never assigns line-based meaning to a token — and gives the layout entirely as
 EBNF.
 

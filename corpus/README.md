@@ -1,23 +1,17 @@
 # cadmpeg corpus
 
-This directory accepts contributor-authored CAD fixtures dedicated to the public domain under CC0-1.0. CAD files enter it only through the donation process below.
-
----
+This directory accepts contributor-authored CAD fixtures dedicated to the public domain under CC0-1.0. CAD files enter it only through the donation process below. Donation rules follow the clean-room policy in [LEGAL.md](../LEGAL.md).
 
 ## What we accept
 
 A donated file must meet all of these requirements:
 
-1. **You authored it.** You created the file yourself in the CAD application you are declaring. Do not donate files made by others, customer parts, or anything you found, even if it seems freely available.
-2. **It contains no vendor library content.** Start from a blank or default template and model the geometry yourself. A file you authored can still embed vendor-copyrighted material: content-library parts, toolbox/standard components, vendor-supplied materials or appearance assets. Files that pull in such content are not accepted.
-3. **Your CAD license permits this use.** The file must be authored under license terms that allow sharing it this way. Files from educational or trial licenses whose EULA restricts use of outputs (education-watermarked files, non-commercial-only terms) are not accepted.
+1. **You authored it.** You created the file yourself in the CAD application you are declaring.
+2. **You modeled every included part.** Start from a blank or default template. Every part, material, and appearance in the file is your own work.
+3. **Your CAD license permits this use.** Author under license terms that allow public sharing of outputs. Check educational and trial EULAs before donating; many restrict use of outputs.
 4. **You dedicate it CC0-1.0.** You release the file into the public domain via [Creative Commons CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). This lets anyone use it as a decoder test fixture without restriction.
-5. **It has a purpose.** It exercises something: a surface type, a feature, an assembly structure, an edge case a decoder should handle. A note on what it is meant to test helps review.
-6. **It is accompanied by a manifest entry** (see below).
-
-We do **not** accept vendor sample files, files under any non-CC0 terms, or files whose origin you are unsure of. This mirrors the clean-room rules in [LEGAL.md](../LEGAL.md): we reject any file with questionable provenance.
-
----
+5. **Notes name what it exercises.** State the surface type, feature, assembly structure, or edge case under test.
+6. **It has a manifest entry** (see below).
 
 ## How to donate
 
@@ -28,11 +22,9 @@ We do **not** accept vendor sample files, files under any non-CC0 terms, or file
    sha256sum my_part.f3d          # Linux
    ```
 3. Add an entry to the corpus manifest describing it (format below), using [`manifest.example.toml`](manifest.example.toml) as a template.
-4. Open a pull request (or an issue, if the file is large and you need guidance on how to attach it) with the file and its manifest entry. Confirm explicitly in the PR/issue text: the CC0 dedication, that the file contains no vendor library content, and that your CAD license permits sharing it.
+4. Open a pull request (or an issue, if the file is large and you need guidance on how to attach it) with the file and its manifest entry. Confirm explicitly in the PR/issue text: the CC0 dedication, that every included part is your own work, and that your CAD license permits sharing it.
 
-The first accepted donation creates `corpus/manifest.toml`. Each later donation adds a `[[file]]` entry. Manifest and donation verification is manual until verification tooling lands. Maintainers verify the SHA-256, format key, manifest fields, authorship declaration, CAD-license permission, absence of vendor library content, and CC0 dedication before merge.
-
----
+The first accepted donation creates `corpus/manifest.toml`. Each later donation adds a `[[file]]` entry. Manifest and donation verification is manual until verification tooling lands. Maintainers verify the manifest fields and declarations before merge.
 
 ## Manifest format
 
@@ -58,4 +50,4 @@ edges = 12
 vertices = 8
 ```
 
-`expected_topology` is optional. Include only counts reported by the authoring application; do not guess.
+`expected_topology` is optional. Include only counts reported by the authoring application.

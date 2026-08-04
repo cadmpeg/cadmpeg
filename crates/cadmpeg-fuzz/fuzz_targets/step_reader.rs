@@ -9,7 +9,7 @@ use cadmpeg_ir::codec::CodecEntry;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    let _ = cadmpeg_step::StepCodec::default().inspect(
+    let _ = cadmpeg_codec_step::StepCodec::default().inspect(
         &mut Cursor::new(data),
         &cadmpeg_codec_core::decode::InspectOptions::default(),
     );

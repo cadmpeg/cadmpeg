@@ -26,7 +26,7 @@ cadmpeg-codec-nx = { path = "../cadmpeg-codec-nx" }
 cadmpeg-codec-rhino = { path = "../cadmpeg-codec-rhino", features = ["fuzzing"] }
 cadmpeg-codec-iges = { path = "../cadmpeg-codec-iges" }
 cadmpeg-ir = { path = "../cadmpeg-ir" }
-cadmpeg-step = { path = "../cadmpeg-step" }
+cadmpeg-codec-step = { path = "../cadmpeg-codec-step" }
 zip = { version = "8", default-features = false, features = ["deflate"] }
 flate2 = "1"
 crc32fast = "1"
