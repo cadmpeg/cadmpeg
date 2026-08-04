@@ -84,6 +84,7 @@ struct ArenaLengths {
     procedural_surfaces: usize,
     features: usize,
     parameters: usize,
+    semantic_annotations: usize,
 }
 
 #[derive(Debug)]
@@ -129,6 +130,7 @@ impl ArenaLengths {
         procedural_surfaces: 0,
         features: 0,
         parameters: 0,
+        semantic_annotations: 0,
     };
 
     fn capture(ir: &CadIr) -> Self {
@@ -151,6 +153,7 @@ impl ArenaLengths {
             procedural_surfaces: ir.model.procedural_surfaces.len(),
             features: ir.model.features.len(),
             parameters: ir.model.parameters.len(),
+            semantic_annotations: ir.model.semantic_annotations.len(),
         }
     }
 
@@ -175,6 +178,9 @@ impl ArenaLengths {
             .truncate(self.procedural_surfaces);
         ir.model.features.truncate(self.features);
         ir.model.parameters.truncate(self.parameters);
+        ir.model
+            .semantic_annotations
+            .truncate(self.semantic_annotations);
     }
 
     fn added_since(self, before: Self) -> Option<usize> {
@@ -197,6 +203,7 @@ impl ArenaLengths {
             (self.procedural_surfaces, before.procedural_surfaces),
             (self.features, before.features),
             (self.parameters, before.parameters),
+            (self.semantic_annotations, before.semantic_annotations),
         ]
         .into_iter()
         .try_fold(0_usize, |total, (after, before)| {
@@ -298,6 +305,11 @@ impl ArenaLengths {
                 .iter()
                 .map(|entity| entity.id.0.clone()),
         );
+        ids.extend(
+            ir.model.semantic_annotations[self.semantic_annotations..]
+                .iter()
+                .map(|entity| entity.id.0.clone()),
+        );
         Some(ids)
     }
 
@@ -353,6 +365,9 @@ impl ArenaLengths {
             .retain(|entity| !ids.contains(&entity.id.to_string()));
         ir.model
             .parameters
+            .retain(|entity| !ids.contains(&entity.id.0));
+        ir.model
+            .semantic_annotations
             .retain(|entity| !ids.contains(&entity.id.0));
     }
 }
@@ -912,22 +927,38 @@ impl<'a> DecodeContext<'a> {
                         );
                         continue;
                     }
-                    let native_ref = Self::mint_unknown_id(source_order).to_string();
-                    let (feature, parameter) = crate::dimensions::project(
+                    // `SemanticAnnotation::order` must be globally unique and
+                    // is a `u32`. The arena length is the dense next index and
+                    // rolls back with the arena, unlike a standalone counter.
+                    let Ok(order) = u32::try_from(self.ir.model.semantic_annotations.len()) else {
+                        self.scan_warning(
+                            source_order,
+                            "dimension retained because the annotation arena exceeds u32 ordinals",
+                        );
+                        continue;
+                    };
+                    let object = Self::mint_unknown_id(source_order).to_string();
+                    let (annotation, unresolved) = crate::dimensions::project(
                         &dimension,
                         &key,
                         (!identity.name.is_empty()).then(|| identity.name.clone()),
-                        native_ref,
+                        &object,
+                        order,
                     );
-                    let links = [feature.id.to_string(), parameter.id.0.clone()];
+                    let links = [annotation.id.0.clone()];
                     let result = self.validate_candidate(|candidate, _annotations| {
-                        candidate.model.features.push(feature);
-                        candidate.model.parameters.push(parameter);
+                        candidate.model.semantic_annotations.push(annotation);
                     });
                     match result {
                         Ok(()) => {
                             self.append_links(source_order, &links);
                             self.mark_decoded(source_order);
+                            for code in unresolved {
+                                self.typed_losses.push(code.note(format!(
+                                    "dimension record {source_order} reference is not resolved to a \
+                                     decoded record"
+                                )));
+                            }
                         }
                         Err(error) => self.scan_warning(
                             source_order,
