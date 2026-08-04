@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "4",
+    "ir_version": "5",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -44,7 +44,6 @@
           "sense": "forward"
         }
       ],
-      "components": [],
       "configurations": [
         {
           "active": true,
@@ -169,8 +168,7 @@
       "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_occurrences": [],
-      "products": [],
+      "product_definitions": [],
       "regions": [
         {
           "body": "sldprt:brep:body#0",
@@ -295,13 +293,13 @@
         "active_parasolid_block": "Contents/Config-0-Partition",
         "block_count": "1",
         "bmp_thumbnail_count": "0",
-        "brep_semantic_sha256": "616692924ee458ca78d36077562ed3ffba51b8d4af08d6e568045f93f71b48a9",
+        "brep_semantic_sha256": "4ac13cbce52442d2fcd7922233a6187d46251f29c8c8e07f5fc00f0d18b76fa9",
         "compound_stream_count": "0",
         "outer_version": "0x00000004",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
         "png_preview_count": "0",
-        "semantic_sha256": "ce40f0de1387571ec7da537be807eeca03d1743531040022413acc464a85dbd9",
+        "semantic_sha256": "d43a58a69e857c43b7aaae36ed11266000686433933b3ad00b1eab1db84b872b",
         "sldprt_configuration_feature_states_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_configuration_parameter_values_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#partition:0",
@@ -331,13 +329,11 @@
     "geometry_transferred": true,
     "losses": [
       {
-        "category": "topology",
         "code": "topology_gauge_substituted",
         "message": "No body record was available; one body/region/shell hierarchy was derived.",
         "severity": "warning"
       },
       {
-        "category": "other",
         "code": "feature_history_retained",
         "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
         "severity": "warning"

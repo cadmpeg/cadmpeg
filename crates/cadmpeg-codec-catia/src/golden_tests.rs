@@ -5,22 +5,25 @@
 //! them: a snapshot test can only tell a decoder change apart from an input
 //! change while the inputs hold still, so regenerating an input destroys the
 //! evidence the snapshot exists to carry. `UPDATE_GOLDEN=1` rewrites
-//! `tests/golden/inspect/` and nothing else.
+//! `tests/golden/decode/` and `tests/golden/inspect/`, and nothing else.
 //!
 //! Regenerate after an intended container-summary change with
 //! `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-catia golden` and review the
 //! diff.
 //!
-//! `tests/golden/decode/` has no reader yet. Those snapshots carry
-//! `ir_version` 4 against the current 5, so every one of them differs from
-//! current output for reasons that predate this harness; pinning them would
-//! freeze staleness, not behavior.
+//! `tests/golden/decode/` pins the decoded document: the IR, the decode
+//! report's losses, and source fidelity. That is the branch a feature-typing
+//! or loss-accounting change moves, and `inspect` cannot see it — an inspect
+//! summary describes the container, not what was transferred out of it.
+//!
+//! Snapshots serialize through [`serde_json::Value`], whose maps order by key,
+//! so reordering a struct field does not rewrite every golden.
 
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use cadmpeg_codec_core::decode::InspectOptions;
-use cadmpeg_ir::codec::CodecEntry;
+use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 
 use super::CatiaCodec;
 
@@ -40,6 +43,10 @@ fn fixture_dir() -> PathBuf {
 
 fn inspect_dir() -> PathBuf {
     golden_dir().join("inspect")
+}
+
+fn decode_dir() -> PathBuf {
+    golden_dir().join("decode")
 }
 
 /// Sorted stems of every file in `dir` whose extension is `extension`.
@@ -77,6 +84,26 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
     text
 }
 
+/// Serialize one decoded document as the stable pretty JSON the goldens hold:
+/// the IR, the decode report, and source fidelity. A decode error is frozen
+/// too: refusing a document is contract-relevant behavior, so this never
+/// panics on codec output.
+fn decode_snapshot(bytes: &[u8]) -> String {
+    let value = match CatiaCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+    {
+        Ok(result) => serde_json::json!({
+            "ir": serde_json::to_value(&result.ir).expect("serialize ir"),
+            "report": serde_json::to_value(&result.report).expect("serialize report"),
+            "source_fidelity": serde_json::to_value(&result.source_fidelity)
+                .expect("serialize source_fidelity"),
+        }),
+        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+    };
+    let mut text = serde_json::to_string_pretty(&value).expect("serialize decode snapshot");
+    text.push('\n');
+    text
+}
+
 /// Read a golden with `\r\n` folded to `\n`.
 ///
 /// `.gitattributes` pins these goldens to LF, but folding on read keeps the
@@ -106,23 +133,36 @@ fn first_line_diff(expected: &str, actual: &str) -> (usize, String, String) {
     }
 }
 
-#[test]
-fn golden_inspect_snapshots_are_byte_identical() {
-    let update = std::env::var_os("UPDATE_GOLDEN").is_some();
+/// Fixture stems, guarded against an empty fixture directory.
+fn fixtures() -> Vec<String> {
     let fixtures = stems(&fixture_dir(), FIXTURE_EXTENSION);
     assert!(
         !fixtures.is_empty(),
         "no `*.{FIXTURE_EXTENSION}` fixture under {}; the harness would pass vacuously",
         fixture_dir().display()
     );
+    fixtures
+}
 
+/// Compare one branch's snapshot for every fixture against its golden.
+///
+/// Returns one failure per drifted or unreadable golden plus one per golden
+/// with no fixture behind it, so a branch reports every difference at once
+/// rather than stopping at the first.
+fn check_branch(
+    kind: &str,
+    dir: &Path,
+    snapshot: fn(&[u8]) -> String,
+    fixtures: &[String],
+    update: bool,
+) -> Vec<String> {
     let mut failures: Vec<String> = Vec::new();
-    for name in &fixtures {
+    for name in fixtures {
         let input = fixture_dir().join(format!("{name}.{FIXTURE_EXTENSION}"));
         let bytes = std::fs::read(&input)
             .unwrap_or_else(|error| panic!("read fixture {}: {error}", input.display()));
-        let actual = inspect_snapshot(&bytes);
-        let path = inspect_dir().join(format!("{name}.json"));
+        let actual = snapshot(&bytes);
+        let path = dir.join(format!("{name}.json"));
         if update {
             std::fs::write(&path, actual.as_bytes())
                 .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
@@ -133,47 +173,75 @@ fn golden_inspect_snapshots_are_byte_identical() {
             Ok(expected) => {
                 let (line, golden_line, actual_line) = first_line_diff(&expected, &actual);
                 failures.push(format!(
-                    "fixture `{name}`: inspect diverged from {} at line {line}\n    golden: {golden_line}\n    actual: {actual_line}",
+                    "fixture `{name}`: {kind} diverged from {} at line {line}\n    golden: {golden_line}\n    actual: {actual_line}",
                     path.display()
                 ));
             }
             Err(error) => failures.push(format!(
-                "fixture `{name}`: cannot read golden {} ({error}); regenerate with `{REGENERATE}`",
+                "fixture `{name}`: cannot read {kind} golden {} ({error}); regenerate with `{REGENERATE}`",
                 path.display()
             )),
         }
     }
-
-    let goldens = stems(&inspect_dir(), "json");
-    for orphan in goldens.iter().filter(|name| !fixtures.contains(name)) {
+    for orphan in stems(dir, "json")
+        .iter()
+        .filter(|name| !fixtures.contains(name))
+    {
         failures.push(format!(
-            "golden `{orphan}.json` has no `{orphan}.{FIXTURE_EXTENSION}` fixture; delete the golden or restore the input"
+            "golden `{orphan}.json` under {} has no `{orphan}.{FIXTURE_EXTENSION}` fixture; delete the golden or restore the input",
+            dir.display()
         ));
     }
+    failures
+}
+
+#[test]
+fn golden_snapshots_are_byte_identical() {
+    let update = std::env::var_os("UPDATE_GOLDEN").is_some();
+    let fixtures = fixtures();
+    let mut failures = check_branch(
+        "inspect",
+        &inspect_dir(),
+        inspect_snapshot,
+        &fixtures,
+        update,
+    );
+    failures.extend(check_branch(
+        "decode",
+        &decode_dir(),
+        decode_snapshot,
+        &fixtures,
+        update,
+    ));
 
     assert!(
         failures.is_empty(),
-        "{} inspect golden(s) drifted; if the change is intended regenerate with `{REGENERATE}` and review the diff:\n\n{}",
+        "{} golden(s) drifted; if the change is intended regenerate with `{REGENERATE}` and review the diff:\n\n{}",
         failures.len(),
         failures.join("\n\n")
     );
 }
 
-/// Guards against nondeterministic summaries (`HashMap` order, timestamps):
-/// inspecting the same bytes twice must produce identical JSON.
+/// Guards against nondeterministic output (`HashMap` order, timestamps):
+/// putting the same bytes through a branch twice must produce identical JSON.
 #[test]
-fn golden_inspect_output_is_deterministic() {
-    for name in stems(&fixture_dir(), FIXTURE_EXTENSION) {
+fn golden_output_is_deterministic() {
+    for name in fixtures() {
         let input = fixture_dir().join(format!("{name}.{FIXTURE_EXTENSION}"));
         let bytes = std::fs::read(&input)
             .unwrap_or_else(|error| panic!("read fixture {}: {error}", input.display()));
-        let first = inspect_snapshot(&bytes);
-        let second = inspect_snapshot(&bytes);
-        if first != second {
-            let (line, one, two) = first_line_diff(&first, &second);
-            panic!(
-                "fixture `{name}`: nondeterministic inspect at line {line}\n    run 1: {one}\n    run 2: {two}"
-            );
+        for (kind, snapshot) in [
+            ("inspect", inspect_snapshot as fn(&[u8]) -> String),
+            ("decode", decode_snapshot as fn(&[u8]) -> String),
+        ] {
+            let first = snapshot(&bytes);
+            let second = snapshot(&bytes);
+            if first != second {
+                let (line, one, two) = first_line_diff(&first, &second);
+                panic!(
+                    "fixture `{name}`: nondeterministic {kind} at line {line}\n    run 1: {one}\n    run 2: {two}"
+                );
+            }
         }
     }
 }
