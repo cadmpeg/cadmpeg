@@ -71,7 +71,20 @@ pub(super) fn decode(
             .parameter(1)
             .and_then(ValueExt::text)
             .filter(|name| !name.is_empty());
-        let bodies = shape_bindings.get(&step_id).cloned().unwrap_or_default();
+        let mut bodies = shape_bindings.get(&step_id).cloned().unwrap_or_default();
+        let before = bodies.len();
+        bodies.retain(|body| {
+            ir.model
+                .bodies
+                .iter()
+                .any(|candidate| candidate.id == *body)
+        });
+        if before != bodies.len() {
+            warnings.push(format!(
+                "PRODUCT #{step_id} has {} shape body reference(s) whose topology root did not commit",
+                before - bodies.len()
+            ));
+        }
         ir.model.product_definitions.push(ProductDefinition {
             id: product_ir_id(step_id),
             kind: ProductDefinitionKind::Part,

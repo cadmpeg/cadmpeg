@@ -1215,6 +1215,36 @@ fn unsupported_mandatory_carriers_preserve_topology_as_unknown() {
 }
 
 #[test]
+fn failed_mandatory_point_root_remains_opaque_and_unbound() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#3=CARTESIAN_POINT('',(0.,0.,0.));",
+            "#3=UNSUPPORTED_POINT('',(0.,0.,0.));",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode source with unsupported mandatory vertex point");
+
+    assert!(decoded.ir.model.bodies.is_empty());
+    let unknowns = decoded
+        .ir
+        .native_unknowns("step")
+        .expect("STEP unknown arena");
+    assert!(unknowns
+        .iter()
+        .any(|record| record.id.0 == "step:data:unsupported_point#3"));
+    assert!(unknowns
+        .iter()
+        .any(|record| record.id.0 == "step:data:shell_based_surface_model#31"));
+    assert!(decoded
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("conflicts with decoded topology")));
+}
+
+#[test]
 fn decode_builds_a_sheet_from_a_geometric_surface_set() {
     use cadmpeg_ir::topology::BodyKind;
 

@@ -53,13 +53,14 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
             continue;
         }
         if let Some(mut built) = build_wire(model, exchange, &vertices, &edges) {
-            built_wire_models.insert(model);
-            built.typed.insert(representation);
-            result.typed_records.append(&mut built.typed);
             if let Err(error) = built.draft.commit_model(ir) {
                 result.warnings.push(format!(
                     "EDGE_BASED_WIREFRAME_MODEL #{model} conflicts with decoded topology: {error}"
                 ));
+            } else {
+                built_wire_models.insert(model);
+                built.typed.insert(representation);
+                result.typed_records.append(&mut built.typed);
             }
         } else {
             result.warnings.push(format!(
@@ -109,12 +110,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
             &oriented,
             &decoded_pcurves,
         ) {
-            result.typed_records.append(&mut built.typed);
             if let Err(error) = built.draft.commit_model(ir) {
                 result.warnings.push(format!(
                     "{} #{id} conflicts with decoded topology: {error}",
                     record.simple_name().expect("matched simple name")
                 ));
+            } else {
+                result.typed_records.append(&mut built.typed);
             }
         } else {
             result.warnings.push(format!(
@@ -142,11 +144,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
             ));
             continue;
         };
-        result.typed_records.append(&mut built.typed);
         if let Err(error) = built.draft.commit_model(ir) {
             result.warnings.push(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} conflicts with decoded topology: {error}"
             ));
+        } else {
+            result.typed_records.append(&mut built.typed);
         }
     }
     for (&id, record) in &exchange.records {
