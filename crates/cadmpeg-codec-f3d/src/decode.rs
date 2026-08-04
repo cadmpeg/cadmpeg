@@ -3524,28 +3524,65 @@ fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
     (ir, unknowns)
 }
 
+/// State the geometry and topology losses from the container's BREP-stream
+/// state, not from one assumed cause.
+///
+/// This path runs when no BREP stream reached the model, which happens for
+/// three distinct reasons: the container declares no ASM BREP stream at all, a
+/// selected stream did not decode, or several streams are present with no
+/// Design body map to select between them. Only the middle case is a decode
+/// failure. Naming that cause for the other two overstates the geometry gap and
+/// hides which carrier is actually missing.
 fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
     let brep_count = scan.breps.len();
+    let selected = container::select_fallback_brep(scan);
+
+    let (geometry, topology) = match (brep_count, selected) {
+        (0, _) => (
+            "ASM BREP geometry was not transferred: the container declares no ASM BREP stream, so \
+             no surfaces, curves, or points were produced."
+                .to_string(),
+            "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built: \
+             the container declares no ASM BREP stream."
+                .to_string(),
+        ),
+        (_, Some(brep)) => (
+            format!(
+                "ASM BREP geometry was not transferred: the selected stream `{}` is not a \
+                 decodable BinaryFile4/BinaryFile8 SAB (or its framing failed). {brep_count} BREP \
+                 stream(s) were located, but no surfaces, curves, or points were produced.",
+                brep.name
+            ),
+            format!(
+                "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not \
+                 built for the selected stream `{}`.",
+                brep.name
+            ),
+        ),
+        (_, None) => (
+            format!(
+                "ASM BREP geometry was not transferred: {brep_count} BREP stream(s) were located, \
+                 but none of them is the document's geometry stream — the Design body map that \
+                 binds a body to its blob was not read, so the selection is ambiguous."
+            ),
+            "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built: \
+             no BREP stream was selected."
+                .to_string(),
+        ),
+    };
 
     let mut losses = vec![
         LossNote {
             code: LossKind::GeometryNotTransferred,
             severity: Severity::Blocking,
-            message: format!(
-                "ASM BREP geometry was not transferred: the selected stream is not a decodable \
-                 BinaryFile4/BinaryFile8 SAB (or its framing failed). {brep_count} BREP stream(s) \
-                 were located, but no surfaces, curves, or points were produced."
-            ),
+            message: geometry,
             provenance: None,
         },
         LossNote {
             code: LossKind::TopologyNotTransferred,
             severity: Severity::Blocking,
-            message:
-                "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not \
-                      built for this stream."
-                    .to_string(),
+            message: topology,
             provenance: None,
         },
         LossNote {
@@ -3558,11 +3595,21 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         },
     ];
 
-    if container::select_fallback_brep(scan).is_none() {
+    // An absent carrier and an unselectable one are different findings. The
+    // second is reachable only through container-only inspection: a full decode
+    // rejects an ambiguous selection before it builds a report.
+    if selected.is_none() {
         losses.push(LossNote {
             code: LossKind::MissingGeometryStream,
             severity: Severity::Error,
-            message: "no ASM BREP stream (.smb/.smbh) was found in the container".to_string(),
+            message: if brep_count == 0 {
+                "no ASM BREP stream (.smb/.smbh) was found in the container".to_string()
+            } else {
+                format!(
+                    "{brep_count} ASM BREP stream(s) are present, but none of them was selected as \
+                     the document's geometry stream"
+                )
+            },
             provenance: None,
         });
     }
@@ -3574,7 +3621,14 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         coverage: std::collections::BTreeMap::new(),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
-        notes: summary.notes,
+        // `summarize` describes what container inspection alone can state. A
+        // full decode did run the design and body-binding passes, so keeping
+        // its advice to "run decode" would contradict the report it sits in.
+        notes: summary
+            .notes
+            .into_iter()
+            .filter(|note| container_only || !note.starts_with("container-level inspection only"))
+            .collect(),
     }
 }
 

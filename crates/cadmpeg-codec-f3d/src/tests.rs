@@ -24652,6 +24652,120 @@ fn part_without_brep_keeps_blocking_losses() {
         .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Blocking));
 }
 
+/// A document with no ASM BREP stream has no selected stream, so the geometry
+/// and topology losses must not name a decode failure of one. Stating a cause
+/// that was never reached misreports which carrier is missing.
+#[test]
+fn brep_less_part_reports_an_absent_stream_not_a_failed_decode() {
+    let archive = f3d_without_brep("part-design", "part.f3d", &[]);
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    let message = |code: LossCode| {
+        let loss = decoded
+            .report
+            .losses
+            .iter()
+            .find(|loss| loss.code == code)
+            .unwrap_or_else(|| panic!("{code:?} not reported: {:?}", decoded.report.losses));
+        loss.message.clone()
+    };
+
+    let geometry = message(LossCode::GeometryNotTransferred);
+    assert!(
+        geometry.contains("declares no ASM BREP stream"),
+        "geometry loss must state the absent stream: {geometry}"
+    );
+    assert!(
+        !geometry.contains("selected stream"),
+        "no stream was selected, so none can have failed to decode: {geometry}"
+    );
+
+    let topology = message(LossCode::TopologyNotTransferred);
+    assert!(
+        topology.contains("declares no ASM BREP stream"),
+        "topology loss must state the absent stream: {topology}"
+    );
+
+    assert_eq!(
+        message(LossCode::MissingGeometryStream),
+        "no ASM BREP stream (.smb/.smbh) was found in the container"
+    );
+
+    // The decode ran; advising the reader to run it is container-only advice.
+    assert!(
+        !decoded
+            .report
+            .notes
+            .iter()
+            .any(|note| note.starts_with("container-level inspection only")),
+        "full decode must not carry container-only advice: {:?}",
+        decoded.report.notes
+    );
+}
+
+/// Several BREP streams with no Design body map leave the selection ambiguous.
+/// The streams are present, so a note claiming none was found is false; the
+/// finding is that none of them is identified as the document's geometry.
+#[test]
+fn ambiguous_brep_selection_reports_the_streams_that_are_present() {
+    let archive = synthetic_ambiguous_multi_brep_f3d();
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(archive),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    let message = |code: LossCode| {
+        let loss = decoded
+            .report
+            .losses
+            .iter()
+            .find(|loss| loss.code == code)
+            .unwrap_or_else(|| panic!("{code:?} not reported: {:?}", decoded.report.losses));
+        loss.message.clone()
+    };
+
+    assert_eq!(
+        message(LossCode::MissingGeometryStream),
+        "2 ASM BREP stream(s) are present, but none of them was selected as the document's \
+         geometry stream"
+    );
+    let geometry = message(LossCode::GeometryNotTransferred);
+    assert!(
+        geometry.contains("2 BREP stream(s) were located") && geometry.contains("ambiguous"),
+        "geometry loss must state the ambiguous selection: {geometry}"
+    );
+    assert!(
+        !geometry.contains("selected stream"),
+        "no stream was selected: {geometry}"
+    );
+}
+
+/// Two BREP streams, no history partition to break the tie and no `Design1`
+/// pair to select the legacy complete set.
+fn synthetic_ambiguous_multi_brep_f3d() -> Vec<u8> {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    zip.start_file("Manifest.dat", stored).unwrap();
+    zip.write_all(b"synthetic-manifest").unwrap();
+    for name in ["first", "second"] {
+        let mut smb = synthetic_smbh();
+        smb[39..47].copy_from_slice(&2u64.to_le_bytes()); // no history partition
+        smb.truncate(60);
+        zip.start_file(
+            format!("FusionAssetName[Active]/Breps.BlobParts/BREP.{name}.smb"),
+            stored,
+        )
+        .unwrap();
+        zip.write_all(&smb).unwrap();
+    }
+    zip.finish().unwrap().into_inner()
+}
+
 #[test]
 fn redirections_leaf_form_parses_empty_object_references() {
     let table = crate::xref::parse(
