@@ -334,4 +334,6 @@ fn source_records<'a>(
 }
 
 #[cfg(test)]
+mod golden_tests;
+#[cfg(test)]
 mod tests;

@@ -2133,4 +2133,6 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 #[cfg(test)]
+mod golden_tests;
+#[cfg(test)]
 mod tests;

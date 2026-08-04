@@ -108,4 +108,6 @@ impl Codec for CreoCodec {
 }
 
 #[cfg(test)]
+mod golden_tests;
+#[cfg(test)]
 mod tests;
