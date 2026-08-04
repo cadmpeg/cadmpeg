@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Byte-level readers, markers, and integer/float payload primitives shared across the NURBS decoders.
 
-use cadmpeg_codec_core::le::{f64_at as read_f64, int_at as read_int, u16_at, u32_at};
+use cadmpeg_codec_core::le::{f64_at as read_f64, int_at as read_int, u16_at};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 /// Millimetres per ASM model-space length unit (centimetres).
@@ -268,11 +268,20 @@ pub(crate) fn take_native_ident(bytes: &[u8], position: &mut usize) -> Option<St
     Some(value)
 }
 
-pub(crate) fn take_native_string(bytes: &[u8], position: &mut usize) -> Option<String> {
+pub(crate) fn take_native_string(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<String> {
     let (length, header) = match *bytes.get(*position)? {
         0x07 => (usize::from(*bytes.get(*position + 1)?), 2),
         0x08 => (usize::from(u16_at(bytes, *position + 1)?), 3),
-        0x09 => (usize::try_from(u32_at(bytes, *position + 1)?).ok()?, 5),
+        // The `0x09` length prefix is the stream's integer width, not a fixed
+        // four bytes ([spec §4.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#41-tag-table)).
+        0x09 => (
+            usize::try_from(read_int(bytes, *position + 1, int_width)?).ok()?,
+            1 + int_width,
+        ),
         _ => return None,
     };
     let start = *position + header;
@@ -321,4 +330,42 @@ pub(crate) fn take_native_vec3(bytes: &[u8], position: &mut usize, tag: u8) -> O
     ];
     *position += 25;
     Some(values)
+}
+
+#[cfg(test)]
+mod string_width_tests {
+    use super::take_native_string;
+
+    /// A `0x09` string whose length prefix is the stream integer width.
+    fn long_string_bytes(payload: &str, int_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x09];
+        let mut length = (payload.len() as u64).to_le_bytes().to_vec();
+        length.truncate(int_width);
+        bytes.extend_from_slice(&length);
+        bytes.extend_from_slice(payload.as_bytes());
+        bytes
+    }
+
+    #[test]
+    fn long_string_length_prefix_is_the_stream_int_width() {
+        for int_width in [4usize, 8] {
+            let bytes = long_string_bytes("#TS0200\ndegree 3", int_width);
+            let mut position = 0;
+            let value = take_native_string(&bytes, &mut position, int_width)
+                .unwrap_or_else(|| panic!("string at width {int_width}"));
+            assert_eq!(value, "#TS0200\ndegree 3");
+            assert_eq!(position, bytes.len());
+        }
+    }
+
+    #[test]
+    fn long_string_read_at_the_wrong_width_never_yields_the_payload() {
+        // A width-8 stream read at width 4 starts four bytes early; the
+        // leading NUL bytes make the mismatch visible instead of parsing as
+        // the intended payload.
+        let bytes = long_string_bytes("#TS0200\ndegree 3", 8);
+        let mut position = 0;
+        let value = take_native_string(&bytes, &mut position, 4);
+        assert_ne!(value.as_deref(), Some("#TS0200\ndegree 3"));
+    }
 }

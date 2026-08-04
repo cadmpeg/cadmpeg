@@ -151,7 +151,7 @@ pub(crate) fn decode_rolling_ball_side(
     reference_context: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<EmbeddedRollingBallSide> {
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
-    let support_kind = match take_native_string(bytes, position)?.as_str() {
+    let support_kind = match take_native_string(bytes, position, int_width)?.as_str() {
         "blend_support_cos_curve" | "blendsupcos" => VariableBlendSupportKind::CosineCurve,
         "blend_support_curve" | "blendsupcur" => VariableBlendSupportKind::Curve,
         "blend_support_point_curve" | "blendsuppnt" => VariableBlendSupportKind::PointCurve,

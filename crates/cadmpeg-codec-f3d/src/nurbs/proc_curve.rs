@@ -964,7 +964,7 @@ pub(crate) fn rolling_ball_patch_layout(
     .or_else(|| {
         let mut position = payload_start;
         for _ in 0..2 {
-            take_native_string(span, &mut position)?;
+            take_native_string(span, &mut position, int_width)?;
             let support_kind = take_native_ident(span, &mut position)?;
             if !matches!(support_kind.as_str(), "plane" | "sphere" | "cone" | "torus") {
                 return None;
