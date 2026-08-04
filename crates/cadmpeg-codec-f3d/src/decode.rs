@@ -2101,6 +2101,13 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     let source_image = preserve_source_image(&scan);
     if mesh_bodies > 0 {
         apply_mesh_body_classification(&mut report, &scan, mesh_bodies);
+    } else {
+        apply_sketch_only_classification(
+            &mut report,
+            scan.breps.len(),
+            native.design_body_bindings.len() + native.design_body_members.len(),
+            ir.model.sketch_entities.len() + ir.model.spatial_sketch_entities.len(),
+        );
     }
     report_unresolved_dimension_companions(&mut report, &native, &ir);
     match &xref_table {
@@ -2284,6 +2291,44 @@ fn apply_mesh_body_classification(report: &mut DecodeReport, scan: &ContainerSca
         severity: Severity::Warning,
         message: format!(
             "{bodies} mesh body geometry container(s) store vertex coordinates at f32 precision"
+        ),
+        provenance: None,
+    });
+}
+
+/// Reclassify a sketch-only design: a document whose content is sketch curves
+/// declares no body, so it has no B-rep to transfer.
+///
+/// Three facts must hold together. The container declares no BREP stream, so no
+/// geometry carrier is present to decode. The design segment declares no body,
+/// which separates a design that never had a solid from one whose body exists
+/// and whose carrier is missing — that second case is a real geometry loss and
+/// keeps its blocking notes. Sketch entities reached the IR, so the content the
+/// document does carry was transferred.
+pub(crate) fn apply_sketch_only_classification(
+    report: &mut DecodeReport,
+    brep_streams: usize,
+    declared_bodies: usize,
+    sketch_entities: usize,
+) {
+    if brep_streams != 0 || declared_bodies != 0 || sketch_entities == 0 {
+        return;
+    }
+    report.losses.retain(|loss| {
+        !matches!(
+            loss.code,
+            LossKind::GeometryNotTransferred
+                | LossKind::TopologyNotTransferred
+                | LossKind::MissingGeometryStream
+        )
+    });
+    report.geometry_transferred = true;
+    report.losses.push(LossNote {
+        code: LossKind::CarrierSummary,
+        severity: Severity::Info,
+        message: format!(
+            "sketch-only design: the document declares no body, and its {sketch_entities} sketch \
+             entity(s) are its complete geometry"
         ),
         provenance: None,
     });

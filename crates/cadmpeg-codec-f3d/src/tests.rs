@@ -25100,6 +25100,81 @@ fn modern_appearance_record_refuses_a_browser_node_entity_of_zero() {
     assert!(crate::materials::browser_body_appearances(&bytes).is_empty());
 }
 
+/// A report carrying the BREP-less geometry losses that `build_container_report`
+/// states before the design segment is classified.
+fn brep_less_geometry_report() -> cadmpeg_ir::report::DecodeReport {
+    let loss = |code: LossCode, severity| cadmpeg_ir::report::LossNote {
+        code,
+        severity,
+        message: "stated before classification".to_owned(),
+        provenance: None,
+    };
+    cadmpeg_ir::report::DecodeReport {
+        format: "f3d".to_owned(),
+        container_only: false,
+        geometry_transferred: false,
+        coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        losses: vec![
+            loss(LossCode::GeometryNotTransferred, Severity::Blocking),
+            loss(LossCode::TopologyNotTransferred, Severity::Blocking),
+            loss(LossCode::MissingGeometryStream, Severity::Error),
+        ],
+        notes: Vec::new(),
+    }
+}
+
+/// A design whose content is sketch curves declares no body, so it has no
+/// B-rep to lose: the sketch entities are its complete geometry.
+#[test]
+fn sketch_only_design_is_not_a_geometry_loss() {
+    let mut report = brep_less_geometry_report();
+    crate::decode::apply_sketch_only_classification(&mut report, 0, 0, 13);
+    assert!(report.geometry_transferred);
+    assert!(
+        report
+            .losses
+            .iter()
+            .all(|loss| loss.severity < Severity::Error),
+        "sketch-only design must not keep blocking losses: {:?}",
+        report.losses
+    );
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("13 sketch entity(s)")));
+}
+
+/// A declared body whose BREP stream is absent is a real missing carrier. Its
+/// sketches do not stand in for the solid the document says it has.
+#[test]
+fn a_declared_body_without_a_brep_stream_keeps_its_geometry_losses() {
+    let mut report = brep_less_geometry_report();
+    crate::decode::apply_sketch_only_classification(&mut report, 0, 1, 13);
+    assert!(!report.geometry_transferred);
+    assert_eq!(report.losses.len(), 3);
+}
+
+/// A document with no sketch entities transferred nothing, so nothing settles
+/// the loss. Fusion drops DXF text on import, which produces exactly this.
+#[test]
+fn a_document_without_sketch_entities_keeps_its_geometry_losses() {
+    let mut report = brep_less_geometry_report();
+    crate::decode::apply_sketch_only_classification(&mut report, 0, 0, 0);
+    assert!(!report.geometry_transferred);
+    assert_eq!(report.losses.len(), 3);
+}
+
+/// A present BREP stream that produced no geometry is a decode failure, not a
+/// sketch-only design, however many sketches the document also carries.
+#[test]
+fn a_present_brep_stream_is_never_reclassified_as_sketch_only() {
+    let mut report = brep_less_geometry_report();
+    crate::decode::apply_sketch_only_classification(&mut report, 1, 0, 13);
+    assert!(!report.geometry_transferred);
+    assert_eq!(report.losses.len(), 3);
+}
+
 /// A report carrying the unconditional appearance loss that
 /// `build_container_report` and `build_geometry_report` state before appearance
 /// decoding runs.
