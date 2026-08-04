@@ -56,6 +56,17 @@ struct ClassOutcome {
 /// either, because a `Retained` record reports
 /// `RhinoLossCode::ObjectFamilyNotTransferred`, which claims the payload was
 /// never read.
+/// Outcome of resolving one foreign object UUID against the object table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ObjectReference {
+    /// Exactly one record owns the UUID; the value is its source order.
+    Resolved(usize),
+    /// No record owns the UUID.
+    Missing,
+    /// Several records own the UUID, so no single record can be selected.
+    Ambiguous,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GeometryStatus {
     Retained,
@@ -702,6 +713,64 @@ impl<'a> DecodeContext<'a> {
         true
     }
 
+    /// Resolves one foreign object UUID to the single record that owns it.
+    ///
+    /// A 3DM record names another object by UUID, and the object table is free
+    /// to omit that UUID or to repeat it. Both outcomes must stay distinct: an
+    /// omitted UUID is a broken link, a repeated one is an unusable link.
+    fn resolve_object(&self, id: crate::wire::Uuid) -> ObjectReference {
+        match self
+            .object_candidates
+            .get(&id)
+            .map_or(&[][..], Vec::as_slice)
+        {
+            [order] => ObjectReference::Resolved(*order),
+            [] => ObjectReference::Missing,
+            _ => ObjectReference::Ambiguous,
+        }
+    }
+
+    /// Resolves foreign object UUIDs to the native identities of their records.
+    ///
+    /// The result is positional: index `i` holds the identity for `ids[i]`, or
+    /// `None` when that UUID is nil, names no record, or names several. Every
+    /// non-nil UUID that does not resolve is charged against `role`.
+    fn resolve_object_records(
+        &mut self,
+        source_order: usize,
+        role: &str,
+        ids: &[crate::wire::Uuid],
+    ) -> Vec<Option<String>> {
+        let mut resolved = Vec::new();
+        let mut charges = Vec::new();
+        for id in ids {
+            if id.is_nil() {
+                resolved.push(None);
+                continue;
+            }
+            match self.resolve_object(*id) {
+                ObjectReference::Resolved(order) => {
+                    resolved.push(Some(Self::mint_unknown_id(order).to_string()));
+                }
+                ObjectReference::Missing => {
+                    resolved.push(None);
+                    charges.push((RhinoLossCode::ReferenceMemberUnresolved, *id));
+                }
+                ObjectReference::Ambiguous => {
+                    resolved.push(None);
+                    charges.push((RhinoLossCode::ReferenceMemberAmbiguous, *id));
+                }
+            }
+        }
+        for (code, id) in charges {
+            let note = code.note(format!(
+                "{role} in object record {source_order} references object {id}"
+            ));
+            self.typed_losses.push(note);
+        }
+        resolved
+    }
+
     /// Decode and atomically commit supported simple geometry.
     pub(crate) fn decode_geometry(&mut self) {
         if !matches!(
@@ -1145,10 +1214,24 @@ impl<'a> DecodeContext<'a> {
         };
         let key = self.object_key(identity, source_order);
         let id = FeatureId(format!("rhino:polyedge:feature#{key}"));
+        let segment_objects = polyedge
+            .segments
+            .iter()
+            .map(|segment| segment.object_id)
+            .collect::<Vec<_>>();
+        let parameters = self
+            .resolve_object_records(source_order, "polyedge segment", &segment_objects)
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, resolved)| {
+                resolved.map(|record| (format!("segment_{index}_object"), record))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let name = (!identity.name.is_empty()).then(|| identity.name.clone());
         let feature = Feature {
             id: id.clone(),
             ordinal: u64::try_from(source_order).expect("source order fits u64"),
-            name: (!identity.name.is_empty()).then(|| identity.name.clone()),
+            name,
             suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
@@ -1159,7 +1242,7 @@ impl<'a> DecodeContext<'a> {
             outputs: Vec::new(),
             definition: FeatureDefinition::Native {
                 kind: "polyedge_reference".to_string(),
-                parameters: BTreeMap::new(),
+                parameters,
                 properties: BTreeMap::from([("construction".to_string(), construction)]),
             },
             native_ref: Some(Self::mint_unknown_id(source_order).to_string()),
@@ -1452,11 +1535,14 @@ impl<'a> DecodeContext<'a> {
             }
         };
         let key = self.object_key(identity, source_order);
+        let captives =
+            self.resolve_object_records(source_order, "morph captive", &morph.captive_ids);
         let feature = crate::morph::project(
             &morph,
             &key,
             (!identity.name.is_empty()).then(|| identity.name.clone()),
             self.unknowns[source_order].id.to_string(),
+            &captives,
         );
         let feature_id = feature.id.to_string();
         match self
@@ -1651,10 +1737,7 @@ impl<'a> DecodeContext<'a> {
         identity: &crate::objects::SourceIdentity,
     ) -> String {
         if !identity.object_id.is_nil()
-            && self
-                .object_candidates
-                .get(&identity.object_id)
-                .is_some_and(|candidates| candidates.as_slice() == [source_order])
+            && self.resolve_object(identity.object_id) == ObjectReference::Resolved(source_order)
         {
             identity.object_id.to_string()
         } else {
@@ -1844,18 +1927,15 @@ impl<'a> DecodeContext<'a> {
         let mut links = Vec::new();
         for member_id in definition_members {
             self.expansion_budget.member()?;
-            let matches = self
-                .object_candidates
-                .get(&member_id)
-                .map_or(&[][..], Vec::as_slice);
-            let [member_order] = matches else {
-                return Err(if matches.is_empty() {
-                    format!("definition member {member_id} is missing")
-                } else {
-                    format!("definition member {member_id} is ambiguous")
-                });
+            let member_order = match self.resolve_object(member_id) {
+                ObjectReference::Resolved(order) => order,
+                ObjectReference::Missing => {
+                    return Err(format!("definition member {member_id} is missing"))
+                }
+                ObjectReference::Ambiguous => {
+                    return Err(format!("definition member {member_id} is ambiguous"))
+                }
             };
-            let member_order = *member_order;
             let member = &self.scan.objects[member_order];
             if crate::instances::is_reference_class(member.class_uuid) {
                 let nested = self.expand_reference_inner(member_order, transform, path, stack)?;

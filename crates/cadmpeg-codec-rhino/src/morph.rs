@@ -557,11 +557,18 @@ fn cage_properties(
     }
 }
 
+/// Projects one decoded morph control into a native feature.
+///
+/// `captives` is positional over `morph.captive_ids`: index `i` holds the native
+/// identity of the record that owns `captive_ids[i]`, or `None` when that UUID is
+/// nil or does not resolve to exactly one record. Unresolved captives are
+/// charged by the caller; the raw UUIDs stay in `captive_ids`.
 pub(crate) fn project(
     morph: &Morph,
     key: &str,
     name: Option<String>,
     native_ref: String,
+    captives: &[Option<String>],
 ) -> cadmpeg_ir::features::Feature {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
     use std::collections::BTreeMap;
@@ -618,24 +625,32 @@ pub(crate) fn project(
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "morph_control".to_string(),
-            parameters: BTreeMap::from([
-                ("variant".to_string(), variant.to_string()),
-                (
-                    "captive_ids".to_string(),
-                    morph
-                        .captive_ids
-                        .iter()
-                        .map(Uuid::to_string)
-                        .collect::<Vec<_>>()
-                        .join(","),
-                ),
-                ("tolerance".to_string(), morph.tolerance.to_string()),
-                ("quick_preview".to_string(), morph.quick_preview.to_string()),
-                (
-                    "preserve_structure".to_string(),
-                    morph.preserve_structure.to_string(),
-                ),
-            ]),
+            parameters: {
+                let mut parameters = BTreeMap::from([
+                    ("variant".to_string(), variant.to_string()),
+                    (
+                        "captive_ids".to_string(),
+                        morph
+                            .captive_ids
+                            .iter()
+                            .map(Uuid::to_string)
+                            .collect::<Vec<_>>()
+                            .join(","),
+                    ),
+                    ("tolerance".to_string(), morph.tolerance.to_string()),
+                    ("quick_preview".to_string(), morph.quick_preview.to_string()),
+                    (
+                        "preserve_structure".to_string(),
+                        morph.preserve_structure.to_string(),
+                    ),
+                ]);
+                parameters.extend(captives.iter().enumerate().filter_map(|(index, record)| {
+                    record
+                        .as_ref()
+                        .map(|record| (format!("captive_{index}_object"), record.clone()))
+                }));
+                parameters
+            },
             properties,
         },
         native_ref: Some(native_ref),
@@ -731,8 +746,29 @@ mod tests {
         assert_eq!(start_transform[7], 30.0);
         assert_eq!(start_transform[11], 40.0);
         assert_eq!(end.control_points[7][0], 70.0);
-        let feature = project(&morph, "test", None, "native".to_string());
+        // One nil captive: no resolved identity and no charge.
+        assert_eq!(morph.captive_ids.len(), 1);
+        let feature = project(&morph, "test", None, "native".to_string(), &[None]);
         assert_eq!(feature.source_tag.as_deref(), Some("RhinoMorphControl"));
+        let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =
+            &feature.definition
+        else {
+            panic!("expected a native morph definition");
+        };
+        assert!(!parameters.contains_key("captive_0_object"));
+        let resolved = project(
+            &morph,
+            "test",
+            None,
+            "native".to_string(),
+            &[Some("rhino:object:record#000007".to_string())],
+        );
+        let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =
+            &resolved.definition
+        else {
+            panic!("expected a native morph definition");
+        };
+        assert_eq!(parameters["captive_0_object"], "rhino:object:record#000007");
     }
 
     #[test]

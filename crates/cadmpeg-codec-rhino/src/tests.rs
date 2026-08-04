@@ -3545,3 +3545,102 @@ fn typed_class_constants_preserve_canonical_uuid_display() {
 
 #[path = "integration_tests.rs"]
 mod integration_tests;
+
+/// Wire form of the object UUID that `polyedge::tests::polyedge_payload`
+/// references from its single segment.
+const POLYEDGE_SEGMENT_TARGET: [u8; 16] = {
+    let mut wire = [0; 16];
+    wire[15] = 9;
+    wire
+};
+
+fn polyedge_scan_objects() -> Vec<Vec<u8>> {
+    let archive = ArchiveVersion::V5;
+    vec![
+        object_record_with_payload(archive, 1, POINT_CLASS, &point_payload([1.0, 2.0, 3.0])),
+        object_record_with_payload(
+            archive,
+            4,
+            polyedge_class_wire(),
+            &super::polyedge::tests::polyedge_payload(),
+        ),
+    ]
+}
+
+fn polyedge_class_wire() -> [u8; 16] {
+    super::polyedge::CURVE_CLASS.to_wire()
+}
+
+fn polyedge_segment_parameter(result: &cadmpeg_ir::codec::DecodeResult) -> Option<String> {
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.source_tag.as_deref() == Some("RhinoPolyEdgeReference"))?;
+    let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } = &feature.definition
+    else {
+        return None;
+    };
+    parameters.get("segment_0_object").cloned()
+}
+
+#[test]
+fn polyedge_segment_uuid_resolves_to_the_single_record_that_owns_it() {
+    let mut scan = scan_with_objects(&polyedge_scan_objects());
+    set_identity(&mut scan, 0, POLYEDGE_SEGMENT_TARGET, "target", None, true);
+    let result = super::decode::decode_for_test(&scan);
+    assert_eq!(
+        polyedge_segment_parameter(&result).as_deref(),
+        Some("rhino:object:record#000000")
+    );
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.starts_with("reference.")));
+    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+}
+
+#[test]
+fn polyedge_segment_uuid_that_names_no_record_is_charged_and_left_unbound() {
+    let scan = scan_with_objects(&polyedge_scan_objects());
+    let result = super::decode::decode_for_test(&scan);
+    assert!(polyedge_segment_parameter(&result).is_none());
+    let charged = result
+        .report
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.message
+                .starts_with(super::loss::RhinoLossCode::ReferenceMemberUnresolved.code())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(charged.len(), 1);
+    assert_eq!(charged[0].code, LossKind::DecodeDiagnostic);
+    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+}
+
+#[test]
+fn polyedge_segment_uuid_owned_by_two_records_is_charged_as_ambiguous() {
+    let mut objects = polyedge_scan_objects();
+    objects.insert(
+        1,
+        object_record_with_payload(
+            ArchiveVersion::V5,
+            1,
+            POINT_CLASS,
+            &point_payload([4.0, 5.0, 6.0]),
+        ),
+    );
+    let mut scan = scan_with_objects(&objects);
+    set_identity(&mut scan, 0, POLYEDGE_SEGMENT_TARGET, "first", None, true);
+    set_identity(&mut scan, 1, POLYEDGE_SEGMENT_TARGET, "second", None, true);
+    let result = super::decode::decode_for_test(&scan);
+    assert!(polyedge_segment_parameter(&result).is_none());
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.message
+            .starts_with(super::loss::RhinoLossCode::ReferenceMemberAmbiguous.code())
+    }));
+    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses.clone()).is_ok());
+}
