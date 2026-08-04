@@ -24925,5 +24925,108 @@ fn colliding_body_keys_bind_the_smallest_body() {
     assert_eq!(crate::materials::body_for_key(&body_keys, 11), None);
 }
 
+/// A report carrying the unconditional appearance loss that
+/// `build_container_report` and `build_geometry_report` state before appearance
+/// decoding runs.
+fn appearance_loss_report() -> cadmpeg_ir::report::DecodeReport {
+    cadmpeg_ir::report::DecodeReport {
+        format: "f3d".to_owned(),
+        container_only: false,
+        geometry_transferred: false,
+        coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        losses: vec![cadmpeg_ir::report::LossNote {
+            code: LossCode::MaterialNotTransferred,
+            severity: Severity::Warning,
+            message: "Materials/appearances (.protein assets, ACT/design assignments) were not \
+                      transferred."
+                .to_owned(),
+            provenance: None,
+        }],
+        notes: Vec::new(),
+    }
+}
+
+fn opaque_appearance(guid: &str) -> cadmpeg_ir::appearance::Appearance {
+    cadmpeg_ir::appearance::Appearance {
+        id: cadmpeg_ir::ids::AppearanceId(format!("f3d:design:appearance#{guid}")),
+        name: Some("Prism-Opaque".to_owned()),
+        asset_guid: Some(guid.to_owned()),
+        library_id: None,
+        visual_guid: Some(guid.to_owned()),
+        physical_token: None,
+        schema: Some("PrismOpaqueSchema".to_owned()),
+        category: None,
+        base_color: Some(cadmpeg_ir::topology::Color {
+            r: 0.5,
+            g: 0.5,
+            b: 0.5,
+            a: 1.0,
+        }),
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    }
+}
+
+fn material_losses(report: &cadmpeg_ir::report::DecodeReport) -> Vec<&str> {
+    report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.category() == cadmpeg_ir::report::LossCategory::Material)
+        .map(|loss| loss.message.as_str())
+        .collect()
+}
+
+#[test]
+fn appearance_loss_stands_when_no_asset_decodes() {
+    let ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut report = appearance_loss_report();
+    crate::decode::reconcile_appearance_loss(&mut report, &ir, false);
+    assert_eq!(material_losses(&report).len(), 1);
+}
+
+#[test]
+fn appearance_loss_clears_when_an_unassigned_catalog_transfers() {
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.appearances = vec![opaque_appearance("2F0E19C1-0000-4000-8000-000000000001")];
+    let mut report = appearance_loss_report();
+    crate::decode::reconcile_appearance_loss(&mut report, &ir, false);
+    assert!(material_losses(&report).is_empty());
+}
+
+#[test]
+fn appearance_loss_counts_assets_whose_assignment_is_unresolved() {
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.appearances = vec![
+        opaque_appearance("2F0E19C1-0000-4000-8000-000000000001"),
+        opaque_appearance("2F0E19C1-0000-4000-8000-000000000002"),
+    ];
+    let mut report = appearance_loss_report();
+    crate::decode::reconcile_appearance_loss(&mut report, &ir, true);
+    let messages = material_losses(&report);
+    assert_eq!(messages.len(), 1);
+    assert!(messages[0].contains("2 Protein appearance asset(s)"));
+}
+
+#[test]
+fn appearance_loss_clears_when_an_assignment_resolves() {
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let appearance = opaque_appearance("2F0E19C1-0000-4000-8000-000000000001");
+    ir.model.appearance_bindings = vec![cadmpeg_ir::appearance::AppearanceBinding {
+        id: "f3d:appearance:body#0_1:2F0E19C1-0000-4000-8000-000000000001".to_owned(),
+        target: cadmpeg_ir::appearance::AppearanceTarget::Body(cadmpeg_ir::ids::BodyId(
+            "f3d:brep/a.smbh/brep:entity#1".to_owned(),
+        )),
+        appearance: appearance.id.clone(),
+        source_entity_id: None,
+        object_type: None,
+        channels: std::collections::BTreeMap::new(),
+    }];
+    ir.model.appearances = vec![appearance];
+    let mut report = appearance_loss_report();
+    crate::decode::reconcile_appearance_loss(&mut report, &ir, true);
+    assert!(material_losses(&report).is_empty());
+}
+
 #[path = "integration_tests.rs"]
 mod integration_tests;

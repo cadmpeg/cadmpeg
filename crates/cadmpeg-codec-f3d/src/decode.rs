@@ -1686,26 +1686,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             resolve_face_appearance_bindings(&mut ir, &decoded_materials.face_assignments);
             apply_appearance_base_colors(&mut ir);
             ir.model.appearance_bindings.sort_by(|a, b| a.id.cmp(&b.id));
-            if !ir.model.appearances.is_empty() {
-                if decoded_materials.has_topology_assignments
-                    && ir.model.appearance_bindings.is_empty()
-                {
-                    if let Some(loss) = report
-                        .losses
-                        .iter_mut()
-                        .find(|loss| loss.code.category() == LossCategory::Material)
-                    {
-                        loss.message = format!(
-                            "{} Protein appearance asset(s) were decoded, but no topology assignment was resolved.",
-                            ir.model.appearances.len()
-                        );
-                    }
-                } else {
-                    report
-                        .losses
-                        .retain(|loss| loss.code.category() != LossCategory::Material);
-                }
-            }
+            reconcile_appearance_loss(&mut report, &ir, decoded_materials.has_topology_assignments);
             annotate_docstruct(&mut ir, &scan);
             match crate::xref::decode(&scan) {
                 Ok(Some(table)) => {
@@ -2087,6 +2068,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     native.act_guids = act.guids;
     native.act_root_components = act.root_components;
     let decoded_materials = materials::decode(&scan)?;
+    let has_appearance_assignments = decoded_materials.has_topology_assignments;
     ir.model.appearances = decoded_materials.appearances;
     ir.model.appearance_bindings = decoded_materials.bindings;
     annotate_docstruct(&mut ir, &scan);
@@ -2112,6 +2094,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         &native.design_component_occurrences,
     );
     let mut report = build_container_report(&scan, false);
+    reconcile_appearance_loss(&mut report, &ir, has_appearance_assignments);
     let mesh_bodies = project_mesh_bodies(&scan, &mut ir, &mut report)?;
     native.store(ir.native.namespace_mut("f3d"))?;
     let annotations = populate_annotations(&ir, &scan, &native, None, &unknowns);
@@ -3521,6 +3504,39 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         losses,
         notes: summary.notes,
     }
+}
+
+/// Settle the appearance loss note against the appearances the IR carries.
+///
+/// [`build_geometry_report`] and [`build_container_report`] state the loss
+/// before appearance decoding runs, so every path that fills
+/// `ir.model.appearances` settles it here. `has_topology_assignments` separates
+/// a document-local catalog that nothing assigns, which is a complete transfer,
+/// from a serialized assignment that failed to resolve, which is a loss.
+pub(crate) fn reconcile_appearance_loss(
+    report: &mut DecodeReport,
+    ir: &CadIr,
+    has_topology_assignments: bool,
+) {
+    if ir.model.appearances.is_empty() {
+        return;
+    }
+    if has_topology_assignments && ir.model.appearance_bindings.is_empty() {
+        if let Some(loss) = report
+            .losses
+            .iter_mut()
+            .find(|loss| loss.code.category() == LossCategory::Material)
+        {
+            loss.message = format!(
+                "{} Protein appearance asset(s) were decoded, but no topology assignment was resolved.",
+                ir.model.appearances.len()
+            );
+        }
+        return;
+    }
+    report
+        .losses
+        .retain(|loss| loss.code.category() != LossCategory::Material);
 }
 
 /// Join per-face appearance assignments to BREP faces through the face GUID
