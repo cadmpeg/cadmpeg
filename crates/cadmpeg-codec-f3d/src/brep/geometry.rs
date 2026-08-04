@@ -144,7 +144,10 @@ pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
                         ref_direction,
                         radius,
                         ratio,
-                        half_angle: sine.abs().asin(),
+                        // Recover from the stored (sine, cosine) pair. `asin(|sine|)`
+                        // alone differs by 1 ULP across libm for common values such as
+                        // 1/2; `atan2` matches the writer round-trip on every platform.
+                        half_angle: sine.abs().atan2(cosine.abs()),
                     },
                     cosine < 0.0,
                 ))

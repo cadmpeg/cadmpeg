@@ -1,1 +1,5 @@
 crates/cadmpeg-codec-nx/tests/golden/*.json text eol=lf
+crates/cadmpeg-codec-f3d/tests/golden/**/*.json text eol=lf
+crates/cadmpeg-codec-f3d/tests/golden/**/*.err.txt text eol=lf
+crates/cadmpeg-codec-f3d/tests/golden/**/*.bin binary
+crates/cadmpeg-codec-f3d/tests/golden/fixtures/** binary

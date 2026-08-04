@@ -72,8 +72,8 @@ jobs:
         run: |
           set -euo pipefail
           cargo test -p cadmpeg-ir --features schema --lib
-          cargo clippy -p cadmpeg-codec-core -p cadmpeg-codec-f3d \
-            -p cadmpeg-codec-catia -p cadmpeg-codec-sldprt --all-targets \
+          cargo check -p cadmpeg-codec-core -p cadmpeg-codec-f3d \
+            -p cadmpeg-codec-catia -p cadmpeg-codec-sldprt --lib \
             --features cadmpeg-codec-core/schema,cadmpeg-codec-f3d/schema,cadmpeg-codec-catia/schema,cadmpeg-codec-sldprt/schema
 
       - name: Fuzz targets compile

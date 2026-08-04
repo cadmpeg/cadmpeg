@@ -11,32 +11,33 @@
     },
     {
       "attributes": {
-        "active_slice_len": "3833",
+        "acis_save_format_version": "23100",
         "asm_entity_count": "5",
         "asm_flags": "3",
         "asm_magic": "ASM BinaryFile8",
-        "asm_release": "23100",
         "asm_width": "8",
-        "delta_state_first_offset": "3833",
+        "history_partition_offset": "3913",
         "product_family": "Autodesk Neutron",
         "product_version": "ASM 231.6.3.65535 OSX",
         "resabs": "0.000001",
         "resnor": "0.0000000001",
         "save_date": "Tue Mar 31 16:16:19 2026",
         "scale": "60",
-        "sha256": "9b430c4f57cd6e6b9048aa23b60316620ee87adce20d26669e6ed99d7b30a37c"
+        "sha256": "793c74c2e0342a9b87b0d02e523e2398d2e9c5935fe83098c77913f845c8c54d",
+        "solved_record_len": "3913"
       },
-      "compressed_size": 3844,
+      "compressed_size": 3926,
       "compression": "stored",
       "name": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
       "role": "brep-smbh",
-      "uncompressed_size": 3844
+      "uncompressed_size": 3926
     }
   ],
   "format": "f3d",
   "notes": [
     "asset folder (from entry paths): FusionAssetName[Active]",
-    "active BREP candidate: FusionAssetName[Active]/Breps.BlobParts/Body1.smbh (3844 bytes uncompressed, authoritative .smbh history stream)",
-    "container-level inspection only; run `decode` to build the B-rep graph and analytic geometry from the active BREP's SAB record stream"
+    "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
+    "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/Body1.smbh (3926 bytes uncompressed)",
+    "container-level inspection only; run `decode` to resolve Design body bindings and build each referenced BREP graph"
   ]
 }

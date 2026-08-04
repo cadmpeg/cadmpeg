@@ -37,14 +37,19 @@
 //! [`container`] identifies ND and DEPDB layouts, classifies sections, reads
 //! surface and curve namespace counts, and discovers typed namespace rows.
 //! [`psb`] and [`scalar`] expose the context-independent primitive decoders.
-//! [`surface`], [`curve`], and [`topology`] expose the typed structural model.
+//! [`surface`], [`curve`], [`reference`], [`primdata`], [`feature`], and
+//! [`topology`] expose the typed structural model.
 //!
 //! # Decode scope
 //!
-//! Decode transfers complete model-space planes, selected cylinders, connected
-//! plane topology, placed section sketches, and native feature records. It
-//! preserves PSB geometry sections as
-//! [`cadmpeg_ir::unknown::UnknownRecord`] values.
+//! Decode transfers complete model-space planes, selected cylinders, placed
+//! cones, tori, and spheres when positional or feature construction establishes
+//! model space, interpolation and NURBS-related carriers with complete control
+//! bodies, reference lines, circles, and ellipses, connected topology with
+//! analytic intersections and pcurves, `SolidPrimdata` triangle strips, a root
+//! product identity occurrence, placed section sketches, and typed features,
+//! parameters, and expressions. It preserves PSB geometry sections as
+//! [`cadmpeg_ir::unknown::UnknownRecord`] values. The crate is read-only.
 //!
 //! Surface prototype parameters describe family templates rather than placed
 //! instances. Other per-instance coordinates, curve families, face bindings,

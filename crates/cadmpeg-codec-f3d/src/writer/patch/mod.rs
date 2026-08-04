@@ -9,7 +9,6 @@ use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
-use zip::write::SimpleFileOptions;
 
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::{
@@ -527,7 +526,7 @@ pub fn write_semantic(
             .by_index(index)
             .map_err(|error| CodecError::Malformed(format!("invalid F3D ZIP entry: {error}")))?;
         let name = entry.name().to_owned();
-        let options = SimpleFileOptions::default().compression_method(entry.compression());
+        let options = crate::zip_write::file_options(entry.compression());
         if entry.is_dir() {
             zip.add_directory(name, options).map_err(|error| {
                 CodecError::Malformed(format!("cannot write F3D directory: {error}"))

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fuzz target for `cadmpeg_step::write_step`.
+//! Fuzz target for `cadmpeg_codec_step::write_step`.
 //!
 //! Feeds arbitrary bytes through UTF-8 decoding, JSON deserialization into
 //! `CadIr`, then STEP export. Contract: no input may panic. Malformed JSON must
@@ -11,7 +11,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::CadIr;
-use cadmpeg_step::{write_step, StepWriteOptions};
+use cadmpeg_codec_step::{write_step, StepWriteOptions};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

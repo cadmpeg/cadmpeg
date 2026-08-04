@@ -261,7 +261,7 @@ Header invariants:
 
 - Every header word in either width is little-endian.
 - The entity-count and flags words carry stream metadata, not model-space quantities. In both widths, the entity-count word is the RecordTable index of the first owned record: `asmheader` occupies index 0, the stream's saved top-level entities (bodies, free faces, and free wire edges) occupy indices `1..entity_count` with an exclusive upper bound, no record in that range is referenced by an earlier record, and the record at index `entity_count` is the first record referenced from that range.
-- The flags word's bit 0 marks a history partition (the `.smbh` stream) in both widths. Bits 1 to 7 hold the save format's revision number: the stream's full format version is `save_format × 100 + ((flags >> 1) & 0x7f)`. Save format 22300 carries revision 2 (version 2230002) and save format 22500 carries revision 3 (version 2250003). Bits 8 and above are zero. All bits above 0 are preserved.
+- The flags word's bit 0 marks a history partition in both widths. The `.smbh` extension usually coincides with that flag, but the flag selects the history role (§2.1). Bits 1 to 7 hold the save format's revision number: the stream's full format version is `save_format × 100 + ((flags >> 1) & 0x7f)`. Save format 22300 carries revision 2 (version 2230002) and save format 22500 carries revision 3 (version 2250003). Bits 8 and above are zero. All bits above 0 are preserved.
 - `scale`, `resabs`, and `resnor` are kernel metadata. `scale` is not a coordinate transform; it varies per stream and is not fixed by width or save format. Both widths use `resabs = 1e-6` and `resnor = 1e-10`.
 
 ---

@@ -205,10 +205,10 @@ mod product_roundtrip {
     use std::io::Cursor;
 
     use cadmpeg_codec_freecad::FcstdCodec;
+    use cadmpeg_codec_step::StepCodec;
     use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, EncodeInput};
     use cadmpeg_ir::products::{AssemblyGraph, Occurrence, OccurrenceParent, PrototypeReference};
     use cadmpeg_ir::{CadIr, Encoder};
-    use cadmpeg_step::StepCodec;
 
     const CORE_DESIGN_PRODUCT: &[u8] = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
