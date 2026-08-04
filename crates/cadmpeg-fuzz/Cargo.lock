@@ -78,6 +78,7 @@ name = "cadmpeg-codec-core"
 version = "0.3.1"
 dependencies = [
  "serde",
+ "serde_json",
  "thiserror",
 ]
 
