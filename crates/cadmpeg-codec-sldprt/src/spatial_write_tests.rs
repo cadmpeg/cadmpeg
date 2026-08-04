@@ -1,17 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Spatial-sketch semantic write-back integration tests.
+//!
+//! These drive the crate through its public `Encoder`/`CodecEntry` surface, so
+//! they read like an integration test, but they live in the library's own test
+//! tree on purpose. A file under `tests/` becomes a separate harness binary and
+//! links the whole dependency graph again; this crate already has a lib test
+//! binary, so folding the module in costs nothing to link.
 
 use std::{collections::BTreeMap, io::Cursor};
 
-use cadmpeg_codec_sldprt::SldprtCodec;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, Encoder};
-
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::{
     SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
     SpatialSketchId,
 };
+
+use crate::SldprtCodec;
 
 fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
     let mut ir = cadmpeg_ir::examples::unit_cube();

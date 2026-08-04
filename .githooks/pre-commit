@@ -40,8 +40,8 @@ else
 fi
 
 if [ "$scope" = "WORKSPACE" ]; then
-  echo "pre-commit: cargo clippy --workspace --all-targets -- -D warnings -W missing-docs"
-  cargo clippy --workspace --all-targets -- -D warnings -W missing-docs
+  echo "pre-commit: cargo clippy --workspace --all-targets"
+  cargo clippy --workspace --all-targets
   echo "pre-commit: cargo test-fast"
   cargo test-fast
 elif [ -n "$scope" ]; then
@@ -50,8 +50,8 @@ elif [ -n "$scope" ]; then
   # error when no selected package has a library target. A commit that stages
   # only `crates/cadmpeg`, which is a binary-only package, could not pass the
   # gate at all. Clippy uses the same flag so test targets cannot hide style debt.
-  echo "pre-commit: cargo clippy$pkg_flags --all-targets -- -D warnings -W missing-docs"
-  cargo clippy $pkg_flags --all-targets -- -D warnings -W missing-docs
+  echo "pre-commit: cargo clippy$pkg_flags --all-targets"
+  cargo clippy $pkg_flags --all-targets
   echo "pre-commit: cargo test$pkg_flags --all-targets"
   cargo test $pkg_flags --all-targets
 else

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! CATIA-native ownership and design records retained outside the neutral model.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -205,7 +206,8 @@ pub(crate) const CATIA_ARENA_NAMES: &[&str] = &[
 ];
 
 /// Consolidated pcurve framing family.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatiaConsolidatedFamily {
     /// A-family frame with a u32 payload length.
@@ -215,7 +217,8 @@ pub enum CatiaConsolidatedFamily {
 }
 
 /// Reference dialect used by a consolidated class-`0x62` owner packet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatiaOwnerReferenceEncoding {
     /// Strong identities use tagged little-endian `u16` values.
@@ -225,7 +228,8 @@ pub enum CatiaOwnerReferenceEncoding {
 }
 
 /// Allocation link immediately preceding a consolidated owner packet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaOwnerAllocationLink {
     /// Link-record byte offset.
     pub byte_offset: u64,
@@ -238,7 +242,8 @@ pub struct CatiaOwnerAllocationLink {
 }
 
 /// Structurally decoded payload of a class-`0x62` consolidated owner packet.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaOwnerNumericTail {
     /// Five-byte class-specific header.
     pub header: [u8; 5],
@@ -251,7 +256,8 @@ pub struct CatiaOwnerNumericTail {
 }
 
 /// Structurally decoded payload of a class-`0x62` consolidated owner packet.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CatiaOwnerPacketPayload {
     /// Nine alternating strong/weak identities followed by a fixed numeric tail.
@@ -269,7 +275,7 @@ pub enum CatiaOwnerPacketPayload {
         references: Vec<u32>,
         /// Complete nonempty class-specific tail.
         #[serde(with = "cadmpeg_ir::bytes")]
-        #[schemars(with = "String")]
+        #[cfg_attr(feature = "schema", schemars(with = "String"))]
         tail: Vec<u8>,
     },
 }
@@ -285,7 +291,8 @@ impl CatiaOwnerPacketPayload {
 }
 
 /// Exact class-`0x62` consolidated owner packet.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedOwnerPacket {
     /// Stable source identity.
     pub id: String,
@@ -301,7 +308,8 @@ pub struct CatiaConsolidatedOwnerPacket {
 }
 
 /// One structurally complete consolidated `B:29` cone chart.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedCone {
     /// Stable native-record identity.
     pub id: String,
@@ -330,7 +338,8 @@ pub struct CatiaConsolidatedCone {
 }
 
 /// One complete consolidated `B:19` arc-length circle support.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedCircle {
     /// Stable native-record identity.
     pub id: String,
@@ -355,7 +364,8 @@ pub struct CatiaConsolidatedCircle {
 }
 
 /// Frame-specific payload of one consolidated `B:28` cylinder chart.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CatiaConsolidatedCylinderPayload {
     /// Complete three-dimensional frame reconstructed from layout `0x52` or `0x5a`.
@@ -381,7 +391,8 @@ pub enum CatiaConsolidatedCylinderPayload {
 }
 
 /// One structurally complete consolidated `B:28` cylinder chart.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedCylinder {
     /// Stable native-record identity.
     pub id: String,
@@ -402,7 +413,8 @@ pub struct CatiaConsolidatedCylinder {
 }
 
 /// One layout-`0x5a` cylinder embedded in a type-3 consolidated group.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedEmbeddedCylinder {
     /// Stable native-record identity.
     pub id: String,
@@ -429,7 +441,8 @@ pub struct CatiaConsolidatedEmbeddedCylinder {
 }
 
 /// Layout-specific scalar lane of a consolidated `B:18` parameter-space record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CatiaConsolidatedParameterPointPayload {
     /// Two surface-chart coordinates.
@@ -452,7 +465,8 @@ pub enum CatiaConsolidatedParameterPointPayload {
 }
 
 /// One complete consolidated `B:18` parameter-space record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedParameterPoint {
     /// Stable native-record identity.
     pub id: String,
@@ -471,7 +485,8 @@ pub struct CatiaConsolidatedParameterPoint {
 }
 
 /// One complete consolidated `B:37` persistent-reference list.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedReferenceList {
     /// Stable native-record identity.
     pub id: String,
@@ -483,7 +498,8 @@ pub struct CatiaConsolidatedReferenceList {
 
 /// One structurally complete consolidated `A/B:20` pcurve jet whose support
 /// identity has not necessarily been resolved to a native surface record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedPcurve {
     /// Stable native-record identity.
     pub id: String,
@@ -509,12 +525,13 @@ pub struct CatiaConsolidatedPcurve {
     pub range: [f64; 2],
     /// Bytes following the evaluation interval in the framed payload.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[schemars(with = "String")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub tail: Vec<u8>,
 }
 
 /// One structurally complete consolidated `B:2a` sphere chart.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedSphere {
     /// Stable native-record identity.
     pub id: String,
@@ -537,7 +554,8 @@ pub struct CatiaConsolidatedSphere {
 }
 
 /// One structurally complete consolidated `B:2b` torus chart.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedTorus {
     /// Stable native-record identity.
     pub id: String,
@@ -570,7 +588,8 @@ pub struct CatiaConsolidatedTorus {
 }
 
 /// One exact consolidated B-family metric line profile.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedLineProfile {
     /// Stable native-record identity.
     pub id: String,
@@ -585,7 +604,8 @@ pub struct CatiaConsolidatedLineProfile {
 }
 
 /// One structurally complete consolidated `B:2d` surface-of-revolution record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedRevolution {
     /// Stable native-record identity.
     pub id: String,
@@ -615,7 +635,8 @@ pub struct CatiaConsolidatedRevolution {
 }
 
 /// One structurally complete consolidated class-`0x61` record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedClass61Record {
     /// Stable native-record identity.
     pub id: String,
@@ -628,7 +649,8 @@ pub struct CatiaConsolidatedClass61Record {
 }
 
 /// Structurally decoded payload of a consolidated class-`0x61` record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CatiaConsolidatedClass61Payload {
     /// Count-selected compact reference lane followed by a class-specific tail.
@@ -637,7 +659,7 @@ pub enum CatiaConsolidatedClass61Payload {
         references: Vec<u32>,
         /// Complete nonempty tail, including terminal byte `0x03`.
         #[serde(with = "cadmpeg_ir::bytes")]
-        #[schemars(with = "String")]
+        #[cfg_attr(feature = "schema", schemars(with = "String"))]
         tail: Vec<u8>,
     },
     /// Long form with a monotone member lane and five persistent references.
@@ -654,7 +676,8 @@ pub enum CatiaConsolidatedClass61Payload {
 }
 
 /// One typed consolidated class-`0x60` group opener.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedGroup {
     /// Stable native-record identity.
     pub id: String,
@@ -665,7 +688,8 @@ pub struct CatiaConsolidatedGroup {
 }
 
 /// One complete consolidated cone-face chart descriptor.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedConeFace {
     /// Stable native-record identity.
     pub id: String,
@@ -675,7 +699,7 @@ pub struct CatiaConsolidatedConeFace {
     pub byte_len: u64,
     /// Complete reference-and-control program preceding the scalars.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[schemars(with = "String")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub program: Vec<u8>,
     /// Stored angular chart scale.
     pub angular_scale: f64,
@@ -687,7 +711,8 @@ pub struct CatiaConsolidatedConeFace {
 
 /// One complete consolidated historical edge run referencing two retained
 /// pcurve records.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedEdgeRun {
     /// Stable native-record identity.
     pub id: String,
@@ -713,7 +738,8 @@ pub struct CatiaConsolidatedEdgeRun {
 }
 
 /// One structurally complete width-coded class-`0x5e` edge node.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedEdgeNode {
     /// Stable native-record identity.
     pub id: String,
@@ -750,7 +776,8 @@ pub struct CatiaConsolidatedEdgeNode {
 }
 
 /// Typed class-`0x18` descriptor bound to a class-`0x25` edge definition.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedClass25Descriptor {
     /// Record byte offset.
     pub byte_offset: u64,
@@ -763,7 +790,8 @@ pub struct CatiaConsolidatedClass25Descriptor {
 }
 
 /// Descriptor and circle relation structurally bound to an analytic edge.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedAnalyticCircleBinding {
     /// Exact class-`0x18` descriptor frame.
     pub descriptor: CatiaConsolidatedAnalyticCircleDescriptor,
@@ -772,7 +800,8 @@ pub struct CatiaConsolidatedAnalyticCircleBinding {
 }
 
 /// Exact class-`0x18` descriptor frame attached to an analytic circle.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedAnalyticCircleDescriptor {
     /// Record byte offset.
     pub byte_offset: u64,
@@ -787,7 +816,8 @@ pub struct CatiaConsolidatedAnalyticCircleDescriptor {
 }
 
 /// Exact class-specific edge-definition frame owned by one consolidated edge node.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedEdgeDefinition {
     /// Record byte offset.
     pub byte_offset: u64,
@@ -810,7 +840,8 @@ pub struct CatiaConsolidatedEdgeDefinition {
 }
 
 /// Exact oriented-use allocation chain owned by one consolidated edge node.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedEdgeUses {
     /// Counted allocation-reference vectors in side order.
     pub references: [[u32; 2]; 2],
@@ -819,7 +850,8 @@ pub struct CatiaConsolidatedEdgeUses {
 }
 
 /// One global endpoint identity retained by consolidated topology edge nodes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedVertexIdentity {
     /// Stable native-record identity assigned in first-incidence order.
     pub id: String,
@@ -830,7 +862,8 @@ pub struct CatiaConsolidatedVertexIdentity {
 }
 
 /// Exact carrier selected for one side of a consolidated historical edge.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum CatiaConsolidatedSupportBinding {
     /// Standalone `b2 03 28` cylinder.
@@ -875,7 +908,8 @@ pub enum CatiaConsolidatedSupportBinding {
 }
 
 /// One complete outer FINJPL segment retained with its framing identity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaFinjplSegment {
     /// Globally unique segment identity.
     pub id: String,
@@ -892,12 +926,13 @@ pub struct CatiaFinjplSegment {
     pub name: Option<String>,
     /// Complete segment bytes from marker through the byte before the next segment.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[schemars(with = "String")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub data: Vec<u8>,
 }
 
 /// One external CATIA document selected by a storage-property record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaExternalReference {
     /// Globally unique reference identity.
     pub id: String,
@@ -910,7 +945,8 @@ pub struct CatiaExternalReference {
 }
 
 /// One exact JPEG preview from the outer summary-information segment.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaPreviewImage {
     /// Globally unique preview identity.
     pub id: String,
@@ -926,12 +962,13 @@ pub struct CatiaPreviewImage {
     pub components: u8,
     /// Exact JPEG byte stream.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[schemars(with = "String")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub data: Vec<u8>,
 }
 
 /// One exact outer `01 00 04 00` alias-row core.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaAliasRow {
     /// Globally unique alias-row identity.
     pub id: String,
@@ -970,7 +1007,8 @@ pub struct CatiaAliasRow {
 }
 
 /// One exact `7C0B` value block adjacent to its source-schema catalog.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaValueBlock {
     /// Globally unique value-block identity.
     pub id: String,
@@ -987,7 +1025,7 @@ pub struct CatiaValueBlock {
     pub catalog: String,
     /// Value payload in serialized order.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[schemars(with = "String")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub payload: Vec<u8>,
     /// Lossless typed fields in payload order.
     #[serde(default)]
@@ -998,7 +1036,8 @@ pub struct CatiaValueBlock {
 }
 
 /// One `0x32` selector from a value block.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaValueSchemaSelection {
     /// Globally unique schema-selection identity.
     pub id: String,
@@ -1020,7 +1059,8 @@ pub struct CatiaValueSchemaSelection {
 }
 
 /// One exact `7C02` source-schema catalog.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaCatalog {
     /// Globally unique catalog identity.
     pub id: String,
@@ -1036,7 +1076,8 @@ pub struct CatiaCatalog {
 }
 
 /// One source-schema name from a [`CatiaCatalog`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaCatalogEntry {
     /// Globally unique catalog-entry identity.
     pub id: String,
@@ -1051,7 +1092,8 @@ pub struct CatiaCatalogEntry {
 }
 
 /// One definition selector resolved against an object graph's source schema.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaDefinitionSchemaSelection {
     /// Byte offset of the selector marker within the definition prefix.
     pub offset: u64,
@@ -1066,7 +1108,8 @@ pub struct CatiaDefinitionSchemaSelection {
 }
 
 /// One schema selector and its following encoded `7C07` value.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaEntityValueSchemaSelection {
     /// Byte offset of the selector marker within the value payload.
     pub offset: u64,
@@ -1085,7 +1128,8 @@ pub struct CatiaEntityValueSchemaSelection {
 }
 
 /// One repeated-reference preamble selector resolved through its graph catalog.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaRepeatedReferenceSchemaSelection {
     /// Serialized order of the blob and schema ordinal.
     pub order: CatiaRepeatedReferenceSchemaOrder,
@@ -1102,7 +1146,8 @@ pub struct CatiaRepeatedReferenceSchemaSelection {
 }
 
 /// One exact schema selector used by a typed entity program.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaEntitySchemaValue {
     /// Byte offset of the selector within its definition or value payload.
     #[serde(default)]
@@ -1117,7 +1162,8 @@ pub struct CatiaEntitySchemaValue {
 }
 
 /// One complete relation-expression value program.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaRelationExpression {
     /// Exact wire framing and its framing-specific roles.
     pub framing: CatiaRelationExpressionFraming,
@@ -1135,7 +1181,8 @@ pub struct CatiaRelationExpression {
 }
 
 /// Mutually exclusive role framing of one relation-expression value program.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaRelationExpressionFraming {
     /// Local placeholder followed by the exact `opened` state selector.
     PlaceholderState {
@@ -1168,7 +1215,8 @@ pub enum CatiaRelationExpressionFraming {
 }
 
 /// Typed roles in a relation-expression source signature.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaRelationTypeSignature {
     /// Ordered expression-local inputs named inside the signature.
     pub inputs: Vec<CatiaRelationTypeInput>,
@@ -1177,7 +1225,8 @@ pub struct CatiaRelationTypeSignature {
 }
 
 /// One typed input clause in a relation-expression source signature.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaRelationTypeInput {
     /// Expression-local parameter named before `#In`.
     pub parameter: String,
@@ -1186,7 +1235,8 @@ pub struct CatiaRelationTypeInput {
 }
 
 /// Evaluation state of one complete entity-record suffix value.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaEntityEvaluation {
     /// The `E7` form carries no evaluated scalar.
     Unset,
@@ -1198,7 +1248,8 @@ pub enum CatiaEntityEvaluation {
 }
 
 /// Wire encoding of one entity-record suffix evaluation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaEntityEvaluationEncoding {
     /// The evaluation opcode directly precedes its payload.
     Direct,
@@ -1207,7 +1258,8 @@ pub enum CatiaEntityEvaluationEncoding {
 }
 
 /// Payload of one complete entity-record suffix value.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaEntitySuffixPayload {
     /// An unset or finite scalar evaluation with exact framing.
     Evaluation {
@@ -1243,7 +1295,8 @@ pub enum CatiaEntitySuffixPayload {
 }
 
 /// Typed value following a source-schema selector in an entity-record suffix.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaEntitySuffixSelectedValue {
     /// One canonical one-byte atom.
     Atom {
@@ -1273,7 +1326,8 @@ pub enum CatiaEntitySuffixSelectedValue {
 }
 
 /// Exact trailer framing of one complete entity-record suffix value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaEntitySuffixTrailer {
     /// No trailer bytes follow the payload.
     Empty,
@@ -1288,7 +1342,8 @@ pub enum CatiaEntitySuffixTrailer {
 }
 
 /// One complete typed value in an entity-record suffix.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaEntitySuffixValue {
     /// Three canonical compact atoms preceding the field code.
     pub prefix_atoms: [u32; 3],
@@ -1303,7 +1358,8 @@ pub struct CatiaEntitySuffixValue {
 }
 
 /// State byte following one escaped word in an entity-record suffix.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaEntitySuffixEscapedWordState {
     /// Stored state byte `00`.
     State00,
@@ -1318,7 +1374,8 @@ pub enum CatiaEntitySuffixEscapedWordState {
 }
 
 /// One complete escaped-word entity-record suffix.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaEntitySuffixEscapedWord {
     /// Fixed-width little-endian word following the `80` escape.
     pub word: u32,
@@ -1327,7 +1384,8 @@ pub struct CatiaEntitySuffixEscapedWord {
 }
 
 /// One complete non-value entity-record suffix framing.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaEntitySuffixFraming {
     /// One escaped fixed-width word followed by an exact state.
     EscapedWord(CatiaEntitySuffixEscapedWord),
@@ -1337,7 +1395,7 @@ pub enum CatiaEntitySuffixFraming {
     FixedFeF6 {
         /// Exact fixed-width payload.
         #[serde(with = "cadmpeg_ir::bytes")]
-        #[schemars(with = "String")]
+        #[cfg_attr(feature = "schema", schemars(with = "String"))]
         payload: Vec<u8>,
     },
     /// One paged compact atom followed by state byte `01`.
@@ -1348,7 +1406,8 @@ pub enum CatiaEntitySuffixFraming {
 }
 
 /// One suffix selector resolved through its graph's source-schema catalog.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaEntitySuffixSchemaSelection {
     /// Byte offset of the selector marker within the record suffix.
     #[serde(default)]
@@ -1364,7 +1423,8 @@ pub struct CatiaEntitySuffixSchemaSelection {
 }
 
 /// Catalog-resolved value following an entity-suffix schema selector.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaEntitySuffixSchemaValue {
     /// One canonical compact atom.
     Atom {
@@ -1400,7 +1460,8 @@ pub enum CatiaEntitySuffixSchemaValue {
 }
 
 /// One complete named parameter-value record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaParameterValue {
     /// Stored parameter name.
     pub name: CatiaEntitySchemaValue,
@@ -1414,7 +1475,8 @@ pub struct CatiaParameterValue {
 }
 
 /// Exact framing of one complete constraint-range value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaConstraintRangeFraming {
     /// `CstAttr_Dimension` selected with prefix code `B8`.
     DimensionB8,
@@ -1425,7 +1487,8 @@ pub enum CatiaConstraintRangeFraming {
 }
 
 /// One complete constraint-range value.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConstraintRange {
     /// Exact `Range` role selector.
     pub range: CatiaEntitySchemaValue,
@@ -1447,7 +1510,8 @@ pub struct CatiaConstraintRange {
 }
 
 /// One exact payload-reference occurrence selecting a constraint range.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConstraintRangeIncomingReference {
     /// Object record carrying the reference occurrence.
     pub object_record: String,
@@ -1461,7 +1525,8 @@ pub struct CatiaConstraintRangeIncomingReference {
 }
 
 /// One exact object-head storage selector selecting a constraint range.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConstraintRangeIncomingStorageReference {
     /// Object record carrying the storage selector.
     pub object_record: String,
@@ -1471,7 +1536,8 @@ pub struct CatiaConstraintRangeIncomingStorageReference {
 }
 
 /// One definition-selected entity whose complete value occupies its suffix.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaDefinitionValue {
     /// Exact source-schema definition selected by the entity.
     pub definition: CatiaEntitySchemaValue,
@@ -1483,7 +1549,8 @@ pub struct CatiaDefinitionValue {
 }
 
 /// One value selected through a complete two-definition role chain.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaDefinitionChainValue {
     /// Definition repeated by the suffix's fixed-width schema selector.
     pub selector: CatiaEntitySchemaValue,
@@ -1494,7 +1561,8 @@ pub struct CatiaDefinitionChainValue {
 }
 
 /// One complete formula relation stored by an entity and its object payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaFormulaRelation {
     /// Complete relation-expression incidence selected by the second payload reference.
     #[serde(default, deserialize_with = "deserialize_payload_entity_reference")]
@@ -1508,7 +1576,8 @@ pub struct CatiaFormulaRelation {
 }
 
 /// One relation-expression symbol and every matching named parameter.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaRelationParameterDependency {
     /// UTF-8 byte offset of this occurrence within the source expression.
     #[serde(default)]
@@ -1521,12 +1590,13 @@ pub struct CatiaRelationParameterDependency {
         skip_serializing_if = "Vec::is_empty",
         deserialize_with = "deserialize_relation_dependency_candidates"
     )]
-    #[schemars(with = "Vec<CatiaEntityReference>")]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<CatiaEntityReference>"))]
     pub candidates: Vec<CatiaEntityReference>,
 }
 
 /// One declared relation-program input and its uniquely selected entity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaRelationProgramInput {
     /// Expression-local parameter in signature order.
     pub parameter: String,
@@ -1564,7 +1634,8 @@ where
 }
 
 /// One exact compound relation-program instance frame.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaRelationProgramInstance {
     /// Exact object-head and payload production.
     #[serde(default)]
@@ -1600,7 +1671,8 @@ pub struct CatiaRelationProgramInstance {
 }
 
 /// One exact entity-reference occurrence in an object payload.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaPayloadEntityReference {
     /// Byte offset of the reference field within the object payload.
     pub payload_offset: u64,
@@ -1652,7 +1724,8 @@ fn stored_payload_entity_reference(
 }
 
 /// One stored entity identity and its optional same-graph resolution.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaEntityReference {
     /// Stored entity identity.
     pub entity_id: u32,
@@ -1668,7 +1741,8 @@ pub struct CatiaEntityReference {
 }
 
 /// One complete reference-signature packet and its same-graph entity incidences.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaReferenceSignature {
     /// Exact complete packet production.
     #[serde(flatten)]
@@ -1682,7 +1756,8 @@ pub struct CatiaReferenceSignature {
 }
 
 /// Source-ordered descriptor records sharing one exact reference pair.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaReferenceSignatureCohort {
     /// Globally unique cohort identity.
     pub id: String,
@@ -1706,7 +1781,8 @@ pub struct CatiaReferenceSignatureCohort {
 }
 
 /// Cohort-level schema incidence selected after the `_SpecList` marker.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaReferenceSignatureSchemaSelection {
     /// Stored zero-based source-schema ordinal.
     pub ordinal: u32,
@@ -1717,7 +1793,8 @@ pub struct CatiaReferenceSignatureSchemaSelection {
 }
 
 /// One exact self-defining `Configuration` object production.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConfigurationRecord {
     /// Byte offset of the schema reference within the object payload.
     #[serde(default)]
@@ -1734,7 +1811,8 @@ pub struct CatiaConfigurationRecord {
 }
 
 /// One exact `configrow` successor-link production.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConfigurationRowLink {
     /// Stored class identity whose catalog name is `configrow`.
     pub class_reference: CatiaEntityReference,
@@ -1746,7 +1824,8 @@ pub struct CatiaConfigurationRowLink {
 }
 
 /// One complete ordered chain formed by exact `configrow` successor links.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConfigurationRowChain {
     /// Stable identity derived from the graph and stored class identity.
     pub id: String,
@@ -1758,7 +1837,8 @@ pub struct CatiaConfigurationRowChain {
 }
 
 /// One ordered edge in a complete configuration-row successor chain.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConfigurationRowChainLink {
     /// Row entity carrying the successor occurrence.
     pub row: CatiaEntityReference,
@@ -1774,7 +1854,8 @@ pub struct CatiaConfigurationRowChainLink {
 }
 
 /// Exact framing production for a compound relation-program instance.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaRelationProgramInstanceFraming {
     /// Compact `0x12` object head and its 20-token payload.
     #[default]
@@ -1784,7 +1865,8 @@ pub enum CatiaRelationProgramInstanceFraming {
 }
 
 /// Field order used by a repeated-reference schema preamble.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaRepeatedReferenceSchemaOrder {
     /// The binary descriptor precedes the schema ordinal.
     BlobThenSchema,
@@ -1793,7 +1875,8 @@ pub enum CatiaRepeatedReferenceSchemaOrder {
 }
 
 /// One `7C05` entity-table record paired with a `7C09` object record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaEntityRecord {
     /// Globally unique entity-record identity.
     pub id: String,
@@ -1813,7 +1896,7 @@ pub struct CatiaEntityRecord {
     pub definition_len: u32,
     /// Exact definition prefix before the `0xEA` identity delimiter.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[schemars(with = "String")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub definition_prefix: Vec<u8>,
     /// Definition selectors resolved against the containing graph's source schema.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1822,13 +1905,13 @@ pub struct CatiaEntityRecord {
     pub entity_id: u32,
     /// Exact definition bytes after the identity.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[schemars(with = "String")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub definition_suffix: Vec<u8>,
     /// Stored nested `7C07` total length.
     pub value_len: u32,
     /// Exact nested `7C07` payload.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[schemars(with = "String")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub value_payload: Vec<u8>,
     /// Lossless tokenization of the complete `7C07` payload.
     #[serde(default)]
@@ -1874,7 +1957,7 @@ pub struct CatiaEntityRecord {
     pub reference_signature: Option<CatiaReferenceSignature>,
     /// Exact bytes after the nested `7C07` frame.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[schemars(with = "String")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub record_suffix: Vec<u8>,
     /// Complete typed value production occupying the record suffix.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1888,7 +1971,8 @@ pub struct CatiaEntityRecord {
 }
 
 /// One outer `7C08` ownership graph in source order.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaObjectGraph {
     /// Globally unique graph identity.
     pub id: String,
@@ -1914,7 +1998,8 @@ pub struct CatiaObjectGraph {
 }
 
 /// Outer `Data` declaration and its selected physical stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaOuterContainerBinding {
     /// Byte offset of the declaration in the reconstructed outer `Data` stream.
     pub data_offset: u64,
@@ -1929,7 +2014,8 @@ pub struct CatiaOuterContainerBinding {
 }
 
 /// One `7C09` object record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaObjectRecord {
     /// Globally unique record identity.
     pub id: String,
@@ -1956,7 +2042,7 @@ pub struct CatiaObjectRecord {
     pub head: Vec<HeadToken>,
     /// Complete alternate inline body when the record has no nested `7C0A`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Option<String>")]
+    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
     pub inline_body: Option<Vec<u8>>,
     /// Structurally assigned owner slot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1993,7 +2079,8 @@ pub struct CatiaObjectRecord {
 }
 
 /// Structurally assigned owner role in a `7C09` head.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaObjectOwner {
     /// Stored entity identity selecting the design object.
     Entity(u32),
@@ -2015,7 +2102,8 @@ impl CatiaObjectRecord {
 }
 
 /// One typed payload reference from a `7C09` record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaObjectRecordReference {
     /// Stored entity identity.
     pub entity_id: u32,
@@ -2035,7 +2123,8 @@ pub struct CatiaObjectRecordReference {
 }
 
 /// Structural container of one payload-reference occurrence.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaObjectRecordReferenceSource {
     /// Standalone compact or fixed-width payload field.
     Field,
@@ -2049,7 +2138,8 @@ pub enum CatiaObjectRecordReferenceSource {
 }
 
 /// One exact schema class retained on a grouped design object.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaDesignClass {
     /// Selected source-schema entry.
     pub entry: String,
@@ -2058,7 +2148,8 @@ pub struct CatiaDesignClass {
 }
 
 /// One exact outbound relation occurrence in a grouped design object.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaDesignObjectRelation {
     /// Field record containing the relation.
     pub source_field: String,
@@ -2080,7 +2171,8 @@ pub struct CatiaDesignObjectRelation {
 }
 
 /// Structural source of one exact outbound relation occurrence.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaDesignObjectRelationSource {
     /// Class-specific storage selector in the field-record head.
     Storage,
@@ -2094,7 +2186,8 @@ pub enum CatiaDesignObjectRelationSource {
 }
 
 /// One cell in a row-aligned design-object reference table.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaDesignReferenceCell {
     /// Byte offset of the reference item within the source field's payload.
     #[serde(default)]
@@ -2116,7 +2209,8 @@ pub struct CatiaDesignReferenceCell {
 }
 
 /// One source-ordered row in a parallel design-object reference table.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaDesignReferenceRow {
     /// Cells in the order of the table's source fields.
     pub cells: Vec<CatiaDesignReferenceCell>,
@@ -2126,7 +2220,8 @@ pub struct CatiaDesignReferenceRow {
 }
 
 /// One source field and list framing forming a parallel-reference table column.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaDesignReferenceColumn {
     /// Source field record containing the reference list.
     pub field: String,
@@ -2169,7 +2264,8 @@ where
 }
 
 /// Equal-cardinality reference lists aligned by list-item ordinal.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaDesignParallelReferenceTable {
     /// Source field and list incidences forming the table's columns.
     #[serde(deserialize_with = "deserialize_design_reference_columns")]
@@ -2179,7 +2275,8 @@ pub struct CatiaDesignParallelReferenceTable {
 }
 
 /// One serialized design object formed by a shared `7C09` owner identity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaDesignObject {
     /// Globally unique design-object identity.
     pub id: String,
@@ -4270,7 +4367,8 @@ fn repeated_reference_schema_selection(
 }
 
 /// One stored entity identity in a pre-`7C05` design stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyEntityIdentity {
     /// Offset of the `EA` identity delimiter.
     pub byte_offset: u64,
@@ -4282,7 +4380,8 @@ pub struct CatiaLegacyEntityIdentity {
 }
 
 /// One complete compact legacy schema program.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacySchemaProgram {
     /// Offset of the first program byte after the fixed prefix.
     pub byte_offset: u64,
@@ -4294,7 +4393,7 @@ pub struct CatiaLegacySchemaProgram {
     pub boundary: CatiaLegacySchemaProgramBoundary,
     /// Exact program bytes, including the terminal `FE`.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[schemars(with = "String")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub data: Vec<u8>,
     /// Complete inclusive-length identifier packets in source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -4302,7 +4401,8 @@ pub struct CatiaLegacySchemaProgram {
 }
 
 /// Production that closes a compact legacy schema program.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatiaLegacySchemaProgramBoundary {
     /// Fixed vendor footer preceded by the terminal `FE`.
@@ -4313,7 +4413,8 @@ pub enum CatiaLegacySchemaProgramBoundary {
 }
 
 /// One complete inclusive-length identifier packet in a compact schema program.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacySchemaIdentifier {
     /// Offset of the inclusive-length byte.
     pub byte_offset: u64,
@@ -4322,7 +4423,8 @@ pub struct CatiaLegacySchemaIdentifier {
 }
 
 /// Framing production used by a legacy schema text field.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatiaLegacyTextEncoding {
     /// Nonzero one-byte inclusive length.
@@ -4334,7 +4436,8 @@ pub enum CatiaLegacyTextEncoding {
 }
 
 /// Framing production used by a legacy role selector.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatiaLegacyRoleSelectorEncoding {
     /// `80` followed by a nonzero little-endian `u32`.
@@ -4344,7 +4447,8 @@ pub enum CatiaLegacyRoleSelectorEncoding {
 }
 
 /// Stored representation of one legacy schema role name.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(untagged)]
 pub enum CatiaLegacyRoleName {
     /// Inclusive-length UTF-8 role name.
@@ -4380,7 +4484,8 @@ impl From<legacy_entity::LegacyRoleName> for CatiaLegacyRoleName {
 }
 
 /// One length-framed legacy schema role and its selector.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyRoleSelector {
     /// Offset of the literal length or schema-selector byte.
     pub byte_offset: u64,
@@ -4412,7 +4517,8 @@ impl CatiaLegacyRoleSelector {
 }
 
 /// One complete legacy schema text field.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyTextField {
     /// Offset of the field opener.
     pub byte_offset: u64,
@@ -4428,7 +4534,8 @@ pub struct CatiaLegacyTextField {
 }
 
 /// One legacy schema field bounded by consecutive role selectors.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacySchemaField {
     /// Offset of the `E8 <field-code:u16le> 01` opener.
     pub byte_offset: u64,
@@ -4445,7 +4552,8 @@ pub struct CatiaLegacySchemaField {
 }
 
 /// One typed parameter role in a legacy relation signature.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyRelationParameter {
     /// Expression-local parameter.
     pub parameter: String,
@@ -4454,7 +4562,8 @@ pub struct CatiaLegacyRelationParameter {
 }
 
 /// One complete legacy expression and type-signature pair.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyRelation {
     /// Stored owner identity.
     pub entity_id: u32,
@@ -4485,7 +4594,8 @@ pub struct CatiaLegacyRelation {
 }
 
 /// One complete legacy `synchrone` relation-update field.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyRelationSynchronousState {
     /// Offset of the `synchrone` role-name length byte.
     pub role_byte_offset: u64,
@@ -4498,7 +4608,8 @@ pub struct CatiaLegacyRelationSynchronousState {
 }
 
 /// Value selected by one complete legacy type descriptor.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaLegacyTypeValue {
     /// Inclusive-length UTF-8 type name.
     Name {
@@ -4513,7 +4624,8 @@ pub enum CatiaLegacyTypeValue {
 }
 
 /// One complete type descriptor in a legacy identity interval.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyTypeDescriptor {
     /// Offset of the fixed descriptor prefix.
     pub byte_offset: u64,
@@ -4524,7 +4636,8 @@ pub struct CatiaLegacyTypeDescriptor {
 }
 
 /// Evaluation stored by a complete legacy scalar packet.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum CatiaLegacyScalarEvaluation {
     /// Finite binary64 scalar.
     Value {
@@ -4536,7 +4649,8 @@ pub enum CatiaLegacyScalarEvaluation {
 }
 
 /// Fixed prefix selecting one legacy scalar production.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatiaLegacyScalarEncoding {
     /// `FE 84 88 82 FE`.
@@ -4546,7 +4660,8 @@ pub enum CatiaLegacyScalarEncoding {
 }
 
 /// One complete typed scalar packet in a legacy identity interval.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyScalarValue {
     /// Stable native identity derived from the containing run and packet offset.
     pub id: String,
@@ -4567,7 +4682,8 @@ pub struct CatiaLegacyScalarValue {
 }
 
 /// One complete legacy UTF-8 string-value packet.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyStringValue {
     /// Stable native identity derived from the containing run and packet offset.
     pub id: String,
@@ -4586,7 +4702,8 @@ pub struct CatiaLegacyStringValue {
 }
 
 /// Stored encoding of one complete legacy signed integer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatiaLegacyIntegerEncoding {
     /// One byte stores values zero through 126 as `value + 0x81`.
@@ -4596,7 +4713,8 @@ pub enum CatiaLegacyIntegerEncoding {
 }
 
 /// One complete legacy signed-integer packet.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyIntegerValue {
     /// Stable native identity derived from the containing run and packet offset.
     pub id: String,
@@ -4617,7 +4735,8 @@ pub struct CatiaLegacyIntegerValue {
 }
 
 /// A monotonically identified pre-`7C05` run and its terminating catalog.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaLegacyEntityRun {
     /// Stable native identity.
     pub id: String,
@@ -4661,7 +4780,8 @@ pub struct CatiaLegacyEntityRun {
 }
 
 /// One zero-entity face-local surface-support occurrence.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntitySupportOccurrence {
     /// Byte offset of the framed `21xx` record.
     pub byte_offset: u64,
@@ -4695,7 +4815,8 @@ pub struct CatiaZeroEntitySupportOccurrence {
 }
 
 /// One counted zero-entity `5fxx` face record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityFace {
     /// Byte offset of the framed face record.
     pub byte_offset: u64,
@@ -4714,7 +4835,8 @@ pub struct CatiaZeroEntityFace {
 }
 
 /// One counted zero-entity `62xx` loop record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityLoop {
     /// Byte offset of the framed loop record.
     pub byte_offset: u64,
@@ -4746,7 +4868,8 @@ pub struct CatiaZeroEntityLoop {
 }
 
 /// One zero-entity surface carrier and its maximal following support run.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntitySupportRun {
     /// Stable native-run identity.
     pub id: String,
@@ -4762,7 +4885,8 @@ pub struct CatiaZeroEntitySupportRun {
 }
 
 /// One zero-entity `5e1a` allocation tuple.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityEdgeStride {
     /// Stable native-record identity.
     pub id: String,
@@ -4775,7 +4899,8 @@ pub struct CatiaZeroEntityEdgeStride {
 }
 
 /// One positional zero-entity `0638` oriented use.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityOrientedUse {
     /// Byte offset of the framed record.
     pub byte_offset: u64,
@@ -4788,7 +4913,8 @@ pub struct CatiaZeroEntityOrientedUse {
 }
 
 /// One zero-entity `2569` header and its two positional uses.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityOrientedUsePair {
     /// Stable native-pair identity.
     pub id: String,
@@ -4805,7 +4931,8 @@ pub struct CatiaZeroEntityOrientedUsePair {
 /// Two zero-entity radial support occurrences with matching bounded model-space witnesses.
 ///
 /// This relation does not establish curve coincidence.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityEndpointPairCandidate {
     /// Stable derived-pair identity.
     pub id: String,
@@ -4820,7 +4947,8 @@ pub struct CatiaZeroEntityEndpointPairCandidate {
 }
 
 /// One endpoint-pair endpoint incident to a geometric endpoint-locus candidate.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityEndpointPairEndpoint {
     /// Derived endpoint-pair candidate.
     pub endpoint_pair: String,
@@ -4829,7 +4957,8 @@ pub struct CatiaZeroEntityEndpointPairEndpoint {
 }
 
 /// One geometric endpoint-locus candidate established by a complete endpoint clique.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityEndpointLocusCandidate {
     /// Stable derived-locus identity.
     pub id: String,
@@ -4842,7 +4971,8 @@ pub struct CatiaZeroEntityEndpointLocusCandidate {
 }
 
 /// One counted zero-entity `05xx` vertex-incidence record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityVertexIncidence {
     /// Stable native-record identity.
     pub id: String,
@@ -4860,7 +4990,8 @@ pub struct CatiaZeroEntityVertexIncidence {
 }
 
 /// One complete zero-entity face-roster, shell, and body ownership hierarchy.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityOwnershipRoot {
     /// Stable native-root identity.
     pub id: String,
@@ -4881,7 +5012,8 @@ pub struct CatiaZeroEntityOwnershipRoot {
 }
 
 /// One framed record in the zero-entity global identity namespace.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityRecord {
     /// Stable native-record identity.
     pub id: String,
@@ -4896,7 +5028,8 @@ pub struct CatiaZeroEntityRecord {
 }
 
 /// CATIA-native records retained outside the format-neutral model.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaNative {
     /// Schema version this namespace was written under.
     pub version: u32,

@@ -12,11 +12,13 @@ use crate::ids::{
 };
 use crate::math::Point3;
 use crate::transform::Transform;
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// RGBA color, components in `[0, 1]`.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Color {
     /// Red.
     pub r: f32,
@@ -32,7 +34,8 @@ pub struct Color {
 ///
 /// For a coedge this compares traversal with its edge curve. For a face it
 /// compares the face normal with its surface normal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Sense {
     /// Same direction as the referenced geometry.
@@ -42,7 +45,8 @@ pub enum Sense {
 }
 
 /// A top-level solid, sheet, wire, or general body.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum BodyKind {
     /// A closed, volume-bounding solid body.
@@ -57,7 +61,8 @@ pub enum BodyKind {
 }
 
 /// A top-level solid, sheet, wire, or general body.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Body {
     /// Arena id.
     pub id: BodyId,
@@ -82,7 +87,8 @@ pub struct Body {
 }
 
 /// A connected region of a body.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Region {
     /// Arena id.
     pub id: RegionId,
@@ -93,7 +99,8 @@ pub struct Region {
 }
 
 /// An oriented boundary of a region.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Shell {
     /// Arena id.
     pub id: ShellId,
@@ -110,7 +117,8 @@ pub struct Shell {
 }
 
 /// A face: a bounded region of a surface.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Face {
     /// Arena id.
     pub id: FaceId,
@@ -134,7 +142,8 @@ pub struct Face {
 }
 
 /// A loop's boundary role within its owning face.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum LoopBoundaryRole {
     /// The source does not classify this loop as outer or inner.
@@ -150,7 +159,8 @@ pub enum LoopBoundaryRole {
 /// A closed boundary of a face, expressed as an ordered ring of coedges or one
 /// vertex use at a surface singularity. The ordering in `coedges` is the ring
 /// order; each coedge's `next` should point to the following entry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Loop {
     /// Arena id.
     pub id: LoopId,
@@ -168,7 +178,8 @@ pub struct Loop {
 }
 
 /// One ordered parameter-space representation of a coedge.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PcurveUse {
     /// Parameter-space curve carrier.
     pub pcurve: PcurveId,
@@ -181,7 +192,8 @@ pub struct PcurveUse {
 }
 
 /// One pole-vertex occurrence in a loop traversal.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct VertexUse {
     /// Referenced pole vertex.
     pub vertex: VertexId,
@@ -197,7 +209,8 @@ pub struct VertexUse {
 ///
 /// Coedges form a loop ring through `next` and `previous`, and a radial ring
 /// around their shared edge through `radial_next`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Coedge {
     /// Arena id.
     pub id: CoedgeId,
@@ -225,7 +238,8 @@ pub struct Coedge {
 }
 
 /// An edge: a bounded segment of a 3D curve between two vertices.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Edge {
     /// Arena id.
     pub id: EdgeId,
@@ -250,7 +264,8 @@ pub struct Edge {
 }
 
 /// A vertex: a topological point referencing a position carrier.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Vertex {
     /// Arena id.
     pub id: VertexId,
@@ -262,7 +277,8 @@ pub struct Vertex {
 }
 
 /// A position carrier for a vertex.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Point {
     /// Arena id.
     pub id: PointId,

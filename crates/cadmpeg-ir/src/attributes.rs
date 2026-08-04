@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-native attributes attached to IR entities.
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{AttributeId, BodyId, CoedgeId, EdgeId, FaceId, LoopId, ShellId, VertexId};
 
 /// An entity which owns a source attribute.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
 pub enum AttributeTarget {
     /// Attribute is owned by the document as a whole, not a specific entity.
@@ -29,7 +31,8 @@ pub enum AttributeTarget {
 }
 
 /// One ordered typed value from a source attribute record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum AttributeValue {
     /// A signed integer value.
@@ -47,7 +50,8 @@ pub enum AttributeValue {
 }
 
 /// A linked source attribute record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SourceAttribute {
     /// Stable id of this attribute record.
     pub id: AttributeId,

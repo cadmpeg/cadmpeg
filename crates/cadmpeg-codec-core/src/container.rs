@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +11,8 @@ use serde::{Deserialize, Serialize};
 ///
 /// `role` and `attributes` are codec-defined. The ordered attribute map keeps
 /// the format-independent summary deterministic.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ContainerEntry {
     /// Entry name/path within the container.
     pub name: String,
@@ -28,7 +30,8 @@ pub struct ContainerEntry {
 }
 
 /// The result of inspecting a container without decoding its geometry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ContainerSummary {
     /// Source format id.
     pub format: String,
