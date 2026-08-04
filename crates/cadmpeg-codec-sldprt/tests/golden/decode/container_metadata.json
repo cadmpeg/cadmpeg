@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "4",
+    "ir_version": "5",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -8,7 +8,6 @@
       "attributes": [],
       "bodies": [],
       "coedges": [],
-      "components": [],
       "configurations": [],
       "curves": [],
       "drawings": [],
@@ -25,8 +24,7 @@
       "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_occurrences": [],
-      "products": [],
+      "product_definitions": [],
       "regions": [],
       "semantic_annotations": [],
       "shells": [],
@@ -74,10 +72,10 @@
       "attributes": {
         "active_parasolid_block": "Contents/Config-0-Partition",
         "block_count": "2",
-        "brep_semantic_sha256": "e8c29ca681ccdead35523b1be4a5ffed7f5ba274d0444c8436739641c29798a9",
+        "brep_semantic_sha256": "48bc49b040804d3da2f6cc52daca4eb21b33e9f2dc603451c2ca76cc0d42fb61",
         "outer_version": "0x00000004",
         "parasolid_schema": "SCH_SW_33103_11000",
-        "semantic_sha256": "6e4bef0cd099ea5abcfe69a74c0747fb639a54565e2d17622f9205361d1d164b",
+        "semantic_sha256": "d38b6263367e86c66f5d90fe2fdce45b7946ab99c3c81d9dbff7dd3f2e7e09a4",
         "sldprt_configuration_feature_states_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_configuration_parameter_values_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -106,19 +104,16 @@
     "geometry_transferred": false,
     "losses": [
       {
-        "category": "geometry",
         "code": "geometry_not_transferred",
         "message": "Parasolid B-rep geometry was not transferred: no partition/deltas stream resolved into a topology graph. 2 payload source(s) were enumerated, 1 carrying Parasolid streams.",
         "severity": "blocking"
       },
       {
-        "category": "topology",
         "code": "topology_not_transferred",
         "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
         "severity": "blocking"
       },
       {
-        "category": "material",
         "code": "material_not_transferred",
         "message": "Body-bound appearances and tessellation were not transferred because no body graph exists.",
         "severity": "warning"

@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "4",
+    "ir_version": "5",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -242,7 +242,6 @@
           "sense": "reversed"
         }
       ],
-      "components": [],
       "configurations": [],
       "curves": [
         {
@@ -1220,8 +1219,7 @@
       "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_occurrences": [],
-      "products": [],
+      "product_definitions": [],
       "regions": [
         {
           "body": "iges:model:body#D109",

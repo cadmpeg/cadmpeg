@@ -1,8 +1,64 @@
 {
   "ir": {
-    "ir_version": "4",
+    "ir_version": "5",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {
+      "creo": {
+        "arenas": {
+          "expanded_sections": [
+            {
+              "compressed_length": 7,
+              "expanded_length": 3,
+              "id": "creo:container:expanded_section#SolidPrimdata:211",
+              "name": "SolidPrimdata",
+              "sha256": "b5d4045c3f466fa91fe2cc6abe79232a1a57cdf104f7a26e716e0a1e2789df78",
+              "source_offset": 211
+            }
+          ],
+          "unknowns": []
+        },
+        "version": 1
+      }
+    },
     "source": {
-      "format": "creo",
       "attributes": {
         "expanded_section_byte_count": "3",
         "expanded_section_count": "1",
@@ -15,79 +71,19 @@
         "section.0.role": "metadata",
         "section_count": "1",
         "version_line": "#UGC:2 P test"
-      }
+      },
+      "format": "creo"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
     },
     "units": {
       "length": "millimeter"
-    },
-    "tolerances": {
-      "linear": 1e-6,
-      "angular": 1e-10
-    },
-    "model": {
-      "bodies": [],
-      "regions": [],
-      "shells": [],
-      "faces": [],
-      "loops": [],
-      "coedges": [],
-      "edges": [],
-      "vertices": [],
-      "points": [],
-      "surfaces": [],
-      "curves": [],
-      "subds": [],
-      "pcurves": [],
-      "procedural_surfaces": [],
-      "procedural_curves": [],
-      "features": [],
-      "configurations": [],
-      "parameters": [],
-      "sketches": [],
-      "sketch_entities": [],
-      "sketch_constraints": [],
-      "spatial_sketches": [],
-      "spatial_sketch_entities": [],
-      "spreadsheets": [],
-      "components": [],
-      "occurrences": [],
-      "assembly_joints": [],
-      "drawings": [],
-      "semantic_annotations": [],
-      "presentation_documents": [],
-      "view_presentations": [],
-      "tessellations": [],
-      "appearances": [],
-      "appearance_bindings": [],
-      "attributes": [],
-      "products": [],
-      "product_occurrences": [],
-      "pmi": [],
-      "presentation_layers": []
-    },
-    "native": {
-      "creo": {
-        "version": 1,
-        "arenas": {
-          "expanded_sections": [
-            {
-              "id": "creo:container:expanded_section#SolidPrimdata:211",
-              "compressed_length": 7,
-              "expanded_length": 3,
-              "name": "SolidPrimdata",
-              "sha256": "b5d4045c3f466fa91fe2cc6abe79232a1a57cdf104f7a26e716e0a1e2789df78",
-              "source_offset": 211
-            }
-          ],
-          "unknowns": []
-        }
-      }
     }
   },
   "report": {
-    "format": "creo",
     "container_only": false,
-    "geometry_transferred": false,
     "coverage": {
       "active_curve_expression_assignment_count": 0,
       "active_feature_relation_constraint_count": 0,
@@ -377,36 +373,33 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 0
     },
+    "format": "creo",
+    "geometry_transferred": false,
     "losses": [
       {
         "code": "carrier_summary",
-        "category": "geometry",
-        "severity": "info",
-        "message": "PSB container decoded structurally: 1 section(s), unknown layout, VisibGeom namespace census srf_array=n/a / crv_array=n/a; 0 typed surface rows, 0 labeled curve prototypes, 0 canonical curve-topology rows, and 0 closed native loops were decoded. Outline-backed planes, guarded non-axis support frames, complete ND first-instance plane, cylinder, cone, torus, and interpolation-spline prototypes, unbound straight positional surface-of-extrusion planes, topology-bound planes with analytic boundary carriers, `fc 05` cylinders with a resolved axis-normal cap plane, four-entry two-cap and blind circular-sweep cylinders, four-entry simple-hole cylinders with complete cap outlines, radius-anchored class-911 counterbore and bore patches, and compact simple-hole cylinders with complete positional carriers, complementary split-outline cylinders bound to an axis-normal plane, complete positional cylinder bodies, complete support-apex and planar-envelope positional cones, and complete local-system positional tori transfer as carriers; other parameter bodies remain structural records."
+        "message": "PSB container decoded structurally: 1 section(s), unknown layout, VisibGeom namespace census srf_array=n/a / crv_array=n/a; 0 typed surface rows, 0 labeled curve prototypes, 0 canonical curve-topology rows, and 0 closed native loops were decoded. Outline-backed planes, guarded non-axis support frames, complete ND first-instance plane, cylinder, cone, torus, and interpolation-spline prototypes, unbound straight positional surface-of-extrusion planes, topology-bound planes with analytic boundary carriers, `fc 05` cylinders with a resolved axis-normal cap plane, four-entry two-cap and blind circular-sweep cylinders, four-entry simple-hole cylinders with complete cap outlines, radius-anchored class-911 counterbore and bore patches, and compact simple-hole cylinders with complete positional carriers, complementary split-outline cylinders bound to an axis-normal plane, complete positional cylinder bodies, complete support-apex and planar-envelope positional cones, and complete local-system positional tori transfer as carriers; other parameter bodies remain structural records.",
+        "severity": "info"
       },
       {
         "code": "geometry_not_transferred",
-        "category": "geometry",
-        "severity": "blocking",
-        "message": "General model B-rep transfer remains incomplete. Native face components transfer when every boundary edge has solved vertex orbits, face orientation is unique, and every loop is complete; a multi-loop planar face additionally requires one strict containment outer boundary. Selected cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete square cap outline establishes the complete axis placement and radius, or a compact class-911 table owns a complete positional cylinder carrier, a class-911 counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature patches have complementary square outline bounds on one axis-normal plane. Later positional instances do not inherit prototype placement or scalar defaults; they require their per-instance parameter bodies ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). 0 PSB geometry section(s) were preserved verbatim as unknown records."
+        "message": "General model B-rep transfer remains incomplete. Native face components transfer when every boundary edge has solved vertex orbits, face orientation is unique, and every loop is complete; a multi-loop planar face additionally requires one strict containment outer boundary. Selected cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete square cap outline establishes the complete axis placement and radius, or a compact class-911 table owns a complete positional cylinder carrier, a class-911 counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature patches have complementary square outline bounds on one axis-normal plane. Later positional instances do not inherit prototype placement or scalar defaults; they require their per-instance parameter bodies ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). 0 PSB geometry section(s) were preserved verbatim as unknown records.",
+        "severity": "blocking"
       },
       {
         "code": "geometry_not_transferred",
-        "category": "geometry",
-        "severity": "blocking",
-        "message": "Additional model-space carriers are gated by unresolved lane-specific scalar prefixes, feature-local transform bindings, placement-incomplete or untagged `0x26` torus/sphere variants, and the round/fillet feature evaluator. These gaps prevent transfer of the remaining non-plane per-instance surfaces, curves, and vertices."
+        "message": "Additional model-space carriers are gated by unresolved lane-specific scalar prefixes, feature-local transform bindings, placement-incomplete or untagged `0x26` torus/sphere variants, and the round/fillet feature evaluator. These gaps prevent transfer of the remaining non-plane per-instance surfaces, curves, and vertices.",
+        "severity": "blocking"
       },
       {
         "code": "topology_not_transferred",
-        "category": "topology",
-        "severity": "blocking",
-        "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates."
+        "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates.",
+        "severity": "blocking"
       },
       {
         "code": "feature_history_retained",
-        "category": "attribute",
-        "severity": "warning",
-        "message": "Named feature operations and their decoded dependency/input tables transfer as typed or native design records. Curve-equation assignments transfer with their source, dependencies, and closed numeric and string operator and deterministic function values. Full neutral operation semantics, configuration presence, graph, case-study, cabling, and cross-model relation functions, materials, and display data remain untransferred."
+        "message": "Named feature operations and their decoded dependency/input tables transfer as typed or native design records. Curve-equation assignments transfer with their source, dependencies, and closed numeric and string operator and deterministic function values. Full neutral operation semantics, configuration presence, graph, case-study, cabling, and cross-model relation functions, materials, and display data remain untransferred.",
+        "severity": "warning"
       }
     ],
     "notes": [
@@ -418,23 +411,23 @@
     ]
   },
   "source_fidelity": {
-    "version": "3",
     "annotations": {
-      "streams": [
-        "creo:SolidPrimdata"
-      ],
-      "provenance": {
-        "creo:container:expanded_section#SolidPrimdata:211": {
-          "stream": 0,
-          "offset": 211,
-          "tag": "unix_compress_expanded_section"
-        }
-      },
       "exactness": {
         "creo:container:expanded_section#SolidPrimdata:211": {
           "entity": "derived"
         }
-      }
-    }
+      },
+      "provenance": {
+        "creo:container:expanded_section#SolidPrimdata:211": {
+          "offset": 211,
+          "stream": 0,
+          "tag": "unix_compress_expanded_section"
+        }
+      },
+      "streams": [
+        "creo:SolidPrimdata"
+      ]
+    },
+    "version": "3"
   }
 }

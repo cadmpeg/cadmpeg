@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "4",
+    "ir_version": "5",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -8,7 +8,6 @@
       "attributes": [],
       "bodies": [],
       "coedges": [],
-      "components": [],
       "configurations": [],
       "curves": [],
       "drawings": [],
@@ -38,8 +37,7 @@
           "surface": "iges:model:surface#D3"
         }
       ],
-      "product_occurrences": [],
-      "products": [],
+      "product_definitions": [],
       "regions": [],
       "semantic_annotations": [],
       "shells": [],

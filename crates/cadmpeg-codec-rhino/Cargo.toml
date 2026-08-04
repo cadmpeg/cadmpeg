@@ -33,5 +33,11 @@ serde_json.workspace = true
 serde.workspace = true
 tempfile.workspace = true
 
+[dev-dependencies]
+# Enables `cadmpeg_codec_core::golden`, the shared snapshot harness.
+# Feature unification applies it to the test build only, so the published
+# library is unchanged.
+cadmpeg-codec-core = { workspace = true, features = ["golden"] }
+
 [lints]
 workspace = true

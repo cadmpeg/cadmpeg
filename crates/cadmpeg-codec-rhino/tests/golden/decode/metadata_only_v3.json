@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "4",
+    "ir_version": "5",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -8,7 +8,6 @@
       "attributes": [],
       "bodies": [],
       "coedges": [],
-      "components": [],
       "configurations": [],
       "curves": [],
       "drawings": [],
@@ -25,8 +24,7 @@
       "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_occurrences": [],
-      "products": [],
+      "product_definitions": [],
       "regions": [],
       "semantic_annotations": [],
       "shells": [],
@@ -117,15 +115,13 @@
     "geometry_transferred": false,
     "losses": [
       {
-        "category": "geometry",
         "code": "object_records_untransferred",
-        "message": "decoded 0/1 Rhino object records",
+        "message": "object.record-census: decoded 0/1 Rhino object records",
         "severity": "info"
       },
       {
-        "category": "geometry",
         "code": "unsupported_object_family",
-        "message": "retained 1 object record(s) for class c3101a1d-f157-11d3-bfe7-0010830122f0; geometry is not decoded",
+        "message": "object.family-not-transferred: retained 1 object record(s) for class c3101a1d-f157-11d3-bfe7-0010830122f0; geometry is not decoded",
         "provenance": {
           "format": "rhino",
           "offset": 87,
@@ -135,9 +131,8 @@
         "severity": "warning"
       },
       {
-        "category": "other",
         "code": "decode_diagnostic",
-        "message": "object at 87 has nil object UUID",
+        "message": "container.scan-diagnostic: object at 87 has nil object UUID",
         "severity": "warning"
       }
     ],

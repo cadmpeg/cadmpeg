@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "4",
+    "ir_version": "5",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -23,7 +23,6 @@
         }
       ],
       "coedges": [],
-      "components": [],
       "configurations": [],
       "curves": [],
       "drawings": [],
@@ -61,8 +60,7 @@
       "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_occurrences": [],
-      "products": [],
+      "product_definitions": [],
       "regions": [
         {
           "body": "rhino:object:body#d000213c-3fed-dfd4-5d93-120ab2084742",
@@ -278,9 +276,8 @@
     "geometry_transferred": true,
     "losses": [
       {
-        "category": "geometry",
         "code": "object_records_untransferred",
-        "message": "decoded 1/1 Rhino object records",
+        "message": "object.record-census: decoded 1/1 Rhino object records",
         "severity": "info"
       }
     ],
