@@ -8192,38 +8192,126 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
 
 #[test]
 fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
+    // The table deliberately places the groups before the owners so a reader
+    // assigning roles by table position cannot pass, and it is exercised under
+    // both header shifts because the shift is not announced by any member.
+    let references = [240, 243, 251, 254, 301, 304, 308, 311];
+    for header_shift in [0usize, 4] {
+        let frame = hem_frame(&HemFixture {
+            header_shift,
+            wrapper: 308,
+            settings: 311,
+            gap_owner: 301,
+            length_owner: 304,
+            aggregate_group: 240,
+            edge_group: 251,
+            bend_radius: 0.25,
+        });
+
+        let operation = crate::design::decode::scopes::exact_hem_operation(
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            &references,
+        )
+        .expect("fixed Hem operation");
+        assert_eq!(operation.edge_wrapper_record_index, 308);
+        assert_eq!(operation.settings_record_index, 311);
+        assert_eq!(operation.gap_owner_record_index, 301);
+        assert_eq!(operation.length_owner_record_index, 304);
+        assert_eq!(operation.aggregate_group_record_index, 240);
+        assert_eq!(operation.aggregate_operand_record_index, 243);
+        assert_eq!(operation.edge_group_record_index, 251);
+        assert_eq!(operation.edge_operand_record_index, 254);
+        assert_eq!(operation.bend_radius, 0.25);
+        assert_eq!(operation.bend_radius_offset, frame.bend_radius_offset);
+        // These four values are retained, not interpreted: each holds one value
+        // across every readable hem form and direction state (DR-09A).
+        assert_eq!(operation.form_code, 3);
+        assert_eq!(operation.direction_code, 1);
+        assert_eq!(operation.direction_reversal_byte, 0);
+        assert_eq!(operation.reference_side_code, 4);
+    }
+}
+
+#[test]
+fn hem_scope_refuses_a_frame_whose_owner_slot_is_absent() {
+    // The rolled form places its owner references at other offsets, so the
+    // two-owner reader must refuse a frame whose owner slot does not agree.
+    let references = [240, 243, 251, 254, 301, 304, 308, 311];
+    let mut frame = hem_frame(&HemFixture {
+        header_shift: 0,
+        wrapper: 308,
+        settings: 311,
+        gap_owner: 301,
+        length_owner: 304,
+        aggregate_group: 240,
+        edge_group: 251,
+        bend_radius: 0.25,
+    });
+    // Move the length-owner reference one byte later, as the rolled form does.
+    let at = 85 + 53;
+    frame.bytes[at..at + 11].fill(0);
+    frame.bytes[at + 1] = 1;
+    frame.bytes[at + 2..at + 6].copy_from_slice(&304u32.to_le_bytes());
+    assert!(crate::design::decode::scopes::exact_hem_operation(
+        &frame.bytes,
+        0,
+        frame.paired_at,
+        &references,
+    )
+    .is_none());
+}
+
+/// Field values written into a synthetic two-owner `Hem` frame.
+struct HemFixture {
+    header_shift: usize,
+    wrapper: u32,
+    settings: u32,
+    gap_owner: u32,
+    length_owner: u32,
+    aggregate_group: u32,
+    edge_group: u32,
+    bend_radius: f64,
+}
+
+/// A synthetic frame plus the offsets the reader is expected to derive.
+struct HemFrame {
+    bytes: Vec<u8>,
+    paired_at: usize,
+    bend_radius_offset: u64,
+}
+
+/// Build a two-owner `Hem` frame from the settled fixed-section layout.
+///
+/// Every offset is computed from the layout rather than counted by hand.
+fn hem_frame(fixture: &HemFixture) -> HemFrame {
     fn reference(bytes: &mut [u8], at: usize, record_index: u32) {
         bytes[at] = 1;
         bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
     }
 
-    let references = [201, 202, 203, 204, 205, 206, 207, 208];
-    let mut bytes = vec![0; 494];
-    bytes[85..89].copy_from_slice(&3u32.to_le_bytes());
-    bytes[89..93].copy_from_slice(&1u32.to_le_bytes());
-    reference(&mut bytes, 93, 203);
-    reference(&mut bytes, 104, 208);
-    bytes[115..119].copy_from_slice(&1u32.to_le_bytes());
-    bytes[121..125].copy_from_slice(&4u32.to_le_bytes());
-    reference(&mut bytes, 127, 201);
-    reference(&mut bytes, 138, 202);
-    bytes[156..164].copy_from_slice(&0.25f64.to_le_bytes());
+    let common = 85 + fixture.header_shift;
+    let paired_at = 494 + fixture.header_shift;
+    let mut bytes = vec![0; paired_at];
+    bytes[common..common + 4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[common + 4..common + 8].copy_from_slice(&1u32.to_le_bytes());
+    reference(&mut bytes, common + 8, fixture.wrapper);
+    reference(&mut bytes, common + 19, fixture.settings);
+    bytes[common + 30..common + 34].copy_from_slice(&1u32.to_le_bytes());
+    bytes[common + 36..common + 40].copy_from_slice(&4u32.to_le_bytes());
+    reference(&mut bytes, common + 42, fixture.gap_owner);
+    reference(&mut bytes, common + 53, fixture.length_owner);
+    let radius_at = common + 71;
+    bytes[radius_at..radius_at + 8].copy_from_slice(&fixture.bend_radius.to_le_bytes());
+    reference(&mut bytes, common + 108, fixture.aggregate_group);
+    reference(&mut bytes, common + 135, fixture.edge_group);
 
-    let operation = crate::design::decode::scopes::exact_hem_operation(&bytes, 0, 494, &references)
-        .expect("fixed Hem operation");
-    assert_eq!(operation.edge_wrapper_record_index, 203);
-    assert_eq!(operation.edge_group_record_index, 204);
-    assert_eq!(operation.edge_operand_record_index, 205);
-    assert_eq!(operation.aggregate_group_record_index, 206);
-    assert_eq!(operation.aggregate_operand_record_index, 207);
-    assert_eq!(operation.gap_owner_record_index, 201);
-    assert_eq!(operation.length_owner_record_index, 202);
-    assert_eq!(operation.bend_radius, 0.25);
-    assert_eq!(operation.bend_radius_offset, 156);
-    assert_eq!(
-        operation.bend_position,
-        crate::records::DesignBendPosition::TangentToSide
-    );
+    HemFrame {
+        bytes,
+        paired_at,
+        bend_radius_offset: u64::try_from(radius_at).expect("radius offset fits u64"),
+    }
 }
 
 #[test]

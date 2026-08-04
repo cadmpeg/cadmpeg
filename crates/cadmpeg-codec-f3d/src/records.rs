@@ -2273,14 +2273,20 @@ pub struct DesignHemOperation {
     pub bend_radius: f64,
     /// Byte offset of `bend_radius`.
     pub bend_radius_offset: u64,
-    /// Uninterpreted hem-form discriminator.
+    /// Retained u32 at the offset once read as the hem-form discriminator. It
+    /// holds one value across every readable hem form, so it does not select the
+    /// form (DR-09A).
     pub form_code: u32,
-    /// Uninterpreted direction discriminator.
+    /// Retained u32 at the offset once read as the direction discriminator. It
+    /// holds one value in both authored direction states (DR-09A).
     pub direction_code: u32,
-    /// Serialized direction reversal.
-    pub is_flipped: bool,
-    /// Bend position relative to the selected side.
-    pub bend_position: DesignBendPosition,
+    /// Retained byte at the offset once read as the direction reversal. It is
+    /// clear in both authored direction states (DR-09A).
+    pub direction_reversal_byte: u8,
+    /// Retained u32 at the offset once read as the bend position. It holds one
+    /// value across every readable hem, and that value is not the code of the
+    /// authored bend position (DR-09A).
+    pub reference_side_code: u32,
 }
 
 /// Fixed construction carried by a uniform body-scale scope.

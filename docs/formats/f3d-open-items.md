@@ -168,19 +168,19 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A to-object height extent has no neutral extent without the inserted pair's roles. The decoder retains the scope as a native record, so the item blocks the extent semantics of that form only.
 
-### DR-09A. Sheet-metal `Hem` discriminators and form layouts
+### DR-09A. Sheet-metal `Hem` form selector and direction
 
-**Question.** We must find three answers:
+**Question.** Which field selects the hem form, which field carries the hem direction, and what is the layout of the rolled and teardrop frames?
 
-- the offset of the `Hem` bend-position discriminator
-- the meanings of the `Hem` direction discriminator and the direction-reversal byte
-- the layout each hem form selects
+**Known.** `f3d.md` §8.1 "A `Hem` scope names one parameter" gives the two-owner layout, the header shift, the parameter source kinds of each form, and the four retained fields.
 
-**Known.** `f3d.md` §8.1 "A `Hem` scope has" gives the offsets of the flat form. The header shift defined for `EdgeFlange` applies to `Hem` as well. The u32 at offset `121 + S` is `4` in a frame whose authored bend position is adjacent, so that offset is not the bend-position discriminator; the `EdgeFlange` bend-position values do not apply to it. The direction-reversal byte at offset `119 + S` is clear both in a frame authored with the default direction and in one authored with the direction reversed, so it does not carry that state either.
+The parameter set separates a rolled hem, which owns `HemRadius` and `HemAngle`, and a teardrop hem, which owns three parameters, from the two-owner forms. It does not separate a flat hem from an open one: both own `HemGap` and `HemLength`. A flat hem's `HemGap` holds a small value its form does not use, which is a value difference and not a selector.
 
-The hem-form discriminator at offset `85 + S` is `3` for the flat form. The open, rolled, and teardrop forms each replace the gap and length parameter owners with the owners their form needs, so their ordered reference tables differ in content and the teardrop form adds a ninth reference. The decoder reads the flat form only.
+The four retained fields each hold one value across the flat, open, rolled, and teardrop forms and across both authored direction states, so none of them carries the form or the direction. The retained u32 at offset `121 + S` is not the bend position either: it holds `4` in hems whose authored bend position is adjacent, which `EdgeFlange` shows is code `3`.
 
-**Need.** A hem has no neutral operation without the form layouts and the direction meaning. **Blocked in part on a specimen:** the closed, rope, and double forms are not available to read.
+A rolled frame places its two owner references 13 bytes apart rather than 11, and a teardrop frame adds a third owner reference and moves the group references by ten bytes. Neither form's inside bend radius is at the two-owner offset. The decoder reads the two-owner forms and refuses the other two.
+
+**Need.** A hem has no neutral operation without the form selector and the direction. **Blocked in part on a specimen:** the closed, rope, and double forms are not available to read.
 
 ### DR-10. `SpirePrimitive` and `CoilPrimitive` values
 

@@ -765,20 +765,31 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             (None, _) => true,
             (Some(_), kind) if kind != "Hem" => false,
             (Some(operation), _) => {
-                scope.reference_members
-                    == [
-                        operation.gap_owner_record_index,
-                        operation.length_owner_record_index,
-                        operation.edge_wrapper_record_index,
-                        operation.edge_group_record_index,
-                        operation.edge_operand_record_index,
-                        operation.aggregate_group_record_index,
-                        operation.aggregate_operand_record_index,
-                        operation.settings_record_index,
-                    ]
+                // The ordered reference table is in record-index order, so the
+                // check is that every role names a distinct table entry and that
+                // each group's operand is the record three after it.
+                let claimed = [
+                    operation.gap_owner_record_index,
+                    operation.length_owner_record_index,
+                    operation.edge_wrapper_record_index,
+                    operation.edge_group_record_index,
+                    operation.edge_operand_record_index,
+                    operation.aggregate_group_record_index,
+                    operation.aggregate_operand_record_index,
+                    operation.settings_record_index,
+                ];
+                claimed.iter().copied().collect::<HashSet<_>>().len() == claimed.len()
+                    && claimed.len() == scope.reference_members.len()
+                    && claimed
+                        .iter()
+                        .all(|index| scope.reference_members.contains(index))
+                    && operation.edge_operand_record_index
+                        == operation.edge_group_record_index.saturating_add(3)
+                    && operation.aggregate_operand_record_index
+                        == operation.aggregate_group_record_index.saturating_add(3)
                     && operation.bend_radius.is_finite()
                     && operation.bend_radius > 0.0
-                    && operation.bend_radius_offset == scope.byte_offset.saturating_add(156)
+                    && operation.bend_radius_offset > scope.byte_offset
                     && operation.bend_radius_offset < scope.paired_byte_offset
             }
         };

@@ -4651,41 +4651,96 @@ pub(crate) fn exact_hem_operation(
     paired_at: usize,
     references: &[u32],
 ) -> Option<DesignHemOperation> {
-    let [gap_owner_record_index, length_owner_record_index, edge_wrapper_record_index, edge_group_record_index, edge_operand_record_index, aggregate_group_record_index, aggregate_operand_record_index, settings_record_index] =
-        references
-    else {
-        return None;
-    };
-    if paired_at.checked_sub(start)? != 494
-        || u32_at(bytes, start + 89)? != 1
-        || marked_record_reference(bytes, start + 93)? != *edge_wrapper_record_index
-        || marked_record_reference(bytes, start + 104)? != *settings_record_index
-        || marked_record_reference(bytes, start + 127)? != *gap_owner_record_index
-        || marked_record_reference(bytes, start + 138)? != *length_owner_record_index
-        || !matches!(bytes.get(start + 119), Some(0 | 1))
+    // The header shift is recovered by agreement, so both candidates are
+    // evaluated and a frame that reads under either one is refused as ambiguous.
+    let mut resolved = None;
+    for header_shift in SHEET_METAL_HEADER_SHIFTS {
+        let Some(candidate) = hem_operation_at(bytes, start, paired_at, references, header_shift)
+        else {
+            continue;
+        };
+        if resolved.is_some() {
+            return None;
+        }
+        resolved = Some(candidate);
+    }
+    resolved
+}
+
+/// Read the two-owner `Hem` fixed operation section for one candidate header
+/// shift and refuse the candidate unless every slot agrees.
+///
+/// The ordered reference table is in record-index order, so every role is taken
+/// from the marked slot that names it and each group's operand is the record
+/// three after that group. The rolled and teardrop forms place their owner
+/// references at other offsets and are refused.
+fn hem_operation_at(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    references: &[u32],
+    header_shift: usize,
+) -> Option<DesignHemOperation> {
+    if references.len() != 8
+        || paired_at.checked_sub(start)? != 494usize.checked_add(header_shift)?
     {
         return None;
     }
-    let bend_radius_offset = start.checked_add(156)?;
+    let common = start.checked_add(85)?.checked_add(header_shift)?;
+    if u32_at(bytes, common.checked_add(4)?)? != 1 {
+        return None;
+    }
+
+    let mut unclaimed: Vec<u32> = references.to_vec();
+    let claim = |index: u32, pool: &mut Vec<u32>| -> Option<u32> {
+        let at = pool.iter().position(|entry| *entry == index)?;
+        pool.remove(at);
+        Some(index)
+    };
+    let slot = |offset: usize, pool: &mut Vec<u32>| -> Option<u32> {
+        claim(
+            marked_record_reference(bytes, common.checked_add(offset)?)?,
+            pool,
+        )
+    };
+
+    let edge_wrapper_record_index = slot(8, &mut unclaimed)?;
+    let settings_record_index = slot(19, &mut unclaimed)?;
+    // The two owners are the form's inputs in local-ordinal order. Both
+    // readable two-owner forms own the gap and the length in that order.
+    let gap_owner_record_index = slot(42, &mut unclaimed)?;
+    let length_owner_record_index = slot(53, &mut unclaimed)?;
+
+    let bend_radius_offset = common.checked_add(71)?;
     let bend_radius = f64_at(bytes, bend_radius_offset)?;
     if !bend_radius.is_finite() || bend_radius <= 0.0 {
         return None;
     }
+
+    let aggregate_group_record_index = slot(108, &mut unclaimed)?;
+    let edge_group_record_index = slot(135, &mut unclaimed)?;
+    let aggregate_operand_record_index =
+        claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    let edge_operand_record_index = claim(edge_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    if !unclaimed.is_empty() {
+        return None;
+    }
+
     Some(DesignHemOperation {
-        edge_wrapper_record_index: *edge_wrapper_record_index,
-        edge_group_record_index: *edge_group_record_index,
-        edge_operand_record_index: *edge_operand_record_index,
-        aggregate_group_record_index: *aggregate_group_record_index,
-        aggregate_operand_record_index: *aggregate_operand_record_index,
-        gap_owner_record_index: *gap_owner_record_index,
-        length_owner_record_index: *length_owner_record_index,
-        settings_record_index: *settings_record_index,
+        edge_wrapper_record_index,
+        edge_group_record_index,
+        edge_operand_record_index,
+        aggregate_group_record_index,
+        aggregate_operand_record_index,
+        gap_owner_record_index,
+        length_owner_record_index,
+        settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        form_code: u32_at(bytes, start + 85)?,
-        direction_code: u32_at(bytes, start + 115)?,
-        is_flipped: bytes[start + 119] != 0,
-        bend_position: DesignBendPosition::from_code(u32_at(bytes, start + 121)?),
+        form_code: u32_at(bytes, common)?,
+        direction_code: u32_at(bytes, common.checked_add(30)?)?,
+        direction_reversal_byte: *bytes.get(common.checked_add(34)?)?,
+        reference_side_code: u32_at(bytes, common.checked_add(36)?)?,
     })
 }
 
