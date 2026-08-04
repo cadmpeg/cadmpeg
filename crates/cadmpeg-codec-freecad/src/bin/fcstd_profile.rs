@@ -547,6 +547,13 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
     }
 }
 
+/// Record every non-default branch a feature definition selects, keyed by
+/// operation family.
+///
+/// A repeated operand carries the same branch taxonomy as a single operand, so
+/// a sequence field contributes its element branches under the enclosing path
+/// and neither the sequence field name nor an element index appears in the
+/// recorded name.
 fn collect_feature_branches(
     value: &Value,
     family: Option<&str>,
@@ -559,6 +566,12 @@ fn collect_feature_branches(
     let family = fields.get("definition").and_then(Value::as_str).or(family);
     for (name, child) in fields {
         if name == "definition" {
+            continue;
+        }
+        if let Value::Array(items) = child {
+            for item in items {
+                collect_feature_branches(item, family, path, output);
+            }
             continue;
         }
         let child_path = if path.is_empty() {
@@ -880,7 +893,8 @@ fn gates(
         "pattern:operation.pattern.direction.z=-1.0",
         "primitive:solid.kind=box",
         "primitive:solid.kind=cylinder",
-        "revolve:construction.extent.kind=symmetric_angle",
+        "revolve:construction.extent.kind=symmetric",
+        "revolve:construction.extent.termination.kind=angle",
         "revolve:construction.solid=false",
         "shell:resolve_intersections=true",
         "sweep:orientation.kind=frenet",
@@ -1112,12 +1126,12 @@ fn gates(
             vec![
                 assertion(
                     "product_structure_matrix",
-                    count("components") > 0
+                    count("product_definitions") > 0
                         && count("occurrences") > 0
                         && required_product_constructs.is_subset(&product_constructs),
                     format!(
-                        "components={}, occurrences={}, constructs={product_constructs:?}",
-                        count("components"),
+                        "product_definitions={}, occurrences={}, constructs={product_constructs:?}",
+                        count("product_definitions"),
                         count("occurrences")
                     ),
                     format!("{required_product_constructs:?}"),
