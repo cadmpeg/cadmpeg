@@ -262,9 +262,19 @@ pub(crate) fn tolerant_coedge_extension(record: &Record) -> Option<TolerantCoedg
             if !matches!(record.chunk(16), Some(Token::SubtypeOpen)) {
                 return None;
             }
+            // Raw index of chunk 16: the payload identifiers inside the
+            // embedded scope are not chunks, and the serialized token count
+            // below is defined over the value tokens alone.
+            let open = record
+                .tokens
+                .iter()
+                .enumerate()
+                .filter(|(_, token)| !token.is_payload_ident())
+                .nth(16)
+                .map(|(index, _)| index)?;
             let mut depth = 0usize;
             let mut close = None;
-            for (index, token) in record.tokens.iter().enumerate().skip(16) {
+            for (index, token) in record.tokens.iter().enumerate().skip(open) {
                 match token {
                     Token::SubtypeOpen => depth += 1,
                     Token::SubtypeClose => {
@@ -278,17 +288,34 @@ pub(crate) fn tolerant_coedge_extension(record: &Record) -> Option<TolerantCoedg
                 }
             }
             let close = close?;
-            let parameter_range = match record.tokens.get(close + 1..) {
-                Some([Token::False, Token::False, Token::Long(0)]) => None,
-                Some(
-                    [Token::True, Token::Double(start), Token::True, Token::Double(end), Token::Long(0)],
-                ) if start.is_finite() && end.is_finite() => Some([*start, *end]),
+            // Suffix in chunk space: a record can end with payload
+            // identifiers (`null_curve` placeholders for absent curve slots),
+            // which are not fields of the extension.
+            let suffix: Vec<&Token> = record
+                .tokens
+                .get(close + 1..)?
+                .iter()
+                .filter(|token| !token.is_payload_ident())
+                .collect();
+            let parameter_range = match suffix.as_slice() {
+                [Token::False, Token::False, Token::Long(0)] => None,
+                [Token::True, Token::Double(start), Token::True, Token::Double(end), Token::Long(0)]
+                    if start.is_finite() && end.is_finite() =>
+                {
+                    Some([*start, *end])
+                }
                 _ => return None,
             };
+            let payload_token_count = record
+                .tokens
+                .get(open + 1..close)?
+                .iter()
+                .filter(|token| !token.is_payload_ident())
+                .count();
             Some(TolerantCoedgeExtension::EmbeddedCurve {
                 target,
                 curve_reversed,
-                payload_token_count: u32::try_from(close.checked_sub(17)?).ok()?,
+                payload_token_count: u32::try_from(payload_token_count).ok()?,
                 parameter_range,
             })
         }
@@ -524,7 +551,11 @@ pub(crate) fn sense_at(rec: &Record, i: usize) -> Sense {
 /// negates the cache parameterization (`C(t) = cache(-t)`), and a reversed
 /// spline surface flips the cache normal.
 pub(crate) fn record_reversed(rec: &Record) -> bool {
-    rec.tokens
+    // Adjacency in chunk space: a freestanding payload identifier (e.g. the
+    // embedded curve's type name) can sit between value tokens without
+    // separating the sense bit from the scope it precedes.
+    let chunks: Vec<&Token> = rec.chunks().collect();
+    chunks
         .windows(2)
         .find_map(|tokens| {
             matches!(tokens[1], Token::SubtypeOpen).then(|| match tokens[0] {
@@ -592,8 +623,11 @@ pub(crate) fn double_at(rec: &Record, i: usize) -> Option<f64> {
 }
 
 pub(crate) fn pcurve_parameter_range(rec: &Record) -> Option<[f64; 2]> {
-    match &*rec.tokens {
-        [.., Token::Double(start), Token::Double(end)] => Some([*start, *end]),
+    // The final two value tokens; a record may end with payload identifiers
+    // (e.g. `null_curve` placeholders), which are not fields.
+    let mut values = rec.chunks().rev();
+    match (values.next(), values.next()) {
+        (Some(Token::Double(end)), Some(Token::Double(start))) => Some([*start, *end]),
         _ => None,
     }
 }
@@ -602,8 +636,11 @@ pub(crate) fn pcurve_inline_tail_flags(rec: &Record) -> Option<[bool; 4]> {
     if !matches!(rec.chunk(3), Some(Token::Long(0))) {
         return None;
     }
-    let end = rec.tokens.len().checked_sub(2)?;
-    let flags = rec.tokens.get(end.checked_sub(4)?..end)?;
+    // End-relative in chunk space: the four booleans precede the final two
+    // value tokens, and trailing payload identifiers are not fields.
+    let chunks: Vec<&Token> = rec.chunks().collect();
+    let end = chunks.len().checked_sub(2)?;
+    let flags = chunks.get(end.checked_sub(4)?..end)?;
     flags
         .iter()
         .map(|token| match token {

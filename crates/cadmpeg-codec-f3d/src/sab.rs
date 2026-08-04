@@ -111,7 +111,7 @@ impl Record {
 
     /// The payload value tokens in order, payload identifiers skipped: the
     /// stream that `chunk[i]` indexes.
-    pub fn chunks(&self) -> impl Iterator<Item = &Token> {
+    pub fn chunks(&self) -> impl DoubleEndedIterator<Item = &Token> {
         self.tokens.iter().filter(|t| !t.is_payload_ident())
     }
 
