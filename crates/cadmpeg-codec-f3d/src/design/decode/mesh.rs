@@ -58,11 +58,11 @@ impl MeshAffineTransform {
         let cells = self.0;
         cadmpeg_ir::math::Point3::new(
             (cells[0] * x + cells[1] * y + cells[2] * z + cells[3])
-                * crate::nurbs::reader::LEN_TO_MM,
+                * cadmpeg_asm::nurbs::reader::LEN_TO_MM,
             (cells[4] * x + cells[5] * y + cells[6] * z + cells[7])
-                * crate::nurbs::reader::LEN_TO_MM,
+                * cadmpeg_asm::nurbs::reader::LEN_TO_MM,
             (cells[8] * x + cells[9] * y + cells[10] * z + cells[11])
-                * crate::nurbs::reader::LEN_TO_MM,
+                * cadmpeg_asm::nurbs::reader::LEN_TO_MM,
         )
     }
 }

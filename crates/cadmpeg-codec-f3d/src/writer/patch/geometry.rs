@@ -12,9 +12,9 @@ use cadmpeg_ir::transform::Transform;
 use super::edits::{
     NurbsCurveEdit, NurbsPcurveEdit, NurbsSurfaceEdit, ProceduralCurveEdit, ProceduralSurfaceEdit,
 };
-use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::{finite_vector, native_bool, unique_knot_count};
 use cadmpeg_asm::asm_header::stream_ref_width;
+use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 use cadmpeg_asm::{asm_header, sab};
 
 pub(crate) fn valid_edited_curve_structure(before: &NurbsCurve, after: &NurbsCurve) -> bool {
@@ -830,14 +830,16 @@ fn patch_extrusion_definition(
     native_position: cadmpeg_ir::math::Point3,
 ) -> Result<(), CodecError> {
     let record_bytes = record_slice(bytes, record, "extrusion")?;
-    let layout =
-        crate::nurbs::proc_curve::extrusion_patch_layout(record_bytes, stream_ref_width(bytes))
-            .ok_or_else(|| {
-                CodecError::Malformed(format!(
-                    "spline record {} lacks writable extrusion fields",
-                    record.index
-                ))
-            })?;
+    let layout = cadmpeg_asm::nurbs::proc_curve::extrusion_patch_layout(
+        record_bytes,
+        stream_ref_width(bytes),
+    )
+    .ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "spline record {} lacks writable extrusion fields",
+            record.index
+        ))
+    })?;
     apply_f64_patches(
         bytes,
         record.offset,
@@ -988,14 +990,16 @@ fn patch_blend_radius_tokens(
     radii: [f64; 2],
 ) -> Result<(), CodecError> {
     let record_bytes = record_slice(bytes, record, "rolling-ball")?;
-    let layout =
-        crate::nurbs::proc_curve::rolling_ball_patch_layout(record_bytes, stream_ref_width(bytes))
-            .ok_or_else(|| {
-                CodecError::Malformed(format!(
-                    "spline record {} lacks a writable rolling-ball radius pair",
-                    record.index
-                ))
-            })?;
+    let layout = cadmpeg_asm::nurbs::proc_curve::rolling_ball_patch_layout(
+        record_bytes,
+        stream_ref_width(bytes),
+    )
+    .ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "spline record {} lacks a writable rolling-ball radius pair",
+            record.index
+        ))
+    })?;
     apply_f64_patches(
         bytes,
         record.offset,
@@ -1018,8 +1022,8 @@ fn patch_nurbs_surface_record(
     let record_bytes = record_slice(bytes, record, "NURBS surface")?;
     let layout = surface_ordinal
         .map_or_else(
-            || crate::nurbs::core::final_surface_patch_layout(record_bytes),
-            |ordinal| crate::nurbs::core::surface_patch_layout_at(record_bytes, ordinal),
+            || cadmpeg_asm::nurbs::core::final_surface_patch_layout(record_bytes),
+            |ordinal| cadmpeg_asm::nurbs::core::surface_patch_layout_at(record_bytes, ordinal),
         )
         .ok_or_else(|| {
             CodecError::Malformed(format!(
@@ -1104,12 +1108,13 @@ fn patch_procedural_surface_fit(
     tolerance: f64,
 ) -> Result<(), CodecError> {
     let record_bytes = record_slice(bytes, record, "procedural-surface")?;
-    let layout = crate::nurbs::core::final_surface_patch_layout(record_bytes).ok_or_else(|| {
-        CodecError::Malformed(format!(
-            "spline record {} has no solved surface cache",
-            record.index
-        ))
-    })?;
+    let layout =
+        cadmpeg_asm::nurbs::core::final_surface_patch_layout(record_bytes).ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "spline record {} has no solved surface cache",
+                record.index
+            ))
+        })?;
     if record_bytes.get(layout.end) != Some(&0x06) {
         return Err(CodecError::NotImplemented(format!(
             "spline record {} has no writable fit-tolerance carrier",
@@ -1130,9 +1135,9 @@ fn patch_nurbs_curve_record(
     let curve = &edit.curve;
     let record_bytes = record_slice(bytes, record, "NURBS curve")?;
     let layout = if final_cache {
-        crate::nurbs::core::final_curve_patch_layout(record_bytes)
+        cadmpeg_asm::nurbs::core::final_curve_patch_layout(record_bytes)
     } else {
-        crate::nurbs::core::first_curve_patch_layout(record_bytes)
+        cadmpeg_asm::nurbs::core::first_curve_patch_layout(record_bytes)
     }
     .ok_or_else(|| {
         CodecError::Malformed(format!(
@@ -1193,12 +1198,13 @@ fn patch_procedural_curve_fit(
     tolerance: f64,
 ) -> Result<(), CodecError> {
     let record_bytes = record_slice(bytes, record, "procedural-curve")?;
-    let layout = crate::nurbs::core::final_curve_patch_layout(record_bytes).ok_or_else(|| {
-        CodecError::Malformed(format!(
-            "intcurve record {} has no solved curve cache",
-            record.index
-        ))
-    })?;
+    let layout =
+        cadmpeg_asm::nurbs::core::final_curve_patch_layout(record_bytes).ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "intcurve record {} has no solved curve cache",
+                record.index
+            ))
+        })?;
     if record_bytes.get(layout.end) != Some(&0x06) {
         return Err(CodecError::NotImplemented(format!(
             "intcurve record {} has no writable fit-tolerance carrier",
@@ -1231,13 +1237,13 @@ fn patch_helix_definition(
     };
     let record_bytes = record_slice(bytes, record, "helix")?;
     let layout =
-        crate::nurbs::proc_curve::helix_patch_layout(record_bytes, stream_ref_width(bytes))
+        cadmpeg_asm::nurbs::proc_curve::helix_patch_layout(record_bytes, stream_ref_width(bytes))
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
-                    "procedural curve record {} lacks writable helix fields",
-                    record.index
-                ))
-            })?;
+            CodecError::Malformed(format!(
+                "procedural curve record {} lacks writable helix fields",
+                record.index
+            ))
+        })?;
     apply_f64_patches(
         bytes,
         record.offset,
@@ -1289,14 +1295,16 @@ fn patch_vector_offset_definition(
         ));
     };
     let record_bytes = record_slice(bytes, record, "vector-offset")?;
-    let layout =
-        crate::nurbs::proc_curve::vector_offset_patch_layout(record_bytes, stream_ref_width(bytes))
-            .ok_or_else(|| {
-                CodecError::Malformed(format!(
-                    "vector-offset record {} lacks writable construction fields",
-                    record.index
-                ))
-            })?;
+    let layout = cadmpeg_asm::nurbs::proc_curve::vector_offset_patch_layout(
+        record_bytes,
+        stream_ref_width(bytes),
+    )
+    .ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "vector-offset record {} lacks writable construction fields",
+            record.index
+        ))
+    })?;
     apply_f64_patches(
         bytes,
         record.offset,
@@ -1329,7 +1337,7 @@ fn patch_subset_definition(
     };
     let record_bytes = record_slice(bytes, record, "subset")?;
     let layout =
-        crate::nurbs::proc_curve::subset_patch_layout(record_bytes, stream_ref_width(bytes))
+        cadmpeg_asm::nurbs::proc_curve::subset_patch_layout(record_bytes, stream_ref_width(bytes))
             .ok_or_else(|| {
                 CodecError::Malformed(format!(
                     "subset record {} lacks writable construction fields",
@@ -1360,14 +1368,16 @@ fn patch_compound_definition(
         ));
     };
     let record_bytes = record_slice(bytes, record, "compound")?;
-    let layout =
-        crate::nurbs::proc_curve::compound_patch_layout(record_bytes, stream_ref_width(bytes))
-            .ok_or_else(|| {
-                CodecError::Malformed(format!(
-                    "compound record {} lacks writable parameter arrays",
-                    record.index
-                ))
-            })?;
+    let layout = cadmpeg_asm::nurbs::proc_curve::compound_patch_layout(
+        record_bytes,
+        stream_ref_width(bytes),
+    )
+    .ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "compound record {} lacks writable parameter arrays",
+            record.index
+        ))
+    })?;
     if layout.parameters.len() != parameters.len()
         || layout.component_parameters.len() != component_parameters.len()
     {
@@ -1406,7 +1416,7 @@ fn patch_two_sided_offset_definition(
     let layout = [8usize, 4]
         .into_iter()
         .filter_map(|width| {
-            crate::nurbs::proc_curve::two_sided_offset_patch_layout(record_bytes, width)
+            cadmpeg_asm::nurbs::proc_curve::two_sided_offset_patch_layout(record_bytes, width)
         })
         .find(|layout| {
             layout
@@ -1489,7 +1499,7 @@ fn patch_surface_offset_definition(
         ));
     }
     let record_bytes = record_slice(bytes, record, "surface-offset")?;
-    let layout = crate::nurbs::proc_curve::surface_offset_patch_layout(
+    let layout = cadmpeg_asm::nurbs::proc_curve::surface_offset_patch_layout(
         record_bytes,
         stream_ref_width(bytes),
     )
@@ -1561,7 +1571,7 @@ fn patch_spring_definition(
     }
     let record_bytes = record_slice(bytes, record, "spring")?;
     let int_width = stream_ref_width(bytes);
-    let layout = crate::nurbs::proc_curve::spring_patch_layout(record_bytes, int_width)
+    let layout = cadmpeg_asm::nurbs::proc_curve::spring_patch_layout(record_bytes, int_width)
         .ok_or_else(|| CodecError::Malformed("spring construction is malformed".into()))?;
     if layout
         .discontinuities
@@ -1622,9 +1632,11 @@ fn patch_projection_definition(
         ));
     }
     let record_bytes = record_slice(bytes, record, "projection")?;
-    let layout =
-        crate::nurbs::proc_curve::projection_patch_layout(record_bytes, stream_ref_width(bytes))
-            .ok_or_else(|| CodecError::Malformed("projection construction is malformed".into()))?;
+    let layout = cadmpeg_asm::nurbs::proc_curve::projection_patch_layout(
+        record_bytes,
+        stream_ref_width(bytes),
+    )
+    .ok_or_else(|| CodecError::Malformed("projection construction is malformed".into()))?;
     if layout
         .discontinuities
         .iter()
@@ -1637,11 +1649,11 @@ fn patch_projection_definition(
     }
     match (&layout.tail, tail) {
         (
-            crate::nurbs::proc_curve::ProjectionTailPatchLayout::EarlyClose { flag: offset },
+            cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout::EarlyClose { flag: offset },
             cadmpeg_ir::geometry::ProjectionTail::EarlyClose { flag },
         ) => bytes[record.offset + offset] = native_bool(*flag),
         (
-            crate::nurbs::proc_curve::ProjectionTailPatchLayout::Ranged {
+            cadmpeg_asm::nurbs::proc_curve::ProjectionTailPatchLayout::Ranged {
                 flag: flag_offset,
                 parameter_range: range_offsets,
                 role: role_range,
@@ -1723,11 +1735,11 @@ fn patch_intersection_definition(
         ));
     }
     let record_bytes = record_slice(bytes, record, "intersection")?;
-    let layout =
-        crate::nurbs::proc_curve::intersection_patch_layout(record_bytes, stream_ref_width(bytes))
-            .ok_or_else(|| {
-                CodecError::Malformed("intersection construction is malformed".into())
-            })?;
+    let layout = cadmpeg_asm::nurbs::proc_curve::intersection_patch_layout(
+        record_bytes,
+        stream_ref_width(bytes),
+    )
+    .ok_or_else(|| CodecError::Malformed("intersection construction is malformed".into()))?;
     if layout
         .discontinuities
         .iter()
@@ -1783,8 +1795,11 @@ fn patch_three_surface_intersection_definition(
     }
     let record_bytes = record_slice(bytes, record, "three-surface intersection")?;
     let int_width = stream_ref_width(bytes);
-    let layout = crate::nurbs::proc_curve::three_surface_patch_layout(record_bytes, int_width)
-        .ok_or_else(|| CodecError::Malformed("three-surface construction is malformed".into()))?;
+    let layout =
+        cadmpeg_asm::nurbs::proc_curve::three_surface_patch_layout(record_bytes, int_width)
+            .ok_or_else(|| {
+                CodecError::Malformed("three-surface construction is malformed".into())
+            })?;
     if layout
         .discontinuities
         .iter()
@@ -1837,7 +1852,7 @@ fn patch_surface_curve_definition(
         ));
     }
     let record_bytes = record_slice(bytes, record, "surface-curve")?;
-    let layout = crate::nurbs::proc_curve::surface_curve_patch_layout(
+    let layout = cadmpeg_asm::nurbs::proc_curve::surface_curve_patch_layout(
         record_bytes,
         stream_ref_width(bytes),
         family,
@@ -1903,7 +1918,7 @@ fn patch_silhouette_definition(
         }
     };
     let record_bytes = record_slice(bytes, record, "silhouette")?;
-    let layout = crate::nurbs::proc_curve::silhouette_patch_layout(
+    let layout = cadmpeg_asm::nurbs::proc_curve::silhouette_patch_layout(
         record_bytes,
         stream_ref_width(bytes),
         silhouette,
@@ -1960,16 +1975,17 @@ fn patch_nurbs_pcurve_record(
             record.index
         )));
     };
-    let layout =
-        crate::nurbs::pcurve::final_pcurve_patch_layout(bytes.get(scope.clone()).ok_or_else(
-            || CodecError::Malformed("NURBS pcurve subtype extent is truncated".into()),
-        )?)
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "pcurve record {} has no writable UV cache",
-                record.index
-            ))
-        })?;
+    let layout = cadmpeg_asm::nurbs::pcurve::final_pcurve_patch_layout(
+        bytes.get(scope.clone()).ok_or_else(|| {
+            CodecError::Malformed("NURBS pcurve subtype extent is truncated".into())
+        })?,
+    )
+    .ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "pcurve record {} has no writable UV cache",
+            record.index
+        ))
+    })?;
     if layout.control_count != control_points.len()
         || layout.control_value_offsets.len() != control_points.len() * 2
         || layout.weight_value_offsets.len() != weights.as_ref().map_or(0, Vec::len)
@@ -2130,7 +2146,7 @@ fn patch_ref_pcurve_contract(
 fn patch_knot_structure(
     bytes: &mut [u8],
     record_offset: usize,
-    layout: &crate::nurbs::core::KnotPatchLayout,
+    layout: &cadmpeg_asm::nurbs::core::KnotPatchLayout,
     knots: &[f64],
     int_width: usize,
 ) -> Result<(), CodecError> {

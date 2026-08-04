@@ -23,10 +23,10 @@ use super::geometry::{
 };
 use super::records::{canonical_guid, native_stream};
 use crate::native::F3dNative;
-use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::{
     finite_point, finite_vector, history_change_kind, normalized_face_sense_to_native,
 };
+use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
 #[derive(Clone, Copy)]
 pub(crate) struct PatchNatives<'a> {

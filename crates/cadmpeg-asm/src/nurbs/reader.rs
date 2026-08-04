@@ -5,7 +5,7 @@ use cadmpeg_codec_core::le::{f64_at as read_f64, int_at as read_int, u16_at};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 /// Millimetres per ASM model-space length unit (centimetres).
-pub(crate) const LEN_TO_MM: f64 = 10.0;
+pub const LEN_TO_MM: f64 = 10.0;
 
 pub(crate) fn unit_vector(vector: Vector3) -> Option<Vector3> {
     let norm = vector.norm();

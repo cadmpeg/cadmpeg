@@ -2,12 +2,12 @@
 //! Decode analytic surfaces and 3D curves, select edge pcurves, reverse
 //! curve orientation, and recognize procedural carriers as analytic geometry.
 
-use crate::nurbs;
-use crate::nurbs::proc_surface::{
+use crate::records::TolerantCoedgeExtension;
+use cadmpeg_asm::nurbs;
+use cadmpeg_asm::nurbs::proc_surface::{
     DecodedProceduralSurfaceDefinition, EmbeddedRollingBall, EmbeddedScaledCompoundLoftShape,
 };
-use crate::nurbs::reader::LEN_TO_MM;
-use crate::records::TolerantCoedgeExtension;
+use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 use cadmpeg_asm::sab::{Record, Token};
 use cadmpeg_ir::eval;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};

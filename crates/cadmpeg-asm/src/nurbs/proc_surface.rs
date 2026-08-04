@@ -13,7 +13,7 @@ use crate::nurbs::proc_curve::{
 };
 use crate::nurbs::reader::{normalized, take_native_ident, LEN_TO_MM};
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
-use cadmpeg_asm::sab::Token;
+use crate::sab::Token;
 use cadmpeg_codec_core::cursor::bounded_len;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry,
@@ -177,204 +177,339 @@ pub enum DecodedProceduralSurfaceDefinition {
     VertexBlend(Box<EmbeddedVertexBlend>),
 }
 
-pub(crate) struct EmbeddedRollingBallSide {
-    pub(crate) support_kind: cadmpeg_ir::geometry::VariableBlendSupportKind,
-    pub(crate) surface: Option<SurfaceGeometry>,
-    pub(crate) surface_ranges: [[Option<f64>; 2]; 2],
-    pub(crate) curve: Option<CurveGeometry>,
-    pub(crate) curve_range: [Option<f64>; 2],
-    pub(crate) pcurve: Option<NurbsPcurve>,
-    pub(crate) location: Point3,
-    pub(crate) secondary_pcurve: Option<NurbsPcurve>,
-    pub(crate) extension: Option<i64>,
-    pub(crate) tertiary_pcurve: Option<NurbsPcurve>,
+/// One embedded support side of a rolling-ball or variable blend.
+pub struct EmbeddedRollingBallSide {
+    /// The support kind the side's leading identifier selects.
+    pub support_kind: cadmpeg_ir::geometry::VariableBlendSupportKind,
+    /// The embedded support surface.
+    pub surface: Option<SurfaceGeometry>,
+    /// Optional UV bounds of the support surface; `None` marks an unbounded end.
+    pub surface_ranges: [[Option<f64>; 2]; 2],
+    /// The embedded support curve.
+    pub curve: Option<CurveGeometry>,
+    /// Optional parameter bounds of the support curve.
+    pub curve_range: [Option<f64>; 2],
+    /// The embedded NURBS parameter curve on the support surface.
+    pub pcurve: Option<NurbsPcurve>,
+    /// The support location point.
+    pub location: Point3,
+    /// A second embedded parameter curve, when serialized.
+    pub secondary_pcurve: Option<NurbsPcurve>,
+    /// The extension integer serialized after the secondary pcurve.
+    pub extension: Option<i64>,
+    /// A third embedded parameter curve, when serialized.
+    pub tertiary_pcurve: Option<NurbsPcurve>,
 }
 
 /// Embedded revision-gated G2 blend before stable IR ids are assigned.
 pub struct EmbeddedRevisionG2Blend {
-    pub(crate) revision: i64,
-    pub(crate) leading_parameters: [f64; 2],
-    pub(crate) sides: Box<[EmbeddedRollingBallSide; 2]>,
-    pub(crate) center: CurveGeometry,
-    pub(crate) center_range: [Option<f64>; 2],
-    pub(crate) radii: [f64; 2],
-    pub(crate) radius_selector: i64,
-    pub(crate) u_range: [Option<f64>; 2],
-    pub(crate) v_range: [Option<f64>; 2],
-    pub(crate) shape_prefix: i64,
-    pub(crate) shape_parameter: f64,
-    pub(crate) shape_length: f64,
-    pub(crate) shape_tail: i64,
+    /// The revision integer that gates the layout.
+    pub revision: i64,
+    /// Two leading parameters serialized before the sides.
+    pub leading_parameters: [f64; 2],
+    /// Two ordered embedded support sides.
+    pub sides: Box<[EmbeddedRollingBallSide; 2]>,
+    /// The embedded center curve.
+    pub center: CurveGeometry,
+    /// Optional parameter bounds of the center curve.
+    pub center_range: [Option<f64>; 2],
+    /// Two blend radii in document length units.
+    pub radii: [f64; 2],
+    /// The integer selector serialized after the radii.
+    pub radius_selector: i64,
+    /// Support-side parameter interval `(T0, T1)`.
+    pub u_range: [Option<f64>; 2],
+    /// Second interval; `None` marks an unbounded end.
+    pub v_range: [Option<f64>; 2],
+    /// Approximation-current flag (`1` when the cache is current).
+    pub shape_prefix: i64,
+    /// Requested fit tolerance.
+    pub shape_parameter: f64,
+    /// Achieved fit tolerance, at or below `shape_parameter`.
+    pub shape_length: f64,
+    /// Signed integer immediately before the shared tail's enum, taking the
+    /// values `-1` and `1`.
+    pub shape_tail: i64,
     /// Enum opening the shared revision-gated surface tail.
-    pub(crate) tail_enum: i64,
+    pub tail_enum: i64,
     /// Parameterization stored by tail-enum form `2` in place of a solved cache.
-    pub(crate) tail_parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
-    pub(crate) discontinuities: [Vec<f64>; 6],
-    pub(crate) tail_flag: bool,
-    pub(crate) tail_extensions: [i64; 3],
+    pub tail_parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
+    /// Six discontinuity arrays of the shared tail.
+    pub discontinuities: [Vec<f64>; 6],
+    /// The boolean serialized after the discontinuity arrays.
+    pub tail_flag: bool,
+    /// Three integers closing the shared tail.
+    pub tail_extensions: [i64; 3],
 }
 
-pub(crate) struct EmbeddedRollingBallThirdSide {
-    pub(crate) label: String,
-    pub(crate) surface: SurfaceGeometry,
-    pub(crate) curve: NurbsCurve,
-    pub(crate) pcurve: Option<NurbsPcurve>,
-    pub(crate) direction: Vector3,
-    pub(crate) secondary_pcurve: Option<NurbsPcurve>,
-    pub(crate) extension: i64,
-    pub(crate) tertiary_pcurve: Option<NurbsPcurve>,
-    pub(crate) flag: bool,
+/// The optional third support side of a rolling-ball blend.
+pub struct EmbeddedRollingBallThirdSide {
+    /// The leading identifier of the third side.
+    pub label: String,
+    /// The embedded support surface.
+    pub surface: SurfaceGeometry,
+    /// The embedded support curve.
+    pub curve: NurbsCurve,
+    /// The embedded NURBS parameter curve on the support surface.
+    pub pcurve: Option<NurbsPcurve>,
+    /// The support direction vector.
+    pub direction: Vector3,
+    /// A second embedded parameter curve, when serialized.
+    pub secondary_pcurve: Option<NurbsPcurve>,
+    /// The extension integer serialized after the secondary pcurve.
+    pub extension: i64,
+    /// A third embedded parameter curve, when serialized.
+    pub tertiary_pcurve: Option<NurbsPcurve>,
+    /// The boolean closing the third side.
+    pub flag: bool,
 }
 
 /// Embedded native variable blend before stable IR ids are assigned.
 pub struct EmbeddedVariableBlend {
-    pub(crate) subtype: cadmpeg_ir::geometry::VariableBlendSurfaceSubtype,
-    pub(crate) revision: i64,
-    pub(crate) sides: Box<[EmbeddedRollingBallSide; 2]>,
-    pub(crate) slice: CurveGeometry,
-    pub(crate) slice_range: [Option<f64>; 2],
-    pub(crate) offsets: [f64; 2],
-    pub(crate) radius_kind: cadmpeg_ir::geometry::VariableBlendRadiusKind,
-    pub(crate) first_value: cadmpeg_ir::geometry::VariableBlendValue,
-    pub(crate) second_value: Option<cadmpeg_ir::geometry::VariableBlendValue>,
-    pub(crate) cross_section: Option<cadmpeg_ir::geometry::VariableBlendCrossSection>,
+    /// The blend subtype the record name selects.
+    pub subtype: cadmpeg_ir::geometry::VariableBlendSurfaceSubtype,
+    /// The revision integer that gates the layout.
+    pub revision: i64,
+    /// Two ordered embedded support sides.
+    pub sides: Box<[EmbeddedRollingBallSide; 2]>,
+    /// The embedded slice curve.
+    pub slice: CurveGeometry,
+    /// Optional parameter bounds of the slice curve.
+    pub slice_range: [Option<f64>; 2],
+    /// Two side offsets in document length units.
+    pub offsets: [f64; 2],
+    /// The radius-law kind of the blend.
+    pub radius_kind: cadmpeg_ir::geometry::VariableBlendRadiusKind,
+    /// The first radius-law value.
+    pub first_value: cadmpeg_ir::geometry::VariableBlendValue,
+    /// The second radius-law value, when serialized.
+    pub second_value: Option<cadmpeg_ir::geometry::VariableBlendValue>,
+    /// The cross-section law, when serialized.
+    pub cross_section: Option<cadmpeg_ir::geometry::VariableBlendCrossSection>,
     /// Support-side parameter interval `(T0, T1)`.
-    pub(crate) u_range: [Option<f64>; 2],
+    pub u_range: [Option<f64>; 2],
     /// Second interval `(T lo, F)`: a lower bound with an unbounded-above
     /// marker decoding to `[Some(lo), None]`.
-    pub(crate) v_range: [Option<f64>; 2],
+    pub v_range: [Option<f64>; 2],
     /// Approximation-current flag (`1` when the cache is current).
-    pub(crate) shape_prefix: i64,
+    pub shape_prefix: i64,
     /// Requested fit tolerance.
-    pub(crate) shape_parameter: f64,
+    pub shape_parameter: f64,
     /// Achieved fit tolerance, at or below `shape_parameter`.
-    pub(crate) shape_length: f64,
+    pub shape_length: f64,
     /// Signed integer immediately before the shared tail's enum, taking the
     /// values `-1` and `1`.
-    pub(crate) shape_tail: i64,
+    pub shape_tail: i64,
     /// Enum opening the shared revision-gated surface tail.
-    pub(crate) tail_enum: i64,
+    pub tail_enum: i64,
     /// Parameterization stored by tail-enum form `2` in place of a solved cache.
-    pub(crate) tail_parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
-    pub(crate) discontinuities: [Vec<f64>; 6],
-    pub(crate) tail_flag: bool,
-    pub(crate) tail_extensions: [i64; 3],
-    pub(crate) secondary_curve: Option<CurveGeometry>,
-    pub(crate) secondary_range: [Option<f64>; 2],
-    pub(crate) convexity: cadmpeg_ir::geometry::VariableBlendConvexity,
-    pub(crate) render_mode: cadmpeg_ir::geometry::VariableBlendRenderMode,
-    pub(crate) post_range: [Option<f64>; 2],
-    pub(crate) post_curve: Option<NurbsCurve>,
-    pub(crate) post_pcurve: Option<NurbsPcurve>,
+    pub tail_parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
+    /// Six discontinuity arrays of the shared tail.
+    pub discontinuities: [Vec<f64>; 6],
+    /// The boolean serialized after the discontinuity arrays.
+    pub tail_flag: bool,
+    /// Three integers closing the shared tail.
+    pub tail_extensions: [i64; 3],
+    /// A second embedded curve serialized after the tail, when present.
+    pub secondary_curve: Option<CurveGeometry>,
+    /// Optional parameter bounds of the secondary curve.
+    pub secondary_range: [Option<f64>; 2],
+    /// The convexity enum of the blend.
+    pub convexity: cadmpeg_ir::geometry::VariableBlendConvexity,
+    /// The render-mode enum of the blend.
+    pub render_mode: cadmpeg_ir::geometry::VariableBlendRenderMode,
+    /// Optional parameter bounds of the post curve.
+    pub post_range: [Option<f64>; 2],
+    /// An embedded curve closing the record, when present.
+    pub post_curve: Option<NurbsCurve>,
+    /// An embedded parameter curve closing the record, when present.
+    pub post_pcurve: Option<NurbsPcurve>,
 }
 
-pub(crate) enum EmbeddedVertexBlendBoundaryGeometry {
+/// The geometry form of one vertex-blend boundary.
+pub enum EmbeddedVertexBlendBoundaryGeometry {
+    /// A circular boundary carried by an embedded curve.
     Circle {
+        /// The embedded boundary curve.
         curve: CurveGeometry,
+        /// Optional endpoint bounds of the boundary curve.
         curve_endpoints: [Option<f64>; 2],
+        /// The form integer serialized after the endpoints.
         form: i64,
+        /// Counted list of twist points.
         twists: Vec<Point3>,
+        /// Two parameters closing the circle form.
         parameters: [f64; 2],
+        /// The sense boolean of the boundary.
         sense: bool,
     },
+    /// A degenerate boundary collapsed to one location.
     Degenerate {
+        /// The collapsed boundary location.
         location: Point3,
+        /// Two boundary normals.
         normals: [Vector3; 2],
     },
+    /// A boundary carried by a parameter curve on a support surface.
     Pcurve {
+        /// The embedded support surface.
         surface: SurfaceGeometry,
+        /// Optional UV bounds of the support surface.
         support_bounds: [Option<f64>; 4],
+        /// The embedded NURBS parameter curve.
         pcurve: Option<NurbsPcurve>,
+        /// The sense boolean of the boundary.
         sense: bool,
+        /// The fit tolerance of the boundary approximation.
         fit_tolerance: f64,
     },
+    /// A planar boundary carried by a normal and an embedded curve.
     Plane {
+        /// The plane normal.
         normal: Vector3,
+        /// Two parameters serialized after the normal.
         parameters: [f64; 2],
+        /// The embedded boundary curve.
         curve: CurveGeometry,
+        /// Optional endpoint bounds of the boundary curve.
         curve_endpoints: [Option<f64>; 2],
     },
 }
 
-pub(crate) struct EmbeddedVertexBlendBoundary {
-    pub(crate) boundary_type: bool,
-    pub(crate) magic: Vector3,
-    pub(crate) u_smoothing: bool,
-    pub(crate) v_smoothing: bool,
-    pub(crate) fullness: f64,
-    pub(crate) geometry: EmbeddedVertexBlendBoundaryGeometry,
+/// One boundary of an embedded vertex blend.
+pub struct EmbeddedVertexBlendBoundary {
+    /// The boundary-type boolean.
+    pub boundary_type: bool,
+    /// The vector serialized after the boundary type.
+    pub magic: Vector3,
+    /// The U-smoothing boolean.
+    pub u_smoothing: bool,
+    /// The V-smoothing boolean.
+    pub v_smoothing: bool,
+    /// The fullness value of the boundary.
+    pub fullness: f64,
+    /// The geometry form of the boundary.
+    pub geometry: EmbeddedVertexBlendBoundaryGeometry,
 }
 
 /// Embedded native vertex blend before stable IR ids are assigned.
 pub struct EmbeddedVertexBlend {
-    pub(crate) revision: Option<i64>,
-    pub(crate) boundaries: Vec<EmbeddedVertexBlendBoundary>,
-    pub(crate) grid_size: i64,
-    pub(crate) fit_tolerance: f64,
+    /// The revision integer that gates the layout, when serialized.
+    pub revision: Option<i64>,
+    /// The embedded boundary graphs, in stream order.
+    pub boundaries: Vec<EmbeddedVertexBlendBoundary>,
+    /// The approximation grid size.
+    pub grid_size: i64,
+    /// The fit tolerance of the patch approximation.
+    pub fit_tolerance: f64,
 }
 
-pub(crate) enum EmbeddedRollingBallRadiusSelector {
+/// The radius selector of an embedded rolling-ball blend.
+pub enum EmbeddedRollingBallRadiusSelector {
+    /// No selector value is serialized.
     None,
+    /// The serialized selector value.
     Value(f64),
 }
 
 /// Embedded native rolling-ball graph before stable IR ids are assigned.
 pub struct EmbeddedRollingBall {
-    pub(crate) definition_index: i64,
-    pub(crate) sides: Box<[EmbeddedRollingBallSide; 2]>,
-    pub(crate) slice: CurveGeometry,
-    pub(crate) slice_range: [Option<f64>; 2],
-    pub(crate) offsets: [f64; 2],
-    pub(crate) radius_selector: EmbeddedRollingBallRadiusSelector,
-    pub(crate) u_range: [Option<f64>; 2],
-    pub(crate) v_range: [Option<f64>; 2],
-    pub(crate) shape_prefix: i64,
-    pub(crate) parameters: [f64; 2],
-    pub(crate) tail: i64,
+    /// The subtype-table index of the record's own definition.
+    pub definition_index: i64,
+    /// Two ordered embedded support sides.
+    pub sides: Box<[EmbeddedRollingBallSide; 2]>,
+    /// The embedded slice curve.
+    pub slice: CurveGeometry,
+    /// Optional parameter bounds of the slice curve.
+    pub slice_range: [Option<f64>; 2],
+    /// Two side offsets in document length units.
+    pub offsets: [f64; 2],
+    /// The radius selector of the blend.
+    pub radius_selector: EmbeddedRollingBallRadiusSelector,
+    /// Support-side parameter interval `(T0, T1)`.
+    pub u_range: [Option<f64>; 2],
+    /// Second interval; `None` marks an unbounded end.
+    pub v_range: [Option<f64>; 2],
+    /// Approximation-current flag (`1` when the cache is current).
+    pub shape_prefix: i64,
+    /// Two parameters serialized after the shape prefix.
+    pub parameters: [f64; 2],
+    /// The integer closing the shape block.
+    pub tail: i64,
     /// Enum opening the shared revision-gated surface tail.
-    pub(crate) tail_enum: i64,
+    pub tail_enum: i64,
     /// Parameterization stored by tail-enum form `2` in place of a solved cache.
-    pub(crate) tail_parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
-    pub(crate) discontinuities: [Vec<f64>; 6],
-    pub(crate) tail_flag: bool,
-    pub(crate) third: Option<Box<EmbeddedRollingBallThirdSide>>,
-    pub(crate) tail_extensions: [i64; 3],
+    pub tail_parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
+    /// Six discontinuity arrays of the shared tail.
+    pub discontinuities: [Vec<f64>; 6],
+    /// The boolean serialized after the discontinuity arrays.
+    pub tail_flag: bool,
+    /// The optional third support side.
+    pub third: Option<Box<EmbeddedRollingBallThirdSide>>,
+    /// Three integers closing the shared tail.
+    pub tail_extensions: [i64; 3],
 }
 
-pub(crate) struct EmbeddedG2Side {
-    pub(crate) label: String,
-    pub(crate) surface: SurfaceGeometry,
-    pub(crate) curve: NurbsCurve,
-    pub(crate) pcurves: [Option<NurbsPcurve>; 2],
-    pub(crate) direction: Vector3,
+/// One embedded support side of a G2 blend.
+pub struct EmbeddedG2Side {
+    /// The leading identifier of the side.
+    pub label: String,
+    /// The embedded support surface.
+    pub surface: SurfaceGeometry,
+    /// The embedded support curve.
+    pub curve: NurbsCurve,
+    /// Two embedded NURBS parameter curves on the support surface.
+    pub pcurves: [Option<NurbsPcurve>; 2],
+    /// The support direction vector.
+    pub direction: Vector3,
 }
 
-pub(crate) enum EmbeddedG2FirstShape {
+/// The shape block serialized after a G2 blend's first side.
+pub enum EmbeddedG2FirstShape {
+    /// The full form: an optional surface cache and tolerance.
     Full {
+        /// The embedded shape surface, when serialized.
         surface: Option<NurbsSurface>,
+        /// The fit tolerance, when serialized.
         tolerance: Option<f64>,
     },
+    /// The reduced form: nine coefficients and a tolerance.
     None {
+        /// Nine shape coefficients.
         coefficients: [f64; 9],
+        /// The fit tolerance.
         tolerance: f64,
+        /// The bridge token serialized after the tolerance, when present.
         extension: Option<cadmpeg_ir::geometry::LoftBridgeToken>,
+        /// The embedded parameter curve closing the block, when present.
         pcurve: Option<NurbsPcurve>,
     },
 }
 
 /// Embedded native G2 blend graph before stable IR ids are assigned.
 pub struct EmbeddedG2Blend {
-    pub(crate) first: EmbeddedG2Side,
-    pub(crate) singularity: i64,
-    pub(crate) first_shape: EmbeddedG2FirstShape,
-    pub(crate) second: EmbeddedG2Side,
-    pub(crate) second_exact_surface: NurbsSurface,
-    pub(crate) center_curve: NurbsCurve,
-    pub(crate) center_parameters: [f64; 2],
-    pub(crate) center_flag: i64,
-    pub(crate) parameter_ranges: [[f64; 2]; 2],
-    pub(crate) trailing_parameters: [f64; 4],
-    pub(crate) discontinuities: [Vec<f64>; 3],
+    /// The first embedded support side.
+    pub first: EmbeddedG2Side,
+    /// The singularity integer serialized after the first side.
+    pub singularity: i64,
+    /// The shape block of the first side.
+    pub first_shape: EmbeddedG2FirstShape,
+    /// The second embedded support side.
+    pub second: EmbeddedG2Side,
+    /// The exact surface of the second side.
+    pub second_exact_surface: NurbsSurface,
+    /// The embedded center curve.
+    pub center_curve: NurbsCurve,
+    /// Two parameters of the center curve.
+    pub center_parameters: [f64; 2],
+    /// The integer serialized after the center parameters.
+    pub center_flag: i64,
+    /// Two UV parameter intervals.
+    pub parameter_ranges: [[f64; 2]; 2],
+    /// Four parameters closing the record body.
+    pub trailing_parameters: [f64; 4],
+    /// Three discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 3],
 }
 
 #[allow(clippy::option_option)] // Outer None is parse failure; inner None is native nullbs.
@@ -592,379 +727,667 @@ fn g2_blend_spl_sur(
     })
 }
 
-pub(crate) struct EmbeddedLoftProfileData {
-    pub(crate) surface: Option<SurfaceGeometry>,
-    pub(crate) support_bounds: [Option<f64>; 4],
-    pub(crate) pcurve: Option<NurbsPcurve>,
-    pub(crate) secondary_pcurve: Option<NurbsPcurve>,
-    pub(crate) first_flag: Option<bool>,
-    pub(crate) asm_extension: Option<i64>,
-    pub(crate) subdata: cadmpeg_ir::geometry::LoftSubdata,
-    pub(crate) direction: Option<Vector3>,
+/// The support data serialized after a loft profile member's curve.
+pub struct EmbeddedLoftProfileData {
+    /// The embedded support surface, when serialized.
+    pub surface: Option<SurfaceGeometry>,
+    /// Optional UV bounds of the support surface.
+    pub support_bounds: [Option<f64>; 4],
+    /// The embedded NURBS parameter curve on the support surface.
+    pub pcurve: Option<NurbsPcurve>,
+    /// A second embedded parameter curve, when serialized.
+    pub secondary_pcurve: Option<NurbsPcurve>,
+    /// The boolean serialized before the subdata, when present.
+    pub first_flag: Option<bool>,
+    /// The ASM extension integer, when serialized.
+    pub asm_extension: Option<i64>,
+    /// Neutral subdata fields of the member.
+    pub subdata: cadmpeg_ir::geometry::LoftSubdata,
+    /// The member direction vector, when serialized.
+    pub direction: Option<Vector3>,
 }
 
-pub(crate) struct EmbeddedLoftProfileMember {
-    pub(crate) type_code: i64,
-    pub(crate) curve: NurbsCurve,
-    pub(crate) endpoints: Option<[Option<f64>; 2]>,
-    pub(crate) data: EmbeddedLoftProfileData,
+/// One profile member of an embedded loft section.
+pub struct EmbeddedLoftProfileMember {
+    /// The member type code.
+    pub type_code: i64,
+    /// The embedded profile curve.
+    pub curve: NurbsCurve,
+    /// Optional endpoint bounds of the profile curve.
+    pub endpoints: Option<[Option<f64>; 2]>,
+    /// The support data of the member.
+    pub data: EmbeddedLoftProfileData,
 }
 
-pub(crate) struct EmbeddedLoftPath {
-    pub(crate) curve: Option<NurbsCurve>,
-    pub(crate) endpoints: Option<[Option<f64>; 2]>,
-    pub(crate) auxiliaries: Vec<NurbsCurve>,
-    pub(crate) flag: i64,
+/// The path block of an embedded loft section.
+pub struct EmbeddedLoftPath {
+    /// The embedded path curve, when serialized.
+    pub curve: Option<NurbsCurve>,
+    /// Optional endpoint bounds of the path curve.
+    pub endpoints: Option<[Option<f64>; 2]>,
+    /// Auxiliary embedded curves, in stream order.
+    pub auxiliaries: Vec<NurbsCurve>,
+    /// The integer closing the path block.
+    pub flag: i64,
 }
 
 /// Embedded revision-gated compound loft before stable IR ids are assigned.
 pub struct EmbeddedRevisionCompoundLoft {
-    pub(crate) revision: i64,
+    /// The revision integer that gates the layout.
+    pub revision: i64,
     /// Enum opening the shared revision-gated surface tail.
-    pub(crate) tail_enum: i64,
+    pub tail_enum: i64,
     /// Parameterization stored by tail-enum form `2` in place of a solved cache.
-    pub(crate) tail_parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
-    pub(crate) discontinuities: [Vec<f64>; 6],
-    pub(crate) tail_flag: bool,
-    pub(crate) base_profile: Vec<EmbeddedLoftProfileMember>,
-    pub(crate) base_path: EmbeddedLoftPath,
-    pub(crate) entries: Vec<EmbeddedLoftSectionEntry>,
-    pub(crate) flags: [bool; 2],
-    pub(crate) kind: i64,
-    pub(crate) kind_flags: [bool; 2],
-    pub(crate) selector: i64,
-    pub(crate) direction: Option<Vector3>,
-    pub(crate) direction_curve: Option<NurbsCurve>,
-    pub(crate) interval: [Option<f64>; 2],
-    pub(crate) trailing_curve: Option<NurbsCurve>,
+    pub tail_parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
+    /// Six discontinuity arrays of the shared tail.
+    pub discontinuities: [Vec<f64>; 6],
+    /// The boolean serialized after the discontinuity arrays.
+    pub tail_flag: bool,
+    /// The base profile members, in stream order.
+    pub base_profile: Vec<EmbeddedLoftProfileMember>,
+    /// The base path block.
+    pub base_path: EmbeddedLoftPath,
+    /// The section entries, in stream order.
+    pub entries: Vec<EmbeddedLoftSectionEntry>,
+    /// Two booleans serialized after the entries.
+    pub flags: [bool; 2],
+    /// The kind integer of the loft.
+    pub kind: i64,
+    /// Two booleans serialized after the kind.
+    pub kind_flags: [bool; 2],
+    /// The integer selector serialized after the kind flags.
+    pub selector: i64,
+    /// The loft direction vector, when serialized.
+    pub direction: Option<Vector3>,
+    /// The loft direction curve, when serialized.
+    pub direction_curve: Option<NurbsCurve>,
+    /// Optional parameter bounds; `None` marks an unbounded end.
+    pub interval: [Option<f64>; 2],
+    /// An embedded curve closing the record, when present.
+    pub trailing_curve: Option<NurbsCurve>,
 }
 
-pub(crate) struct EmbeddedLoftSectionEntry {
-    pub(crate) parameter: f64,
-    pub(crate) profile: Vec<EmbeddedLoftProfileMember>,
-    pub(crate) path: EmbeddedLoftPath,
+/// One section entry of an embedded loft.
+pub struct EmbeddedLoftSectionEntry {
+    /// The section parameter.
+    pub parameter: f64,
+    /// The profile members of the section, in stream order.
+    pub profile: Vec<EmbeddedLoftProfileMember>,
+    /// The path block of the section.
+    pub path: EmbeddedLoftPath,
 }
 
 /// Embedded native loft graph before its carriers receive stable IR ids.
 pub struct EmbeddedLoft {
-    pub(crate) sections: [Vec<EmbeddedLoftSectionEntry>; 2],
-    pub(crate) revision_form: Option<cadmpeg_ir::geometry::LoftRevisionForm>,
-    pub(crate) parameters: cadmpeg_ir::geometry::SplineSurfaceParameters,
-    pub(crate) closures: [i64; 2],
-    pub(crate) singularities: [i64; 2],
-    pub(crate) mode: i64,
-    pub(crate) bridge: Vec<cadmpeg_ir::geometry::LoftBridgeToken>,
+    /// The two section lists, in stream order.
+    pub sections: [Vec<EmbeddedLoftSectionEntry>; 2],
+    /// The revision-gated form of the layout, when serialized.
+    pub revision_form: Option<cadmpeg_ir::geometry::LoftRevisionForm>,
+    /// Neutral surface parameters of the loft.
+    pub parameters: cadmpeg_ir::geometry::SplineSurfaceParameters,
+    /// Two closure enums.
+    pub closures: [i64; 2],
+    /// Two singularity enums.
+    pub singularities: [i64; 2],
+    /// The mode integer of the loft.
+    pub mode: i64,
+    /// The bridge tokens closing the record, in stream order.
+    pub bridge: Vec<cadmpeg_ir::geometry::LoftBridgeToken>,
 }
 
-pub(crate) struct EmbeddedCompoundLoftScale {
-    pub(crate) members: Vec<EmbeddedLoftProfileMember>,
-    pub(crate) path: NurbsCurve,
-    pub(crate) auxiliaries: Vec<NurbsCurve>,
-    pub(crate) tail: [i64; 2],
+/// One scale block of an embedded compound loft.
+pub struct EmbeddedCompoundLoftScale {
+    /// The profile members of the block, in stream order.
+    pub members: Vec<EmbeddedLoftProfileMember>,
+    /// The embedded path curve.
+    pub path: NurbsCurve,
+    /// Auxiliary embedded curves, in stream order.
+    pub auxiliaries: Vec<NurbsCurve>,
+    /// Two integers closing the block.
+    pub tail: [i64; 2],
 }
 
-pub(crate) enum EmbeddedCompoundLoftDirection {
+/// The direction carrier of a compound loft tail.
+pub enum EmbeddedCompoundLoftDirection {
+    /// A direction vector.
     Vector(Vector3),
+    /// An embedded direction curve.
     Curve(NurbsCurve),
 }
 
-pub(crate) enum EmbeddedCompoundLoftTail {
+/// The kind-discriminated tail of an embedded compound loft.
+pub enum EmbeddedCompoundLoftTail {
+    /// The kind-6 tail: one scale block and a ranged curve.
     Six {
+        /// Two booleans opening the tail.
         flags: [bool; 2],
+        /// The scale block of the tail.
         scale: Box<EmbeddedCompoundLoftScale>,
+        /// The integer selector serialized after the scale block.
         selector: i64,
+        /// The tail direction vector.
         direction: Vector3,
+        /// Two parameter-range doubles.
         parameter_range: [f64; 2],
+        /// The embedded curve closing the tail.
         curve: NurbsCurve,
     },
+    /// The kind-7 tail: two flagged scale blocks.
     Seven {
+        /// The boolean before the first scale block.
         first_flag: bool,
+        /// The first scale block, when serialized.
         first_scale: Option<Box<EmbeddedCompoundLoftScale>>,
+        /// The boolean before the second scale block.
         second_flag: bool,
+        /// The second scale block.
         second_scale: Box<EmbeddedCompoundLoftScale>,
+        /// The integer selector serialized after the scale blocks.
         selector: i64,
+        /// The tail direction vector.
         direction: Vector3,
+        /// Two booleans closing the tail.
         trailing_flags: [bool; 2],
     },
+    /// The kind-0 tail: a direction carrier without scale blocks.
     Zero {
+        /// Two booleans opening the tail.
         flags: [bool; 2],
+        /// The integer selector serialized after the flags.
         selector: i64,
+        /// The direction carrier of the tail.
         direction: EmbeddedCompoundLoftDirection,
+        /// Two booleans closing the tail.
         trailing_flags: [bool; 2],
     },
 }
 
 /// Embedded native compound loft before stable IR ids are assigned.
 pub struct EmbeddedCompoundLoft {
-    pub(crate) scales: Box<[Option<EmbeddedCompoundLoftScale>; 4]>,
-    pub(crate) fifth_scale: Option<Box<EmbeddedCompoundLoftScale>>,
-    pub(crate) flags: [bool; 2],
-    pub(crate) tail: EmbeddedCompoundLoftTail,
+    /// Four ordered optional scale blocks.
+    pub scales: Box<[Option<EmbeddedCompoundLoftScale>; 4]>,
+    /// A fifth scale block, when serialized.
+    pub fifth_scale: Option<Box<EmbeddedCompoundLoftScale>>,
+    /// Two booleans serialized after the scale blocks.
+    pub flags: [bool; 2],
+    /// The kind-discriminated tail.
+    pub tail: EmbeddedCompoundLoftTail,
 }
 
-pub(crate) enum EmbeddedScaledCompoundLoftShape {
+/// The shape block of an embedded scaled compound loft.
+pub enum EmbeddedScaledCompoundLoftShape {
+    /// The full form carries no extra fields.
     Full,
+    /// The reduced form: parameter ranges and arrays in place of a cache.
     None {
+        /// Two UV parameter intervals.
         parameter_ranges: [[f64; 2]; 2],
+        /// Two parameter arrays.
         parameters: [Vec<f64>; 2],
     },
 }
 
-pub(crate) enum EmbeddedScaledCompoundLoftBranch {
+/// The branch-discriminated tail of an embedded scaled compound loft.
+pub enum EmbeddedScaledCompoundLoftBranch {
+    /// The extended branch closed by a direction vector.
     ExtendedVector {
+        /// The first scale block, when serialized.
         first_scale: Option<Box<EmbeddedCompoundLoftScale>>,
+        /// The second scale block.
         second_scale: Box<EmbeddedCompoundLoftScale>,
+        /// The integer selector serialized after the scale blocks.
         selector: i64,
+        /// The branch direction vector.
         direction: Vector3,
     },
+    /// The extended branch closed by an embedded curve.
     ExtendedCurve {
+        /// The scale block, when serialized.
         scale: Option<Box<EmbeddedCompoundLoftScale>>,
+        /// The boolean serialized after the scale block.
         flag: bool,
+        /// The singularity integer of the branch.
         singularity: i64,
+        /// The embedded curve closing the branch.
         curve: NurbsCurve,
     },
+    /// The direct branch: a flag, selector, and direction carrier.
     Direct {
+        /// The boolean opening the branch.
         flag: bool,
+        /// The integer selector serialized after the flag.
         selector: i64,
+        /// The direction carrier of the branch.
         direction: EmbeddedCompoundLoftDirection,
     },
 }
 
 /// Embedded native scaled compound loft before stable IR ids are assigned.
 pub struct EmbeddedScaledCompoundLoft {
-    pub(crate) singularity: i64,
-    pub(crate) shape: EmbeddedScaledCompoundLoftShape,
-    pub(crate) discontinuities: [Vec<f64>; 6],
-    pub(crate) discontinuity_flag: bool,
-    pub(crate) scales: Box<[Option<EmbeddedCompoundLoftScale>; 3]>,
-    pub(crate) flags: [bool; 2],
-    pub(crate) selector: i64,
-    pub(crate) branch: EmbeddedScaledCompoundLoftBranch,
-    pub(crate) trailing_flags: [bool; 2],
-    pub(crate) tail_kind: i64,
-    pub(crate) tail_directions: [Vector3; 2],
-    pub(crate) tail_singularity: i64,
-    pub(crate) tail_curve: NurbsCurve,
+    /// The singularity integer opening the record body.
+    pub singularity: i64,
+    /// The shape block of the loft.
+    pub shape: EmbeddedScaledCompoundLoftShape,
+    /// Six discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 6],
+    /// The boolean serialized after the discontinuity arrays.
+    pub discontinuity_flag: bool,
+    /// Three ordered optional scale blocks.
+    pub scales: Box<[Option<EmbeddedCompoundLoftScale>; 3]>,
+    /// Two booleans serialized after the scale blocks.
+    pub flags: [bool; 2],
+    /// The integer selector serialized after the flags.
+    pub selector: i64,
+    /// The branch-discriminated tail.
+    pub branch: EmbeddedScaledCompoundLoftBranch,
+    /// Two booleans serialized after the branch.
+    pub trailing_flags: [bool; 2],
+    /// The kind integer of the closing tail.
+    pub tail_kind: i64,
+    /// Two direction vectors of the closing tail.
+    pub tail_directions: [Vector3; 2],
+    /// The singularity integer of the closing tail.
+    pub tail_singularity: i64,
+    /// The embedded curve closing the record.
+    pub tail_curve: NurbsCurve,
 }
 
-pub(crate) enum EmbeddedLawExpression {
+/// One law-expression operand of an embedded law formula.
+pub enum EmbeddedLawExpression {
+    /// A null operand.
     Null,
+    /// An integer operand.
     Integer(i64),
+    /// A double operand.
     Double(f64),
+    /// A point operand.
     Point(Point3),
+    /// A vector operand.
     Vector(Vector3),
+    /// A transform operand of thirteen scalars and three enums.
     Transform {
+        /// Thirteen transform scalars.
         scalars: [f64; 13],
+        /// Three transform enums.
         enums: [i64; 3],
     },
+    /// A vector-form transform operand.
     TransformVec {
+        /// Four transform vectors.
         vectors: [Vector3; 4],
+        /// The transform scale.
         scale: f64,
+        /// Three transform booleans.
         flags: [bool; 3],
     },
+    /// An edge operand carrying an embedded curve.
     Edge {
+        /// The embedded edge curve.
         curve: NurbsCurve,
+        /// Optional endpoint bounds of the edge curve.
         endpoints: Option<[Option<f64>; 2]>,
+        /// Two parameters closing the operand.
         parameters: [f64; 2],
     },
+    /// A spline operand carrying raw knot and control arrays.
     Spline {
+        /// The native identifier of the spline.
         native_id: i64,
+        /// The raw knot array.
         knots: Vec<f64>,
+        /// The raw control array.
         controls: Vec<f64>,
+        /// The point closing the operand.
         point: Point3,
     },
+    /// An algebraic operand applying an operator to nested operands.
     Algebraic {
+        /// The operator name.
         operator: String,
+        /// The nested operands, in stream order.
         operands: Vec<EmbeddedLawExpression>,
     },
 }
 
-pub(crate) struct EmbeddedLawFormula {
-    pub(crate) name: String,
-    pub(crate) variables: Vec<EmbeddedLawExpression>,
+/// One law formula: a name and its operand list.
+pub struct EmbeddedLawFormula {
+    /// The formula name.
+    pub name: String,
+    /// The formula operands, in stream order.
+    pub variables: Vec<EmbeddedLawExpression>,
 }
 
 /// Embedded native law surface before stable IR ids are assigned.
 pub struct EmbeddedLawSurface {
-    pub(crate) parameter_ranges: Option<[[f64; 2]; 2]>,
-    pub(crate) primary: EmbeddedLawFormula,
-    pub(crate) additional: Vec<EmbeddedLawFormula>,
-    pub(crate) tail: cadmpeg_ir::geometry::LawSurfaceTail,
-    pub(crate) discontinuities: [Vec<f64>; 6],
+    /// Two UV parameter intervals, when serialized.
+    pub parameter_ranges: Option<[[f64; 2]; 2]>,
+    /// The law formula that drives the surface.
+    pub primary: EmbeddedLawFormula,
+    /// Additional law formulas serialized after the primary.
+    pub additional: Vec<EmbeddedLawFormula>,
+    /// Neutral tail fields of the record.
+    pub tail: cadmpeg_ir::geometry::LawSurfaceTail,
+    /// Six discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 6],
 }
 
-pub(crate) enum EmbeddedSkinSurfaceLayout {
+/// The layout-discriminated body of an embedded skin surface.
+pub enum EmbeddedSkinSurfaceLayout {
+    /// The profile-list form.
     Profiles {
+        /// The profile members, in stream order.
         profiles: Vec<EmbeddedLoftProfileMember>,
+        /// The embedded path curve.
         path: NurbsCurve,
+        /// Two integers closing the form.
         tail: [i64; 2],
     },
+    /// The compact two-curve form.
     Compact {
+        /// The first embedded curve.
         curve: NurbsCurve,
+        /// Neutral subdata fields of the first curve.
         subdata: cadmpeg_ir::geometry::LoftSubdata,
+        /// The integer serialized after the first curve.
         first_tail: i64,
+        /// The second embedded curve.
         secondary_curve: NurbsCurve,
+        /// The integer serialized after the second curve.
         second_tail: i64,
     },
 }
 
 /// Embedded native skin surface before stable IR ids are assigned.
 pub struct EmbeddedSkinSurface {
-    pub(crate) surface_boolean: i64,
-    pub(crate) surface_normal: i64,
-    pub(crate) surface_direction: i64,
-    pub(crate) count: i64,
-    pub(crate) parameter: f64,
-    pub(crate) inner_count: i64,
-    pub(crate) layout: EmbeddedSkinSurfaceLayout,
-    pub(crate) direction: Vector3,
-    pub(crate) trailing_parameter: f64,
-    pub(crate) formula: EmbeddedLawFormula,
-    pub(crate) parameter_curve: NurbsCurve,
-    pub(crate) discontinuities: [Vec<f64>; 6],
-    pub(crate) discontinuity_flag: bool,
+    /// The first integer of the record body.
+    pub surface_boolean: i64,
+    /// The surface-normal integer.
+    pub surface_normal: i64,
+    /// The surface-direction integer.
+    pub surface_direction: i64,
+    /// The profile count.
+    pub count: i64,
+    /// The parameter serialized after the count.
+    pub parameter: f64,
+    /// The inner profile count.
+    pub inner_count: i64,
+    /// The layout-discriminated body.
+    pub layout: EmbeddedSkinSurfaceLayout,
+    /// The skin direction vector.
+    pub direction: Vector3,
+    /// The parameter serialized after the direction.
+    pub trailing_parameter: f64,
+    /// The law formula of the skin.
+    pub formula: EmbeddedLawFormula,
+    /// The embedded parameter curve of the skin.
+    pub parameter_curve: NurbsCurve,
+    /// Six discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 6],
+    /// The boolean serialized after the discontinuity arrays.
+    pub discontinuity_flag: bool,
 }
 
 /// Embedded native net surface before stable IR ids are assigned.
 pub struct EmbeddedNetSurface {
-    pub(crate) sections: Box<[Vec<EmbeddedLoftSectionEntry>; 2]>,
-    pub(crate) frame_parameters: [f64; 12],
-    pub(crate) flag: i64,
-    pub(crate) directions: [Vector3; 4],
-    pub(crate) formulas: Box<[EmbeddedLawFormula; 4]>,
-    pub(crate) discontinuities: [Vec<f64>; 6],
-    pub(crate) discontinuity_flag: bool,
+    /// The two section lists, in stream order.
+    pub sections: Box<[Vec<EmbeddedLoftSectionEntry>; 2]>,
+    /// Twelve frame parameters.
+    pub frame_parameters: [f64; 12],
+    /// The integer serialized after the frame parameters.
+    pub flag: i64,
+    /// Four direction vectors.
+    pub directions: [Vector3; 4],
+    /// Four law formulas, in stream order.
+    pub formulas: Box<[EmbeddedLawFormula; 4]>,
+    /// Six discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 6],
+    /// The boolean serialized after the discontinuity arrays.
+    pub discontinuity_flag: bool,
 }
 
-pub(crate) enum EmbeddedSweepSurfaceLayout {
+/// The layout-discriminated body of an embedded sweep surface.
+pub enum EmbeddedSweepSurfaceLayout {
+    /// The profile-first form: profile, spine, and a formula triple.
     ProfileFirst {
+        /// The embedded profile curve.
         profile: NurbsCurve,
+        /// The embedded spine curve.
         spine: NurbsCurve,
+        /// The secondary kind integer.
         secondary_kind: i64,
+        /// Five direction vectors.
         directions: [Vector3; 5],
+        /// The sweep origin point.
         origin: Point3,
+        /// Four parameters closing the form.
         parameters: [f64; 4],
+        /// Three law formulas, in stream order.
         formulas: Box<[EmbeddedLawFormula; 3]>,
     },
+    /// The explicit form closed by one law formula.
     ExplicitFormula {
+        /// The embedded profile curve.
         profile: NurbsCurve,
+        /// The mode integer of the sweep.
         mode: i64,
+        /// Two parameter bounds of the profile curve.
         profile_range: [f64; 2],
+        /// The profile frame point and vector, when serialized.
         profile_frame: Option<(Point3, Vector3)>,
+        /// The sweep origin point.
         origin: Point3,
+        /// Three direction vectors.
         directions: [Vector3; 3],
+        /// The boolean serialized before the path.
         trajectory_flag: bool,
+        /// The embedded path curve.
         path: NurbsCurve,
+        /// Two parameter bounds of the path curve.
         path_range: [f64; 2],
+        /// The parameter serialized after the path range.
         path_parameter: f64,
+        /// The boolean serialized before the formula.
         formula_flag: bool,
+        /// The law formula closing the form.
         formula: EmbeddedLawFormula,
+        /// The boolean closing the form.
         trailing_flag: bool,
     },
+    /// The explicit form closed by a guide curve.
     ExplicitGuide {
+        /// The embedded profile curve.
         profile: NurbsCurve,
+        /// The mode integer of the sweep.
         mode: i64,
+        /// Two parameter bounds of the profile curve.
         profile_range: [f64; 2],
+        /// The profile frame point and vector, when serialized.
         profile_frame: Option<(Point3, Vector3)>,
+        /// The sweep origin point.
         origin: Point3,
+        /// Three direction vectors.
         directions: [Vector3; 3],
+        /// The boolean serialized before the path.
         trajectory_flag: bool,
+        /// The embedded path curve.
         path: NurbsCurve,
+        /// Two parameter bounds of the path curve.
         path_range: [f64; 2],
+        /// The parameter serialized after the path range.
         path_parameter: f64,
+        /// Two booleans serialized before the guide curve.
         guide_flags: [bool; 2],
+        /// The embedded guide curve.
         guide_curve: NurbsCurve,
+        /// Two parameter bounds of the guide curve.
         guide_range: [f64; 2],
+        /// Two mode integers of the guide.
         guide_modes: [i64; 2],
+        /// Six parameters of the guide.
         guide_parameters: [f64; 6],
+        /// Three booleans closing the form.
         trailing_flags: [bool; 3],
     },
+    /// The explicit form closed by a support surface.
     ExplicitSurface {
+        /// The embedded profile curve.
         profile: NurbsCurve,
+        /// The mode integer of the sweep.
         mode: i64,
+        /// Two parameter bounds of the profile curve.
         profile_range: [f64; 2],
+        /// The profile frame point and vector, when serialized.
         profile_frame: Option<(Point3, Vector3)>,
+        /// The sweep origin point.
         origin: Point3,
+        /// Three direction vectors.
         directions: [Vector3; 3],
+        /// The boolean serialized before the path.
         trajectory_flag: bool,
+        /// The embedded path curve.
         path: NurbsCurve,
+        /// Two parameter bounds of the path curve.
         path_range: [f64; 2],
+        /// The parameter serialized after the path range.
         path_parameter: f64,
+        /// The singularity integer of the form.
         singularity: i64,
+        /// The embedded support surface.
         support_surface: SurfaceGeometry,
+        /// An auxiliary embedded curve, when serialized.
         auxiliary_curve: Option<NurbsCurve>,
+        /// The boolean serialized after the support surface.
         support_flag: bool,
+        /// The legacy boolean closing the form, when serialized.
         legacy_flag: Option<bool>,
     },
+    /// The law-driven form: two law expressions and one formula.
     LawDriven {
+        /// The embedded profile curve.
         profile: NurbsCurve,
+        /// The mode integer of the sweep.
         mode: i64,
+        /// Two parameter bounds of the profile curve.
         profile_range: [f64; 2],
+        /// The profile frame point and vector, when serialized.
         profile_frame: Option<(Point3, Vector3)>,
+        /// The sweep origin point.
         origin: Point3,
+        /// Three direction vectors.
         directions: [Vector3; 3],
+        /// The first law expression.
         first_law: EmbeddedLawExpression,
+        /// The mode integer of the first law.
         first_mode: i64,
+        /// Two parameter bounds of the first law.
         first_range: [f64; 2],
+        /// The law direction vector.
         law_direction: Vector3,
+        /// The mode integer serialized before the path.
         path_mode: i64,
+        /// The boolean serialized before the path.
         path_flag: bool,
+        /// The embedded path curve.
         path: NurbsCurve,
+        /// Two parameter bounds of the path curve.
         path_range: [f64; 2],
+        /// The parameter serialized after the path range.
         path_parameter: f64,
+        /// The boolean serialized before the second law.
         second_law_flag: bool,
+        /// The second law expression.
         second_law: EmbeddedLawExpression,
+        /// The mode integer serialized before the formula.
         formula_mode: i64,
+        /// The law formula closing the form.
         formula: EmbeddedLawFormula,
+        /// The boolean closing the form.
         trailing_flag: bool,
     },
 }
 
 /// Embedded native sweep surface before stable IR ids are assigned.
 pub struct EmbeddedSweepSurface {
-    pub(crate) primary_kind: i64,
-    pub(crate) revision_form: Option<cadmpeg_ir::geometry::SweepRevisionForm>,
-    pub(crate) layout: EmbeddedSweepSurfaceLayout,
-    pub(crate) discontinuities: [Vec<f64>; 6],
-    pub(crate) discontinuity_flag: bool,
+    /// The primary kind integer of the record.
+    pub primary_kind: i64,
+    /// The revision-gated form of the layout, when serialized.
+    pub revision_form: Option<cadmpeg_ir::geometry::SweepRevisionForm>,
+    /// The layout-discriminated body.
+    pub layout: EmbeddedSweepSurfaceLayout,
+    /// Six discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 6],
+    /// The boolean serialized after the discontinuity arrays.
+    pub discontinuity_flag: bool,
 }
 
 /// Embedded native deformable surface before stable support ids are assigned.
 pub struct EmbeddedDeformableSurface {
-    pub(crate) support: SurfaceGeometry,
-    pub(crate) data: EmbeddedDeformableSurfaceData,
-    pub(crate) discontinuities: [Vec<f64>; 6],
-    pub(crate) discontinuity_flag: bool,
+    /// The embedded support surface.
+    pub support: SurfaceGeometry,
+    /// The mode-discriminated payload.
+    pub data: EmbeddedDeformableSurfaceData,
+    /// Six discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 6],
+    /// The boolean serialized after the discontinuity arrays.
+    pub discontinuity_flag: bool,
 }
 
-pub(crate) enum EmbeddedDeformableSurfaceData {
+/// The mode-discriminated payload of an embedded deformable surface.
+pub enum EmbeddedDeformableSurfaceData {
+    /// A payload fully resolved to neutral IR fields.
     Resolved(cadmpeg_ir::geometry::DeformableSurfaceData),
+    /// The surface-curve payload: an embedded surface, curve, and frame.
     SurfaceCurve {
+        /// The embedded payload surface.
         surface: SurfaceGeometry,
+        /// The native identifier of the payload.
         native_id: i64,
+        /// The boolean serialized after the native identifier.
         flag: bool,
+        /// The parameter serialized after the flag.
         first_parameter: f64,
+        /// The integer selector of the payload.
         selector: i64,
+        /// The parameter serialized after the selector.
         second_parameter: f64,
+        /// The embedded payload curve.
         curve: NurbsCurve,
+        /// Four frame vectors.
         vectors: [Vector3; 4],
+        /// The parameter serialized after the frame vectors.
         frame_parameter: f64,
+        /// Three booleans serialized after the frame parameter.
         flags: [bool; 3],
+        /// Counted list of parameter triples.
         parameter_triples: Vec<[f64; 3]>,
     },
+    /// The full payload: a leading frame, surface, curve, and vector frames.
     Full {
+        /// Four ordered leading frame vectors.
         leading_vectors: [Vector3; 4],
+        /// The parameter serialized after the leading vectors.
         leading_parameter: f64,
+        /// Three booleans serialized after the leading parameter.
         leading_flags: [bool; 3],
+        /// The integer selector of the payload.
         selector: i64,
+        /// The embedded payload surface.
         surface: SurfaceGeometry,
+        /// The native identifier of the payload.
         native_id: i64,
+        /// The boolean serialized after the native identifier.
         flag: bool,
+        /// The parameter serialized after the flag.
         first_parameter: f64,
+        /// The version integer, when serialized.
         version_value: Option<i64>,
+        /// The parameter serialized after the version value.
         second_parameter: f64,
+        /// The embedded payload curve.
         curve: NurbsCurve,
+        /// Two deformation vector frames.
         frames: Box<[cadmpeg_ir::geometry::DeformableVectorFrame; 2]>,
+        /// The integer closing the payload.
         trailing_value: i64,
     },
 }
@@ -2733,18 +3156,18 @@ fn comp_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
 }
 
 /// The shared revision-gated surface tail, decoded.
-pub(crate) struct RevisionSurfaceTail {
+pub struct RevisionSurfaceTail {
     /// Enum opening the tail, selecting the approximation-cache form.
-    pub(crate) enumeration: i64,
+    pub enumeration: i64,
     /// Fit tolerance of the solved cache. Carried by form `0` only.
-    pub(crate) fit_tolerance: Option<f64>,
+    pub fit_tolerance: Option<f64>,
     /// Parameter intervals and closure/singularity enums. Carried by form `2`
     /// only.
-    pub(crate) parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
+    pub parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
     /// Six ordered discontinuity arrays.
-    pub(crate) discontinuities: [Vec<f64>; 6],
+    pub discontinuities: [Vec<f64>; 6],
     /// Boolean terminating the tail.
-    pub(crate) tail_flag: bool,
+    pub tail_flag: bool,
 }
 
 /// Parse the shared revision-gated surface tail (GC-08). It opens with an enum
@@ -2756,7 +3179,7 @@ pub(crate) struct RevisionSurfaceTail {
 /// counted discontinuity arrays and one boolean. Other values have no defined
 /// grammar; they fail so the containing record is retained verbatim through the
 /// native-preservation path rather than misparsed.
-pub(crate) fn revision_surface_tail(cur: &mut Cur<'_>) -> Option<RevisionSurfaceTail> {
+pub fn revision_surface_tail(cur: &mut Cur<'_>) -> Option<RevisionSurfaceTail> {
     let enumeration = cur.take_enum()?;
     let (fit_tolerance, parameterization) = match enumeration {
         0 => {
@@ -3661,7 +4084,7 @@ fn resolve_t_spline_subtransform(
 }
 
 /// Decode a native procedural definition, following nested subtype-table references.
-pub(crate) fn procedural_surface_resolving_refs(
+pub fn procedural_surface_resolving_refs(
     toks: &[Token],
     table: &SubtypeTable,
 ) -> Option<DecodedProceduralSurface> {

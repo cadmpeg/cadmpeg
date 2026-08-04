@@ -18,8 +18,8 @@ use super::native_bytes::{native_f64, native_i64, native_ref};
 use super::native_geometry::native_nurbs_curve;
 use super::preconditions::DesignBindingsValidated;
 use crate::native::F3dNative;
-use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::native_bool;
+use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
 pub(crate) fn tolerant_coedge_range(
     index: &NativeGenerationIndex<'_>,

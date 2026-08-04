@@ -23,40 +23,45 @@ use crate::nurbs::subtypes::{
     find_owned_intcurve_subtype, find_owned_subtype_marker, subtype_span, SubtypeTables,
 };
 use crate::nurbs::toks::{Cur, SubtypeTable};
-use cadmpeg_asm::sab::Token;
+use crate::sab::Token;
 use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 /// Source curve and tail fields decoded from an `offset_int_cur` construction.
-pub(crate) type VectorOffsetDefinition = (NurbsCurve, [f64; 2], Vector3, [String; 2], [i64; 2]);
+pub type VectorOffsetDefinition = (NurbsCurve, [f64; 2], Vector3, [String; 2], [i64; 2]);
 
 /// Parent curve and retained range decoded from a `subset_int_cur` construction.
-pub(crate) type SubsetDefinition = (NurbsCurve, [f64; 2]);
+pub type SubsetDefinition = (NurbsCurve, [f64; 2]);
 
 /// Parameter arrays and child curves decoded from a `comp_int_cur` construction.
-pub(crate) type CompoundDefinition = (Vec<f64>, Vec<f64>, Vec<NurbsCurve>);
+pub type CompoundDefinition = (Vec<f64>, Vec<f64>, Vec<NurbsCurve>);
 
 /// Embedded freeform support carriers and tail fields of an `off_int_cur`.
-pub(crate) struct EmbeddedTwoSidedOffset {
+pub struct EmbeddedTwoSidedOffset {
     /// Two ordered embedded support surfaces.
-    pub(crate) surfaces: [Option<SurfaceGeometry>; 2],
+    pub surfaces: [Option<SurfaceGeometry>; 2],
     /// Two ordered embedded NURBS parameter curves.
-    pub(crate) pcurves: [Option<NurbsPcurve>; 2],
+    pub pcurves: [Option<NurbsPcurve>; 2],
     /// Shared native parameter interval.
-    pub(crate) parameter_range: [f64; 2],
+    pub parameter_range: [f64; 2],
     /// Three discontinuity arrays.
-    pub(crate) discontinuities: [Vec<f64>; 3],
-    pub(crate) discontinuity_flag: bool,
+    pub discontinuities: [Vec<f64>; 3],
+    /// The boolean serialized after the discontinuity arrays.
+    pub discontinuity_flag: bool,
     /// Signed side offsets in document length units.
-    pub(crate) offsets: [f64; 2],
+    pub offsets: [f64; 2],
 }
 
 /// Embedded support carriers and shared fields of an `int_int_cur`.
-pub(crate) struct EmbeddedIntersection {
-    pub(crate) surfaces: [Option<SurfaceGeometry>; 2],
-    pub(crate) pcurves: [Option<NurbsPcurve>; 2],
-    pub(crate) parameter_range: [f64; 2],
-    pub(crate) discontinuities: [Vec<f64>; 3],
+pub struct EmbeddedIntersection {
+    /// Two ordered embedded support surfaces.
+    pub surfaces: [Option<SurfaceGeometry>; 2],
+    /// Two ordered embedded NURBS parameter curves.
+    pub pcurves: [Option<NurbsPcurve>; 2],
+    /// Shared native parameter interval.
+    pub parameter_range: [f64; 2],
+    /// Three discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 3],
 }
 
 #[derive(Clone, Copy)]
@@ -139,112 +144,189 @@ fn required_support_pair(cur: &mut Cur<'_>) -> Option<([SurfaceGeometry; 2], [Nu
 }
 
 /// Three ordered support carriers and selector of an `sss_int_cur`.
-pub(crate) struct EmbeddedThreeSurfaceIntersection {
-    pub(crate) surfaces: [SurfaceGeometry; 3],
-    pub(crate) pcurves: [NurbsPcurve; 3],
-    pub(crate) parameter_range: [f64; 2],
-    pub(crate) discontinuities: [Vec<f64>; 3],
-    pub(crate) selector: i64,
+pub struct EmbeddedThreeSurfaceIntersection {
+    /// Three ordered embedded support surfaces.
+    pub surfaces: [SurfaceGeometry; 3],
+    /// Three ordered embedded NURBS parameter curves.
+    pub pcurves: [NurbsPcurve; 3],
+    /// Shared native parameter interval.
+    pub parameter_range: [f64; 2],
+    /// Three discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 3],
+    /// The integer selector serialized after the discontinuity arrays.
+    pub selector: i64,
 }
 
 /// Embedded support context, source curve, and tail of a `proj_int_cur`.
-pub(crate) struct EmbeddedProjection {
-    pub(crate) surfaces: [SurfaceGeometry; 2],
-    pub(crate) pcurves: [NurbsPcurve; 2],
-    pub(crate) parameter_range: [f64; 2],
-    pub(crate) discontinuities: [Vec<f64>; 3],
-    pub(crate) discontinuity_flag: bool,
-    pub(crate) source: NurbsCurve,
-    pub(crate) tail: cadmpeg_ir::geometry::ProjectionTail,
+pub struct EmbeddedProjection {
+    /// Two ordered embedded support surfaces.
+    pub surfaces: [SurfaceGeometry; 2],
+    /// Two ordered embedded NURBS parameter curves.
+    pub pcurves: [NurbsPcurve; 2],
+    /// Shared native parameter interval.
+    pub parameter_range: [f64; 2],
+    /// Three discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 3],
+    /// The boolean serialized after the discontinuity arrays.
+    pub discontinuity_flag: bool,
+    /// The embedded projected source curve.
+    pub source: NurbsCurve,
+    /// Neutral tail fields decoded after the source curve.
+    pub tail: cadmpeg_ir::geometry::ProjectionTail,
 }
 
 /// Shared context and tail fields of a silhouette intcurve.
-pub(crate) struct EmbeddedSilhouette {
-    pub(crate) context: EmbeddedIntersection,
-    pub(crate) silhouette: cadmpeg_ir::geometry::SilhouetteKind,
-    pub(crate) cast_surface: SurfaceGeometry,
-    pub(crate) light_direction: Vector3,
+pub struct EmbeddedSilhouette {
+    /// Shared embedded support context.
+    pub context: EmbeddedIntersection,
+    /// The silhouette family the subtype name selects.
+    pub silhouette: cadmpeg_ir::geometry::SilhouetteKind,
+    /// The embedded surface the silhouette is cast on.
+    pub cast_surface: SurfaceGeometry,
+    /// The projection direction of the silhouette light.
+    pub light_direction: Vector3,
 }
 
 /// Shared context and tail fields of an `off_surf_int_cur`.
-pub(crate) struct EmbeddedSurfaceOffset {
-    pub(crate) context: EmbeddedIntersection,
-    pub(crate) discontinuity_flag: bool,
-    pub(crate) base_u_range: [f64; 2],
-    pub(crate) base_v_range: [f64; 2],
-    pub(crate) base: NurbsCurve,
-    pub(crate) base_range: [f64; 2],
-    pub(crate) base_endpoints: [Option<f64>; 2],
-    pub(crate) cache_first: Option<cadmpeg_ir::geometry::CacheFirstCurveForm>,
-    pub(crate) distance: f64,
-    pub(crate) shift: f64,
-    pub(crate) scale: f64,
+pub struct EmbeddedSurfaceOffset {
+    /// Shared embedded support context.
+    pub context: EmbeddedIntersection,
+    /// The boolean serialized after the discontinuity arrays.
+    pub discontinuity_flag: bool,
+    /// U parameter interval of the base surface.
+    pub base_u_range: [f64; 2],
+    /// V parameter interval of the base surface.
+    pub base_v_range: [f64; 2],
+    /// The embedded base curve the offset follows.
+    pub base: NurbsCurve,
+    /// Native parameter interval of the base curve.
+    pub base_range: [f64; 2],
+    /// Optional endpoint bounds of the base curve.
+    pub base_endpoints: [Option<f64>; 2],
+    /// Layout form when the cache precedes the construction.
+    pub cache_first: Option<cadmpeg_ir::geometry::CacheFirstCurveForm>,
+    /// Signed offset distance in document length units.
+    pub distance: f64,
+    /// The shift value serialized after the distance.
+    pub shift: f64,
+    /// The scale value serialized after the shift.
+    pub scale: f64,
 }
 
 /// Spring support context, conditional null-carrier ranges, and direction enum.
-pub(crate) struct EmbeddedSpring {
-    pub(crate) surfaces: [Option<SurfaceGeometry>; 2],
-    pub(crate) pcurves: [Option<NurbsPcurve>; 2],
-    pub(crate) surface_parameter_ranges: [Option<[[f64; 2]; 2]>; 2],
-    pub(crate) first_pcurve_parameter_range: Option<[f64; 2]>,
-    pub(crate) parameter_range: [f64; 2],
-    pub(crate) discontinuities: [Vec<f64>; 3],
-    pub(crate) discontinuity_flag: bool,
-    pub(crate) cache_first: Option<cadmpeg_ir::geometry::CacheFirstCurveForm>,
-    pub(crate) direction: i64,
+pub struct EmbeddedSpring {
+    /// Two ordered embedded support surfaces.
+    pub surfaces: [Option<SurfaceGeometry>; 2],
+    /// Two ordered embedded NURBS parameter curves.
+    pub pcurves: [Option<NurbsPcurve>; 2],
+    /// UV parameter rectangles serialized in place of null surfaces.
+    pub surface_parameter_ranges: [Option<[[f64; 2]; 2]>; 2],
+    /// Parameter interval serialized in place of a null first pcurve.
+    pub first_pcurve_parameter_range: Option<[f64; 2]>,
+    /// Shared native parameter interval.
+    pub parameter_range: [f64; 2],
+    /// Three discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 3],
+    /// The boolean serialized after the discontinuity arrays.
+    pub discontinuity_flag: bool,
+    /// Layout form when the cache precedes the construction.
+    pub cache_first: Option<cadmpeg_ir::geometry::CacheFirstCurveForm>,
+    /// The direction enum serialized at the construction tail.
+    pub direction: i64,
 }
 
-pub(crate) struct EmbeddedLawCurve {
-    pub(crate) context: EmbeddedIntersection,
+/// Embedded support context and recursive formulas of a `law_int_cur`.
+pub struct EmbeddedLawCurve {
+    /// Shared embedded support context.
+    pub context: EmbeddedIntersection,
     /// Version-stamped serializer form; `None` for the legacy layout.
-    pub(crate) version: Option<EmbeddedLawVersion>,
-    pub(crate) extension: i64,
-    pub(crate) primary: EmbeddedLawFormula,
-    pub(crate) additional: Vec<EmbeddedLawFormula>,
+    pub version: Option<EmbeddedLawVersion>,
+    /// The extension enum serialized before the primary formula.
+    pub extension: i64,
+    /// The law formula that drives the curve.
+    pub primary: EmbeddedLawFormula,
+    /// Additional law formulas serialized after the primary.
+    pub additional: Vec<EmbeddedLawFormula>,
 }
 
 /// Version stamp, trailing enum, and unbounded parameter interval of the
 /// stamped `law_int_cur` serializer form.
-pub(crate) struct EmbeddedLawVersion {
-    pub(crate) stamp: i64,
-    pub(crate) post_enum: i64,
-    pub(crate) parameter_range: [Option<f64>; 2],
+pub struct EmbeddedLawVersion {
+    /// The serializer version stamp.
+    pub stamp: i64,
+    /// The enum serialized after the version stamp.
+    pub post_enum: i64,
+    /// Optional parameter bounds; `None` marks an unbounded end.
+    pub parameter_range: [Option<f64>; 2],
 }
 
-pub(crate) enum EmbeddedDeformableData {
+/// Mode-discriminated payload of a `defm_int_cur` construction.
+pub enum EmbeddedDeformableData {
+    /// The vector-field payload: four frame vectors and a parameter-pair list.
     VectorField {
+        /// Four ordered frame vectors.
         vectors: [Vector3; 4],
+        /// Counted list of parameter pairs.
         parameter_pairs: Vec<[f64; 2]>,
     },
+    /// The mode-3 payload: leading frame, trailing frame, and scalar tail.
     Mode3 {
+        /// Four ordered leading frame vectors.
         leading_vectors: [Vector3; 4],
+        /// The parameter serialized after the leading vectors.
         leading_parameter: f64,
+        /// Three booleans serialized after the leading parameter.
         leading_flags: [bool; 3],
+        /// The point that anchors the trailing frame.
         trailing_point: Point3,
+        /// Two ordered trailing frame vectors.
         trailing_vectors: [Vector3; 2],
+        /// The parameter serialized after the trailing vectors.
         frame_parameter: f64,
+        /// Two booleans serialized after the frame parameter.
         frame_flags: [bool; 2],
+        /// Three scalar parameters of the tail.
         parameters: [f64; 3],
+        /// Five booleans serialized after the tail parameters.
         trailing_flags: [bool; 5],
+        /// The parameter serialized after the trailing flags.
         trailing_parameter: f64,
+        /// The integer serialized at the payload end.
         trailing_value: i64,
     },
 }
 
-pub(crate) struct EmbeddedDeformable {
-    pub(crate) form: cadmpeg_ir::geometry::CacheFirstCurveForm,
-    pub(crate) surfaces: [Option<SurfaceGeometry>; 2],
-    pub(crate) pcurves: [Option<NurbsPcurve>; 2],
-    pub(crate) parameter_range: [f64; 2],
-    pub(crate) discontinuities: [Vec<f64>; 3],
-    pub(crate) source: EmbeddedDeformableSource,
-    pub(crate) source_parameter_range: [Option<f64>; 2],
-    pub(crate) data: EmbeddedDeformableData,
+/// Embedded bend curve and discriminator payload of a `defm_int_cur`.
+pub struct EmbeddedDeformable {
+    /// Layout form of the cache-first construction.
+    pub form: cadmpeg_ir::geometry::CacheFirstCurveForm,
+    /// Two ordered embedded support surfaces.
+    pub surfaces: [Option<SurfaceGeometry>; 2],
+    /// Two ordered embedded NURBS parameter curves.
+    pub pcurves: [Option<NurbsPcurve>; 2],
+    /// Shared native parameter interval.
+    pub parameter_range: [f64; 2],
+    /// Three discontinuity arrays.
+    pub discontinuities: [Vec<f64>; 3],
+    /// The source the deformation bends.
+    pub source: EmbeddedDeformableSource,
+    /// Optional parameter bounds of the source; `None` marks an unbounded end.
+    pub source_parameter_range: [Option<f64>; 2],
+    /// The mode-discriminated payload.
+    pub data: EmbeddedDeformableData,
 }
 
-pub(crate) enum EmbeddedDeformableSource {
+/// The source a `defm_int_cur` deformation bends.
+pub enum EmbeddedDeformableSource {
+    /// An embedded source curve.
     Curve(NurbsCurve),
-    NativeReference { flag: bool, index: i64 },
+    /// A flag and index referencing a curve serialized elsewhere in the stream.
+    NativeReference {
+        /// The boolean serialized before the index.
+        flag: bool,
+        /// The native reference index.
+        index: i64,
+    },
 }
 
 /// A procedural curve cache together with its native subtype and fit contract.
@@ -264,36 +346,36 @@ pub struct DecodedProceduralCurve {
     /// Parameter arrays and ordered child curves of a `comp_int_cur` construction.
     pub compound: Option<CompoundDefinition>,
     /// Non-null embedded NURBS support carriers of an `off_int_cur`.
-    pub(crate) embedded_two_sided_offset: Option<EmbeddedTwoSidedOffset>,
+    pub embedded_two_sided_offset: Option<EmbeddedTwoSidedOffset>,
     /// Embedded support context of an `int_int_cur`.
-    pub(crate) embedded_intersection: Option<(EmbeddedIntersection, bool)>,
+    pub embedded_intersection: Option<(EmbeddedIntersection, bool)>,
     /// Three embedded support pairs of an `sss_int_cur`.
-    pub(crate) embedded_three_surface_intersection: Option<EmbeddedThreeSurfaceIntersection>,
+    pub embedded_three_surface_intersection: Option<EmbeddedThreeSurfaceIntersection>,
     /// Prefix-only surface-curve family and support context.
-    pub(crate) embedded_surface_curve: Option<(
+    pub embedded_surface_curve: Option<(
         cadmpeg_ir::geometry::SurfaceCurveFamily,
         EmbeddedIntersection,
         Option<cadmpeg_ir::geometry::SurfaceCurveTail>,
     )>,
     /// Embedded silhouette support, cast surface, and light vector.
-    pub(crate) embedded_silhouette: Option<EmbeddedSilhouette>,
+    pub embedded_silhouette: Option<EmbeddedSilhouette>,
     /// Embedded support context and base curve of an `off_surf_int_cur`.
-    pub(crate) embedded_surface_offset: Option<EmbeddedSurfaceOffset>,
+    pub embedded_surface_offset: Option<EmbeddedSurfaceOffset>,
     /// Modern non-null `spring_int_cur` construction.
-    pub(crate) embedded_spring: Option<EmbeddedSpring>,
+    pub embedded_spring: Option<EmbeddedSpring>,
     /// Embedded bend curve and discriminator payload of a `defm_int_cur`.
-    pub(crate) embedded_deformable: Option<EmbeddedDeformable>,
+    pub embedded_deformable: Option<EmbeddedDeformable>,
     /// Embedded support context and source of a `proj_int_cur`.
-    pub(crate) embedded_projection: Option<EmbeddedProjection>,
+    pub embedded_projection: Option<EmbeddedProjection>,
     /// Embedded support context and recursive formulas of a `law_int_cur`.
-    pub(crate) embedded_law: Option<EmbeddedLawCurve>,
+    pub embedded_law: Option<EmbeddedLawCurve>,
     /// `surface_fit_tolerance` of the cached B-spline block, if present
     /// ([spec §7.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#75-nubsnurbs-blocks-b-spline-curves-and-surfaces)).
     pub cache_fit_tolerance: Option<f64>,
 }
 
 /// Decode a procedural 3D curve cache while following subtype-table references.
-pub(crate) fn procedural_curve_resolving_refs(
+pub fn procedural_curve_resolving_refs(
     toks: &[Token],
     table: &SubtypeTable,
 ) -> Option<DecodedProceduralCurve> {
@@ -301,7 +383,7 @@ pub(crate) fn procedural_curve_resolving_refs(
 }
 
 /// Decode an exact procedural curve construction that has no solved cache.
-pub(crate) fn cacheless_procedural_curve_resolving_refs(
+pub fn cacheless_procedural_curve_resolving_refs(
     toks: &[Token],
     table: &SubtypeTable,
 ) -> Option<(String, cadmpeg_ir::geometry::ProceduralCurveDefinition)> {
@@ -720,15 +802,19 @@ fn embedded_spring(
 }
 
 /// Writable fields in the shared context tail of a `spring_int_cur` subtype.
-pub(crate) struct SpringPatchLayout {
-    pub(crate) parameter_range: [usize; 2],
-    pub(crate) discontinuities: [Vec<usize>; 3],
-    pub(crate) discontinuity_flag: usize,
-    pub(crate) direction: usize,
+pub struct SpringPatchLayout {
+    /// Byte offsets of the two parameter-range doubles.
+    pub parameter_range: [usize; 2],
+    /// Byte offsets of the values in each discontinuity array.
+    pub discontinuities: [Vec<usize>; 3],
+    /// Byte offset of the boolean after the discontinuity arrays.
+    pub discontinuity_flag: usize,
+    /// Byte offset of the direction enum.
+    pub direction: usize,
 }
 
 /// Locate spring context fields by walking the subtype grammar at `int_width`.
-pub(crate) fn spring_patch_layout(bytes: &[u8], int_width: usize) -> Option<SpringPatchLayout> {
+pub fn spring_patch_layout(bytes: &[u8], int_width: usize) -> Option<SpringPatchLayout> {
     let (marker, name_len) = find_owned_intcurve_subtype(bytes, b"spring_int_cur", int_width)?;
     let mut position = marker + name_len + 3;
     for _ in 0..2 {
@@ -775,44 +861,57 @@ pub(crate) fn spring_patch_layout(bytes: &[u8], int_width: usize) -> Option<Spri
 }
 
 /// Writable radius-law payloads in a rolling-ball blend surface subtype.
-pub(crate) struct RollingBallPatchLayout {
-    pub(crate) radii: [usize; 2],
+pub struct RollingBallPatchLayout {
+    /// Byte offsets of the two radius-law doubles.
+    pub radii: [usize; 2],
 }
 
 /// Writable leading fields in a translational-extrusion surface subtype.
-pub(crate) struct ExtrusionPatchLayout {
-    pub(crate) parameter_interval: [usize; 2],
-    pub(crate) direction: usize,
-    pub(crate) native_position: usize,
+pub struct ExtrusionPatchLayout {
+    /// Byte offsets of the two parameter-interval doubles.
+    pub parameter_interval: [usize; 2],
+    /// Byte offset of the extrusion direction vector.
+    pub direction: usize,
+    /// Byte offset of the native position triple.
+    pub native_position: usize,
 }
 
 /// Writable construction fields in a `helix_int_cur` subtype.
-pub(crate) struct HelixPatchLayout {
-    pub(crate) angle_range: [usize; 2],
-    pub(crate) frame_vectors: [usize; 4],
-    pub(crate) apex_factor: usize,
-    pub(crate) axis: usize,
+pub struct HelixPatchLayout {
+    /// Byte offsets of the two angle-range doubles.
+    pub angle_range: [usize; 2],
+    /// Byte offsets of the four frame vectors.
+    pub frame_vectors: [usize; 4],
+    /// Byte offset of the apex factor double.
+    pub apex_factor: usize,
+    /// Byte offset of the axis vector.
+    pub axis: usize,
 }
 
 /// Writable fields following the source cache in an `offset_int_cur` subtype.
-pub(crate) struct VectorOffsetPatchLayout {
-    pub(crate) parameter_range: [usize; 2],
-    pub(crate) offset: usize,
+pub struct VectorOffsetPatchLayout {
+    /// Byte offsets of the two parameter-range doubles.
+    pub parameter_range: [usize; 2],
+    /// Byte offset of the offset vector.
+    pub offset: usize,
 }
 
 /// Writable parameter range following the parent curve in `subset_int_cur`.
-pub(crate) struct SubsetPatchLayout {
-    pub(crate) parameter_range: [usize; 2],
+pub struct SubsetPatchLayout {
+    /// Byte offsets of the two parameter-range doubles.
+    pub parameter_range: [usize; 2],
 }
 
 /// Writable parameter arrays in a `comp_int_cur` subtype.
-pub(crate) struct CompoundPatchLayout {
-    pub(crate) parameters: Vec<usize>,
-    pub(crate) component_parameters: Vec<usize>,
+pub struct CompoundPatchLayout {
+    /// Byte offsets of the values in the parameter array.
+    pub parameters: Vec<usize>,
+    /// Byte offsets of the values in the component-parameter array.
+    pub component_parameters: Vec<usize>,
 }
 
 /// Locate both compound parameter arrays from their native counts.
-pub(crate) fn compound_patch_layout(bytes: &[u8], int_width: usize) -> Option<CompoundPatchLayout> {
+pub fn compound_patch_layout(bytes: &[u8], int_width: usize) -> Option<CompoundPatchLayout> {
     let name = b"comp_int_cur";
     let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     subtype_span(bytes, marker, int_width)?;
@@ -834,7 +933,7 @@ pub(crate) fn compound_patch_layout(bytes: &[u8], int_width: usize) -> Option<Co
 }
 
 /// Locate the subset range by consuming the subtype-owned parent curve.
-pub(crate) fn subset_patch_layout(bytes: &[u8], int_width: usize) -> Option<SubsetPatchLayout> {
+pub fn subset_patch_layout(bytes: &[u8], int_width: usize) -> Option<SubsetPatchLayout> {
     let name = b"subset_int_cur";
     let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     subtype_span(bytes, marker, int_width)?;
@@ -848,7 +947,7 @@ pub(crate) fn subset_patch_layout(bytes: &[u8], int_width: usize) -> Option<Subs
 }
 
 /// Locate vector-offset fields by consuming the wrapper flag and source curve.
-pub(crate) fn vector_offset_patch_layout(
+pub fn vector_offset_patch_layout(
     bytes: &[u8],
     int_width: usize,
 ) -> Option<VectorOffsetPatchLayout> {
@@ -871,7 +970,7 @@ pub(crate) fn vector_offset_patch_layout(
 }
 
 /// Locate helix fields by consuming the subtype prefix grammar.
-pub(crate) fn helix_patch_layout(bytes: &[u8], int_width: usize) -> Option<HelixPatchLayout> {
+pub fn helix_patch_layout(bytes: &[u8], int_width: usize) -> Option<HelixPatchLayout> {
     let name = b"helix_int_cur";
     let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     subtype_span(bytes, marker, int_width)?;
@@ -909,10 +1008,7 @@ pub(crate) fn helix_patch_layout(bytes: &[u8], int_width: usize) -> Option<Helix
 }
 
 /// Locate extrusion fields from the `cyl_spl_sur` subtype header.
-pub(crate) fn extrusion_patch_layout(
-    bytes: &[u8],
-    int_width: usize,
-) -> Option<ExtrusionPatchLayout> {
+pub fn extrusion_patch_layout(bytes: &[u8], int_width: usize) -> Option<ExtrusionPatchLayout> {
     let names: [&[u8]; 2] = [b"cyl_spl_sur", b"cylsur"];
     let (start, name_len) = find_owned_subtype_marker(bytes, &names, int_width)
         .map(|(start, name)| (start, name.len()))?;
@@ -934,10 +1030,7 @@ pub(crate) fn extrusion_patch_layout(
 }
 
 /// Locate the rolling-ball radius pair by walking both supports and the slice curve.
-pub(crate) fn rolling_ball_patch_layout(
-    bytes: &[u8],
-    int_width: usize,
-) -> Option<RollingBallPatchLayout> {
+pub fn rolling_ball_patch_layout(bytes: &[u8], int_width: usize) -> Option<RollingBallPatchLayout> {
     let names: [&[u8]; 6] = [
         b"rb_blend_spl_sur",
         b"rbblnsur",
@@ -1163,20 +1256,29 @@ fn embedded_surface_offset(
 }
 
 /// Writable scalar fields in an `off_surf_int_cur` subtype.
-pub(crate) struct SurfaceOffsetPatchLayout {
-    pub(crate) parameter_range: [usize; 2],
-    pub(crate) discontinuities: [Vec<usize>; 3],
-    pub(crate) discontinuity_flag: usize,
-    pub(crate) base_u_range: [usize; 2],
-    pub(crate) base_v_range: [usize; 2],
-    pub(crate) base_range: [usize; 2],
-    pub(crate) distance: usize,
-    pub(crate) shift: usize,
-    pub(crate) scale: usize,
+pub struct SurfaceOffsetPatchLayout {
+    /// Byte offsets of the two parameter-range doubles.
+    pub parameter_range: [usize; 2],
+    /// Byte offsets of the values in each discontinuity array.
+    pub discontinuities: [Vec<usize>; 3],
+    /// Byte offset of the boolean after the discontinuity arrays.
+    pub discontinuity_flag: usize,
+    /// Byte offsets of the two base-surface U-range doubles.
+    pub base_u_range: [usize; 2],
+    /// Byte offsets of the two base-surface V-range doubles.
+    pub base_v_range: [usize; 2],
+    /// Byte offsets of the two base-curve range doubles.
+    pub base_range: [usize; 2],
+    /// Byte offset of the offset-distance double.
+    pub distance: usize,
+    /// Byte offset of the shift double.
+    pub shift: usize,
+    /// Byte offset of the scale double.
+    pub scale: usize,
 }
 
 /// Locate surface-offset fields by walking supports and the base curve.
-pub(crate) fn surface_offset_patch_layout(
+pub fn surface_offset_patch_layout(
     bytes: &[u8],
     int_width: usize,
 ) -> Option<SurfaceOffsetPatchLayout> {
@@ -1272,13 +1374,15 @@ fn embedded_silhouette(toks: &[Token]) -> Option<EmbeddedSilhouette> {
 }
 
 /// Writable light and optional taper fields in a silhouette subtype.
-pub(crate) struct SilhouettePatchLayout {
-    pub(crate) light_direction: usize,
-    pub(crate) draft_factor: Option<usize>,
+pub struct SilhouettePatchLayout {
+    /// Byte offset of the light-direction vector.
+    pub light_direction: usize,
+    /// Byte offset of the draft-factor double, for tapered silhouettes.
+    pub draft_factor: Option<usize>,
 }
 
 /// Locate silhouette fields by walking its context and cast surface.
-pub(crate) fn silhouette_patch_layout(
+pub fn silhouette_patch_layout(
     bytes: &[u8],
     int_width: usize,
     silhouette: &cadmpeg_ir::geometry::SilhouetteKind,
@@ -1358,7 +1462,7 @@ fn embedded_surface_curve(
 /// whole domain in the other is decoded: that restriction is exactly a NURBS
 /// curve of the support's degree over the support's knot vector. Any other
 /// pcurve denotes a curve a NURBS cache can only approximate, so it is refused.
-pub(crate) fn decode_par_int_cur_isoline(
+pub fn decode_par_int_cur_isoline(
     scope: &[u8],
     int_width: usize,
     reference_context: Option<(&[u8], &SubtypeTables)>,
@@ -1645,13 +1749,15 @@ fn cache_first_surface_curve(
 }
 
 /// Writable shared-context fields in a surface-related `intcurve` subtype.
-pub(crate) struct SurfaceCurvePatchLayout {
-    pub(crate) parameter_range: [usize; 2],
-    pub(crate) discontinuities: [Vec<usize>; 3],
+pub struct SurfaceCurvePatchLayout {
+    /// Byte offsets of the two parameter-range doubles.
+    pub parameter_range: [usize; 2],
+    /// Byte offsets of the values in each discontinuity array.
+    pub discontinuities: [Vec<usize>; 3],
 }
 
 /// Locate a surface-curve context by walking its two ordered support pairs.
-pub(crate) fn surface_curve_patch_layout(
+pub fn surface_curve_patch_layout(
     bytes: &[u8],
     int_width: usize,
     family: &cadmpeg_ir::geometry::SurfaceCurveFamily,
@@ -1713,14 +1819,17 @@ fn embedded_three_surface_intersection(toks: &[Token]) -> Option<EmbeddedThreeSu
 }
 
 /// Writable context fields in an `sss_int_cur` subtype.
-pub(crate) struct ThreeSurfacePatchLayout {
-    pub(crate) parameter_range: [usize; 2],
-    pub(crate) discontinuities: [Vec<usize>; 3],
-    pub(crate) selector: usize,
+pub struct ThreeSurfacePatchLayout {
+    /// Byte offsets of the two parameter-range doubles.
+    pub parameter_range: [usize; 2],
+    /// Byte offsets of the values in each discontinuity array.
+    pub discontinuities: [Vec<usize>; 3],
+    /// Byte offset of the selector integer.
+    pub selector: usize,
 }
 
 /// Locate three-surface intersection fields by walking all three support pairs.
-pub(crate) fn three_surface_patch_layout(
+pub fn three_surface_patch_layout(
     bytes: &[u8],
     int_width: usize,
 ) -> Option<ThreeSurfacePatchLayout> {
@@ -1785,30 +1894,37 @@ fn embedded_projection(toks: &[Token]) -> Option<EmbeddedProjection> {
 }
 
 /// Writable tail shape of a `proj_int_cur` subtype.
-pub(crate) enum ProjectionTailPatchLayout {
+pub enum ProjectionTailPatchLayout {
+    /// The tail closes directly after the flag.
     EarlyClose {
+        /// Byte offset of the tail flag boolean.
         flag: usize,
     },
+    /// The tail carries a parameter range and a role identifier.
     Ranged {
+        /// Byte offset of the tail flag boolean.
         flag: usize,
+        /// Byte offsets of the two tail parameter-range doubles.
         parameter_range: [usize; 2],
+        /// Byte range of the role identifier payload.
         role: std::ops::Range<usize>,
     },
 }
 
 /// Writable shared-context and tail fields in a `proj_int_cur` subtype.
-pub(crate) struct ProjectionPatchLayout {
-    pub(crate) parameter_range: [usize; 2],
-    pub(crate) discontinuities: [Vec<usize>; 3],
-    pub(crate) discontinuity_flag: usize,
-    pub(crate) tail: ProjectionTailPatchLayout,
+pub struct ProjectionPatchLayout {
+    /// Byte offsets of the two parameter-range doubles.
+    pub parameter_range: [usize; 2],
+    /// Byte offsets of the values in each discontinuity array.
+    pub discontinuities: [Vec<usize>; 3],
+    /// Byte offset of the boolean after the discontinuity arrays.
+    pub discontinuity_flag: usize,
+    /// Writable tail shape.
+    pub tail: ProjectionTailPatchLayout,
 }
 
 /// Locate projection fields by walking supports, source curve, and selected tail.
-pub(crate) fn projection_patch_layout(
-    bytes: &[u8],
-    int_width: usize,
-) -> Option<ProjectionPatchLayout> {
+pub fn projection_patch_layout(bytes: &[u8], int_width: usize) -> Option<ProjectionPatchLayout> {
     let (marker, name_len) = find_owned_intcurve_subtype(bytes, b"proj_int_cur", int_width)?;
     let mut position = marker + name_len + 3;
     decode_embedded_surface(bytes, &mut position, int_width)?;
@@ -1940,14 +2056,17 @@ fn cache_first_intersection(
 }
 
 /// Writable shared-context fields in an `int_int_cur` subtype.
-pub(crate) struct IntersectionPatchLayout {
-    pub(crate) parameter_range: [usize; 2],
-    pub(crate) discontinuities: [Vec<usize>; 3],
-    pub(crate) discontinuity_flag: usize,
+pub struct IntersectionPatchLayout {
+    /// Byte offsets of the two parameter-range doubles.
+    pub parameter_range: [usize; 2],
+    /// Byte offsets of the values in each discontinuity array.
+    pub discontinuities: [Vec<usize>; 3],
+    /// Byte offset of the boolean after the discontinuity arrays.
+    pub discontinuity_flag: usize,
 }
 
 /// Locate an intersection context by walking both ordered support pairs.
-pub(crate) fn intersection_patch_layout(
+pub fn intersection_patch_layout(
     bytes: &[u8],
     int_width: usize,
 ) -> Option<IntersectionPatchLayout> {
@@ -2036,15 +2155,19 @@ fn optional_pcurve(cur: &mut Cur<'_>) -> Option<Nullable<NurbsPcurve>> {
 }
 
 /// Writable scalar locations in a retained `off_int_cur` construction.
-pub(crate) struct TwoSidedOffsetPatchLayout {
-    pub(crate) parameter_range: [usize; 2],
-    pub(crate) discontinuities: [Vec<usize>; 3],
-    pub(crate) discontinuity_flag: usize,
-    pub(crate) offsets: [usize; 2],
+pub struct TwoSidedOffsetPatchLayout {
+    /// Byte offsets of the two parameter-range doubles.
+    pub parameter_range: [usize; 2],
+    /// Byte offsets of the values in each discontinuity array.
+    pub discontinuities: [Vec<usize>; 3],
+    /// Byte offset of the boolean after the discontinuity arrays.
+    pub discontinuity_flag: usize,
+    /// Byte offsets of the two side-offset doubles.
+    pub offsets: [usize; 2],
 }
 
 /// Locates the fixed-width scalar payloads after variable embedded supports.
-pub(crate) fn two_sided_offset_patch_layout(
+pub fn two_sided_offset_patch_layout(
     bytes: &[u8],
     int_width: usize,
 ) -> Option<TwoSidedOffsetPatchLayout> {
@@ -2691,7 +2814,7 @@ pub(crate) fn optional_helix_revision(cur: &mut Cur<'_>) -> Option<bool> {
 /// Four optional U/V parameter bounds following a surface record's first
 /// top-level subtype scope, or `None` when the record stores no bound fields.
 /// `toks` is the record's payload tokens.
-pub(crate) fn record_trailing_surface_bounds(toks: &[Token]) -> Option<[Option<f64>; 4]> {
+pub fn record_trailing_surface_bounds(toks: &[Token]) -> Option<[Option<f64>; 4]> {
     // Walk the fixed spline-record header: any leading payload identifiers,
     // attrib ref, history int, geometry ref, sense boolean, then the subtype
     // scope.

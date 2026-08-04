@@ -10,7 +10,7 @@
 //! byte offsets served — ordering and identity — without binding the decoder
 //! to one serialization.
 
-use cadmpeg_asm::sab::Token;
+use crate::sab::Token;
 
 /// A cursor over one record's payload tokens.
 ///
@@ -18,18 +18,19 @@ use cadmpeg_asm::sab::Token;
 /// value, or return `None` without advancing when the next token is not of the
 /// requested kind — the same contract as the byte cursors they replace.
 #[derive(Clone, Copy)]
-pub(crate) struct Cur<'a> {
+pub struct Cur<'a> {
     toks: &'a [Token],
     pos: usize,
 }
 
 impl<'a> Cur<'a> {
-    pub(crate) fn at(toks: &'a [Token], pos: usize) -> Self {
+    /// A cursor over `toks` starting at token index `pos`.
+    pub fn at(toks: &'a [Token], pos: usize) -> Self {
         Self { toks, pos }
     }
 
     /// Current token index.
-    pub(crate) fn pos(&self) -> usize {
+    pub fn pos(&self) -> usize {
         self.pos
     }
 
@@ -343,7 +344,7 @@ pub(crate) fn find_owned_subtype_marker<'n>(
 
 /// The construction `toks` is, under its modern name: the first subtype
 /// definition `toks` owns other than `ref`, canonicalized.
-pub(crate) fn owned_construction_subtype(toks: &[Token]) -> Option<String> {
+pub fn owned_construction_subtype(toks: &[Token]) -> Option<String> {
     owned_subtype_defs(toks)
         .into_iter()
         .map(|(_, name)| name)
@@ -445,9 +446,9 @@ pub(crate) fn subtype_refs(toks: &[Token]) -> Vec<usize> {
 /// The interior tokens of the subtype scope at payload chunk `chunk_index`
 /// when its immediately following identifier is `expected`: everything after
 /// that identifier up to (excluding) the matching close. Token-space
-/// counterpart of [`cadmpeg_asm::sab::payload_subtype_span`].
-pub(crate) fn payload_subtype_toks<'r>(
-    record: &'r cadmpeg_asm::sab::Record,
+/// counterpart of [`crate::sab::payload_subtype_span`].
+pub fn payload_subtype_toks<'r>(
+    record: &'r crate::sab::Record,
     chunk_index: usize,
     expected: &str,
 ) -> Option<&'r [Token]> {
@@ -484,7 +485,7 @@ pub(crate) fn payload_subtype_toks<'r>(
 /// entry. Each entry holds the owning record's shared payload tokens and the
 /// definition's token index within them, so resolution needs no side channel
 /// back to the record table.
-pub(crate) struct SubtypeTable {
+pub struct SubtypeTable {
     defs: Vec<(std::sync::Arc<[Token]>, usize)>,
     /// The stream's ASM save format version, from the `asmheader` record. Some
     /// revision-gated grammars key on it; the framer does not carry it in the
@@ -494,7 +495,7 @@ pub(crate) struct SubtypeTable {
 
 impl SubtypeTable {
     /// Build the table over each framed record's payload tokens, in order.
-    pub(crate) fn from_records(records: &[cadmpeg_asm::sab::Record]) -> Self {
+    pub fn from_records(records: &[crate::sab::Record]) -> Self {
         let mut defs = Vec::new();
         for record in records {
             for (pos, token) in record.tokens.iter().enumerate() {
@@ -516,7 +517,8 @@ impl SubtypeTable {
     }
 
     /// Attach the stream's ASM save format version.
-    pub(crate) fn with_save_format_version(mut self, version: Option<u32>) -> Self {
+    #[must_use]
+    pub fn with_save_format_version(mut self, version: Option<u32>) -> Self {
         self.save_format_version = version;
         self
     }
@@ -535,20 +537,22 @@ impl SubtypeTable {
 
 /// Lex a bare byte span (a subtype scope or block without a record name or
 /// terminator) into payload tokens, for tests that build byte fixtures.
-#[cfg(test)]
-pub(crate) fn lex_test_span(bytes: &[u8], ref_width: usize) -> std::sync::Arc<[Token]> {
+///
+/// # Panics
+///
+/// Panics when the span does not lex as one record's payload.
+pub fn lex_test_span(bytes: &[u8], ref_width: usize) -> std::sync::Arc<[Token]> {
     let mut wrapped = vec![0x0d, 1, b'x'];
     wrapped.extend_from_slice(bytes);
     wrapped.push(0x11);
     let records =
-        cadmpeg_asm::sab::frame(&wrapped, 0, wrapped.len(), ref_width).expect("test span lexes");
+        crate::sab::frame(&wrapped, 0, wrapped.len(), ref_width).expect("test span lexes");
     records.into_iter().next().expect("one record").tokens
 }
 
 /// Build a [`SubtypeTable`] over a bare byte span, for tests.
-#[cfg(test)]
-pub(crate) fn test_table(bytes: &[u8], ref_width: usize) -> SubtypeTable {
-    let record = cadmpeg_asm::sab::Record {
+pub fn test_table(bytes: &[u8], ref_width: usize) -> SubtypeTable {
+    let record = crate::sab::Record {
         index: 0,
         name: String::new(),
         head: String::new(),

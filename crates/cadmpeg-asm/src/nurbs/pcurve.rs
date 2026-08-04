@@ -6,7 +6,7 @@ use crate::nurbs::reader::{
     is_periodic, marker_at, marker_positions, read_knots, take_tagged_int, INT_WIDTHS,
 };
 use crate::nurbs::toks::{self, Cur};
-use cadmpeg_asm::sab::Token;
+use crate::sab::Token;
 use cadmpeg_codec_core::le::f64_at as read_f64;
 use cadmpeg_ir::math::Point2;
 
@@ -25,37 +25,37 @@ pub struct NurbsPcurve {
 }
 
 /// One BS2 parse reachable from an explicit pcurve carrier.
-pub(crate) struct PcurveCandidate {
+pub struct PcurveCandidate {
     /// Decoded parameter-space curve.
-    pub(crate) curve: NurbsPcurve,
+    pub curve: NurbsPcurve,
     /// The same bytes do not also form a 3D NURBS curve block.
-    pub(crate) unambiguous_2d: bool,
+    pub unambiguous_2d: bool,
     /// This is the first BS2 block owned by an `exp_par_cur` definition.
-    pub(crate) authoritative: bool,
+    pub authoritative: bool,
 }
 
 /// Writable value offsets for one 2D pcurve cache.
-pub(crate) struct PcurvePatchLayout {
+pub struct PcurvePatchLayout {
     /// Payload width of integer and enum fields.
-    pub(crate) int_width: usize,
+    pub int_width: usize,
     /// Tagged-integer payload offset for the curve degree.
-    pub(crate) degree_value_offset: usize,
+    pub degree_value_offset: usize,
     /// Tagged-double payload offsets in `(u, v)` pole order.
-    pub(crate) control_value_offsets: Vec<usize>,
+    pub control_value_offsets: Vec<usize>,
     /// Tagged-double payload offsets for homogeneous weights.
-    pub(crate) weight_value_offsets: Vec<usize>,
+    pub weight_value_offsets: Vec<usize>,
     /// Number of UV control points.
-    pub(crate) control_count: usize,
+    pub control_count: usize,
     /// Native unique-knot payloads and expanded run lengths.
-    pub(crate) knots: KnotPatchLayout,
+    pub knots: KnotPatchLayout,
     /// Payload offset for the closure enum.
-    pub(crate) periodic_value_offset: usize,
+    pub periodic_value_offset: usize,
     /// Offset immediately after the final UV control component.
-    pub(crate) control_end: usize,
+    pub control_end: usize,
 }
 
 /// Locate the final valid non-rational 2D pcurve block in a carrier record.
-pub(crate) fn final_pcurve_patch_layout(record: &[u8]) -> Option<PcurvePatchLayout> {
+pub fn final_pcurve_patch_layout(record: &[u8]) -> Option<PcurvePatchLayout> {
     INT_WIDTHS
         .into_iter()
         .find_map(|int_width| final_pcurve_patch_layout_at(record, int_width))
@@ -227,7 +227,7 @@ fn pcurve_block(toks: &[Token], marker_pos: usize) -> Option<NurbsPcurve> {
 /// The parameter-space fit tolerance immediately following the final valid 2D
 /// pcurve block in `toks`. Token-space counterpart of
 /// [`decode_pcurve_fit_tolerance`].
-pub(crate) fn pcurve_fit_tolerance(toks: &[Token]) -> Option<f64> {
+pub fn pcurve_fit_tolerance(toks: &[Token]) -> Option<f64> {
     let (_, end) = toks::marker_positions(toks)
         .into_iter()
         .filter_map(|pos| pcurve_block_with_end(toks, pos))
@@ -242,7 +242,7 @@ pub(crate) fn pcurve_fit_tolerance(toks: &[Token]) -> Option<f64> {
 /// tokens, in the same order and with the same ambiguity ranking as the byte
 /// walk. Token-space counterpart of
 /// [`decode_pcurve_cache_candidates_resolving_refs`].
-pub(crate) fn pcurve_cache_candidates_resolving_refs(
+pub fn pcurve_cache_candidates_resolving_refs(
     toks: &[Token],
     table: &toks::SubtypeTable,
 ) -> Vec<PcurveCandidate> {
@@ -254,7 +254,7 @@ pub(crate) fn pcurve_cache_candidates_resolving_refs(
 /// Candidates from the interior of an explicitly owned `exp_par_cur` scope.
 /// The scope opener is outside `toks`, so ownership must enter through this
 /// boundary rather than be inferred from the interior tokens.
-pub(crate) fn owned_pcurve_cache_candidates_resolving_refs(
+pub fn owned_pcurve_cache_candidates_resolving_refs(
     toks: &[Token],
     table: &toks::SubtypeTable,
 ) -> Vec<PcurveCandidate> {

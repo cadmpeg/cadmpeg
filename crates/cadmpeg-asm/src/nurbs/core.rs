@@ -14,7 +14,7 @@ use crate::nurbs::reader::{
 use crate::nurbs::subtypes::{decode_cache_resolving_refs, SubtypeTables};
 use crate::nurbs::toks;
 use crate::nurbs::toks::Cur;
-use cadmpeg_asm::sab::Token;
+use crate::sab::Token;
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::Point3;
 
@@ -212,7 +212,7 @@ pub(crate) fn cache_resolving_refs<T>(
 }
 
 /// [`surface_cache`], following subtype-table references.
-pub(crate) fn surface_cache_resolving_refs(
+pub fn surface_cache_resolving_refs(
     toks: &[Token],
     table: &toks::SubtypeTable,
 ) -> Option<NurbsSurface> {
@@ -228,7 +228,7 @@ pub(crate) fn owned_surface_cache_resolving_refs(
 }
 
 /// [`curve_cache`], following subtype-table references.
-pub(crate) fn curve_cache_resolving_refs(
+pub fn curve_cache_resolving_refs(
     toks: &[Token],
     table: &toks::SubtypeTable,
 ) -> Option<NurbsCurve> {
@@ -343,35 +343,35 @@ pub(crate) fn decode_surface_block(
 }
 
 /// Writable value offsets for the final valid surface cache in one carrier record.
-pub(crate) struct SurfacePatchLayout {
+pub struct SurfacePatchLayout {
     /// Payload width of integer and enum fields.
-    pub(crate) int_width: usize,
+    pub int_width: usize,
     /// Native v-major tagged-double payload offsets, excluding each tag byte.
-    pub(crate) control_value_offsets: Vec<usize>,
+    pub control_value_offsets: Vec<usize>,
     /// Whether every pole includes a fourth rational weight component.
-    pub(crate) rational: bool,
+    pub rational: bool,
     /// Pole count in the u direction.
-    pub(crate) u_count: usize,
+    pub u_count: usize,
     /// Pole count in the v direction.
-    pub(crate) v_count: usize,
+    pub v_count: usize,
     /// Native payload offsets and expanded run lengths for U knots.
-    pub(crate) u_knots: KnotPatchLayout,
+    pub u_knots: KnotPatchLayout,
     /// Native payload offsets and expanded run lengths for V knots.
-    pub(crate) v_knots: KnotPatchLayout,
+    pub v_knots: KnotPatchLayout,
     /// Offset immediately after the final control component.
-    pub(crate) end: usize,
+    pub end: usize,
     /// Payload offsets for the U/V closure enums.
-    pub(crate) periodic_value_offsets: [usize; 2],
+    pub periodic_value_offsets: [usize; 2],
     /// Payload offsets for the U/V degree integers.
-    pub(crate) degree_value_offsets: [usize; 2],
+    pub degree_value_offsets: [usize; 2],
 }
 
 /// Unique native knot payload offsets.
-pub(crate) struct KnotPatchLayout {
+pub struct KnotPatchLayout {
     /// Payload offsets for unique knot values.
-    pub(crate) value_offsets: Vec<usize>,
+    pub value_offsets: Vec<usize>,
     /// Payload offsets for stored multiplicities.
-    pub(crate) multiplicity_offsets: Vec<usize>,
+    pub multiplicity_offsets: Vec<usize>,
     /// Repetition count of each unique value in the expanded IR vector.
     #[expect(dead_code)]
     pub(crate) expanded_run_lengths: Vec<usize>,
@@ -388,7 +388,7 @@ impl From<KnotLayout> for KnotPatchLayout {
 }
 
 /// Locate the final valid `nubs`/`nurbs` surface block in a carrier record.
-pub(crate) fn final_surface_patch_layout(record: &[u8]) -> Option<SurfacePatchLayout> {
+pub fn final_surface_patch_layout(record: &[u8]) -> Option<SurfacePatchLayout> {
     let decoded = INT_WIDTHS.into_iter().find_map(|int_width| {
         marker_positions(record)
             .into_iter()
@@ -410,7 +410,7 @@ pub(crate) fn final_surface_patch_layout(record: &[u8]) -> Option<SurfacePatchLa
 }
 
 /// Locate the surface block at `ordinal` among valid surface caches in a carrier record.
-pub(crate) fn surface_patch_layout_at(record: &[u8], ordinal: usize) -> Option<SurfacePatchLayout> {
+pub fn surface_patch_layout_at(record: &[u8], ordinal: usize) -> Option<SurfacePatchLayout> {
     let decoded = INT_WIDTHS.into_iter().find_map(|int_width| {
         marker_positions(record)
             .into_iter()
@@ -490,27 +490,27 @@ pub(crate) fn decode_curve_block(
 }
 
 /// Writable value offsets for a 3D curve cache in one carrier record.
-pub(crate) struct CurvePatchLayout {
+pub struct CurvePatchLayout {
     /// Payload width of integer and enum fields.
-    pub(crate) int_width: usize,
+    pub int_width: usize,
     /// Tagged-double payload offsets in pole/component order.
-    pub(crate) control_value_offsets: Vec<usize>,
+    pub control_value_offsets: Vec<usize>,
     /// Whether every pole includes a fourth rational weight component.
-    pub(crate) rational: bool,
+    pub rational: bool,
     /// Number of control points.
-    pub(crate) control_count: usize,
+    pub control_count: usize,
     /// Native unique-knot payloads and expanded run lengths.
-    pub(crate) knots: KnotPatchLayout,
+    pub knots: KnotPatchLayout,
     /// Offset immediately after the final control component.
-    pub(crate) end: usize,
+    pub end: usize,
     /// Payload offset for the closure enum.
-    pub(crate) periodic_value_offset: usize,
+    pub periodic_value_offset: usize,
     /// Payload offset for the degree integer.
-    pub(crate) degree_value_offset: usize,
+    pub degree_value_offset: usize,
 }
 
 /// Locate the first valid 3D curve cache in a carrier record.
-pub(crate) fn first_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout> {
+pub fn first_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout> {
     let decoded = INT_WIDTHS.into_iter().find_map(|int_width| {
         marker_positions(record)
             .into_iter()
@@ -529,7 +529,7 @@ pub(crate) fn first_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout
 }
 
 /// Locate the final valid 3D curve cache in a carrier record.
-pub(crate) fn final_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout> {
+pub fn final_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout> {
     let decoded = INT_WIDTHS.into_iter().find_map(|int_width| {
         marker_positions(record)
             .into_iter()
@@ -623,7 +623,7 @@ pub(crate) fn decode_curve_cache_at(record_bytes: &[u8], int_width: usize) -> Op
 
 /// Decode the 3D curve cache a subtype scope itself owns: the first curve block
 /// outside every construction the scope nests.
-pub(crate) fn decode_owned_curve_cache_at(scope: &[u8], int_width: usize) -> Option<NurbsCurve> {
+pub fn decode_owned_curve_cache_at(scope: &[u8], int_width: usize) -> Option<NurbsCurve> {
     owned_marker_positions(scope, int_width)
         .into_iter()
         .find_map(|pos| decode_curve_block(scope, pos, int_width).map(|decoded| decoded.curve))

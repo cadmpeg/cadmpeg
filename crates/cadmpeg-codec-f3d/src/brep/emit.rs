@@ -2,12 +2,17 @@
 //! Emit decoded carriers, pcurves, and topology entities into the [`Brep`]
 //! graph, one pass per entity kind.
 
-use crate::nurbs;
-use crate::nurbs::proc_curve::{
+use crate::records::{
+    BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceContainment, FaceSidedness,
+    TolerantCoedgeExtension, TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail,
+    TransformHints, VertexOwnership,
+};
+use cadmpeg_asm::nurbs;
+use cadmpeg_asm::nurbs::proc_curve::{
     EmbeddedDeformableData, EmbeddedLawCurve, EmbeddedProjection, EmbeddedSilhouette,
     EmbeddedSpring, EmbeddedSurfaceOffset,
 };
-use crate::nurbs::proc_surface::{
+use cadmpeg_asm::nurbs::proc_surface::{
     DecodedProceduralSurfaceDefinition, EmbeddedCompoundLoft, EmbeddedCompoundLoftDirection,
     EmbeddedCompoundLoftScale, EmbeddedCompoundLoftTail, EmbeddedDeformableSurface,
     EmbeddedDeformableSurfaceData, EmbeddedG2Blend, EmbeddedG2FirstShape, EmbeddedG2Side,
@@ -19,12 +24,7 @@ use crate::nurbs::proc_surface::{
     EmbeddedSweepSurfaceLayout, EmbeddedVariableBlend, EmbeddedVertexBlend,
     EmbeddedVertexBlendBoundaryGeometry,
 };
-use crate::nurbs::reader::LEN_TO_MM;
-use crate::records::{
-    BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceContainment, FaceSidedness,
-    TolerantCoedgeExtension, TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail,
-    TransformHints, VertexOwnership,
-};
+use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 use cadmpeg_asm::sab::{Record, Token};
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::geometry::{
@@ -2744,7 +2744,7 @@ fn emit_carrier_curve(
                 })
             });
             let source = match embedded.source {
-                crate::nurbs::proc_curve::EmbeddedDeformableSource::Curve(geometry) => {
+                cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource::Curve(geometry) => {
                     let curve = CurveId(format!("f3d:brep:procedural_curve#{i}:deformable_source"));
                     out.curves.push(Curve {
                         id: curve.clone(),
@@ -2753,7 +2753,7 @@ fn emit_carrier_curve(
                     });
                     cadmpeg_ir::geometry::DeformableCurveSource::Curve { curve }
                 }
-                crate::nurbs::proc_curve::EmbeddedDeformableSource::NativeReference {
+                cadmpeg_asm::nurbs::proc_curve::EmbeddedDeformableSource::NativeReference {
                     flag,
                     index,
                 } => cadmpeg_ir::geometry::DeformableCurveSource::NativeReference { flag, index },

@@ -3,7 +3,7 @@
 //!
 //! [`decode`] follows the topology chain from bodies through vertices and
 //! points. It creates analytic carriers for planes, cylinders, cones, spheres,
-//! tori, lines, circles, and ellipses. [`crate::nurbs`] supplies cached NURBS
+//! tori, lines, circles, and ellipses. [`cadmpeg_asm::nurbs`] supplies cached NURBS
 //! surfaces, 3D curves, and pcurves for spline and procedural records.
 //!
 //! Faces retain their loops and trims when a referenced surface has no decoded
@@ -21,14 +21,6 @@ mod emit;
 pub(crate) mod geometry;
 mod topology;
 
-use crate::nurbs;
-use crate::nurbs::proc_curve::{
-    CompoundDefinition, EmbeddedDeformable, EmbeddedIntersection, EmbeddedLawCurve,
-    EmbeddedProjection, EmbeddedSilhouette, EmbeddedSpring, EmbeddedSurfaceOffset,
-    EmbeddedThreeSurfaceIntersection, EmbeddedTwoSidedOffset, SubsetDefinition,
-    VectorOffsetDefinition,
-};
-use crate::nurbs::proc_surface::DecodedProceduralSurface;
 use crate::records::{
     BodyNativeKey, CreationTimestamp, EdgeContinuity, EdgeOwnership, FaceSidedness,
     MeshSurfaceSentinel, PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
@@ -36,6 +28,14 @@ use crate::records::{
     VertexOwnership, WireTopology,
 };
 use cadmpeg_asm::asm_header;
+use cadmpeg_asm::nurbs;
+use cadmpeg_asm::nurbs::proc_curve::{
+    CompoundDefinition, EmbeddedDeformable, EmbeddedIntersection, EmbeddedLawCurve,
+    EmbeddedProjection, EmbeddedSilhouette, EmbeddedSpring, EmbeddedSurfaceOffset,
+    EmbeddedThreeSurfaceIntersection, EmbeddedTwoSidedOffset, SubsetDefinition,
+    VectorOffsetDefinition,
+};
+use cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface;
 use cadmpeg_asm::sab::Record;
 use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
 use cadmpeg_ir::geometry::{

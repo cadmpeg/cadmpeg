@@ -2,11 +2,11 @@
 //! Decode source attribute chains into sketch links, persistent design and
 //! subentity references, colors, names, and transforms.
 
-use crate::nurbs::reader::LEN_TO_MM;
 use crate::records::{
     sketch_link_sense_is_unconstrained, CreationTimestamp, PersistentDesignLink,
     PersistentSubentityTag, SketchCurveLink,
 };
+use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 use cadmpeg_asm::sab::{Record, Token};
 use cadmpeg_codec_core::cursor::bounded_len;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};

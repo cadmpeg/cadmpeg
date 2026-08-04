@@ -2,8 +2,8 @@
 //! Walk the reachable topology graph, collect wire and shell chains, and
 //! classify edge curve senses.
 
-use crate::nurbs;
 use crate::records::{MeshSurfaceSentinel, WireSide, WireTopology};
+use cadmpeg_asm::nurbs;
 use cadmpeg_asm::sab::{Record, Token};
 use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{

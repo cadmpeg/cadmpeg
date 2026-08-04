@@ -9,8 +9,8 @@ use super::geometry::{
 };
 use super::topology::{shell_faces, shell_wire_roots, subshell_ancestor_shells};
 use super::*;
-use crate::nurbs;
 use crate::records::BodyNativeKey;
+use cadmpeg_asm::nurbs;
 use cadmpeg_asm::sab::{Record, Token};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId, LoopId, RegionId, ShellId};

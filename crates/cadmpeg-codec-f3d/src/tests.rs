@@ -1572,7 +1572,7 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
     )
     .expect("regenerate stamped law curve");
     let inner = regenerated.iter().position(|&b| b == 0x0f).unwrap();
-    let span = crate::nurbs::subtypes::subtype_span(&regenerated, inner, 8).unwrap();
+    let span = cadmpeg_asm::nurbs::subtypes::subtype_span(&regenerated, inner, 8).unwrap();
     assert_eq!(span, subtype.as_slice());
 }
 
@@ -1606,7 +1606,7 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
             .position(|window| window == b"law_int_cur")
             .unwrap()
             - 3;
-        crate::nurbs::subtypes::subtype_span(&smbh, marker, 8)
+        cadmpeg_asm::nurbs::subtypes::subtype_span(&smbh, marker, 8)
             .unwrap()
             .to_vec()
     };
@@ -1630,7 +1630,7 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
     )
     .expect("regenerate legacy law curve");
     let inner = regenerated.iter().position(|&b| b == 0x0f).unwrap();
-    let span = crate::nurbs::subtypes::subtype_span(&regenerated, inner, 8).unwrap();
+    let span = cadmpeg_asm::nurbs::subtypes::subtype_span(&regenerated, inner, 8).unwrap();
     assert_eq!(span, original.as_slice());
 }
 
@@ -2884,7 +2884,7 @@ fn regenerated_procedural_surface_span(ir: &cadmpeg_ir::document::CadIr) -> Vec<
         .iter()
         .position(|&byte| byte == 0x0f)
         .expect("subtype opening");
-    crate::nurbs::subtypes::subtype_span(&bytes, inner, 8)
+    cadmpeg_asm::nurbs::subtypes::subtype_span(&bytes, inner, 8)
         .expect("subtype span")
         .to_vec()
 }
@@ -2897,7 +2897,7 @@ fn synthetic_revision_surface_subtype_span(smbh: &[u8]) -> Vec<u8> {
     let record = &records[9];
     let slice = &smbh[record.offset..record.offset + record.len];
     let inner = slice.iter().position(|&byte| byte == 0x0f).unwrap();
-    crate::nurbs::subtypes::subtype_span(slice, inner, 8)
+    cadmpeg_asm::nurbs::subtypes::subtype_span(slice, inner, 8)
         .unwrap()
         .to_vec()
 }
@@ -4443,7 +4443,7 @@ fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
         8,
     )
     .unwrap();
-    let tables = crate::nurbs::subtypes::SubtypeTables::from_records(&records, &bytes);
+    let tables = cadmpeg_asm::nurbs::subtypes::SubtypeTables::from_records(&records, &bytes);
     let index = tables
         .index_of_offset(8, old_offset + shared_offset)
         .expect("shared T-spline subtype index");
@@ -14767,7 +14767,7 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
 
 #[test]
 fn nurbs_surface_block_decodes_to_carrier() {
-    use crate::nurbs::core::decode_surface_cache;
+    use cadmpeg_asm::nurbs::core::decode_surface_cache;
 
     // A degree-1 × degree-1 nubs surface with a 2×2 control grid. Endpoint
     // multiplicities are stored as `degree` (=1); the clamped knot vector adds
@@ -20527,9 +20527,9 @@ fn subtype_reference_resolves_surface_cache() {
 
     let mut active = target;
     active.extend_from_slice(&source);
-    let decoded = crate::nurbs::core::surface_cache_resolving_refs(
-        &crate::nurbs::toks::lex_test_span(&source, 8),
-        &crate::nurbs::toks::test_table(&active, 8),
+    let decoded = cadmpeg_asm::nurbs::core::surface_cache_resolving_refs(
+        &cadmpeg_asm::nurbs::toks::lex_test_span(&source, 8),
+        &cadmpeg_asm::nurbs::toks::test_table(&active, 8),
     )
     .expect("subtype-table reference resolves to its surface cache");
     assert_eq!((decoded.u_count, decoded.v_count), (2, 2));
@@ -20574,7 +20574,7 @@ fn generated_form_two_par_int_cur(first: [f64; 2], second: [f64; 2]) -> Vec<u8> 
 
 #[test]
 fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
-    use crate::nurbs::proc_curve::decode_par_int_cur_isoline;
+    use cadmpeg_asm::nurbs::proc_curve::decode_par_int_cur_isoline;
     use cadmpeg_ir::math::Point3;
 
     // The support is the unit bilinear patch scaled to millimetres, so the
@@ -20600,7 +20600,7 @@ fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
 
 #[test]
 fn a_nested_construction_cache_is_not_the_enclosing_scope_cache() {
-    use crate::nurbs::core::{decode_curve_cache, decode_owned_curve_cache_at};
+    use cadmpeg_asm::nurbs::core::{decode_curve_cache, decode_owned_curve_cache_at};
 
     // A `par_int_cur` whose cache slot is `nullbs` and whose support is an
     // intcurve construction carrying a curve block of its own.
@@ -20619,7 +20619,7 @@ fn a_nested_construction_cache_is_not_the_enclosing_scope_cache() {
 
 #[test]
 fn a_nested_construction_does_not_claim_its_enclosing_record() {
-    use crate::nurbs::proc_surface::{
+    use cadmpeg_asm::nurbs::proc_surface::{
         procedural_surface_resolving_refs, DecodedProceduralSurfaceDefinition,
     };
 
@@ -20631,7 +20631,7 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     let owned = bytes[record.offset..record.offset + record.len].to_vec();
     let decoded = procedural_surface_resolving_refs(
         &record.tokens,
-        &crate::nurbs::toks::SubtypeTable::from_records(std::slice::from_ref(record)),
+        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(std::slice::from_ref(record)),
     )
     .expect("the record owns its extrusion");
     assert!(matches!(
@@ -20653,7 +20653,7 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     let nested_records = cadmpeg_asm::sab::frame(&nested, 0, nested.len(), 8).unwrap();
     assert!(procedural_surface_resolving_refs(
         &nested_records[0].tokens,
-        &crate::nurbs::toks::SubtypeTable::from_records(&nested_records),
+        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&nested_records),
     )
     .is_none());
 }
@@ -20674,7 +20674,7 @@ fn subtype_table_walks_wide_strings_at_the_stream_ref_width() {
         active.extend_from_slice(b"\x0f\x0d\x08real_def\x10");
         active.push(0x11);
 
-        let tables = crate::nurbs::subtypes::SubtypeTables::from_stream(&active);
+        let tables = cadmpeg_asm::nurbs::subtypes::SubtypeTables::from_stream(&active);
         assert_eq!(tables.for_width(ref_width), [definition]);
     }
 }
@@ -20830,7 +20830,7 @@ fn transform_decodes_column_major_basis_and_scaled_translation() {
 
 #[test]
 fn nurbs_curve_block_decodes_to_carrier() {
-    use crate::nurbs::core::decode_curve_cache;
+    use cadmpeg_asm::nurbs::core::decode_curve_cache;
 
     // A degree-2 nubs curve with two unique knots at stored multiplicity 2:
     // sum(mults) 4, n_poles = 4 - (degree - 1) = 3.
@@ -23212,7 +23212,7 @@ fn generated_f3d_rewrites_topology_bound_nurbs_curve() {
 
 #[test]
 fn nurbs_pcurve_block_decodes_without_length_scaling() {
-    use crate::nurbs::pcurve::decode_pcurve_cache;
+    use cadmpeg_asm::nurbs::pcurve::decode_pcurve_cache;
 
     // A degree-1 2D pcurve. Unlike model-space NURBS control points, these
     // are UV parameters and therefore must not be converted from cm to mm.
@@ -23230,9 +23230,9 @@ fn ref_pcurve_collects_intcurve_uv_candidates() {
     let mut intcurve = generated_curve_block();
     intcurve.extend_from_slice(&generated_pcurve_block());
 
-    let candidates = crate::nurbs::pcurve::pcurve_cache_candidates_resolving_refs(
-        &crate::nurbs::toks::lex_test_span(&intcurve, 8),
-        &crate::nurbs::toks::test_table(&intcurve, 8),
+    let candidates = cadmpeg_asm::nurbs::pcurve::pcurve_cache_candidates_resolving_refs(
+        &cadmpeg_asm::nurbs::toks::lex_test_span(&intcurve, 8),
+        &cadmpeg_asm::nurbs::toks::test_table(&intcurve, 8),
     );
     let pcurve = candidates
         .first()
@@ -23254,9 +23254,9 @@ fn ref_pcurve_resolves_intcurve_subtype_candidates() {
     let mut active = target;
     active.extend_from_slice(&source);
 
-    let candidates = crate::nurbs::pcurve::pcurve_cache_candidates_resolving_refs(
-        &crate::nurbs::toks::lex_test_span(&source, 8),
-        &crate::nurbs::toks::test_table(&active, 8),
+    let candidates = cadmpeg_asm::nurbs::pcurve::pcurve_cache_candidates_resolving_refs(
+        &cadmpeg_asm::nurbs::toks::lex_test_span(&source, 8),
+        &cadmpeg_asm::nurbs::toks::test_table(&active, 8),
     );
     let pcurve = candidates
         .first()

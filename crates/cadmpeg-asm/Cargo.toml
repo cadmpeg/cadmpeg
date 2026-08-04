@@ -11,6 +11,7 @@ rust-version.workspace = true
 
 [dependencies]
 cadmpeg-codec-core.workspace = true
+cadmpeg-ir.workspace = true
 
 [lints]
 workspace = true

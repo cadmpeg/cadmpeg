@@ -67,7 +67,7 @@
 //! is the only fallback. [`cadmpeg_asm::sab`] frames each selected active
 //! record slice.
 //! [`brep`] builds each topology chain from bodies through vertices and points,
-//! while [`nurbs`] decodes cached spline carriers.
+//! while [`cadmpeg_asm::nurbs`] decodes cached spline carriers.
 //! [`design`], [`history`], and [`materials`] populate source-native records and
 //! appearance bindings. [`f3z`] merges multi-document archives into one model.
 //!
@@ -92,7 +92,6 @@ mod history_records;
 mod ids;
 pub mod materials;
 mod native;
-pub mod nurbs;
 mod paramesh;
 mod protein;
 pub mod records;

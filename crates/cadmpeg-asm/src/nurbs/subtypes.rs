@@ -2,7 +2,7 @@
 //! Subtype reference tables, intcurve subtype classification, and token walkers.
 
 use crate::nurbs::reader::INT_WIDTHS;
-use cadmpeg_asm::sab::Record;
+use crate::sab::Record;
 use cadmpeg_codec_core::le::int_at as read_int;
 
 /// Byte offsets and names of the subtype definitions `bytes` itself owns: the
@@ -166,16 +166,18 @@ impl SubtypeTables {
         }
     }
 
-    pub(crate) fn for_width(&self, int_width: usize) -> &[usize] {
+    /// The table built for `int_width`, or an empty slice for a width outside
+    /// the candidate set.
+    pub fn for_width(&self, int_width: usize) -> &[usize] {
         INT_WIDTHS
             .iter()
             .position(|&width| width == int_width)
             .map_or(&[], |slot| self.tables[slot].as_slice())
     }
 
-    /// Return the table index assigned to an absolute subtype-definition offset.
-    #[cfg(test)]
-    pub(crate) fn index_of_offset(&self, int_width: usize, offset: usize) -> Option<usize> {
+    /// Return the table index assigned to an absolute subtype-definition offset,
+    /// for tests.
+    pub fn index_of_offset(&self, int_width: usize, offset: usize) -> Option<usize> {
         self.for_width(int_width)
             .iter()
             .position(|candidate| *candidate == offset)
@@ -240,7 +242,10 @@ pub(crate) fn subtype_refs(bytes: &[u8], int_width: usize) -> Vec<usize> {
     refs
 }
 
-pub(crate) fn subtype_span(bytes: &[u8], start: usize, int_width: usize) -> Option<&[u8]> {
+/// The byte span of the subtype definition that opens at `start`: from its
+/// `0x0f` opening through the matching `0x10` close, nested definitions
+/// included.
+pub fn subtype_span(bytes: &[u8], start: usize, int_width: usize) -> Option<&[u8]> {
     let mut depth = 0usize;
     let mut pos = start;
     while pos < bytes.len() {
