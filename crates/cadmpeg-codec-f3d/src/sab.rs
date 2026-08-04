@@ -122,19 +122,6 @@ impl Record {
     }
 }
 
-/// Return the bytes inside payload subtype `token_index` when its immediately
-/// following identifier is `expected`.
-pub(crate) fn payload_subtype_span<'a>(
-    bytes: &'a [u8],
-    record: &Record,
-    token_index: usize,
-    ref_width: usize,
-    expected: &str,
-) -> Option<&'a [u8]> {
-    let range = payload_subtype_range(bytes, record, token_index, ref_width, expected)?;
-    bytes.get(range)
-}
-
 /// Return the absolute byte range inside payload subtype `token_index` when
 /// its immediately following identifier is `expected`.
 pub(crate) fn payload_subtype_range(
@@ -562,7 +549,7 @@ fn frame_impl(
 
 #[cfg(test)]
 mod tests {
-    use super::{frame, frame_history, payload_subtype_span, payload_token_offset};
+    use super::{frame, frame_history, payload_token_offset};
 
     #[test]
     fn history_framer_accepts_only_the_final_record_at_eof() {
@@ -1096,13 +1083,14 @@ mod tests {
 
     #[test]
     fn generated_payload_subtype_lookup_uses_declared_integer_width() {
+        use crate::nurbs::toks::payload_subtype_toks;
         for ref_width in [4, 8] {
             let bytes = generated_pcurve_record(ref_width);
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated record");
             let record = records.first().expect("generated pcurve");
-            assert!(payload_subtype_span(&bytes, record, 5, ref_width, "exp_par_cur").is_some());
-            assert!(payload_subtype_span(&bytes, record, 4, ref_width, "exp_par_cur").is_none());
-            assert!(payload_subtype_span(&bytes, record, 5, ref_width, "bad_par_cur").is_none());
+            assert!(payload_subtype_toks(record, 5, "exp_par_cur").is_some());
+            assert!(payload_subtype_toks(record, 4, "exp_par_cur").is_none());
+            assert!(payload_subtype_toks(record, 5, "bad_par_cur").is_none());
             assert_eq!(
                 bytes[payload_token_offset(&bytes, record, ref_width, 4)
                     .expect("required invariant")],

@@ -707,10 +707,8 @@ fn decode_with_purpose(
     let by_index: HashMap<i64, &Record> = records.iter().map(|r| (r.index as i64, r)).collect();
     // Subtype-definition positions, built once for every carrier resolution.
     let subtype_tables = nurbs::subtypes::SubtypeTables::from_records(records, bytes);
+    let token_table = nurbs::toks::SubtypeTable::from_records(records);
     let header = asm_header::parse(bytes);
-    let ref_width = header
-        .as_ref()
-        .map_or(8, |header| usize::from(header.width));
     let save_format_major = header
         .as_ref()
         .and_then(crate::asm_header::AsmHeader::save_format_major);
@@ -725,6 +723,7 @@ fn decode_with_purpose(
         bytes,
         &by_index,
         &subtype_tables,
+        &token_table,
         &mut carriers,
         &mut reach,
         purpose,
@@ -733,8 +732,8 @@ fn decode_with_purpose(
         &mut out,
         &by_index,
         bytes,
-        ref_width,
         &subtype_tables,
+        &token_table,
         &mut carriers,
         &mut reach,
         purpose,
@@ -745,6 +744,7 @@ fn decode_with_purpose(
         &by_index,
         bytes,
         &subtype_tables,
+        &token_table,
         &mut carriers,
         &mut reach,
         purpose,
@@ -761,7 +761,7 @@ fn decode_with_purpose(
         &reversed_curve_refs,
         &forward_curve_refs,
     );
-    emit_pcurves(&mut out, records, bytes, ref_width, &mut carriers, &reach);
+    emit_pcurves(&mut out, records, &mut carriers, &reach);
     emit_points(&mut out, records, &reach);
     emit_vertices(&mut out, records, &by_index, &reach);
     emit_edges(
@@ -775,8 +775,7 @@ fn decode_with_purpose(
     emit_coedges(
         &mut out,
         records,
-        bytes,
-        &subtype_tables,
+        &token_table,
         save_format_major,
         &carriers,
         &reach,

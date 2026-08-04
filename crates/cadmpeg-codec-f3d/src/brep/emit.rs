@@ -3262,8 +3262,6 @@ pub(crate) fn emit_carrier_records(
 pub(crate) fn emit_pcurves(
     out: &mut Brep,
     records: &[Record],
-    bytes: &[u8],
-    ref_width: usize,
     carriers: &mut Carriers,
     reach: &Reachable,
 ) {
@@ -3292,8 +3290,8 @@ pub(crate) fn emit_pcurves(
                     parameter_range: pcurve_parameter_range(r),
                     fit_tolerance: match (r.chunk(3), r.chunk(4)) {
                         (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
-                            crate::sab::payload_subtype_span(bytes, r, 5, ref_width, "exp_par_cur")
-                                .and_then(nurbs::pcurve::decode_pcurve_fit_tolerance)
+                            nurbs::toks::payload_subtype_toks(r, 5, "exp_par_cur")
+                                .and_then(nurbs::pcurve::pcurve_fit_tolerance)
                         }
                         _ => None,
                     },
@@ -3530,13 +3528,11 @@ pub(crate) fn emit_edges(
 pub(crate) fn emit_coedges(
     out: &mut Brep,
     records: &[Record],
-    bytes: &[u8],
-    subtype_tables: &nurbs::subtypes::SubtypeTables,
+    token_table: &nurbs::toks::SubtypeTable,
     save_format_major: Option<u32>,
     carriers: &Carriers,
     reach: &Reachable,
 ) {
-    let ref_width = crate::asm_header::stream_ref_width(bytes);
     let Carriers {
         pcurve_parameter_ranges,
         ..
@@ -3596,13 +3592,7 @@ pub(crate) fn emit_coedges(
                 else {
                     return None;
                 };
-                let record_bytes = bytes.get(r.offset..r.offset.checked_add(r.len)?)?;
-                let mut curve = nurbs::core::decode_curve_cache_resolving_refs_at(
-                    record_bytes,
-                    bytes,
-                    subtype_tables,
-                    ref_width,
-                )?;
+                let mut curve = nurbs::core::curve_cache_resolving_refs(&r.tokens, token_table)?;
                 if *curve_reversed {
                     reverse_nurbs_curve(&mut curve);
                 }

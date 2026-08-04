@@ -226,12 +226,66 @@ pub(crate) fn normalized(value: [f64; 3]) -> Option<Vector3> {
     crate::nurbs::reader::normalized(value)
 }
 
-/// The B-spline marker at token `pos`, if any: `(control-point dimension,
-/// rational?)`. `nubs` introduces a non-rational block, `nurbs` a rational one.
-pub(crate) fn marker_at(toks: &[Token], pos: usize) -> Option<(usize, bool)> {
+/// Read a knot table of `n` `(knot, multiplicity)` pairs from the cursor,
+/// returning the expanded clamped knot vector and pole count
+/// `sum(mult) - (degree - 1)`. Endpoint multiplicities are stored as `degree`
+/// rather than `degree + 1`; expansion adds one at each end.
+pub(crate) fn take_knot_table(
+    cur: &mut Cur<'_>,
+    n: usize,
+    degree: i64,
+) -> Option<(Vec<f64>, usize)> {
+    let mut values = Vec::new();
+    let mut mults = Vec::new();
+    for _ in 0..n {
+        values.push(cur.take_f64()?);
+        mults.push(cur.take_long()?);
+    }
+    let sum: i64 = mults.iter().sum();
+    let n_poles = sum - (degree - 1);
+    if !(2..=100_000).contains(&n_poles) {
+        return None;
+    }
+    let mut expanded = Vec::new();
+    for (i, (value, mult)) in values.iter().zip(&mults).enumerate() {
+        let extra = i64::from(i == 0 || i == n - 1);
+        for _ in 0..usize::try_from((*mult + extra).max(0)).ok()? {
+            expanded.push(*value);
+        }
+    }
+    Some((expanded, n_poles as usize))
+}
+
+/// A B-spline block marker: `nubs` introduces a non-rational block, `nurbs` a
+/// rational one whose poles carry a fourth weight component.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum BsplineMarker {
+    /// Non-rational: three doubles per pole.
+    Nubs,
+    /// Rational: four doubles per pole, the fourth a homogeneous weight.
+    Nurbs,
+}
+
+impl BsplineMarker {
+    /// Doubles per control point.
+    pub(crate) fn cp_dims(self) -> usize {
+        match self {
+            Self::Nubs => 3,
+            Self::Nurbs => 4,
+        }
+    }
+
+    /// Whether poles carry homogeneous weights.
+    pub(crate) fn rational(self) -> bool {
+        self == Self::Nurbs
+    }
+}
+
+/// The B-spline marker at token `pos`, if any.
+pub(crate) fn marker_at(toks: &[Token], pos: usize) -> Option<BsplineMarker> {
     match toks.get(pos)? {
-        Token::Ident(name) if name == "nubs" => Some((3, false)),
-        Token::Ident(name) if name == "nurbs" => Some((4, true)),
+        Token::Ident(name) if name == "nubs" => Some(BsplineMarker::Nubs),
+        Token::Ident(name) if name == "nurbs" => Some(BsplineMarker::Nurbs),
         _ => None,
     }
 }
@@ -410,28 +464,64 @@ pub(crate) fn subtype_refs(toks: &[Token]) -> Vec<usize> {
     refs
 }
 
+/// The interior tokens of the subtype scope at payload chunk `chunk_index`
+/// when its immediately following identifier is `expected`: everything after
+/// that identifier up to (excluding) the matching close. Token-space
+/// counterpart of [`crate::sab::payload_subtype_span`].
+pub(crate) fn payload_subtype_toks<'r>(
+    record: &'r crate::sab::Record,
+    chunk_index: usize,
+    expected: &str,
+) -> Option<&'r [Token]> {
+    let mut chunk = 0usize;
+    let mut open = None;
+    for (pos, token) in record.tokens.iter().enumerate() {
+        if token.is_payload_ident() {
+            continue;
+        }
+        if chunk == chunk_index {
+            open = Some(pos);
+            break;
+        }
+        chunk += 1;
+    }
+    let open = open?;
+    if !matches!(record.tokens.get(open), Some(Token::SubtypeOpen)) {
+        return None;
+    }
+    let (Token::Ident(name) | Token::SubIdent(name)) = record.tokens.get(open + 1)? else {
+        return None;
+    };
+    if name != expected {
+        return None;
+    }
+    let span = subtype_span(&record.tokens, open)?;
+    span.get(2..span.len() - 1)
+}
+
 /// Token positions of the stream's subtype definitions, in stream order.
 ///
 /// A subtype definition opens as `SubtypeOpen` followed by an identifier other
 /// than `ref`, at any nesting depth; `{ref N}` references resolve to the `N`-th
-/// entry. Entries are `(record index in the framed table, token index in that
-/// record's payload)`.
+/// entry. Each entry holds the owning record's shared payload tokens and the
+/// definition's token index within them, so resolution needs no side channel
+/// back to the record table.
 pub(crate) struct SubtypeTable {
-    defs: Vec<(usize, usize)>,
+    defs: Vec<(std::sync::Arc<[Token]>, usize)>,
 }
 
 impl SubtypeTable {
     /// Build the table over each framed record's payload tokens, in order.
     pub(crate) fn from_records(records: &[crate::sab::Record]) -> Self {
         let mut defs = Vec::new();
-        for (record_pos, record) in records.iter().enumerate() {
+        for record in records {
             for (pos, token) in record.tokens.iter().enumerate() {
                 if matches!(token, Token::SubtypeOpen) {
                     if let Some(Token::Ident(name) | Token::SubIdent(name)) =
                         record.tokens.get(pos + 1)
                     {
                         if name != "ref" {
-                            defs.push((record_pos, pos));
+                            defs.push((record.tokens.clone(), pos));
                         }
                     }
                 }
@@ -441,14 +531,36 @@ impl SubtypeTable {
     }
 
     /// The token span of definition `index`, sliced from its owning record.
-    pub(crate) fn span<'r>(
-        &self,
-        records: &'r [crate::sab::Record],
-        index: usize,
-    ) -> Option<&'r [Token]> {
-        let (record_pos, token_pos) = *self.defs.get(index)?;
-        subtype_span(&records.get(record_pos)?.tokens, token_pos)
+    pub(crate) fn span(&self, index: usize) -> Option<&[Token]> {
+        let (tokens, token_pos) = self.defs.get(index)?;
+        subtype_span(tokens, *token_pos)
     }
+}
+
+/// Lex a bare byte span (a subtype scope or block without a record name or
+/// terminator) into payload tokens, for tests that build byte fixtures.
+#[cfg(test)]
+pub(crate) fn lex_test_span(bytes: &[u8], ref_width: usize) -> std::sync::Arc<[Token]> {
+    let mut wrapped = vec![0x0d, 1, b'x'];
+    wrapped.extend_from_slice(bytes);
+    wrapped.push(0x11);
+    let records =
+        crate::sab::frame(&wrapped, 0, wrapped.len(), ref_width).expect("test span lexes");
+    records.into_iter().next().expect("one record").tokens
+}
+
+/// Build a [`SubtypeTable`] over a bare byte span, for tests.
+#[cfg(test)]
+pub(crate) fn test_table(bytes: &[u8], ref_width: usize) -> SubtypeTable {
+    let record = crate::sab::Record {
+        index: 0,
+        name: String::new(),
+        head: String::new(),
+        tokens: lex_test_span(bytes, ref_width),
+        offset: 0,
+        len: 0,
+    };
+    SubtypeTable::from_records(&[record])
 }
 
 #[cfg(test)]
@@ -512,7 +624,7 @@ mod tests {
         // `nurbs` inside the nested scope is not.
         assert_eq!(owned_marker_positions(&toks), vec![1]);
         assert_eq!(marker_positions(&toks), vec![1, 3]);
-        assert_eq!(marker_at(&toks, 1), Some((3, false)));
-        assert_eq!(marker_at(&toks, 3), Some((4, true)));
+        assert_eq!(marker_at(&toks, 1), Some(BsplineMarker::Nubs));
+        assert_eq!(marker_at(&toks, 3), Some(BsplineMarker::Nurbs));
     }
 }

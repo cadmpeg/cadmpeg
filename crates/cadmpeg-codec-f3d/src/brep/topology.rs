@@ -64,6 +64,7 @@ pub(crate) fn keep_faces_and_carriers(
     bytes: &[u8],
     by_index: &HashMap<i64, &Record>,
     subtype_tables: &nurbs::subtypes::SubtypeTables,
+    token_table: &nurbs::toks::SubtypeTable,
     carriers: &mut Carriers,
     reach: &mut Reachable,
     purpose: DecodePurpose,
@@ -156,12 +157,9 @@ pub(crate) fn keep_faces_and_carriers(
         // as supports, not as evaluated face caches.
         if !exact_cacheless_construction {
             if let std::collections::hash_map::Entry::Vacant(e) = surface_geo.entry(surf_ref) {
-                if let Some(ns) = nurbs::core::decode_surface_cache_resolving_refs_at(
-                    record_slice(surf_rec, bytes),
-                    bytes,
-                    subtype_tables,
-                    ref_width,
-                ) {
+                if let Some(ns) =
+                    nurbs::core::surface_cache_resolving_refs(&surf_rec.tokens, token_table)
+                {
                     e.insert((SurfaceGeometry::Nurbs(ns), false));
                     if surf_rec.head == "spline" && !procedural_surface_defs.contains_key(&surf_ref)
                     {
@@ -225,11 +223,8 @@ pub(crate) fn keep_faces_and_carriers(
             } else {
                 out.stats.unknown_surface_faces += 1;
                 let native_kind = if surf_rec.head == "spline" {
-                    nurbs::subtypes::owned_construction_subtype(
-                        record_slice(surf_rec, bytes),
-                        ref_width,
-                    )
-                    .unwrap_or_else(|| surf_rec.head.clone())
+                    nurbs::toks::owned_construction_subtype(&surf_rec.tokens)
+                        .unwrap_or_else(|| surf_rec.head.clone())
                 } else {
                     surf_rec.head.clone()
                 };
@@ -249,8 +244,8 @@ pub(crate) fn walk_reachable_topology(
     out: &mut Brep,
     by_index: &HashMap<i64, &Record>,
     bytes: &[u8],
-    ref_width: usize,
     subtype_tables: &nurbs::subtypes::SubtypeTables,
+    token_table: &nurbs::toks::SubtypeTable,
     carriers: &mut Carriers,
     reach: &mut Reachable,
     purpose: DecodePurpose,
@@ -328,49 +323,44 @@ pub(crate) fn walk_reachable_topology(
                                 // nested refs describe support data. Other intcurve
                                 // graphs require dimensional or geometric selection.
                                 let candidates = match (prec.chunk(3), prec.chunk(4)) {
-                                (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
-                                    if let Some(span) = crate::sab::payload_subtype_span(
-                                        bytes,
-                                        prec,
-                                        5,
-                                        ref_width,
-                                        "exp_par_cur",
-                                    ) {
-                                        nurbs::pcurve::decode_owned_pcurve_cache_candidates_resolving_refs(
-                                            span, bytes, subtype_tables,
-                                        )
-                                    } else if crate::sab::payload_subtype_span(
-                                        bytes, prec, 5, ref_width, "ref",
-                                    )
-                                    .is_some()
-                                    {
-                                        // The resolver needs the `ref N` opener and name,
-                                        // not only the scope interior returned above.
-                                        nurbs::pcurve::decode_pcurve_cache_candidates_resolving_refs(
-                                            record_slice(prec, bytes),
-                                            bytes,
-                                            subtype_tables,
-                                        )
-                                    } else {
-                                        Vec::new()
+                                    (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
+                                        if let Some(span) = nurbs::toks::payload_subtype_toks(
+                                            prec,
+                                            5,
+                                            "exp_par_cur",
+                                        ) {
+                                            nurbs::pcurve::owned_pcurve_cache_candidates_resolving_refs(
+                                                span,
+                                                token_table,
+                                            )
+                                        } else if nurbs::toks::payload_subtype_toks(prec, 5, "ref")
+                                            .is_some()
+                                        {
+                                            // The resolver needs the `ref N` opener and name,
+                                            // not only the scope interior returned above.
+                                            nurbs::pcurve::pcurve_cache_candidates_resolving_refs(
+                                                &prec.tokens,
+                                                token_table,
+                                            )
+                                        } else {
+                                            Vec::new()
+                                        }
                                     }
-                                }
-                                (
-                                    Some(Token::Long(1 | 2 | -1 | -2)),
-                                    Some(Token::Ref(reference)),
-                                ) => by_index
-                                    .get(reference)
-                                    .filter(|record| record.head == "intcurve")
-                                    .map(|intcurve| {
-                                        nurbs::pcurve::decode_pcurve_cache_candidates_resolving_refs(
-                                            record_slice(intcurve, bytes),
-                                            bytes,
-                                            subtype_tables,
-                                        )
-                                    })
-                                    .unwrap_or_default(),
-                                _ => Vec::new(),
-                            };
+                                    (
+                                        Some(Token::Long(1 | 2 | -1 | -2)),
+                                        Some(Token::Ref(reference)),
+                                    ) => by_index
+                                        .get(reference)
+                                        .filter(|record| record.head == "intcurve")
+                                        .map(|intcurve| {
+                                            nurbs::pcurve::pcurve_cache_candidates_resolving_refs(
+                                                &intcurve.tokens,
+                                                token_table,
+                                            )
+                                        })
+                                        .unwrap_or_default(),
+                                    _ => Vec::new(),
+                                };
                                 let edge =
                                     ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied();
                                 let authoritative_count = candidates
@@ -577,6 +567,7 @@ pub(crate) fn collect_wire_topology(
     by_index: &HashMap<i64, &Record>,
     bytes: &[u8],
     subtype_tables: &nurbs::subtypes::SubtypeTables,
+    token_table: &nurbs::toks::SubtypeTable,
     carriers: &mut Carriers,
     reach: &mut Reachable,
     purpose: DecodePurpose,
@@ -600,6 +591,7 @@ pub(crate) fn collect_wire_topology(
                 by_index,
                 bytes,
                 subtype_tables,
+                token_table,
                 carriers,
                 reach,
                 purpose,
@@ -653,6 +645,7 @@ pub(crate) fn collect_wire_topology(
                                 by_index,
                                 bytes,
                                 subtype_tables,
+                                token_table,
                                 carriers,
                                 reach,
                                 purpose,
@@ -717,6 +710,7 @@ fn keep_wire_edge(
     by_index: &HashMap<i64, &Record>,
     bytes: &[u8],
     subtype_tables: &nurbs::subtypes::SubtypeTables,
+    _token_table: &nurbs::toks::SubtypeTable,
     carriers: &mut Carriers,
     reach: &mut Reachable,
     purpose: DecodePurpose,

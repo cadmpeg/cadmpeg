@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Cached parameter-space curve (pcurve) block decoding, patch layouts, and cache entry points.
 
-use crate::nurbs::core::{decode_curve_block, KnotPatchLayout};
+use crate::nurbs::core::KnotPatchLayout;
 use crate::nurbs::reader::{
     is_periodic, marker_at, marker_positions, read_knots, take_tagged_int, INT_WIDTHS,
 };
-use crate::nurbs::subtypes::{
-    decode_cache_resolving_refs, find_owned_subtype_marker, subtype_refs, subtype_span,
-    SubtypeTables,
-};
+use crate::nurbs::toks::{self, Cur};
+use crate::sab::Token;
 use cadmpeg_codec_core::le::f64_at as read_f64;
 use cadmpeg_ir::math::Point2;
 
@@ -112,14 +110,6 @@ fn final_pcurve_patch_layout_at(record: &[u8], int_width: usize) -> Option<Pcurv
         .next_back()
 }
 
-/// Decode the parameter-space fit tolerance immediately following the UV cache.
-pub(crate) fn decode_pcurve_fit_tolerance(record: &[u8]) -> Option<f64> {
-    let layout = final_pcurve_patch_layout(record)?;
-    (record.get(layout.control_end) == Some(&0x06))
-        .then(|| read_f64(record, layout.control_end + 1))
-        .flatten()
-}
-
 fn decode_pcurve_block(b: &[u8], marker_pos: usize, int_width: usize) -> Option<NurbsPcurve> {
     decode_pcurve_block_with_end(b, marker_pos, int_width).map(|(pcurve, _)| pcurve)
 }
@@ -189,97 +179,127 @@ fn decode_pcurve_cache_at(record_bytes: &[u8], int_width: usize) -> Option<Nurbs
         .find_map(|pos| decode_pcurve_block(record_bytes, pos, int_width))
 }
 
-/// Decode a 2D pcurve cache, resolving a nested ASM subtype-table reference
-/// when the pcurve record delegates its UV carrier to an `intcurve` block.
-pub fn decode_pcurve_cache_resolving_refs(
-    record_bytes: &[u8],
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
-) -> Option<NurbsPcurve> {
-    INT_WIDTHS.into_iter().find_map(|int_width| {
-        decode_cache_resolving_refs(
-            record_bytes,
-            active_bytes,
-            tables,
-            &mut Vec::new(),
-            decode_pcurve_cache_at,
-            int_width,
-        )
-    })
-}
-
-/// Decode every candidate 2D `nubs`/`nurbs` block reachable from a pcurve
-/// carrier record: the record's own blocks plus, through nested `ref N`
-/// subtype references, the blocks of the definitions it links. A ref-form
-/// pcurve delegates its UV carrier to an `intcurve` entity whose record can
-/// hold several 2D blocks (side pcurves and construction machinery); the
-/// dimensional-role flag separates genuine BS2 blocks from BS3 blocks whose
-/// bytes also admit a BS2 parse. The caller uses endpoint agreement only when
-/// several genuine BS2 candidates remain.
-pub(crate) fn decode_pcurve_cache_candidates_resolving_refs(
-    record_bytes: &[u8],
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
-) -> Vec<PcurveCandidate> {
-    decode_pcurve_candidates(record_bytes, active_bytes, tables, false)
-}
-
-/// Decode candidates from the interior of an explicitly owned `exp_par_cur`
-/// scope. The scope opener is outside `record_bytes`, so ownership must enter
-/// through this boundary rather than be inferred from the interior bytes.
-pub(crate) fn decode_owned_pcurve_cache_candidates_resolving_refs(
-    record_bytes: &[u8],
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
-) -> Vec<PcurveCandidate> {
-    decode_pcurve_candidates(record_bytes, active_bytes, tables, true)
-}
-
-fn decode_pcurve_candidates(
-    record_bytes: &[u8],
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
-    owns_explicit_pcurve: bool,
-) -> Vec<PcurveCandidate> {
-    for int_width in INT_WIDTHS {
-        let mut out = Vec::new();
-        collect_pcurve_candidates(
-            record_bytes,
-            active_bytes,
-            tables,
-            &mut Vec::new(),
-            int_width,
-            owns_explicit_pcurve,
-            &mut out,
-        );
-        if !out.is_empty() {
-            return out;
+/// Decode a 2D `nubs`/`nurbs` pcurve block at token `marker_pos`, returning
+/// the pcurve and the token index just past the block. Token-space counterpart
+/// of [`decode_pcurve_block_with_end`].
+pub(crate) fn pcurve_block_with_end(
+    toks: &[Token],
+    marker_pos: usize,
+) -> Option<(NurbsPcurve, usize)> {
+    let rational = toks::marker_at(toks, marker_pos)?.rational();
+    let mut cur = Cur::at(toks, marker_pos + 1);
+    let degree = cur.take_long()?;
+    if !(1..=20).contains(&degree) {
+        return None;
+    }
+    let closure = cur.take_enum()?;
+    let n_uniq = cur.take_long()?;
+    if !(1..=1000).contains(&n_uniq) {
+        return None;
+    }
+    let (knots, n_poles) = toks::take_knot_table(&mut cur, n_uniq as usize, degree)?;
+    let mut control_points = Vec::new();
+    let mut weights = rational.then(Vec::new);
+    for _ in 0..n_poles {
+        let u = cur.take_f64()?;
+        let v = cur.take_f64()?;
+        control_points.push(Point2::new(u, v));
+        if let Some(weights) = weights.as_mut() {
+            weights.push(cur.take_f64()?);
         }
     }
-    Vec::new()
+    Some((
+        NurbsPcurve {
+            degree: degree as u32,
+            knots,
+            control_points,
+            weights,
+            periodic: is_periodic(closure),
+        },
+        cur.pos(),
+    ))
 }
 
-fn collect_pcurve_candidates(
-    bytes: &[u8],
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+fn pcurve_block(toks: &[Token], marker_pos: usize) -> Option<NurbsPcurve> {
+    pcurve_block_with_end(toks, marker_pos).map(|(pcurve, _)| pcurve)
+}
+
+/// The parameter-space fit tolerance immediately following the final valid 2D
+/// pcurve block in `toks`. Token-space counterpart of
+/// [`decode_pcurve_fit_tolerance`].
+pub(crate) fn pcurve_fit_tolerance(toks: &[Token]) -> Option<f64> {
+    let (_, end) = toks::marker_positions(toks)
+        .into_iter()
+        .filter_map(|pos| pcurve_block_with_end(toks, pos))
+        .next_back()?;
+    match toks.get(end) {
+        Some(Token::Double(value)) => Some(*value),
+        _ => None,
+    }
+}
+
+/// Decode the first well-formed 2D block in a pcurve record's payload tokens.
+#[allow(dead_code)] // Consumed when the procedural decoders port onto tokens.
+pub(crate) fn pcurve_cache(toks: &[Token]) -> Option<NurbsPcurve> {
+    toks::marker_positions(toks)
+        .into_iter()
+        .find_map(|pos| pcurve_block(toks, pos))
+}
+
+/// [`pcurve_cache`], resolving a nested ASM subtype-table reference when the
+/// pcurve record delegates its UV carrier to an `intcurve` block.
+#[allow(dead_code)] // Consumed when the procedural decoders port onto tokens.
+pub(crate) fn pcurve_cache_resolving_refs(
+    toks: &[Token],
+    table: &toks::SubtypeTable,
+) -> Option<NurbsPcurve> {
+    crate::nurbs::core::cache_resolving_refs(toks, table, &mut Vec::new(), pcurve_cache)
+}
+
+/// Decode every candidate 2D block reachable from a pcurve carrier's payload
+/// tokens, in the same order and with the same ambiguity ranking as the byte
+/// walk. Token-space counterpart of
+/// [`decode_pcurve_cache_candidates_resolving_refs`].
+pub(crate) fn pcurve_cache_candidates_resolving_refs(
+    toks: &[Token],
+    table: &toks::SubtypeTable,
+) -> Vec<PcurveCandidate> {
+    let mut out = Vec::new();
+    collect_candidates(toks, table, &mut Vec::new(), false, &mut out);
+    out
+}
+
+/// Candidates from the interior of an explicitly owned `exp_par_cur` scope.
+/// The scope opener is outside `toks`, so ownership must enter through this
+/// boundary rather than be inferred from the interior tokens.
+pub(crate) fn owned_pcurve_cache_candidates_resolving_refs(
+    toks: &[Token],
+    table: &toks::SubtypeTable,
+) -> Vec<PcurveCandidate> {
+    let mut out = Vec::new();
+    collect_candidates(toks, table, &mut Vec::new(), true, &mut out);
+    out
+}
+
+fn collect_candidates(
+    toks: &[Token],
+    table: &toks::SubtypeTable,
     seen: &mut Vec<usize>,
-    int_width: usize,
     owns_explicit_pcurve: bool,
     out: &mut Vec<PcurveCandidate>,
 ) {
-    // A 3D curve block's bytes can also parse as a 2D block; such ambiguous
+    // A 3D curve block's tokens can also parse as a 2D block; such ambiguous
     // reads rank after every unambiguous 2D block so an unverified caller
     // taking the first candidate never picks a misread 3D carrier.
     let mut ambiguous = Vec::new();
-    let owns_explicit_pcurve = owns_explicit_pcurve
-        || find_owned_subtype_marker(bytes, &[b"exp_par_cur"], int_width).is_some();
+    let owns_explicit_pcurve =
+        owns_explicit_pcurve || toks::find_owned_subtype_marker(toks, &["exp_par_cur"]).is_some();
     let mut claimed_owned_carrier = false;
-    for position in marker_positions(bytes) {
-        if let Some(pcurve) = decode_pcurve_block(bytes, position, int_width) {
+    for position in toks::marker_positions(toks) {
+        if let Some(pcurve) = pcurve_block(toks, position) {
             let authoritative = owns_explicit_pcurve && !claimed_owned_carrier;
             claimed_owned_carrier |= authoritative;
-            if decode_curve_block(bytes, position, int_width).is_some() {
+            if crate::nurbs::core::curve_block(toks, position).is_some() {
                 ambiguous.push(PcurveCandidate {
                     curve: pcurve,
                     unambiguous_2d: false,
@@ -295,19 +315,15 @@ fn collect_pcurve_candidates(
         }
     }
     out.append(&mut ambiguous);
-    let table = tables.for_width(int_width);
-    for index in subtype_refs(bytes, int_width) {
+    for index in toks::subtype_refs(toks) {
         if seen.contains(&index) {
             continue;
         }
         seen.push(index);
-        let Some(&target) = table.get(index) else {
+        let Some(span) = table.span(index) else {
             continue;
         };
-        let Some(span) = subtype_span(active_bytes, target, int_width) else {
-            continue;
-        };
-        collect_pcurve_candidates(span, active_bytes, tables, seen, int_width, false, out);
+        collect_candidates(span, table, seen, false, out);
     }
 }
 
@@ -318,9 +334,7 @@ mod width_tests {
         decode_cyl_spl_sur_at, decode_rolling_ball_curve, decode_rolling_ball_side,
         decode_rolling_ball_surface, DecodedRollingBallCurve,
     };
-    use crate::nurbs::core::{
-        decode_curve_cache, decode_surface_cache, decode_surface_cache_resolving_refs_at,
-    };
+    use crate::nurbs::core::{decode_curve_cache, decode_surface_cache};
     use crate::nurbs::proc_curve::{
         compound_patch_layout, decode_helix_definition, decode_procedural_curve_resolving_refs,
         extrusion_patch_layout, helix_patch_layout, intersection_patch_layout,
@@ -334,6 +348,7 @@ mod width_tests {
         DecodedProceduralSurfaceDefinition, EmbeddedLawExpression,
     };
     use crate::nurbs::reader::NUBS_MARKER;
+    use crate::nurbs::subtypes::SubtypeTables;
     use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -455,11 +470,9 @@ mod width_tests {
             push_ident(&mut active, "ref");
             push_int(&mut active, 0x04, 1, int_width);
             active.push(0x10);
-            let tables = SubtypeTables::from_stream(&active);
-            let candidates = decode_pcurve_cache_candidates_resolving_refs(
-                &active[record_start..],
-                &active,
-                &tables,
+            let candidates = pcurve_cache_candidates_resolving_refs(
+                &crate::nurbs::toks::lex_test_span(&active[record_start..], int_width),
+                &crate::nurbs::toks::test_table(&active, int_width),
             );
 
             assert_eq!(candidates.len(), 2);
@@ -1230,11 +1243,9 @@ mod width_tests {
         record.extend_from_slice(b"ref");
         push_int(&mut record, 0x04, 0, 4);
         record.push(0x10);
-        let surface = decode_surface_cache_resolving_refs_at(
-            &record,
-            &active,
-            &SubtypeTables::from_stream(&active),
-            4,
+        let surface = crate::nurbs::core::surface_cache_resolving_refs(
+            &crate::nurbs::toks::lex_test_span(&record, 4),
+            &crate::nurbs::toks::test_table(&active, 4),
         )
         .expect("resolved width-4 ref");
         assert_eq!((surface.u_count, surface.v_count), (2, 2));
@@ -1250,11 +1261,9 @@ mod width_tests {
             let mut record = vec![0x0f];
             push_int(&mut record, 0x04, 0, int_width);
             record.push(0x10);
-            let surface = decode_surface_cache_resolving_refs_at(
-                &record,
-                &active,
-                &SubtypeTables::from_stream(&active),
-                int_width,
+            let surface = crate::nurbs::core::surface_cache_resolving_refs(
+                &crate::nurbs::toks::lex_test_span(&record, int_width),
+                &crate::nurbs::toks::test_table(&active, int_width),
             )
             .unwrap_or_else(|| panic!("compact subtype ref at width {int_width}"));
             assert_eq!((surface.u_count, surface.v_count), (2, 2));
