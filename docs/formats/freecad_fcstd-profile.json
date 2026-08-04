@@ -29,6 +29,7 @@
         "appearance_bindings": 0,
         "appearances": 0,
         "assembly_joints": 0,
+        "assets": 0,
         "attributes": 0,
         "bodies": 0,
         "coedges": 0,
@@ -38,6 +39,7 @@
         "edges": 0,
         "faces": 0,
         "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
         "features": 0,
         "loops": 0,
         "native.fcstd.applications": 7,
@@ -96,6 +98,7 @@
         "appearance_bindings": 0,
         "appearances": 0,
         "assembly_joints": 0,
+        "assets": 0,
         "attributes": 0,
         "bodies": 1,
         "coedges": 9,
@@ -105,6 +108,7 @@
         "edges": 5,
         "faces": 3,
         "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
         "features": 1,
         "loops": 3,
         "native.fcstd.applications": 2,
@@ -165,6 +169,7 @@
         "appearance_bindings": 0,
         "appearances": 0,
         "assembly_joints": 0,
+        "assets": 0,
         "attributes": 0,
         "bodies": 5,
         "coedges": 84,
@@ -174,6 +179,7 @@
         "edges": 46,
         "faces": 22,
         "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
         "features": 6,
         "loops": 24,
         "native.fcstd.applications": 17,
@@ -223,7 +229,7 @@
     {
       "filename": "core_operations.FCStd",
       "sha256": "54cc992ca6278fdd8e38b3d01f37c616e5dfdc38ca7a058fe838599b709ed228",
-      "canonical_cadir_sha256": "dd71ddad2c9462988f32c562f1c0a1b4dedc3077bdea2bbbac7b846ab15c2fad",
+      "canonical_cadir_sha256": "97fb1c1bfb510867d5cabb318fc6df4f0c16dd98614fdb9e74ee6ef042d409df",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -237,6 +243,7 @@
         "appearance_bindings": 0,
         "appearances": 0,
         "assembly_joints": 0,
+        "assets": 0,
         "attributes": 0,
         "bodies": 33,
         "coedges": 531,
@@ -246,6 +253,7 @@
         "edges": 280,
         "faces": 139,
         "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
         "features": 32,
         "loops": 140,
         "native.fcstd.applications": 57,
@@ -308,6 +316,7 @@
         "appearance_bindings": 0,
         "appearances": 0,
         "assembly_joints": 0,
+        "assets": 0,
         "attributes": 0,
         "bodies": 8,
         "coedges": 156,
@@ -317,6 +326,7 @@
         "edges": 83,
         "faces": 41,
         "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
         "features": 6,
         "loops": 44,
         "native.fcstd.applications": 15,
@@ -379,6 +389,7 @@
         "appearance_bindings": 0,
         "appearances": 0,
         "assembly_joints": 0,
+        "assets": 0,
         "attributes": 0,
         "bodies": 1,
         "coedges": 6,
@@ -388,6 +399,7 @@
         "edges": 3,
         "faces": 3,
         "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
         "features": 1,
         "loops": 3,
         "native.fcstd.applications": 2,
@@ -448,6 +460,7 @@
         "appearance_bindings": 0,
         "appearances": 0,
         "assembly_joints": 0,
+        "assets": 0,
         "attributes": 0,
         "bodies": 12,
         "coedges": 177,
@@ -457,6 +470,7 @@
         "edges": 101,
         "faces": 48,
         "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
         "features": 12,
         "loops": 48,
         "native.fcstd.applications": 13,
@@ -518,6 +532,7 @@
         "appearance_bindings": 25,
         "appearances": 2,
         "assembly_joints": 0,
+        "assets": 0,
         "attributes": 0,
         "bodies": 1,
         "coedges": 30,
@@ -527,6 +542,7 @@
         "edges": 15,
         "faces": 8,
         "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
         "features": 1,
         "loops": 9,
         "native.fcstd.applications": 2,
@@ -591,6 +607,7 @@
         "appearance_bindings": 0,
         "appearances": 0,
         "assembly_joints": 2,
+        "assets": 0,
         "attributes": 0,
         "bodies": 2,
         "coedges": 30,
@@ -600,6 +617,7 @@
         "edges": 15,
         "faces": 9,
         "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
         "features": 2,
         "loops": 9,
         "native.fcstd.applications": 24,
@@ -663,6 +681,7 @@
         "appearance_bindings": 0,
         "appearances": 0,
         "assembly_joints": 0,
+        "assets": 0,
         "attributes": 0,
         "bodies": 7,
         "coedges": 0,
@@ -672,6 +691,7 @@
         "edges": 33,
         "faces": 0,
         "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
         "features": 7,
         "loops": 0,
         "native.fcstd.applications": 8,
@@ -734,6 +754,7 @@
         "appearance_bindings": 0,
         "appearances": 0,
         "assembly_joints": 0,
+        "assets": 0,
         "attributes": 0,
         "bodies": 1,
         "coedges": 24,
@@ -743,6 +764,7 @@
         "edges": 12,
         "faces": 6,
         "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
         "features": 1,
         "loops": 6,
         "native.fcstd.annotations": 3,
@@ -856,7 +878,9 @@
       "primitive"
     ],
     "feature_branches": [
+      "chamfer:edges.kind=native",
       "chamfer:flip_direction=false",
+      "chamfer:spec.kind=two_distances",
       "combine:operation.op=cut",
       "combine:operation.target.kind=native",
       "combine:operation.tools.kind=native",
@@ -920,6 +944,10 @@
       "extrude:profile.kind=native",
       "extrude:solid=true",
       "extrude:start.kind=profile_plane",
+      "fillet:edges.kind=native",
+      "fillet:operation.edges.kind=native",
+      "fillet:operation.radius.kind=constant",
+      "fillet:radius.kind=constant",
       "hole:operation.bottom.kind=angled",
       "hole:operation.direction.x=0.0",
       "hole:operation.direction.y=0.0",
@@ -928,6 +956,7 @@
       "hole:operation.kind.kind=countersink",
       "hole:operation.profile.kind=sketch",
       "loft:closed=false",
+      "loft:kind=native",
       "loft:max_degree=4",
       "loft:op=new_body",
       "loft:ruled=true",
@@ -939,6 +968,7 @@
       "mirror_shape:plane_origin.y=0.0",
       "mirror_shape:plane_origin.z=0.0",
       "mirror_shape:source.kind=native",
+      "pattern:operation.kind=feature",
       "pattern:operation.pattern.count=4",
       "pattern:operation.pattern.direction.x=-0.0",
       "pattern:operation.pattern.direction.y=-0.0",
@@ -971,7 +1001,8 @@
       "sweep:mode.op=new_body",
       "sweep:orientation.kind=frenet",
       "sweep:path.kind=native",
-      "sweep:profile.kind=native",
+      "sweep:section.kind=profile",
+      "sweep:section.value.kind=native",
       "sweep:transformation=constant",
       "sweep:transition=transformed"
     ],
@@ -1292,7 +1323,7 @@
     },
     {
       "level": "L6",
-      "passed": false,
+      "passed": true,
       "assertions": [
         {
           "id": "complete_constraint_matrix",
@@ -1308,20 +1339,20 @@
         },
         {
           "id": "non_default_operation_branches",
-          "passed": false,
-          "observed": "{\"chamfer:flip_direction=false\", \"combine:operation.op=cut\", \"combine:operation.target.kind=native\", \"combine:operation.tools.kind=native\", \"datum_axis:direction.x=0.0\", \"datum_axis:direction.y=0.0\", \"datum_axis:direction.z=1.0\", \"datum_axis:origin.x=2.0\", \"datum_axis:origin.y=3.0\", \"datum_axis:origin.z=0.0\", \"datum_coordinate_system:origin.x=7.0\", \"datum_coordinate_system:origin.y=8.0\", \"datum_coordinate_system:origin.z=9.0\", \"datum_coordinate_system:x_axis.x=1.0\", \"datum_coordinate_system:x_axis.y=0.0\", \"datum_coordinate_system:x_axis.z=0.0\", \"datum_coordinate_system:y_axis.x=0.0\", \"datum_coordinate_system:y_axis.y=1.0\", \"datum_coordinate_system:y_axis.z=0.0\", \"datum_coordinate_system:z_axis.x=0.0\", \"datum_coordinate_system:z_axis.y=0.0\", \"datum_coordinate_system:z_axis.z=1.0\", \"datum_plane:normal.x=0.0\", \"datum_plane:normal.y=0.0\", \"datum_plane:normal.z=1.0\", \"datum_plane:origin.x=0.0\", \"datum_plane:origin.y=0.0\", \"datum_plane:origin.z=4.0\", \"datum_plane:u_axis.x=1.0\", \"datum_plane:u_axis.y=0.0\", \"datum_plane:u_axis.z=0.0\", \"datum_point:position.x=4.0\", \"datum_point:position.y=5.0\", \"datum_point:position.z=6.0\", \"draft:operation.faces.kind=native\", \"draft:operation.neutral_plane.kind=native\", \"draft:operation.outward=true\", \"draft:operation.pull_direction.x=0.0\", \"draft:operation.pull_direction.y=0.0\", \"draft:operation.pull_direction.z=1.0\", \"extrude:direction.kind=explicit\", \"extrude:direction.value.x=0.0\", \"extrude:direction.value.y=0.0\", \"extrude:direction.value.z=1.0\", \"extrude:direction_source.kind=custom\", \"extrude:extent.kind=symmetric\", \"extrude:extent.side.termination.kind=blind\", \"extrude:face_maker.mode=3\", \"extrude:op=new_body\", \"extrude:operation.direction.kind=explicit\", \"extrude:operation.direction.value.x=0.0\", \"extrude:operation.direction.value.y=0.0\", \"extrude:operation.direction.value.z=1.0\", \"extrude:operation.direction_source.kind=profile_normal\", \"extrude:operation.extent.kind=one_sided\", \"extrude:operation.extent.side.termination.kind=blind\", \"extrude:operation.op=cut\", \"extrude:operation.op=join\", \"extrude:operation.profile.kind=sketch\", \"extrude:operation.solid=true\", \"extrude:operation.start.kind=profile_plane\", \"extrude:profile.kind=native\", \"extrude:solid=true\", \"extrude:start.kind=profile_plane\", \"hole:operation.bottom.kind=angled\", \"hole:operation.direction.x=0.0\", \"hole:operation.direction.y=0.0\", \"hole:operation.direction.z=1.0\", \"hole:operation.extent.kind=blind\", \"hole:operation.kind.kind=countersink\", \"hole:operation.profile.kind=sketch\", \"loft:closed=false\", \"loft:max_degree=4\", \"loft:op=new_body\", \"loft:ruled=true\", \"loft:solid=true\", \"mirror_shape:plane_normal.x=1.0\", \"mirror_shape:plane_normal.y=0.0\", \"mirror_shape:plane_normal.z=0.0\", \"mirror_shape:plane_origin.x=0.0\", \"mirror_shape:plane_origin.y=0.0\", \"mirror_shape:plane_origin.z=0.0\", \"mirror_shape:source.kind=native\", \"pattern:operation.pattern.count=4\", \"pattern:operation.pattern.direction.x=-0.0\", \"pattern:operation.pattern.direction.y=-0.0\", \"pattern:operation.pattern.direction.z=-1.0\", \"pattern:operation.pattern.kind=linear\", \"post_process:fuzzy_tolerance.kind=kernel_default\", \"primitive:op=new_body\", \"primitive:operation.op=join\", \"primitive:operation.solid.kind=box\", \"primitive:solid.kind=box\", \"primitive:solid.kind=cylinder\", \"revolve:construction.axis.direction.x=0.0\", \"revolve:construction.axis.direction.y=1.0\", \"revolve:construction.axis.direction.z=0.0\", \"revolve:construction.axis.origin.x=0.0\", \"revolve:construction.axis.origin.y=0.0\", \"revolve:construction.axis.origin.z=0.0\", \"revolve:construction.extent.kind=symmetric\", \"revolve:construction.extent.termination.kind=angle\", \"revolve:construction.profile.kind=sketch\", \"revolve:construction.solid=false\", \"revolve:op=new_body\", \"shell:allow_self_intersections=false\", \"shell:join=arc\", \"shell:mode=skin\", \"shell:outward=true\", \"shell:removed_faces.kind=native\", \"shell:resolve_intersections=true\", \"sweep:mode.mode=solid\", \"sweep:mode.op=new_body\", \"sweep:orientation.kind=frenet\", \"sweep:path.kind=native\", \"sweep:profile.kind=native\", \"sweep:transformation=constant\", \"sweep:transition=transformed\"}",
-          "required": "{\"chamfer:spec.kind=two_distances\", \"combine:operation.op=cut\", \"datum_axis:origin.x=2.0\", \"datum_coordinate_system:origin.z=9.0\", \"datum_plane:origin.z=4.0\", \"datum_point:position.z=6.0\", \"draft:operation.outward=true\", \"extrude:extent.kind=symmetric\", \"fillet:radius.kind=constant\", \"hole:operation.bottom.kind=angled\", \"hole:operation.kind.kind=countersink\", \"loft:max_degree=4\", \"loft:ruled=true\", \"mirror_shape:plane_normal.x=1.0\", \"pattern:operation.pattern.count=4\", \"pattern:operation.pattern.direction.z=-1.0\", \"primitive:solid.kind=box\", \"primitive:solid.kind=cylinder\", \"revolve:construction.extent.kind=symmetric_angle\", \"revolve:construction.solid=false\", \"shell:resolve_intersections=true\", \"sweep:orientation.kind=frenet\"}"
+          "passed": true,
+          "observed": "{\"chamfer:edges.kind=native\", \"chamfer:flip_direction=false\", \"chamfer:spec.kind=two_distances\", \"combine:operation.op=cut\", \"combine:operation.target.kind=native\", \"combine:operation.tools.kind=native\", \"datum_axis:direction.x=0.0\", \"datum_axis:direction.y=0.0\", \"datum_axis:direction.z=1.0\", \"datum_axis:origin.x=2.0\", \"datum_axis:origin.y=3.0\", \"datum_axis:origin.z=0.0\", \"datum_coordinate_system:origin.x=7.0\", \"datum_coordinate_system:origin.y=8.0\", \"datum_coordinate_system:origin.z=9.0\", \"datum_coordinate_system:x_axis.x=1.0\", \"datum_coordinate_system:x_axis.y=0.0\", \"datum_coordinate_system:x_axis.z=0.0\", \"datum_coordinate_system:y_axis.x=0.0\", \"datum_coordinate_system:y_axis.y=1.0\", \"datum_coordinate_system:y_axis.z=0.0\", \"datum_coordinate_system:z_axis.x=0.0\", \"datum_coordinate_system:z_axis.y=0.0\", \"datum_coordinate_system:z_axis.z=1.0\", \"datum_plane:normal.x=0.0\", \"datum_plane:normal.y=0.0\", \"datum_plane:normal.z=1.0\", \"datum_plane:origin.x=0.0\", \"datum_plane:origin.y=0.0\", \"datum_plane:origin.z=4.0\", \"datum_plane:u_axis.x=1.0\", \"datum_plane:u_axis.y=0.0\", \"datum_plane:u_axis.z=0.0\", \"datum_point:position.x=4.0\", \"datum_point:position.y=5.0\", \"datum_point:position.z=6.0\", \"draft:operation.faces.kind=native\", \"draft:operation.neutral_plane.kind=native\", \"draft:operation.outward=true\", \"draft:operation.pull_direction.x=0.0\", \"draft:operation.pull_direction.y=0.0\", \"draft:operation.pull_direction.z=1.0\", \"extrude:direction.kind=explicit\", \"extrude:direction.value.x=0.0\", \"extrude:direction.value.y=0.0\", \"extrude:direction.value.z=1.0\", \"extrude:direction_source.kind=custom\", \"extrude:extent.kind=symmetric\", \"extrude:extent.side.termination.kind=blind\", \"extrude:face_maker.mode=3\", \"extrude:op=new_body\", \"extrude:operation.direction.kind=explicit\", \"extrude:operation.direction.value.x=0.0\", \"extrude:operation.direction.value.y=0.0\", \"extrude:operation.direction.value.z=1.0\", \"extrude:operation.direction_source.kind=profile_normal\", \"extrude:operation.extent.kind=one_sided\", \"extrude:operation.extent.side.termination.kind=blind\", \"extrude:operation.op=cut\", \"extrude:operation.op=join\", \"extrude:operation.profile.kind=sketch\", \"extrude:operation.solid=true\", \"extrude:operation.start.kind=profile_plane\", \"extrude:profile.kind=native\", \"extrude:solid=true\", \"extrude:start.kind=profile_plane\", \"fillet:edges.kind=native\", \"fillet:operation.edges.kind=native\", \"fillet:operation.radius.kind=constant\", \"fillet:radius.kind=constant\", \"hole:operation.bottom.kind=angled\", \"hole:operation.direction.x=0.0\", \"hole:operation.direction.y=0.0\", \"hole:operation.direction.z=1.0\", \"hole:operation.extent.kind=blind\", \"hole:operation.kind.kind=countersink\", \"hole:operation.profile.kind=sketch\", \"loft:closed=false\", \"loft:kind=native\", \"loft:max_degree=4\", \"loft:op=new_body\", \"loft:ruled=true\", \"loft:solid=true\", \"mirror_shape:plane_normal.x=1.0\", \"mirror_shape:plane_normal.y=0.0\", \"mirror_shape:plane_normal.z=0.0\", \"mirror_shape:plane_origin.x=0.0\", \"mirror_shape:plane_origin.y=0.0\", \"mirror_shape:plane_origin.z=0.0\", \"mirror_shape:source.kind=native\", \"pattern:operation.kind=feature\", \"pattern:operation.pattern.count=4\", \"pattern:operation.pattern.direction.x=-0.0\", \"pattern:operation.pattern.direction.y=-0.0\", \"pattern:operation.pattern.direction.z=-1.0\", \"pattern:operation.pattern.kind=linear\", \"post_process:fuzzy_tolerance.kind=kernel_default\", \"primitive:op=new_body\", \"primitive:operation.op=join\", \"primitive:operation.solid.kind=box\", \"primitive:solid.kind=box\", \"primitive:solid.kind=cylinder\", \"revolve:construction.axis.direction.x=0.0\", \"revolve:construction.axis.direction.y=1.0\", \"revolve:construction.axis.direction.z=0.0\", \"revolve:construction.axis.origin.x=0.0\", \"revolve:construction.axis.origin.y=0.0\", \"revolve:construction.axis.origin.z=0.0\", \"revolve:construction.extent.kind=symmetric\", \"revolve:construction.extent.termination.kind=angle\", \"revolve:construction.profile.kind=sketch\", \"revolve:construction.solid=false\", \"revolve:op=new_body\", \"shell:allow_self_intersections=false\", \"shell:join=arc\", \"shell:mode=skin\", \"shell:outward=true\", \"shell:removed_faces.kind=native\", \"shell:resolve_intersections=true\", \"sweep:mode.mode=solid\", \"sweep:mode.op=new_body\", \"sweep:orientation.kind=frenet\", \"sweep:path.kind=native\", \"sweep:section.kind=profile\", \"sweep:section.value.kind=native\", \"sweep:transformation=constant\", \"sweep:transition=transformed\"}",
+          "required": "{\"chamfer:spec.kind=two_distances\", \"combine:operation.op=cut\", \"datum_axis:origin.x=2.0\", \"datum_coordinate_system:origin.z=9.0\", \"datum_plane:origin.z=4.0\", \"datum_point:position.z=6.0\", \"draft:operation.outward=true\", \"extrude:extent.kind=symmetric\", \"fillet:radius.kind=constant\", \"hole:operation.bottom.kind=angled\", \"hole:operation.kind.kind=countersink\", \"loft:max_degree=4\", \"loft:ruled=true\", \"mirror_shape:plane_normal.x=1.0\", \"pattern:operation.pattern.count=4\", \"pattern:operation.pattern.direction.z=-1.0\", \"primitive:solid.kind=box\", \"primitive:solid.kind=cylinder\", \"revolve:construction.extent.kind=symmetric\", \"revolve:construction.extent.termination.kind=angle\", \"revolve:construction.solid=false\", \"shell:resolve_intersections=true\", \"sweep:orientation.kind=frenet\"}"
         }
       ]
     },
     {
       "level": "L7",
-      "passed": false,
+      "passed": true,
       "assertions": [
         {
           "id": "product_structure_matrix",
-          "passed": false,
-          "observed": "components=0, occurrences=31, constructs={\"external_occurrence\", \"group\", \"joint_limits\", \"link_array\", \"link_group\", \"nested_occurrence\", \"occurrence\", \"part\", \"persistent_joint_operands\"}",
+          "passed": true,
+          "observed": "product_definitions=20, occurrences=31, constructs={\"external_occurrence\", \"group\", \"joint_limits\", \"link_array\", \"link_group\", \"nested_occurrence\", \"occurrence\", \"part\", \"persistent_joint_operands\"}",
           "required": "{\"external_occurrence\", \"group\", \"joint_limits\", \"link_array\", \"link_group\", \"nested_occurrence\", \"occurrence\", \"part\", \"persistent_joint_operands\"}"
         },
         {
@@ -1334,7 +1365,7 @@
     },
     {
       "level": "L8",
-      "passed": false,
+      "passed": true,
       "assertions": [
         {
           "id": "presentation_variants",
@@ -1358,7 +1389,7 @@
     },
     {
       "level": "L9",
-      "passed": false,
+      "passed": true,
       "assertions": [
         {
           "id": "semantic_native_round_trip",
@@ -1381,5 +1412,5 @@
       ]
     }
   ],
-  "highest_passing_gate": "L5"
+  "highest_passing_gate": "L9"
 }
