@@ -88,4 +88,6 @@ impl Codec for IgesCodec {
 }
 
 #[cfg(test)]
+mod golden_tests;
+#[cfg(test)]
 mod tests;

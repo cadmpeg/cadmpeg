@@ -186,4 +186,6 @@ mod archive_test_support;
 #[cfg(test)]
 mod archive_tests;
 #[cfg(test)]
+mod golden_tests;
+#[cfg(test)]
 mod tests;
