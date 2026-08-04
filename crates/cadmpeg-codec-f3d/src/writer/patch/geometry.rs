@@ -201,9 +201,10 @@ pub(crate) fn patch_framed_geometry(
                     record.index
                 )));
             }
+            // Position in chunk space, because the index feeds `chunk()` below
+            // and chunk indices skip payload identifiers.
             let family = record
-                .tokens
-                .iter()
+                .chunks()
                 .position(
                     |token| matches!(token, sab::Token::Str(value) if value == "Timestamp_attrib_def"),
                 )
@@ -2012,13 +2013,14 @@ fn patch_nurbs_pcurve_record(
                 record.index
             )));
         }
-        let suffix_start = record.tokens.len().checked_sub(6).ok_or_else(|| {
+        // Chunk space, because `payload_token_offset` indexes value tokens.
+        let suffix_start = record.chunk_len().checked_sub(6).ok_or_else(|| {
             CodecError::Malformed(format!(
                 "pcurve record {} lacks its native metadata suffix",
                 record.index
             ))
         })?;
-        let suffix_offsets = (suffix_start..record.tokens.len())
+        let suffix_offsets = (suffix_start..record.chunk_len())
             .map(|index| {
                 sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
                     CodecError::Malformed(format!(

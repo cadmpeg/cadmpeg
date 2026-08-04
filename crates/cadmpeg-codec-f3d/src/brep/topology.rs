@@ -209,7 +209,7 @@ pub(crate) fn keep_faces_and_carriers(
         } else {
             unknown_surface_records.insert(surf_ref);
             undecoded_carriers.insert(surf_ref);
-            if surf_rec.head == "mesh_surface" && surf_rec.tokens.is_empty() {
+            if surf_rec.head == "mesh_surface" && surf_rec.chunks().next().is_none() {
                 if !out
                     .mesh_surface_sentinels
                     .iter()

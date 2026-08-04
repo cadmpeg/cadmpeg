@@ -296,7 +296,10 @@ pub(crate) fn source_attribute(record: &Record, target: AttributeTarget) -> Sour
         id: AttributeId(format!("f3d:brep:attribute#{}", record.index)),
         target,
         name: record.name.clone(),
-        values: record.tokens.iter().map(attribute_value).collect(),
+        // Chunks, not raw tokens: the serialized value list is defined over the
+        // value tokens, and a payload identifier names an embedded construction
+        // rather than carrying an attribute value.
+        values: record.chunks().map(attribute_value).collect(),
     }
 }
 
@@ -317,6 +320,10 @@ fn attribute_value(token: &Token) -> AttributeValue {
         Token::SubtypeClose => AttributeValue::String("subtype_close".into()),
         Token::Position(value) | Token::Vector3(value) => AttributeValue::Vector(value.to_vec()),
         Token::Vector2(value) => AttributeValue::Vector(value.to_vec()),
+        // Not reachable through `source_attribute`, which maps chunks; kept
+        // total so a payload identifier still carries its name if a future
+        // caller maps raw tokens.
+        Token::Ident(value) | Token::SubIdent(value) => AttributeValue::String(value.clone()),
     }
 }
 

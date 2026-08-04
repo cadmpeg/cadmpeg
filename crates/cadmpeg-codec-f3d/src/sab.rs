@@ -51,6 +51,26 @@ pub enum Token {
     Vector2([f64; 2]),
     /// `0x17` `AutoCAD` ASM int64 attribute value.
     Int64(i64),
+    /// `0x0d` identifier inside a record payload: the terminal component of a
+    /// subtype definition's name chain, e.g. `nubs` in a B-spline cache or
+    /// `exactcur` in a legacy intcurve construction.
+    Ident(String),
+    /// `0x0e` sub-identifier inside a record payload: a non-terminal component
+    /// of a subtype definition's name chain, e.g. `full` preceding `nubs`.
+    SubIdent(String),
+}
+
+impl Token {
+    /// Whether this token is a payload identifier ([`Token::Ident`] or
+    /// [`Token::SubIdent`]).
+    ///
+    /// Positional field semantics — `chunk[i]` in the topology field tables and
+    /// every serialized token count — are defined over the value tokens alone,
+    /// because identifiers name the construction that follows rather than carry
+    /// a field. [`Record::chunk`] and [`Record::chunk_len`] skip them.
+    pub fn is_payload_ident(&self) -> bool {
+        matches!(self, Token::Ident(_) | Token::SubIdent(_))
+    }
 }
 
 /// One framed record: its `RecordTable` index, assembled name, payload tokens
@@ -72,19 +92,33 @@ pub struct Record {
 }
 
 impl Record {
-    /// The `chunk[i]` value: the `i`-th payload token, as topology field tables
-    /// index them.
+    /// The `chunk[i]` value: the `i`-th payload value token, as topology field
+    /// tables index them. Payload identifiers are not chunks: they name the
+    /// construction that follows, so indexing skips them and `chunk[i]` means
+    /// the same field whether or not the record embeds a named subtype.
     pub fn chunk(&self, i: usize) -> Option<&Token> {
-        self.tokens.get(i)
+        self.chunks().nth(i)
     }
 
     /// The `chunk[i]` as a non-null entity reference index. Returns `None` for a
     /// null reference (`-1`) or a non-reference token.
     pub fn ref_at(&self, i: usize) -> Option<i64> {
-        match self.tokens.get(i) {
+        match self.chunk(i) {
             Some(Token::Ref(v)) if *v >= 0 => Some(*v),
             _ => None,
         }
+    }
+
+    /// The payload value tokens in order, payload identifiers skipped: the
+    /// stream that `chunk[i]` indexes.
+    pub fn chunks(&self) -> impl Iterator<Item = &Token> {
+        self.tokens.iter().filter(|t| !t.is_payload_ident())
+    }
+
+    /// Number of payload value tokens: the length of the stream that
+    /// `chunk[i]` indexes.
+    pub fn chunk_len(&self) -> usize {
+        self.chunks().count()
     }
 }
 
@@ -466,19 +500,24 @@ fn frame_impl(
                 }
                 Lexed::Ident(identifier) => {
                     // Identifier tokens after the name belong to the payload
-                    // (e.g. subtype names inside a spline). An archived ASM
-                    // history record may wrap an edge record in the exact
-                    // End-of-ASM-History-Section marker chain; its following
-                    // identifier is the wrapped record's dispatch name.
+                    // (e.g. subtype names inside a spline) and are retained as
+                    // payload tokens. An archived ASM history record may wrap
+                    // an edge record in the exact End-of-ASM-History-Section
+                    // marker chain; its following identifier is the wrapped
+                    // record's dispatch name.
                     if payload_start
                         && name_parts.join("-") == "End-of-ASM-History-Section"
                         && identifier == "edge"
                     {
-                        embedded_history_entity = Some(identifier);
+                        embedded_history_entity = Some(identifier.clone());
                     }
                     payload_start = false;
+                    tokens.push(Token::Ident(identifier));
                 }
-                Lexed::SubIdent(_) => payload_start = false,
+                Lexed::SubIdent(identifier) => {
+                    payload_start = false;
+                    tokens.push(Token::SubIdent(identifier));
+                }
                 Lexed::Value(Token::SubtypeOpen) => {
                     payload_start = false;
                     depth += 1;
@@ -568,6 +607,49 @@ mod tests {
         let records = frame_history(&non_wrapper, 0, non_wrapper.len(), 8)
             .expect("marker with a later payload identifier");
         assert_eq!(records[0].name, "End-of-ASM-History-Section");
+    }
+
+    #[test]
+    fn payload_identifiers_are_retained_and_skipped_by_chunk_indexing() {
+        // spline record shape: one value, a named subtype scope wrapping one
+        // double, then one trailing value.
+        let mut bytes = vec![0x0d, 6];
+        bytes.extend_from_slice(b"spline");
+        bytes.push(0x0a); // chunk 0
+        bytes.push(0x0f); // chunk 1: subtype open
+        bytes.extend_from_slice(&[0x0e, 4]);
+        bytes.extend_from_slice(b"full"); // payload sub-identifier
+        bytes.extend_from_slice(&[0x0d, 4]);
+        bytes.extend_from_slice(b"nubs"); // payload identifier
+        bytes.push(0x06); // chunk 2
+        bytes.extend_from_slice(&1.5f64.to_le_bytes());
+        bytes.push(0x10); // chunk 3: subtype close
+        bytes.push(0x0b); // chunk 4
+        bytes.push(0x11);
+
+        let records = frame(&bytes, 0, bytes.len(), 8).expect("named subtype");
+        assert_eq!(records.len(), 1);
+        let record = &records[0];
+        // The token stream is faithful: the subtype's name chain is present.
+        assert_eq!(
+            &*record.tokens,
+            [
+                super::Token::True,
+                super::Token::SubtypeOpen,
+                super::Token::SubIdent("full".to_string()),
+                super::Token::Ident("nubs".to_string()),
+                super::Token::Double(1.5),
+                super::Token::SubtypeClose,
+                super::Token::False,
+            ]
+        );
+        // Chunk indexing is defined over value tokens and skips the names.
+        assert_eq!(record.chunk(0), Some(&super::Token::True));
+        assert_eq!(record.chunk(1), Some(&super::Token::SubtypeOpen));
+        assert_eq!(record.chunk(2), Some(&super::Token::Double(1.5)));
+        assert_eq!(record.chunk(3), Some(&super::Token::SubtypeClose));
+        assert_eq!(record.chunk(4), Some(&super::Token::False));
+        assert_eq!(record.chunk_len(), 5);
     }
 
     #[test]
