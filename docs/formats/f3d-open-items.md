@@ -160,18 +160,27 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the operation to build a neutral dimension from more than one recipe record.
 
-### DR-09. Sheet-metal `EdgeFlange` and `Hem` discriminators
+### DR-09. Sheet-metal `EdgeFlange` to-object height extent
 
-**Question.** What do the values of these discriminators mean?
+**Question.** What is the layout of an `EdgeFlange` frame whose height extent terminates at a selected object rather than at a distance?
 
-- the `EdgeFlange` extent discriminator
-- the `EdgeFlange` height-datum discriminator
-- the `Hem` direction discriminator
-- the `Hem` hem-form discriminator
+**Known.** `f3d.md` §8.1 "A single-edge `EdgeFlange` scope has" gives the distance-extent layout, the header shift, the bend-position values, the height-datum values, and the edge-width mode. A to-object frame adds three ordered references and inserts a marked reference pair into the fixed operation section between the height-owner reference and the result-record run. Its frame length does not satisfy the distance-extent length relation for any result-record count, so the to-object form is a separate layout and the decoder refuses it. The height-datum discriminator still carries the outer-faces value in a to-object frame, where the height datum has no effect.
 
-**Known.** `f3d.md` §8.1 "An `EdgeFlange` scope with" and `f3d.md` §8.1 "A `Hem` scope has" give the offset and the width of each field. The decoder keeps every unresolved field as an uninterpreted value. Bend-position value `4` is typed as tangent to the side reference plane in both feature families; other bend-position values remain losslessly retained unknown values.
+**Need.** A to-object height extent has no neutral extent without the inserted pair's roles. The decoder retains the scope as a native record, so the item blocks the extent semantics of that form only.
 
-**Need.** These two features have no neutral operation without the remaining value meanings. We cannot rebuild either feature in a neutral model. Available records contain one combination of the unresolved values. Settling them needs one edge flange per width mode, one flange whose height is measured to a plane and one to a point, and one hem of each form and direction.
+### DR-09A. Sheet-metal `Hem` discriminators and form layouts
+
+**Question.** We must find three answers:
+
+- the offset of the `Hem` bend-position discriminator
+- the meanings of the `Hem` direction discriminator and the direction-reversal byte
+- the layout each hem form selects
+
+**Known.** `f3d.md` §8.1 "A `Hem` scope has" gives the offsets of the flat form. The header shift defined for `EdgeFlange` applies to `Hem` as well. The u32 at offset `121 + S` is `4` in a frame whose authored bend position is adjacent, so that offset is not the bend-position discriminator; the `EdgeFlange` bend-position values do not apply to it. The direction-reversal byte at offset `119 + S` is clear both in a frame authored with the default direction and in one authored with the direction reversed, so it does not carry that state either.
+
+The hem-form discriminator at offset `85 + S` is `3` for the flat form. The open, rolled, and teardrop forms each replace the gap and length parameter owners with the owners their form needs, so their ordered reference tables differ in content and the teardrop form adds a ninth reference. The decoder reads the flat form only.
+
+**Need.** A hem has no neutral operation without the form layouts and the direction meaning. **Blocked in part on a specimen:** the closed, rope, and double forms are not available to read.
 
 ### DR-10. `SpirePrimitive` and `CoilPrimitive` values
 

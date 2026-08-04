@@ -342,6 +342,28 @@ The stated field list tiles the stated 58-byte total exactly. The timestamp is a
 | 42 | 8 | `timestamp_micros` | `u64` | little | spec | a nonzero u64 Unix-epoch timestamp in microseconds |
 | 50 | 8 | `zero_run_8` | `bytes[8]` | little | spec | and eight zero bytes |
 
+## `edge_flange_fixed_operation_section`
+
+Spec §8.1 · layout: byte offsets · size: 79 B
+
+Offsets are relative to the section base `85 + S`, where `S` is the header shift. The section runs from the bend-position discriminator through the inside bend radius; the result-record run and the two closing group references follow it at variable offsets.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `bend_position` | `u32` | little | spec | with a u32 bend-position discriminator |
+| 4 | 4 | `edge_count` | `u32` | little | spec | the u32 edge count `1` |
+| 8 | 11 | `edge_wrapper_reference` | `bytes[11]` | little | spec | the marked wrapper reference |
+| 19 | 11 | `settings_reference` | `bytes[11]` | little | spec | the marked settings reference |
+| 30 | 4 | `height_datum` | `u32` | little | spec | a u32 height-datum discriminator |
+| 34 | 11 | `angle_owner_reference` | `bytes[11]` | little | spec | and the marked angle-owner and height-owner references |
+| 45 | 11 | `height_owner_reference` | `bytes[11]` | little | spec | Height-datum value `1` measures the height from the inner faces |
+| 56 | 4 | `unsettled_side_reference` | `u32` | little | spec | A u32 whose role is not settled follows the height-owner reference |
+| 71 | 8 | `inside_bend_radius` | `f64` | little | spec | the positive f64 inside bend radius in centimetres starts 15 bytes after that u32 |
+
+Unstated regions:
+
+- `60..71` (11 B): The spec places the radius 15 bytes after the unsettled u32, so eleven bytes between them are unaccounted for.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

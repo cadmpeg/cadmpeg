@@ -1979,9 +1979,20 @@ pub struct DesignBaseFlangeOperation {
 }
 
 /// Bend position used by sheet-metal edge operations.
+///
+/// The position places the bend region against the selected edge: `Outside` and
+/// `Inside` put the bend beyond and within the source face boundary, `Adjacent`
+/// starts it at the boundary, and `TangentToSide` makes it tangent to the side
+/// reference plane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DesignBendPosition {
+    /// The bend lies outside the selected edge.
+    Outside,
+    /// The bend lies inside the selected edge.
+    Inside,
+    /// The bend starts at the selected edge.
+    Adjacent,
     /// The bend is tangent to the side reference plane.
     TangentToSide,
     /// A serialized value whose bend-position meaning is not settled.
@@ -1993,6 +2004,9 @@ impl DesignBendPosition {
     #[must_use]
     pub fn from_code(code: u32) -> Self {
         match code {
+            1 => Self::Outside,
+            2 => Self::Inside,
+            3 => Self::Adjacent,
             4 => Self::TangentToSide,
             code => Self::Unknown(code),
         }
@@ -2002,10 +2016,62 @@ impl DesignBendPosition {
     #[must_use]
     pub fn code(self) -> u32 {
         match self {
+            Self::Outside => 1,
+            Self::Inside => 2,
+            Self::Adjacent => 3,
             Self::TangentToSide => 4,
             Self::Unknown(code) => code,
         }
     }
+}
+
+/// Face pair an `EdgeFlange` height is measured from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignSheetMetalHeightDatum {
+    /// The height is measured from the inner faces of the sheet.
+    InnerFaces,
+    /// The height is measured from the outer faces of the sheet.
+    OuterFaces,
+    /// A serialized value whose height-datum meaning is not settled.
+    Unknown(u32),
+}
+
+impl DesignSheetMetalHeightDatum {
+    /// Decode the serialized height-datum discriminator without discarding unknown values.
+    #[must_use]
+    pub fn from_code(code: u32) -> Self {
+        match code {
+            1 => Self::InnerFaces,
+            2 => Self::OuterFaces,
+            code => Self::Unknown(code),
+        }
+    }
+
+    /// Return the serialized discriminator.
+    #[must_use]
+    pub fn code(self) -> u32 {
+        match self {
+            Self::InnerFaces => 1,
+            Self::OuterFaces => 2,
+            Self::Unknown(code) => code,
+        }
+    }
+}
+
+/// Extent of an `EdgeFlange` along its selected edge.
+///
+/// The mode is carried by the count of width-distance parameter owners the scope
+/// adds to its ordered reference table, not by a discriminator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignEdgeWidthMode {
+    /// The flange spans the complete selected edge and adds no width owner.
+    FullEdge,
+    /// The flange is centred on the edge and adds one width owner.
+    Symmetric,
+    /// The flange is measured from each end and adds two width owners.
+    TwoSides,
 }
 
 /// Fixed construction carried by a sheet-metal `EdgeFlange` scope.
@@ -2025,18 +2091,35 @@ pub struct DesignEdgeFlangeOperation {
     pub height_owner_record_index: u32,
     /// Angle parameter-owner record.
     pub angle_owner_record_index: u32,
+    /// Width-distance parameter-owner records the edge-width mode adds, in source order.
+    pub width_distance_owner_record_indices: Vec<u32>,
     /// Indexed operation-settings record.
     pub settings_record_index: u32,
     /// Positive rule-derived inside bend radius in centimetres.
     pub bend_radius: f64,
     /// Byte offset of `bend_radius`.
     pub bend_radius_offset: u64,
-    /// Uninterpreted extent discriminator (DR-09).
-    pub extent_code: u32,
-    /// Uninterpreted height-datum discriminator (DR-09).
-    pub height_datum_code: u32,
-    /// Bend position relative to the selected side.
+    /// Uninterpreted side-reference discriminator (DR-09).
+    pub reference_side_code: u32,
+    /// Face pair the flange height is measured from.
+    pub height_datum: DesignSheetMetalHeightDatum,
+    /// Bend position relative to the selected edge.
     pub bend_position: DesignBendPosition,
+}
+
+impl DesignEdgeFlangeOperation {
+    /// Return the extent of the flange along its selected edge.
+    ///
+    /// The width-distance owner count carries the mode, and the parser refuses a
+    /// frame whose count exceeds the two-sided form.
+    #[must_use]
+    pub fn edge_width_mode(&self) -> DesignEdgeWidthMode {
+        match self.width_distance_owner_record_indices.len() {
+            0 => DesignEdgeWidthMode::FullEdge,
+            1 => DesignEdgeWidthMode::Symmetric,
+            _ => DesignEdgeWidthMode::TwoSides,
+        }
+    }
 }
 
 /// Fixed construction carried by a sheet-metal `Hem` scope.

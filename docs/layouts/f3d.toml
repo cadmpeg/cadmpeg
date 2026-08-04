@@ -1035,3 +1035,79 @@ area = "Container, manifest, and history-partition layers (§1, §2)"
 reason = "ZIP entries, `Manifest.dat` text grammar, and length-delimited delta records; no fixed byte-offset structure is stated."
 section = "1.3"
 anchor = "`Manifest.dat` grammar"
+
+[[record]]
+name = "edge_flange_fixed_operation_section"
+kind = "byte"
+section = "8.1"
+anchor = "The `EdgeFlange` fixed operation section starts at offset"
+size = 79
+note = "Offsets are relative to the section base `85 + S`, where `S` is the header shift. The section runs from the bend-position discriminator through the inside bend radius; the result-record run and the two closing group references follow it at variable offsets."
+
+[[record.field]]
+name = "bend_position"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "with a u32 bend-position discriminator"
+
+[[record.field]]
+name = "edge_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "the u32 edge count `1`"
+
+[[record.field]]
+name = "edge_wrapper_reference"
+offset = 8
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked wrapper reference"
+
+[[record.field]]
+name = "settings_reference"
+offset = 19
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked settings reference"
+
+[[record.field]]
+name = "height_datum"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "a u32 height-datum discriminator"
+
+[[record.field]]
+name = "angle_owner_reference"
+offset = 34
+type = "bytes[11]"
+source = "spec"
+anchor = "and the marked angle-owner and height-owner references"
+
+[[record.field]]
+name = "height_owner_reference"
+offset = 45
+type = "bytes[11]"
+source = "spec"
+anchor = "Height-datum value `1` measures the height from the inner faces"
+
+[[record.field]]
+name = "unsettled_side_reference"
+offset = 56
+type = "u32"
+source = "spec"
+anchor = "A u32 whose role is not settled follows the height-owner reference"
+
+[[record.gap]]
+offset = 60
+size = 11
+note = "The spec places the radius 15 bytes after the unsettled u32, so eleven bytes between them are unaccounted for."
+
+[[record.field]]
+name = "inside_bend_radius"
+offset = 71
+type = "f64"
+source = "spec"
+anchor = "the positive f64 inside bend radius in centimetres starts 15 bytes after that u32"
