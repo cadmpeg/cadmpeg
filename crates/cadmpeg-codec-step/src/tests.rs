@@ -1034,6 +1034,187 @@ fn writer_round_trips_rational_nurbs_pcurves() {
 }
 
 #[test]
+fn writer_round_trips_every_exact_step_pcurve_family() {
+    use cadmpeg_ir::geometry::PcurveGeometry;
+    use cadmpeg_ir::math::Point2;
+
+    let bytes = include_bytes!("../tests/fixtures/ap214_sheet.p21");
+    let template = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode sheet")
+        .ir;
+    let x_axis = Point2::new(0.6, 0.8);
+    let y_axis = Point2::new(-0.8, 0.6);
+    let cases = [
+        PcurveGeometry::Circle {
+            center: Point2::new(2.0, 3.0),
+            x_axis,
+            y_axis,
+            radius: 4.0,
+        },
+        PcurveGeometry::Ellipse {
+            center: Point2::new(2.0, 3.0),
+            x_axis,
+            y_axis,
+            major_radius: 4.0,
+            minor_radius: 2.0,
+        },
+        PcurveGeometry::Parabola {
+            vertex: Point2::new(2.0, 3.0),
+            x_axis,
+            y_axis,
+            focal_distance: 1.5,
+        },
+        PcurveGeometry::Hyperbola {
+            center: Point2::new(2.0, 3.0),
+            x_axis,
+            y_axis,
+            major_radius: 4.0,
+            minor_radius: 2.0,
+        },
+        PcurveGeometry::Trimmed {
+            parameter_range: [0.25, 1.75],
+            basis: Box::new(PcurveGeometry::Circle {
+                center: Point2::new(2.0, 3.0),
+                x_axis,
+                y_axis,
+                radius: 4.0,
+            }),
+        },
+        PcurveGeometry::Offset {
+            distance: -0.5,
+            basis: Box::new(PcurveGeometry::Line {
+                origin: Point2::new(2.0, 3.0),
+                direction: Point2::new(4.0, 0.0),
+            }),
+        },
+    ];
+
+    for geometry in cases {
+        let mut ir = template.clone();
+        ir.model.pcurves[0].geometry = geometry.clone();
+        let mut output = Vec::new();
+        write_step(&ir, &mut output, &StepWriteOptions::default()).expect("write exact pcurve");
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .expect("decode exact pcurve");
+        assert_eq!(decoded.ir.model.pcurves[0].geometry, geometry);
+        assert_eq!(decoded.ir.model.bodies.len(), 1);
+        assert!(decoded
+            .report
+            .losses
+            .iter()
+            .all(|loss| !loss.message.contains("has no decoded surface or 2D curve")));
+    }
+}
+
+#[test]
+fn decode_maps_a_two_dimensional_polyline_to_a_pcurve_nurbs() {
+    use cadmpeg_ir::geometry::PcurveGeometry;
+    use cadmpeg_ir::math::Point2;
+
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#52=DIRECTION('',(1.,0.));",
+            "#52=CARTESIAN_POINT('',(1.,2.));",
+        )
+        .replace("#53=VECTOR('',#52,1.);", "#53=CARTESIAN_POINT('',(3.,2.));")
+        .replace("#54=LINE('',#51,#53);", "#54=POLYLINE('',(#51,#52,#53));");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode polyline pcurve");
+
+    assert!(matches!(
+        &decoded.ir.model.pcurves[0].geometry,
+        PcurveGeometry::Nurbs {
+            degree: 1,
+            control_points,
+            weights: None,
+            periodic: false,
+            ..
+        } if control_points == &[
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 2.0),
+            Point2::new(3.0, 2.0),
+        ]
+    ));
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+}
+
+#[test]
+fn unsupported_optional_pcurve_does_not_discard_valid_topology() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace("#54=LINE('',#51,#53);", "#54=UNSUPPORTED_CURVE('',#51);");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode sheet with unsupported optional pcurve");
+
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(decoded.ir.model.faces.len(), 1);
+    assert_eq!(decoded.ir.model.edges.len(), 3);
+    assert!(decoded
+        .ir
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| coedge.pcurves.is_empty()));
+    assert!(decoded.report.losses.iter().any(|loss| loss
+        .message
+        .contains("PCURVE #56 has no decoded surface or 2D curve")));
+    assert!(decoded
+        .report
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("conflicts with decoded topology")));
+}
+
+#[test]
+fn unsupported_mandatory_carriers_preserve_topology_as_unknown() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace("#16=LINE('',#3,#13);", "#16=UNSUPPORTED_CURVE('',#3);")
+        .replace("#28=PLANE('',#27);", "#28=UNSUPPORTED_SURFACE('',#27);");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode sheet with unknown mandatory carriers");
+
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(decoded.ir.model.faces.len(), 1);
+    assert_eq!(decoded.ir.model.edges.len(), 3);
+    assert!(matches!(
+        decoded
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id.as_str() == "step:data:curve#16")
+            .map(|curve| &curve.geometry),
+        Some(CurveGeometry::Unknown { record: Some(record) })
+            if record.as_str() == "step:data:unsupported_curve#16"
+    ));
+    assert!(matches!(
+        decoded
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id.as_str() == "step:data:surface#28")
+            .map(|surface| &surface.geometry),
+        Some(SurfaceGeometry::Unknown { record: Some(record) })
+            if record.as_str() == "step:data:unsupported_surface#28"
+    ));
+    assert!(decoded
+        .report
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("conflicts with decoded topology")));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn decode_builds_a_sheet_from_a_geometric_surface_set() {
     use cadmpeg_ir::topology::BodyKind;
 

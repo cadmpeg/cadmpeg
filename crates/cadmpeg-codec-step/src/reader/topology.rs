@@ -87,6 +87,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
             .map(|surface| surface.id.0.clone())
             .collect(),
     };
+    let decoded_pcurves = ir
+        .model
+        .pcurves
+        .iter()
+        .map(|pcurve| pcurve.id.clone())
+        .collect::<BTreeSet<_>>();
     for (&id, record) in &exchange.records {
         if !matches!(
             record.simple_name(),
@@ -94,7 +100,15 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         ) {
             continue;
         }
-        if let Some(mut built) = build(id, record, exchange, &vertices, &edges, &oriented) {
+        if let Some(mut built) = build(
+            id,
+            record,
+            exchange,
+            &vertices,
+            &edges,
+            &oriented,
+            &decoded_pcurves,
+        ) {
             result.typed_records.append(&mut built.typed);
             if let Err(error) = built.draft.commit_model(ir) {
                 result.warnings.push(format!(
@@ -519,6 +533,7 @@ fn build(
     vdefs: &BTreeMap<u64, VertexDef>,
     edefs: &BTreeMap<u64, EdgeDef>,
     odefs: &BTreeMap<u64, OrientedDef>,
+    decoded_pcurves: &BTreeSet<PcurveId>,
 ) -> Option<Built> {
     let solid = matches!(
         root.simple_name(),
@@ -566,6 +581,7 @@ fn build(
     let mut used_shells = BTreeSet::new();
     let mut used_faces = BTreeSet::new();
     let mut radial = BTreeMap::<u64, Vec<usize>>::new();
+    let mut pcurve_use_counts = BTreeMap::<(u64, u64), usize>::new();
     for shell_reference in shell_steps {
         let (shell_step, shell_forward) = resolve_shell(shell_reference, exchange, &mut typed)?;
         if !used_shells.insert(shell_step) {
@@ -636,6 +652,18 @@ fn build(
                 for use_step in uses {
                     let o = odefs.get(&use_step)?;
                     let edge = edefs.get(&o.edge)?;
+                    let associated =
+                        associated_pcurves(edge.curve, surface_step, exchange, decoded_pcurves);
+                    let pcurves = if associated.len() <= 1 {
+                        associated
+                    } else {
+                        let use_count = pcurve_use_counts
+                            .entry((edge.curve, surface_step))
+                            .or_default();
+                        let selected = associated[*use_count % associated.len()].clone();
+                        *use_count += 1;
+                        vec![selected]
+                    };
                     let cid = CoedgeId(format!("step:data:coedge#{use_step}-face-{face_step}"));
                     coedge_ids.push(cid.clone());
                     coedges.push(Coedge {
@@ -650,13 +678,13 @@ fn build(
                         } else {
                             Sense::Reversed
                         },
-                        pcurves: associated_pcurve(edge.curve, surface_step, exchange)
+                        pcurves: pcurves
+                            .into_iter()
                             .map(|pcurve| PcurveUse {
                                 pcurve,
                                 isoparametric: None,
                                 parameter_range: None,
                             })
-                            .into_iter()
                             .collect(),
                         use_curve: None,
                         use_curve_parameter_range: None,
@@ -764,19 +792,32 @@ fn curve_carrier_step(curve_step: u64, exchange: &Exchange) -> Option<u64> {
     }
 }
 
-fn associated_pcurve(curve_step: u64, surface_step: u64, exchange: &Exchange) -> Option<PcurveId> {
-    let curve = exchange.records.get(&curve_step)?;
+fn associated_pcurves(
+    curve_step: u64,
+    surface_step: u64,
+    exchange: &Exchange,
+    decoded_pcurves: &BTreeSet<PcurveId>,
+) -> Vec<PcurveId> {
+    let Some(curve) = exchange.records.get(&curve_step) else {
+        return Vec::new();
+    };
     if !matches!(curve.simple_name(), Some("SURFACE_CURVE" | "SEAM_CURVE")) {
-        return None;
+        return Vec::new();
     }
-    refs(curve.parameter(2)?)?
+    let Some(pcurves) = curve.parameter(2).and_then(refs) else {
+        return Vec::new();
+    };
+    pcurves
         .into_iter()
-        .find_map(|pcurve_step| {
+        .filter_map(|pcurve_step| {
             let pcurve = exchange.records.get(&pcurve_step)?;
+            let pcurve_id = PcurveId(format!("step:data:pcurve#{pcurve_step}"));
             (pcurve.simple_name() == Some("PCURVE")
-                && pcurve.parameter(1)?.reference()? == surface_step)
-                .then(|| PcurveId(format!("step:data:pcurve#{pcurve_step}")))
+                && pcurve.parameter(1)?.reference()? == surface_step
+                && decoded_pcurves.contains(&pcurve_id))
+            .then_some(pcurve_id)
         })
+        .collect()
 }
 
 fn resolve_shell(

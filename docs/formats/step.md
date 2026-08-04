@@ -192,6 +192,20 @@ vertex loop. A geometric set containing surfaces forms a sheet carrier;
 decoded curve-only or point-only sets remain standalone geometry and do not
 create a body.
 
+An `AXIS2_PLACEMENT_2D` defines the origin and positive-u axis of a
+parameter-space conic. Its positive-v axis is the counterclockwise
+perpendicular. A `PCURVE` definitional representation transfers one exact 2D
+line, circle, ellipse, parabola, hyperbola, polyline, NURBS, trimmed curve, or
+offset curve. A representation with no unique supported 2D curve remains
+opaque and is not attached to a coedge.
+
+A topology-referenced curve or surface whose geometry does not transfer keeps
+its STEP identity as an unknown carrier linked to the opaque entity record.
+The body topology remains connected. An optional pcurve that does not transfer
+is omitted from its coedge and produces a loss; it does not reject the body.
+Two same-surface pcurves of one seam curve bind in occurrence order to the two
+coedge uses of that seam.
+
 Product shape binds through `PRODUCT_DEFINITION_SHAPE` and
 `SHAPE_DEFINITION_REPRESENTATION`. Occurrence transforms compose once from the
 product-definition relationship into model space. Mapped representations and
