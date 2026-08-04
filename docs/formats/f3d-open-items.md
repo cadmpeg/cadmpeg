@@ -527,22 +527,29 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 
 ## 6. Mesh geometry
 
-### PM-01. `.paramesh` undecoded streams and container fields
+### PM-01. `.paramesh` packed and per-triangle element contents
 
-**Question.** We must find six answers:
+**Question.** We must find five answers:
 
-- how an `r0` stream frames its elements, because its descriptor sets `U`
-- what `r0` holds
-- what `r0i` and `r1` hold
-- what the `r2` per-triangle value selects
-- what descriptor `T` values other than `0`, `1`, and `3` select, and what `U` selects
-- what the protobuf message fields other than the stream registry, the resource GUIDs, and `fusion_uuid` hold
+- how a code-5 element packs three direction components into two f32 values
+- what quantity a code-5 channel holds
+- what a code-7 per-triangle value selects
+- what the stream named by registry field 7 holds
+- what descriptor `T` values other than `0`, `1`, and `3` select, and what registry fields 9 and 12 hold
 
-**Known.** `f3d.md` §1.1.2 "The container layout is" gives the container framing, both compressed and raw stream encodings, and the descriptor value types. The `v` and `t` streams are decoded. The `t` stream's implicit initial corner is the unique start that keeps every reconstructed corner inside the vertex domain; every stored difference except the terminal value contributes one corner. `r2` carries one zero u32 per triangle while imported per-triangle colours instead add the `r3`, `r3i`, and `r4` family, so `r2` is not that colour selector.
+**Known.** `f3d.md` §1.1.2 gives the container framing, both stream encodings, the descriptor value types, the registry channel entries, and the element codes. Every container declares one code-5 channel. Where the mesh is a cube, every f32 in that channel is `-1`, `0`, or `1`, which is the component set of the six face normals of a cube. A code-7 channel carries one zero per triangle while authored per-triangle colours instead add a code-4 channel, so a code-7 value is not that colour selector. Boolean descriptor `U = true` occurs on the code-5 channel and on no other.
 
-An `r0` stream declares three components of type f32 and boolean `U = true`. Where the mesh is a cube, every component in it is `-1`, `0`, or `1`, which is the component set of the six face normals of a cube, and the stream holds sixty-four components, which three does not divide. Where a mesh has eight vertices, twelve triangles, and thirty-six corners, `r0i` and `r1` each hold twenty-four values, so neither stream holds one value per vertex, per triangle, or per corner. The `r0i` values accumulate to an increasing sequence that ends below the component count of `r0`, so `r0i` can hold offsets into `r0`. The `r1` values accumulate to a sequence that goes below zero, so `r1` does not hold offsets. The colour-family streams have established framing but their `r3i` to `r3` indexing and `r4` field semantics are not decoded.
+**Need.** We must know the packing, the two channel contents, and the remaining descriptor and registry fields to write a container from a neutral model.
 
-**Need.** The decoder keeps the auxiliary streams as opaque bytes. We must know their contents, the remaining descriptor selectors, the colour-family indexing, and the message fields to write a container from a neutral model.
+### PM-03. Corner order of an indexed `.paramesh` attribute channel
+
+**Question.** Which triangle corner does each value of an indexed attribute channel belong to?
+
+**Known.** `f3d.md` §1.1.2 gives the channel declaration, the element codes, and the count relation: a channel that declares an index stream holds its values deduplicated per vertex, and its index stream holds exactly the element count less the vertex count values. That relation holds for the code-2, code-4, and code-5 channels of every container, so the values are grouped by vertex and one value per vertex is implicit.
+
+A code-4 channel stores authored corner colours exactly, in the sRGB scale and with alpha, and its element count equals the corner count when every corner carries a distinct colour. The stored order is a permutation of the corner order, not the corner order: where a mesh has six vertices, eight triangles, and twenty-four corners each carrying one of eight distinct colours, three consecutive stored triples equal the three corner colours of the first, second, and third triangle, and no grouping of the complete stored sequence into consecutive runs of four equals any vertex's corner colours. An index stream is monotonically increasing in steps of one and two, which is an offset array rather than an index array.
+
+**Need.** The decoder transfers a channel with one value per vertex and reports every indexed channel. We must know the per-vertex corner order the index stream offsets address to transfer an authored corner colour or texture coordinate. A mesh with one vertex whose incident corners carry a known asymmetric colour cycle, and a second mesh with the same connectivity and one differing corner, would separate the fan order from the offset semantics.
 
 ### PM-02. Mesh Design-record classes without decoded content
 

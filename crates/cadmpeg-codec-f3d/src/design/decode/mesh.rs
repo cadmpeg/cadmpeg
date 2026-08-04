@@ -24,13 +24,15 @@ const MESH_BODY_SECOND_MATRIX_AT: usize =
     MESH_BODY_FIRST_MATRIX_AT + MATRIX_BYTES + MESH_BODY_MATRIX_SEPARATOR_BYTES;
 
 /// One mesh body's geometry, in model millimetres.
-pub struct MeshBody {
+pub(crate) struct MeshBody {
     /// Deterministic native identifier, keyed by the mesh-body record.
-    pub id: String,
+    pub(crate) id: String,
     /// Vertex positions in model millimetres.
-    pub vertices: Vec<cadmpeg_ir::math::Point3>,
+    pub(crate) vertices: Vec<cadmpeg_ir::math::Point3>,
     /// Triangle corner indices into `vertices`.
-    pub triangles: Vec<[u32; 3]>,
+    pub(crate) triangles: Vec<[u32; 3]>,
+    /// The attribute channels the container's registry declares.
+    pub(crate) attributes: Vec<crate::paramesh::MeshAttribute>,
 }
 
 /// A finite, orientation-preserving row-major affine map.
@@ -73,7 +75,7 @@ fn mesh_body_transform(payload: &[u8]) -> Option<MeshAffineTransform> {
 }
 
 /// Result of decoding and joining one `.paramesh` entry.
-pub enum MeshContainerOutcome {
+pub(crate) enum MeshContainerOutcome {
     /// Geometry and its Design body record were decoded and joined.
     Joined(MeshBody),
     /// The container decoded, but no complete Design join named it.
@@ -144,7 +146,9 @@ fn indexed_records(bytes: &[u8]) -> Vec<IndexedRecord<'_>> {
 
 /// Decode every mesh body: one per `.paramesh` container joined to the
 /// mesh-body record that names its GUID record.
-pub fn decode_mesh_bodies(scan: &ContainerScan) -> Result<Vec<MeshContainerOutcome>, CodecError> {
+pub(crate) fn decode_mesh_bodies(
+    scan: &ContainerScan,
+) -> Result<Vec<MeshContainerOutcome>, CodecError> {
     let design_streams = scan
         .entries
         .iter()
@@ -213,6 +217,7 @@ pub fn decode_mesh_bodies(scan: &ContainerScan) -> Result<Vec<MeshContainerOutco
                 .map(|point| transform.transform(point))
                 .collect(),
             triangles: container.triangles,
+            attributes: container.attributes,
         }));
     }
     Ok(outcomes)

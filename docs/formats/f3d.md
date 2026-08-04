@@ -75,21 +75,26 @@ The protobuf message registers the container's streams and resource GUIDs and ca
 
 A kind-3 body is a MessagePack map from stream name to integer stream id. A kind-4 body is a u16 descriptor byte count, a MessagePack descriptor map of that many bytes, a u32 uncompressed byte count, and a two-byte stream encoding. Encoding `5D 14` is followed by a raw LZMA1 stream with `lc` 3, `lp` 0, `pb` 2, and a 1 MiB dictionary; it decompresses to exactly the declared count. Encoding `5D FE` is followed directly by that many uncompressed bytes. The kind-4 chunks follow the name table in ascending stream-id order. The descriptor keys are `D`, `T`, `U`, and `d`, and descriptor values are MessagePack integers or booleans. `D` is the component count of one element and is absent when an element has one component. `T` is the component type: `0` is a byte, `1` is a u32, and `3` is an f32. `d` set to integer `1` says the stream stores each value as its two's-complement difference from the value before it. A stream whose descriptor omits `U` decompresses to the element count times the component count times the component width. Boolean `U = true` selects another framing.
 
-The streams are:
+Stream names are container-local slots, not fixed names: the protobuf registry names every stream it uses. Registry field 21 names the vertex-position stream and field 22 the triangle-corner stream, which are `v` and `t`. The remaining streams are named `r0`, `r1`, and upward in ascending stream-id order, and the registry binds each one to the channel that uses it.
 
-| Name  | Id  | Content                                  |
-| ----- | --- | ---------------------------------------- |
-| `v`   | 2   | one f32 coordinate triple per vertex     |
-| `t`   | 3   | one u32 per triangle corner, delta-coded |
-| `r0`  | 4   | undecoded                                |
-| `r0i` | 5   | undecoded                                |
-| `r1`  | 6   | undecoded                                |
-| `r2`  | 7   | one u32 per triangle                     |
-| `r3`  | 8   | colour-family data, undecoded            |
-| `r3i` | 9   | colour-family index data, undecoded      |
-| `r4`  | 10  | an XML `<Attrib>` document               |
+The position stream holds one f32 coordinate triple per vertex. Those coordinates are not model centimetres: the mesh-body Design record (§8.1) stores the affine map from container coordinates to model space. In the corner stream, the first corner is implicit. The values before the last are two's-complement differences from one corner to the next. The implicit corner is the unique starting index that keeps the complete decoded sequence inside the vertex-index domain; the last stored value does not continue the sequence.
 
-`v` coordinates are not model centimetres: the mesh-body Design record (§8.1) stores the affine map from container coordinates to model space. In `t`, the first corner is implicit. The values before the last are two's-complement differences from one corner to the next. The implicit corner is the unique starting index that keeps the complete decoded sequence inside the vertex-index domain; the last stored value does not continue the sequence. `r3`, `r3i`, and `r4` form the colour-attribute family. The `r4` document is `<Attrib><TriName>color_tt<guid></TriName><AmtName>mecol</AmtName></Attrib>`, and its GUID equals a resource GUID in the protobuf message.
+#### Attribute channels
+
+Registry field 4 declares one channel whose values address vertices or triangle corners, and field 5 one channel whose values address triangles. A channel entry holds an optional role in field 2, a resource GUID in field 3, and a stream entry in field 5. The stream entry holds the element code in field 1, the value-stream name in field 2, and the index-stream name in field 3.
+
+The element code selects the stored element:
+
+| Code | Element                                                                                     |
+| ---- | ------------------------------------------------------------------------------------------- |
+| 2    | two f32 components                                                                          |
+| 4    | four f32 components: red, green, blue, and alpha, in the authored sRGB scale                |
+| 5    | a three-component direction packed into two f32 values, not three                           |
+| 7    | one delta-coded value per triangle                                                          |
+
+A field-4 channel that declares no index stream stores exactly one value per vertex, so the value stream holds the vertex count times the element width. A field-4 channel that declares an index stream stores its values deduplicated per vertex, and the index stream holds exactly the element count less the vertex count values. Roles 3 and 4 mark the texture-coordinate and colour channels.
+
+A registry field-8 entry pairs a property key in field 1 with either a text value in field 3 or a stream name in field 4. Key `fusion_uuid` carries the ASCII GUID the container's Design-segment GUID record repeats. Key `attname.amt.autodesk` names the stream holding an XML `<Attrib>` document, whose `TriName` element is `color_tt` followed by the resource GUID of a colour channel and whose `AmtName` element is the authored attribute name.
 
 ### 1.2 Stored property and configuration entries
 

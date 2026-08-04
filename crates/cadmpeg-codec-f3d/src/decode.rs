@@ -2145,9 +2145,11 @@ fn project_mesh_bodies(
         }
     }
     let count = bodies.len();
+    let mut unresolved = std::collections::BTreeMap::new();
     ir.model
         .tessellations
         .extend(bodies.into_iter().map(|body| {
+            let channels = mesh_attribute_channels(&body.attributes, &mut unresolved);
             cadmpeg_ir::tessellation::Tessellation {
                 id: body.id,
                 body: None,
@@ -2160,10 +2162,80 @@ fn project_mesh_bodies(
                 triangles: body.triangles,
                 strip_lengths: Vec::new(),
                 normals: Vec::new(),
-                channels: Vec::new(),
+                channels,
             }
         }));
+    report_unresolved_mesh_attributes(report, &unresolved);
     Ok(count)
+}
+
+/// Project the attribute channels whose element layout the registry settles,
+/// and count the rest by the domain they address.
+///
+/// A vertex-domain channel stores one value per vertex, so its values need no
+/// index and transfer as a tessellation channel. A corner-domain channel
+/// deduplicates its values per vertex and selects one per corner through an
+/// index stream this codec does not resolve
+/// ([open item PM-03](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d-open-items.md)),
+/// so its values are counted, not projected under an invented mapping.
+fn mesh_attribute_channels(
+    attributes: &[crate::paramesh::MeshAttribute],
+    unresolved: &mut std::collections::BTreeMap<crate::paramesh::MeshAttributeDomain, usize>,
+) -> Vec<cadmpeg_ir::tessellation::TessellationChannel> {
+    use crate::paramesh::MeshAttributeDomain;
+
+    let mut channels = Vec::new();
+    for attribute in attributes {
+        match (attribute.domain, attribute.item_size, attribute.count()) {
+            (MeshAttributeDomain::Vertex, Some(item_size), Some(count)) => {
+                channels.push(cadmpeg_ir::tessellation::TessellationChannel {
+                    item_size,
+                    kind: attribute.role,
+                    flags: attribute.element_code,
+                    count,
+                    data: attribute.values.clone(),
+                });
+            }
+            (domain, _, _) => *unresolved.entry(domain).or_default() += 1,
+        }
+    }
+    channels
+}
+
+/// Report every mesh attribute channel that was not projected, by domain.
+fn report_unresolved_mesh_attributes(
+    report: &mut DecodeReport,
+    unresolved: &std::collections::BTreeMap<crate::paramesh::MeshAttributeDomain, usize>,
+) {
+    use crate::paramesh::MeshAttributeDomain;
+
+    for (domain, count) in unresolved {
+        let (addressing, reason) = match domain {
+            MeshAttributeDomain::Corner => (
+                "triangle corners",
+                "their values are deduplicated per vertex and selected through an index stream \
+                 whose corner order is not resolved",
+            ),
+            MeshAttributeDomain::Triangle => (
+                "triangles",
+                "their values are delta-coded under an element code this codec does not read",
+            ),
+            MeshAttributeDomain::Vertex => (
+                "vertices",
+                "their element code does not settle a stored element layout of one value per \
+                 vertex",
+            ),
+        };
+        report.losses.push(LossNote {
+            code: LossKind::AttributesNotTransferred,
+            severity: Severity::Warning,
+            message: format!(
+                "{count} mesh attribute channel(s) addressing {addressing} were not transferred: \
+                 {reason}."
+            ),
+            provenance: None,
+        });
+    }
 }
 
 /// Record the `Properties.dat` docstruct declaration on the source metadata.
