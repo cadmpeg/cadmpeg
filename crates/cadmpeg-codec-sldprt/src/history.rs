@@ -11029,7 +11029,7 @@ pub fn prepare_configurations_for_write(
     let baseline_feature_states = ir.source.as_ref().and_then(|source| {
         source
             .attributes
-            .get("sldprt_configuration_feature_states_sha256")
+            .get("sldprt_configuration_feature_states_local_sha256")
     });
     let feature_states_changed = baseline_feature_states
         .is_some_and(|baseline| baseline != &feature_state_hash)
@@ -11043,7 +11043,7 @@ pub fn prepare_configurations_for_write(
     let baseline_parameter_values = ir.source.as_ref().and_then(|source| {
         source
             .attributes
-            .get("sldprt_configuration_parameter_values_sha256")
+            .get("sldprt_configuration_parameter_values_local_sha256")
     });
     let parameter_values_changed = baseline_parameter_values
         .is_some_and(|baseline| baseline != &parameter_value_hash)
@@ -11159,11 +11159,11 @@ fn sync_configuration_design_state(
     let native_design_state_changed = ir.source.as_ref().is_some_and(|source| {
         source
             .attributes
-            .get("sldprt_configuration_parameter_values_sha256")
+            .get("sldprt_configuration_parameter_values_local_sha256")
             .is_some_and(|baseline| baseline != &current_parameter_hash)
             || source
                 .attributes
-                .get("sldprt_configuration_feature_states_sha256")
+                .get("sldprt_configuration_feature_states_local_sha256")
                 .is_some_and(|baseline| baseline != &current_feature_hash)
     });
     if native_design_state_changed {

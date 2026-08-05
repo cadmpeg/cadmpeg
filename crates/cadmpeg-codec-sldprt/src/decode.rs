@@ -3528,11 +3528,11 @@ fn stamp_configuration_baseline(ir: &mut CadIr) {
             .attributes
             .insert("sldprt_neutral_configuration_local_sha256".into(), hash);
         source.attributes.insert(
-            "sldprt_configuration_parameter_values_sha256".into(),
+            "sldprt_configuration_parameter_values_local_sha256".into(),
             parameter_value_hash,
         );
         source.attributes.insert(
-            "sldprt_configuration_feature_states_sha256".into(),
+            "sldprt_configuration_feature_states_local_sha256".into(),
             feature_state_hash,
         );
     }
