@@ -1386,9 +1386,7 @@ pub(super) fn associate_topology_carriers(exchange: &Exchange, ir: &mut CadIr) {
         .map(|(index, point)| (point.id.0.clone(), index))
         .collect::<BTreeMap<_, _>>();
     for (edge_id, edge) in exchange.entities("EDGE_CURVE") {
-        let Some(curve_step) = edge
-            .parameter(3)
-            .and_then(Value::reference)
+        let Some(curve_step) = edge_curve_geometry_reference(edge)
             .and_then(|curve| curve_carrier_record(curve, exchange))
         else {
             continue;
@@ -1411,15 +1409,8 @@ pub(super) fn associate_topology_carriers(exchange: &Exchange, ir: &mut CadIr) {
                 instance_path: Vec::new(),
             });
     }
-    for (face_id, face) in exchange.entities("ADVANCED_FACE") {
-        let surface_step = face.parameter(2).and_then(Value::reference).or_else(|| {
-            face.partials
-                .iter()
-                .flat_map(|partial| partial.parameters.iter())
-                .filter_map(Value::reference)
-                .next_back()
-        });
-        let Some(surface_step) = surface_step else {
+    for (face_id, face) in exchange.entities_any(&["ADVANCED_FACE", "FACE_SURFACE"]) {
+        let Some(surface_step) = face_surface_reference(face) else {
             continue;
         };
         let Some(index) = surface_indices.get(&format!("step:data:surface#{surface_step}")) else {
