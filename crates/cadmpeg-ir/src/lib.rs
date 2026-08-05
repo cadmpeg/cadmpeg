@@ -74,7 +74,7 @@ pub use artifact::{DocumentArtifact, DocumentOrigin};
 pub use codec::{
     CadirEncoder, Codec, CodecEntry, Confidence, DecodeOptions, DecodeResult, Encoder,
 };
-pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
+pub use diff::{diff, ArenaDiff, AttributeChange, IrDiff, ModifiedEntity, SourceDiff};
 pub use document::{CadIr, SourceMeta, IR_VERSION};
 pub use features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction, CoilExtent, CoilPlacement,
