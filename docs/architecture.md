@@ -25,7 +25,7 @@ CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 
 
 The `Codec` trait splits decoding into a provided `decode` wrapper and a required `decode_impl`. The wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the codec, and finalizes a `DecodeContext`.
 
-`DecodeContext` holds budget counters and the address-space registry. `DecodeArena` holds byte buffers with stable addresses. A `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field. Ownership lives in `cadmpeg_codec_core::decode`.
+`DecodeContext` holds budget counters and the address-space registry. `DecodeArena` holds byte buffers with stable addresses. A `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field. Ownership lives in `cadmpeg_core::decode`.
 
 ## CLI stream and exit contract
 
@@ -49,7 +49,7 @@ Every encoder returns an `ExportReport` with its format id, entity census, loss 
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `cadmpeg`               | CLI orchestration, built-in codec registration, and output dispatch.                                                                   |
 | `cadmpeg-ir`            | `CadIr` version 5, validation, diff, codec traits, reports, and source-fidelity sidecars.                                              |
-| `cadmpeg-codec-core`    | Shared decode budgets, arenas, views, container summaries, and I/O helpers.                                                            |
+| `cadmpeg-core`    | Shared decode budgets, arenas, views, container summaries, and I/O helpers.                                                            |
 | `cadmpeg-container`     | Shared archive and compression helpers for container codecs.                                                                           |
 | `cadmpeg-codec-freecad` | FreeCAD `.FCStd` read and semantic write for the schema-4/file-1 envelope.                                                             |
 | `cadmpeg-codec-f3d`     | Fusion `.f3d` inspection, ASM/SAB geometry, design records, retained replay, and selected native edits.                                |

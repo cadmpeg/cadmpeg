@@ -2,7 +2,7 @@
 //! Physical graph to CADIR native preservation and loss reporting.
 
 use crate::{card, directory, entities, global, graph, native, parameter};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
 use cadmpeg_ir::units::Units;

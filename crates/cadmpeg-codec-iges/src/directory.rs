@@ -2,7 +2,7 @@
 //! Directory Entry pairs and fixed status fields.
 
 use crate::card::{CardScan, PhysicalLine, Section};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
 /// Four two-digit fields in the Directory Entry status number.

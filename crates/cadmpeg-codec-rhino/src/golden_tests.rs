@@ -15,7 +15,7 @@
 //! change moves the decode branch and `inspect` cannot see it, because an
 //! inspect summary describes the container, not what was transferred out of it.
 //!
-//! [`cadmpeg_codec_core::golden`] holds the enumeration, comparison, and
+//! [`cadmpeg_core::golden`] holds the enumeration, comparison, and
 //! reporting shared with every other codec; this module supplies only this
 //! codec's branches.
 
@@ -23,8 +23,8 @@ use std::collections::BTreeSet;
 use std::io::Cursor;
 use std::path::Path;
 
-use cadmpeg_codec_core::decode::InspectOptions;
-use cadmpeg_codec_core::golden::{snapshot_text, Branch, Harness};
+use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_core::golden::{snapshot_text, Branch, Harness};
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, EncodeInput, Encoder};
 
 use super::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};

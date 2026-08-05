@@ -36,10 +36,10 @@
 //! and patches the second.
 //!
 //! This lives in `cadmpeg-ir` rather than beside the golden harness in
-//! `cadmpeg_codec_core::golden` because it drives [`Encoder`], which
-//! `cadmpeg-codec-core` cannot name: the dependency runs the other way.
+//! `cadmpeg_core::golden` because it drives [`Encoder`], which
+//! `cadmpeg-core` cannot name: the dependency runs the other way.
 
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::CodecError;
 
 use crate::codec::{Codec, CodecEntry, DecodeOptions, EncodeInput, Encoder, ExportPlan};
 use crate::document::CadIr;
@@ -147,7 +147,7 @@ pub enum SemanticOutcome {
 /// # Why only that attribute
 ///
 /// The document baseline is one member of the `_local_sha256` family that
-/// [`cadmpeg_codec_core::compare::is_local_digest_attribute`] classifies, and it is the only member that gates
+/// [`cadmpeg_core::compare::is_local_digest_attribute`] classifies, and it is the only member that gates
 /// this decision. The others are per-lane baselines answering the narrower
 /// question of *which* part changed, and a writer reads them to plan its edit.
 /// Removing the whole family therefore does not force the writer harder; it

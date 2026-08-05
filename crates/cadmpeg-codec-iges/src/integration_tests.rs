@@ -33,7 +33,7 @@ fn envelope_pipeline_aligns_cards_global_units_directories_transforms_and_inspec
     let summary = IgesCodec
         .inspect(
             &mut Cursor::new(&bytes),
-            &cadmpeg_codec_core::decode::InspectOptions::default(),
+            &cadmpeg_core::decode::InspectOptions::default(),
         )
         .expect("IGES inspection");
     assert_eq!(summary.format, "iges");

@@ -28,7 +28,7 @@ cargo fmt --all --check
 # Scope clippy and tests to the staged crates plus their transitive workspace
 # dependents. A leaf-codec commit must not fail on pre-existing lint debt in
 # crates it did not touch, and it must not pay full-workspace latency; a
-# shared-crate commit (cadmpeg-ir, cadmpeg-codec-core) still gates every
+# shared-crate commit (cadmpeg-ir, cadmpeg-core) still gates every
 # dependent codec through the reverse-dependency closure. Manifest, lockfile,
 # Cargo-config, and toolchain changes fall back to the full workspace, as does
 # any staged Rust file that no workspace crate owns.

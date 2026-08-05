@@ -18,7 +18,7 @@
 //! use cadmpeg_codec_sldprt::SldprtCodec;
 //! use cadmpeg_ir::{CodecEntry, DecodeOptions};
 //!
-//! # fn decode(bytes: Vec<u8>) -> Result<(), cadmpeg_codec_core::CodecError> {
+//! # fn decode(bytes: Vec<u8>) -> Result<(), cadmpeg_core::CodecError> {
 //! let decoded = SldprtCodec.decode(
 //!     &mut Cursor::new(bytes),
 //!     &DecodeOptions::default(),
@@ -88,7 +88,7 @@
 //! right-handed rigid body transforms into geometry.
 //!
 //! [`Codec::inspect`]: cadmpeg_ir::Codec::inspect
-//! [`CodecError::NotImplemented`]: cadmpeg_codec_core::CodecError::NotImplemented
+//! [`CodecError::NotImplemented`]: cadmpeg_core::CodecError::NotImplemented
 //! [`DecodeOptions::container_only`]: cadmpeg_ir::DecodeOptions::container_only
 
 mod annotations;
@@ -114,8 +114,8 @@ mod writer;
 mod writer_patch;
 mod writer_transform;
 
-use cadmpeg_codec_core::decode::{DecodeContext, View};
-use cadmpeg_codec_core::{CodecError, ContainerSummary};
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};

@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::SubdId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::subd::{

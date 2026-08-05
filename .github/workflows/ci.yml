@@ -74,9 +74,9 @@ jobs:
         run: |
           set -euo pipefail
           cargo test -p cadmpeg-ir --features schema --lib
-          cargo check -p cadmpeg-codec-core -p cadmpeg-codec-f3d \
+          cargo check -p cadmpeg-core -p cadmpeg-codec-f3d \
             -p cadmpeg-codec-catia -p cadmpeg-codec-sldprt --all-targets \
-            --features cadmpeg-codec-core/schema,cadmpeg-codec-f3d/schema,cadmpeg-codec-catia/schema,cadmpeg-codec-sldprt/schema
+            --features cadmpeg-core/schema,cadmpeg-codec-f3d/schema,cadmpeg-codec-catia/schema,cadmpeg-codec-sldprt/schema
 
       - name: Fuzz targets compile
         # The fuzz crate declares its own `[workspace]`, so every step above

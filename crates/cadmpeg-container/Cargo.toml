@@ -10,7 +10,7 @@ homepage.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-cadmpeg-codec-core.workspace = true
+cadmpeg-core.workspace = true
 flate2.workspace = true
 zstd.workspace = true
 crc32fast.workspace = true

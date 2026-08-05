@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Built-in format descriptors, detection, encoding, and native validation.
 
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{CadirEncoder, Codec, Confidence, Encoder};
 use cadmpeg_ir::{CadIr, Finding};
 

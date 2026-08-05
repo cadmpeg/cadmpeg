@@ -9,7 +9,7 @@ use crate::nurbs::subtypes::{
     decode_cache_resolving_refs, find_owned_subtype_marker, subtype_refs, subtype_span,
     SubtypeTables,
 };
-use cadmpeg_codec_core::le::f64_at as read_f64;
+use cadmpeg_core::le::f64_at as read_f64;
 use cadmpeg_ir::math::Point2;
 
 /// The decoded payload of a 2D `nubs` or `nurbs` pcurve block.

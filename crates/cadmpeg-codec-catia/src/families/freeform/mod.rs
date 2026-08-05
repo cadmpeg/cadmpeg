@@ -78,7 +78,7 @@ fn loop_metadata_counts<'a>(
 }
 
 pub(crate) fn try_decode_freeform_surfaces(
-    _ctx: &cadmpeg_codec_core::decode::DecodeContext<'_>,
+    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Option<FamilyOutput> {
     let mut b5_graph = crate::families::b5::graph::parse(&scan.data);

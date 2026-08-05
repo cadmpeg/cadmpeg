@@ -5,7 +5,7 @@
 //! Families that also drive a full decode pipeline own a `decode` module whose
 //! entry point is registered in [`ROUTES`].
 
-use cadmpeg_codec_core::decode::DecodeContext;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Annotations, CadIr};

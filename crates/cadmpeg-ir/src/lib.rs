@@ -17,7 +17,7 @@
 //!
 //! Format crates implement [`Codec`]. Detection selects a codec from a byte
 //! prefix, inspection enumerates a container, and decoding returns a
-//! [`DecodeResult`]. Operation failures use [`cadmpeg_codec_core::CodecError`].
+//! [`DecodeResult`]. Operation failures use [`cadmpeg_core::CodecError`].
 //! A successful decode reports partial transfer through [`DecodeReport`] and
 //! [`LossNote`].
 //!

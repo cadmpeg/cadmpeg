@@ -8,7 +8,7 @@
 //! from the graph.
 #![deny(clippy::disallowed_methods)]
 
-use cadmpeg_codec_core::be;
+use cadmpeg_core::be;
 use cadmpeg_ir::math::Point3;
 use std::collections::{BTreeMap, BTreeSet};
 

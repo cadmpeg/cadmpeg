@@ -4,8 +4,8 @@
 use std::collections::BTreeSet;
 use std::io::Read;
 
-use cadmpeg_codec_core::decode::{DecodeContext, ExpandSpec, View};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::decode::{DecodeContext, ExpandSpec, View};
+use cadmpeg_core::CodecError;
 
 const MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const FREE_SECTOR: u32 = 0xffff_ffff;
@@ -514,7 +514,7 @@ fn le_u64(bytes: &[u8], offset: usize) -> Option<u64> {
 mod tests {
     use std::io::Write;
 
-    use cadmpeg_codec_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
     use super::*;
 

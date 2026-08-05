@@ -16,8 +16,8 @@
 //! and retained source data remains available for native replay.
 
 use crate::native::F3dNative;
-use cadmpeg_codec_core::decode::{DecodeContext, View};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};

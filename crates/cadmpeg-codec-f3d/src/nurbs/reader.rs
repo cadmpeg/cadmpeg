@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Byte-level readers, markers, and integer/float payload primitives shared across the NURBS decoders.
 
-use cadmpeg_codec_core::le::{f64_at as read_f64, int_at as read_int, u16_at, u32_at};
+use cadmpeg_core::le::{f64_at as read_f64, int_at as read_int, u16_at, u32_at};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 /// Millimetres per ASM model-space length unit (centimetres).

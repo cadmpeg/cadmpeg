@@ -15,10 +15,10 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_codec_core::be::u32_at as be_u32;
-use cadmpeg_codec_core::decode::{DecodeContext, View};
-use cadmpeg_codec_core::le::{i32_at as le_i32, u16_at as le_u16, u32_at as le_u32};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::be::u32_at as be_u32;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::le::{i32_at as le_i32, u16_at as le_u16, u32_at as le_u32};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::DecodeResult;

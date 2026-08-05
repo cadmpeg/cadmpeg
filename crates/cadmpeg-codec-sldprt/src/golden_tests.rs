@@ -15,18 +15,16 @@
 //! change moves the decode branch and `inspect` cannot see it, because an
 //! inspect summary describes the container, not what was transferred out of it.
 //!
-//! [`cadmpeg_codec_core::golden`] holds the enumeration, comparison, and
+//! [`cadmpeg_core::golden`] holds the enumeration, comparison, and
 //! reporting shared with every other codec; this module supplies only this
 //! codec's branches.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
-use cadmpeg_codec_core::decode::InspectOptions;
-use cadmpeg_codec_core::golden::{
-    elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness,
-};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_core::golden::{elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, Length, Termination};
 use cadmpeg_ir::roundtrip::{

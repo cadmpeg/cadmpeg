@@ -8,9 +8,9 @@
 
 use std::borrow::Cow;
 
-use cadmpeg_codec_core::cursor::bounded_len;
-use cadmpeg_codec_core::le::{u32_at as u32_le, u64_at as u64_le};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::cursor::bounded_len;
+use cadmpeg_core::le::{u32_at as u32_le, u64_at as u64_le};
+use cadmpeg_core::CodecError;
 
 /// The eight-byte signature used to identify an SPLMSSTR container.
 pub const MAGIC: &[u8; 8] = b"SPLMSSTR";

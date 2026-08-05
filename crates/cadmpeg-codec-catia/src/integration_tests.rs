@@ -2,7 +2,7 @@
 //! End-to-end contracts over synthesized CATPart byte images.
 
 use super::*;
-use cadmpeg_codec_core::decode::InspectOptions;
+use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::report::{LossCategory, Severity};
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {

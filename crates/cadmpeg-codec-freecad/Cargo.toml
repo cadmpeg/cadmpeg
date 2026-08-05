@@ -17,7 +17,7 @@ exclude = ["tests/golden/**"]
 
 [dependencies]
 cadmpeg-container.workspace = true
-cadmpeg-codec-core.workspace = true
+cadmpeg-core.workspace = true
 cadmpeg-ir.workspace = true
 flate2.workspace = true
 serde.workspace = true
@@ -31,10 +31,10 @@ name = "fcstd-profile"
 path = "src/bin/fcstd_profile.rs"
 
 [dev-dependencies]
-# Enables `cadmpeg_codec_core::golden`, the shared snapshot harness.
+# Enables `cadmpeg_core::golden`, the shared snapshot harness.
 # Feature unification applies it to the test build only, so the published
 # library is unchanged.
-cadmpeg-codec-core = { workspace = true, features = ["golden"] }
+cadmpeg-core = { workspace = true, features = ["golden"] }
 # `tests/golden/step/` pins what this codec's documents export as. The STEP
 # encoder writes those bytes; this crate hosts the goldens because it owns
 # their inputs. Test-only, so the published library is unchanged.

@@ -1,6 +1,6 @@
-# cadmpeg-codec-core
+# cadmpeg-core
 
-`cadmpeg-codec-core` supplies bounded byte decoding primitives and resource
+`cadmpeg-core` supplies bounded byte decoding primitives and resource
 policy shared by cadmpeg format codecs. Format crates depend on it for
 checked cursors, little- and big-endian readers, decode arenas, address-space
 views, container summaries, and `CodecError`.
@@ -11,7 +11,7 @@ Application code usually depends on a format crate such as
 ## Install
 
 ```sh
-cargo add cadmpeg-codec-core
+cargo add cadmpeg-core
 ```
 
 ## Documentation
@@ -24,6 +24,6 @@ cargo add cadmpeg-codec-core
 Requires Rust 1.88 or later. Licensed under Apache-2.0.
 
 [architecture]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/architecture.md
-[docs]: https://docs.rs/cadmpeg-codec-core
+[docs]: https://docs.rs/cadmpeg-core
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md
 [repo]: https://github.com/cadmpeg/cadmpeg

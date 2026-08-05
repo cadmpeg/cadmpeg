@@ -21,7 +21,7 @@ use crate::nurbs::subtypes::{
     find_owned_intcurve_subtype, find_owned_subtype_marker, owned_construction_subtype,
     subtype_refs, subtype_span, SubtypeTables,
 };
-use cadmpeg_codec_core::le::{f64_at as read_f64, int_at as read_int};
+use cadmpeg_core::le::{f64_at as read_f64, int_at as read_int};
 use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 

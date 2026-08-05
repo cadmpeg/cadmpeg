@@ -27,8 +27,8 @@ use crate::records::{
     DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation, DesignSurfaceStitchOperation,
     DesignThreadConstruction, DesignWorkAxisConstruction,
 };
-use cadmpeg_codec_core::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
+use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
 /// Decode every canonical sketch or construction-operation scope, including

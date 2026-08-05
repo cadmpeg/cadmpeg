@@ -15,7 +15,7 @@
 //! change moves the decode branch and `inspect` cannot see it, because an
 //! inspect summary describes the container, not what was transferred out of it.
 //!
-//! [`cadmpeg_codec_core::golden`] holds the enumeration, comparison, and
+//! [`cadmpeg_core::golden`] holds the enumeration, comparison, and
 //! reporting shared with every other codec; this module supplies only this
 //! codec's branches.
 
@@ -23,10 +23,10 @@ use std::collections::BTreeSet;
 use std::io::Cursor;
 use std::path::Path;
 
-use cadmpeg_codec_core::compare::floats_agree;
-use cadmpeg_codec_core::decode::InspectOptions;
-use cadmpeg_codec_core::golden::{snapshot_text, Branch, Harness};
 use cadmpeg_codec_step::StepCodec;
+use cadmpeg_core::compare::floats_agree;
+use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_core::golden::{snapshot_text, Branch, Harness};
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, EncodeInput, Encoder};
 
 use super::FcstdCodec;
@@ -238,7 +238,7 @@ fn step_snapshot(bytes: &[u8]) -> String {
 
 /// Compares two STEP texts, holding structure exact and numbers to a tolerance.
 ///
-/// [`cadmpeg_codec_core::golden::snapshots_agree`] cannot do this: STEP is not
+/// [`cadmpeg_core::golden::snapshots_agree`] cannot do this: STEP is not
 /// JSON, so it falls back to a line comparison, and a line comparison of an
 /// exchange file reports a platform as a regression. These texts carry the same
 /// decoded geometry the `decode` branch compares tolerantly — a conical face's
