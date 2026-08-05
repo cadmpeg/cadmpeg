@@ -18,7 +18,7 @@ use std::io::Write;
 use crate::document::CadIr;
 use crate::report::DecodeReport;
 use crate::report::StrictConsequence;
-use crate::report::{CensusBasis, EntityCensus, ExportReport, FidelityResolution};
+use crate::report::{CensusBasis, EntityCensus, ExportReport, FidelityResolution, WritePath};
 use crate::source_fidelity::SourceFidelity;
 use cadmpeg_codec_core::decode::{
     DecodeArena, DecodeContext, DecodeMode, DecodePolicy, InspectOptions, View,
@@ -280,6 +280,11 @@ impl<'a> ExportPlan<'a> {
         &self.report.fidelity
     }
 
+    /// Returns the write path the encoder took to produce this plan's payload.
+    pub fn write_path(&self) -> WritePath {
+        self.report.write_path
+    }
+
     /// Writes the planned payload and returns the unchanged plan-time report.
     pub fn write_to(self, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
         match self.payload {
@@ -308,6 +313,9 @@ impl Encoder for CadirEncoder {
                 counts: validation.entity_counts,
             },
             fidelity: FidelityResolution::NotProvided,
+            // CADIR is the neutral document itself: there is no container to
+            // replay or patch, so this encoder has one path and states it.
+            write_path: WritePath::Synthesized,
             losses: Vec::new(),
             notes: Vec::new(),
         };

@@ -103,6 +103,7 @@ pub use provenance::{Exactness, SourceObjectAssociation};
 pub use report::{
     CensusBasis, Check, CoverageKey, DecodeReport, EntityCensus, ExportReport, FidelityResolution,
     Finding, LossCategory, LossKind, LossNote, Severity, StrictConsequence, ValidationReport,
+    WritePath,
 };
 pub use sketches::{
     Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,

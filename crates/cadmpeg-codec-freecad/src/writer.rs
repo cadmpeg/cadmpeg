@@ -143,6 +143,11 @@ pub(crate) fn write_seekable(
             counts: validation.entity_counts,
         },
         fidelity: cadmpeg_ir::FidelityResolution::NotProvided,
+        // This writer refuses without a retained `fcstd` native graph, then
+        // rewrites `Document.xml` inside that entry set and repacks the rest. It
+        // authors part of the archive and carries the rest over, which is the
+        // patched path; it has no verbatim and no source-less branch.
+        write_path: cadmpeg_ir::WritePath::Patched,
         losses: Vec::new(),
         notes: vec![
             format!(

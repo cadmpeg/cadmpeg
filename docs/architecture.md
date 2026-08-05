@@ -39,7 +39,9 @@ Writers create a unique temporary file in the destination directory, then rename
 
 Source decoders return `DecodeReport`, including `geometry_transferred`, a decode-coverage census, notes, and attributable `LossNote` entries. Validation propagates supplied decode losses unchanged.
 
-Every encoder returns an `ExportReport` with its format id, entity census, loss notes, and informational notes. STEP reports reductions and omitted IR data. CADIR export carries no losses. F3D, SLDPRT, Rhino, and FreeCAD report replay versus regeneration and reject unsupported input atomically. Decode losses remain in the command report when export or convert started from native CAD.
+Every encoder returns an `ExportReport` with its format id, entity census, loss notes, informational notes, and a `write_path`. STEP reports reductions and omitted IR data. CADIR export carries no losses. F3D, SLDPRT, Rhino, and FreeCAD report replay versus regeneration and reject unsupported input atomically. Decode losses remain in the command report when export or convert started from native CAD.
+
+`write_path` names which of an encoder's write paths produced the bytes: `verbatim_replay` copies retained source bytes out unchanged, `patched` runs the writer over retained source content, and `synthesized` runs the writer over neutral IR content alone. The encoder sets it at the branch it takes. The distinction is not recoverable from the output, because a patch that changes nothing observable reproduces its input byte for byte. F3D takes all three paths, SLDPRT takes all three, FreeCAD is always `patched`, and CADIR, STEP, and Rhino are always `synthesized`.
 
 ## Crate map
 

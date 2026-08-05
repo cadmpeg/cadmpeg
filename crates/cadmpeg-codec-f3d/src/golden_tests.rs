@@ -22,6 +22,7 @@ use cadmpeg_codec_core::golden::{elide_local_digests, snapshots_agree};
 use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, DecodeResult, EncodeInput, Encoder};
 use cadmpeg_ir::examples;
+use cadmpeg_ir::WritePath;
 
 use super::{
     f3d_with_configuration, f3d_with_smbh, f3d_with_smbh_and_protein, synthetic_comp_spl_sur_smbh,
@@ -357,28 +358,48 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
     text
 }
 
+/// Encodes an unedited decode result. Every fixture carries its own baseline, so
+/// this lane takes the verbatim-replay branch and the assertion below pins that:
+/// without it the lane would silently become a byte copy of the input the day the
+/// baseline stopped matching, and pass either way.
 fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let result = decode_result(bytes).ok()?;
     let mut out = Vec::new();
-    Some(
-        match F3dCodec
-            .plan(EncodeInput {
-                ir: &result.ir,
-                fidelity: Some(&result.source_fidelity),
-            })
-            .and_then(|plan| plan.write_to(&mut out))
-        {
-            Ok(_) => Ok(out),
-            Err(error) => Err(error.to_string()),
-        },
-    )
+    let outcome = match F3dCodec.plan(EncodeInput {
+        ir: &result.ir,
+        fidelity: Some(&result.source_fidelity),
+    }) {
+        Ok(plan) => {
+            let path = plan.write_path();
+            match plan.write_to(&mut out) {
+                Ok(_) => {
+                    assert_eq!(
+                        path,
+                        WritePath::VerbatimReplay,
+                        "the replay lane must take the verbatim-replay write path"
+                    );
+                    Ok(out)
+                }
+                Err(error) => Err(error.to_string()),
+            }
+        }
+        Err(error) => Err(error.to_string()),
+    };
+    Some(outcome)
 }
 
 fn generate_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let result = decode_result(bytes).ok()?;
     let mut out = Vec::new();
     Some(match F3dCodec.encode(&result.ir, &mut out) {
-        Ok(_) => Ok(out),
+        Ok(report) => {
+            assert_eq!(
+                report.write_path,
+                WritePath::Synthesized,
+                "the generate lane withholds the sidecar, so the writer must author every byte"
+            );
+            Ok(out)
+        }
         Err(error) => Err(error.to_string()),
     })
 }
@@ -397,7 +418,14 @@ fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
             &result.source_fidelity,
             &mut out,
         ) {
-            Ok(()) => Ok(out),
+            Ok(path) => {
+                assert_eq!(
+                    path,
+                    WritePath::Patched,
+                    "the patch lane edits the IR, so the writer must run"
+                );
+                Ok(out)
+            }
             Err(error) => Err(error.to_string()),
         },
     )

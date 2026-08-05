@@ -74,7 +74,7 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::CadIr;
-use cadmpeg_ir::FidelityResolution;
+use cadmpeg_ir::{FidelityResolution, WritePath};
 
 use writer::{real, refs, string, Emitter, Ref};
 
@@ -2879,6 +2879,9 @@ impl<'a> Builder<'a> {
                 counts: self.emitter.counts(),
             },
             fidelity: FidelityResolution::NotProvided,
+            // STEP is a target-only format here: every record is emitted from
+            // the neutral IR, with no source container to replay or patch.
+            write_path: WritePath::Synthesized,
             losses: self.losses.clone(),
             notes: self.notes.clone(),
         }
