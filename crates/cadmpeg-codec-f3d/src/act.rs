@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use crate::bytes::{is_guid_hyphenated, lp_ascii_strict, lp_utf16_bounded};
 use crate::records::{ActEntity, ActGuid, ActRootComponent};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::CodecError;
 
 use crate::container::{role, ContainerScan};
 

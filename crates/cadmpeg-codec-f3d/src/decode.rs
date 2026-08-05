@@ -16,8 +16,8 @@
 //! and retained source data remains available for native replay.
 
 use crate::native::F3dNative;
-use cadmpeg_codec_core::decode::{DecodeContext, View};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -2286,9 +2286,10 @@ fn decode_result(
     // whether anything moved since this decode. See `document_local_sha256`.
     let hash = document_local_sha256(&ir);
     if let Some(source) = &mut ir.source {
-        source
-            .attributes
-            .insert("document_local_sha256".into(), hash);
+        source.attributes.insert(
+            cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
+            hash,
+        );
     }
     Ok(DecodeResult::new(ir, report, source_fidelity))
 }

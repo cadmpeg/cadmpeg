@@ -13,7 +13,7 @@ actually charge work, which is blocked on the missing platform API (see
 The migrated-means checklist depends on `cadmpeg-ir` primitives that are absent
 on this branch: `View`/`req_*`/`View::window`/`View::counted`, `BoundedCount`,
 `grow_vec`, `alloc_unfloored`, `DepthGuard`, and `begin_expand`/`ExpandWriter`.
-The only bounded primitives available are `cadmpeg_codec_core::cursor::{Cursor,
+The only bounded primitives available are `cadmpeg_core::cursor::{Cursor,
 bounded_len, Cursor::counted, Cursor::read_counted}`. Consequently no sldprt
 decoder module currently charges work, and peak allocation is governed by the
 existing hand-rolled ceilings rather than by an `alloc_unfloored` cap or a

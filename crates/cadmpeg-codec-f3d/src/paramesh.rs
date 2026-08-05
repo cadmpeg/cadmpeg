@@ -9,8 +9,8 @@
 //! Vertex coordinates are container coordinates; the mesh-body Design record
 //! stores the scale that relates them to model space.
 
-use cadmpeg_codec_core::le::{u16_at, u32_at, u64_at};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::le::{u16_at, u32_at, u64_at};
+use cadmpeg_core::CodecError;
 
 /// Container magic.
 const MAGIC: [u8; 12] = [

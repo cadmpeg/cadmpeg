@@ -16,9 +16,9 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashSet};
 use std::ops::Range;
 
-use cadmpeg_codec_core::be::u32_at as u32_be;
-use cadmpeg_codec_core::le::u32_at as u32_le;
-use cadmpeg_codec_core::{ContainerEntry, ContainerSummary};
+use cadmpeg_core::be::u32_at as u32_be;
+use cadmpeg_core::le::u32_at as u32_le;
+use cadmpeg_core::{ContainerEntry, ContainerSummary};
 
 use crate::variant::Variant;
 

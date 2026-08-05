@@ -78,7 +78,7 @@ fn loop_metadata_counts<'a>(
 }
 
 pub(crate) fn try_decode_freeform_surfaces(
-    _ctx: &cadmpeg_codec_core::decode::DecodeContext<'_>,
+    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Option<FamilyOutput> {
     let mut b5_graph = crate::families::b5::graph::parse(&scan.data);
@@ -375,6 +375,16 @@ pub(crate) fn try_decode_freeform_surfaces(
         coverage.insert(
             "resolved_object_stream_uncounted_face_count".to_string(),
             uncounted,
+        );
+    }
+    if topology_transferred {
+        coverage.insert(
+            "transferred_object_stream_face_count".to_string(),
+            ir.model.faces.len(),
+        );
+        coverage.insert(
+            "transferred_object_stream_loop_count".to_string(),
+            ir.model.loops.len(),
         );
     }
     if let Some([control_03, control_05, uncounted, unresolved]) = typed_face_counts {
@@ -978,6 +988,13 @@ pub(crate) enum ConsolidatedCarrierChart<'a> {
     Torus {
         torus: &'a crate::families::b2::records::B2Torus,
     },
+    /// Plane isometry carrying a stored chart onto a target plane's chart.
+    Rigid {
+        /// Row-major linear part.
+        linear: [[f64; 2]; 2],
+        /// Translation applied to positions only.
+        offset: [f64; 2],
+    },
 }
 
 #[derive(Clone, Copy, Default)]
@@ -986,6 +1003,8 @@ pub(crate) struct ConsolidatedCurveBindingCounts {
     pub(crate) partner_supports: usize,
     pub(crate) partner_face_pcurve_pairs: usize,
     pub(crate) standard_face_surfaces: usize,
+    /// Coedge pcurves bound after the endpoint-lift witness.
+    pub(crate) standard_face_pcurves: usize,
 }
 
 struct ConsolidatedStandardFaceBinding {
@@ -1005,6 +1024,10 @@ impl ConsolidatedCarrierChart<'_> {
                 (v - cone.slant_range[0]) * cone.half_angle.cos(),
             ],
             Self::Torus { torus } => [u / torus.major_scale, v / torus.minor_scale],
+            Self::Rigid { linear, offset } => [
+                linear[0][0] * u + linear[0][1] * v + offset[0],
+                linear[1][0] * u + linear[1][1] * v + offset[1],
+            ],
         }
     }
 
@@ -1014,6 +1037,10 @@ impl ConsolidatedCarrierChart<'_> {
             Self::Cylinder { radius } => [u / radius, v],
             Self::Cone { cone } => [u / cone.angular_scale, v * cone.half_angle.cos()],
             Self::Torus { torus } => [u / torus.major_scale, v / torus.minor_scale],
+            Self::Rigid { linear, .. } => [
+                linear[0][0] * u + linear[0][1] * v,
+                linear[1][0] * u + linear[1][1] * v,
+            ],
         }
     }
 }
@@ -1092,6 +1119,12 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
         .iter()
         .filter_map(|vertex| Some((vertex.id.clone(), *point_positions.get(&vertex.point)?)))
         .collect::<HashMap<_, _>>();
+    let vertex_tolerances = ir
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| (vertex.id.clone(), vertex.tolerance))
+        .collect::<HashMap<_, _>>();
     let curve_indices = ir
         .model
         .curves
@@ -1116,6 +1149,25 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
         .coedges
         .iter()
         .map(|coedge| loop_surfaces.get(&coedge.owner_loop).cloned())
+        .collect::<Vec<_>>();
+    let face_tolerances = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| (face.id.clone(), face.tolerance))
+        .collect::<HashMap<_, _>>();
+    let coedge_face_tolerances = ir
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| {
+            let loop_ = ir
+                .model
+                .loops
+                .iter()
+                .find(|value| value.id == coedge.owner_loop)?;
+            face_tolerances.get(&loop_.face).copied().flatten()
+        })
         .collect::<Vec<_>>();
     let attachable_edges = ir
         .model
@@ -1534,13 +1586,34 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                             return Some((identity, None));
                         }
                     }
+                    let standard_partner_geometry = &ir
+                        .model
+                        .surfaces
+                        .iter()
+                        .find(|surface| {
+                            surface.id == standard_surfaces[1 - *standard_resolved_side]
+                        })?
+                        .geometry;
                     let partner_pcurve = match &sides[partner].pcurve {
                         Some(pcurve) => pcurve.clone(),
                         None => {
-                            let mut pcurve = consolidated_jet_pcurve(
-                                &resolved.block.pcurves[partner],
-                                &ConsolidatedCarrierChart::Identity,
-                            )?;
+                            // The free side stores its jet in its own carrier's
+                            // chart, which is not the standard partner face's
+                            // chart. Recover the isometry between them from the
+                            // block's shared 3D loci.
+                            let chart = resolved
+                                .shared_loci
+                                .as_deref()
+                                .and_then(|loci| {
+                                    solve_planar_chart_rechart(
+                                        &resolved.block.pcurves[partner].points,
+                                        loci,
+                                        standard_partner_geometry,
+                                    )
+                                })
+                                .unwrap_or(ConsolidatedCarrierChart::Identity);
+                            let mut pcurve =
+                                consolidated_jet_pcurve(&resolved.block.pcurves[partner], &chart)?;
                             if reversed {
                                 pcurve = crate::nurbs::reverse_pcurve_geometry(
                                     &pcurve,
@@ -1570,11 +1643,27 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                             standard_geometries[0].clone(),
                         ]
                     };
-                    let edge_id = &ir.model.edges[identity.0].id;
+                    let edge = &ir.model.edges[identity.0];
+                    let edge_id = &edge.id;
+                    let edge_endpoints = [
+                        *vertex_positions.get(&edge.start)?,
+                        *vertex_positions.get(&edge.end)?,
+                    ];
+                    // The shared coincidence bound, widened by whatever the
+                    // topology itself declares. A binding accepted here is one
+                    // the endpoint-incidence contract also accepts.
+                    let edge_allowance = [
+                        edge.tolerance,
+                        vertex_tolerances.get(&edge.start).copied().flatten(),
+                        vertex_tolerances.get(&edge.end).copied().flatten(),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max);
                     let coedges = standard_surfaces
                         .iter()
                         .enumerate()
-                        .map(|(side, surface)| {
+                        .filter_map(|(side, surface)| {
                             let candidates = ir
                                 .model
                                 .coedges
@@ -1600,17 +1689,37 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                                     resolved.block.parameters.range,
                                 )?;
                             }
-                            Some((*coedge, geometry))
+                            // A pcurve binds to a face only when it lifts onto
+                            // the edge through that face's carrier. Without the
+                            // witness the side's chart is not this face's
+                            // chart, and the pcurve does not describe the edge.
+                            let surface_geometry = &ir
+                                .model
+                                .surfaces
+                                .iter()
+                                .find(|value| &value.id == surface)?
+                                .geometry;
+                            let face_allowance = coedge_face_tolerances
+                                .get(*coedge)
+                                .copied()
+                                .flatten()
+                                .map_or(edge_allowance, |value| edge_allowance.max(value));
+                            pcurve_lift_reaches_endpoints(
+                                &geometry,
+                                surface_geometry,
+                                resolved.block.parameters.range,
+                                edge_endpoints,
+                                face_allowance,
+                            )
+                            .then_some((*coedge, geometry))
                         })
-                        .collect::<Option<Vec<_>>>();
-                    coedges.filter(|coedges| coedges.len() == 2).map(|coedges| {
-                        ConsolidatedStandardFaceBinding {
-                            coedges,
-                            standard_surfaces: standard_surfaces.clone(),
-                            edge_pcurves: standard_geometries,
-                            inferred_partner: inferred_partner
-                                .map(|(_, carrier)| (1 - *standard_resolved_side, carrier)),
-                        }
+                        .collect::<Vec<_>>();
+                    (!coedges.is_empty()).then(|| ConsolidatedStandardFaceBinding {
+                        coedges,
+                        standard_surfaces: standard_surfaces.clone(),
+                        edge_pcurves: standard_geometries,
+                        inferred_partner: inferred_partner
+                            .map(|(_, carrier)| (1 - *standard_resolved_side, carrier)),
                     })
                 } else {
                     None
@@ -1663,7 +1772,10 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             attached_curves.insert(curve_id.clone());
             binding_counts.standard_edges += 1;
             if let Some(partner_pcurves) = partner_pcurves {
-                binding_counts.partner_face_pcurve_pairs += 1;
+                if partner_pcurves.coedges.len() == 2 {
+                    binding_counts.partner_face_pcurve_pairs += 1;
+                }
+                binding_counts.standard_face_pcurves += partner_pcurves.coedges.len();
                 for (coedge_index, geometry) in partner_pcurves.coedges {
                     let pcurve_id = PcurveId(format!(
                         "catia:consolidated:standard-pcurve#{}",
@@ -1752,6 +1864,137 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
         }
     }
     binding_counts
+}
+
+/// Tolerance in millimetres for consolidated definition-site agreement.
+const CONSOLIDATED_SITE_TOLERANCE: f64 = 2e-3;
+
+/// Solve the plane isometry that carries a consolidated side's stored chart
+/// onto `target`'s chart.
+///
+/// A consolidated side stores its definition sites in the carrier's own
+/// orthonormal chart. When the shared 3D loci of the block lie on `target` and
+/// `target` is a plane, both charts are isometric parameterizations of one
+/// plane, so a single rigid 2D motion relates them. The motion is recovered
+/// from the index-aligned site correspondence and is accepted only when it
+/// reproduces every site.
+fn solve_planar_chart_rechart(
+    sites: &[[f64; 2]],
+    loci: &[Point3],
+    target: &SurfaceGeometry,
+) -> Option<ConsolidatedCarrierChart<'static>> {
+    if !matches!(target, SurfaceGeometry::Plane { .. }) || sites.len() != loci.len() {
+        return None;
+    }
+    // Target-chart image of each locus. A locus off the plane has no image,
+    // because the plane inverse discards the normal component.
+    let images = loci
+        .iter()
+        .map(|locus| {
+            let uv = cadmpeg_ir::eval::analytic_surface_parameters(target, *locus)?;
+            let back = cadmpeg_ir::eval::surface_point(target, uv.u, uv.v)?;
+            ((back.x - locus.x)
+                .hypot(back.y - locus.y)
+                .hypot(back.z - locus.z)
+                <= CONSOLIDATED_SITE_TOLERANCE)
+                .then_some([uv.u, uv.v])
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let count = images.len();
+    if count < 2 {
+        return None;
+    }
+    let scale = 1.0 / count as f64;
+    let mean = |values: &[[f64; 2]]| {
+        values.iter().fold([0.0, 0.0], |acc, value| {
+            [acc[0] + value[0] * scale, acc[1] + value[1] * scale]
+        })
+    };
+    let stored_center = mean(sites);
+    let image_center = mean(&images);
+    // Two-dimensional orthogonal Procrustes. `dot` and `cross` accumulate the
+    // rotation's cosine and sine lanes; the reflected solution swaps the sign
+    // of the image's second chart coordinate.
+    let (mut dot, mut cross) = (0.0, 0.0);
+    let (mut reflected_dot, mut reflected_cross) = (0.0, 0.0);
+    for (stored, image) in sites.iter().zip(&images) {
+        let [su, sv] = [stored[0] - stored_center[0], stored[1] - stored_center[1]];
+        let [iu, iv] = [image[0] - image_center[0], image[1] - image_center[1]];
+        dot += su * iu + sv * iv;
+        cross += su * iv - sv * iu;
+        reflected_dot += su * iu - sv * iv;
+        reflected_cross += su * iv + sv * iu;
+    }
+    let candidates = [(dot, cross, 1.0), (reflected_dot, reflected_cross, -1.0)];
+    let mut best: Option<(f64, ConsolidatedCarrierChart<'static>)> = None;
+    for (dot, cross, determinant) in candidates {
+        let norm = dot.hypot(cross);
+        if !norm.is_finite() || norm <= f64::EPSILON {
+            continue;
+        }
+        let (cosine, sine) = (dot / norm, cross / norm);
+        // A reflection about the target chart's first axis follows the
+        // rotation, so its second column changes sign.
+        let linear = [[cosine, -sine * determinant], [sine, cosine * determinant]];
+        let offset = [
+            image_center[0] - (linear[0][0] * stored_center[0] + linear[0][1] * stored_center[1]),
+            image_center[1] - (linear[1][0] * stored_center[0] + linear[1][1] * stored_center[1]),
+        ];
+        let chart = ConsolidatedCarrierChart::Rigid { linear, offset };
+        let residual = sites
+            .iter()
+            .zip(&images)
+            .map(|(stored, image)| {
+                let mapped = chart.point(*stored);
+                (mapped[0] - image[0]).hypot(mapped[1] - image[1])
+            })
+            .fold(0.0f64, f64::max);
+        if !residual.is_finite() {
+            continue;
+        }
+        if best.as_ref().is_none_or(|(current, _)| residual < *current) {
+            best = Some((residual, chart));
+        }
+    }
+    let (residual, chart) = best?;
+    (residual <= CONSOLIDATED_SITE_TOLERANCE).then_some(chart)
+}
+
+/// Does `pcurve`, mapped through `surface`, reach `endpoints` over `range`?
+///
+/// A consolidated side binds to a standard face only when its stored chart is
+/// that face carrier's chart. This is the local geometric witness of that: the
+/// pcurve's parameter-interval extremes must lift onto the edge's vertex
+/// positions within `allowance`. Either endpoint assignment satisfies it,
+/// because pcurve parameter direction is independent of edge sense.
+///
+/// A carrier with no geometry has no chart, so it admits no witness and no
+/// disagreement. The binding then records the pairing alone and is retained.
+fn pcurve_lift_reaches_endpoints(
+    pcurve: &PcurveGeometry,
+    surface: &SurfaceGeometry,
+    range: [f64; 2],
+    endpoints: [Point3; 2],
+    allowance: f64,
+) -> bool {
+    if matches!(surface, SurfaceGeometry::Unknown { .. }) {
+        return true;
+    }
+    let lift = |parameter| {
+        let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)?;
+        cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v)
+    };
+    let (Some(start), Some(end)) = (lift(range[0]), lift(range[1])) else {
+        return false;
+    };
+    let distance = |left: Point3, right: Point3| {
+        (left.x - right.x)
+            .hypot(left.y - right.y)
+            .hypot(left.z - right.z)
+    };
+    let forward = distance(start, endpoints[0]).max(distance(end, endpoints[1]));
+    let reversed = distance(start, endpoints[1]).max(distance(end, endpoints[0]));
+    forward.min(reversed) <= allowance
 }
 
 fn unique_endpoint_pair_match<T>(
@@ -2000,8 +2243,9 @@ pub(crate) fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDeriva
 mod tests {
     use super::{
         append_freeform_surface_pools, append_resolved_consolidated_surface_curves,
-        attach_standalone_wires, freeform_surface_carriers, rechart_equivalent_surface_pcurve,
-        same_surface_locus, unique_endpoint_pair_match, unique_paired_surface_lift_match,
+        attach_standalone_wires, freeform_surface_carriers, pcurve_lift_reaches_endpoints,
+        rechart_equivalent_surface_pcurve, same_surface_locus, solve_planar_chart_rechart,
+        unique_endpoint_pair_match, unique_paired_surface_lift_match, ConsolidatedCarrierChart,
     };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
@@ -2355,6 +2599,165 @@ mod tests {
         .expect("reversed pcurve start");
         assert_eq!([start.u, start.v], [0.5, 1.0]);
         assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
+    }
+
+    /// A plane whose chart origin and axes differ from the stored chart used by
+    /// a consolidated side, together with definition sites on it. The stored
+    /// chart is the target chart turned by `angle` about the site origin and
+    /// shifted by `shift`, which is what a foreign carrier's chart looks like.
+    fn foreign_plane_chart_sites(
+        angle: f64,
+        shift: [f64; 2],
+    ) -> (SurfaceGeometry, Vec<[f64; 2]>, Vec<Point3>) {
+        let origin = Point3::new(7.0, -2.0, 11.0);
+        let u_axis = Vector3::new(0.0, 1.0, 0.0);
+        let normal = Vector3::new(1.0, 0.0, 0.0);
+        let target = SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        };
+        // Sites in the target chart, deliberately not collinear so the
+        // isometry between the charts is uniquely determined.
+        let target_sites = [[0.0, 0.0], [3.0, 1.0], [5.0, -2.0], [8.0, 4.0]];
+        let loci = target_sites
+            .iter()
+            .map(|[u, v]| {
+                cadmpeg_ir::eval::surface_point(&target, *u, *v).expect("plane evaluates")
+            })
+            .collect::<Vec<_>>();
+        let (cosine, sine) = (angle.cos(), angle.sin());
+        let stored = target_sites
+            .iter()
+            .map(|[u, v]| {
+                [
+                    cosine * u - sine * v + shift[0],
+                    sine * u + cosine * v + shift[1],
+                ]
+            })
+            .collect::<Vec<_>>();
+        (target, stored, loci)
+    }
+
+    #[test]
+    fn planar_rechart_recovers_a_foreign_consolidated_chart() {
+        let angle = 0.7;
+        let shift = [12.5, -4.25];
+        let (target, stored, loci) = foreign_plane_chart_sites(angle, shift);
+        let chart = solve_planar_chart_rechart(&stored, &loci, &target)
+            .expect("an isometric stored chart recharts onto the target plane");
+        for (site, locus) in stored.iter().zip(&loci) {
+            let [u, v] = chart.point(*site);
+            let lifted = cadmpeg_ir::eval::surface_point(&target, u, v).expect("plane evaluates");
+            assert!(
+                (lifted.x - locus.x)
+                    .hypot(lifted.y - locus.y)
+                    .hypot(lifted.z - locus.z)
+                    < 1e-9,
+                "recharted site must lift onto its definition locus"
+            );
+        }
+        // The naive binding this replaces reads the stored chart as the
+        // target's own, which lands far from the definition loci.
+        let naive = ConsolidatedCarrierChart::Identity;
+        let [u, v] = naive.point(stored[0]);
+        let lifted = cadmpeg_ir::eval::surface_point(&target, u, v).expect("plane evaluates");
+        assert!(
+            (lifted.x - loci[0].x)
+                .hypot(lifted.y - loci[0].y)
+                .hypot(lifted.z - loci[0].z)
+                > 1.0,
+            "the unrecharted stored chart must not be mistaken for the target chart"
+        );
+        // The linear part carries derivatives without the translation.
+        let derivative = chart.derivative([1.0, 0.0]);
+        assert!(
+            (derivative[0].hypot(derivative[1]) - 1.0).abs() < 1e-12,
+            "an isometry preserves derivative magnitude"
+        );
+    }
+
+    #[test]
+    fn planar_rechart_declines_a_chart_that_is_not_an_isometry() {
+        let (target, stored, loci) = foreign_plane_chart_sites(0.4, [1.0, 2.0]);
+        // Scale one chart axis. No rigid motion reproduces the sites, so no
+        // binding may be claimed.
+        let scaled = stored
+            .iter()
+            .map(|[u, v]| [*u * 1.5, *v])
+            .collect::<Vec<_>>();
+        assert!(solve_planar_chart_rechart(&scaled, &loci, &target).is_none());
+        // Loci off the plane have no image in its chart.
+        let lifted_loci = loci
+            .iter()
+            .map(|locus| Point3::new(locus.x + 4.0, locus.y, locus.z))
+            .collect::<Vec<_>>();
+        assert!(solve_planar_chart_rechart(&stored, &lifted_loci, &target).is_none());
+        // A non-plane target has no affine chart to solve against.
+        assert!(solve_planar_chart_rechart(
+            &stored,
+            &loci,
+            &SurfaceGeometry::Unknown { record: None }
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn endpoint_lift_witness_refuses_a_pcurve_from_a_foreign_chart() {
+        let (target, stored, loci) = foreign_plane_chart_sites(0.9, [-6.0, 3.5]);
+        let endpoints = [*loci.first().expect("sites"), *loci.last().expect("sites")];
+        let range = [0.0, 1.0];
+        let line_through = |first: [f64; 2], last: [f64; 2]| PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![range[0], range[0], range[1], range[1]],
+            control_points: vec![
+                Point2::new(first[0], first[1]),
+                Point2::new(last[0], last[1]),
+            ],
+            weights: None,
+            periodic: false,
+        };
+        let chart = solve_planar_chart_rechart(&stored, &loci, &target).expect("isometry");
+        let first = *stored.first().expect("sites");
+        let last = *stored.last().expect("sites");
+        let recharted = line_through(chart.point(first), chart.point(last));
+        assert!(
+            pcurve_lift_reaches_endpoints(
+                &recharted,
+                &target,
+                range,
+                endpoints,
+                cadmpeg_ir::units::COINCIDENCE_TOLERANCE
+            ),
+            "the recharted pcurve lifts onto the edge's vertex positions"
+        );
+        let naive = line_through(first, last);
+        assert!(
+            !pcurve_lift_reaches_endpoints(
+                &naive,
+                &target,
+                range,
+                endpoints,
+                cadmpeg_ir::units::COINCIDENCE_TOLERANCE
+            ),
+            "a pcurve stored in a foreign chart has no witness on this carrier"
+        );
+        // The witness is independent of endpoint order.
+        assert!(pcurve_lift_reaches_endpoints(
+            &recharted,
+            &target,
+            range,
+            [endpoints[1], endpoints[0]],
+            cadmpeg_ir::units::COINCIDENCE_TOLERANCE
+        ));
+        // A carrier with no geometry admits no witness and no disagreement.
+        assert!(pcurve_lift_reaches_endpoints(
+            &naive,
+            &SurfaceGeometry::Unknown { record: None },
+            range,
+            endpoints,
+            cadmpeg_ir::units::COINCIDENCE_TOLERANCE
+        ));
     }
 
     #[test]

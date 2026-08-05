@@ -1,0 +1,139 @@
+{
+  "entries": [
+    {
+      "name": "Document.xml",
+      "payload_len": 56656,
+      "payload_sha256": "5e34b55267b2e6df8bbaca6c58fb8a4105a6120803a79d490b0d99017a821f85"
+    },
+    {
+      "name": "Box.Shape.brp",
+      "payload_len": 8938,
+      "payload_sha256": "9a3523babdb58076dfd2c35f8d64fb7849e18a6b7515d7c8b18ebd791799cadd"
+    },
+    {
+      "name": "Cut.Shape.Map.txt",
+      "payload_len": 645,
+      "payload_sha256": "b91fb726bfa15a3a7cacc7971d88b2ed517aa3ba8b18a6b7e3da7d2bf86f11bd"
+    },
+    {
+      "name": "Cut.Shape.brp",
+      "payload_len": 12897,
+      "payload_sha256": "59f9d453d7448ba49e75c4e4d568a9679c676c3af50190121daa846ac895d581"
+    },
+    {
+      "name": "Cylinder.Shape.brp",
+      "payload_len": 2646,
+      "payload_sha256": "948e25b6487e76dee3777ffda6e9d03ec9f63e29cf6cbfa5236494ed7cfb2920"
+    },
+    {
+      "name": "DesignedFeature.Shape.brp",
+      "payload_len": 8888,
+      "payload_sha256": "780b0dab5fb6e15ae4e5c79233ee3b4a627260ab3a82dab1339d737bce76ccdf"
+    },
+    {
+      "name": "DesignedFeature.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "PlacementList",
+      "payload_len": 4,
+      "payload_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+    },
+    {
+      "name": "Profile.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "Profile.Shape.Map.txt",
+      "payload_len": 267,
+      "payload_sha256": "8f31c0f71c086586367547a6bbfde21c50b20c31bf1bc624b319a5409e7cb75a"
+    },
+    {
+      "name": "Profile.Shape.brp",
+      "payload_len": 1649,
+      "payload_sha256": "544b5031f22f06afc08ba6ae897abef34e3d18297855458248383a1509ed6b10"
+    },
+    {
+      "name": "ScaleList",
+      "payload_len": 4,
+      "payload_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+    }
+  ],
+  "report": {
+    "census": {
+      "basis": "ir_arenas",
+      "counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "assembly_joints": 0,
+        "assets": 0,
+        "attributes": 0,
+        "bodies": 5,
+        "coedges": 84,
+        "configurations": 0,
+        "curves": 48,
+        "drawings": 0,
+        "edges": 46,
+        "faces": 22,
+        "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
+        "features": 6,
+        "loops": 24,
+        "native.fcstd.applications": 17,
+        "native.fcstd.attachments": 15,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 5,
+        "native.fcstd.design_census": 6,
+        "native.fcstd.document": 1,
+        "native.fcstd.element_maps": 2,
+        "native.fcstd.entries": 12,
+        "native.fcstd.extensions": 9,
+        "native.fcstd.logical_ledger": 460,
+        "native.fcstd.objects": 17,
+        "native.fcstd.physical_ledger": 85,
+        "native.fcstd.product_nodes": 2,
+        "native.fcstd.properties": 225,
+        "native.fcstd.shape_payloads": 7,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 7,
+        "parameters": 10,
+        "pcurves": 82,
+        "pmi": 0,
+        "points": 32,
+        "presentation_documents": 0,
+        "presentation_layers": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 0,
+        "product_definitions": 6,
+        "regions": 5,
+        "semantic_annotations": 0,
+        "shells": 5,
+        "sketch_constraints": 4,
+        "sketch_entities": 4,
+        "sketches": 1,
+        "spatial_sketch_constraints": 0,
+        "spatial_sketch_entities": 0,
+        "spatial_sketches": 0,
+        "spreadsheets": 1,
+        "subds": 0,
+        "surfaces": 24,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 32,
+        "view_presentations": 0
+      }
+    },
+    "fidelity": {
+      "status": "not_consumed"
+    },
+    "format": "fcstd",
+    "losses": [],
+    "notes": [
+      "semantic FCStd archive written for SchemaVersion=4 FileVersion=1",
+      "unsupported retained entries and unedited XML records were preserved"
+    ],
+    "write_path": "patched"
+  }
+}

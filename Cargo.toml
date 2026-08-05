@@ -3,7 +3,7 @@
 resolver = "2"
 members = [
   "crates/cadmpeg",
-  "crates/cadmpeg-codec-core",
+  "crates/cadmpeg-core",
   "crates/cadmpeg-container",
   "crates/cadmpeg-ir",
   "crates/cadmpeg-codec-f3d",
@@ -31,7 +31,7 @@ homepage = "https://github.com/cadmpeg/cadmpeg"
 rust-version = "1.88"
 
 [workspace.dependencies]
-cadmpeg-codec-core = { path = "crates/cadmpeg-codec-core", version = "0.3.1" }
+cadmpeg-core = { path = "crates/cadmpeg-core", version = "0.3.1" }
 cadmpeg-container = { path = "crates/cadmpeg-container", version = "0.3.1" }
 cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.3.1" }
 cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.3.1" }

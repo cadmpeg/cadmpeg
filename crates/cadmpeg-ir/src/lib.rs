@@ -17,7 +17,7 @@
 //!
 //! Format crates implement [`Codec`]. Detection selects a codec from a byte
 //! prefix, inspection enumerates a container, and decoding returns a
-//! [`DecodeResult`]. Operation failures use [`cadmpeg_codec_core::CodecError`].
+//! [`DecodeResult`]. Operation failures use [`cadmpeg_core::CodecError`].
 //! A successful decode reports partial transfer through [`DecodeReport`] and
 //! [`LossNote`].
 //!
@@ -57,6 +57,7 @@ pub mod presentation;
 pub mod products;
 mod provenance;
 pub mod report;
+pub mod roundtrip;
 pub mod schema;
 pub mod semantic_annotations;
 pub mod sketches;
@@ -103,6 +104,7 @@ pub use provenance::{Exactness, SourceObjectAssociation};
 pub use report::{
     CensusBasis, Check, CoverageKey, DecodeReport, EntityCensus, ExportReport, FidelityResolution,
     Finding, LossCategory, LossKind, LossNote, Severity, StrictConsequence, ValidationReport,
+    WritePath,
 };
 pub use sketches::{
     Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,

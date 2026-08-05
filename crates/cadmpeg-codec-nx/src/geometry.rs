@@ -13,7 +13,7 @@
 //! returned record offsets into topology.
 #![deny(clippy::disallowed_methods)]
 
-use cadmpeg_codec_core::be::{f64_at as read_f64, vec3_at as read_vec3};
+use cadmpeg_core::be::{f64_at as read_f64, vec3_at as read_vec3};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 

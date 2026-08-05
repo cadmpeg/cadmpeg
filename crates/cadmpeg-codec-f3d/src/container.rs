@@ -14,9 +14,9 @@
 use std::collections::BTreeMap;
 use std::io::Read;
 
-use cadmpeg_codec_core::decode::{DecodeContext, View};
-use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_container::ArchiveSnapshot;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::hash::sha256_hex;
 
 use crate::asm_header;
@@ -94,7 +94,7 @@ pub(crate) fn read_entry_bounded(
             break;
         }
         bytes.try_reserve(read).map_err(|_| {
-            cadmpeg_codec_core::decode::refuse_local_limit(
+            cadmpeg_core::decode::refuse_local_limit(
                 "F3D entry allocation",
                 MAX_INFLATED_ENTRY_BYTES,
                 bytes.len().saturating_add(read) as u64,

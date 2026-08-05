@@ -13,8 +13,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_codec_core::decode::{DecodeContext, View};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};

@@ -1,0 +1,188 @@
+{
+  "entries": [
+    {
+      "name": "Document.xml",
+      "payload_len": 100460,
+      "payload_sha256": "498f08caf9ccf8bac6a0f9e7d748b0b7e047f28baef7270a24317ea570c3ba7b"
+    },
+    {
+      "name": "DimensionalRelations.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "DimensionalRelations.Shape.Map.txt",
+      "payload_len": 387,
+      "payload_sha256": "2bb40983f25d4ff6edea769653d1980f4126b312c0022725c6a7ab9109157c24"
+    },
+    {
+      "name": "DimensionalRelations.Shape.brp",
+      "payload_len": 4227,
+      "payload_sha256": "08cf0cccfb4d8bec99c32ef344124c1f34904d408e091e4fcb33f0b1fe420dd1"
+    },
+    {
+      "name": "GeometricRelations.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "GeometricRelations.Shape.Map.txt",
+      "payload_len": 559,
+      "payload_sha256": "8ad1a23a76fd3b84dcb3cf64e47f08f80ec618a004d1a503134421136d1f6a6f"
+    },
+    {
+      "name": "GeometricRelations.Shape.brp",
+      "payload_len": 6716,
+      "payload_sha256": "d0c09a4797234c2a793364431d681f7a4792bde518fd9ba126de83d25afd802d"
+    },
+    {
+      "name": "InactiveRelation.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "InactiveRelation.Shape.Map.txt",
+      "payload_len": 191,
+      "payload_sha256": "eb80ba3937bdc8b295c511c60db0282feb570e3009b470663e62d907f2f5857a"
+    },
+    {
+      "name": "InactiveRelation.Shape.brp",
+      "payload_len": 797,
+      "payload_sha256": "6c3b903b42e8bac21dc84446c3738ec35a76b0e5ec793b77627d7498772ad2c1"
+    },
+    {
+      "name": "InternalAlignmentRelations.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "InternalAlignmentRelations.Shape.Map.txt",
+      "payload_len": 181,
+      "payload_sha256": "921921731a48ecab8631a730a022ee139b47774d267c39d663703350b6a79f3d"
+    },
+    {
+      "name": "InternalAlignmentRelations.Shape.brp",
+      "payload_len": 868,
+      "payload_sha256": "7f4d649c99643003f403c8b33eaf81896004965d2e5aef996694fbfe1a68dd83"
+    },
+    {
+      "name": "OpticalRelation.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "OpticalRelation.Shape.Map.txt",
+      "payload_len": 247,
+      "payload_sha256": "f7acf5c271190a86ecbd760e5cea0920db8c1513526ee7edd7df09055aa17e03"
+    },
+    {
+      "name": "OpticalRelation.Shape.brp",
+      "payload_len": 1680,
+      "payload_sha256": "e2cc0117c8142f021dee68e4bff0a5c908f3da9d0dc0b49f0d967a103937937c"
+    },
+    {
+      "name": "SplineWeightRelation.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "SplineWeightRelation.Shape.Map.txt",
+      "payload_len": 191,
+      "payload_sha256": "2087a4ef3661489026b140820977f38a45e94a36240d21e76d864d4f5c89719e"
+    },
+    {
+      "name": "SplineWeightRelation.Shape.brp",
+      "payload_len": 1057,
+      "payload_sha256": "8c8bb5f3527b06fb96716a1e45700025529db8056ac4f41c1ec5d9faef2665d6"
+    },
+    {
+      "name": "SymmetryRelation.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "SymmetryRelation.Shape.Map.txt",
+      "payload_len": 247,
+      "payload_sha256": "d1cfdbc8a03224cb039f3e47ce4abd79b60799cc1b03b55154e3e6741973ef19"
+    },
+    {
+      "name": "SymmetryRelation.Shape.brp",
+      "payload_len": 1671,
+      "payload_sha256": "c8126ee95d6e42df75571acd40d4ed9270a89943503ef6423059b124f8d77e43"
+    }
+  ],
+  "report": {
+    "census": {
+      "basis": "ir_arenas",
+      "counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "assembly_joints": 0,
+        "assets": 0,
+        "attributes": 0,
+        "bodies": 7,
+        "coedges": 0,
+        "configurations": 0,
+        "curves": 33,
+        "drawings": 0,
+        "edges": 33,
+        "faces": 0,
+        "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
+        "features": 7,
+        "loops": 0,
+        "native.fcstd.applications": 8,
+        "native.fcstd.attachments": 7,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 7,
+        "native.fcstd.design_census": 7,
+        "native.fcstd.document": 1,
+        "native.fcstd.element_maps": 7,
+        "native.fcstd.entries": 22,
+        "native.fcstd.extensions": 7,
+        "native.fcstd.logical_ledger": 435,
+        "native.fcstd.objects": 8,
+        "native.fcstd.physical_ledger": 155,
+        "native.fcstd.properties": 210,
+        "native.fcstd.shape_payloads": 14,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 0,
+        "parameters": 9,
+        "pcurves": 0,
+        "pmi": 0,
+        "points": 58,
+        "presentation_documents": 0,
+        "presentation_layers": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 0,
+        "product_definitions": 0,
+        "regions": 30,
+        "semantic_annotations": 0,
+        "shells": 30,
+        "sketch_constraints": 32,
+        "sketch_entities": 43,
+        "sketches": 7,
+        "spatial_sketch_constraints": 0,
+        "spatial_sketch_entities": 0,
+        "spatial_sketches": 0,
+        "spreadsheets": 0,
+        "subds": 0,
+        "surfaces": 0,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 58,
+        "view_presentations": 0
+      }
+    },
+    "fidelity": {
+      "status": "not_consumed"
+    },
+    "format": "fcstd",
+    "losses": [],
+    "notes": [
+      "semantic FCStd archive written for SchemaVersion=4 FileVersion=1",
+      "unsupported retained entries and unedited XML records were preserved"
+    ],
+    "write_path": "patched"
+  }
+}

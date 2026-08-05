@@ -141,7 +141,7 @@ pub(super) fn append_generated_sketch_markers(
     ir: &cadmpeg_ir::CadIr,
     sketch: &Sketch,
     payload: &mut Vec<u8>,
-) -> Result<(), cadmpeg_codec_core::CodecError> {
+) -> Result<(), cadmpeg_core::CodecError> {
     let relations = ir
         .model
         .sketch_constraints
@@ -171,7 +171,7 @@ pub(super) fn append_generated_sketch_markers(
     {
         for (point, locus) in sketch_entity_loci(entity) {
             let local_id = u16::try_from(next_id).map_err(|_| {
-                cadmpeg_codec_core::CodecError::Malformed(format!(
+                cadmpeg_core::CodecError::Malformed(format!(
                     "source-less SLDPRT sketch {} exceeds the marker-local id space",
                     sketch.id.0
                 ))
@@ -209,7 +209,7 @@ pub(super) fn append_generated_sketch_markers(
         let (kind, links) = match relation {
             GeneratedMarkerRelation::Unary(kind, entity) => {
                 let ids = marker_ids.get(entity).ok_or_else(|| {
-                    cadmpeg_codec_core::CodecError::NotImplemented(format!(
+                    cadmpeg_core::CodecError::NotImplemented(format!(
                         "source-less SLDPRT relation on {} has no coordinate-bearing marker loci",
                         entity.0
                     ))
@@ -262,7 +262,7 @@ pub(super) fn append_generated_sketch_markers(
         };
         if let Some(owner) = reverse_owner {
             let relation_id = u16::try_from(next_id).map_err(|_| {
-                cadmpeg_codec_core::CodecError::Malformed(format!(
+                cadmpeg_core::CodecError::Malformed(format!(
                     "source-less SLDPRT sketch {} exceeds the marker-local id space",
                     sketch.id.0
                 ))
@@ -271,7 +271,7 @@ pub(super) fn append_generated_sketch_markers(
         }
         append_reference_marker(payload, kind, links, next_id);
         next_id = next_id.checked_add(1).ok_or_else(|| {
-            cadmpeg_codec_core::CodecError::Malformed(
+            cadmpeg_core::CodecError::Malformed(
                 "source-less SLDPRT marker-local id space is exhausted".into(),
             )
         })?;
@@ -455,14 +455,14 @@ pub(super) fn append_generated_sketch_markers(
             .iter()
             .find(|candidate| candidate.id == *parameter)
             .ok_or_else(|| {
-                cadmpeg_codec_core::CodecError::Malformed(format!(
+                cadmpeg_core::CodecError::Malformed(format!(
                     "source-less SLDPRT dimension references missing parameter {}",
                     parameter.0
                 ))
             })?;
         let value = match (&parameter.value, class) {
             (Some(cadmpeg_ir::features::ParameterValue::Length(_)), "sgAnglDim") => {
-                return Err(cadmpeg_codec_core::CodecError::Malformed(format!(
+                return Err(cadmpeg_core::CodecError::Malformed(format!(
                     "source-less SLDPRT angular dimension {} has a length value",
                     parameter.id.0
                 )));
@@ -470,7 +470,7 @@ pub(super) fn append_generated_sketch_markers(
             (Some(cadmpeg_ir::features::ParameterValue::Angle(value)), "sgAnglDim") => value.0,
             (Some(cadmpeg_ir::features::ParameterValue::Length(value)), _) => value.0 * 0.001,
             _ => {
-                return Err(cadmpeg_codec_core::CodecError::Malformed(format!(
+                return Err(cadmpeg_core::CodecError::Malformed(format!(
                     "source-less SLDPRT dimension parameter {} has no compatible evaluated value",
                     parameter.id.0
                 )));
@@ -478,7 +478,7 @@ pub(super) fn append_generated_sketch_markers(
         };
         append_generated_scalar(payload, class, &parameter.name, value, next_id, &operands)?;
         next_id = next_id.checked_add(1).ok_or_else(|| {
-            cadmpeg_codec_core::CodecError::Malformed(
+            cadmpeg_core::CodecError::Malformed(
                 "source-less SLDPRT marker-local id space is exhausted".into(),
             )
         })?;
@@ -489,9 +489,9 @@ pub(super) fn append_generated_sketch_markers(
 fn generated_dimension<'a>(
     ir: &cadmpeg_ir::CadIr,
     definition: &'a SketchConstraintDefinition,
-) -> Option<Result<GeneratedDimension<'a>, cadmpeg_codec_core::CodecError>> {
+) -> Option<Result<GeneratedDimension<'a>, cadmpeg_core::CodecError>> {
     let unsupported = || {
-        cadmpeg_codec_core::CodecError::NotImplemented(
+        cadmpeg_core::CodecError::NotImplemented(
             "source-less SLDPRT distance dimensions require two entities or point/entity loci"
                 .into(),
         )
@@ -561,15 +561,15 @@ fn append_generated_scalar(
     value: f64,
     object_id: u32,
     operands: &[(FeatureInputOperandKind, u16)],
-) -> Result<(), cadmpeg_codec_core::CodecError> {
+) -> Result<(), cadmpeg_core::CodecError> {
     let units = name.encode_utf16().collect::<Vec<_>>();
     let length = u8::try_from(units.len()).map_err(|_| {
-        cadmpeg_codec_core::CodecError::Malformed(
+        cadmpeg_core::CodecError::Malformed(
             "SLDPRT generated parameter name exceeds 255 UTF-16 code units".into(),
         )
     })?;
     if length == 0 || length > 128 {
-        return Err(cadmpeg_codec_core::CodecError::Malformed(
+        return Err(cadmpeg_core::CodecError::Malformed(
             "SLDPRT generated parameter name must contain 1 to 128 UTF-16 code units".into(),
         ));
     }
@@ -606,7 +606,7 @@ fn unique_generated_entity_marker(
     sketch: &Sketch,
     markers: &[(SketchLocus, Point2, SketchInputKind, u16)],
     entity: &SketchEntityId,
-) -> Result<u16, cadmpeg_codec_core::CodecError> {
+) -> Result<u16, cadmpeg_core::CodecError> {
     for (_, point, kind, local_id) in markers
         .iter()
         .filter(|(candidate, ..)| locus_entity(candidate) == *entity)
@@ -627,7 +627,7 @@ fn unique_generated_entity_marker(
             return Ok(*local_id);
         }
     }
-    Err(cadmpeg_codec_core::CodecError::NotImplemented(format!(
+    Err(cadmpeg_core::CodecError::NotImplemented(format!(
         "source-less SLDPRT binary relation cannot identify entity {} with one unambiguous marker locus",
         entity.0
     )))
@@ -639,7 +639,7 @@ fn generated_entity_operand(
     markers: &[(SketchLocus, Point2, SketchInputKind, u16)],
     entity: &SketchEntityId,
     kind: FeatureInputOperandKind,
-) -> Result<u16, cadmpeg_codec_core::CodecError> {
+) -> Result<u16, cadmpeg_core::CodecError> {
     let local_id = unique_generated_entity_marker(ir, sketch, markers, entity)?;
     generated_operand_address(markers, local_id, kind, sketch)
 }
@@ -650,7 +650,7 @@ fn generated_locus_operand(
     markers: &[(SketchLocus, Point2, SketchInputKind, u16)],
     locus: &SketchLocus,
     kind: FeatureInputOperandKind,
-) -> Result<u16, cadmpeg_codec_core::CodecError> {
+) -> Result<u16, cadmpeg_core::CodecError> {
     let local_id = unique_generated_locus_marker(ir, sketch, markers, locus)?;
     generated_operand_address(markers, local_id, kind, sketch)
 }
@@ -660,7 +660,7 @@ fn generated_operand_address(
     local_id: u16,
     kind: FeatureInputOperandKind,
     sketch: &Sketch,
-) -> Result<u16, cadmpeg_codec_core::CodecError> {
+) -> Result<u16, cadmpeg_core::CodecError> {
     if !operand_uses_compatible_ordinal(kind) {
         return Ok(local_id);
     }
@@ -669,12 +669,12 @@ fn generated_operand_address(
         .filter(|(_, _, marker_kind, _)| operand_accepts_marker(kind, *marker_kind))
         .position(|(_, _, _, candidate)| *candidate == local_id)
         .ok_or_else(|| {
-            cadmpeg_codec_core::CodecError::NotImplemented(format!(
+            cadmpeg_core::CodecError::NotImplemented(format!(
                 "source-less SLDPRT dimension operand cannot address marker {local_id} with tag {kind:?}"
             ))
         })?;
     u16::try_from(ordinal).map_err(|_| {
-        cadmpeg_codec_core::CodecError::Malformed(format!(
+        cadmpeg_core::CodecError::Malformed(format!(
             "source-less SLDPRT sketch {} exceeds the dimension operand space",
             sketch.id.0
         ))
@@ -686,7 +686,7 @@ fn unique_generated_locus_marker(
     sketch: &Sketch,
     markers: &[(SketchLocus, Point2, SketchInputKind, u16)],
     locus: &SketchLocus,
-) -> Result<u16, cadmpeg_codec_core::CodecError> {
+) -> Result<u16, cadmpeg_core::CodecError> {
     for (_, point, kind, local_id) in markers.iter().filter(|(candidate, ..)| candidate == locus) {
         let mut candidates = ir
             .model
@@ -705,7 +705,7 @@ fn unique_generated_locus_marker(
             return Ok(*local_id);
         }
     }
-    Err(cadmpeg_codec_core::CodecError::NotImplemented(format!(
+    Err(cadmpeg_core::CodecError::NotImplemented(format!(
         "source-less SLDPRT locus relation cannot identify {locus:?} with one unambiguous marker"
     )))
 }
@@ -750,7 +750,7 @@ pub(super) fn append_coordinate_marker_link(
     payload: &mut [u8],
     owner_local_id: u16,
     relation_local_id: u16,
-) -> Result<(), cadmpeg_codec_core::CodecError> {
+) -> Result<(), cadmpeg_core::CodecError> {
     const SELECTOR: u16 = 0x8386;
     let offsets = payload
         .windows(SKETCH_MARKER.len())
@@ -766,7 +766,7 @@ pub(super) fn append_coordinate_marker_link(
         })
         .collect::<Vec<_>>();
     let [offset] = offsets.as_slice() else {
-        return Err(cadmpeg_codec_core::CodecError::NotImplemented(format!(
+        return Err(cadmpeg_core::CodecError::NotImplemented(format!(
             "source-less SLDPRT reverse relation cannot identify coordinate marker {owner_local_id}"
         )));
     };
@@ -775,25 +775,25 @@ pub(super) fn append_coordinate_marker_link(
             .get(*offset + 84..*offset + 86)
             .and_then(|bytes| bytes.try_into().ok())
             .ok_or_else(|| {
-                cadmpeg_codec_core::CodecError::Malformed(
+                cadmpeg_core::CodecError::Malformed(
                     "source-less SLDPRT coordinate marker is truncated".into(),
                 )
             })?,
     ));
     if count >= 2 {
-        return Err(cadmpeg_codec_core::CodecError::NotImplemented(format!(
+        return Err(cadmpeg_core::CodecError::NotImplemented(format!(
             "source-less SLDPRT coordinate marker {owner_local_id} exceeds two reverse relations"
         )));
     }
     if count > 0 && payload.get(*offset + 86..*offset + 88) != Some(&SELECTOR.to_le_bytes()) {
-        return Err(cadmpeg_codec_core::CodecError::Malformed(
+        return Err(cadmpeg_core::CodecError::Malformed(
             "source-less SLDPRT coordinate marker changed reverse-relation selector".into(),
         ));
     }
     let cell = offset + 86 + count * 12;
     let end = cell + 18;
     let bytes = payload.get_mut(cell..end).ok_or_else(|| {
-        cadmpeg_codec_core::CodecError::Malformed(
+        cadmpeg_core::CodecError::Malformed(
             "source-less SLDPRT coordinate marker reverse relation is truncated".into(),
         )
     })?;
@@ -829,15 +829,15 @@ pub(super) fn append_generated_object_name(
     payload: &mut Vec<u8>,
     name: &str,
     object_id: u32,
-) -> Result<(), cadmpeg_codec_core::CodecError> {
+) -> Result<(), cadmpeg_core::CodecError> {
     let units = name.encode_utf16().collect::<Vec<_>>();
     let length = u8::try_from(units.len()).map_err(|_| {
-        cadmpeg_codec_core::CodecError::Malformed(
+        cadmpeg_core::CodecError::Malformed(
             "SLDPRT generated feature name exceeds 255 UTF-16 code units".into(),
         )
     })?;
     if length == 0 || length > 128 {
-        return Err(cadmpeg_codec_core::CodecError::Malformed(
+        return Err(cadmpeg_core::CodecError::Malformed(
             "SLDPRT generated feature name must contain 1 to 128 UTF-16 code units".into(),
         ));
     }

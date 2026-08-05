@@ -25,7 +25,7 @@ CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 
 
 The `Codec` trait splits decoding into a provided `decode` wrapper and a required `decode_impl`. The wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the codec, and finalizes a `DecodeContext`.
 
-`DecodeContext` holds budget counters and the address-space registry. `DecodeArena` holds byte buffers with stable addresses. A `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field. Ownership lives in `cadmpeg_codec_core::decode`.
+`DecodeContext` holds budget counters and the address-space registry. `DecodeArena` holds byte buffers with stable addresses. A `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field. Ownership lives in `cadmpeg_core::decode`.
 
 ## CLI stream and exit contract
 
@@ -39,7 +39,9 @@ Writers create a unique temporary file in the destination directory, then rename
 
 Source decoders return `DecodeReport`, including `geometry_transferred`, a decode-coverage census, notes, and attributable `LossNote` entries. Validation propagates supplied decode losses unchanged.
 
-Every encoder returns an `ExportReport` with its format id, entity census, loss notes, and informational notes. STEP reports reductions and omitted IR data. CADIR export carries no losses. F3D, SLDPRT, Rhino, and FreeCAD report replay versus regeneration and reject unsupported input atomically. Decode losses remain in the command report when export or convert started from native CAD.
+Every encoder returns an `ExportReport` with its format id, entity census, loss notes, informational notes, and a `write_path`. STEP reports reductions and omitted IR data. CADIR export carries no losses. F3D, SLDPRT, Rhino, and FreeCAD report replay versus regeneration and reject unsupported input atomically. Decode losses remain in the command report when export or convert started from native CAD.
+
+`write_path` names which of an encoder's write paths produced the bytes: `verbatim_replay` copies retained source bytes out unchanged, `patched` runs the writer over retained source content, and `synthesized` runs the writer over neutral IR content alone. The encoder sets it at the branch it takes. The distinction is not recoverable from the output, because a patch that changes nothing observable reproduces its input byte for byte. F3D takes all three paths, SLDPRT takes all three, FreeCAD is always `patched`, and CADIR, STEP, and Rhino are always `synthesized`.
 
 ## Crate map
 
@@ -47,7 +49,7 @@ Every encoder returns an `ExportReport` with its format id, entity census, loss 
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `cadmpeg`               | CLI orchestration, built-in codec registration, and output dispatch.                                                                   |
 | `cadmpeg-ir`            | `CadIr` version 5, validation, diff, codec traits, reports, and source-fidelity sidecars.                                              |
-| `cadmpeg-codec-core`    | Shared decode budgets, arenas, views, container summaries, and I/O helpers.                                                            |
+| `cadmpeg-core`    | Shared decode budgets, arenas, views, container summaries, and I/O helpers.                                                            |
 | `cadmpeg-container`     | Shared archive and compression helpers for container codecs.                                                                           |
 | `cadmpeg-codec-freecad` | FreeCAD `.FCStd` read and semantic write for the schema-4/file-1 envelope.                                                             |
 | `cadmpeg-codec-f3d`     | Fusion `.f3d` inspection, ASM/SAB geometry, design records, retained replay, and selected native edits.                                |

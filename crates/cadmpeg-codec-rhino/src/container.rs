@@ -3,8 +3,8 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_codec_core::decode::{DecodeContext, View};
-use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::units::Units;
@@ -157,8 +157,8 @@ fn acquire(root: View<'_>) -> &[u8] {
 fn framing_error(error: FramingError) -> CodecError {
     match error {
         FramingError::Truncated { offset, .. } => CodecError::truncated(
-            cadmpeg_codec_core::decode::SourceLocation {
-                space: cadmpeg_codec_core::decode::SpaceId::ROOT,
+            cadmpeg_core::decode::SourceLocation {
+                space: cadmpeg_core::decode::SpaceId::ROOT,
                 offset: offset as u64,
             },
             "rhino chunk framing",

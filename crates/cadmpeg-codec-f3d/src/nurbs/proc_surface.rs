@@ -19,8 +19,8 @@ use crate::nurbs::reader::{
 use crate::nurbs::subtypes::{
     find_owned_subtype_marker, owned_subtype_defs, subtype_refs, subtype_span, SubtypeTables,
 };
-use cadmpeg_codec_core::cursor::bounded_len;
-use cadmpeg_codec_core::le::f64_at as read_f64;
+use cadmpeg_core::cursor::bounded_len;
+use cadmpeg_core::le::f64_at as read_f64;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry,
 };

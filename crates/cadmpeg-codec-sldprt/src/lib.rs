@@ -18,7 +18,7 @@
 //! use cadmpeg_codec_sldprt::SldprtCodec;
 //! use cadmpeg_ir::{CodecEntry, DecodeOptions};
 //!
-//! # fn decode(bytes: Vec<u8>) -> Result<(), cadmpeg_codec_core::CodecError> {
+//! # fn decode(bytes: Vec<u8>) -> Result<(), cadmpeg_core::CodecError> {
 //! let decoded = SldprtCodec.decode(
 //!     &mut Cursor::new(bytes),
 //!     &DecodeOptions::default(),
@@ -88,7 +88,7 @@
 //! right-handed rigid body transforms into geometry.
 //!
 //! [`Codec::inspect`]: cadmpeg_ir::Codec::inspect
-//! [`CodecError::NotImplemented`]: cadmpeg_codec_core::CodecError::NotImplemented
+//! [`CodecError::NotImplemented`]: cadmpeg_core::CodecError::NotImplemented
 //! [`DecodeOptions::container_only`]: cadmpeg_ir::DecodeOptions::container_only
 
 mod annotations;
@@ -114,14 +114,16 @@ mod writer;
 mod writer_patch;
 mod writer_transform;
 
-use cadmpeg_codec_core::decode::{DecodeContext, View};
-use cadmpeg_codec_core::{CodecError, ContainerSummary};
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::{Annotations, FidelityResolution, Finding, LossNote, Severity, SourceFidelity};
+use cadmpeg_ir::{
+    Annotations, FidelityResolution, Finding, LossNote, Severity, SourceFidelity, WritePath,
+};
 use std::io::Write;
 
 /// Codec for `SolidWorks` `.sldprt` part documents.
@@ -149,7 +151,7 @@ impl SldprtCodec {
         ir: &CadIr,
         source_fidelity: &SourceFidelity,
         writer: &mut dyn Write,
-    ) -> Result<(), CodecError> {
+    ) -> Result<WritePath, CodecError> {
         let records = source_records(ir, source_fidelity)?;
         Self::write_preserved_with_annotations(ir, &source_fidelity.annotations, &records, writer)
     }
@@ -163,24 +165,29 @@ impl SldprtCodec {
     /// cannot be answered, so the document takes the semantic write path — the
     /// conservative branch, which reproduces the document from the IR instead of
     /// replaying bytes that may no longer describe it.
+    ///
+    /// The returned [`WritePath`] is the branch this function took, not a
+    /// judgement made about its output afterwards. The semantic writer can
+    /// reproduce the input byte for byte when nothing it rewrites has moved, so
+    /// the output cannot say which branch ran and only this value can.
     fn write_preserved_with_annotations(
         ir: &CadIr,
         annotations: &Annotations,
         records: &[SourceRecord<'_>],
         writer: &mut dyn Write,
-    ) -> Result<(), CodecError> {
+    ) -> Result<WritePath, CodecError> {
         let expected = ir
             .source
             .as_ref()
-            .and_then(|source| source.attributes.get("document_local_sha256"));
+            .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE));
         if expected.is_none_or(|expected| decode::document_local_sha256(ir) != *expected) {
-            return writer::write_semantic_with_records(ir, annotations, records, writer);
+            return Self::write_semantic(ir, annotations, records, writer);
         }
         let Some(record) = records
             .iter()
             .find(|record| record.id.0 == "sldprt:file:source-image#0")
         else {
-            return writer::write_semantic_with_records(ir, annotations, records, writer);
+            return Self::write_semantic(ir, annotations, records, writer);
         };
         let data = record.data.as_ref().ok_or_else(|| {
             CodecError::Malformed("retained SLDPRT source image has no bytes".into())
@@ -192,7 +199,24 @@ impl SldprtCodec {
             ));
         }
         writer.write_all(data)?;
-        Ok(())
+        Ok(WritePath::VerbatimReplay)
+    }
+
+    /// Runs the semantic writer and names the path it stands for: `Patched` when
+    /// retained source records fed the write, `Synthesized` when the document was
+    /// built from the neutral IR alone.
+    fn write_semantic(
+        ir: &CadIr,
+        annotations: &Annotations,
+        records: &[SourceRecord<'_>],
+        writer: &mut dyn Write,
+    ) -> Result<WritePath, CodecError> {
+        writer::write_semantic_with_records(ir, annotations, records, writer)?;
+        Ok(if records.is_empty() {
+            WritePath::Synthesized
+        } else {
+            WritePath::Patched
+        })
     }
 }
 
@@ -251,25 +275,17 @@ impl Encoder for SldprtCodec {
             .source
             .as_ref()
             .is_some_and(|source| source.format == "sldprt");
-        let fidelity = match (input.fidelity.is_some() || expects_preserved_source, replay) {
+        // The writer above reports the resolution it could see; this branch is
+        // the only place that knows whether the retained source image was
+        // actually replayed.
+        report.fidelity = match (input.fidelity.is_some() || expects_preserved_source, replay) {
             (_, true) => FidelityResolution::Replayed,
             (true, false) => FidelityResolution::Degraded {
                 reason: "preserved SLDPRT source image is unavailable".into(),
             },
             (false, false) => FidelityResolution::NotProvided,
         };
-        if replay {
-            report.notes[0] = input
-                .fidelity
-                .and_then(|value| value.retained_record("sldprt:file:source-image#0"))
-                .filter(|source| source.data.as_deref() == Some(bytes.as_slice()))
-                .map_or(
-                    "preserved source container replayed with semantic patches",
-                    |_| "preserved source container replayed verbatim",
-                )
-                .into();
-        }
-        if matches!(fidelity, FidelityResolution::Degraded { .. }) {
+        if matches!(report.fidelity, FidelityResolution::Degraded { .. }) {
             report.losses.push(LossNote {
                 code: cadmpeg_ir::LossKind::PreservedSourceUnavailable,
                 severity: Severity::Blocking,
@@ -277,7 +293,7 @@ impl Encoder for SldprtCodec {
                 provenance: None,
             });
         }
-        Ok(ExportPlan::buffered(report, fidelity, bytes))
+        Ok(ExportPlan::buffered(report, bytes))
     }
 }
 
@@ -297,10 +313,7 @@ impl SldprtCodec {
         records: &[SourceRecord<'_>],
         writer: &mut dyn Write,
     ) -> Result<ExportReport, CodecError> {
-        let replay = records
-            .iter()
-            .any(|record| record.id.0 == "sldprt:file:source-image#0");
-        Self::write_preserved_with_annotations(ir, annotations, records, writer)?;
+        let write_path = Self::write_preserved_with_annotations(ir, annotations, records, writer)?;
         let validation = cadmpeg_ir::validate(ir, Vec::new());
         Ok(ExportReport {
             format: "sldprt".into(),
@@ -309,12 +322,15 @@ impl SldprtCodec {
                 counts: validation.entity_counts,
             },
             fidelity: FidelityResolution::NotProvided,
+            write_path,
             losses: Vec::new(),
             notes: vec![
-                if replay {
-                    "preserved source container replayed verbatim"
-                } else {
-                    "source container regenerated from IR"
+                match write_path {
+                    WritePath::VerbatimReplay => "preserved source container replayed verbatim",
+                    WritePath::Patched => {
+                        "preserved source container replayed with semantic patches"
+                    }
+                    WritePath::Synthesized => "source container regenerated from IR",
                 }
                 .into(),
                 "entity counts are derived from the IR".into(),

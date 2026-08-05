@@ -33,6 +33,17 @@ pub fn canonical_json_sha256<T: Serialize>(value: &T) -> String {
     encode_hex(&hasher.finalize())
 }
 
+/// The source-attribute key under which a codec records
+/// [`document_local_sha256`].
+///
+/// This one key gates the whole-document write decision: an encoder that finds
+/// the recorded value still equal to a freshly computed one replays its retained
+/// bytes, and otherwise runs its writer. Other `_local_sha256` attributes answer
+/// narrower questions — which lane changed, and how — so they are not
+/// interchangeable with this one and removing them does not move the same
+/// branch.
+pub const DOCUMENT_LOCAL_DIGEST_ATTRIBUTE: &str = "document_local_sha256";
+
 /// Returns the machine-local content digest of `ir` as seen by the `format`
 /// codec, for recording as the `document_local_sha256` source attribute.
 ///
@@ -60,14 +71,14 @@ pub fn canonical_json_sha256<T: Serialize>(value: &T) -> String {
 /// hashed type, or to a codec's arithmetic.
 ///
 /// It is intentionally not tolerance-aware, and no amount of work can make it
-/// so. Tolerant equality — what [`cadmpeg_codec_core::compare`] and
+/// so. Tolerant equality — what [`cadmpeg_core::compare`] and
 /// [`crate::diff`] implement — is not transitive, and a hash imposes an
 /// equivalence relation, so no digest can ever agree with an epsilon comparison.
 /// The digest therefore stays bitwise and states its limits, rather than
 /// pretending to a semantic identity it cannot deliver.
 ///
 /// Every attribute holding a digest with these properties carries the
-/// [`cadmpeg_codec_core::compare::LOCAL_DIGEST_SUFFIX`] suffix; see
+/// [`cadmpeg_core::compare::LOCAL_DIGEST_SUFFIX`] suffix; see
 /// [`crate::document::SourceMeta`] for the convention and for who relies on it.
 pub fn document_local_sha256(ir: &CadIr, format: &str, source_image_id: &str) -> String {
     let unknowns = reduced_unknowns(ir, format, source_image_id);

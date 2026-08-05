@@ -2,7 +2,7 @@
 //! End-to-end contracts over synthesized Creo PSB byte images.
 
 use super::*;
-use cadmpeg_codec_core::decode::InspectOptions;
+use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 

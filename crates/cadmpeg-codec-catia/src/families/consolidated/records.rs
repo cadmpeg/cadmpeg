@@ -4,7 +4,7 @@
 //! and their native incidence graph, and resolves edge-block side carriers
 //! against typed analytic and NURBS charts.
 
-use cadmpeg_codec_core::le::u16_at as u16_le;
+use cadmpeg_core::le::u16_at as u16_le;
 use cadmpeg_ir::eval::nurbs_surface_partials;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};

@@ -1,0 +1,408 @@
+{
+  "entries": [
+    {
+      "name": "Document.xml",
+      "payload_len": 164090,
+      "payload_sha256": "b3ab2b68eafbc91c05d51d2a09df74a6ce3814bf7dc41c2990568c5e01d9123d"
+    },
+    {
+      "name": "ChamferBase.Shape.brp",
+      "payload_len": 8913,
+      "payload_sha256": "1c76fd83ffcbdd9d24c369512012ffa9aa152d18ecd0e333ddf629bd31d7382d"
+    },
+    {
+      "name": "DatumAxis.Shape.brp",
+      "payload_len": 787,
+      "payload_sha256": "8029ebff95334f57b72a002b6afd9d826c1ad8d95b9c7f5098565cbf2fbe2840"
+    },
+    {
+      "name": "DatumCoordinateSystem.Shape.brp",
+      "payload_len": 663,
+      "payload_sha256": "502c642135f6307e6398603b98ad7568c792714f2b7784ad4d99bbfacd5dc693"
+    },
+    {
+      "name": "DatumPlane.Shape.brp",
+      "payload_len": 663,
+      "payload_sha256": "eb823b2a1729a6b8bf78b8771d2b99f48809b7de2ce8ad28ddb72c21ceadaaf8"
+    },
+    {
+      "name": "DatumPoint.Shape.brp",
+      "payload_len": 469,
+      "payload_sha256": "f6330e8e95b9d050b6a764258cf0da43952764afbffdecda16f12158ac2855c8"
+    },
+    {
+      "name": "Draft.AddSubShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "Draft.Shape.Map.txt",
+      "payload_len": 620,
+      "payload_sha256": "d9159b34a16a8e16e8ac0c96b2eddf6370e85e875418b693531fae5a9be7ced2"
+    },
+    {
+      "name": "Draft.Shape.brp",
+      "payload_len": 10075,
+      "payload_sha256": "2cd2bd916a188b3821c2922460a4bae8828cfdc35d1f7fa643eb9c7814c45919"
+    },
+    {
+      "name": "Draft.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "DraftBase.Shape.brp",
+      "payload_len": 8938,
+      "payload_sha256": "2dd5fdf3d645aa55dc60ddd17be781f4a544ef978afd8411a19acbfb3c484614"
+    },
+    {
+      "name": "DraftBase.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "DraftBody.Shape.Map.txt",
+      "payload_len": 804,
+      "payload_sha256": "826eddb911fda7b27b8c2f9024da6b624d0a086ff8e8018a88b2881bd84aefd2"
+    },
+    {
+      "name": "DraftBody.Shape.brp",
+      "payload_len": 6267,
+      "payload_sha256": "9a60c1d87f8676dbb92a2878544e2ce76db76a2945df93f8cc17a8db169b53aa"
+    },
+    {
+      "name": "DressupBase.Shape.brp",
+      "payload_len": 8938,
+      "payload_sha256": "af1a7662e375a0bac7bdbb31a35693ecfcf6665e23ee211e69e6f32c771b54eb"
+    },
+    {
+      "name": "Edges",
+      "payload_len": 24,
+      "payload_sha256": "607111519765c74747f39396bf544d2989152ff4c630b0c0457b7d52a757669a"
+    },
+    {
+      "name": "Edges1",
+      "payload_len": 24,
+      "payload_sha256": "4cc58197dd86871e0df2b55bf5abe0333b78fd13dc2bca6d4583b0ff5080f34a"
+    },
+    {
+      "name": "ExtrusionProfile.Shape.brp",
+      "payload_len": 1643,
+      "payload_sha256": "7e11f4659d963c11fd5480efd0168d67e1a8c82b5c79e640542749e7206194b6"
+    },
+    {
+      "name": "Hole.AddSubShape.Map.txt",
+      "payload_len": 1366,
+      "payload_sha256": "23f3e3c7476691777f9575ee91f153a5b012e0d67b756ed10fe0948dce55631a"
+    },
+    {
+      "name": "Hole.AddSubShape.brp",
+      "payload_len": 5628,
+      "payload_sha256": "38b60476b544d450baa426eb7bf0f17d690921f6177646aa665a91a187cb2d38"
+    },
+    {
+      "name": "Hole.Shape.Map.txt",
+      "payload_len": 1235,
+      "payload_sha256": "52e376a5a718472b1e48ee99fd883ec4ddeb67b3804c2c3fad3494da9fe0066a"
+    },
+    {
+      "name": "Hole.Shape.brp",
+      "payload_len": 14823,
+      "payload_sha256": "b8fd98a2c3793fe3842a251826f009982698cbd17325ce1c2669dcd5f5383035"
+    },
+    {
+      "name": "Hole.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "HoleBase.Shape.brp",
+      "payload_len": 8938,
+      "payload_sha256": "b72b252ba7017631516ec5282afb8568bd5c95e1c535248a4e9feddeb0b4a91b"
+    },
+    {
+      "name": "HoleBase.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "HoleBody.Shape.Map.txt",
+      "payload_len": 1422,
+      "payload_sha256": "15691ce297fb6027c0a673f7311e465530ad0888f582bcc455e89005f3a5d0c4"
+    },
+    {
+      "name": "HoleBody.Shape.brp",
+      "payload_len": 11794,
+      "payload_sha256": "b0c83d384f2fc52ba4bfef6f0b2da3f8a1f83e1608cdecacac55da74f3cb1e6b"
+    },
+    {
+      "name": "HoleProfile.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "HoleProfile.Shape.Map.txt",
+      "payload_len": 183,
+      "payload_sha256": "70324eec1f5e01b299a901a77a4d89d3f70a02a8f8bd327a9c792d82c6568612"
+    },
+    {
+      "name": "HoleProfile.Shape.brp",
+      "payload_len": 849,
+      "payload_sha256": "9f5c537781d8e6669ee93cf62f912936c33c67536060affd2b341ce534c51d62"
+    },
+    {
+      "name": "LinearPattern.Shape.Map.txt",
+      "payload_len": 1658,
+      "payload_sha256": "cd4280affb11e0e3549ebba98399ac44613b2f8823b5ce6cd12092210bb8d081"
+    },
+    {
+      "name": "LinearPattern.Shape.brp",
+      "payload_len": 9529,
+      "payload_sha256": "2e6bcf25d12192c2df51412a5646c1db57f1487a7917559dedf6c43f2a1285b8"
+    },
+    {
+      "name": "LinearPattern.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "Loft.Shape.Map.txt",
+      "payload_len": 394,
+      "payload_sha256": "cb092ab885d109eeb760bd8a60c594d8c55e4b9457495ab15a08e5c978dc2853"
+    },
+    {
+      "name": "Loft.Shape.brp",
+      "payload_len": 4049,
+      "payload_sha256": "d333382832dffe3cadef7bf825eaf03be51f89ccbacab28a8a7a5697aedee672"
+    },
+    {
+      "name": "LoftSectionA.Shape.brp",
+      "payload_len": 1812,
+      "payload_sha256": "5fbac7604db456b9335c3aec5bc0f8428a2fa27e2590b1f4b61a4269297396a5"
+    },
+    {
+      "name": "LoftSectionB.Shape.brp",
+      "payload_len": 1816,
+      "payload_sha256": "f497c4a37b90b5b9947c165b88403a23db7f7a1a7970d20a3d427d8dd7c86260"
+    },
+    {
+      "name": "Mirror.Shape.Map.txt",
+      "payload_len": 318,
+      "payload_sha256": "6b8bda0f1bffc9b7b2815b4ea547f9a5d4b5fda9fd25e4ac740554777a8f5162"
+    },
+    {
+      "name": "Mirror.Shape.brp",
+      "payload_len": 3263,
+      "payload_sha256": "98479093956a5d8850851794701f0f3ed7f6ab45a6f1b2d56989a90479dfbd3a"
+    },
+    {
+      "name": "MirrorBase.Shape.brp",
+      "payload_len": 3375,
+      "payload_sha256": "15b9c6c30d8378dce2c33904037ef073127c8e6234b2ca07dad4c0abc64af074"
+    },
+    {
+      "name": "PartChamfer.Shape.Map.txt",
+      "payload_len": 883,
+      "payload_sha256": "bba9bb0758d64a6240c21d85603bcae697707b25808d552dec3210973e1e0812"
+    },
+    {
+      "name": "PartChamfer.Shape.brp",
+      "payload_len": 11469,
+      "payload_sha256": "043afa65edabada351bd20cf20897696cf1d92e146ad817f2c566d3f17a40a08"
+    },
+    {
+      "name": "PartFillet.Shape.Map.txt",
+      "payload_len": 883,
+      "payload_sha256": "c5655ad3808639b5d7383b0866080b9dafabc3563d43acc599db0749c53df8f3"
+    },
+    {
+      "name": "PartFillet.Shape.brp",
+      "payload_len": 11935,
+      "payload_sha256": "d7daf43e8662a1efe0c90fb3713e0cd64cbfa06b88386ca39b3f625d0d6b11ec"
+    },
+    {
+      "name": "PatternBase.AddSubShape.brp",
+      "payload_len": 8642,
+      "payload_sha256": "f0f81c0bfa2d2996dde7776a00f6c36c52cf5d0fc227e9a78377af94a899e997"
+    },
+    {
+      "name": "PatternBase.Shape.brp",
+      "payload_len": 8863,
+      "payload_sha256": "275cade56fce74fbc97cd07766c27de5e6fc349d71b09aa23586043094acd2a3"
+    },
+    {
+      "name": "PatternBase.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "PatternBody.Shape.Map.txt",
+      "payload_len": 255,
+      "payload_sha256": "1a40437a7234b23c648398af0b021165a621f4e4c74a5158ce7e4cc4de19d580"
+    },
+    {
+      "name": "PatternBody.Shape.brp",
+      "payload_len": 5982,
+      "payload_sha256": "8a2fa48f63089a5c6f842d232f3ed4db32f558184d0f12dc985ca71c1ad17591"
+    },
+    {
+      "name": "Revolution.Shape.Map.txt",
+      "payload_len": 362,
+      "payload_sha256": "785e2a574cfc456e01da1e9109751b13f298336d2feae89b224dedec0644a7f4"
+    },
+    {
+      "name": "Revolution.Shape.brp",
+      "payload_len": 3444,
+      "payload_sha256": "9f2a246230107fddcddfbcd5da961ff9cbd61a6bbfb3ad9be0751de4cc47ba7c"
+    },
+    {
+      "name": "RevolutionProfile.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "RevolutionProfile.Shape.Map.txt",
+      "payload_len": 191,
+      "payload_sha256": "eb370ca09b13573a3b9cc8ee738a847990fc33918141a3329f609afb044dbee6"
+    },
+    {
+      "name": "RevolutionProfile.Shape.brp",
+      "payload_len": 2015,
+      "payload_sha256": "55b97096949ca2742c32372e9746c27e0109381267e046dbff6d61e42ec7145a"
+    },
+    {
+      "name": "SpacingPattern",
+      "payload_len": 12,
+      "payload_sha256": "ca888f40c3caca805b37a5434c75de5550616e0795e7602fb91156f22dd90851"
+    },
+    {
+      "name": "SpacingPattern2",
+      "payload_len": 12,
+      "payload_sha256": "ca888f40c3caca805b37a5434c75de5550616e0795e7602fb91156f22dd90851"
+    },
+    {
+      "name": "Spacings",
+      "payload_len": 28,
+      "payload_sha256": "db12ed3d677121cb16cc8e02772ea257e683960f28c5d69571782a8bb3f5c937"
+    },
+    {
+      "name": "StringHasher.Table.txt",
+      "payload_len": 1117,
+      "payload_sha256": "9679fd1dd2ed83a0214c8e4d08a79f9582ffeaa2f88fd5a57e7798860bcfda55"
+    },
+    {
+      "name": "Sweep.Shape.Map.txt",
+      "payload_len": 529,
+      "payload_sha256": "5bea4d798ac1e740361b049f2c296fecb4758762a5dced2ea8cfab10162da931"
+    },
+    {
+      "name": "Sweep.Shape.brp",
+      "payload_len": 4858,
+      "payload_sha256": "f6f8ddcfbac0ff2c4412218b7555b340cf38d6e43e0bd9c891cacfc6d80bfbed"
+    },
+    {
+      "name": "SweepSection.Shape.brp",
+      "payload_len": 846,
+      "payload_sha256": "3cbe04d0cf643547c2bbbf42a2361ac73f131a03d7a8e457b129f45db310b716"
+    },
+    {
+      "name": "SweepSpine.Shape.brp",
+      "payload_len": 1112,
+      "payload_sha256": "8c471785166fdadf961a6b11023bfde7c51119b6eda549c9afa281689236362a"
+    },
+    {
+      "name": "SymmetricExtrusion.Shape.Map.txt",
+      "payload_len": 820,
+      "payload_sha256": "99129f039443d02a346cc8bf20cd8af7af4da235c2fb29a7675cb6810542aad8"
+    },
+    {
+      "name": "SymmetricExtrusion.Shape.brp",
+      "payload_len": 12800,
+      "payload_sha256": "4a0184bd9bfc3ceade1f14637fd6502e1dde8ad506126bab55012d95d448c21c"
+    },
+    {
+      "name": "Thickness.Shape.brp",
+      "payload_len": 17330,
+      "payload_sha256": "a6bc11fafa2eb74409482f4af8f3ef9755fcbb7eb7f156fc1de1210ad5057a5f"
+    },
+    {
+      "name": "ThicknessBase.Shape.brp",
+      "payload_len": 8913,
+      "payload_sha256": "e029ae1b8d36a01c81dc25df7d3172925249c9125f86455a42373ce89d9a6e41"
+    }
+  ],
+  "report": {
+    "census": {
+      "basis": "ir_arenas",
+      "counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "assembly_joints": 0,
+        "assets": 0,
+        "attributes": 0,
+        "bodies": 33,
+        "coedges": 531,
+        "configurations": 0,
+        "curves": 306,
+        "drawings": 0,
+        "edges": 280,
+        "faces": 139,
+        "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
+        "features": 32,
+        "loops": 140,
+        "native.fcstd.applications": 57,
+        "native.fcstd.attachments": 56,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 34,
+        "native.fcstd.design_census": 32,
+        "native.fcstd.document": 1,
+        "native.fcstd.element_maps": 16,
+        "native.fcstd.entries": 66,
+        "native.fcstd.extensions": 25,
+        "native.fcstd.logical_ledger": 1457,
+        "native.fcstd.objects": 57,
+        "native.fcstd.physical_ledger": 463,
+        "native.fcstd.properties": 700,
+        "native.fcstd.shape_payloads": 43,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 0,
+        "parameters": 18,
+        "pcurves": 411,
+        "pmi": 0,
+        "points": 191,
+        "presentation_documents": 0,
+        "presentation_layers": 0,
+        "procedural_curves": 4,
+        "procedural_surfaces": 6,
+        "product_definitions": 0,
+        "regions": 33,
+        "semantic_annotations": 0,
+        "shells": 33,
+        "sketch_constraints": 0,
+        "sketch_entities": 2,
+        "sketches": 2,
+        "spatial_sketch_constraints": 0,
+        "spatial_sketch_entities": 0,
+        "spatial_sketches": 0,
+        "spreadsheets": 0,
+        "subds": 0,
+        "surfaces": 167,
+        "surfaces_unknown_geometry": 2,
+        "tessellations": 0,
+        "vertices": 191,
+        "view_presentations": 0
+      }
+    },
+    "fidelity": {
+      "status": "not_consumed"
+    },
+    "format": "fcstd",
+    "losses": [],
+    "notes": [
+      "semantic FCStd archive written for SchemaVersion=4 FileVersion=1",
+      "unsupported retained entries and unedited XML records were preserved"
+    ],
+    "write_path": "patched"
+  }
+}

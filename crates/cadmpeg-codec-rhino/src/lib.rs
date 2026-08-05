@@ -6,11 +6,11 @@
 //! support ladder. The codec provides bounded 3DM container inspection, typed
 //! decoding, and explicitly versioned semantic native writing.
 
-use cadmpeg_codec_core::decode::{DecodeContext, View};
-use cadmpeg_codec_core::{CodecError, ContainerSummary};
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::FidelityResolution;
+use cadmpeg_ir::{FidelityResolution, WritePath};
 
 pub(crate) mod annotations;
 pub(crate) mod brep;
@@ -168,16 +168,18 @@ impl Encoder for RhinoEncoder {
                 basis: cadmpeg_ir::CensusBasis::IrArenas,
                 counts: validation.entity_counts,
             },
-            fidelity: FidelityResolution::NotProvided,
+            fidelity: if input.fidelity.is_some() {
+                FidelityResolution::NotConsumed
+            } else {
+                FidelityResolution::NotProvided
+            },
+            // The 3DM writer builds every chunk from the neutral IR; it has no
+            // retained-source branch.
+            write_path: WritePath::Synthesized,
             losses,
             notes: vec![format!("3DM archive version {}", self.version.value())],
         };
-        let fidelity = if input.fidelity.is_some() {
-            FidelityResolution::NotConsumed
-        } else {
-            FidelityResolution::NotProvided
-        };
-        Ok(ExportPlan::buffered(report, fidelity, bytes))
+        Ok(ExportPlan::buffered(report, bytes))
     }
 }
 

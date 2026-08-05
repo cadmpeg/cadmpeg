@@ -15,10 +15,10 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_codec_core::be::u32_at as be_u32;
-use cadmpeg_codec_core::decode::{DecodeContext, View};
-use cadmpeg_codec_core::le::{i32_at as le_i32, u16_at as le_u16, u32_at as le_u32};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::be::u32_at as be_u32;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::le::{i32_at as le_i32, u16_at as le_u16, u32_at as le_u32};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::DecodeResult;
@@ -3528,16 +3528,33 @@ fn stamp_configuration_baseline(ir: &mut CadIr) {
             .attributes
             .insert("sldprt_neutral_configuration_local_sha256".into(), hash);
         source.attributes.insert(
-            "sldprt_configuration_parameter_values_sha256".into(),
+            "sldprt_configuration_parameter_values_local_sha256".into(),
             parameter_value_hash,
         );
         source.attributes.insert(
-            "sldprt_configuration_feature_states_sha256".into(),
+            "sldprt_configuration_feature_states_local_sha256".into(),
             feature_state_hash,
         );
     }
 }
 
+/// Record the sketch baselines the write path compares against.
+///
+/// Two of the three are machine-local and say so with the `_local_sha256`
+/// suffix: they cover projected neutral sketch geometry, which reaches its
+/// values through `f64::cos` and friends.
+///
+/// `sldprt_native_sketch_sha256` carries no such suffix because it is portable
+/// by construction, not merely portable today. It digests
+/// `SldprtNative::feature_input_lanes`, whose every field is a `String`, an
+/// integer, or retained source bytes, with exactly three exceptions:
+/// `FeatureInputScalar::value`, `SketchInputEntity::state_value`, and
+/// `SketchInputEntity::coordinates_m`. Each of the three is one
+/// `f64::from_le_bytes` of the payload at the byte offset the record stores
+/// beside it, with no arithmetic between the read and the field. Reading an
+/// IEEE 754 bit pattern is exact on every platform, so no libm can move this
+/// digest. Any future enrichment that computes a lane float rather than reading
+/// one makes the digest machine-local and forces the rename.
 fn stamp_sketch_baseline(ir: &mut CadIr, native: &crate::native::SldprtNative) {
     let neutral_hash = crate::resolved_features::hashes::sketch_hash(ir);
     let constraint_hash = crate::resolved_features::hashes::constraint_hash(ir);
@@ -3571,9 +3588,10 @@ fn stamp_local_digests(ir: &mut CadIr) {
     }
     let hash = document_local_sha256(ir);
     if let Some(source) = &mut ir.source {
-        source
-            .attributes
-            .insert("document_local_sha256".into(), hash);
+        source.attributes.insert(
+            cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
+            hash,
+        );
     }
 }
 

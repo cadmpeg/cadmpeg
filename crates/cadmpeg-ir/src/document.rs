@@ -393,7 +393,7 @@ impl CadIr {
 /// # The `_local_sha256` attribute convention
 ///
 /// An attribute key ending in
-/// [`cadmpeg_codec_core::compare::LOCAL_DIGEST_SUFFIX`] holds a machine-local
+/// [`cadmpeg_core::compare::LOCAL_DIGEST_SUFFIX`] holds a machine-local
 /// content digest: a bitwise digest over decoded neutral content, recorded so
 /// that a writer can ask whether the document was edited since it was decoded.
 /// Such a digest is reproducible only under the same binary on the same
@@ -407,7 +407,7 @@ impl CadIr {
 /// suffix, and must not name a digest over retained source bytes with it: those
 /// are bit-exact everywhere, and a difference in one is a real difference.
 /// [`crate::diff`] and the golden harness both classify attributes through
-/// [`cadmpeg_codec_core::compare::is_local_digest_attribute`].
+/// [`cadmpeg_core::compare::is_local_digest_attribute`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SourceMeta {

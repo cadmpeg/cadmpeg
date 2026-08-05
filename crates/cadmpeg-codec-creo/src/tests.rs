@@ -10165,7 +10165,7 @@ fn inspect_summary_has_layout_and_census_notes() {
     let summary = CreoCodec
         .inspect(
             &mut reader,
-            &cadmpeg_codec_core::decode::InspectOptions::default(),
+            &cadmpeg_core::decode::InspectOptions::default(),
         )
         .expect("inspect");
     assert_eq!(summary.format, "creo");

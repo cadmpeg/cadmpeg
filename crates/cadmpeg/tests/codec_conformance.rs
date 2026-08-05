@@ -13,14 +13,14 @@ mod budget {
     use std::io::Cursor;
 
     use cadmpeg_codec_catia::CatiaCodec;
-    use cadmpeg_codec_core::decode::{
-        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceLimits,
-    };
-    use cadmpeg_codec_core::CodecError;
     use cadmpeg_codec_creo::CreoCodec;
     use cadmpeg_codec_freecad::FcstdCodec;
     use cadmpeg_codec_nx::NxCodec;
     use cadmpeg_codec_sldprt::SldprtCodec;
+    use cadmpeg_core::decode::{
+        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceLimits,
+    };
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 
     const CATIA: &[u8] = include_bytes!("../../cadmpeg-fuzz/seeds/catia_container/standard_nested");

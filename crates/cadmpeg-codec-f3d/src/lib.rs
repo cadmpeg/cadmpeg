@@ -104,13 +104,13 @@ mod writer;
 pub mod xref;
 mod zip_write;
 
-use cadmpeg_codec_core::decode::{DecodeContext, View};
-use cadmpeg_codec_core::{CodecError, ContainerSummary};
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::FidelityResolution;
+use cadmpeg_ir::{FidelityResolution, WritePath};
 use std::io::Write;
 
 /// The ZIP local-file-header magic.
@@ -127,7 +127,7 @@ impl F3dCodec {
         ir: &CadIr,
         source_fidelity: &cadmpeg_ir::SourceFidelity,
         writer: &mut dyn Write,
-    ) -> Result<(), CodecError> {
+    ) -> Result<WritePath, CodecError> {
         let record = source_fidelity
             .retained_record(ids::FILE_SOURCE_IMAGE_ID)
             .ok_or_else(|| {
@@ -148,17 +148,23 @@ impl F3dCodec {
     /// answered at all, and this codec refuses rather than guess: replaying the
     /// bytes could discard edits, and patching could rewrite a container that
     /// needed no change.
+    ///
+    /// The returned [`WritePath`] is the branch this function took, not a
+    /// judgement made about its output afterwards. The two branches can produce
+    /// the same bytes — a patch that changes nothing observable rewrites the
+    /// container back to what it was — so the output cannot answer which one
+    /// ran, and only this value can.
     fn write_preserved_bytes(
         ir: &CadIr,
         data: &[u8],
         byte_len: u64,
         sha256: &str,
         writer: &mut dyn Write,
-    ) -> Result<(), CodecError> {
+    ) -> Result<WritePath, CodecError> {
         let expected = ir
             .source
             .as_ref()
-            .and_then(|source| source.attributes.get("document_local_sha256"))
+            .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE))
             .ok_or_else(|| CodecError::NotImplemented("IR has no F3D document baseline".into()))?;
         let hash = sha256_hex(data);
         if data.len() as u64 != byte_len || hash != sha256 {
@@ -167,10 +173,11 @@ impl F3dCodec {
             ));
         }
         if decode::document_local_sha256(ir) != *expected {
-            return writer::patch::write_semantic(ir, data, writer);
+            writer::patch::write_semantic(ir, data, writer)?;
+            return Ok(WritePath::Patched);
         }
         writer.write_all(data)?;
-        Ok(())
+        Ok(WritePath::VerbatimReplay)
     }
 }
 
@@ -226,19 +233,17 @@ impl Encoder for F3dCodec {
             .and_then(|sidecar| sidecar.retained_record(ids::FILE_SOURCE_IMAGE_ID))
             .is_some();
         let mut bytes = Vec::new();
-        if let Some(sidecar) = input.fidelity.filter(|_| replay) {
-            self.write_preserved_with_source_fidelity(input.ir, sidecar, &mut bytes)?;
+        let write_path = if let Some(sidecar) = input.fidelity.filter(|_| replay) {
+            self.write_preserved_with_source_fidelity(input.ir, sidecar, &mut bytes)?
         } else {
             writer::generate::write_new(input.ir, &mut bytes)?;
-        }
-        let replay_note = input
-            .fidelity
-            .and_then(|sidecar| sidecar.retained_record(ids::FILE_SOURCE_IMAGE_ID))
-            .filter(|source| source.data.as_deref() == Some(bytes.as_slice()))
-            .map_or(
-                "preserved source container replayed with semantic patches",
-                |_| "preserved source container replayed verbatim",
-            );
+            WritePath::Synthesized
+        };
+        let path_note = match write_path {
+            WritePath::VerbatimReplay => "preserved source container replayed verbatim",
+            WritePath::Patched => "preserved source container replayed with semantic patches",
+            WritePath::Synthesized => "source container regenerated from IR",
+        };
         let validation = cadmpeg_ir::validate(input.ir, Vec::new());
         let expects_preserved_source = input
             .ir
@@ -267,19 +272,15 @@ impl Encoder for F3dCodec {
                 basis: cadmpeg_ir::CensusBasis::IrArenas,
                 counts: validation.entity_counts,
             },
-            fidelity: FidelityResolution::NotProvided,
+            fidelity,
+            write_path,
             losses,
             notes: vec![
-                if replay {
-                    replay_note
-                } else {
-                    "source container regenerated from IR"
-                }
-                .into(),
+                path_note.into(),
                 "entity counts are derived from the IR".into(),
             ],
         };
-        Ok(ExportPlan::buffered(report, fidelity, bytes))
+        Ok(ExportPlan::buffered(report, bytes))
     }
 }
 

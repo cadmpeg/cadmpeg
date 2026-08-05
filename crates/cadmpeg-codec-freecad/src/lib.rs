@@ -33,8 +33,8 @@ mod writer;
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_codec_core::decode::{DecodeContext, View};
-use cadmpeg_codec_core::{CodecError, ContainerSummary};
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{
     Codec, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
 };
@@ -1434,14 +1434,17 @@ impl Encoder for FcstdCodec {
 
     fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
         let mut bytes = Vec::new();
-        let report =
+        let mut report =
             self.encode_with_options(input.ir, &mut bytes, FcstdWriteOptions::default())?;
-        let fidelity = if input.fidelity.is_some() {
+        // `encode_with_options` takes no fidelity sidecar, so the report it
+        // returns states the only resolution it can see. Whether the caller
+        // supplied one is known here, and only here.
+        report.fidelity = if input.fidelity.is_some() {
             FidelityResolution::NotConsumed
         } else {
             FidelityResolution::NotProvided
         };
-        Ok(ExportPlan::buffered(report, fidelity, bytes))
+        Ok(ExportPlan::buffered(report, bytes))
     }
 }
 

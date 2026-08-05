@@ -19,7 +19,7 @@ use crate::records::{
     FeatureInputBodySelection, FeatureInputComponentPathEntry, FeatureInputEdgeSelection,
     FeatureInputLane, FeatureInputOperandKind, FeatureInputSurfaceSelection, SketchInputKind,
 };
-use cadmpeg_codec_core::cursor::bounded_len;
+use cadmpeg_core::cursor::bounded_len;
 use std::collections::{HashMap, HashSet};
 
 pub(super) fn compact_body_selections(
