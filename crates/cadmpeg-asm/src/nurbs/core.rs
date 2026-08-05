@@ -1,13 +1,247 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Core cached B-spline surface and curve block decoding and their writer-facing patch layouts.
+//!
+//! The token-space functions decode model values from framed payload tokens
+//! and serve the decode path. The byte-space functions additionally record
+//! native payload offsets and serve the retained-source patch writer, which
+//! edits the original binary stream in place and is therefore byte-addressed
+//! by nature.
 
 use crate::nurbs::reader::{
     is_periodic, marker_at, marker_positions, owned_marker_positions, read_control_points,
-    read_knots, take_tagged_int, KnotLayout, INT_WIDTHS,
+    read_knots, take_tagged_int, KnotLayout, INT_WIDTHS, LEN_TO_MM,
 };
 use crate::nurbs::subtypes::{decode_cache_resolving_refs, SubtypeTables};
+use crate::nurbs::toks;
+use crate::nurbs::toks::Cur;
+use crate::sab::Token;
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::Point3;
+
+use crate::nurbs::toks::take_knot_table as knots;
+
+/// Read `count` control points of `cp_dims` doubles each, scaling positions to
+/// millimetres. Token-space counterpart of [`read_control_points`].
+fn control_points(
+    cur: &mut Cur<'_>,
+    count: usize,
+    cp_dims: usize,
+) -> Option<(Vec<Point3>, Option<Vec<f64>>)> {
+    let mut points = Vec::new();
+    let mut weights = (cp_dims == 4).then(Vec::new);
+    for _ in 0..count {
+        let mut comps = [0.0f64; 4];
+        for comp in comps.iter_mut().take(cp_dims) {
+            *comp = cur.take_f64()?;
+        }
+        points.push(Point3::new(
+            comps[0] * LEN_TO_MM,
+            comps[1] * LEN_TO_MM,
+            comps[2] * LEN_TO_MM,
+        ));
+        if let Some(w) = weights.as_mut() {
+            w.push(comps[3]);
+        }
+    }
+    Some((points, weights))
+}
+
+/// Decode a surface `nubs`/`nurbs` block at token `marker_pos`, returning the
+/// surface and the token index just past the block. Token-space counterpart of
+/// [`decode_surface_block`].
+pub(crate) fn surface_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsSurface, usize)> {
+    let cp_dims = toks::marker_at(toks, marker_pos)?.cp_dims();
+    let mut cur = Cur::at(toks, marker_pos + 1);
+
+    let degree_u = cur.take_long()?;
+    let degree_v = cur.take_long()?;
+    if !(1..=20).contains(&degree_u) || !(1..=20).contains(&degree_v) {
+        return None;
+    }
+    // Some caches carry an optional scope identifier (`u`/`v`/`both`) before
+    // the enum block; skip it so knot counts stay aligned.
+    if matches!(cur.peek(), Some(Token::Ident(_))) {
+        cur.bump();
+    }
+    let mut enums = [0i64; 4];
+    for e in &mut enums {
+        *e = cur.take_enum()?;
+    }
+    let n_uniq_u = cur.take_long()?;
+    let n_uniq_v = cur.take_long()?;
+    if !(1..=1000).contains(&n_uniq_u) || !(1..=1000).contains(&n_uniq_v) {
+        return None;
+    }
+
+    let (u_knots, n_poles_u) = knots(&mut cur, n_uniq_u as usize, degree_u)?;
+    let (v_knots, n_poles_v) = knots(&mut cur, n_uniq_v as usize, degree_v)?;
+    if n_poles_u.checked_mul(n_poles_v).is_none_or(|n| n > 200_000) {
+        return None;
+    }
+
+    // Grid is stored v-major (v outer, u inner); transpose to the IR's u-major
+    // order where index `u * v_count + v` is pole `(u, v)`.
+    let (flat, flat_w) = control_points(&mut cur, n_poles_u * n_poles_v, cp_dims)?;
+    let mut grid = vec![Point3::new(0.0, 0.0, 0.0); n_poles_u * n_poles_v];
+    let mut weights = flat_w.as_ref().map(|_| vec![0.0f64; n_poles_u * n_poles_v]);
+    for v in 0..n_poles_v {
+        for u in 0..n_poles_u {
+            let file_idx = v * n_poles_u + u;
+            let ir_idx = u * n_poles_v + v;
+            grid[ir_idx] = flat[file_idx];
+            if let (Some(w), Some(fw)) = (weights.as_mut(), flat_w.as_ref()) {
+                w[ir_idx] = fw[file_idx];
+            }
+        }
+    }
+
+    Some((
+        NurbsSurface {
+            u_degree: degree_u as u32,
+            v_degree: degree_v as u32,
+            u_knots,
+            v_knots,
+            u_count: n_poles_u as u32,
+            v_count: n_poles_v as u32,
+            control_points: grid,
+            weights,
+            u_periodic: is_periodic(enums[0]),
+            v_periodic: is_periodic(enums[1]),
+        },
+        cur.pos(),
+    ))
+}
+
+/// Decode a curve `nubs`/`nurbs` block at token `marker_pos`, returning the
+/// curve and the token index just past the block. Token-space counterpart of
+/// [`decode_curve_block`].
+pub(crate) fn curve_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsCurve, usize)> {
+    let cp_dims = toks::marker_at(toks, marker_pos)?.cp_dims();
+    let mut cur = Cur::at(toks, marker_pos + 1);
+
+    let degree = cur.take_long()?;
+    if !(1..=20).contains(&degree) {
+        return None;
+    }
+    let closure = cur.take_enum()?;
+    let n_uniq = cur.take_long()?;
+    if !(1..=1000).contains(&n_uniq) {
+        return None;
+    }
+    let (knot_vector, n_poles) = knots(&mut cur, n_uniq as usize, degree)?;
+    let (points, weights) = control_points(&mut cur, n_poles, cp_dims)?;
+
+    Some((
+        NurbsCurve {
+            degree: degree as u32,
+            knots: knot_vector,
+            control_points: points,
+            weights,
+            periodic: is_periodic(closure),
+        },
+        cur.pos(),
+    ))
+}
+
+/// Decode the face-surface cache of a spline surface record from its payload
+/// tokens: the LAST valid surface block (the final `setSurfaceShape` cache;
+/// earlier blocks are support surfaces or 2D pcurves), except in a
+/// `comp_spl_sur` compound, whose own cache comes first.
+pub(crate) fn surface_cache(toks: &[Token]) -> Option<NurbsSurface> {
+    let mut caches = toks::marker_positions(toks)
+        .into_iter()
+        .filter_map(|pos| surface_block(toks, pos).map(|(surface, _)| surface));
+    let compound = toks.iter().any(|token| {
+        matches!(token, Token::Ident(name) | Token::SubIdent(name) if name == "comp_spl_sur")
+    });
+    if compound {
+        caches.next()
+    } else {
+        caches.next_back()
+    }
+}
+
+/// Decode the surface cache a subtype scope itself owns: the first surface
+/// block outside every construction the scope nests.
+pub(crate) fn owned_surface_cache(scope: &[Token]) -> Option<NurbsSurface> {
+    toks::owned_marker_positions(scope)
+        .into_iter()
+        .find_map(|pos| surface_block(scope, pos).map(|(surface, _)| surface))
+}
+
+/// Decode the 3D curve cache of a procedural curve record from its payload
+/// tokens: the FIRST valid curve block (surface and 2D pcurve blocks do not
+/// parse as a 3D curve block).
+pub(crate) fn curve_cache(toks: &[Token]) -> Option<NurbsCurve> {
+    toks::marker_positions(toks)
+        .into_iter()
+        .find_map(|pos| curve_block(toks, pos).map(|(curve, _)| curve))
+}
+
+/// Decode the 3D curve cache a subtype scope itself owns: the first curve
+/// block outside every construction the scope nests.
+pub(crate) fn owned_curve_cache(scope: &[Token]) -> Option<NurbsCurve> {
+    toks::owned_marker_positions(scope)
+        .into_iter()
+        .find_map(|pos| curve_block(scope, pos).map(|(curve, _)| curve))
+}
+
+/// Resolve a cache through `{ref N}` subtype references: decode inline first,
+/// then follow each reference into the stream's subtype table. `seen` breaks
+/// reference cycles. Token-space counterpart of [`decode_cache_resolving_refs`].
+pub(crate) fn cache_resolving_refs<T>(
+    toks: &[Token],
+    table: &toks::SubtypeTable,
+    seen: &mut Vec<usize>,
+    decode_inline: fn(&[Token]) -> Option<T>,
+) -> Option<T> {
+    if let Some(decoded) = decode_inline(toks) {
+        return Some(decoded);
+    }
+    for index in toks::subtype_refs(toks) {
+        if seen.contains(&index) {
+            continue;
+        }
+        seen.push(index);
+        let target = table.span(index)?;
+        if let Some(decoded) = cache_resolving_refs(target, table, seen, decode_inline) {
+            return Some(decoded);
+        }
+    }
+    None
+}
+
+/// [`surface_cache`], following subtype-table references.
+pub fn surface_cache_resolving_refs(
+    toks: &[Token],
+    table: &toks::SubtypeTable,
+) -> Option<NurbsSurface> {
+    cache_resolving_refs(toks, table, &mut Vec::new(), surface_cache)
+}
+
+/// [`owned_surface_cache`], following subtype-table references.
+pub(crate) fn owned_surface_cache_resolving_refs(
+    toks: &[Token],
+    table: &toks::SubtypeTable,
+) -> Option<NurbsSurface> {
+    cache_resolving_refs(toks, table, &mut Vec::new(), owned_surface_cache)
+}
+
+/// [`curve_cache`], following subtype-table references.
+pub fn curve_cache_resolving_refs(
+    toks: &[Token],
+    table: &toks::SubtypeTable,
+) -> Option<NurbsCurve> {
+    cache_resolving_refs(toks, table, &mut Vec::new(), curve_cache)
+}
+
+/// [`owned_curve_cache`], following subtype-table references.
+pub(crate) fn owned_curve_cache_resolving_refs(
+    toks: &[Token],
+    table: &toks::SubtypeTable,
+) -> Option<NurbsCurve> {
+    cache_resolving_refs(toks, table, &mut Vec::new(), owned_curve_cache)
+}
 
 /// Decode a surface `nubs`/`nurbs` block at `marker_pos`, or `None` if the bytes
 /// there are not a well-formed surface block.
@@ -109,35 +343,35 @@ pub(crate) fn decode_surface_block(
 }
 
 /// Writable value offsets for the final valid surface cache in one carrier record.
-pub(crate) struct SurfacePatchLayout {
+pub struct SurfacePatchLayout {
     /// Payload width of integer and enum fields.
-    pub(crate) int_width: usize,
+    pub int_width: usize,
     /// Native v-major tagged-double payload offsets, excluding each tag byte.
-    pub(crate) control_value_offsets: Vec<usize>,
+    pub control_value_offsets: Vec<usize>,
     /// Whether every pole includes a fourth rational weight component.
-    pub(crate) rational: bool,
+    pub rational: bool,
     /// Pole count in the u direction.
-    pub(crate) u_count: usize,
+    pub u_count: usize,
     /// Pole count in the v direction.
-    pub(crate) v_count: usize,
+    pub v_count: usize,
     /// Native payload offsets and expanded run lengths for U knots.
-    pub(crate) u_knots: KnotPatchLayout,
+    pub u_knots: KnotPatchLayout,
     /// Native payload offsets and expanded run lengths for V knots.
-    pub(crate) v_knots: KnotPatchLayout,
+    pub v_knots: KnotPatchLayout,
     /// Offset immediately after the final control component.
-    pub(crate) end: usize,
+    pub end: usize,
     /// Payload offsets for the U/V closure enums.
-    pub(crate) periodic_value_offsets: [usize; 2],
+    pub periodic_value_offsets: [usize; 2],
     /// Payload offsets for the U/V degree integers.
-    pub(crate) degree_value_offsets: [usize; 2],
+    pub degree_value_offsets: [usize; 2],
 }
 
 /// Unique native knot payload offsets.
-pub(crate) struct KnotPatchLayout {
+pub struct KnotPatchLayout {
     /// Payload offsets for unique knot values.
-    pub(crate) value_offsets: Vec<usize>,
+    pub value_offsets: Vec<usize>,
     /// Payload offsets for stored multiplicities.
-    pub(crate) multiplicity_offsets: Vec<usize>,
+    pub multiplicity_offsets: Vec<usize>,
     /// Repetition count of each unique value in the expanded IR vector.
     #[expect(dead_code)]
     pub(crate) expanded_run_lengths: Vec<usize>,
@@ -154,7 +388,7 @@ impl From<KnotLayout> for KnotPatchLayout {
 }
 
 /// Locate the final valid `nubs`/`nurbs` surface block in a carrier record.
-pub(crate) fn final_surface_patch_layout(record: &[u8]) -> Option<SurfacePatchLayout> {
+pub fn final_surface_patch_layout(record: &[u8]) -> Option<SurfacePatchLayout> {
     let decoded = INT_WIDTHS.into_iter().find_map(|int_width| {
         marker_positions(record)
             .into_iter()
@@ -176,7 +410,7 @@ pub(crate) fn final_surface_patch_layout(record: &[u8]) -> Option<SurfacePatchLa
 }
 
 /// Locate the surface block at `ordinal` among valid surface caches in a carrier record.
-pub(crate) fn surface_patch_layout_at(record: &[u8], ordinal: usize) -> Option<SurfacePatchLayout> {
+pub fn surface_patch_layout_at(record: &[u8], ordinal: usize) -> Option<SurfacePatchLayout> {
     let decoded = INT_WIDTHS.into_iter().find_map(|int_width| {
         marker_positions(record)
             .into_iter()
@@ -256,27 +490,27 @@ pub(crate) fn decode_curve_block(
 }
 
 /// Writable value offsets for a 3D curve cache in one carrier record.
-pub(crate) struct CurvePatchLayout {
+pub struct CurvePatchLayout {
     /// Payload width of integer and enum fields.
-    pub(crate) int_width: usize,
+    pub int_width: usize,
     /// Tagged-double payload offsets in pole/component order.
-    pub(crate) control_value_offsets: Vec<usize>,
+    pub control_value_offsets: Vec<usize>,
     /// Whether every pole includes a fourth rational weight component.
-    pub(crate) rational: bool,
+    pub rational: bool,
     /// Number of control points.
-    pub(crate) control_count: usize,
+    pub control_count: usize,
     /// Native unique-knot payloads and expanded run lengths.
-    pub(crate) knots: KnotPatchLayout,
+    pub knots: KnotPatchLayout,
     /// Offset immediately after the final control component.
-    pub(crate) end: usize,
+    pub end: usize,
     /// Payload offset for the closure enum.
-    pub(crate) periodic_value_offset: usize,
+    pub periodic_value_offset: usize,
     /// Payload offset for the degree integer.
-    pub(crate) degree_value_offset: usize,
+    pub degree_value_offset: usize,
 }
 
 /// Locate the first valid 3D curve cache in a carrier record.
-pub(crate) fn first_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout> {
+pub fn first_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout> {
     let decoded = INT_WIDTHS.into_iter().find_map(|int_width| {
         marker_positions(record)
             .into_iter()
@@ -295,7 +529,7 @@ pub(crate) fn first_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout
 }
 
 /// Locate the final valid 3D curve cache in a carrier record.
-pub(crate) fn final_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout> {
+pub fn final_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout> {
     let decoded = INT_WIDTHS.into_iter().find_map(|int_width| {
         marker_positions(record)
             .into_iter()
@@ -372,26 +606,6 @@ pub(crate) fn decode_owned_surface_cache_resolving_refs_at(
     )
 }
 
-/// Decode a surface cache from a carrier record at the stream's integer width,
-/// following the ASM subtype table when the record stores a nested `ref N`
-/// instead of an inline cache. `active_bytes` is the full active SAB slice; `N`
-/// indexes its non-`ref` subtype openings in byte order.
-pub(crate) fn decode_surface_cache_resolving_refs_at(
-    record_bytes: &[u8],
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
-    int_width: usize,
-) -> Option<NurbsSurface> {
-    decode_cache_resolving_refs(
-        record_bytes,
-        active_bytes,
-        tables,
-        &mut Vec::new(),
-        decode_surface_cache_at,
-        int_width,
-    )
-}
-
 /// Decode the 3D curve cache of a procedural curve record: the FIRST valid curve
 /// block (surface and 2D pcurve blocks in the record are skipped because they do
 /// not parse as a 3D curve block). Returns `None` when none is present.
@@ -409,7 +623,7 @@ pub(crate) fn decode_curve_cache_at(record_bytes: &[u8], int_width: usize) -> Op
 
 /// Decode the 3D curve cache a subtype scope itself owns: the first curve block
 /// outside every construction the scope nests.
-pub(crate) fn decode_owned_curve_cache_at(scope: &[u8], int_width: usize) -> Option<NurbsCurve> {
+pub fn decode_owned_curve_cache_at(scope: &[u8], int_width: usize) -> Option<NurbsCurve> {
     owned_marker_positions(scope, int_width)
         .into_iter()
         .find_map(|pos| decode_curve_block(scope, pos, int_width).map(|decoded| decoded.curve))
@@ -429,25 +643,6 @@ pub(crate) fn decode_owned_curve_cache_resolving_refs_at(
         tables,
         &mut Vec::new(),
         decode_owned_curve_cache_at,
-        int_width,
-    )
-}
-
-/// Decode a curve cache from a carrier record at the stream's integer width,
-/// resolving nested ASM subtype references through the active slice's subtype
-/// table.
-pub(crate) fn decode_curve_cache_resolving_refs_at(
-    record_bytes: &[u8],
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
-    int_width: usize,
-) -> Option<NurbsCurve> {
-    decode_cache_resolving_refs(
-        record_bytes,
-        active_bytes,
-        tables,
-        &mut Vec::new(),
-        decode_curve_cache_at,
         int_width,
     )
 }

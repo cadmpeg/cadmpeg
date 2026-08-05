@@ -2,8 +2,9 @@
 //! Walk the reachable topology graph, collect wire and shell chains, and
 //! classify edge curve senses.
 
+use super::records::{MeshSurfaceSentinel, WireSide, WireTopology};
+use crate::ids::IdFormat;
 use crate::nurbs;
-use crate::records::{MeshSurfaceSentinel, WireSide, WireTopology};
 use crate::sab::{Record, Token};
 use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{
@@ -13,14 +14,15 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::topology::Sense;
 use std::collections::{HashMap, HashSet};
 
-use super::attributes::{record_slice, unknown_record_id};
+use super::attributes::unknown_record_id;
 use super::geometry::{
-    analytic_procedural_surface, decode_curve, decode_surface, is_analytic_curve,
-    is_analytic_surface, is_coedge_record, is_edge_record, is_vertex_record,
+    analytic_procedural_surface, coedge_pcurve_ref, decode_curve, decode_surface,
+    is_analytic_curve, is_analytic_surface, is_coedge_record, is_edge_record, is_vertex_record,
     pcurve_ranges_on_domain, procedural_surface_definition_is_exact_carrier, record_reversed,
-    reverse_nurbs_curve, reverse_procedural_curve_definition, select_face_pcurve, sense_at,
+    reverse_nurbs_curve, reverse_nurbs_pcurve, reverse_procedural_curve_definition, sense_at,
+    vertex_point_ref,
 };
-use super::{count_kind, id, Brep, Carriers, DecodePurpose, Reachable, WireShellTopology};
+use super::{count_kind, id, AsmBrep, Carriers, DecodePurpose, Reachable, WireShellTopology};
 /// Pass 1: classify carriers and decode analytic geometry. Returns the seeded
 /// carrier maps and the set of carriers whose native normal is inward.
 pub(crate) fn decode_analytic_carriers(records: &[Record]) -> (Carriers, HashSet<i64>) {
@@ -59,16 +61,15 @@ pub(crate) fn decode_analytic_carriers(records: &[Record]) -> (Carriers, HashSet
     reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
 )]
 pub(crate) fn keep_faces_and_carriers(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
-    bytes: &[u8],
     by_index: &HashMap<i64, &Record>,
-    subtype_tables: &nurbs::subtypes::SubtypeTables,
+    token_table: &nurbs::toks::SubtypeTable,
     carriers: &mut Carriers,
     reach: &mut Reachable,
     purpose: DecodePurpose,
+    format: IdFormat<'_>,
 ) {
-    let ref_width = crate::asm_header::stream_ref_width(bytes);
     let Carriers {
         surface_geo,
         procedural_surface_defs,
@@ -104,24 +105,16 @@ pub(crate) fn keep_faces_and_carriers(
         kept_faces.insert(r.index as i64);
         if purpose == DecodePurpose::History {
             let native_kind = (surf_rec.head == "spline")
-                .then(|| {
-                    nurbs::subtypes::owned_construction_subtype(
-                        record_slice(surf_rec, bytes),
-                        ref_width,
-                    )
-                })
+                .then(|| nurbs::toks::owned_construction_subtype(&surf_rec.tokens))
                 .flatten();
             if native_kind
                 .as_deref()
                 .is_some_and(|kind| kind.contains("blend"))
             {
-                if let Some(procedural) =
-                    nurbs::proc_surface::decode_procedural_surface_resolving_refs(
-                        record_slice(surf_rec, bytes),
-                        bytes,
-                        subtype_tables,
-                    )
-                {
+                if let Some(procedural) = nurbs::proc_surface::procedural_surface_resolving_refs(
+                    &surf_rec.tokens,
+                    token_table,
+                ) {
                     procedural_surface_defs.insert(surf_ref, procedural);
                 }
             }
@@ -131,11 +124,9 @@ pub(crate) fn keep_faces_and_carriers(
             kept_surfaces.insert(surf_ref);
             continue;
         }
-        if let Some(procedural) = nurbs::proc_surface::decode_procedural_surface_resolving_refs(
-            record_slice(surf_rec, bytes),
-            bytes,
-            subtype_tables,
-        ) {
+        if let Some(procedural) =
+            nurbs::proc_surface::procedural_surface_resolving_refs(&surf_rec.tokens, token_table)
+        {
             procedural_surface_defs.insert(surf_ref, procedural);
         }
         if let Some(geometry) = procedural_surface_defs
@@ -156,12 +147,9 @@ pub(crate) fn keep_faces_and_carriers(
         // as supports, not as evaluated face caches.
         if !exact_cacheless_construction {
             if let std::collections::hash_map::Entry::Vacant(e) = surface_geo.entry(surf_ref) {
-                if let Some(ns) = nurbs::core::decode_surface_cache_resolving_refs_at(
-                    record_slice(surf_rec, bytes),
-                    bytes,
-                    subtype_tables,
-                    ref_width,
-                ) {
+                if let Some(ns) =
+                    nurbs::core::surface_cache_resolving_refs(&surf_rec.tokens, token_table)
+                {
                     e.insert((SurfaceGeometry::Nurbs(ns), false));
                     if surf_rec.head == "spline" && !procedural_surface_defs.contains_key(&surf_ref)
                     {
@@ -189,12 +177,12 @@ pub(crate) fn keep_faces_and_carriers(
                     } else if construction_is_exact_carrier {
                         SurfaceGeometry::Procedural {
                             construction: ProceduralSurfaceId(format!(
-                                "f3d:brep:procedural_surface#{surf_ref}"
+                                "{format}:brep:procedural_surface#{surf_ref}"
                             )),
                         }
                     } else {
                         SurfaceGeometry::Unknown {
-                            record: Some(UnknownId(unknown_record_id(surf_rec))),
+                            record: Some(UnknownId(unknown_record_id(surf_rec, format))),
                         }
                     },
                     false,
@@ -209,15 +197,15 @@ pub(crate) fn keep_faces_and_carriers(
         } else {
             unknown_surface_records.insert(surf_ref);
             undecoded_carriers.insert(surf_ref);
-            if surf_rec.head == "mesh_surface" && surf_rec.tokens.is_empty() {
+            if surf_rec.head == "mesh_surface" && surf_rec.chunks().next().is_none() {
                 if !out
                     .mesh_surface_sentinels
                     .iter()
                     .any(|sentinel| sentinel.record_index == surf_rec.index as u32)
                 {
                     out.mesh_surface_sentinels.push(MeshSurfaceSentinel {
-                        id: format!("f3d:asm:mesh-surface-sentinel#{}", surf_rec.index),
-                        surface: SurfaceId(id(surf_ref)),
+                        id: format!("{format}:asm:mesh-surface-sentinel#{}", surf_rec.index),
+                        surface: SurfaceId(id(format, surf_ref)),
                         record_index: surf_rec.index as u32,
                     });
                 }
@@ -225,11 +213,8 @@ pub(crate) fn keep_faces_and_carriers(
             } else {
                 out.stats.unknown_surface_faces += 1;
                 let native_kind = if surf_rec.head == "spline" {
-                    nurbs::subtypes::owned_construction_subtype(
-                        record_slice(surf_rec, bytes),
-                        ref_width,
-                    )
-                    .unwrap_or_else(|| surf_rec.head.clone())
+                    nurbs::toks::owned_construction_subtype(&surf_rec.tokens)
+                        .unwrap_or_else(|| surf_rec.head.clone())
                 } else {
                     surf_rec.head.clone()
                 };
@@ -246,23 +231,21 @@ pub(crate) fn keep_faces_and_carriers(
     reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
 )]
 pub(crate) fn walk_reachable_topology(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     by_index: &HashMap<i64, &Record>,
-    bytes: &[u8],
-    ref_width: usize,
-    subtype_tables: &nurbs::subtypes::SubtypeTables,
+    token_table: &nurbs::toks::SubtypeTable,
     carriers: &mut Carriers,
     reach: &mut Reachable,
     purpose: DecodePurpose,
+    format: IdFormat<'_>,
 ) {
     let Carriers {
-        surface_geo,
-        procedural_surface_defs,
         curve_geo,
         procedural_curve_defs,
         cacheless_procedural_curve_defs,
         pcurve_geo,
         pcurve_parameter_ranges,
+        ..
     } = &mut *carriers;
     let Reachable {
         faces: kept_faces,
@@ -305,7 +288,7 @@ pub(crate) fn walk_reachable_topology(
                         break;
                     }
                     kept_coedges.insert(ci);
-                    if let Some(pc) = ce.ref_at(10) {
+                    if let Some(pc) = coedge_pcurve_ref(ce) {
                         if let Some(prec) = by_index.get(&pc) {
                             if purpose == DecodePurpose::History {
                                 pcurve_geo
@@ -317,104 +300,64 @@ pub(crate) fn walk_reachable_topology(
                                 pcurve_parameter_ranges.entry(ci).or_insert([0.0, 0.0]);
                                 kept_pcurves.insert(pc);
                             } else {
-                                // A wrapped pcurve either owns an inline 2D block
-                                // or delegates through a subtype-table reference;
-                                // a nonzero-discriminator ref form delegates to an
-                                // intcurve entity. Decode every referenced candidate
-                                // and keep the one whose endpoints land on the edge's
-                                // vertices through the face surface. An
-                                // `exp_par_cur` scope owns exactly one BS2 carrier,
-                                // including when reached through a subtype ref; its
-                                // nested refs describe support data. Other intcurve
-                                // graphs require dimensional or geometric selection.
-                                let candidates = match (prec.chunk(3), prec.chunk(4)) {
-                                (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
-                                    if let Some(span) = crate::sab::payload_subtype_span(
-                                        bytes,
-                                        prec,
-                                        5,
-                                        ref_width,
-                                        "exp_par_cur",
-                                    ) {
-                                        nurbs::pcurve::decode_owned_pcurve_cache_candidates_resolving_refs(
-                                            span, bytes, subtype_tables,
-                                        )
-                                    } else if crate::sab::payload_subtype_span(
-                                        bytes, prec, 5, ref_width, "ref",
-                                    )
-                                    .is_some()
-                                    {
-                                        // The resolver needs the `ref N` opener and name,
-                                        // not only the scope interior returned above.
-                                        nurbs::pcurve::decode_pcurve_cache_candidates_resolving_refs(
-                                            record_slice(prec, bytes),
-                                            bytes,
-                                            subtype_tables,
-                                        )
-                                    } else {
-                                        Vec::new()
+                                // An inline `exp_par_cur` owns its first BS2 field.
+                                // A wrapped subtype ref resolves that same typed
+                                // field. A nonzero-discriminator ref form names one
+                                // of the target intcurve's two pcurve slots; its
+                                // sign composes with the intcurve sense bit.
+                                let decoded = match (prec.chunk(3), prec.chunk(4)) {
+                                    (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
+                                        if let Some(span) = nurbs::toks::payload_subtype_toks(
+                                            prec,
+                                            5,
+                                            "exp_par_cur",
+                                        ) {
+                                            nurbs::pcurve::explicit_pcurve_cache(span)
+                                        } else if let Some(span) =
+                                            nurbs::toks::payload_subtype_toks(prec, 5, "ref")
+                                        {
+                                            match span.first() {
+                                                Some(Token::Long(index)) =>
+                                                    nurbs::pcurve::explicit_pcurve_cache_from_subtype_ref(
+                                                        *index,
+                                                        token_table,
+                                                    ),
+                                                _ => None,
+                                            }
+                                        } else {
+                                            None
+                                        }
                                     }
-                                }
-                                (
-                                    Some(Token::Long(1 | 2 | -1 | -2)),
-                                    Some(Token::Ref(reference)),
-                                ) => by_index
-                                    .get(reference)
-                                    .filter(|record| record.head == "intcurve")
-                                    .map(|intcurve| {
-                                        nurbs::pcurve::decode_pcurve_cache_candidates_resolving_refs(
-                                            record_slice(intcurve, bytes),
-                                            bytes,
-                                            subtype_tables,
-                                        )
-                                    })
-                                    .unwrap_or_default(),
-                                _ => Vec::new(),
-                            };
+                                    (
+                                        Some(Token::Long(selector)),
+                                        Some(Token::Ref(reference)),
+                                    ) if matches!(*selector, 1 | 2 | -1 | -2) => {
+                                        by_index
+                                            .get(reference)
+                                            .filter(|record| record.head == "intcurve")
+                                            .and_then(|intcurve| {
+                                                nurbs::proc_curve::pcurve_for_selector_resolving_refs(
+                                                    &intcurve.tokens,
+                                                    *selector,
+                                                    token_table,
+                                                )
+                                                .map(|mut curve| {
+                                                    if (*selector < 0) ^ record_reversed(intcurve) {
+                                                        reverse_nurbs_pcurve(&mut curve);
+                                                    }
+                                                    curve
+                                                })
+                                            })
+                                    }
+                                    _ => None,
+                                };
                                 let edge =
                                     ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied();
-                                let authoritative_count = candidates
-                                    .iter()
-                                    .filter(|candidate| candidate.authoritative)
-                                    .count();
-                                let decoded = if authoritative_count == 1 {
-                                    candidates
-                                        .into_iter()
-                                        .find(|candidate| candidate.authoritative)
-                                        .and_then(|candidate| {
-                                            pcurve_ranges_on_domain(&candidate.curve, edge)
-                                                .and_then(|ranges| ranges.into_iter().next())
-                                                .map(|range| (candidate.curve, range))
-                                        })
-                                } else if candidates
-                                    .iter()
-                                    .filter(|candidate| candidate.unambiguous_2d)
-                                    .count()
-                                    == 1
-                                {
-                                    let candidate = candidates
-                                        .into_iter()
-                                        .find(|candidate| candidate.unambiguous_2d)
-                                        .expect("one unambiguous candidate");
-                                    let range = pcurve_ranges_on_domain(&candidate.curve, edge)
-                                        .and_then(|ranges| ranges.into_iter().next());
-                                    range.map(|range| (candidate.curve, range))
-                                } else {
-                                    select_face_pcurve(
-                                        candidates
-                                            .into_iter()
-                                            .map(|candidate| candidate.curve)
-                                            .collect(),
-                                        face.ref_at(7)
-                                            .and_then(|surface| surface_geo.get(&surface))
-                                            .map(|(geometry, _)| geometry),
-                                        face.ref_at(7).is_some_and(|surface| {
-                                            procedural_surface_defs.contains_key(&surface)
-                                        }),
-                                        edge,
-                                        by_index,
-                                    )
-                                };
+                                let decoded = decoded.and_then(|decoded| {
+                                    pcurve_ranges_on_domain(&decoded, edge)
+                                        .and_then(|ranges| ranges.into_iter().next())
+                                        .map(|range| (decoded, range))
+                                });
                                 if let Some((decoded, parameter_range)) = decoded {
                                     pcurve_geo.insert(
                                         pc,
@@ -449,7 +392,7 @@ pub(crate) fn walk_reachable_topology(
                                         if let Some(v) = by_index.get(&vi) {
                                             if is_vertex_record(v) {
                                                 kept_vertices.insert(vi);
-                                                if let Some(pi) = v.ref_at(5) {
+                                                if let Some(pi) = vertex_point_ref(v) {
                                                     kept_points.insert(pi);
                                                 }
                                             }
@@ -471,10 +414,9 @@ pub(crate) fn walk_reachable_topology(
                                             // A procedural curve carries an inline
                                             // 3D B-spline cache in most subtypes.
                                             } else if let Some(decoded) =
-                                                nurbs::proc_curve::decode_procedural_curve_resolving_refs(
-                                                    record_slice(crec, bytes),
-                                                    bytes,
-                                                    subtype_tables,
+                                                nurbs::proc_curve::procedural_curve_resolving_refs(
+                                                    &crec.tokens,
+                                                    token_table,
                                                 )
                                             {
                                                 let mut curve = decoded.curve;
@@ -510,10 +452,9 @@ pub(crate) fn walk_reachable_topology(
                                                 out.stats.nurbs_curves += 1;
                                                 kept_curves.insert(cv);
                                             } else if let Some((native_kind, mut definition)) =
-                                                nurbs::proc_curve::decode_cacheless_procedural_curve_resolving_refs(
-                                                    record_slice(crec, bytes),
-                                                    bytes,
-                                                    subtype_tables,
+                                                nurbs::proc_curve::cacheless_procedural_curve_resolving_refs(
+                                                    &crec.tokens,
+                                                    token_table,
                                                 )
                                             {
                                                 if record_reversed(crec) {
@@ -525,7 +466,7 @@ pub(crate) fn walk_reachable_topology(
                                                     cv,
                                                     CurveGeometry::Procedural {
                                                         construction: format!(
-                                                            "f3d:brep:procedural_curve#{cv}"
+                                                            "{format}:brep:procedural_curve#{cv}"
                                                         )
                                                         .into(),
                                                     },
@@ -572,21 +513,19 @@ pub(crate) fn walk_reachable_topology(
     reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
 )]
 pub(crate) fn collect_wire_topology(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
-    bytes: &[u8],
-    subtype_tables: &nurbs::subtypes::SubtypeTables,
+    saved_entity_limit: Option<i64>,
+    token_table: &nurbs::toks::SubtypeTable,
     carriers: &mut Carriers,
     reach: &mut Reachable,
     purpose: DecodePurpose,
+    format: IdFormat<'_>,
 ) -> WireShellTopology {
     let mut wire_edges_by_shell = HashMap::<i64, Vec<i64>>::new();
     let mut free_vertices_by_shell = HashMap::<i64, Vec<i64>>::new();
     let mut saved_free_edges = Vec::new();
-    let saved_entity_limit = crate::asm_header::parse(bytes)
-        .and_then(|header| header.entity_count)
-        .and_then(|count| i64::try_from(count).ok());
     if let Some(limit) = saved_entity_limit {
         for edge in records.iter().filter(|record| {
             let index = record.index as i64;
@@ -598,11 +537,11 @@ pub(crate) fn collect_wire_topology(
                 out,
                 edge_index,
                 by_index,
-                bytes,
-                subtype_tables,
+                token_table,
                 carriers,
                 reach,
                 purpose,
+                format,
             );
             if !already_owned && reach.edges.contains(&edge_index) {
                 saved_free_edges.push(edge_index);
@@ -651,11 +590,11 @@ pub(crate) fn collect_wire_topology(
                                 out,
                                 edge_index,
                                 by_index,
-                                bytes,
-                                subtype_tables,
+                                token_table,
                                 carriers,
                                 reach,
                                 purpose,
+                                format,
                             );
                         }
                         coedge_ref = coedge.ref_at(3);
@@ -679,20 +618,23 @@ pub(crate) fn collect_wire_topology(
                     if !vertices.contains(&vertex) {
                         vertices.push(vertex);
                     }
-                    if let Some(point) = by_index.get(&vertex).and_then(|record| record.ref_at(5)) {
+                    if let Some(point) = by_index
+                        .get(&vertex)
+                        .and_then(|record| vertex_point_ref(record))
+                    {
                         reach.points.insert(point);
                     }
                 }
                 if let Some(side) = side {
                     out.wire_topologies.push(WireTopology {
-                        id: format!("f3d:asm:wire-topology#{wire_index}"),
-                        shell: ShellId(id(shell_index)),
+                        id: format!("{format}:asm:wire-topology#{wire_index}"),
+                        shell: ShellId(id(format, shell_index)),
                         record_index: wire.index as u32,
                         edges: wire_edges
                             .into_iter()
-                            .map(|edge| EdgeId(id(edge)))
+                            .map(|edge| EdgeId(id(format, edge)))
                             .collect(),
-                        free_vertex: free_vertex.map(|vertex| VertexId(id(vertex))),
+                        free_vertex: free_vertex.map(|vertex| VertexId(id(format, vertex))),
                         side,
                     });
                 }
@@ -712,14 +654,14 @@ pub(crate) fn collect_wire_topology(
     reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
 )]
 fn keep_wire_edge(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     edge_index: i64,
     by_index: &HashMap<i64, &Record>,
-    bytes: &[u8],
-    subtype_tables: &nurbs::subtypes::SubtypeTables,
+    token_table: &nurbs::toks::SubtypeTable,
     carriers: &mut Carriers,
     reach: &mut Reachable,
     purpose: DecodePurpose,
+    format: IdFormat<'_>,
 ) {
     let Carriers {
         curve_geo,
@@ -751,7 +693,7 @@ fn keep_wire_edge(
                 .filter(|vertex| is_vertex_record(vertex))
             {
                 kept_vertices.insert(vertex_index);
-                if let Some(point_index) = vertex.ref_at(5) {
+                if let Some(point_index) = vertex_point_ref(vertex) {
                     kept_points.insert(point_index);
                 }
             }
@@ -775,10 +717,9 @@ fn keep_wire_edge(
                 kept_curves.insert(curve_index);
                 return;
             }
-            if let Some(decoded) = nurbs::proc_curve::decode_procedural_curve_resolving_refs(
-                record_slice(curve_record, bytes),
-                bytes,
-                subtype_tables,
+            if let Some(decoded) = nurbs::proc_curve::procedural_curve_resolving_refs(
+                &curve_record.tokens,
+                token_table,
             ) {
                 let mut curve = decoded.curve;
                 if record_reversed(curve_record) {
@@ -809,17 +750,16 @@ fn keep_wire_edge(
                 kept_curves.insert(curve_index);
                 out.stats.nurbs_curves += 1;
             } else if let Some((native_kind, mut definition)) =
-                nurbs::proc_curve::decode_cacheless_procedural_curve_resolving_refs(
-                    record_slice(curve_record, bytes),
-                    bytes,
-                    subtype_tables,
+                nurbs::proc_curve::cacheless_procedural_curve_resolving_refs(
+                    &curve_record.tokens,
+                    token_table,
                 )
             {
                 if record_reversed(curve_record) {
                     reverse_procedural_curve_definition(&mut definition);
                 }
                 entry.insert(CurveGeometry::Procedural {
-                    construction: format!("f3d:brep:procedural_curve#{curve_index}").into(),
+                    construction: format!("{format}:brep:procedural_curve#{curve_index}").into(),
                 });
                 cacheless_procedural_curve_defs.insert(curve_index, (native_kind, definition));
                 kept_curves.insert(curve_index);
@@ -864,8 +804,9 @@ pub(crate) fn ring_coedges(
     loop_rec: &Record,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
+    format: IdFormat<'_>,
 ) -> Vec<CoedgeId> {
-    let id = |i: i64| CoedgeId(format!("f3d:brep:entity#{i}"));
+    let id = |i: i64| CoedgeId(format!("{format}:brep:entity#{i}"));
     let mut out = Vec::new();
     let Some(first) = loop_rec.ref_at(4) else {
         return out;
@@ -890,8 +831,9 @@ pub(crate) fn loop_chain(
     face_rec: &Record,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
+    format: IdFormat<'_>,
 ) -> Vec<LoopId> {
-    let id = |i: i64| LoopId(format!("f3d:brep:entity#{i}"));
+    let id = |i: i64| LoopId(format!("{format}:brep:entity#{i}"));
     let mut out = Vec::new();
     let mut cur = face_rec.ref_at(4);
     let mut guard = HashSet::new();
@@ -912,8 +854,9 @@ fn face_chain(
     shell_rec: &Record,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
+    format: IdFormat<'_>,
 ) -> Vec<FaceId> {
-    let id = |i: i64| FaceId(format!("f3d:brep:entity#{i}"));
+    let id = |i: i64| FaceId(format!("{format}:brep:entity#{i}"));
     let mut out = Vec::new();
     let mut cur = shell_rec.ref_at(5);
     let mut guard = HashSet::new();
@@ -959,8 +902,9 @@ pub(crate) fn shell_faces(
     shell: &Record,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
+    format: IdFormat<'_>,
 ) -> Vec<FaceId> {
-    let mut out = face_chain(shell, by_index, kept);
+    let mut out = face_chain(shell, by_index, kept, format);
     let mut pending = shell.ref_at(4).into_iter().collect::<Vec<_>>();
     let mut guard = HashSet::new();
     while let Some(index) = pending.pop().filter(|index| guard.insert(*index)) {
@@ -970,7 +914,7 @@ pub(crate) fn shell_faces(
         else {
             break;
         };
-        out.extend(face_chain_from(record.ref_at(6), by_index, kept));
+        out.extend(face_chain_from(record.ref_at(6), by_index, kept, format));
         if let Some(next) = record.ref_at(4) {
             pending.push(next);
         }
@@ -1009,12 +953,13 @@ fn face_chain_from(
     mut current: Option<i64>,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
+    format: IdFormat<'_>,
 ) -> Vec<FaceId> {
     let mut out = Vec::new();
     let mut guard = HashSet::new();
     while let Some(index) = current.filter(|index| guard.insert(*index)) {
         if kept.contains(&index) {
-            out.push(FaceId(format!("f3d:brep:entity#{index}")));
+            out.push(FaceId(format!("{format}:brep:entity#{index}")));
         }
         let Some(face) = by_index.get(&index) else {
             break;
@@ -1024,8 +969,12 @@ fn face_chain_from(
     out
 }
 
-pub(crate) fn shell_chain(region_rec: &Record, by_index: &HashMap<i64, &Record>) -> Vec<ShellId> {
-    let id = |i: i64| ShellId(format!("f3d:brep:entity#{i}"));
+pub(crate) fn shell_chain(
+    region_rec: &Record,
+    by_index: &HashMap<i64, &Record>,
+    format: IdFormat<'_>,
+) -> Vec<ShellId> {
+    let id = |i: i64| ShellId(format!("{format}:brep:entity#{i}"));
     let mut out = Vec::new();
     let mut cur = region_rec.ref_at(4);
     let mut guard = HashSet::new();
@@ -1040,8 +989,12 @@ pub(crate) fn shell_chain(region_rec: &Record, by_index: &HashMap<i64, &Record>)
     out
 }
 
-pub(crate) fn region_chain(body_rec: &Record, by_index: &HashMap<i64, &Record>) -> Vec<RegionId> {
-    let id = |i: i64| RegionId(format!("f3d:brep:entity#{i}"));
+pub(crate) fn region_chain(
+    body_rec: &Record,
+    by_index: &HashMap<i64, &Record>,
+    format: IdFormat<'_>,
+) -> Vec<RegionId> {
+    let id = |i: i64| RegionId(format!("{format}:brep:entity#{i}"));
     let mut out = Vec::new();
     let mut cur = body_rec.ref_at(3);
     let mut guard = HashSet::new();

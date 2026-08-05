@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Emit decoded carriers, pcurves, and topology entities into the [`Brep`]
+//! Emit decoded carriers, pcurves, and topology entities into the [`AsmBrep`]
 //! graph, one pass per entity kind.
 
+use super::records::{
+    BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceContainment, FaceSidedness,
+    TolerantCoedgeExtension, TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail,
+    TransformHints, VertexOwnership,
+};
+use crate::ids::IdFormat;
 use crate::nurbs;
 use crate::nurbs::proc_curve::{
     EmbeddedDeformableData, EmbeddedLawCurve, EmbeddedProjection, EmbeddedSilhouette,
@@ -20,11 +26,6 @@ use crate::nurbs::proc_surface::{
     EmbeddedVertexBlendBoundaryGeometry,
 };
 use crate::nurbs::reader::LEN_TO_MM;
-use crate::records::{
-    BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceContainment, FaceSidedness,
-    TolerantCoedgeExtension, TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail,
-    TransformHints, VertexOwnership,
-};
 use crate::sab::{Record, Token};
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::geometry::{
@@ -44,32 +45,31 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use std::collections::{HashMap, HashSet};
 
 use super::attributes::{
-    attribute_chain_color, attribute_chain_name, collect_attributes, creation_timestamp,
-    decode_transform, persistent_design_links, persistent_subentity_tags, record_slice,
-    sketch_curve_link, source_attribute, unknown_record_id,
+    attribute_chain_color, attribute_chain_name, collect_attributes, decode_transform,
+    source_attribute, unknown_record_id,
 };
 use super::geometry::{
-    collect_carrier, double_at, is_asm_stream_delimiter, is_coedge_record, is_edge_record,
-    is_known_record_head, is_vertex_record, norm3, pcurve_inline_tail_flags,
+    coedge_pcurve_ref, collect_carrier, double_at, is_asm_stream_delimiter, is_coedge_record,
+    is_edge_record, is_known_record_head, is_vertex_record, norm3, pcurve_inline_tail_flags,
     pcurve_parameter_range, record_reversed, reverse_curve_geometry, reverse_nurbs_curve,
-    scale_point, sense_at, tolerant_coedge_extension,
+    scale_point, sense_at, tolerant_coedge_extension, vertex_point_ref,
 };
 use super::topology::{
     loop_chain, region_chain, ring_coedges, shell_chain, shell_faces, subshell_ancestor_shells,
 };
 use super::{
-    embedded_pcurve_geometry, id, inherited_attribute_target, AnnotationRecord, Brep, Carriers,
+    embedded_pcurve_geometry, id, inherited_attribute_target, AnnotationRecord, AsmBrep, Carriers,
     Reachable, WireShellTopology,
 };
 /// Emit a kept surface carrier and, when present, its procedural-surface
 /// construction and nested support carriers.
 fn emit_carrier_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     r: &Record,
     i: i64,
-    bytes: &[u8],
     carriers: &mut Carriers,
     reach: &Reachable,
+    format: IdFormat<'_>,
 ) {
     let Carriers {
         surface_geo,
@@ -86,14 +86,14 @@ fn emit_carrier_surface(
         return;
     };
     out.surfaces.push(Surface {
-        id: SurfaceId(id(i)),
+        id: SurfaceId(id(format, i)),
         geometry,
         source_object: None,
     });
     if let Some(procedural) = procedural_surface_defs.remove(&i) {
         let definition = match procedural.definition {
             DecodedProceduralSurfaceDefinition::Deformable(embedded) => {
-                emit_deformable_surface(out, i, embedded)
+                emit_deformable_surface(out, i, embedded, format)
             }
             DecodedProceduralSurfaceDefinition::Helix(construction) => {
                 ProceduralSurfaceDefinition::Helix { construction }
@@ -119,7 +119,7 @@ fn emit_carrier_surface(
                     .enumerate()
                     .map(|(component, geometry)| {
                         let id = SurfaceId(format!(
-                            "f3d:brep:procedural_surface#{i}:component{component}"
+                            "{format}:brep:procedural_surface#{i}:component{component}"
                         ));
                         out.surfaces.push(Surface {
                             id: id.clone(),
@@ -139,7 +139,7 @@ fn emit_carrier_surface(
                 parameter_ranges,
             } => {
                 let support_id = SurfaceId(format!(
-                    "f3d:brep:procedural_surface#{i}:sub_surface:support"
+                    "{format}:brep:procedural_surface#{i}:sub_surface:support"
                 ));
                 out.surfaces.push(Surface {
                     id: support_id.clone(),
@@ -159,13 +159,14 @@ fn emit_carrier_surface(
                 taper,
                 revision_form,
             } => {
-                let support_id = SurfaceId(format!("f3d:brep:procedural_surface#{i}:support"));
+                let support_id = SurfaceId(format!("{format}:brep:procedural_surface#{i}:support"));
                 out.surfaces.push(Surface {
                     id: support_id.clone(),
                     geometry: support,
                     source_object: None,
                 });
-                let reference_id = CurveId(format!("f3d:brep:procedural_surface#{i}:reference"));
+                let reference_id =
+                    CurveId(format!("{format}:brep:procedural_surface#{i}:reference"));
                 out.curves.push(Curve {
                     id: reference_id.clone(),
                     geometry: CurveGeometry::Nurbs(reference),
@@ -188,28 +189,32 @@ fn emit_carrier_surface(
                 }
             }
             DecodedProceduralSurfaceDefinition::Loft(embedded) => {
-                emit_loft_surface(out, i, embedded)
+                emit_loft_surface(out, i, embedded, format)
             }
             DecodedProceduralSurfaceDefinition::CompoundLoft(embedded) => {
-                emit_compound_loft_surface(out, i, *embedded)
+                emit_compound_loft_surface(out, i, *embedded, format)
             }
             DecodedProceduralSurfaceDefinition::ScaledCompoundLoft(embedded) => {
-                emit_scaled_compound_loft_surface(out, i, embedded)
+                emit_scaled_compound_loft_surface(out, i, embedded, format)
             }
-            DecodedProceduralSurfaceDefinition::Law(embedded) => emit_law_surface(out, i, embedded),
+            DecodedProceduralSurfaceDefinition::Law(embedded) => {
+                emit_law_surface(out, i, embedded, format)
+            }
             DecodedProceduralSurfaceDefinition::Skin(embedded) => {
-                emit_skin_surface(out, i, embedded)
+                emit_skin_surface(out, i, embedded, format)
             }
-            DecodedProceduralSurfaceDefinition::Net(embedded) => emit_net_surface(out, i, embedded),
+            DecodedProceduralSurfaceDefinition::Net(embedded) => {
+                emit_net_surface(out, i, embedded, format)
+            }
             DecodedProceduralSurfaceDefinition::Sweep(embedded) => {
-                emit_sweep_surface(out, i, embedded)
+                emit_sweep_surface(out, i, embedded, format)
             }
             DecodedProceduralSurfaceDefinition::G2Blend(embedded) => {
-                emit_g2_blend_surface(out, i, embedded)
+                emit_g2_blend_surface(out, i, embedded, format)
             }
             DecodedProceduralSurfaceDefinition::Ruled { first, second } => {
-                let first_id = CurveId(format!("f3d:brep:procedural_surface#{i}:profile0"));
-                let second_id = CurveId(format!("f3d:brep:procedural_surface#{i}:profile1"));
+                let first_id = CurveId(format!("{format}:brep:procedural_surface#{i}:profile0"));
+                let second_id = CurveId(format!("{format}:brep:procedural_surface#{i}:profile1"));
                 out.curves.push(Curve {
                     id: first_id.clone(),
                     geometry: CurveGeometry::Nurbs(first),
@@ -231,8 +236,8 @@ fn emit_carrier_surface(
                 basepoint,
                 revision_form,
             } => {
-                let first_id = CurveId(format!("f3d:brep:procedural_surface#{i}:curve0"));
-                let second_id = CurveId(format!("f3d:brep:procedural_surface#{i}:curve1"));
+                let first_id = CurveId(format!("{format}:brep:procedural_surface#{i}:curve0"));
+                let second_id = CurveId(format!("{format}:brep:procedural_surface#{i}:curve1"));
                 out.curves.push(Curve {
                     id: first_id.clone(),
                     geometry: first,
@@ -258,7 +263,8 @@ fn emit_carrier_surface(
                 parameter_interval,
                 revision_form,
             } => {
-                let directrix_id = CurveId(format!("f3d:brep:procedural_surface#{i}:directrix"));
+                let directrix_id =
+                    CurveId(format!("{format}:brep:procedural_surface#{i}:directrix"));
                 out.curves.push(Curve {
                     id: directrix_id.clone(),
                     geometry: directrix,
@@ -282,7 +288,7 @@ fn emit_carrier_surface(
                 extension_flags,
                 revision_form,
             } => {
-                let support_id = SurfaceId(format!("f3d:brep:procedural_surface#{i}:support"));
+                let support_id = SurfaceId(format!("{format}:brep:procedural_surface#{i}:support"));
                 out.surfaces.push(Surface {
                     id: support_id.clone(),
                     geometry: support,
@@ -304,7 +310,8 @@ fn emit_carrier_surface(
                 native_position,
                 revision_form,
             } => {
-                let directrix_id = CurveId(format!("f3d:brep:procedural_surface#{i}:directrix"));
+                let directrix_id =
+                    CurveId(format!("{format}:brep:procedural_surface#{i}:directrix"));
                 out.curves.push(Curve {
                     id: directrix_id.clone(),
                     geometry: CurveGeometry::Nurbs(directrix),
@@ -319,16 +326,16 @@ fn emit_carrier_surface(
                 }
             }
             DecodedProceduralSurfaceDefinition::VariableBlend(construction) => {
-                emit_variable_blend_surface(out, i, construction)
+                emit_variable_blend_surface(out, i, construction, format)
             }
             DecodedProceduralSurfaceDefinition::RevisionCompoundLoft(construction) => {
-                emit_revision_compound_loft_surface(out, i, construction)
+                emit_revision_compound_loft_surface(out, i, construction, format)
             }
             DecodedProceduralSurfaceDefinition::RevisionG2Blend(construction) => {
-                emit_revision_g2_blend_surface(out, i, construction)
+                emit_revision_g2_blend_surface(out, i, construction, format)
             }
             DecodedProceduralSurfaceDefinition::VertexBlend(construction) => {
-                emit_vertex_blend_surface(out, i, *construction)
+                emit_vertex_blend_surface(out, i, *construction, format)
             }
             DecodedProceduralSurfaceDefinition::Blend {
                 supports,
@@ -336,23 +343,30 @@ fn emit_carrier_surface(
                 radius,
                 cross_section,
                 native,
-            } => emit_blend_surface(out, i, supports, spine, radius, cross_section, native),
+            } => emit_blend_surface(
+                out,
+                i,
+                supports,
+                spine,
+                radius,
+                cross_section,
+                native,
+                format,
+            ),
         };
         out.procedural_surfaces.push(ProceduralSurface {
-            id: format!("f3d:brep:procedural_surface#{i}").into(),
-            surface: SurfaceId(id(i)),
+            id: format!("{format}:brep:procedural_surface#{i}").into(),
+            surface: SurfaceId(id(format, i)),
             definition,
             cache_fit_tolerance: procedural.cache_fit_tolerance,
-            record_bounds: nurbs::proc_curve::record_trailing_surface_bounds(record_slice(
-                r, bytes,
-            )),
+            record_bounds: nurbs::proc_curve::record_trailing_surface_bounds(&r.tokens),
         });
     } else if cached_unknown_procedural_surfaces.contains(&i) {
         out.procedural_surfaces.push(ProceduralSurface {
-            id: format!("f3d:brep:procedural_surface#{i}").into(),
-            surface: SurfaceId(id(i)),
+            id: format!("{format}:brep:procedural_surface#{i}").into(),
+            surface: SurfaceId(id(format, i)),
             definition: ProceduralSurfaceDefinition::Unknown {
-                record: Some(UnknownId(unknown_record_id(r))),
+                record: Some(UnknownId(unknown_record_id(r, format))),
             },
             cache_fit_tolerance: None,
             record_bounds: None,
@@ -363,13 +377,14 @@ fn emit_carrier_surface(
 /// Emit a kept 3D curve carrier (with its `:reversed` clone when shared) and
 /// any procedural-curve construction and nested support carriers.
 fn emit_deformable_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedDeformableSurface>,
+    format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
     let embedded = *embedded;
     let support = SurfaceId(format!(
-        "f3d:brep:procedural_surface#{i}:deformable:support"
+        "{format}:brep:procedural_surface#{i}:deformable:support"
     ));
     out.surfaces.push(Surface {
         id: support.clone(),
@@ -392,14 +407,16 @@ fn emit_deformable_surface(
             parameter_triples,
         } => {
             let secondary_surface = SurfaceId(format!(
-                "f3d:brep:procedural_surface#{i}:deformable:secondary"
+                "{format}:brep:procedural_surface#{i}:deformable:secondary"
             ));
             out.surfaces.push(Surface {
                 id: secondary_surface.clone(),
                 geometry: surface,
                 source_object: None,
             });
-            let curve_id = CurveId(format!("f3d:brep:procedural_surface#{i}:deformable:curve"));
+            let curve_id = CurveId(format!(
+                "{format}:brep:procedural_surface#{i}:deformable:curve"
+            ));
             out.curves.push(Curve {
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Nurbs(curve),
@@ -435,14 +452,16 @@ fn emit_deformable_surface(
             trailing_value,
         } => {
             let secondary_surface = SurfaceId(format!(
-                "f3d:brep:procedural_surface#{i}:deformable:secondary"
+                "{format}:brep:procedural_surface#{i}:deformable:secondary"
             ));
             out.surfaces.push(Surface {
                 id: secondary_surface.clone(),
                 geometry: surface,
                 source_object: None,
             });
-            let curve_id = CurveId(format!("f3d:brep:procedural_surface#{i}:deformable:curve"));
+            let curve_id = CurveId(format!(
+                "{format}:brep:procedural_surface#{i}:deformable:curve"
+            ));
             out.curves.push(Curve {
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Nurbs(curve),
@@ -476,9 +495,10 @@ fn emit_deformable_surface(
 }
 
 fn emit_loft_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: EmbeddedLoft,
+    format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
     let sections = embedded.sections.into_iter().enumerate().map(
                                 |(section_index, entries)| {
@@ -487,7 +507,7 @@ fn emit_loft_surface(
                                             let profile = entry.profile.into_iter().enumerate().map(
                                                 |(member_index, member)| {
                                                     let curve = CurveId(format!(
-                                                        "f3d:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:profile:{member_index}"
+                                                        "{format}:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:profile:{member_index}"
                                                     ));
                                                     out.curves.push(Curve {
                                                         id: curve.clone(),
@@ -496,7 +516,7 @@ fn emit_loft_surface(
                                                     });
                                                     let surface = member.data.surface.map(|geometry| {
                                                         let surface = SurfaceId(format!(
-                                                            "f3d:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:support:{member_index}"
+                                                            "{format}:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:support:{member_index}"
                                                         ));
                                                         out.surfaces.push(Surface {
                                                             id: surface.clone(),
@@ -529,7 +549,7 @@ fn emit_loft_surface(
                                             ).collect();
                                             let path_curve = entry.path.curve.map(|geometry| {
                                                 let path_curve = CurveId(format!(
-                                                    "f3d:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:path"
+                                                    "{format}:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:path"
                                                 ));
                                                 out.curves.push(Curve {
                                                     id: path_curve.clone(),
@@ -541,7 +561,7 @@ fn emit_loft_surface(
                                             let auxiliaries = entry.path.auxiliaries.into_iter().enumerate().map(
                                                 |(auxiliary_index, geometry)| {
                                                     let id = CurveId(format!(
-                                                        "f3d:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:auxiliary:{auxiliary_index}"
+                                                        "{format}:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:auxiliary:{auxiliary_index}"
                                                     ));
                                                     out.curves.push(Curve {
                                                         id: id.clone(),
@@ -578,18 +598,19 @@ fn emit_loft_surface(
 }
 
 fn emit_compound_loft_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: EmbeddedCompoundLoft,
+    format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
-    let map_scale = |out: &mut Brep, name: &str, scale: EmbeddedCompoundLoftScale| {
+    let map_scale = |out: &mut AsmBrep, name: &str, scale: EmbeddedCompoundLoftScale| {
         let members = scale
                                     .members
                                     .into_iter()
                                     .enumerate()
                                     .map(|(member_index, member)| {
                                         let curve = CurveId(format!(
-                                            "f3d:brep:procedural_surface#{i}:cloft:{name}:member:{member_index}:curve"
+                                            "{format}:brep:procedural_surface#{i}:cloft:{name}:member:{member_index}:curve"
                                         ));
                                         out.curves.push(Curve {
                                             id: curve.clone(),
@@ -598,7 +619,7 @@ fn emit_compound_loft_surface(
                                         });
                                         let surface = member.data.surface.map(|geometry| {
                                                 let surface = SurfaceId(format!(
-                                                    "f3d:brep:procedural_surface#{i}:cloft:{name}:member:{member_index}:surface"
+                                                    "{format}:brep:procedural_surface#{i}:cloft:{name}:member:{member_index}:surface"
                                                 ));
                                                 out.surfaces.push(Surface {
                                                     id: surface.clone(),
@@ -629,7 +650,9 @@ fn emit_compound_loft_surface(
                                         }
                                     })
                                     .collect();
-        let path = CurveId(format!("f3d:brep:procedural_surface#{i}:cloft:{name}:path"));
+        let path = CurveId(format!(
+            "{format}:brep:procedural_surface#{i}:cloft:{name}:path"
+        ));
         out.curves.push(Curve {
             id: path.clone(),
             geometry: CurveGeometry::Nurbs(scale.path),
@@ -641,7 +664,7 @@ fn emit_compound_loft_surface(
             .enumerate()
             .map(|(index, geometry)| {
                 let id = CurveId(format!(
-                    "f3d:brep:procedural_surface#{i}:cloft:{name}:auxiliary:{index}"
+                    "{format}:brep:procedural_surface#{i}:cloft:{name}:auxiliary:{index}"
                 ));
                 out.curves.push(Curve {
                     id: id.clone(),
@@ -680,7 +703,9 @@ fn emit_compound_loft_surface(
             parameter_range,
             curve,
         } => {
-            let curve_id = CurveId(format!("f3d:brep:procedural_surface#{i}:cloft:tail6:curve"));
+            let curve_id = CurveId(format!(
+                "{format}:brep:procedural_surface#{i}:cloft:tail6:curve"
+            ));
             out.curves.push(Curve {
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Nurbs(curve),
@@ -725,7 +750,7 @@ fn emit_compound_loft_surface(
                 }
                 EmbeddedCompoundLoftDirection::Curve(curve) => {
                     let id = CurveId(format!(
-                        "f3d:brep:procedural_surface#{i}:cloft:tail0:direction"
+                        "{format}:brep:procedural_surface#{i}:cloft:tail0:direction"
                     ));
                     out.curves.push(Curve {
                         id: id.clone(),
@@ -754,19 +779,20 @@ fn emit_compound_loft_surface(
 }
 
 fn emit_scaled_compound_loft_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedScaledCompoundLoft>,
+    format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
     let embedded = *embedded;
-    let map_scale = |out: &mut Brep, name: &str, scale: EmbeddedCompoundLoftScale| {
+    let map_scale = |out: &mut AsmBrep, name: &str, scale: EmbeddedCompoundLoftScale| {
         let members = scale
                                     .members
                                     .into_iter()
                                     .enumerate()
                                     .map(|(member_index, member)| {
                                         let curve = CurveId(format!(
-                                            "f3d:brep:procedural_surface#{i}:scaled_cloft:{name}:member:{member_index}:curve"
+                                            "{format}:brep:procedural_surface#{i}:scaled_cloft:{name}:member:{member_index}:curve"
                                         ));
                                         out.curves.push(Curve {
                                             id: curve.clone(),
@@ -775,7 +801,7 @@ fn emit_scaled_compound_loft_surface(
                                         });
                                         let surface = member.data.surface.map(|geometry| {
                                                 let surface = SurfaceId(format!(
-                                                    "f3d:brep:procedural_surface#{i}:scaled_cloft:{name}:member:{member_index}:surface"
+                                                    "{format}:brep:procedural_surface#{i}:scaled_cloft:{name}:member:{member_index}:surface"
                                                 ));
                                                 out.surfaces.push(Surface {
                                                     id: surface.clone(),
@@ -807,7 +833,7 @@ fn emit_scaled_compound_loft_surface(
                                     })
                                     .collect();
         let path = CurveId(format!(
-            "f3d:brep:procedural_surface#{i}:scaled_cloft:{name}:path"
+            "{format}:brep:procedural_surface#{i}:scaled_cloft:{name}:path"
         ));
         out.curves.push(Curve {
             id: path.clone(),
@@ -820,7 +846,7 @@ fn emit_scaled_compound_loft_surface(
             .enumerate()
             .map(|(index, geometry)| {
                 let id = CurveId(format!(
-                    "f3d:brep:procedural_surface#{i}:scaled_cloft:{name}:auxiliary:{index}"
+                    "{format}:brep:procedural_surface#{i}:scaled_cloft:{name}:auxiliary:{index}"
                 ));
                 out.curves.push(Curve {
                     id: id.clone(),
@@ -847,13 +873,13 @@ fn emit_scaled_compound_loft_surface(
         .collect::<Vec<_>>()
         .try_into()
         .expect("three scaled compound-loft scales");
-    let map_direction = |out: &mut Brep, name: &str, direction| match direction {
+    let map_direction = |out: &mut AsmBrep, name: &str, direction| match direction {
         EmbeddedCompoundLoftDirection::Vector(value) => {
             cadmpeg_ir::geometry::CompoundLoftDirection::Vector { value }
         }
         EmbeddedCompoundLoftDirection::Curve(curve) => {
             let id = CurveId(format!(
-                "f3d:brep:procedural_surface#{i}:scaled_cloft:{name}"
+                "{format}:brep:procedural_surface#{i}:scaled_cloft:{name}"
             ));
             out.curves.push(Curve {
                 id: id.clone(),
@@ -883,7 +909,7 @@ fn emit_scaled_compound_loft_surface(
             curve,
         } => {
             let id = CurveId(format!(
-                "f3d:brep:procedural_surface#{i}:scaled_cloft:branch:curve"
+                "{format}:brep:procedural_surface#{i}:scaled_cloft:branch:curve"
             ));
             out.curves.push(Curve {
                 id: id.clone(),
@@ -908,7 +934,7 @@ fn emit_scaled_compound_loft_surface(
         },
     };
     let tail_curve = CurveId(format!(
-        "f3d:brep:procedural_surface#{i}:scaled_cloft:tail:curve"
+        "{format}:brep:procedural_surface#{i}:scaled_cloft:tail:curve"
     ));
     out.curves.push(Curve {
         id: tail_curve.clone(),
@@ -947,15 +973,17 @@ fn emit_scaled_compound_loft_surface(
 }
 
 fn emit_law_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedLawSurface>,
+    format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
     fn map_law_expression(
-        out: &mut Brep,
+        out: &mut AsmBrep,
         owner: i64,
         path: &str,
         expression: EmbeddedLawExpression,
+        format: IdFormat<'_>,
     ) -> cadmpeg_ir::geometry::LawExpression {
         match expression {
             EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
@@ -989,7 +1017,7 @@ fn emit_law_surface(
                 parameters,
             } => {
                 let id = CurveId(format!(
-                    "f3d:brep:procedural_surface#{owner}:law:{path}:edge"
+                    "{format}:brep:procedural_surface#{owner}:law:{path}:edge"
                 ));
                 out.curves.push(Curve {
                     id: id.clone(),
@@ -1020,14 +1048,20 @@ fn emit_law_surface(
                         .into_iter()
                         .enumerate()
                         .map(|(index, operand)| {
-                            map_law_expression(out, owner, &format!("{path}:{index}"), operand)
+                            map_law_expression(
+                                out,
+                                owner,
+                                &format!("{path}:{index}"),
+                                operand,
+                                format,
+                            )
                         })
                         .collect(),
                 }
             }
         }
     }
-    let map_formula = |out: &mut Brep, path: &str, formula: EmbeddedLawFormula| {
+    let map_formula = |out: &mut AsmBrep, path: &str, formula: EmbeddedLawFormula| {
         cadmpeg_ir::geometry::LawFormula {
             name: formula.name,
             variables: formula
@@ -1035,7 +1069,7 @@ fn emit_law_surface(
                 .into_iter()
                 .enumerate()
                 .map(|(index, expression)| {
-                    map_law_expression(out, i, &format!("{path}:{index}"), expression)
+                    map_law_expression(out, i, &format!("{path}:{index}"), expression, format)
                 })
                 .collect(),
         }
@@ -1060,15 +1094,17 @@ fn emit_law_surface(
 }
 
 fn emit_skin_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedSkinSurface>,
+    format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
     fn map_law_expression(
-        out: &mut Brep,
+        out: &mut AsmBrep,
         owner: i64,
         path: &str,
         expression: EmbeddedLawExpression,
+        format: IdFormat<'_>,
     ) -> cadmpeg_ir::geometry::LawExpression {
         match expression {
             EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
@@ -1102,7 +1138,7 @@ fn emit_skin_surface(
                 parameters,
             } => {
                 let id = CurveId(format!(
-                    "f3d:brep:procedural_surface#{owner}:skin:law:{path}:edge"
+                    "{format}:brep:procedural_surface#{owner}:skin:law:{path}:edge"
                 ));
                 out.curves.push(Curve {
                     id: id.clone(),
@@ -1133,7 +1169,13 @@ fn emit_skin_surface(
                         .into_iter()
                         .enumerate()
                         .map(|(index, operand)| {
-                            map_law_expression(out, owner, &format!("{path}:{index}"), operand)
+                            map_law_expression(
+                                out,
+                                owner,
+                                &format!("{path}:{index}"),
+                                operand,
+                                format,
+                            )
                         })
                         .collect(),
                 }
@@ -1149,13 +1191,15 @@ fn emit_skin_surface(
             secondary_curve,
             second_tail,
         } => {
-            let curve_id = CurveId(format!("f3d:brep:procedural_surface#{i}:skin:curve"));
+            let curve_id = CurveId(format!("{format}:brep:procedural_surface#{i}:skin:curve"));
             out.curves.push(Curve {
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Nurbs(curve),
                 source_object: None,
             });
-            let secondary_id = CurveId(format!("f3d:brep:procedural_surface#{i}:skin:secondary"));
+            let secondary_id = CurveId(format!(
+                "{format}:brep:procedural_surface#{i}:skin:secondary"
+            ));
             out.curves.push(Curve {
                 id: secondary_id.clone(),
                 geometry: CurveGeometry::Nurbs(secondary_curve),
@@ -1179,7 +1223,7 @@ fn emit_skin_surface(
                 .enumerate()
                 .map(|(index, profile)| {
                     let curve = CurveId(format!(
-                        "f3d:brep:procedural_surface#{i}:skin:profile:{index}:curve"
+                        "{format}:brep:procedural_surface#{i}:skin:profile:{index}:curve"
                     ));
                     out.curves.push(Curve {
                         id: curve.clone(),
@@ -1188,7 +1232,7 @@ fn emit_skin_surface(
                     });
                     let surface = profile.data.surface.map(|geometry| {
                         let surface = SurfaceId(format!(
-                            "f3d:brep:procedural_surface#{i}:skin:profile:{index}:surface"
+                            "{format}:brep:procedural_surface#{i}:skin:profile:{index}:surface"
                         ));
                         out.surfaces.push(Surface {
                             id: surface.clone(),
@@ -1216,7 +1260,7 @@ fn emit_skin_surface(
                     }
                 })
                 .collect();
-            let path_id = CurveId(format!("f3d:brep:procedural_surface#{i}:skin:path"));
+            let path_id = CurveId(format!("{format}:brep:procedural_surface#{i}:skin:path"));
             out.curves.push(Curve {
                 id: path_id.clone(),
                 geometry: CurveGeometry::Nurbs(path),
@@ -1230,7 +1274,7 @@ fn emit_skin_surface(
         }
     };
     let parameter_curve = CurveId(format!(
-        "f3d:brep:procedural_surface#{i}:skin:parameter_curve"
+        "{format}:brep:procedural_surface#{i}:skin:parameter_curve"
     ));
     out.curves.push(Curve {
         id: parameter_curve.clone(),
@@ -1245,7 +1289,7 @@ fn emit_skin_surface(
             .into_iter()
             .enumerate()
             .map(|(variable_index, variable)| {
-                map_law_expression(&mut *out, i, &variable_index.to_string(), variable)
+                map_law_expression(&mut *out, i, &variable_index.to_string(), variable, format)
             })
             .collect(),
     };
@@ -1269,15 +1313,17 @@ fn emit_skin_surface(
 }
 
 fn emit_net_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedNetSurface>,
+    format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
     fn map_net_law(
-        out: &mut Brep,
+        out: &mut AsmBrep,
         owner: i64,
         path: &str,
         expression: EmbeddedLawExpression,
+        format: IdFormat<'_>,
     ) -> cadmpeg_ir::geometry::LawExpression {
         match expression {
             EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
@@ -1311,7 +1357,7 @@ fn emit_net_surface(
                 parameters,
             } => {
                 let id = CurveId(format!(
-                    "f3d:brep:procedural_surface#{owner}:net:law:{path}:edge"
+                    "{format}:brep:procedural_surface#{owner}:net:law:{path}:edge"
                 ));
                 out.curves.push(Curve {
                     id: id.clone(),
@@ -1342,7 +1388,7 @@ fn emit_net_surface(
                         .into_iter()
                         .enumerate()
                         .map(|(index, operand)| {
-                            map_net_law(out, owner, &format!("{path}:{index}"), operand)
+                            map_net_law(out, owner, &format!("{path}:{index}"), operand, format)
                         })
                         .collect(),
                 }
@@ -1365,7 +1411,7 @@ fn emit_net_surface(
                                                 .enumerate()
                                                 .map(|(member_index, member)| {
                                                     let curve = CurveId(format!(
-                                                        "f3d:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:member:{member_index}:curve"
+                                                        "{format}:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:member:{member_index}:curve"
                                                     ));
                                                     out.curves.push(Curve {
                                                         id: curve.clone(),
@@ -1374,7 +1420,7 @@ fn emit_net_surface(
                                                     });
                                                     let surface = member.data.surface.map(|geometry| {
                                                             let surface = SurfaceId(format!(
-                                                                "f3d:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:member:{member_index}:surface"
+                                                                "{format}:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:member:{member_index}:surface"
                                                             ));
                                                             out.surfaces.push(Surface {
                                                                 id: surface.clone(),
@@ -1409,7 +1455,7 @@ fn emit_net_surface(
                                                 .collect();
                                             let path = entry.path.curve.map(|geometry| {
                                                 let path = CurveId(format!(
-                                                    "f3d:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:path"
+                                                    "{format}:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:path"
                                                 ));
                                                 out.curves.push(Curve {
                                                     id: path.clone(),
@@ -1425,7 +1471,7 @@ fn emit_net_surface(
                                                 .enumerate()
                                                 .map(|(index, geometry)| {
                                                     let id = CurveId(format!(
-                                                        "f3d:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:auxiliary:{index}"
+                                                        "{format}:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:auxiliary:{index}"
                                                     ));
                                                     out.curves.push(Curve {
                                                         id: id.clone(),
@@ -1464,7 +1510,13 @@ fn emit_net_surface(
                     .into_iter()
                     .enumerate()
                     .map(|(index, variable)| {
-                        map_net_law(&mut *out, i, &format!("{formula_index}:{index}"), variable)
+                        map_net_law(
+                            &mut *out,
+                            i,
+                            &format!("{formula_index}:{index}"),
+                            variable,
+                            format,
+                        )
                     })
                     .collect(),
             },
@@ -1486,15 +1538,17 @@ fn emit_net_surface(
 }
 
 fn emit_sweep_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedSweepSurface>,
+    format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
     fn map_sweep_law(
-        out: &mut Brep,
+        out: &mut AsmBrep,
         owner: i64,
         path: &str,
         expression: EmbeddedLawExpression,
+        format: IdFormat<'_>,
     ) -> cadmpeg_ir::geometry::LawExpression {
         match expression {
             EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
@@ -1528,7 +1582,7 @@ fn emit_sweep_surface(
                 parameters,
             } => {
                 let id = CurveId(format!(
-                    "f3d:brep:procedural_surface#{owner}:sweep:law:{path}:edge"
+                    "{format}:brep:procedural_surface#{owner}:sweep:law:{path}:edge"
                 ));
                 out.curves.push(Curve {
                     id: id.clone(),
@@ -1559,7 +1613,7 @@ fn emit_sweep_surface(
                         .into_iter()
                         .enumerate()
                         .map(|(index, operand)| {
-                            map_sweep_law(out, owner, &format!("{path}:{index}"), operand)
+                            map_sweep_law(out, owner, &format!("{path}:{index}"), operand, format)
                         })
                         .collect(),
                 }
@@ -1593,6 +1647,7 @@ fn emit_sweep_surface(
                                     i,
                                     &format!("{formula_index}:{index}"),
                                     variable,
+                                    format,
                                 )
                             })
                             .collect(),
@@ -1635,7 +1690,7 @@ fn emit_sweep_surface(
                     .into_iter()
                     .enumerate()
                     .map(|(index, variable)| {
-                        map_sweep_law(&mut *out, i, &format!("explicit:{index}"), variable)
+                        map_sweep_law(&mut *out, i, &format!("explicit:{index}"), variable, format)
                     })
                     .collect(),
             };
@@ -1675,7 +1730,8 @@ fn emit_sweep_surface(
             guide_parameters,
             trailing_flags,
         } => {
-            let guide_curve_id = CurveId(format!("f3d:brep:procedural_surface#{i}:sweep:guide"));
+            let guide_curve_id =
+                CurveId(format!("{format}:brep:procedural_surface#{i}:sweep:guide"));
             out.curves.push(Curve {
                 id: guide_curve_id.clone(),
                 geometry: CurveGeometry::Nurbs(guide_curve),
@@ -1719,15 +1775,18 @@ fn emit_sweep_surface(
             support_flag,
             legacy_flag,
         } => {
-            let support_surface_id =
-                SurfaceId(format!("f3d:brep:procedural_surface#{i}:sweep:support"));
+            let support_surface_id = SurfaceId(format!(
+                "{format}:brep:procedural_surface#{i}:sweep:support"
+            ));
             out.surfaces.push(Surface {
                 id: support_surface_id.clone(),
                 geometry: support_surface,
                 source_object: None,
             });
             let auxiliary_curve = auxiliary_curve.map(|geometry| {
-                let id = CurveId(format!("f3d:brep:procedural_surface#{i}:sweep:auxiliary"));
+                let id = CurveId(format!(
+                    "{format}:brep:procedural_surface#{i}:sweep:auxiliary"
+                ));
                 out.curves.push(Curve {
                     id: id.clone(),
                     geometry: CurveGeometry::Nurbs(geometry),
@@ -1777,8 +1836,8 @@ fn emit_sweep_surface(
             formula,
             trailing_flag,
         } => {
-            let first_law = map_sweep_law(&mut *out, i, "law:first", first_law);
-            let second_law = map_sweep_law(&mut *out, i, "law:second", second_law);
+            let first_law = map_sweep_law(&mut *out, i, "law:first", first_law, format);
+            let second_law = map_sweep_law(&mut *out, i, "law:second", second_law, format);
             let formula = cadmpeg_ir::geometry::LawFormula {
                 name: formula.name,
                 variables: formula
@@ -1786,7 +1845,13 @@ fn emit_sweep_surface(
                     .into_iter()
                     .enumerate()
                     .map(|(index, variable)| {
-                        map_sweep_law(&mut *out, i, &format!("law:formula:{index}"), variable)
+                        map_sweep_law(
+                            &mut *out,
+                            i,
+                            &format!("law:formula:{index}"),
+                            variable,
+                            format,
+                        )
                     })
                     .collect(),
             };
@@ -1816,13 +1881,15 @@ fn emit_sweep_surface(
             )
         }
     };
-    let profile = CurveId(format!("f3d:brep:procedural_surface#{i}:sweep:profile"));
+    let profile = CurveId(format!(
+        "{format}:brep:procedural_surface#{i}:sweep:profile"
+    ));
     out.curves.push(Curve {
         id: profile.clone(),
         geometry: CurveGeometry::Nurbs(profile_geometry),
         source_object: None,
     });
-    let spine = CurveId(format!("f3d:brep:procedural_surface#{i}:sweep:spine"));
+    let spine = CurveId(format!("{format}:brep:procedural_surface#{i}:sweep:spine"));
     out.curves.push(Curve {
         id: spine.clone(),
         geometry: CurveGeometry::Nurbs(spine_geometry),
@@ -1842,19 +1909,24 @@ fn emit_sweep_surface(
 }
 
 fn emit_g2_blend_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedG2Blend>,
+    format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
     let embedded = *embedded;
     let mut add_side = |name: &str, side: EmbeddedG2Side| {
-        let surface = SurfaceId(format!("f3d:brep:procedural_surface#{i}:g2:{name}:surface"));
+        let surface = SurfaceId(format!(
+            "{format}:brep:procedural_surface#{i}:g2:{name}:surface"
+        ));
         out.surfaces.push(Surface {
             id: surface.clone(),
             geometry: side.surface,
             source_object: None,
         });
-        let curve = CurveId(format!("f3d:brep:procedural_surface#{i}:g2:{name}:curve"));
+        let curve = CurveId(format!(
+            "{format}:brep:procedural_surface#{i}:g2:{name}:curve"
+        ));
         out.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Nurbs(side.curve),
@@ -1882,7 +1954,9 @@ fn emit_g2_blend_surface(
     let first_shape = match embedded.first_shape {
         EmbeddedG2FirstShape::Full { surface, tolerance } => {
             let surface = surface.map(|geometry| {
-                let id = SurfaceId(format!("f3d:brep:procedural_surface#{i}:g2:first_exact"));
+                let id = SurfaceId(format!(
+                    "{format}:brep:procedural_surface#{i}:g2:first_exact"
+                ));
                 out.surfaces.push(Surface {
                     id: id.clone(),
                     geometry: SurfaceGeometry::Nurbs(geometry),
@@ -1910,14 +1984,15 @@ fn emit_g2_blend_surface(
             }),
         },
     };
-    let second_exact_surface =
-        SurfaceId(format!("f3d:brep:procedural_surface#{i}:g2:second_exact"));
+    let second_exact_surface = SurfaceId(format!(
+        "{format}:brep:procedural_surface#{i}:g2:second_exact"
+    ));
     out.surfaces.push(Surface {
         id: second_exact_surface.clone(),
         geometry: SurfaceGeometry::Nurbs(embedded.second_exact_surface),
         source_object: None,
     });
-    let center_curve = CurveId(format!("f3d:brep:procedural_surface#{i}:g2:center"));
+    let center_curve = CurveId(format!("{format}:brep:procedural_surface#{i}:g2:center"));
     out.curves.push(Curve {
         id: center_curve.clone(),
         geometry: CurveGeometry::Nurbs(embedded.center_curve),
@@ -1941,13 +2016,14 @@ fn emit_g2_blend_surface(
 }
 
 fn emit_variable_blend_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     construction: Box<EmbeddedVariableBlend>,
+    format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
     let mut sides = Vec::with_capacity(2);
     for (side_index, side) in construction.sides.into_iter().enumerate() {
-        let prefix = format!("f3d:brep:procedural_surface#{i}:variable_side{side_index}");
+        let prefix = format!("{format}:brep:procedural_surface#{i}:variable_side{side_index}");
         let surface = side.surface.map(|geometry| {
             let id = SurfaceId(format!("{prefix}:surface"));
             out.surfaces.push(Surface {
@@ -1983,7 +2059,9 @@ fn emit_variable_blend_surface(
         .try_into()
         .expect("invariant: variable blend has two sides");
     let mut add_curve = |suffix: &str, geometry: CurveGeometry| {
-        let id = CurveId(format!("f3d:brep:procedural_surface#{i}:variable_{suffix}"));
+        let id = CurveId(format!(
+            "{format}:brep:procedural_surface#{i}:variable_{suffix}"
+        ));
         out.curves.push(Curve {
             id: id.clone(),
             geometry,
@@ -2033,13 +2111,14 @@ fn emit_variable_blend_surface(
 }
 
 fn emit_revision_compound_loft_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     construction: Box<EmbeddedRevisionCompoundLoft>,
+    format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
     let convert_profile = |scope: String,
                            profile: Vec<EmbeddedLoftProfileMember>,
-                           out: &mut Brep|
+                           out: &mut AsmBrep|
      -> Vec<cadmpeg_ir::geometry::LoftProfileMember> {
         profile
             .into_iter()
@@ -2081,39 +2160,41 @@ fn emit_revision_compound_loft_surface(
             })
             .collect()
     };
-    let convert_path =
-        |scope: String, path: EmbeddedLoftPath, out: &mut Brep| -> cadmpeg_ir::geometry::LoftPath {
-            let curve = path.curve.map(|geometry| {
-                let id = CurveId(format!("{scope}:path"));
+    let convert_path = |scope: String,
+                        path: EmbeddedLoftPath,
+                        out: &mut AsmBrep|
+     -> cadmpeg_ir::geometry::LoftPath {
+        let curve = path.curve.map(|geometry| {
+            let id = CurveId(format!("{scope}:path"));
+            out.curves.push(Curve {
+                id: id.clone(),
+                geometry: CurveGeometry::Nurbs(geometry),
+                source_object: None,
+            });
+            id
+        });
+        let auxiliaries = path
+            .auxiliaries
+            .into_iter()
+            .enumerate()
+            .map(|(auxiliary_index, geometry)| {
+                let id = CurveId(format!("{scope}:auxiliary:{auxiliary_index}"));
                 out.curves.push(Curve {
                     id: id.clone(),
                     geometry: CurveGeometry::Nurbs(geometry),
                     source_object: None,
                 });
                 id
-            });
-            let auxiliaries = path
-                .auxiliaries
-                .into_iter()
-                .enumerate()
-                .map(|(auxiliary_index, geometry)| {
-                    let id = CurveId(format!("{scope}:auxiliary:{auxiliary_index}"));
-                    out.curves.push(Curve {
-                        id: id.clone(),
-                        geometry: CurveGeometry::Nurbs(geometry),
-                        source_object: None,
-                    });
-                    id
-                })
-                .collect();
-            cadmpeg_ir::geometry::LoftPath {
-                curve,
-                endpoints: path.endpoints,
-                auxiliaries,
-                flag: path.flag,
-            }
-        };
-    let base = format!("f3d:brep:procedural_surface#{i}:cloft:base");
+            })
+            .collect();
+        cadmpeg_ir::geometry::LoftPath {
+            curve,
+            endpoints: path.endpoints,
+            auxiliaries,
+            flag: path.flag,
+        }
+    };
+    let base = format!("{format}:brep:procedural_surface#{i}:cloft:base");
     let base_profile = convert_profile(base.clone(), construction.base_profile, &mut *out);
     let base_path = convert_path(base, construction.base_path, &mut *out);
     let entries: Vec<_> = construction
@@ -2121,7 +2202,7 @@ fn emit_revision_compound_loft_surface(
         .into_iter()
         .enumerate()
         .map(|(entry_index, entry)| {
-            let scope = format!("f3d:brep:procedural_surface#{i}:cloft:{entry_index}");
+            let scope = format!("{format}:brep:procedural_surface#{i}:cloft:{entry_index}");
             cadmpeg_ir::geometry::LoftSectionEntry {
                 parameter: entry.parameter,
                 profile: convert_profile(scope.clone(), entry.profile, &mut *out),
@@ -2130,7 +2211,9 @@ fn emit_revision_compound_loft_surface(
         })
         .collect();
     let direction_curve = construction.direction_curve.map(|geometry| {
-        let id = CurveId(format!("f3d:brep:procedural_surface#{i}:cloft:direction"));
+        let id = CurveId(format!(
+            "{format}:brep:procedural_surface#{i}:cloft:direction"
+        ));
         out.curves.push(Curve {
             id: id.clone(),
             geometry: CurveGeometry::Nurbs(geometry),
@@ -2139,7 +2222,9 @@ fn emit_revision_compound_loft_surface(
         id
     });
     let trailing_curve = construction.trailing_curve.map(|geometry| {
-        let id = CurveId(format!("f3d:brep:procedural_surface#{i}:cloft:trailing"));
+        let id = CurveId(format!(
+            "{format}:brep:procedural_surface#{i}:cloft:trailing"
+        ));
         out.curves.push(Curve {
             id: id.clone(),
             geometry: CurveGeometry::Nurbs(geometry),
@@ -2170,13 +2255,14 @@ fn emit_revision_compound_loft_surface(
 }
 
 fn emit_revision_g2_blend_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     construction: Box<EmbeddedRevisionG2Blend>,
+    format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
     let mut sides = Vec::with_capacity(2);
     for (side_index, side) in construction.sides.into_iter().enumerate() {
-        let prefix = format!("f3d:brep:procedural_surface#{i}:g2_side{side_index}");
+        let prefix = format!("{format}:brep:procedural_surface#{i}:g2_side{side_index}");
         let surface = side.surface.map(|geometry| {
             let id = SurfaceId(format!("{prefix}:surface"));
             out.surfaces.push(Surface {
@@ -2211,7 +2297,7 @@ fn emit_revision_g2_blend_surface(
     let [first, second]: [RollingBallSide; 2] = sides
         .try_into()
         .expect("invariant: revision g2 blend has two sides");
-    let center_id = CurveId(format!("f3d:brep:procedural_surface#{i}:g2_center"));
+    let center_id = CurveId(format!("{format}:brep:procedural_surface#{i}:g2_center"));
     out.curves.push(Curve {
         id: center_id.clone(),
         geometry: construction.center,
@@ -2242,13 +2328,15 @@ fn emit_revision_g2_blend_surface(
 }
 
 fn emit_vertex_blend_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     construction: EmbeddedVertexBlend,
+    format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
     let mut boundaries = Vec::with_capacity(construction.boundaries.len());
     for (boundary_index, boundary) in construction.boundaries.into_iter().enumerate() {
-        let prefix = format!("f3d:brep:procedural_surface#{i}:vertex_boundary{boundary_index}");
+        let prefix =
+            format!("{format}:brep:procedural_surface#{i}:vertex_boundary{boundary_index}");
         let geometry = match boundary.geometry {
             EmbeddedVertexBlendBoundaryGeometry::Circle {
                 curve,
@@ -2336,19 +2424,26 @@ fn emit_vertex_blend_surface(
     }
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+)]
 fn emit_blend_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     supports: Box<[Option<SurfaceGeometry>; 2]>,
     spine: Option<NurbsCurve>,
     radius: BlendRadiusLaw,
     cross_section: BlendCrossSection,
     native: Option<Box<EmbeddedRollingBall>>,
+    format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
     let mut resolved_supports = [None, None];
     for (side, support) in supports.into_iter().enumerate() {
         if let Some(support) = support {
-            let support_id = SurfaceId(format!("f3d:brep:procedural_surface#{i}:support{side}"));
+            let support_id = SurfaceId(format!(
+                "{format}:brep:procedural_surface#{i}:support{side}"
+            ));
             out.surfaces.push(Surface {
                 id: support_id.clone(),
                 geometry: support,
@@ -2361,7 +2456,7 @@ fn emit_blend_surface(
         }
     }
     let spine = spine.map(|spine| {
-        let spine_id = CurveId(format!("f3d:brep:procedural_surface#{i}:spine"));
+        let spine_id = CurveId(format!("{format}:brep:procedural_surface#{i}:spine"));
         out.curves.push(Curve {
             id: spine_id.clone(),
             geometry: CurveGeometry::Nurbs(spine),
@@ -2372,7 +2467,7 @@ fn emit_blend_surface(
     let native = native.map(|native| {
         let mut resolved_sides = Vec::with_capacity(2);
         for (side_index, side) in native.sides.into_iter().enumerate() {
-            let prefix = format!("f3d:brep:procedural_surface#{i}:native_side{side_index}");
+            let prefix = format!("{format}:brep:procedural_surface#{i}:native_side{side_index}");
             let surface = side.surface.map(|geometry| {
                 let id = SurfaceId(format!("{prefix}:surface"));
                 out.surfaces.push(Surface {
@@ -2413,14 +2508,14 @@ fn emit_blend_surface(
         let [first, second]: [RollingBallSide; 2] = resolved_sides
             .try_into()
             .expect("invariant: native rolling-ball has two sides");
-        let slice = CurveId(format!("f3d:brep:procedural_surface#{i}:native_slice"));
+        let slice = CurveId(format!("{format}:brep:procedural_surface#{i}:native_slice"));
         out.curves.push(Curve {
             id: slice.clone(),
             geometry: native.slice,
             source_object: None,
         });
         let third = native.third.map(|side| {
-            let prefix = format!("f3d:brep:procedural_surface#{i}:native_third");
+            let prefix = format!("{format}:brep:procedural_surface#{i}:native_third");
             let surface = SurfaceId(format!("{prefix}:surface"));
             out.surfaces.push(Surface {
                 id: surface.clone(),
@@ -2489,11 +2584,12 @@ fn emit_blend_surface(
 }
 
 fn emit_carrier_curve(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     carriers: &mut Carriers,
     reversed_curve_refs: &HashSet<i64>,
     forward_curve_refs: &HashSet<i64>,
+    format: IdFormat<'_>,
 ) {
     let Carriers {
         curve_geo,
@@ -2509,7 +2605,7 @@ fn emit_carrier_curve(
             let mut reversed = geometry.clone();
             reverse_curve_geometry(&mut reversed);
             out.curves.push(Curve {
-                id: CurveId(format!("{}:reversed", id(i))),
+                id: CurveId(format!("{}:reversed", id(format, i))),
                 geometry: reversed,
                 source_object: None,
             });
@@ -2518,7 +2614,7 @@ fn emit_carrier_curve(
         }
     }
     out.curves.push(Curve {
-        id: CurveId(id(i)),
+        id: CurveId(id(format, i)),
         geometry,
         source_object: None,
     });
@@ -2526,7 +2622,7 @@ fn emit_carrier_curve(
         let definition = if let Some((source, parameter_range, offset, labels, codes)) =
             procedural.2
         {
-            let source_id = CurveId(format!("f3d:brep:procedural_curve#{i}:source"));
+            let source_id = CurveId(format!("{format}:brep:procedural_curve#{i}:source"));
             out.curves.push(Curve {
                 id: source_id.clone(),
                 geometry: CurveGeometry::Nurbs(source),
@@ -2540,7 +2636,7 @@ fn emit_carrier_curve(
                 codes,
             }
         } else if let Some((source, parameter_range)) = procedural.3 {
-            let source_id = CurveId(format!("f3d:brep:procedural_curve#{i}:source"));
+            let source_id = CurveId(format!("{format}:brep:procedural_curve#{i}:source"));
             out.curves.push(Curve {
                 id: source_id.clone(),
                 geometry: CurveGeometry::Nurbs(source),
@@ -2557,7 +2653,7 @@ fn emit_carrier_curve(
                 .enumerate()
                 .map(|(side, geometry)| {
                     let geometry = geometry?;
-                    let id = SurfaceId(format!("f3d:brep:procedural_curve#{i}:support{side}"));
+                    let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
                     out.surfaces.push(Surface {
                         id: id.clone(),
                         geometry,
@@ -2597,7 +2693,7 @@ fn emit_carrier_curve(
                 .enumerate()
                 .map(|(side, geometry)| {
                     let geometry = geometry?;
-                    let id = SurfaceId(format!("f3d:brep:procedural_curve#{i}:support{side}"));
+                    let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
                     out.surfaces.push(Surface {
                         id: id.clone(),
                         geometry,
@@ -2635,7 +2731,7 @@ fn emit_carrier_curve(
                 .into_iter()
                 .enumerate()
                 .map(|(side, geometry)| {
-                    let id = SurfaceId(format!("f3d:brep:procedural_curve#{i}:support{side}"));
+                    let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
                     out.surfaces.push(Surface {
                         id: id.clone(),
                         geometry,
@@ -2677,7 +2773,7 @@ fn emit_carrier_curve(
                 .enumerate()
                 .map(|(side, geometry)| {
                     let geometry = geometry?;
-                    let id = SurfaceId(format!("f3d:brep:procedural_curve#{i}:support{side}"));
+                    let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
                     out.surfaces.push(Surface {
                         id: id.clone(),
                         geometry,
@@ -2711,11 +2807,11 @@ fn emit_carrier_curve(
                 tail,
             }
         } else if let Some(embedded) = procedural.9 {
-            emit_silhouette_curve(out, i, embedded)
+            emit_silhouette_curve(out, i, embedded, format)
         } else if let Some(embedded) = procedural.10 {
-            emit_surface_offset_curve(out, i, embedded)
+            emit_surface_offset_curve(out, i, embedded, format)
         } else if let Some(embedded) = procedural.11 {
-            emit_spring_curve(out, i, embedded)
+            emit_spring_curve(out, i, embedded, format)
         } else if let Some(embedded) = procedural.12 {
             let support_ids: [Option<SurfaceId>; 2] = embedded
                 .surfaces
@@ -2724,7 +2820,7 @@ fn emit_carrier_curve(
                 .map(|(side, geometry)| {
                     geometry.map(|geometry| {
                         let id = SurfaceId(format!(
-                            "f3d:brep:procedural_curve#{i}:deformable_support{side}"
+                            "{format}:brep:procedural_curve#{i}:deformable_support{side}"
                         ));
                         out.surfaces.push(Surface {
                             id: id.clone(),
@@ -2748,7 +2844,9 @@ fn emit_carrier_curve(
             });
             let source = match embedded.source {
                 crate::nurbs::proc_curve::EmbeddedDeformableSource::Curve(geometry) => {
-                    let curve = CurveId(format!("f3d:brep:procedural_curve#{i}:deformable_source"));
+                    let curve = CurveId(format!(
+                        "{format}:brep:procedural_curve#{i}:deformable_source"
+                    ));
                     out.curves.push(Curve {
                         id: curve.clone(),
                         geometry: CurveGeometry::Nurbs(geometry),
@@ -2811,16 +2909,16 @@ fn emit_carrier_curve(
                 data,
             }
         } else if let Some(embedded) = procedural.13 {
-            emit_projection_curve(out, i, embedded)
+            emit_projection_curve(out, i, embedded, format)
         } else if let Some(embedded) = procedural.14 {
-            emit_law_curve(out, i, embedded)
+            emit_law_curve(out, i, embedded, format)
         } else if let Some((parameters, component_parameters, components)) = procedural.4 {
             let components = components
                 .into_iter()
                 .enumerate()
                 .map(|(component, curve)| {
                     let id = CurveId(format!(
-                        "f3d:brep:procedural_curve#{i}:component#{component}"
+                        "{format}:brep:procedural_curve#{i}:component#{component}"
                     ));
                     out.curves.push(Curve {
                         id: id.clone(),
@@ -2844,15 +2942,15 @@ fn emit_carrier_curve(
                 })
         };
         out.procedural_curves.push(ProceduralCurve {
-            id: format!("f3d:brep:procedural_curve#{i}").into(),
-            curve: CurveId(id(i)),
+            id: format!("{format}:brep:procedural_curve#{i}").into(),
+            curve: CurveId(id(format, i)),
             definition,
             cache_fit_tolerance: procedural.15,
         });
     } else if let Some((_native_kind, definition)) = cacheless_procedural_curve_defs.remove(&i) {
         out.procedural_curves.push(ProceduralCurve {
-            id: format!("f3d:brep:procedural_curve#{i}").into(),
-            curve: CurveId(id(i)),
+            id: format!("{format}:brep:procedural_curve#{i}").into(),
+            curve: CurveId(id(format, i)),
             definition,
             cache_fit_tolerance: None,
         });
@@ -2860,9 +2958,10 @@ fn emit_carrier_curve(
 }
 
 fn emit_silhouette_curve(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: EmbeddedSilhouette,
+    format: IdFormat<'_>,
 ) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
     let support_ids: [Option<SurfaceId>; 2] = embedded
         .context
@@ -2871,7 +2970,7 @@ fn emit_silhouette_curve(
         .enumerate()
         .map(|(side, geometry)| {
             let geometry = geometry?;
-            let id = SurfaceId(format!("f3d:brep:procedural_curve#{i}:support{side}"));
+            let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
             out.surfaces.push(Surface {
                 id: id.clone(),
                 geometry,
@@ -2891,7 +2990,7 @@ fn emit_silhouette_curve(
             periodic: pcurve.periodic,
         })
     });
-    let cast_surface = SurfaceId(format!("f3d:brep:procedural_curve#{i}:cast_surface"));
+    let cast_surface = SurfaceId(format!("{format}:brep:procedural_curve#{i}:cast_surface"));
     out.surfaces.push(Surface {
         id: cast_surface.clone(),
         geometry: embedded.cast_surface,
@@ -2914,9 +3013,10 @@ fn emit_silhouette_curve(
 }
 
 fn emit_surface_offset_curve(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: EmbeddedSurfaceOffset,
+    format: IdFormat<'_>,
 ) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
     let support_ids: [Option<SurfaceId>; 2] = embedded
         .context
@@ -2925,7 +3025,7 @@ fn emit_surface_offset_curve(
         .enumerate()
         .map(|(side, geometry)| {
             let geometry = geometry?;
-            let id = SurfaceId(format!("f3d:brep:procedural_curve#{i}:support{side}"));
+            let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
             out.surfaces.push(Surface {
                 id: id.clone(),
                 geometry,
@@ -2945,7 +3045,7 @@ fn emit_surface_offset_curve(
             periodic: pcurve.periodic,
         })
     });
-    let base = CurveId(format!("f3d:brep:procedural_curve#{i}:base"));
+    let base = CurveId(format!("{format}:brep:procedural_curve#{i}:base"));
     out.curves.push(Curve {
         id: base.clone(),
         geometry: CurveGeometry::Nurbs(embedded.base),
@@ -2975,9 +3075,10 @@ fn emit_surface_offset_curve(
 }
 
 fn emit_spring_curve(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: EmbeddedSpring,
+    format: IdFormat<'_>,
 ) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
     let support_ids: [Option<SurfaceId>; 2] = embedded
         .surfaces
@@ -2985,7 +3086,7 @@ fn emit_spring_curve(
         .enumerate()
         .map(|(side, geometry)| {
             geometry.map(|geometry| {
-                let id = SurfaceId(format!("f3d:brep:procedural_curve#{i}:support{side}"));
+                let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
                 out.surfaces.push(Surface {
                     id: id.clone(),
                     geometry,
@@ -3025,16 +3126,17 @@ fn emit_spring_curve(
 }
 
 fn emit_projection_curve(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: EmbeddedProjection,
+    format: IdFormat<'_>,
 ) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
     let surfaces: [Option<SurfaceId>; 2] = embedded
         .surfaces
         .into_iter()
         .enumerate()
         .map(|(side, geometry)| {
-            let id = SurfaceId(format!("f3d:brep:procedural_curve#{i}:support{side}"));
+            let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
             out.surfaces.push(Surface {
                 id: id.clone(),
                 geometry,
@@ -3054,7 +3156,7 @@ fn emit_projection_curve(
             periodic: pcurve.periodic,
         })
     });
-    let source = CurveId(format!("f3d:brep:procedural_curve#{i}:source"));
+    let source = CurveId(format!("{format}:brep:procedural_curve#{i}:source"));
     out.curves.push(Curve {
         id: source.clone(),
         geometry: CurveGeometry::Nurbs(embedded.source),
@@ -3077,15 +3179,17 @@ fn emit_projection_curve(
 }
 
 fn emit_law_curve(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: EmbeddedLawCurve,
+    format: IdFormat<'_>,
 ) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
     fn map_law_curve(
-        out: &mut Brep,
+        out: &mut AsmBrep,
         owner: i64,
         path: &str,
         expression: EmbeddedLawExpression,
+        format: IdFormat<'_>,
     ) -> cadmpeg_ir::geometry::LawExpression {
         match expression {
             EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
@@ -3118,7 +3222,7 @@ fn emit_law_curve(
                 endpoints,
                 parameters,
             } => {
-                let id = CurveId(format!("f3d:brep:procedural_curve#{owner}:law:{path}"));
+                let id = CurveId(format!("{format}:brep:procedural_curve#{owner}:law:{path}"));
                 out.curves.push(Curve {
                     id: id.clone(),
                     geometry: CurveGeometry::Nurbs(curve),
@@ -3148,7 +3252,7 @@ fn emit_law_curve(
                         .into_iter()
                         .enumerate()
                         .map(|(index, operand)| {
-                            map_law_curve(out, owner, &format!("{path}:{index}"), operand)
+                            map_law_curve(out, owner, &format!("{path}:{index}"), operand, format)
                         })
                         .collect(),
                 }
@@ -3162,7 +3266,7 @@ fn emit_law_curve(
         .enumerate()
         .map(|(side, geometry)| {
             let geometry = geometry?;
-            let id = SurfaceId(format!("f3d:brep:procedural_curve#{i}:support{side}"));
+            let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
             out.surfaces.push(Surface {
                 id: id.clone(),
                 geometry,
@@ -3190,7 +3294,7 @@ fn emit_law_curve(
                 .into_iter()
                 .enumerate()
                 .map(|(index, expression)| {
-                    map_law_curve(&mut *out, i, &format!("{path}:{index}"), expression)
+                    map_law_curve(&mut *out, i, &format!("{path}:{index}"), expression, format)
                 })
                 .collect(),
         };
@@ -3225,33 +3329,40 @@ fn emit_law_curve(
 /// Pass 3: emit surface and curve carriers in `RecordTable` order for
 /// deterministic output.
 pub(crate) fn emit_carrier_records(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
-    bytes: &[u8],
     carriers: &mut Carriers,
     reach: &Reachable,
     reversed_curve_refs: &HashSet<i64>,
     forward_curve_refs: &HashSet<i64>,
+    format: IdFormat<'_>,
 ) {
     for r in records {
         let i = r.index as i64;
         match r.head.as_str() {
             _ if reach.surfaces.contains(&i) => {
-                emit_carrier_surface(out, r, i, bytes, carriers, reach);
+                emit_carrier_surface(out, r, i, carriers, reach, format);
             }
             _ if reach.unknown_surface_records.contains(&i) => {
                 // Topology-known face on an undecoded surface: emit an opaque
                 // carrier linking to the preserved record bytes, marked Unknown.
                 out.surfaces.push(Surface {
-                    id: SurfaceId(id(i)),
+                    id: SurfaceId(id(format, i)),
                     geometry: SurfaceGeometry::Unknown {
-                        record: Some(UnknownId(unknown_record_id(r))),
+                        record: Some(UnknownId(unknown_record_id(r, format))),
                     },
                     source_object: None,
                 });
             }
             _ if reach.curves.contains(&i) => {
-                emit_carrier_curve(out, i, carriers, reversed_curve_refs, forward_curve_refs);
+                emit_carrier_curve(
+                    out,
+                    i,
+                    carriers,
+                    reversed_curve_refs,
+                    forward_curve_refs,
+                    format,
+                );
             }
             _ => {}
         }
@@ -3260,12 +3371,11 @@ pub(crate) fn emit_carrier_records(
 
 /// Emit reachable pcurve carriers with their wrapper and fit-tolerance tails.
 pub(crate) fn emit_pcurves(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
-    bytes: &[u8],
-    ref_width: usize,
     carriers: &mut Carriers,
     reach: &Reachable,
+    format: IdFormat<'_>,
 ) {
     let Carriers { pcurve_geo, .. } = &mut *carriers;
     let Reachable {
@@ -3277,7 +3387,7 @@ pub(crate) fn emit_pcurves(
         if kept_pcurves.contains(&i) {
             if let Some(geometry) = pcurve_geo.remove(&i) {
                 out.pcurves.push(Pcurve {
-                    id: PcurveId(id(i)),
+                    id: PcurveId(id(format, i)),
                     geometry,
                     wrapper_reversed: match r.chunk(4) {
                         Some(Token::True) if matches!(r.chunk(3), Some(Token::Long(0))) => {
@@ -3292,8 +3402,8 @@ pub(crate) fn emit_pcurves(
                     parameter_range: pcurve_parameter_range(r),
                     fit_tolerance: match (r.chunk(3), r.chunk(4)) {
                         (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
-                            crate::sab::payload_subtype_span(bytes, r, 5, ref_width, "exp_par_cur")
-                                .and_then(nurbs::pcurve::decode_pcurve_fit_tolerance)
+                            nurbs::toks::payload_subtype_toks(r, 5, "exp_par_cur")
+                                .and_then(nurbs::pcurve::pcurve_fit_tolerance)
                         }
                         _ => None,
                     },
@@ -3304,7 +3414,12 @@ pub(crate) fn emit_pcurves(
 }
 
 /// Emit reachable point carriers, scaled to millimetres.
-pub(crate) fn emit_points(out: &mut Brep, records: &[Record], reach: &Reachable) {
+pub(crate) fn emit_points(
+    out: &mut AsmBrep,
+    records: &[Record],
+    reach: &Reachable,
+    format: IdFormat<'_>,
+) {
     let Reachable {
         points: kept_points,
         ..
@@ -3315,7 +3430,7 @@ pub(crate) fn emit_points(out: &mut Brep, records: &[Record], reach: &Reachable)
             let c = collect_carrier(r);
             if let Some(p) = c.positions.first() {
                 out.points.push(Point {
-                    id: PointId(id(i)),
+                    id: PointId(id(format, i)),
                     position: scale_point(*p),
                     source_object: None,
                 });
@@ -3326,10 +3441,11 @@ pub(crate) fn emit_points(out: &mut Brep, records: &[Record], reach: &Reachable)
 
 /// Emit reachable vertices with their tolerant tails and ownership records.
 pub(crate) fn emit_vertices(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     reach: &Reachable,
+    format: IdFormat<'_>,
 ) {
     let Reachable {
         vertices: kept_vertices,
@@ -3339,20 +3455,30 @@ pub(crate) fn emit_vertices(
     for r in records {
         let i = r.index as i64;
         if is_vertex_record(r) && kept_vertices.contains(&i) {
-            if let Some(pi) = r.ref_at(5) {
+            if let Some(pi) = vertex_point_ref(r) {
                 if kept_points.contains(&pi) {
                     out.vertices.push(Vertex {
-                        id: VertexId(id(i)),
-                        point: PointId(id(pi)),
+                        id: VertexId(id(format, i)),
+                        point: PointId(id(format, pi)),
                         // The last of the three f64 tolerance slots is the
-                        // evaluated tolerance. A negative value is the
-                        // unevaluated sentinel and is retained verbatim
-                        // without unit conversion.
+                        // evaluated tolerance. A negative value is the unset
+                        // sentinel, a marker rather than a length: the
+                        // neutral vertex carries no tolerance and the native
+                        // tail keeps the unset fact.
                         tolerance: matches!(r.head.as_str(), "tvertex")
-                            .then(|| match r.chunk(8) {
-                                Some(Token::Double(value)) if *value < 0.0 => Some(*value),
-                                Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
-                                _ => None,
+                            .then(|| {
+                                // The save-format 700 layout stores one
+                                // tolerance directly after the point.
+                                let slot = if matches!(r.chunk(4), Some(Token::Long(_))) {
+                                    8
+                                } else {
+                                    5
+                                };
+                                match r.chunk(slot) {
+                                    Some(Token::Double(value)) if *value < 0.0 => None,
+                                    Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
+                                    _ => None,
+                                }
                             })
                             .flatten(),
                     });
@@ -3361,10 +3487,14 @@ pub(crate) fn emit_vertices(
                             (r.chunk(6), r.chunk(7))
                         {
                             out.tolerant_vertex_tails.push(TolerantVertexTail {
-                                id: format!("f3d:asm:tolerant-vertex-tail#{i}"),
-                                vertex: VertexId(id(i)),
+                                id: format!("{format}:asm:tolerant-vertex-tail#{i}"),
+                                vertex: VertexId(id(format, i)),
                                 record_index: r.index as u32,
                                 leading_tolerances: [*first, *second],
+                                evaluated_unset: matches!(
+                                    r.chunk(8),
+                                    Some(Token::Double(value)) if *value < 0.0
+                                ),
                                 trailing_field: match r.chunk(9) {
                                     Some(Token::Long(value)) => Some(*value),
                                     _ => None,
@@ -3381,10 +3511,10 @@ pub(crate) fn emit_vertices(
                         r.chunk(4),
                     ) {
                         out.vertex_ownerships.push(VertexOwnership {
-                            id: format!("f3d:asm:vertex-ownership#{i}"),
-                            vertex: VertexId(id(i)),
+                            id: format!("{format}:asm:vertex-ownership#{i}"),
+                            vertex: VertexId(id(format, i)),
                             record_index: r.index as u32,
-                            owning_edge: EdgeId(id(owning_edge)),
+                            owning_edge: EdgeId(id(format, owning_edge)),
                             endpoint_index: *endpoint_index as u8,
                         });
                     }
@@ -3397,12 +3527,13 @@ pub(crate) fn emit_vertices(
 /// Emit reachable edges with parameter ranges, tolerant tails, ownership, and
 /// continuity records, folding reversed senses onto the shared carrier.
 pub(crate) fn emit_edges(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     reach: &Reachable,
     reversed_curve_refs: &HashSet<i64>,
     forward_curve_refs: &HashSet<i64>,
+    format: IdFormat<'_>,
 ) {
     let Reachable {
         edges: kept_edges,
@@ -3412,9 +3543,9 @@ pub(crate) fn emit_edges(
     } = reach;
     let reversed_curve_id = |c: i64| {
         if reversed_curve_refs.contains(&c) && forward_curve_refs.contains(&c) {
-            CurveId(format!("{}:reversed", id(c)))
+            CurveId(format!("{}:reversed", id(format, c)))
         } else {
-            CurveId(id(c))
+            CurveId(id(format, c))
         }
     };
     for r in records {
@@ -3470,7 +3601,7 @@ pub(crate) fn emit_edges(
             // link differs when the curve is shared across senses.
             let curve = curve.map(|c| match sense_at(r, 9) {
                 Sense::Reversed => reversed_curve_id(c),
-                Sense::Forward => CurveId(id(c)),
+                Sense::Forward => CurveId(id(format, c)),
             });
             // The tedge tail carries the model-space tolerance, then the
             // per-entity serializer revision stamp, then a trailing LONG
@@ -3490,32 +3621,32 @@ pub(crate) fn emit_edges(
                 _ => None,
             };
             out.edges.push(Edge {
-                id: EdgeId(id(i)),
+                id: EdgeId(id(format, i)),
                 curve,
-                start: VertexId(id(start)),
-                end: VertexId(id(end)),
+                start: VertexId(id(format, start)),
+                end: VertexId(id(format, end)),
                 param_range,
                 tolerance: tolerant_tail.map(|(tolerance, _, _)| tolerance * LEN_TO_MM),
             });
             if let Some((_, entity_revision, trailing_field)) = tolerant_tail {
                 out.tolerant_edge_tails.push(TolerantEdgeTail {
-                    id: format!("f3d:asm:tolerant-edge-tail#{i}"),
-                    edge: EdgeId(id(i)),
+                    id: format!("{format}:asm:tolerant-edge-tail#{i}"),
+                    edge: EdgeId(id(format, i)),
                     record_index: r.index as u32,
                     entity_revision,
                     trailing_field,
                 });
             }
             out.edge_ownerships.push(EdgeOwnership {
-                id: format!("f3d:asm:edge-ownership#{i}"),
-                edge: EdgeId(id(i)),
+                id: format!("{format}:asm:edge-ownership#{i}"),
+                edge: EdgeId(id(format, i)),
                 record_index: r.index as u32,
-                owner_coedge: r.ref_at(7).map(|owner| CoedgeId(id(owner))),
+                owner_coedge: r.ref_at(7).map(|owner| CoedgeId(id(format, owner))),
             });
             if let Some(Token::Str(continuity)) = r.chunk(10) {
                 out.edge_continuities.push(EdgeContinuity {
-                    id: format!("f3d:asm:edge-continuity#{i}"),
-                    edge: EdgeId(id(i)),
+                    id: format!("{format}:asm:edge-continuity#{i}"),
+                    edge: EdgeId(id(format, i)),
                     record_index: r.index as u32,
                     sense: sense_at(r, 9),
                     continuity: continuity.clone(),
@@ -3528,15 +3659,14 @@ pub(crate) fn emit_edges(
 /// Emit reachable coedges with pcurve links, tolerant parameters, and any
 /// embedded use-curve carrier.
 pub(crate) fn emit_coedges(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
-    bytes: &[u8],
-    subtype_tables: &nurbs::subtypes::SubtypeTables,
+    token_table: &nurbs::toks::SubtypeTable,
     save_format_major: Option<u32>,
     carriers: &Carriers,
     reach: &Reachable,
+    format: IdFormat<'_>,
 ) {
-    let ref_width = crate::asm_header::stream_ref_width(bytes);
     let Carriers {
         pcurve_parameter_ranges,
         ..
@@ -3596,17 +3726,11 @@ pub(crate) fn emit_coedges(
                 else {
                     return None;
                 };
-                let record_bytes = bytes.get(r.offset..r.offset.checked_add(r.len)?)?;
-                let mut curve = nurbs::core::decode_curve_cache_resolving_refs_at(
-                    record_bytes,
-                    bytes,
-                    subtype_tables,
-                    ref_width,
-                )?;
+                let mut curve = nurbs::core::curve_cache_resolving_refs(&r.tokens, token_table)?;
                 if *curve_reversed {
                     reverse_nurbs_curve(&mut curve);
                 }
-                let curve_id = CurveId(format!("f3d:brep:tolerant-coedge-curve#{i}"));
+                let curve_id = CurveId(format!("{format}:brep:tolerant-coedge-curve#{i}"));
                 out.curves.push(Curve {
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Nurbs(curve),
@@ -3615,18 +3739,18 @@ pub(crate) fn emit_coedges(
                 Some((curve_id, parameter_range.unwrap_or(*range)))
             });
             out.coedges.push(Coedge {
-                id: CoedgeId(id(i)),
-                owner_loop: LoopId(id(owner)),
-                edge: EdgeId(id(edge)),
-                next: CoedgeId(id(next)),
-                previous: CoedgeId(id(prev)),
-                radial_next: partner.map_or_else(|| CoedgeId(id(i)), |p| CoedgeId(id(p))),
+                id: CoedgeId(id(format, i)),
+                owner_loop: LoopId(id(format, owner)),
+                edge: EdgeId(id(format, edge)),
+                next: CoedgeId(id(format, next)),
+                previous: CoedgeId(id(format, prev)),
+                radial_next: partner
+                    .map_or_else(|| CoedgeId(id(format, i)), |p| CoedgeId(id(format, p))),
                 sense: sense_at(r, 7),
-                pcurves: r
-                    .ref_at(10)
+                pcurves: coedge_pcurve_ref(r)
                     .filter(|p| kept_pcurves.contains(p))
                     .map(|p| cadmpeg_ir::topology::PcurveUse {
-                        pcurve: PcurveId(id(p)),
+                        pcurve: PcurveId(id(format, p)),
                         isoparametric: None,
                         parameter_range: pcurve_parameter_ranges.get(&i).copied(),
                     })
@@ -3638,8 +3762,8 @@ pub(crate) fn emit_coedges(
             if let Some((parameter_range, extension)) = tolerant {
                 out.tolerant_coedge_parameters
                     .push(TolerantCoedgeParameters {
-                        id: format!("f3d:asm:tolerant-coedge-parameters#{i}"),
-                        coedge: CoedgeId(id(i)),
+                        id: format!("{format}:asm:tolerant-coedge-parameters#{i}"),
+                        coedge: CoedgeId(id(format, i)),
                         record_index: r.index as u32,
                         parameter_range,
                         extension,
@@ -3651,10 +3775,11 @@ pub(crate) fn emit_coedges(
 
 /// Emit reachable loops with their coedge rings filtered to kept coedges.
 pub(crate) fn emit_loops(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     reach: &Reachable,
+    format: IdFormat<'_>,
 ) {
     let Reachable {
         loops: kept_loops,
@@ -3665,10 +3790,10 @@ pub(crate) fn emit_loops(
         let i = r.index as i64;
         if r.head == "loop" && kept_loops.contains(&i) {
             let Some(owner) = r.ref_at(5) else { continue };
-            let coedges = ring_coedges(r, by_index, kept_coedges);
+            let coedges = ring_coedges(r, by_index, kept_coedges, format);
             out.loops.push(Loop {
-                id: LoopId(id(i)),
-                face: FaceId(id(owner)),
+                id: LoopId(id(format, i)),
+                face: FaceId(id(format, owner)),
                 boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges,
                 vertex_uses: Vec::new(),
@@ -3680,11 +3805,12 @@ pub(crate) fn emit_loops(
 /// Emit reachable faces, folding surface reversal into the normalized sense and
 /// recording native sidedness.
 pub(crate) fn emit_faces(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     reach: &Reachable,
     inward_normal_surfaces: &HashSet<i64>,
+    format: IdFormat<'_>,
 ) {
     let Reachable {
         faces: kept_faces,
@@ -3699,7 +3825,7 @@ pub(crate) fn emit_faces(
             let (Some(surface), Some(owner)) = (r.ref_at(7), r.ref_at(5)) else {
                 continue;
             };
-            let loops = loop_chain(r, by_index, kept_loops);
+            let loops = loop_chain(r, by_index, kept_loops, format);
             // The face record's sense is relative to its surface record's
             // orientation. A reversed spline record flips the cache normal,
             // and a negative-cosine cone points its normal toward the axis;
@@ -3719,9 +3845,9 @@ pub(crate) fn emit_faces(
                 };
             }
             out.faces.push(Face {
-                id: FaceId(id(i)),
-                shell: ShellId(id(owner)),
-                surface: SurfaceId(id(surface)),
+                id: FaceId(id(format, i)),
+                shell: ShellId(id(format, owner)),
+                surface: SurfaceId(id(format, surface)),
                 sense,
                 loops,
                 name: attribute_name(r),
@@ -3734,8 +3860,8 @@ pub(crate) fn emit_faces(
                 _ => None,
             };
             out.face_sidedness.push(FaceSidedness {
-                id: format!("f3d:asm:face-sidedness#{i}"),
-                face: FaceId(id(i)),
+                id: format!("{format}:asm:face-sidedness#{i}"),
+                face: FaceId(id(format, i)),
                 record_index: r.index as u32,
                 native_sense,
                 normalized_sense: sense,
@@ -3747,14 +3873,19 @@ pub(crate) fn emit_faces(
 
 /// Emit shells, regions, and bodies for every record so back-references
 /// resolve, filtering child lists to reachable entities.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+)]
 pub(crate) fn emit_containers(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     reach: &Reachable,
     wire: &WireShellTopology,
     stream: &str,
     header_scale: f64,
+    format: IdFormat<'_>,
 ) {
     let Reachable {
         faces: kept_faces, ..
@@ -3771,22 +3902,22 @@ pub(crate) fn emit_containers(
         match r.head.as_str() {
             "shell" => {
                 let Some(owner) = r.ref_at(7) else { continue };
-                let faces = shell_faces(r, by_index, kept_faces);
+                let faces = shell_faces(r, by_index, kept_faces, format);
                 out.shells.push(Shell {
-                    id: ShellId(id(i)),
-                    region: RegionId(id(owner)),
+                    id: ShellId(id(format, i)),
+                    region: RegionId(id(format, owner)),
                     faces,
                     wire_edges: wire_edges_by_shell
                         .get(&i)
                         .into_iter()
                         .flatten()
-                        .map(|edge| EdgeId(id(*edge)))
+                        .map(|edge| EdgeId(id(format, *edge)))
                         .collect(),
                     free_vertices: free_vertices_by_shell
                         .get(&i)
                         .into_iter()
                         .flatten()
-                        .map(|vertex| VertexId(id(*vertex)))
+                        .map(|vertex| VertexId(id(format, *vertex)))
                         .collect(),
                 });
             }
@@ -3794,19 +3925,19 @@ pub(crate) fn emit_containers(
             // carry the original ACIS head `lump`. Same layout in both.
             "region" | "lump" => {
                 let Some(owner) = r.ref_at(5) else { continue };
-                let shells = shell_chain(r, by_index);
+                let shells = shell_chain(r, by_index, format);
                 out.regions.push(Region {
-                    id: RegionId(id(i)),
-                    body: BodyId(id(owner)),
+                    id: RegionId(id(format, i)),
+                    body: BodyId(id(format, owner)),
                     shells,
                 });
             }
             "body" => {
-                let regions = region_chain(r, by_index);
-                let body_id = BodyId(id(i));
+                let regions = region_chain(r, by_index, format);
+                let body_id = BodyId(id(format, i));
                 if let Some(Token::Long(key)) = r.chunk(1) {
                     out.body_native_keys.push(BodyNativeKey {
-                        id: format!("f3d:asm:body-native-key#{i}"),
+                        id: format!("{format}:asm:body-native-key#{i}"),
                         body: body_id.clone(),
                         record_index: r.index as u32,
                         body_ordinal: out.body_native_keys.len() as u32,
@@ -3830,7 +3961,7 @@ pub(crate) fn emit_containers(
                         .collect::<Vec<_>>();
                     if let [rotation, reflection, shear] = flags.as_slice() {
                         out.transform_hints.push(TransformHints {
-                            id: format!("f3d:asm:transform-hints#{}", transform.index),
+                            id: format!("{format}:asm:transform-hints#{}", transform.index),
                             body: body_id.clone(),
                             record_index: transform.index as u32,
                             rotation: *rotation,
@@ -3854,9 +3985,9 @@ pub(crate) fn emit_containers(
         }
     }
     for &edge in saved_free_edges {
-        let body_id = BodyId(format!("f3d:brep:saved-edge-body#{edge}"));
-        let region_id = RegionId(format!("f3d:brep:saved-edge-region#{edge}"));
-        let shell_id = ShellId(format!("f3d:brep:saved-edge-shell#{edge}"));
+        let body_id = BodyId(format!("{format}:brep:saved-edge-body#{edge}"));
+        let region_id = RegionId(format!("{format}:brep:saved-edge-region#{edge}"));
+        let shell_id = ShellId(format!("{format}:brep:saved-edge-shell#{edge}"));
         out.bodies.push(Body {
             id: body_id.clone(),
             kind: cadmpeg_ir::topology::BodyKind::Wire,
@@ -3875,7 +4006,7 @@ pub(crate) fn emit_containers(
             id: shell_id,
             region: region_id,
             faces: Vec::new(),
-            wire_edges: vec![EdgeId(id(edge))],
+            wire_edges: vec![EdgeId(id(format, edge))],
             free_vertices: Vec::new(),
         });
     }
@@ -3884,9 +4015,10 @@ pub(crate) fn emit_containers(
 /// Project subshell-owned faces onto their nearest shell ancestor, since the
 /// neutral IR has no subshell arena.
 pub(crate) fn project_subshell_faces(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
+    format: IdFormat<'_>,
 ) {
     let subshell_shells = subshell_ancestor_shells(records, by_index);
     for face in &mut out.faces {
@@ -3898,7 +4030,7 @@ pub(crate) fn project_subshell_faces(
             .and_then(|index| by_index.get(&index))
             .and_then(|record| record.ref_at(5));
         if let Some(shell) = native_owner.and_then(|owner| subshell_shells.get(&owner)) {
-            face.shell = ShellId(id(*shell));
+            face.shell = ShellId(id(format, *shell));
         }
     }
 }
@@ -3906,10 +4038,11 @@ pub(crate) fn project_subshell_faces(
 /// Emit direct and inherited entity attributes and derive the link, tag, and
 /// timestamp projections. Returns the set of emitted attribute record indices.
 pub(crate) fn emit_attributes(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     reach: &Reachable,
+    format: IdFormat<'_>,
 ) -> HashSet<i64> {
     let Reachable {
         faces: kept_faces,
@@ -3924,22 +4057,36 @@ pub(crate) fn emit_attributes(
     for record in records {
         let index = record.index as i64;
         let target = match record.head.as_str() {
-            "body" if out.bodies.iter().any(|entity| entity.id.0 == id(index)) => {
-                Some(AttributeTarget::Body(BodyId(id(index))))
+            "body"
+                if out
+                    .bodies
+                    .iter()
+                    .any(|entity| entity.id.0 == id(format, index)) =>
+            {
+                Some(AttributeTarget::Body(BodyId(id(format, index))))
             }
-            "shell" if out.shells.iter().any(|entity| entity.id.0 == id(index)) => {
-                Some(AttributeTarget::Shell(ShellId(id(index))))
+            "shell"
+                if out
+                    .shells
+                    .iter()
+                    .any(|entity| entity.id.0 == id(format, index)) =>
+            {
+                Some(AttributeTarget::Shell(ShellId(id(format, index))))
             }
-            "face" if kept_faces.contains(&index) => Some(AttributeTarget::Face(FaceId(id(index)))),
-            "loop" if kept_loops.contains(&index) => Some(AttributeTarget::Loop(LoopId(id(index)))),
+            "face" if kept_faces.contains(&index) => {
+                Some(AttributeTarget::Face(FaceId(id(format, index))))
+            }
+            "loop" if kept_loops.contains(&index) => {
+                Some(AttributeTarget::Loop(LoopId(id(format, index))))
+            }
             "coedge" | "tcoedge" if kept_coedges.contains(&index) => {
-                Some(AttributeTarget::Coedge(CoedgeId(id(index))))
+                Some(AttributeTarget::Coedge(CoedgeId(id(format, index))))
             }
             "edge" | "tedge" if kept_edges.contains(&index) => {
-                Some(AttributeTarget::Edge(EdgeId(id(index))))
+                Some(AttributeTarget::Edge(EdgeId(id(format, index))))
             }
             "vertex" | "tvertex" if kept_vertices.contains(&index) => {
-                Some(AttributeTarget::Vertex(VertexId(id(index))))
+                Some(AttributeTarget::Vertex(VertexId(id(format, index))))
             }
             _ => None,
         };
@@ -3951,6 +4098,7 @@ pub(crate) fn emit_attributes(
                 by_index,
                 &mut emitted_attributes,
                 &mut out.attributes,
+                format,
             );
         }
     }
@@ -3965,39 +4113,21 @@ pub(crate) fn emit_attributes(
             .and_then(|owner| inherited_attribute_target(owner, by_index, &attribute_targets))
         {
             emitted_attributes.insert(index);
-            out.attributes.push(source_attribute(record, target));
+            out.attributes
+                .push(source_attribute(record, target, format));
         }
     }
-    out.sketch_curve_links = out
-        .attributes
-        .iter()
-        .filter_map(sketch_curve_link)
-        .collect();
-    out.persistent_design_links = out
-        .attributes
-        .iter()
-        .flat_map(persistent_design_links)
-        .collect();
-    out.persistent_subentity_tags = out
-        .attributes
-        .iter()
-        .flat_map(persistent_subentity_tags)
-        .collect();
-    out.creation_timestamps = out
-        .attributes
-        .iter()
-        .filter_map(creation_timestamp)
-        .collect();
     emitted_attributes
 }
 
 /// Preserve undecoded carriers and opaque cached procedural surfaces referenced
 /// by real topology as passthrough unknown records.
 pub(crate) fn emit_passthrough_unknowns(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     bytes: &[u8],
     reach: &Reachable,
+    format: IdFormat<'_>,
 ) {
     let Reachable {
         undecoded_carriers,
@@ -4008,7 +4138,7 @@ pub(crate) fn emit_passthrough_unknowns(
         let i = r.index as i64;
         if undecoded_carriers.contains(&i) || cached_unknown_procedural_surfaces.contains(&i) {
             out.unknowns.push(UnknownRecord {
-                id: UnknownId(unknown_record_id(r)),
+                id: UnknownId(unknown_record_id(r, format)),
                 offset: r.offset as u64,
                 byte_len: r.len as u64,
                 sha256: sha256_hex(&bytes[r.offset..(r.offset + r.len).min(bytes.len())]),
@@ -4021,7 +4151,7 @@ pub(crate) fn emit_passthrough_unknowns(
 
 /// Count record kinds that were neither emitted nor preserved.
 pub(crate) fn count_other_records(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     reach: &Reachable,
     emitted_attributes: &HashSet<i64>,
@@ -4071,10 +4201,11 @@ pub(crate) fn count_other_records(
 /// Emit annotation records mapping every emitted entity, attribute, unknown,
 /// and synthetic procedural id back to its source record offset.
 pub(crate) fn emit_annotation_records(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     stream: &str,
+    format: IdFormat<'_>,
 ) {
     let curve_geometries = out
         .curves
@@ -4118,7 +4249,7 @@ pub(crate) fn emit_annotation_records(
         )
         .collect::<HashSet<_>>();
     for record in records {
-        let entity_id = id(record.index as i64);
+        let entity_id = id(format, record.index as i64);
         if emitted_ids.contains(entity_id.as_str()) {
             let mut derived_fields = Vec::new();
             match record.head.as_str() {
@@ -4164,7 +4295,7 @@ pub(crate) fn emit_annotation_records(
                 derived_fields,
             });
         }
-        let attribute_id = format!("f3d:brep:attribute#{}", record.index);
+        let attribute_id = format!("{format}:brep:attribute#{}", record.index);
         if attribute_ids.contains(attribute_id.as_str()) {
             out.annotation_records.push(AnnotationRecord {
                 id: attribute_id,
@@ -4174,7 +4305,7 @@ pub(crate) fn emit_annotation_records(
                 derived_fields: Vec::new(),
             });
         }
-        let unknown_id = unknown_record_id(record);
+        let unknown_id = unknown_record_id(record, format);
         if unknown_ids.contains(unknown_id.as_str()) {
             out.annotation_records.push(AnnotationRecord {
                 id: unknown_id,
@@ -4186,11 +4317,11 @@ pub(crate) fn emit_annotation_records(
         }
         for (synthetic_id, tag) in [
             (
-                format!("f3d:brep:procedural_surface#{}", record.index),
+                format!("{format}:brep:procedural_surface#{}", record.index),
                 "procedural_surface",
             ),
             (
-                format!("f3d:brep:procedural_curve#{}", record.index),
+                format!("{format}:brep:procedural_curve#{}", record.index),
                 "procedural_curve",
             ),
         ] {
@@ -4205,6 +4336,7 @@ pub(crate) fn emit_annotation_records(
             }
         }
     }
+    let procedural_surface_prefix = format!("{format}:brep:procedural_surface#");
     for (entity_id, tag) in out
         .surfaces
         .iter()
@@ -4215,7 +4347,7 @@ pub(crate) fn emit_annotation_records(
                 .map(|entity| (entity.id.0.as_str(), "procedural_curve_child")),
         )
     {
-        if !entity_id.starts_with("f3d:brep:procedural_surface#") {
+        if !entity_id.starts_with(&procedural_surface_prefix) {
             continue;
         }
         let Some(index) = entity_id

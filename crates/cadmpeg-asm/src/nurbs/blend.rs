@@ -6,45 +6,44 @@
 //! Blend spline-surface decoders (cylindrical, rolling-ball, variable, vertex, and rb blends).
 
 use crate::nurbs::core::{
-    decode_curve_block, decode_curve_cache_at, decode_owned_curve_cache_at,
+    curve_block, decode_curve_block, decode_owned_curve_cache_at,
     decode_owned_curve_cache_resolving_refs_at, decode_owned_surface_cache_at,
-    decode_owned_surface_cache_resolving_refs_at, decode_surface_block,
+    decode_owned_surface_cache_resolving_refs_at, decode_surface_block, surface_block,
 };
-use crate::nurbs::pcurve::decode_pcurve_block_with_end;
+use crate::nurbs::pcurve::pcurve_block_with_end;
 use crate::nurbs::proc_curve::{
-    decode_embedded_base_curve_resolving_refs, decode_embedded_surface,
-    decode_embedded_surface_with_ranges, decode_optional_embedded_surface_with_bounds,
-    decode_par_int_cur_isoline,
+    decode_embedded_surface_with_ranges, decode_par_int_cur_isoline,
+    embedded_base_curve_resolving_refs, embedded_surface, embedded_surface_with_ranges,
+    optional_embedded_surface_with_bounds, par_int_cur_isoline,
 };
 use crate::nurbs::proc_surface::{
-    decode_nullable_embedded_pcurve, decode_revision_surface_tail, DecodedProceduralSurface,
-    DecodedProceduralSurfaceDefinition, EmbeddedRollingBall, EmbeddedRollingBallRadiusSelector,
-    EmbeddedRollingBallSide, EmbeddedRollingBallThirdSide, EmbeddedVariableBlend,
-    EmbeddedVertexBlend, EmbeddedVertexBlendBoundary, EmbeddedVertexBlendBoundaryGeometry,
-    RevisionSurfaceTail,
+    decode_nullable_embedded_pcurve, nullable_embedded_pcurve, revision_surface_tail,
+    DecodedProceduralSurface, DecodedProceduralSurfaceDefinition, EmbeddedRollingBall,
+    EmbeddedRollingBallRadiusSelector, EmbeddedRollingBallSide, EmbeddedRollingBallThirdSide,
+    EmbeddedVariableBlend, EmbeddedVertexBlend, EmbeddedVertexBlendBoundary,
+    EmbeddedVertexBlendBoundaryGeometry, RevisionSurfaceTail,
 };
 use crate::nurbs::reader::{
-    marker_at, marker_positions, owned_marker_positions, take_bool, take_f64, take_native_ident,
-    take_native_string, take_native_vec3, take_optional_range_value, take_tagged_int, unit_vector,
-    LEN_TO_MM,
+    marker_at, take_bool, take_f64, take_native_ident, take_native_string, take_native_vec3,
+    take_optional_range_value, take_tagged_int, unit_vector, LEN_TO_MM,
 };
-use crate::nurbs::subtypes::{find_owned_subtype_marker, next_token, subtype_span, SubtypeTables};
-use cadmpeg_core::le::{f64_at as read_f64, int_at as read_int};
+use crate::nurbs::subtypes::{subtype_span, SubtypeTables};
+use crate::nurbs::toks::{self, Cur, SubtypeTable};
+use crate::sab::Token;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
 /// Decode an inline `cyl_spl_sur` translational-extrusion definition.
-pub(crate) fn decode_cyl_spl_sur_at(
-    record_bytes: &[u8],
-    int_width: usize,
-    resolver: Option<(&[u8], &SubtypeTables)>,
+pub(crate) fn cyl_spl_sur(
+    toks: &[Token],
+    resolver: Option<&SubtypeTable>,
 ) -> Option<DecodedProceduralSurface> {
-    let names: [&[u8]; 2] = [b"cyl_spl_sur", b"cylsur"];
-    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name.len() + 3;
+    let names = ["cyl_spl_sur", "cylsur"];
+    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
     // The revision-gated layout stores the directrix as a nested intcurve scope
     // and ends with the shared revision-gated surface tail, so its cache is
     // located by parsing that tail. The compact layout has no tail: its optional
@@ -56,39 +55,33 @@ pub(crate) fn decode_cyl_spl_sur_at(
         native_position,
         cache_fit_tolerance,
         revision_form,
-    ) = if span.get(position) == Some(&0x04) {
-        let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    ) = if matches!(cur.peek(), Some(Token::Long(_))) {
+        let revision = cur.take_long()?;
         // Sense flag of the embedded directrix curve. It is the carrier's
         // whole boolean run, so it travels in the revision form's `flags`.
-        let directrix_start = position;
-        let directrix_sense = if matches!(span.get(position), Some(0x0a | 0x0b)) {
-            span.get(position) == Some(&0x0a)
+        let directrix_start = cur.pos();
+        let directrix_sense = if matches!(cur.peek(), Some(Token::True | Token::False)) {
+            matches!(cur.peek(), Some(Token::True))
         } else {
-            (take_native_ident(span, &mut position)? == "intcurve").then_some(())?;
-            let sense = take_bool(span, &mut position)?;
-            position = directrix_start;
+            (cur.take_ident()? == "intcurve").then_some(())?;
+            let sense = cur.take_bool()?;
+            cur.set_pos(directrix_start);
             sense
         };
-        let (active_bytes, tables) = resolver?;
-        let directrix = decode_embedded_base_curve_resolving_refs(
-            span,
-            &mut position,
-            int_width,
-            active_bytes,
-            tables,
-        )?;
-        let start = take_optional_range_value(span, &mut position)?;
-        let end = take_optional_range_value(span, &mut position)?;
+        let table = resolver?;
+        let directrix = embedded_base_curve_resolving_refs(&mut cur, table)?;
+        let start = cur.take_optional_range_value()?;
+        let end = cur.take_optional_range_value()?;
         let interval = [start?, end?];
-        let direction = take_native_vec3(span, &mut position, 0x14)?;
-        let native_position = take_native_vec3(span, &mut position, 0x13)?;
+        let direction = cur.take_vector3()?;
+        let native_position = cur.take_position()?;
         let RevisionSurfaceTail {
             enumeration: tail_enum,
             fit_tolerance,
             parameterization,
             discontinuities,
             tail_flag,
-        } = decode_revision_surface_tail(span, &mut position, int_width)?;
+        } = revision_surface_tail(&mut cur)?;
         (
             directrix,
             interval,
@@ -109,19 +102,18 @@ pub(crate) fn decode_cyl_spl_sur_at(
             }),
         )
     } else {
-        let directrix = decode_curve_cache_at(span, int_width)?;
-        let interval = [
-            take_f64(span, &mut position)?,
-            take_f64(span, &mut position)?,
-        ];
-        let direction = take_native_vec3(span, &mut position, 0x14)?;
-        let native_position = take_native_vec3(span, &mut position, 0x13)?;
-        let cache_fit_tolerance = owned_marker_positions(span, int_width)
+        let directrix = crate::nurbs::core::curve_cache(span)?;
+        let interval = [cur.take_f64()?, cur.take_f64()?];
+        let direction = cur.take_vector3()?;
+        let native_position = cur.take_position()?;
+        let cache_fit_tolerance = toks::owned_marker_positions(span)
             .into_iter()
-            .filter_map(|at| decode_surface_block(span, at, int_width))
+            .filter_map(|at| surface_block(span, at))
             .next_back()
-            .filter(|cache| span.get(cache.end) == Some(&0x06))
-            .and_then(|cache| read_f64(span, cache.end + 1).map(|v| v * LEN_TO_MM));
+            .and_then(|(_, cache_end)| match span.get(cache_end) {
+                Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
+                _ => None,
+            });
         (
             directrix,
             interval,
@@ -159,7 +151,7 @@ pub(crate) fn decode_rolling_ball_side(
     reference_context: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<EmbeddedRollingBallSide> {
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
-    let support_kind = match take_native_string(bytes, position)?.as_str() {
+    let support_kind = match take_native_string(bytes, position, int_width)?.as_str() {
         "blend_support_cos_curve" | "blendsupcos" => VariableBlendSupportKind::CosineCurve,
         "blend_support_curve" | "blendsupcur" => VariableBlendSupportKind::Curve,
         "blend_support_point_curve" | "blendsuppnt" => VariableBlendSupportKind::PointCurve,
@@ -389,25 +381,242 @@ pub(crate) fn decode_rolling_ball_curve(
     })
 }
 
-fn decode_rolling_ball_third_side(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-) -> Option<EmbeddedRollingBallThirdSide> {
-    let label = take_native_string(bytes, position)?;
-    let surface = decode_embedded_surface(bytes, position, int_width)?;
-    let curve = decode_curve_block(bytes, *position, int_width)?;
-    *position = curve.end;
-    let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
-    let direction = take_native_vec3(bytes, position, 0x14)?;
-    let secondary_pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
-    let extension = take_tagged_int(bytes, position, 0x04, int_width)?;
-    let tertiary_pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
-    let flag = take_bool(bytes, position)?;
+/// Decode one rolling-ball support side. Token-space counterpart of
+/// [`decode_rolling_ball_side`].
+pub(crate) fn rolling_ball_side(
+    cur: &mut Cur<'_>,
+    reference_context: Option<&SubtypeTable>,
+) -> Option<EmbeddedRollingBallSide> {
+    use cadmpeg_ir::geometry::VariableBlendSupportKind;
+    let support_kind = match cur.take_str()? {
+        "blend_support_cos_curve" | "blendsupcos" => VariableBlendSupportKind::CosineCurve,
+        "blend_support_curve" | "blendsupcur" => VariableBlendSupportKind::Curve,
+        "blend_support_point_curve" | "blendsuppnt" => VariableBlendSupportKind::PointCurve,
+        "blend_support_surface" | "blendsupsur" => VariableBlendSupportKind::Surface,
+        "blend_support_zero_curve" | "blendsupzro" => VariableBlendSupportKind::ZeroCurve,
+        _ => return None,
+    };
+    let (surface, surface_ranges) = optional_rolling_ball_surface(cur, reference_context)?;
+    let saved = cur.pos();
+    let (curve, curve_range) = if cur.take_ident() == Some("null_curve") {
+        (None, [None, None])
+    } else {
+        cur.set_pos(saved);
+        let curve = rolling_ball_curve(cur, reference_context)?;
+        (Some(curve.geometry), curve.parameter_range)
+    };
+    let pcurve = nullable_embedded_pcurve(cur)?;
+    let location = cur.take_position()?;
+    let secondary_pcurve = nullable_embedded_pcurve(cur)?;
+    let extension_start = cur.pos();
+    let extension_fields = (|| {
+        let extension = cur.take_long()?;
+        let tertiary = nullable_embedded_pcurve(cur)?;
+        Some((extension, tertiary))
+    })();
+    let (extension, tertiary_pcurve) = match extension_fields {
+        Some((extension, tertiary)) => (Some(extension), tertiary),
+        None => {
+            cur.set_pos(extension_start);
+            (None, None)
+        }
+    };
+    Some(EmbeddedRollingBallSide {
+        support_kind,
+        surface,
+        surface_ranges,
+        curve,
+        curve_range,
+        pcurve,
+        location: Point3::new(
+            location[0] * LEN_TO_MM,
+            location[1] * LEN_TO_MM,
+            location[2] * LEN_TO_MM,
+        ),
+        secondary_pcurve,
+        extension,
+        tertiary_pcurve,
+    })
+}
+
+/// A support-surface slot: the `null_surface` ident, or an embedded surface and
+/// its parameter bounds. Token-space counterpart of
+/// [`decode_optional_rolling_ball_surface`].
+pub(crate) fn optional_rolling_ball_surface(
+    cur: &mut Cur<'_>,
+    reference_context: Option<&SubtypeTable>,
+) -> Option<OptionalSupportSurface> {
+    let saved = cur.pos();
+    if cur.take_ident() == Some("null_surface") {
+        return Some((None, [[None, None], [None, None]]));
+    }
+    cur.set_pos(saved);
+    rolling_ball_surface(cur, reference_context).map(|(surface, ranges)| (Some(surface), ranges))
+}
+
+/// Decode one rolling-ball support surface. Token-space counterpart of
+/// [`decode_rolling_ball_surface`].
+pub(crate) fn rolling_ball_surface(
+    cur: &mut Cur<'_>,
+    reference_context: Option<&SubtypeTable>,
+) -> Option<(SurfaceGeometry, [[Option<f64>; 2]; 2])> {
+    let toks = cur.toks();
+    let saved = cur.pos();
+    let kind = cur.take_ident()?;
+    if kind == "spline" {
+        if toks::marker_at(toks, cur.pos()).is_some() {
+            let (surface, surface_end) = surface_block(toks, cur.pos())?;
+            cur.set_pos(surface_end);
+            let ranges = surface_ranges(cur)?;
+            return Some((SurfaceGeometry::Nurbs(surface), ranges));
+        }
+        cur.take_bool()?;
+        let scope = toks::subtype_span(toks, cur.pos())?;
+        let surface = reference_context
+            .and_then(|table| crate::nurbs::core::owned_surface_cache_resolving_refs(scope, table))
+            .or_else(|| crate::nurbs::core::owned_surface_cache(scope))?;
+        cur.set_pos(cur.pos() + scope.len());
+        let ranges = surface_ranges(cur)?;
+        return Some((SurfaceGeometry::Nurbs(surface), ranges));
+    }
+    cur.set_pos(saved);
+    embedded_surface_with_ranges(cur)
+}
+
+/// Four optional U/V range bounds. Token-space counterpart of
+/// [`decode_surface_ranges`].
+pub(crate) fn surface_ranges(cur: &mut Cur<'_>) -> Option<[[Option<f64>; 2]; 2]> {
+    Some([
+        [
+            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?,
+        ],
+        [
+            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?,
+        ],
+    ])
+}
+
+/// Decode one rolling-ball curve slot. Token-space counterpart of
+/// [`decode_rolling_ball_curve`].
+pub(crate) fn rolling_ball_curve(
+    cur: &mut Cur<'_>,
+    reference_context: Option<&SubtypeTable>,
+) -> Option<DecodedRollingBallCurve> {
+    let toks = cur.toks();
+    if toks::marker_at(toks, cur.pos()).is_some() {
+        let (curve, curve_end) = curve_block(toks, cur.pos())?;
+        cur.set_pos(curve_end);
+        let parameter_range = [
+            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?,
+        ];
+        return Some(DecodedRollingBallCurve {
+            geometry: CurveGeometry::Nurbs(curve),
+            parameter_range,
+        });
+    }
+    let kind = cur.take_ident()?;
+    if kind == "intcurve" {
+        cur.take_bool()?;
+        let scope = toks::subtype_span(toks, cur.pos())?;
+        let curve = reference_context
+            .and_then(|table| crate::nurbs::core::owned_curve_cache_resolving_refs(scope, table))
+            .or_else(|| crate::nurbs::core::owned_curve_cache(scope))
+            .or_else(|| par_int_cur_isoline(scope, reference_context))?;
+        cur.set_pos(cur.pos() + scope.len());
+        let parameter_range = [
+            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?,
+        ];
+        return Some(DecodedRollingBallCurve {
+            geometry: CurveGeometry::Nurbs(curve),
+            parameter_range,
+        });
+    }
+    let geometry = match kind {
+        "straight" => {
+            let origin = cur.take_position()?;
+            let direction = cur.take_vector3()?;
+            CurveGeometry::Line {
+                origin: Point3::new(
+                    origin[0] * LEN_TO_MM,
+                    origin[1] * LEN_TO_MM,
+                    origin[2] * LEN_TO_MM,
+                ),
+                direction: unit_vector(Vector3::new(direction[0], direction[1], direction[2]))?,
+            }
+        }
+        "ellipse" => {
+            let center = cur.take_position()?;
+            let axis = cur.take_vector3()?;
+            let reference = cur.take_vector3()?;
+            let ratio = cur.take_f64()?;
+            let reference = Vector3::new(reference[0], reference[1], reference[2]);
+            let major_radius = reference.norm() * LEN_TO_MM;
+            if (ratio.abs() - 1.0).abs() <= f64::EPSILON {
+                CurveGeometry::Circle {
+                    center: Point3::new(
+                        center[0] * LEN_TO_MM,
+                        center[1] * LEN_TO_MM,
+                        center[2] * LEN_TO_MM,
+                    ),
+                    axis: unit_vector(Vector3::new(axis[0], axis[1], axis[2]))?,
+                    ref_direction: unit_vector(reference)?,
+                    radius: major_radius,
+                }
+            } else {
+                CurveGeometry::Ellipse {
+                    center: Point3::new(
+                        center[0] * LEN_TO_MM,
+                        center[1] * LEN_TO_MM,
+                        center[2] * LEN_TO_MM,
+                    ),
+                    axis: unit_vector(Vector3::new(axis[0], axis[1], axis[2]))?,
+                    major_direction: unit_vector(reference)?,
+                    major_radius,
+                    minor_radius: major_radius * ratio.abs(),
+                }
+            }
+        }
+        "degenerate_curve" => {
+            let point = cur.take_position()?;
+            CurveGeometry::Degenerate {
+                point: Point3::new(
+                    point[0] * LEN_TO_MM,
+                    point[1] * LEN_TO_MM,
+                    point[2] * LEN_TO_MM,
+                ),
+            }
+        }
+        _ => return None,
+    };
+    let parameter_range = [
+        cur.take_optional_range_value()?,
+        cur.take_optional_range_value()?,
+    ];
+    Some(DecodedRollingBallCurve {
+        geometry,
+        parameter_range,
+    })
+}
+
+fn rolling_ball_third_side(cur: &mut Cur<'_>) -> Option<EmbeddedRollingBallThirdSide> {
+    let label = cur.take_str()?.to_string();
+    let surface = embedded_surface(cur)?;
+    let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
+    cur.set_pos(curve_end);
+    let pcurve = nullable_embedded_pcurve(cur)?;
+    let direction = cur.take_vector3()?;
+    let secondary_pcurve = nullable_embedded_pcurve(cur)?;
+    let extension = cur.take_long()?;
+    let tertiary_pcurve = nullable_embedded_pcurve(cur)?;
+    let flag = cur.take_bool()?;
     Some(EmbeddedRollingBallThirdSide {
         label,
         surface,
-        curve: curve.curve,
+        curve,
         pcurve,
         direction: Vector3::new(direction[0], direction[1], direction[2]),
         secondary_pcurve,
@@ -417,19 +626,17 @@ fn decode_rolling_ball_third_side(
     })
 }
 
-fn take_blend_value_name(bytes: &[u8], position: &mut usize) -> Option<String> {
-    let saved = *position;
-    if let Some(value) = take_native_string(bytes, position) {
-        return Some(value);
+fn blend_value_name(cur: &mut Cur<'_>) -> Option<String> {
+    let saved = cur.pos();
+    if let Some(value) = cur.take_str() {
+        return Some(value.to_string());
     }
-    *position = saved;
-    take_native_ident(bytes, position)
+    cur.set_pos(saved);
+    cur.take_ident().map(str::to_string)
 }
 
-fn decode_variable_blend_value(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
+fn variable_blend_value(
+    cur: &mut Cur<'_>,
     modern: bool,
     depth: usize,
 ) -> Option<cadmpeg_ir::geometry::VariableBlendValue> {
@@ -440,47 +647,40 @@ fn decode_variable_blend_value(
     if depth > 32 {
         return None;
     }
-    let name = take_blend_value_name(bytes, position)?;
-    let discriminator = if bytes.get(*position) == Some(&0x04) {
-        take_tagged_int(bytes, position, 0x04, int_width)?
+    let name = blend_value_name(cur)?;
+    let discriminator = if matches!(cur.peek(), Some(Token::Long(_))) {
+        cur.take_long()?
     } else {
         1
     };
-    let calibrated = take_tagged_int(bytes, position, 0x15, int_width)?;
-    let modern_flag = if modern {
-        take_bool(bytes, position)?
-    } else {
-        false
-    };
+    let calibrated = cur.take_enum()?;
+    let modern_flag = if modern { cur.take_bool()? } else { false };
     let payload = match name.as_str() {
         "fixed_width" => VariableBlendValuePayload::FixedWidth {
-            parameters: [take_f64(bytes, position)?, take_f64(bytes, position)?],
-            width: take_f64(bytes, position)?,
+            parameters: [cur.take_f64()?, cur.take_f64()?],
+            width: cur.take_f64()?,
         },
         "two_ends" => VariableBlendValuePayload::TwoEnds {
-            parameters: [take_f64(bytes, position)?, take_f64(bytes, position)?],
-            radii: [
-                take_f64(bytes, position)? * LEN_TO_MM,
-                take_f64(bytes, position)? * LEN_TO_MM,
-            ],
+            parameters: [cur.take_f64()?, cur.take_f64()?],
+            radii: [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM],
         },
         // The payload is the law-domain parameter range and one offset, so the
         // second field is a parameter and only the third is a length. The
         // sub-discriminator selects no layout here; it is still read and written
         // as the format stores it, and no value outside `0` and `1` is defined.
         "edge_offset" if matches!(discriminator, 0 | 1) => VariableBlendValuePayload::EdgeOffset {
-            scalars: vec![take_f64(bytes, position)?, take_f64(bytes, position)?],
-            lengths: vec![take_f64(bytes, position)? * LEN_TO_MM],
+            scalars: vec![cur.take_f64()?, cur.take_f64()?],
+            lengths: vec![cur.take_f64()? * LEN_TO_MM],
         },
         "functional" => {
-            let parameter = take_f64(bytes, position)?;
-            let radius = take_f64(bytes, position)? * LEN_TO_MM;
-            let (function, end) = decode_pcurve_block_with_end(bytes, *position, int_width)?;
-            *position = end;
-            let terminal = if bytes.get(*position) == Some(&0x06) {
-                LoftBridgeToken::Double(take_f64(bytes, position)?)
+            let parameter = cur.take_f64()?;
+            let radius = cur.take_f64()? * LEN_TO_MM;
+            let (function, end) = pcurve_block_with_end(cur.toks(), cur.pos())?;
+            cur.set_pos(end);
+            let terminal = if matches!(cur.peek(), Some(Token::Double(_))) {
+                LoftBridgeToken::Double(cur.take_f64()?)
             } else {
-                LoftBridgeToken::Text(take_blend_value_name(bytes, position)?)
+                LoftBridgeToken::Text(blend_value_name(cur)?)
             };
             VariableBlendValuePayload::Functional {
                 parameter,
@@ -496,40 +696,37 @@ fn decode_variable_blend_value(
             }
         }
         "const" => VariableBlendValuePayload::Constant {
-            parameters: [take_f64(bytes, position)?, take_f64(bytes, position)?],
-            radius: take_f64(bytes, position)? * LEN_TO_MM,
-            variable_chamfer: take_tagged_int(bytes, position, 0x15, int_width)?,
-            chamfer_type: take_tagged_int(bytes, position, 0x15, int_width)?,
-            nested: Box::new(decode_variable_blend_value(
-                bytes,
-                position,
-                int_width,
-                modern,
-                depth + 1,
-            )?),
+            parameters: [cur.take_f64()?, cur.take_f64()?],
+            radius: cur.take_f64()? * LEN_TO_MM,
+            variable_chamfer: cur.take_enum()?,
+            chamfer_type: cur.take_enum()?,
+            nested: Box::new(variable_blend_value(cur, modern, depth + 1)?),
         },
         "interp" => {
-            let parameter = take_f64(bytes, position)?;
-            let radius = take_f64(bytes, position)? * LEN_TO_MM;
-            let (function, end) = decode_pcurve_block_with_end(bytes, *position, int_width)?;
-            *position = end;
+            let parameter = cur.take_f64()?;
+            let radius = cur.take_f64()? * LEN_TO_MM;
+            let (function, end) = pcurve_block_with_end(cur.toks(), cur.pos())?;
+            cur.set_pos(end);
             // The extension enum precedes the radius-point count and gates
             // nothing. Revision-gated streams store it as a 0x15 enum token;
             // pre-revision streams use a 0x04 integer.
-            let enum_tagged = bytes.get(*position) == Some(&0x15);
-            let count_tag = if enum_tagged { 0x15 } else { 0x04 };
-            let enum_count = take_tagged_int(bytes, position, count_tag, int_width)?;
-            let count = usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
+            let enum_tagged = matches!(cur.peek(), Some(Token::Enum(_)));
+            let enum_count = if enum_tagged {
+                cur.take_enum()?
+            } else {
+                cur.take_long()?
+            };
+            let count = usize::try_from(cur.take_long()?).ok()?;
             if count > 100_000 {
                 return None;
             }
             let mut points = Vec::with_capacity(count);
             for _ in 0..count {
-                let parameter = take_f64(bytes, position)?;
-                let radius = take_f64(bytes, position)? * LEN_TO_MM;
-                let tangents = [take_f64(bytes, position)?, take_f64(bytes, position)?];
-                let location = take_native_vec3(bytes, position, 0x13)?;
-                let normal = take_native_vec3(bytes, position, 0x14)?;
+                let parameter = cur.take_f64()?;
+                let radius = cur.take_f64()? * LEN_TO_MM;
+                let tangents = [cur.take_f64()?, cur.take_f64()?];
+                let location = cur.take_position()?;
+                let normal = cur.take_vector3()?;
                 points.push(VariableBlendInterpolationPoint {
                     parameter,
                     radius,
@@ -605,10 +802,10 @@ mod variable_blend_value_tests {
     fn decodes_generated_two_ends_and_recursive_const_values() {
         let mut direct = Vec::new();
         two_ends(&mut direct);
-        let mut position = 0;
-        let decoded = decode_variable_blend_value(&direct, &mut position, 8, true, 0)
-            .expect("generated two-ends value");
-        assert_eq!(position, direct.len());
+        let toks = crate::nurbs::toks::lex_test_span(&direct, 8);
+        let mut cur = Cur::at(&toks, 0);
+        let decoded = variable_blend_value(&mut cur, true, 0).expect("generated two-ends value");
+        assert_eq!(cur.pos(), toks.len());
         assert!(decoded.modern_flag);
         assert_eq!(decoded.discriminator, 7);
         let VariableBlendValuePayload::TwoEnds { parameters, radii } = decoded.payload else {
@@ -627,10 +824,11 @@ mod variable_blend_value_tests {
         integer(&mut recursive, 0x15, 3);
         integer(&mut recursive, 0x15, 2);
         two_ends(&mut recursive);
-        let mut position = 0;
-        let decoded = decode_variable_blend_value(&recursive, &mut position, 8, true, 0)
-            .expect("generated recursive const value");
-        assert_eq!(position, recursive.len());
+        let toks = crate::nurbs::toks::lex_test_span(&recursive, 8);
+        let mut cur = Cur::at(&toks, 0);
+        let decoded =
+            variable_blend_value(&mut cur, true, 0).expect("generated recursive const value");
+        assert_eq!(cur.pos(), toks.len());
         let VariableBlendValuePayload::Constant { radius, nested, .. } = decoded.payload else {
             panic!("expected constant payload")
         };
@@ -651,10 +849,10 @@ mod variable_blend_value_tests {
         for value in [0.5, 3.5, 0.1905] {
             double(&mut bytes, value);
         }
-        let mut position = 0;
-        let decoded = decode_variable_blend_value(&bytes, &mut position, 8, true, 0)
-            .expect("generated fixed-width value");
-        assert_eq!(position, bytes.len());
+        let toks = crate::nurbs::toks::lex_test_span(&bytes, 8);
+        let mut cur = Cur::at(&toks, 0);
+        let decoded = variable_blend_value(&mut cur, true, 0).expect("generated fixed-width value");
+        assert_eq!(cur.pos(), toks.len());
         let VariableBlendValuePayload::FixedWidth { parameters, width } = decoded.payload else {
             panic!("expected fixed-width payload")
         };
@@ -702,12 +900,12 @@ mod variable_blend_value_tests {
         // The value ends at the last radius point. A following enum belongs to
         // the enclosing record's cross-section clause, so it must be left
         // unconsumed.
-        let payload_end = bytes.len();
         integer(&mut bytes, 0x15, 0);
-        let mut position = 0;
-        let decoded = decode_variable_blend_value(&bytes, &mut position, 8, true, 0)
-            .expect("generated enum-tagged interp value");
-        assert_eq!(position, payload_end);
+        let toks = crate::nurbs::toks::lex_test_span(&bytes, 8);
+        let mut cur = Cur::at(&toks, 0);
+        let decoded =
+            variable_blend_value(&mut cur, true, 0).expect("generated enum-tagged interp value");
+        assert_eq!(cur.pos(), toks.len() - 1);
         let VariableBlendValuePayload::Interpolated {
             enum_count,
             enum_tagged,
@@ -762,12 +960,12 @@ mod variable_blend_value_tests {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
         // The enclosing record's cross-section enum, left unconsumed.
-        let payload_end = bytes.len();
         integer(&mut bytes, 0x15, 0);
-        let mut position = 0;
-        let decoded = decode_variable_blend_value(&bytes, &mut position, 8, true, 0)
+        let toks = crate::nurbs::toks::lex_test_span(&bytes, 8);
+        let mut cur = Cur::at(&toks, 0);
+        let decoded = variable_blend_value(&mut cur, true, 0)
             .expect("generated interp value with unset derivatives");
-        assert_eq!(position, payload_end);
+        assert_eq!(cur.pos(), toks.len() - 1);
         let VariableBlendValuePayload::Interpolated { points, .. } = decoded.payload else {
             panic!("expected interpolated payload")
         };
@@ -776,109 +974,87 @@ mod variable_blend_value_tests {
     }
 }
 
-pub(crate) fn decode_var_blend_spl_sur(
-    record_bytes: &[u8],
-    int_width: usize,
-    reference_context: Option<(&[u8], &SubtypeTables)>,
+pub(crate) fn var_blend_spl_sur(
+    toks: &[Token],
+    reference_context: Option<&SubtypeTable>,
 ) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::VariableBlendCrossSection;
-    let names: [&[u8]; 10] = [
-        b"var_blend_spl_sur",
-        b"varblendsplsur",
-        b"srf_srf_v_bl_spl_sur",
-        b"srfsrfblndsur",
-        b"crv_crv_v_bl_spl_sur",
-        b"crvcrvblndsur",
-        b"crv_srf_v_bl_spl_sur",
-        b"crvsrfblndsur",
-        b"sfcv_free_bl_spl_sur",
-        b"sfcvfreeblndsur",
+    let names = [
+        "var_blend_spl_sur",
+        "varblendsplsur",
+        "srf_srf_v_bl_spl_sur",
+        "srfsrfblndsur",
+        "crv_crv_v_bl_spl_sur",
+        "crvcrvblndsur",
+        "crv_srf_v_bl_spl_sur",
+        "crvsrfblndsur",
+        "sfcv_free_bl_spl_sur",
+        "sfcvfreeblndsur",
     ];
-    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
     let subtype = match name {
-        b"var_blend_spl_sur" | b"varblendsplsur" => {
+        "var_blend_spl_sur" | "varblendsplsur" => {
             cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::VariableBlend
         }
-        b"srf_srf_v_bl_spl_sur" | b"srfsrfblndsur" => {
+        "srf_srf_v_bl_spl_sur" | "srfsrfblndsur" => {
             cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::SurfaceSurface
         }
-        b"crv_crv_v_bl_spl_sur" | b"crvcrvblndsur" => {
+        "crv_crv_v_bl_spl_sur" | "crvcrvblndsur" => {
             cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::CurveCurve
         }
-        b"crv_srf_v_bl_spl_sur" | b"crvsrfblndsur" => {
+        "crv_srf_v_bl_spl_sur" | "crvsrfblndsur" => {
             cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::CurveSurface
         }
-        b"sfcv_free_bl_spl_sur" | b"sfcvfreeblndsur" => {
+        "sfcv_free_bl_spl_sur" | "sfcvfreeblndsur" => {
             cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::SurfaceCurveFree
         }
         _ => return None,
     };
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name.len() + 3;
-    let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
+    let revision = cur.take_long()?;
     let sides = Box::new([
-        decode_rolling_ball_side(span, &mut position, int_width, reference_context)?,
-        decode_rolling_ball_side(span, &mut position, int_width, reference_context)?,
+        rolling_ball_side(&mut cur, reference_context)?,
+        rolling_ball_side(&mut cur, reference_context)?,
     ]);
-    let slice = decode_rolling_ball_curve(span, &mut position, int_width, reference_context)?;
-    let offsets = [
-        take_f64(span, &mut position)? * LEN_TO_MM,
-        take_f64(span, &mut position)? * LEN_TO_MM,
-    ];
-    let radius_kind = match take_tagged_int(span, &mut position, 0x15, int_width)? {
+    let slice = rolling_ball_curve(&mut cur, reference_context)?;
+    let offsets = [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM];
+    let radius_kind = match cur.take_enum()? {
         0 => cadmpeg_ir::geometry::VariableBlendRadiusKind::SingleRadius,
         1 => cadmpeg_ir::geometry::VariableBlendRadiusKind::TwoRadii,
         _ => return None,
     };
-    let first_value = decode_variable_blend_value(span, &mut position, int_width, true, 0)?;
+    let first_value = variable_blend_value(&mut cur, true, 0)?;
     let second_value = if matches!(
         radius_kind,
         cadmpeg_ir::geometry::VariableBlendRadiusKind::TwoRadii
     ) {
-        Some(decode_variable_blend_value(
-            span,
-            &mut position,
-            int_width,
-            true,
-            0,
-        )?)
+        Some(variable_blend_value(&mut cur, true, 0)?)
     } else {
         None
     };
     // The cross-section clause follows the complete one- or two-radius law
     // sequence. An absent enum is the elided circular default.
-    let cross_section = if span.get(position) == Some(&0x15) {
-        let selector = take_tagged_int(span, &mut position, 0x15, int_width)?;
+    let cross_section = if matches!(cur.peek(), Some(Token::Enum(_))) {
+        let selector = cur.take_enum()?;
         match selector {
             0 => Some(VariableBlendCrossSection::Circular),
             1 => Some(VariableBlendCrossSection::Thumbweights {
-                parameters: [
-                    take_f64(span, &mut position)?,
-                    take_f64(span, &mut position)?,
-                ],
+                parameters: [cur.take_f64()?, cur.take_f64()?],
             }),
             selector @ (2 | 4 | 5 | 6) => Some(VariableBlendCrossSection::UnclassifiedBare {
                 selector: selector.try_into().ok()?,
             }),
             3 => {
-                let radius = if take_bool(span, &mut position)? {
-                    Some(Box::new(decode_variable_blend_value(
-                        span,
-                        &mut position,
-                        int_width,
-                        true,
-                        0,
-                    )?))
+                let radius = if cur.take_bool()? {
+                    Some(Box::new(variable_blend_value(&mut cur, true, 0)?))
                 } else {
                     None
                 };
                 Some(VariableBlendCrossSection::RoundedChamfer { radius })
             }
             7 => Some(VariableBlendCrossSection::G2Round {
-                parameters: [
-                    take_f64(span, &mut position)?,
-                    take_f64(span, &mut position)?,
-                ],
+                parameters: [cur.take_f64()?, cur.take_f64()?],
             }),
             _ => return None,
         }
@@ -886,63 +1062,57 @@ pub(crate) fn decode_var_blend_spl_sur(
         None
     };
     let u_range = [
-        take_optional_range_value(span, &mut position)?,
-        take_optional_range_value(span, &mut position)?,
+        cur.take_optional_range_value()?,
+        cur.take_optional_range_value()?,
     ];
     let v_range = [
-        take_optional_range_value(span, &mut position)?,
-        take_optional_range_value(span, &mut position)?,
+        cur.take_optional_range_value()?,
+        cur.take_optional_range_value()?,
     ];
-    let shape_prefix = take_tagged_int(span, &mut position, 0x04, int_width)?;
-    let shape_parameter = take_f64(span, &mut position)?;
-    let shape_length = take_f64(span, &mut position)? * LEN_TO_MM;
-    let shape_tail = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let shape_prefix = cur.take_long()?;
+    let shape_parameter = cur.take_f64()?;
+    let shape_length = cur.take_f64()? * LEN_TO_MM;
+    let shape_tail = cur.take_long()?;
     let RevisionSurfaceTail {
         enumeration: tail_enum,
         fit_tolerance: cache_fit_tolerance,
         parameterization: tail_parameterization,
         discontinuities,
         tail_flag,
-    } = decode_revision_surface_tail(span, &mut position, int_width)?;
-    let tail_extensions = [
-        take_tagged_int(span, &mut position, 0x04, int_width)?,
-        take_tagged_int(span, &mut position, 0x04, int_width)?,
-        take_tagged_int(span, &mut position, 0x04, int_width)?,
-    ];
-    let saved = position;
-    let (secondary_curve, secondary_range) =
-        if take_native_ident(span, &mut position).as_deref() == Some("null_curve") {
-            (None, [None, None])
-        } else {
-            position = saved;
-            let secondary =
-                decode_rolling_ball_curve(span, &mut position, int_width, reference_context)?;
-            (Some(secondary.geometry), secondary.parameter_range)
-        };
-    let convexity = if take_bool(span, &mut position)? {
+    } = revision_surface_tail(&mut cur)?;
+    let tail_extensions = [cur.take_long()?, cur.take_long()?, cur.take_long()?];
+    let saved = cur.pos();
+    let (secondary_curve, secondary_range) = if cur.take_ident() == Some("null_curve") {
+        (None, [None, None])
+    } else {
+        cur.set_pos(saved);
+        let secondary = rolling_ball_curve(&mut cur, reference_context)?;
+        (Some(secondary.geometry), secondary.parameter_range)
+    };
+    let convexity = if cur.take_bool()? {
         cadmpeg_ir::geometry::VariableBlendConvexity::Convex
     } else {
         cadmpeg_ir::geometry::VariableBlendConvexity::Concave
     };
-    let render_mode = if take_bool(span, &mut position)? {
+    let render_mode = if cur.take_bool()? {
         cadmpeg_ir::geometry::VariableBlendRenderMode::RollingBallEnvelope
     } else {
         cadmpeg_ir::geometry::VariableBlendRenderMode::RollingBallSnapshot
     };
     let post_range = [
-        take_optional_range_value(span, &mut position)?,
-        take_optional_range_value(span, &mut position)?,
+        cur.take_optional_range_value()?,
+        cur.take_optional_range_value()?,
     ];
-    let saved = position;
-    let post_curve = if take_native_ident(span, &mut position).as_deref() == Some("nullbs") {
+    let saved = cur.pos();
+    let post_curve = if cur.take_ident() == Some("nullbs") {
         None
     } else {
-        position = saved;
-        let post = decode_curve_block(span, position, int_width)?;
-        position = post.end;
-        Some(post.curve)
+        cur.set_pos(saved);
+        let (post, post_end) = curve_block(span, cur.pos())?;
+        cur.set_pos(post_end);
+        Some(post)
     };
-    let post_pcurve = decode_nullable_embedded_pcurve(span, &mut position, int_width)?;
+    let post_pcurve = nullable_embedded_pcurve(&mut cur)?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::VariableBlend(Box::new(
             EmbeddedVariableBlend {
@@ -980,22 +1150,18 @@ pub(crate) fn decode_var_blend_spl_sur(
     })
 }
 
-fn decode_vertex_blend_boundary(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-) -> Option<EmbeddedVertexBlendBoundary> {
-    let kind = take_native_string(bytes, position)?;
-    let boundary_type = take_bool(bytes, position)?;
-    let magic = take_native_vec3(bytes, position, 0x13)?;
-    let u_smoothing = take_bool(bytes, position)?;
-    let v_smoothing = take_bool(bytes, position)?;
-    let fullness = take_f64(bytes, position)?;
+fn vertex_blend_boundary(cur: &mut Cur<'_>) -> Option<EmbeddedVertexBlendBoundary> {
+    let kind = cur.take_str()?.to_string();
+    let boundary_type = cur.take_bool()?;
+    let magic = cur.take_position()?;
+    let u_smoothing = cur.take_bool()?;
+    let v_smoothing = cur.take_bool()?;
+    let fullness = cur.take_f64()?;
     let geometry = match kind.as_str() {
         "circle" => {
-            let curve = decode_curve_block(bytes, *position, int_width)?;
-            *position = curve.end;
-            let form = take_tagged_int(bytes, position, 0x15, int_width)?;
+            let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
+            cur.set_pos(curve_end);
+            let form = cur.take_enum()?;
             let twist_count = match form {
                 0 => 0,
                 1 => 1,
@@ -1004,17 +1170,17 @@ fn decode_vertex_blend_boundary(
             };
             let mut twists = Vec::with_capacity(twist_count);
             for _ in 0..twist_count {
-                let twist = take_native_vec3(bytes, position, 0x13)?;
+                let twist = cur.take_position()?;
                 twists.push(Point3::new(
                     twist[0] * LEN_TO_MM,
                     twist[1] * LEN_TO_MM,
                     twist[2] * LEN_TO_MM,
                 ));
             }
-            let parameters = [take_f64(bytes, position)?, take_f64(bytes, position)?];
-            let sense = take_bool(bytes, position)?;
+            let parameters = [cur.take_f64()?, cur.take_f64()?];
+            let sense = cur.take_bool()?;
             EmbeddedVertexBlendBoundaryGeometry::Circle {
-                curve: CurveGeometry::Nurbs(curve.curve),
+                curve: CurveGeometry::Nurbs(curve),
                 curve_endpoints: [None; 2],
                 form,
                 twists,
@@ -1023,9 +1189,9 @@ fn decode_vertex_blend_boundary(
             }
         }
         "deg" => {
-            let location = take_native_vec3(bytes, position, 0x13)?;
-            let first = take_native_vec3(bytes, position, 0x14)?;
-            let second = take_native_vec3(bytes, position, 0x14)?;
+            let location = cur.take_position()?;
+            let first = cur.take_vector3()?;
+            let second = cur.take_vector3()?;
             EmbeddedVertexBlendBoundaryGeometry::Degenerate {
                 location: Point3::new(
                     location[0] * LEN_TO_MM,
@@ -1039,10 +1205,10 @@ fn decode_vertex_blend_boundary(
             }
         }
         "pcurve" => {
-            let surface = decode_embedded_surface(bytes, position, int_width)?;
-            let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
-            let sense = take_bool(bytes, position)?;
-            let fit_tolerance = take_f64(bytes, position)?;
+            let surface = embedded_surface(cur)?;
+            let pcurve = nullable_embedded_pcurve(cur)?;
+            let sense = cur.take_bool()?;
+            let fit_tolerance = cur.take_f64()?;
             EmbeddedVertexBlendBoundaryGeometry::Pcurve {
                 surface,
                 support_bounds: [None; 4],
@@ -1052,14 +1218,14 @@ fn decode_vertex_blend_boundary(
             }
         }
         "plane" => {
-            let normal = take_native_vec3(bytes, position, 0x14)?;
-            let parameters = [take_f64(bytes, position)?, take_f64(bytes, position)?];
-            let curve = decode_curve_block(bytes, *position, int_width)?;
-            *position = curve.end;
+            let normal = cur.take_vector3()?;
+            let parameters = [cur.take_f64()?, cur.take_f64()?];
+            let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
+            cur.set_pos(curve_end);
             EmbeddedVertexBlendBoundaryGeometry::Plane {
                 normal: Vector3::new(normal[0], normal[1], normal[2]),
                 parameters,
-                curve: CurveGeometry::Nurbs(curve.curve),
+                curve: CurveGeometry::Nurbs(curve),
                 curve_endpoints: [None; 2],
             }
         }
@@ -1081,33 +1247,25 @@ fn decode_vertex_blend_boundary(
 /// cross boolean, magic vector, smoothing booleans, fullness, and the
 /// type-selected payload with bound-carrying supports and endpoint-carrying
 /// curves.
-fn decode_revision_vertex_blend_boundary(
-    bytes: &[u8],
-    position: &mut usize,
-    int_width: usize,
-    resolver: Option<(&[u8], &SubtypeTables)>,
+fn revision_vertex_blend_boundary(
+    cur: &mut Cur<'_>,
+    resolver: Option<&SubtypeTable>,
 ) -> Option<EmbeddedVertexBlendBoundary> {
-    let (active_bytes, tables) = resolver?;
-    let kind = take_native_ident(bytes, position)?;
-    let boundary_type = take_bool(bytes, position)?;
-    let magic = take_native_vec3(bytes, position, 0x14)?;
-    let u_smoothing = take_bool(bytes, position)?;
-    let v_smoothing = take_bool(bytes, position)?;
-    let fullness = take_f64(bytes, position)?;
+    let table = resolver?;
+    let kind = cur.take_ident()?.to_string();
+    let boundary_type = cur.take_bool()?;
+    let magic = cur.take_vector3()?;
+    let u_smoothing = cur.take_bool()?;
+    let v_smoothing = cur.take_bool()?;
+    let fullness = cur.take_f64()?;
     let geometry = match kind.as_str() {
         "circle" => {
-            let curve = decode_embedded_base_curve_resolving_refs(
-                bytes,
-                position,
-                int_width,
-                active_bytes,
-                tables,
-            )?;
+            let curve = embedded_base_curve_resolving_refs(cur, table)?;
             let curve_endpoints = [
-                take_optional_range_value(bytes, position)?,
-                take_optional_range_value(bytes, position)?,
+                cur.take_optional_range_value()?,
+                cur.take_optional_range_value()?,
             ];
-            let form = take_tagged_int(bytes, position, 0x15, int_width)?;
+            let form = cur.take_enum()?;
             let twist_count = match form {
                 0 => 0,
                 1 => 1,
@@ -1116,15 +1274,15 @@ fn decode_revision_vertex_blend_boundary(
             };
             let mut twists = Vec::with_capacity(twist_count);
             for _ in 0..twist_count {
-                let twist = take_native_vec3(bytes, position, 0x14)?;
+                let twist = cur.take_vector3()?;
                 twists.push(Point3::new(
                     twist[0] * LEN_TO_MM,
                     twist[1] * LEN_TO_MM,
                     twist[2] * LEN_TO_MM,
                 ));
             }
-            let parameters = [take_f64(bytes, position)?, take_f64(bytes, position)?];
-            let sense = take_bool(bytes, position)?;
+            let parameters = [cur.take_f64()?, cur.take_f64()?];
+            let sense = cur.take_bool()?;
             EmbeddedVertexBlendBoundaryGeometry::Circle {
                 curve: CurveGeometry::Nurbs(curve),
                 curve_endpoints,
@@ -1135,9 +1293,9 @@ fn decode_revision_vertex_blend_boundary(
             }
         }
         "deg" => {
-            let location = take_native_vec3(bytes, position, 0x13)?;
-            let first = take_native_vec3(bytes, position, 0x14)?;
-            let second = take_native_vec3(bytes, position, 0x14)?;
+            let location = cur.take_position()?;
+            let first = cur.take_vector3()?;
+            let second = cur.take_vector3()?;
             EmbeddedVertexBlendBoundaryGeometry::Degenerate {
                 location: Point3::new(
                     location[0] * LEN_TO_MM,
@@ -1151,16 +1309,10 @@ fn decode_revision_vertex_blend_boundary(
             }
         }
         "pcurve" => {
-            let (surface, support_bounds) = decode_optional_embedded_surface_with_bounds(
-                bytes,
-                position,
-                int_width,
-                active_bytes,
-                tables,
-            )?;
-            let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
-            let sense = take_bool(bytes, position)?;
-            let fit_tolerance = take_f64(bytes, position)?;
+            let (surface, support_bounds) = optional_embedded_surface_with_bounds(cur, table)?;
+            let pcurve = nullable_embedded_pcurve(cur)?;
+            let sense = cur.take_bool()?;
+            let fit_tolerance = cur.take_f64()?;
             EmbeddedVertexBlendBoundaryGeometry::Pcurve {
                 surface: surface?,
                 support_bounds,
@@ -1170,18 +1322,12 @@ fn decode_revision_vertex_blend_boundary(
             }
         }
         "plane" => {
-            let normal = take_native_vec3(bytes, position, 0x14)?;
-            let parameters = [take_f64(bytes, position)?, take_f64(bytes, position)?];
-            let curve = decode_embedded_base_curve_resolving_refs(
-                bytes,
-                position,
-                int_width,
-                active_bytes,
-                tables,
-            )?;
+            let normal = cur.take_vector3()?;
+            let parameters = [cur.take_f64()?, cur.take_f64()?];
+            let curve = embedded_base_curve_resolving_refs(cur, table)?;
             let curve_endpoints = [
-                take_optional_range_value(bytes, position)?,
-                take_optional_range_value(bytes, position)?,
+                cur.take_optional_range_value()?,
+                cur.take_optional_range_value()?,
             ];
             EmbeddedVertexBlendBoundaryGeometry::Plane {
                 normal: Vector3::new(normal[0], normal[1], normal[2]),
@@ -1204,46 +1350,45 @@ fn decode_revision_vertex_blend_boundary(
     })
 }
 
-pub(crate) fn decode_vertex_blend_spl_sur(
-    record_bytes: &[u8],
-    int_width: usize,
-    resolver: Option<(&[u8], &SubtypeTables)>,
+pub(crate) fn vertex_blend_spl_sur(
+    toks: &[Token],
+    resolver: Option<&SubtypeTable>,
 ) -> Option<DecodedProceduralSurface> {
-    let names: [&[u8]; 2] = [b"VBL_SURF", b"vertexblendsur"];
-    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
-    let name_len = name.len();
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name_len + 3;
+    let names = ["VBL_SURF", "vertexblendsur"];
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
     // The revision-gated layout stores the revision integer before the
     // boundary count; boundary names are ident tokens and boundary payloads
-    // carry optional bounds and endpoints. The count is a `0x04` integer in
+    // carry optional bounds and endpoints. The count is an integer token in
     // both layouts, so the revision layout is recognized by the second
-    // `0x04` token: a legacy count is directly followed by a boundary type
+    // integer token: a legacy count is directly followed by a boundary type
     // string, a revision integer by the count integer. Only the modern name
     // stores the revision layout.
-    let revision =
-        if span.get(position) == Some(&0x04) && span.get(position + 1 + int_width) == Some(&0x04) {
-            (name == b"VBL_SURF".as_slice()).then_some(())?;
-            let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
-            (revision > 0).then_some(())?;
-            Some(revision)
-        } else {
-            None
-        };
-    let count = usize::try_from(take_tagged_int(span, &mut position, 0x04, int_width)?).ok()?;
+    let revision = if matches!(span.get(cur.pos()), Some(Token::Long(_)))
+        && matches!(span.get(cur.pos() + 1), Some(Token::Long(_)))
+    {
+        (name == "VBL_SURF").then_some(())?;
+        let revision = cur.take_long()?;
+        (revision > 0).then_some(())?;
+        Some(revision)
+    } else {
+        None
+    };
+    let count = usize::try_from(cur.take_long()?).ok()?;
     if count > 100_000 {
         return None;
     }
     let mut boundaries = Vec::with_capacity(count);
     for _ in 0..count {
         boundaries.push(if revision.is_some() {
-            decode_revision_vertex_blend_boundary(span, &mut position, int_width, resolver)?
+            revision_vertex_blend_boundary(&mut cur, resolver)?
         } else {
-            decode_vertex_blend_boundary(span, &mut position, int_width)?
+            vertex_blend_boundary(&mut cur)?
         });
     }
-    let grid_size = take_tagged_int(span, &mut position, 0x04, int_width)?;
-    let fit_tolerance = take_f64(span, &mut position)? * LEN_TO_MM;
+    let grid_size = cur.take_long()?;
+    let fit_tolerance = cur.take_f64()? * LEN_TO_MM;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::VertexBlend(Box::new(
             EmbeddedVertexBlend {
@@ -1257,81 +1402,63 @@ pub(crate) fn decode_vertex_blend_spl_sur(
     })
 }
 
-pub(crate) fn decode_full_rb_blend_spl_sur(
-    record_bytes: &[u8],
-    int_width: usize,
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+pub(crate) fn full_rb_blend_spl_sur(
+    toks: &[Token],
+    table: &SubtypeTable,
 ) -> Option<DecodedProceduralSurface> {
-    let names: [&[u8]; 6] = [
-        b"rb_blend_spl_sur",
-        b"rbblnsur",
-        b"pipe_spl_sur",
-        b"pipesur",
-        b"sss_blend_spl_sur",
-        b"sssblndsur",
+    let names = [
+        "rb_blend_spl_sur",
+        "rbblnsur",
+        "pipe_spl_sur",
+        "pipesur",
+        "sss_blend_spl_sur",
+        "sssblndsur",
     ];
-    let (start, name) = find_owned_subtype_marker(record_bytes, &names, int_width)?;
-    let name_len = name.len();
-    let has_third = name == b"sss_blend_spl_sur" || name == b"sssblndsur";
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let mut position = name_len + 3;
-    let definition_index = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let has_third = name == "sss_blend_spl_sur" || name == "sssblndsur";
+    let span = toks::subtype_span(toks, start)?;
+    let mut cur = Cur::at(span, 2);
+    let definition_index = cur.take_long()?;
     let sides = Box::new([
-        decode_rolling_ball_side(span, &mut position, int_width, Some((active_bytes, tables)))?,
-        decode_rolling_ball_side(span, &mut position, int_width, Some((active_bytes, tables)))?,
+        rolling_ball_side(&mut cur, Some(table))?,
+        rolling_ball_side(&mut cur, Some(table))?,
     ]);
-    let slice =
-        decode_rolling_ball_curve(span, &mut position, int_width, Some((active_bytes, tables)))?;
-    let offsets = [
-        take_f64(span, &mut position)? * LEN_TO_MM,
-        take_f64(span, &mut position)? * LEN_TO_MM,
-    ];
-    let radius_selector = match span.get(position)? {
-        0x15 => {
-            if take_tagged_int(span, &mut position, 0x15, int_width)? != -1 {
+    let slice = rolling_ball_curve(&mut cur, Some(table))?;
+    let offsets = [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM];
+    let radius_selector = match cur.peek()? {
+        Token::Enum(_) => {
+            if cur.take_enum()? != -1 {
                 return None;
             }
             EmbeddedRollingBallRadiusSelector::None
         }
-        0x06 => EmbeddedRollingBallRadiusSelector::Value(take_f64(span, &mut position)?),
+        Token::Double(_) => EmbeddedRollingBallRadiusSelector::Value(cur.take_f64()?),
         _ => return None,
     };
     let u_range = [
-        take_optional_range_value(span, &mut position)?,
-        take_optional_range_value(span, &mut position)?,
+        cur.take_optional_range_value()?,
+        cur.take_optional_range_value()?,
     ];
     let v_range = [
-        take_optional_range_value(span, &mut position)?,
-        take_optional_range_value(span, &mut position)?,
+        cur.take_optional_range_value()?,
+        cur.take_optional_range_value()?,
     ];
-    let shape_prefix = take_tagged_int(span, &mut position, 0x04, int_width)?;
-    let parameters = [
-        take_f64(span, &mut position)?,
-        take_f64(span, &mut position)?,
-    ];
-    let tail = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let shape_prefix = cur.take_long()?;
+    let parameters = [cur.take_f64()?, cur.take_f64()?];
+    let tail = cur.take_long()?;
     let RevisionSurfaceTail {
         enumeration: tail_enum,
         fit_tolerance: cache_fit_tolerance,
         parameterization: tail_parameterization,
         discontinuities,
         tail_flag,
-    } = decode_revision_surface_tail(span, &mut position, int_width)?;
+    } = revision_surface_tail(&mut cur)?;
     let third = if has_third {
-        Some(Box::new(decode_rolling_ball_third_side(
-            span,
-            &mut position,
-            int_width,
-        )?))
+        Some(Box::new(rolling_ball_third_side(&mut cur)?))
     } else {
         None
     };
-    let tail_extensions = [
-        take_tagged_int(span, &mut position, 0x04, int_width)?,
-        take_tagged_int(span, &mut position, 0x04, int_width)?,
-        take_tagged_int(span, &mut position, 0x04, int_width)?,
-    ];
+    let tail_extensions = [cur.take_long()?, cur.take_long()?, cur.take_long()?];
     let radius = if offsets[0] == offsets[1] {
         BlendRadiusLaw::Constant {
             signed_radius: offsets[0],
@@ -1375,56 +1502,43 @@ pub(crate) fn decode_full_rb_blend_spl_sur(
     })
 }
 
-pub(crate) fn decode_rb_blend_spl_sur_fallback(
-    record_bytes: &[u8],
-    int_width: usize,
-) -> Option<DecodedProceduralSurface> {
-    let names: [&[u8]; 4] = [
-        b"rb_blend_spl_sur",
-        b"rbblnsur",
-        b"pipe_spl_sur",
-        b"pipesur",
-    ];
-    let (start, header_len) = find_owned_subtype_marker(record_bytes, &names, int_width)
-        .map(|(start, name)| (start, name.len() + 3))?;
-    let span = subtype_span(record_bytes, start, int_width)?;
-    let cache = marker_positions(span)
+pub(crate) fn rb_blend_spl_sur_fallback(toks: &[Token]) -> Option<DecodedProceduralSurface> {
+    let names = ["rb_blend_spl_sur", "rbblnsur", "pipe_spl_sur", "pipesur"];
+    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
+    let span = toks::subtype_span(toks, start)?;
+    // Skip the scope opening and its name token.
+    let header_len = 2usize;
+    let (_, cache_end) = toks::marker_positions(span)
         .into_iter()
-        .filter_map(|at| decode_surface_block(span, at, int_width))
+        .filter_map(|at| surface_block(span, at))
         .next_back()?;
 
     let mut support_geometries = Vec::new();
     let mut radius_boundary = None;
     let mut pos = header_len;
-    while pos < cache.end {
-        match span[pos] {
-            0x0e => {
-                let len = usize::from(*span.get(pos + 1)?);
-                let name = span.get(pos + 2..pos + 2 + len)?;
-                if [b"plane".as_slice(), b"sphere", b"cone", b"torus"].contains(&name) {
-                    let at = next_token(span, pos, int_width)?;
-                    let mut end = at;
-                    let geometry =
-                        decode_embedded_surface(span, &mut end, int_width).or_else(|| {
-                            decode_surface_block(span, at, int_width)
-                                .map(|decoded| SurfaceGeometry::Nurbs(decoded.surface))
-                        });
-                    support_geometries.push(geometry);
-                }
+    while pos < cache_end {
+        match span.get(pos)? {
+            Token::SubIdent(name)
+                if ["plane", "sphere", "cone", "torus"].contains(&name.as_str()) =>
+            {
+                let at = pos + 1;
+                let mut end = Cur::at(span, at);
+                let geometry = embedded_surface(&mut end).or_else(|| {
+                    surface_block(span, at).map(|(decoded, _)| SurfaceGeometry::Nurbs(decoded))
+                });
+                support_geometries.push(geometry);
             }
-            0x15 if read_int(span, pos + 1, int_width) == Some(-1) => radius_boundary = Some(pos),
+            Token::Enum(-1) => radius_boundary = Some(pos),
             _ => {}
         }
-        pos = next_token(span, pos, int_width)?;
+        pos += 1;
     }
     let boundary = radius_boundary?;
     let mut radius_values = Vec::new();
-    let mut pos = header_len;
-    while pos < boundary {
-        if span[pos] == 0x06 {
-            radius_values.push(read_f64(span, pos + 1)?);
+    for token in span.get(header_len..boundary)? {
+        if let Token::Double(value) = token {
+            radius_values.push(*value);
         }
-        pos = next_token(span, pos, int_width)?;
     }
     let end = *radius_values.last()? * LEN_TO_MM;
     let start = *radius_values.get(radius_values.len().checked_sub(2)?)? * LEN_TO_MM;
@@ -1435,10 +1549,10 @@ pub(crate) fn decode_rb_blend_spl_sur_fallback(
     } else {
         BlendRadiusLaw::Linear { start, end }
     };
-    let center_curve = marker_positions(span)
+    let center_curve = toks::marker_positions(span)
         .into_iter()
-        .filter_map(|at| decode_curve_block(span, at, int_width))
-        .map(|decoded| decoded.curve)
+        .filter_map(|at| curve_block(span, at))
+        .map(|(curve, _)| curve)
         .next_back();
     let supports: [Option<SurfaceGeometry>; 2] = support_geometries
         .into_iter()
@@ -1447,9 +1561,10 @@ pub(crate) fn decode_rb_blend_spl_sur_fallback(
         .collect::<Vec<_>>()
         .try_into()
         .expect("two support slots collected");
-    let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
-        .then(|| read_f64(span, cache.end + 1).map(|v| v * LEN_TO_MM))
-        .flatten();
+    let cache_fit_tolerance = match span.get(cache_end) {
+        Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
+        _ => None,
+    };
 
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Blend {

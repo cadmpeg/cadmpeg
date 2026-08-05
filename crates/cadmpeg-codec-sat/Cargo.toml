@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg-codec-sat"
+description = "Inspect and decode bare ASM .sat/.sab/.smt/.smb B-rep streams."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/cadmpeg-codec-sat"
+keywords = ["cad", "acis", "sat", "shapemanager", "geometry"]
+categories = ["encoding", "parser-implementations", "graphics"]
+
+[dependencies]
+cadmpeg-asm.workspace = true
+cadmpeg-core.workspace = true
+cadmpeg-ir.workspace = true
+
+[lints]
+workspace = true

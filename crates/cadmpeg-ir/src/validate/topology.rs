@@ -2851,6 +2851,51 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     );
                 }
             }
+            FeatureDefinition::SheetMetalEdgeFlange {
+                edges,
+                height,
+                angle,
+                width,
+                bend_radius,
+                ..
+            } => {
+                edge_selections.push(edges);
+                if !positive_feature_length(*height) {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "sheet-metal edge-flange height is invalid",
+                    );
+                }
+                if !angle.0.is_finite() {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "sheet-metal edge-flange angle is invalid",
+                    );
+                }
+                if !positive_feature_length(*bend_radius) {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "sheet-metal edge-flange bend radius is invalid",
+                    );
+                }
+                let widths = match width {
+                    crate::features::SheetMetalFlangeWidth::FullEdge => Vec::new(),
+                    crate::features::SheetMetalFlangeWidth::Symmetric { width } => vec![*width],
+                    crate::features::SheetMetalFlangeWidth::TwoSides { first, second } => {
+                        vec![*first, *second]
+                    }
+                };
+                if !widths.iter().copied().all(positive_feature_length) {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "sheet-metal edge-flange width is invalid",
+                    );
+                }
+            }
             FeatureDefinition::Revolve { construction, .. } => {
                 paths.extend(&construction.axis_reference);
                 if construction.axis.as_ref().is_some_and(|axis| {

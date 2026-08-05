@@ -3,6 +3,7 @@
 resolver = "2"
 members = [
   "crates/cadmpeg",
+  "crates/cadmpeg-asm",
   "crates/cadmpeg-core",
   "crates/cadmpeg-container",
   "crates/cadmpeg-ir",
@@ -15,6 +16,7 @@ members = [
   "crates/cadmpeg-codec-rhino",
   "crates/cadmpeg-codec-iges",
   "crates/cadmpeg-codec-step",
+  "crates/cadmpeg-codec-sat",
 ]
 # cadmpeg-fuzz is intentionally excluded: cargo-fuzz targets link libFuzzer and
 # require a nightly toolchain, so keeping the crate out of the default workspace
@@ -31,6 +33,7 @@ homepage = "https://github.com/cadmpeg/cadmpeg"
 rust-version = "1.88"
 
 [workspace.dependencies]
+cadmpeg-asm = { path = "crates/cadmpeg-asm", version = "0.3.1" }
 cadmpeg-core = { path = "crates/cadmpeg-core", version = "0.3.1" }
 cadmpeg-container = { path = "crates/cadmpeg-container", version = "0.3.1" }
 cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.3.1" }
@@ -43,6 +46,7 @@ cadmpeg-codec-nx = { path = "crates/cadmpeg-codec-nx", version = "0.3.1" }
 cadmpeg-codec-rhino = { path = "crates/cadmpeg-codec-rhino", version = "0.3.1" }
 cadmpeg-codec-iges = { path = "crates/cadmpeg-codec-iges", version = "0.3.1" }
 cadmpeg-codec-step = { path = "crates/cadmpeg-codec-step", version = "0.3.1" }
+cadmpeg-codec-sat = { path = "crates/cadmpeg-codec-sat", version = "0.3.1" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }

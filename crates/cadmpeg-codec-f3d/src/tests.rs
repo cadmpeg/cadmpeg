@@ -21,10 +21,10 @@ use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 use cadmpeg_ir::report::{LossKind as LossCode, Severity};
 use zip::CompressionMethod;
 
-use crate::asm_header;
 use crate::bytes::lp_utf16_bytes;
 use crate::container::{self, role};
 use crate::F3dCodec;
+use cadmpeg_asm::asm_header;
 
 trait TestEncode {
     fn encode(
@@ -483,7 +483,7 @@ fn append_generated_record_tail(bytes: &mut Vec<u8>, head: &str, tail: &[u8]) {
         .windows(b"\x0d\x09asmheader".len())
         .position(|window| window == b"\x0d\x09asmheader")
         .expect("generated ASM record table");
-    let offsets = crate::sab::frame(bytes, record_start, bytes.len(), 8)
+    let offsets = cadmpeg_asm::sab::frame(bytes, record_start, bytes.len(), 8)
         .expect("generated ASM records must frame")
         .into_iter()
         .filter(|record| record.head == head)
@@ -528,7 +528,7 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
         .iter()
         .all(|parameters| matches!(
             parameters.extension,
-            crate::records::TolerantCoedgeExtension::Empty { target: None }
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: None }
         )));
 
     decoded.ir.model.coedges[0].sense = cadmpeg_ir::topology::Sense::Reversed;
@@ -570,7 +570,7 @@ fn decode_selects_tolerant_coedge_extension_from_save_format() {
                 t_long(&mut bytes, 0);
                 bytes
             },
-            crate::records::TolerantCoedgeExtension::EmbeddedCurve {
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
                 target: None,
                 curve_reversed: true,
                 payload_token_count: 1,
@@ -584,12 +584,12 @@ fn decode_selects_tolerant_coedge_extension_from_save_format() {
                 t_ref(&mut bytes, 17);
                 bytes
             },
-            crate::records::TolerantCoedgeExtension::Reference { target: Some(17) },
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::Reference { target: Some(17) },
         ),
         (
             21400u32,
             Vec::new(),
-            crate::records::TolerantCoedgeExtension::None,
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::None,
         ),
     ] {
         let mut smbh = synthetic_geometry_smbh();
@@ -616,6 +616,59 @@ fn decode_selects_tolerant_coedge_extension_from_save_format() {
             vec![expected; 3]
         );
     }
+}
+
+/// A tolerant coedge whose payload carries identifier tokens outside the
+/// embedded scope: the freestanding embedded-curve type name before the sense
+/// flag and trailing `null_curve` placeholders after the extension fields.
+/// Identifiers are not fields, so the extension decodes exactly as it does
+/// without them and the serialized token count stays defined over the value
+/// tokens.
+#[test]
+fn tolerant_coedge_extension_ignores_payload_identifiers() {
+    let mut smbh = synthetic_geometry_smbh();
+    smbh[15..19].copy_from_slice(&23000u32.to_le_bytes());
+    let mut tail = Vec::new();
+    t_dbl(&mut tail, -0.5);
+    t_dbl(&mut tail, 1.5);
+    t_ref(&mut tail, -1);
+    t_long(&mut tail, 1);
+    t_ident(&mut tail, "intcurve");
+    tail.extend_from_slice(&[0x0a, 0x0f]);
+    t_ident(&mut tail, "par_int_cur");
+    t_long(&mut tail, 22800);
+    tail.extend_from_slice(&[0x10, 0x0a]);
+    t_dbl(&mut tail, -2.0);
+    tail.push(0x0a);
+    t_dbl(&mut tail, 3.0);
+    t_long(&mut tail, 0);
+    t_ident(&mut tail, "null_curve");
+    t_ident(&mut tail, "null_curve");
+    append_generated_record_tail(&mut smbh, "coedge", &tail);
+    replace_generated_record_head(&mut smbh, "coedge", "tcoedge");
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh_and_protein(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("ident-bearing tolerant coedges must decode");
+    assert_eq!(
+        f3d_native(&decoded.ir)
+            .tolerant_coedge_parameters
+            .iter()
+            .map(|parameters| parameters.extension.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
+                target: None,
+                curve_reversed: true,
+                payload_token_count: 1,
+                parameter_range: Some([-2.0, 3.0]),
+            };
+            3
+        ]
+    );
 }
 
 #[test]
@@ -719,12 +772,12 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     source_less.model.coedges[0].use_curve = Some(generated_curve_id);
     source_less.model.coedges[0].use_curve_parameter_range = Some([-2.0, 3.0]);
     f3d_native_mut(&mut source_less).tolerant_coedge_parameters =
-        vec![crate::records::TolerantCoedgeParameters {
+        vec![cadmpeg_asm::brep::records::TolerantCoedgeParameters {
             id: "generated:tolerant-coedge-parameters#0".into(),
             coedge: tolerant_coedge,
             record_index: 0,
             parameter_range: [0.0, 1.0],
-            extension: crate::records::TolerantCoedgeExtension::EmbeddedCurve {
+            extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
                 target: None,
                 curve_reversed: false,
                 payload_token_count: 0,
@@ -771,7 +824,7 @@ fn decode_frames_history_less_stream_whose_final_record_ends_at_eof() {
         t_subident(&mut smbh, name);
     }
     t_ident(&mut smbh, "data"); // no trailing 0x11
-    assert!(crate::asm_header::solved_record_limit(&smbh).is_none());
+    assert!(cadmpeg_asm::asm_header::solved_record_limit(&smbh).is_none());
 
     let decoded = F3dCodec
         .decode(
@@ -850,12 +903,12 @@ fn synthetic_geometry_with_history_smbh() -> Vec<u8> {
 
 fn synthetic_geometry_with_transform_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let limit = crate::asm_header::solved_record_limit(&bytes).expect("history boundary");
-    let start = crate::asm_header::record_stream_start(&bytes).expect("record stream");
-    let records = crate::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
+    let limit = cadmpeg_asm::asm_header::solved_record_limit(&bytes).expect("history boundary");
+    let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
     let body = &records[1];
-    let transform_ref =
-        crate::sab::payload_token_offsets(&bytes, body, 8, 0x0c).expect("body reference tokens")[4];
+    let transform_ref = cadmpeg_asm::sab::payload_token_offsets(&bytes, body, 8, 0x0c)
+        .expect("body reference tokens")[4];
     bytes[transform_ref + 1..transform_ref + 9].copy_from_slice(&19i64.to_le_bytes());
 
     let mut transform = Vec::new();
@@ -877,12 +930,12 @@ fn synthetic_geometry_with_transform_smbh() -> Vec<u8> {
 
 fn synthetic_geometry_with_body_color_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let limit = crate::asm_header::solved_record_limit(&bytes).expect("history boundary");
-    let start = crate::asm_header::record_stream_start(&bytes).expect("record stream");
-    let records = crate::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
+    let limit = cadmpeg_asm::asm_header::solved_record_limit(&bytes).expect("history boundary");
+    let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
     let body = &records[1];
-    let attribute_ref =
-        crate::sab::payload_token_offsets(&bytes, body, 8, 0x0c).expect("body reference tokens")[0];
+    let attribute_ref = cadmpeg_asm::sab::payload_token_offsets(&bytes, body, 8, 0x0c)
+        .expect("body reference tokens")[0];
     bytes[attribute_ref + 1..attribute_ref + 9].copy_from_slice(&19i64.to_le_bytes());
 
     let mut attribute = Vec::new();
@@ -900,12 +953,12 @@ fn synthetic_geometry_with_body_color_smbh() -> Vec<u8> {
 
 fn synthetic_geometry_with_face_color_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let limit = crate::asm_header::solved_record_limit(&bytes).expect("history boundary");
-    let start = crate::asm_header::record_stream_start(&bytes).expect("record stream");
-    let records = crate::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
+    let limit = cadmpeg_asm::asm_header::solved_record_limit(&bytes).expect("history boundary");
+    let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
     let face = &records[4];
-    let attribute_ref =
-        crate::sab::payload_token_offsets(&bytes, face, 8, 0x0c).expect("face reference tokens")[0];
+    let attribute_ref = cadmpeg_asm::sab::payload_token_offsets(&bytes, face, 8, 0x0c)
+        .expect("face reference tokens")[0];
     bytes[attribute_ref + 1..attribute_ref + 9].copy_from_slice(&19i64.to_le_bytes());
 
     let mut attribute = Vec::new();
@@ -923,9 +976,9 @@ fn synthetic_geometry_with_face_color_smbh() -> Vec<u8> {
 
 fn synthetic_geometry_with_mesh_surface_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
-    let limit = crate::asm_header::solved_record_limit(&bytes).expect("history boundary");
-    let start = crate::asm_header::record_stream_start(&bytes).expect("record stream");
-    let records = crate::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
+    let limit = cadmpeg_asm::asm_header::solved_record_limit(&bytes).expect("history boundary");
+    let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
     let plane = records
         .iter()
         .find(|record| record.head == "plane")
@@ -988,7 +1041,7 @@ fn synthetic_inline_pcurve_with_referenced_support_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let asmheader_end = records[0].offset + records[0].len - 1;
 
     let mut target = vec![0x0f];
@@ -1017,7 +1070,7 @@ fn synthetic_inline_pcurve_with_referenced_support_smbh() -> Vec<u8> {
 fn replace_generated_face_with_nurbs_surface(mut bytes: Vec<u8>) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[6];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -1084,7 +1137,7 @@ fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let coedge = &records[7];
     let record = &mut bytes[coedge.offset..coedge.offset + coedge.len];
     let pcurve_ref_tag = record.iter().rposition(|b| *b == 0x0c).unwrap();
@@ -1132,7 +1185,7 @@ fn synthetic_geometry_with_ref_pcurve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let coedge = &records[7];
     let record = &mut bytes[coedge.offset..coedge.offset + coedge.len];
     let pcurve_ref_tag = record.iter().rposition(|byte| *byte == 0x0c).unwrap();
@@ -1168,12 +1221,12 @@ fn synthetic_geometry_with_ref_pcurve_smbh() -> Vec<u8> {
 fn with_pcurve_discriminator(mut bytes: Vec<u8>, discriminator: i64) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let pcurve = records
         .iter()
         .find(|record| record.head == "pcurve")
         .expect("generated pcurve record");
-    let offsets = crate::sab::payload_token_offsets(&bytes, pcurve, 8, 0x04)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, pcurve, 8, 0x04)
         .expect("generated pcurve integer offsets");
     bytes[offsets[1] + 1..offsets[1] + 9].copy_from_slice(&discriminator.to_le_bytes());
     bytes
@@ -1182,12 +1235,12 @@ fn with_pcurve_discriminator(mut bytes: Vec<u8>, discriminator: i64) -> Vec<u8> 
 fn with_inline_pcurve_non_boolean_wrapper(mut bytes: Vec<u8>) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let pcurve = records
         .iter()
         .find(|record| record.head == "pcurve")
         .expect("generated pcurve record");
-    let integers = crate::sab::payload_token_offsets(&bytes, pcurve, 8, 0x04)
+    let integers = cadmpeg_asm::sab::payload_token_offsets(&bytes, pcurve, 8, 0x04)
         .expect("generated pcurve integer offsets");
     let wrapper = integers[1] + 9;
     assert_eq!(bytes[wrapper], 0x0b, "generated inline wrapper boolean");
@@ -1198,7 +1251,7 @@ fn with_inline_pcurve_non_boolean_wrapper(mut bytes: Vec<u8>) -> Vec<u8> {
 fn with_ref_pcurve_companion_name(mut bytes: Vec<u8>, name: &[u8; 8]) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let pcurve = records
         .iter()
         .find(|record| record.head == "pcurve")
@@ -1214,11 +1267,30 @@ fn with_ref_pcurve_companion_name(mut bytes: Vec<u8>, name: &[u8; 8]) -> Vec<u8>
     bytes
 }
 
+fn with_ref_pcurve_companion_reversed(mut bytes: Vec<u8>) -> Vec<u8> {
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let pcurve = records
+        .iter()
+        .find(|record| record.head == "pcurve")
+        .expect("generated pcurve record");
+    let companion_index = pcurve.ref_at(4).expect("generated ref-form companion");
+    let companion = &records[usize::try_from(companion_index).unwrap()];
+    let offset = bytes[companion.offset..companion.offset + companion.len]
+        .windows(b"\x0d\x04nubs".len())
+        .position(|window| window == b"\x0d\x04nubs")
+        .map(|offset| companion.offset + offset)
+        .expect("generated intcurve cache marker");
+    bytes.splice(offset..offset, [0x0a]);
+    bytes
+}
+
 fn synthetic_geometry_with_procedural_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
     let record = &mut bytes[edge.offset..edge.offset + edge.len];
     let curve_ref_tag = record.iter().rposition(|byte| *byte == 0x0c).unwrap();
@@ -1249,9 +1321,9 @@ fn synthetic_geometry_with_helix_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
 
@@ -1290,7 +1362,7 @@ fn synthetic_geometry_with_cacheless_helix_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_with_helix_curve_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let helix = records.iter().find(|record| record.index == 19).unwrap();
     let block = generated_curve_block();
     let relative = bytes[helix.offset..helix.offset + helix.len]
@@ -1306,9 +1378,9 @@ fn synthetic_geometry_with_law_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c).unwrap();
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c).unwrap();
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
         .windows(b"delta_state".len())
@@ -1422,9 +1494,9 @@ fn synthetic_geometry_with_stamped_law_curve_smbh(subtype: &[u8]) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c).unwrap();
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c).unwrap();
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
         .windows(b"delta_state".len())
@@ -1519,7 +1591,7 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
     )
     .expect("regenerate stamped law curve");
     let inner = regenerated.iter().position(|&b| b == 0x0f).unwrap();
-    let span = crate::nurbs::subtypes::subtype_span(&regenerated, inner, 8).unwrap();
+    let span = cadmpeg_asm::nurbs::subtypes::subtype_span(&regenerated, inner, 8).unwrap();
     assert_eq!(span, subtype.as_slice());
 }
 
@@ -1553,7 +1625,7 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
             .position(|window| window == b"law_int_cur")
             .unwrap()
             - 3;
-        crate::nurbs::subtypes::subtype_span(&smbh, marker, 8)
+        cadmpeg_asm::nurbs::subtypes::subtype_span(&smbh, marker, 8)
             .unwrap()
             .to_vec()
     };
@@ -1577,7 +1649,7 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
     )
     .expect("regenerate legacy law curve");
     let inner = regenerated.iter().position(|&b| b == 0x0f).unwrap();
-    let span = crate::nurbs::subtypes::subtype_span(&regenerated, inner, 8).unwrap();
+    let span = cadmpeg_asm::nurbs::subtypes::subtype_span(&regenerated, inner, 8).unwrap();
     assert_eq!(span, original.as_slice());
 }
 
@@ -1585,9 +1657,9 @@ fn synthetic_geometry_with_vector_offset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
 
@@ -1625,9 +1697,9 @@ fn synthetic_geometry_with_subset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
@@ -1658,9 +1730,9 @@ fn synthetic_geometry_with_exact_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
@@ -1712,9 +1784,9 @@ fn synthetic_geometry_with_compound_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
@@ -1752,9 +1824,9 @@ fn synthetic_geometry_with_two_sided_offset_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
@@ -1796,9 +1868,9 @@ fn synthetic_geometry_with_embedded_offset_supports_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
@@ -1840,9 +1912,9 @@ fn synthetic_geometry_with_analytic_offset_supports_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
@@ -2084,9 +2156,9 @@ fn synthetic_geometry_with_null_support_spring_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
@@ -2152,9 +2224,9 @@ fn synthetic_geometry_with_cache_first_curve_smbh(
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let delta = bytes
@@ -2452,7 +2524,7 @@ fn synthetic_revision_surface_smbh(subtype: &str, body: impl FnOnce(&mut Vec<u8>
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -2831,7 +2903,7 @@ fn regenerated_procedural_surface_span(ir: &cadmpeg_ir::document::CadIr) -> Vec<
         .iter()
         .position(|&byte| byte == 0x0f)
         .expect("subtype opening");
-    crate::nurbs::subtypes::subtype_span(&bytes, inner, 8)
+    cadmpeg_asm::nurbs::subtypes::subtype_span(&bytes, inner, 8)
         .expect("subtype span")
         .to_vec()
 }
@@ -2840,11 +2912,11 @@ fn regenerated_procedural_surface_span(ir: &cadmpeg_ir::document::CadIr) -> Vec<
 fn synthetic_revision_surface_subtype_span(smbh: &[u8]) -> Vec<u8> {
     let start = asm_header::record_stream_start(smbh).unwrap();
     let limit = asm_header::solved_record_limit(smbh).unwrap();
-    let records = crate::sab::frame(smbh, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(smbh, start, limit, 8).unwrap();
     let record = &records[9];
     let slice = &smbh[record.offset..record.offset + record.len];
     let inner = slice.iter().position(|&byte| byte == 0x0f).unwrap();
-    crate::nurbs::subtypes::subtype_span(slice, inner, 8)
+    cadmpeg_asm::nurbs::subtypes::subtype_span(slice, inner, 8)
         .unwrap()
         .to_vec()
 }
@@ -3016,7 +3088,7 @@ fn synthetic_geometry_with_attribute_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let body = &records[1];
     let record = &mut bytes[body.offset..body.offset + body.len];
     let attribute_ref = record.iter().position(|byte| *byte == 0x0c).unwrap();
@@ -3069,7 +3141,7 @@ fn synthetic_geometry_with_sketch_link_smbh(form: SketchLinkForm<'_>) -> Vec<u8>
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let coedge = &records[7];
     let record = &mut bytes[coedge.offset..coedge.offset + coedge.len];
     let attribute_ref = record.iter().position(|byte| *byte == 0x0c).unwrap();
@@ -3265,15 +3337,15 @@ fn synthetic_mixed_face_wire_body_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     for (record_index, reference_ordinal) in [(1usize, 3usize), (3, 5)] {
         let record = &records[record_index];
-        let offsets = crate::sab::payload_token_offsets(&bytes, record, 8, 0x0c)
+        let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, record, 8, 0x0c)
             .expect("generated reference offsets");
         let offset = offsets[reference_ordinal];
         bytes[offset + 1..offset + 9].copy_from_slice(&19i64.to_le_bytes());
     }
-    let updated = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let updated = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     assert_eq!(updated[1].ref_at(4), Some(19));
     assert_eq!(updated[3].ref_at(6), Some(19));
 
@@ -3352,17 +3424,17 @@ fn synthetic_geometry_with_degenerate_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let edge = &records[10];
-    let offsets = crate::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
+    let offsets = cadmpeg_asm::sab::payload_token_offsets(&bytes, edge, 8, 0x0c)
         .expect("generated edge reference offsets");
     bytes[offsets[3] + 1..offsets[3] + 9].copy_from_slice(&13i64.to_le_bytes());
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let vertex = &records[14];
-    let owner = crate::sab::payload_token_offsets(&bytes, vertex, 8, 0x0c)
+    let owner = cadmpeg_asm::sab::payload_token_offsets(&bytes, vertex, 8, 0x0c)
         .expect("generated vertex reference offsets")[2];
     bytes[owner + 1..owner + 9].copy_from_slice(&11i64.to_le_bytes());
-    let endpoint = crate::sab::payload_token_offsets(&bytes, vertex, 8, 0x04)
+    let endpoint = cadmpeg_asm::sab::payload_token_offsets(&bytes, vertex, 8, 0x04)
         .expect("generated vertex integer offsets")[1];
     bytes[endpoint + 1..endpoint + 9].copy_from_slice(&0i64.to_le_bytes());
 
@@ -3565,7 +3637,7 @@ fn synthetic_versioned_cyl_spl_sur_with_tail_smbh(tail_form: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old_offset = records[9].offset;
     let old_len = records[9].len;
 
@@ -3608,7 +3680,7 @@ fn synthetic_cyl_spl_sur_with_cache_smbh(include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old_offset = records[9].offset;
     let old_len = records[9].len;
 
@@ -3639,7 +3711,7 @@ fn synthetic_exact_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -3677,7 +3749,7 @@ fn synthetic_ruled_spl_sur_smbh(name: &str, include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -3704,7 +3776,7 @@ fn synthetic_sum_spl_sur_smbh(name: &str, include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -3732,7 +3804,7 @@ fn synthetic_rot_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -3758,7 +3830,7 @@ fn synthetic_off_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -3794,7 +3866,7 @@ fn synthetic_comp_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -3827,7 +3899,7 @@ fn synthetic_taper_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -3904,7 +3976,7 @@ fn synthetic_loft_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -3942,7 +4014,7 @@ fn synthetic_net_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -3985,7 +4057,7 @@ fn synthetic_profile_first_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4033,7 +4105,7 @@ fn synthetic_t_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4073,7 +4145,7 @@ fn synthetic_helix_surface_smbh(circular: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4123,7 +4195,7 @@ fn synthetic_minimal_deformable_surface_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4164,7 +4236,7 @@ fn synthetic_framed_deformable_surface_smbh(mode: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4222,7 +4294,7 @@ fn synthetic_surface_curve_deformable_smbh() -> Vec<u8> {
     let mut bytes = synthetic_minimal_deformable_surface_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4278,7 +4350,7 @@ fn synthetic_full_deformable_surface_smbh(version_value: Option<i64>) -> Vec<u8>
     let mut bytes = synthetic_minimal_deformable_surface_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4347,7 +4419,7 @@ fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old_offset = records[9].offset;
     let old_len = records[9].len;
     let mut surface = Vec::new();
@@ -4383,14 +4455,14 @@ fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
     surface.push(0x10);
     t_end(&mut surface);
     bytes.splice(old_offset..old_offset + old_len, surface);
-    let records = crate::sab::frame(
+    let records = cadmpeg_asm::sab::frame(
         &bytes,
         asm_header::record_stream_start(&bytes).unwrap(),
         asm_header::solved_record_limit(&bytes).unwrap(),
         8,
     )
     .unwrap();
-    let tables = crate::nurbs::subtypes::SubtypeTables::from_records(&records, &bytes);
+    let tables = cadmpeg_asm::nurbs::subtypes::SubtypeTables::from_records(&records, &bytes);
     let index = tables
         .index_of_offset(8, old_offset + shared_offset)
         .expect("shared T-spline subtype index");
@@ -4403,7 +4475,7 @@ fn synthetic_explicit_formula_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4451,7 +4523,7 @@ fn synthetic_explicit_guide_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4504,7 +4576,7 @@ fn synthetic_explicit_surface_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4558,7 +4630,7 @@ fn synthetic_law_driven_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4637,7 +4709,7 @@ fn synthetic_compound_loft_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4676,7 +4748,7 @@ fn synthetic_scaled_compound_loft_smbh(full: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4728,7 +4800,7 @@ fn synthetic_skin_spl_sur_smbh(law_case: u8, expanded: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4837,7 +4909,7 @@ fn synthetic_law_spl_sur_smbh(name: &str, legacy_ranges: bool, tail_selector: i6
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4914,7 +4986,7 @@ fn synthetic_sub_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -4955,7 +5027,7 @@ fn synthetic_g2_blend_spl_sur_smbh(name: &str, full: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -5017,7 +5089,7 @@ fn synthetic_ref_cyl_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let asmheader = &records[0];
     let surface = &records[9];
     let marker = b"\x0f\x0d\x0bcyl_spl_sur";
@@ -5043,7 +5115,7 @@ fn synthetic_revision_ref_directrix_cyl_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_versioned_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let asmheader = &records[0];
 
     let mut target = Vec::new();
@@ -5071,7 +5143,7 @@ fn synthetic_rb_blend_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -5132,7 +5204,7 @@ fn synthetic_full_rolling_ball_with_tail_smbh(name: &str, tail_form: i64) -> Vec
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -5360,7 +5432,7 @@ fn synthetic_variable_blend_smbh_inner(
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -5475,7 +5547,7 @@ fn synthetic_vertex_blend_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -6152,29 +6224,32 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             .expect("generated edge continuity");
         metadata.continuity = "tangent".into();
         metadata.sense = cadmpeg_ir::topology::Sense::Reversed;
-        native.face_sidedness[0].containment = Some(crate::records::FaceContainment::In);
+        native.face_sidedness[0].containment =
+            Some(cadmpeg_asm::brep::records::FaceContainment::In);
         native.edge_ownerships[0].owner_coedge = Some(owner_coedge);
-        native.tolerant_vertex_tails = vec![crate::records::TolerantVertexTail {
+        native.tolerant_vertex_tails = vec![cadmpeg_asm::brep::records::TolerantVertexTail {
             id: "f3d:asm:tolerant-vertex-tail#generated".into(),
             vertex: tolerant_vertex,
             record_index: 0,
             leading_tolerances: [-1.0, -1.0],
             trailing_field: Some(0),
+            evaluated_unset: false,
         }];
-        native.tolerant_edge_tails = vec![crate::records::TolerantEdgeTail {
+        native.tolerant_edge_tails = vec![cadmpeg_asm::brep::records::TolerantEdgeTail {
             id: "f3d:asm:tolerant-edge-tail#generated".into(),
             edge: tolerant_edge,
             record_index: 0,
             entity_revision: 22800,
             trailing_field: Some(1),
         }];
-        native.tolerant_coedge_parameters = vec![crate::records::TolerantCoedgeParameters {
-            id: "f3d:asm:tolerant-coedge-parameters#generated".into(),
-            coedge: tolerant_coedge,
-            record_index: 0,
-            parameter_range: [0.25, 0.75],
-            extension: crate::records::TolerantCoedgeExtension::None,
-        }];
+        native.tolerant_coedge_parameters =
+            vec![cadmpeg_asm::brep::records::TolerantCoedgeParameters {
+                id: "f3d:asm:tolerant-coedge-parameters#generated".into(),
+                coedge: tolerant_coedge,
+                record_index: 0,
+                parameter_range: [0.25, 0.75],
+                extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension::None,
+            }];
         native.body_visibilities = vec![crate::records::BodyVisibility {
             id: "f3d:design:body-visibility#generated".into(),
             body: visible_body,
@@ -6214,7 +6289,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         .windows(b"\x0d\x09asmheader".len())
         .position(|window| window == b"\x0d\x09asmheader")
         .expect("generated ASM record table");
-    let records = crate::sab::frame(&smbh, record_start, smbh.len(), 8)
+    let records = cadmpeg_asm::sab::frame(&smbh, record_start, smbh.len(), 8)
         .expect("generated ASM records must frame");
     let point_records = records
         .iter()
@@ -6337,7 +6412,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         .all(|metadata| metadata.continuity == "unknown"));
     assert_eq!(
         f3d_native(&round_trip.ir).face_sidedness[0].containment,
-        Some(crate::records::FaceContainment::In)
+        Some(cadmpeg_asm::brep::records::FaceContainment::In)
     );
     assert_eq!(round_trip.ir.model.points, source_less.model.points);
     assert_eq!(round_trip.ir.model.surfaces, source_less.model.surfaces);
@@ -6349,7 +6424,8 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     {
         let mut native = f3d_native_mut(&mut edited);
         native.body_native_keys[0].asm_body_key = Some(84);
-        native.face_sidedness[0].containment = Some(crate::records::FaceContainment::Out);
+        native.face_sidedness[0].containment =
+            Some(cadmpeg_asm::brep::records::FaceContainment::Out);
         native.tolerant_vertex_tails[0].leading_tolerances = [3.5, -4.5];
     }
     let mut retained = Vec::new();
@@ -6361,7 +6437,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         .expect("retained double-sided containment round trip");
     assert_eq!(
         f3d_native(&retained.ir).face_sidedness[0].containment,
-        Some(crate::records::FaceContainment::Out)
+        Some(cadmpeg_asm::brep::records::FaceContainment::Out)
     );
     assert_eq!(retained.ir.model.vertices[0].tolerance, Some(0.05));
     assert_eq!(retained.ir.model.edges[0].tolerance, Some(0.06));
@@ -6414,14 +6490,15 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
         let tolerant_edge = source_less.model.edges[0].id.clone();
         {
             let mut native = f3d_native_mut(&mut source_less);
-            native.tolerant_vertex_tails = vec![crate::records::TolerantVertexTail {
+            native.tolerant_vertex_tails = vec![cadmpeg_asm::brep::records::TolerantVertexTail {
                 id: "f3d:asm:tolerant-vertex-tail#generated".into(),
                 vertex: tolerant_vertex,
                 record_index: 0,
                 leading_tolerances: [-1.0, -1.0],
                 trailing_field: vertex_trailing,
+                evaluated_unset: false,
             }];
-            native.tolerant_edge_tails = vec![crate::records::TolerantEdgeTail {
+            native.tolerant_edge_tails = vec![cadmpeg_asm::brep::records::TolerantEdgeTail {
                 id: "f3d:asm:tolerant-edge-tail#generated".into(),
                 edge: tolerant_edge,
                 record_index: 0,
@@ -6449,6 +6526,56 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
             vertex_trailing
         );
     }
+}
+
+#[test]
+fn an_unset_tolerant_vertex_sentinel_round_trips_without_a_neutral_tolerance() {
+    // The `-1` unset evaluated slot is a marker rather than a length: the
+    // neutral vertex carries no tolerance, the native tail keeps the unset
+    // fact, and generation writes the sentinel back into a tvertex record.
+    let source = f3d_with_smbh(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated planar triangle decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let tolerant_vertex = source_less.model.vertices[0].id.clone();
+    assert_eq!(source_less.model.vertices[0].tolerance, None);
+    {
+        let mut native = f3d_native_mut(&mut source_less);
+        native.tolerant_vertex_tails = vec![cadmpeg_asm::brep::records::TolerantVertexTail {
+            id: "f3d:asm:tolerant-vertex-tail#generated".into(),
+            vertex: tolerant_vertex,
+            record_index: 0,
+            leading_tolerances: [-1.0, -1.0],
+            trailing_field: Some(0),
+            evaluated_unset: true,
+        }];
+    }
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("unset tolerant vertex encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("unset tolerant vertex round trip");
+    let vertex = round_trip
+        .ir
+        .model
+        .vertices
+        .iter()
+        .find(|vertex| {
+            f3d_native(&round_trip.ir)
+                .tolerant_vertex_tails
+                .iter()
+                .any(|tail| tail.vertex == vertex.id)
+        })
+        .expect("tolerant vertex survives");
+    assert_eq!(vertex.tolerance, None);
+    let tail = &f3d_native(&round_trip.ir).tolerant_vertex_tails[0];
+    assert!(tail.evaluated_unset);
+    assert_eq!(tail.leading_tolerances, [-1.0, -1.0]);
 }
 
 #[test]
@@ -8128,12 +8255,12 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let tolerant_coedge = source_less.model.coedges[7].id.clone();
     f3d_native_mut(&mut source_less).tolerant_coedge_parameters =
-        vec![crate::records::TolerantCoedgeParameters {
+        vec![cadmpeg_asm::brep::records::TolerantCoedgeParameters {
             id: "f3d:asm:tolerant-coedge-parameters#cube".into(),
             coedge: tolerant_coedge,
             record_index: 0,
             parameter_range: [-1.5, 2.25],
-            extension: crate::records::TolerantCoedgeExtension::None,
+            extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension::None,
         }];
     let mut encoded = Vec::new();
     F3dCodec
@@ -8151,22 +8278,22 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
             .unwrap()
             .read_to_end(&mut stream)
             .unwrap();
-        let records = crate::sab::frame(&stream, 47, stream.len(), 8).unwrap();
+        let records = cadmpeg_asm::sab::frame(&stream, 47, stream.len(), 8).unwrap();
         let tolerant = records
             .iter()
             .find(|record| record.head == "tcoedge")
             .expect("canonical tolerant coedge record");
         assert!(matches!(
             tolerant.chunk(13),
-            Some(crate::sab::Token::Ref(-1))
+            Some(cadmpeg_asm::sab::Token::Ref(-1))
         ));
         assert!(matches!(
             tolerant.chunk(14),
-            Some(crate::sab::Token::Long(0))
+            Some(cadmpeg_asm::sab::Token::Long(0))
         ));
         assert!(matches!(
             tolerant.chunk(15),
-            Some(crate::sab::Token::Long(0))
+            Some(cadmpeg_asm::sab::Token::Long(0))
         ));
     }
     let round_trip = F3dCodec
@@ -9121,7 +9248,7 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
 
 #[test]
 fn generated_source_less_rejects_collapsed_native_topology_metadata() {
-    use crate::records::{EdgeContinuity, TolerantVertexTail};
+    use cadmpeg_asm::brep::records::{EdgeContinuity, TolerantVertexTail};
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let edge = source_less.model.edges[0].id.clone();
@@ -9158,6 +9285,7 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
             record_index: 0,
             leading_tolerances: [1.0, 2.0],
             trailing_field: Some(0),
+            evaluated_unset: false,
         }];
     }
     let error = F3dCodec
@@ -11293,7 +11421,7 @@ fn body_key_edit_does_not_rewrite_ordinal_design_selector() {
     let mut baseline = crate::native::F3dNative::default();
     baseline
         .body_native_keys
-        .push(crate::records::BodyNativeKey {
+        .push(cadmpeg_asm::brep::records::BodyNativeKey {
             id: "f3d:asm:body-native-key#1".into(),
             body: body.clone(),
             record_index: 1,
@@ -12519,7 +12647,7 @@ fn asm_header_parses_documented_fields() {
 }
 
 /// Flag bits 1 to 7 hold the save format's revision number
-/// ([spec §3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#3-asm-binary-header)):
+/// ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#1-asm-binary-header)):
 /// save format 22300 carries revision 2 and 22500 carries revision 3. Those
 /// bits are assigned, so they leave the uninterpreted set; bits 8 and above
 /// stay in it.
@@ -12557,7 +12685,7 @@ fn asm_header_absent_on_non_asm_bytes() {
     assert!(!asm_header::has_asm_magic(b"PK\x03\x04"));
 }
 
-/// The `BinaryFile4` fixed header ([spec §3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#3-asm-binary-header)): 15-byte magic, four little-endian
+/// The `BinaryFile4` fixed header ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#1-asm-binary-header)): 15-byte magic, four little-endian
 /// u32 words (save-format version, record count, entity count, flags), then the same
 /// tagged string/double sequence as `BinaryFile8`.
 fn bf4_header_prefix(flags: u32) -> Vec<u8> {
@@ -12593,7 +12721,7 @@ fn synthetic_geometry_bf4_nurbs_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_bf4_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 4).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 4).unwrap();
     let ellipse_range = records[19].offset..records[19].offset + records[19].len;
 
     let mut curve = Vec::new();
@@ -12994,7 +13122,7 @@ fn history_preamble_record_is_the_modern_partition_boundary() {
 
     assert_eq!(asm_header::solved_record_limit(&bytes), Some(expected));
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let solved = crate::sab::frame(&bytes, start, expected, 8).unwrap();
+    let solved = cadmpeg_asm::sab::frame(&bytes, start, expected, 8).unwrap();
     assert_eq!(
         solved.last().map(|record| record.name.as_str()),
         Some("body")
@@ -13284,7 +13412,7 @@ fn sab_framer_indexes_records_from_asmheader() {
     let bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).expect("record stream start");
     let limit = asm_header::solved_record_limit(&bytes).unwrap_or(bytes.len());
-    let records = crate::sab::frame(&bytes, start, limit, 8).expect("framing succeeds");
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).expect("framing succeeds");
 
     // asmheader occupies index 0; the topology records follow in order.
     assert_eq!(records[0].index, 0);
@@ -13392,14 +13520,15 @@ fn history_topology_decode_matches_full_brep_graph() {
     ] {
         let start = asm_header::record_stream_start(&bytes).expect("record stream start");
         let limit = asm_header::solved_record_limit(&bytes).expect("solved record limit");
-        let records = crate::sab::frame(&bytes, start, limit, 8).expect("frame BREP");
+        let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).expect("frame BREP");
 
-        let full =
-            crate::history::historical_topology(&crate::brep::decode(&records, &bytes, "full"))
-                .expect("full topology");
-        let history = crate::history::historical_topology(&crate::brep::decode_history_topology(
-            &records, &bytes,
-        ))
+        let full = crate::history::historical_topology(
+            &crate::brep::decode(&records, &bytes, "full", crate::ids::ID_FORMAT).asm,
+        )
+        .expect("full topology");
+        let history = crate::history::historical_topology(
+            &crate::brep::decode_history_topology(&records, &bytes, crate::ids::ID_FORMAT).asm,
+        )
         .expect("history topology");
 
         assert_eq!(history, full);
@@ -13429,7 +13558,7 @@ fn decode_transfers_generated_wire_body_topology() {
     assert_eq!(f3d_native(&result.ir).wire_topologies.len(), 1);
     assert_eq!(
         f3d_native(&result.ir).wire_topologies[0].side,
-        crate::records::WireSide::Out
+        cadmpeg_asm::brep::records::WireSide::Out
     );
     assert_eq!(
         result.ir.model.shells[0].wire_edges[0],
@@ -13441,7 +13570,7 @@ fn decode_transfers_generated_wire_body_topology() {
         .iter()
         .any(|loss| loss.message.contains("wire=")));
     update_f3d_native(&mut result.ir, |native| {
-        native.wire_topologies[0].side = crate::records::WireSide::In;
+        native.wire_topologies[0].side = cadmpeg_asm::brep::records::WireSide::In;
     });
     let mut edited = Vec::new();
     F3dCodec
@@ -13452,7 +13581,7 @@ fn decode_transfers_generated_wire_body_topology() {
         .expect("wire-side retained round trip");
     assert_eq!(
         f3d_native(&edited.ir).wire_topologies[0].side,
-        crate::records::WireSide::In
+        cadmpeg_asm::brep::records::WireSide::In
     );
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(
@@ -13778,7 +13907,7 @@ fn generated_source_less_writes_wire_body_topology() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     update_f3d_native(&mut source_less, |native| {
-        native.wire_topologies[0].side = crate::records::WireSide::In;
+        native.wire_topologies[0].side = cadmpeg_asm::brep::records::WireSide::In;
     });
     let expected_curve = source_less.model.curves[0].geometry.clone();
     let expected_points = source_less
@@ -13807,7 +13936,7 @@ fn generated_source_less_writes_wire_body_topology() {
     assert_eq!(round_trip.ir.model.shells[0].wire_edges.len(), 1);
     assert_eq!(
         f3d_native(&round_trip.ir).wire_topologies[0].side,
-        crate::records::WireSide::In
+        cadmpeg_asm::brep::records::WireSide::In
     );
     assert_eq!(round_trip.ir.model.edges.len(), 1);
     assert_eq!(
@@ -13841,7 +13970,7 @@ fn generated_source_less_writes_isolated_vertex_wire() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     update_f3d_native(&mut source_less, |native| {
-        native.wire_topologies[0].side = crate::records::WireSide::In;
+        native.wire_topologies[0].side = cadmpeg_asm::brep::records::WireSide::In;
     });
 
     let mut encoded = Vec::new();
@@ -13875,7 +14004,7 @@ fn generated_source_less_writes_isolated_vertex_wire() {
         wire.free_vertex,
         Some(round_trip.ir.model.vertices[0].id.clone())
     );
-    assert_eq!(wire.side, crate::records::WireSide::In);
+    assert_eq!(wire.side, cadmpeg_asm::brep::records::WireSide::In);
     let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
     assert!(
         validation.is_ok(),
@@ -14201,8 +14330,8 @@ fn generated_source_less_writes_multi_shell_wire_region() {
 
 #[test]
 fn analytic_carrier_decode_covers_each_shape() {
-    use crate::brep::geometry::{decode_curve, decode_surface};
-    use crate::sab::{Record, Token};
+    use cadmpeg_asm::brep::geometry::{decode_curve, decode_surface};
+    use cadmpeg_asm::sab::{Record, Token};
     use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 
     fn rec(head: &str, tokens: Vec<Token>) -> Record {
@@ -14547,7 +14676,7 @@ fn decode_reports_faces_with_missing_surface_references() {
         let mut smbh = synthetic_mixed_smbh();
         let start = asm_header::record_stream_start(&smbh).unwrap();
         let limit = asm_header::solved_record_limit(&smbh).unwrap();
-        let records = crate::sab::frame(&smbh, start, limit, 8).unwrap();
+        let records = cadmpeg_asm::sab::frame(&smbh, start, limit, 8).unwrap();
         let face = records
             .iter()
             .filter(|record| record.head == "face")
@@ -14611,7 +14740,7 @@ fn decode_reports_dangling_edge_curve_references() {
     let mut smbh = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&smbh).unwrap();
     let limit = asm_header::solved_record_limit(&smbh).unwrap();
-    let records = crate::sab::frame(&smbh, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&smbh, start, limit, 8).unwrap();
     let edge = &records[10];
     let record = &mut smbh[edge.offset..edge.offset + edge.len];
     let curve_ref = record.iter().rposition(|byte| *byte == 0x0c).unwrap();
@@ -14702,7 +14831,7 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
 
 #[test]
 fn nurbs_surface_block_decodes_to_carrier() {
-    use crate::nurbs::core::decode_surface_cache;
+    use cadmpeg_asm::nurbs::core::decode_surface_cache;
 
     // A degree-1 × degree-1 nubs surface with a 2×2 control grid. Endpoint
     // multiplicities are stored as `degree` (=1); the clamped knot vector adds
@@ -20447,8 +20576,6 @@ fn decode_reports_generated_partial_rolling_ball_supports() {
 
 #[test]
 fn subtype_reference_resolves_surface_cache() {
-    use crate::nurbs::core::decode_surface_cache_resolving_refs_at;
-
     let mut target = Vec::new();
     target.extend_from_slice(b"\x0f\x0d\x07surface");
     // A payload byte equal to SUBTYPE_CLOSE must not terminate the span.
@@ -20464,11 +20591,9 @@ fn subtype_reference_resolves_surface_cache() {
 
     let mut active = target;
     active.extend_from_slice(&source);
-    let decoded = decode_surface_cache_resolving_refs_at(
-        &source,
-        &active,
-        &crate::nurbs::subtypes::SubtypeTables::from_stream(&active),
-        8,
+    let decoded = cadmpeg_asm::nurbs::core::surface_cache_resolving_refs(
+        &cadmpeg_asm::nurbs::toks::lex_test_span(&source, 8),
+        &cadmpeg_asm::nurbs::toks::test_table(&active, 8),
     )
     .expect("subtype-table reference resolves to its surface cache");
     assert_eq!((decoded.u_count, decoded.v_count), (2, 2));
@@ -20513,7 +20638,7 @@ fn generated_form_two_par_int_cur(first: [f64; 2], second: [f64; 2]) -> Vec<u8> 
 
 #[test]
 fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
-    use crate::nurbs::proc_curve::decode_par_int_cur_isoline;
+    use cadmpeg_asm::nurbs::proc_curve::decode_par_int_cur_isoline;
     use cadmpeg_ir::math::Point3;
 
     // The support is the unit bilinear patch scaled to millimetres, so the
@@ -20539,7 +20664,7 @@ fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
 
 #[test]
 fn a_nested_construction_cache_is_not_the_enclosing_scope_cache() {
-    use crate::nurbs::core::{decode_curve_cache, decode_owned_curve_cache_at};
+    use cadmpeg_asm::nurbs::core::{decode_curve_cache, decode_owned_curve_cache_at};
 
     // A `par_int_cur` whose cache slot is `nullbs` and whose support is an
     // intcurve construction carrying a curve block of its own.
@@ -20558,21 +20683,19 @@ fn a_nested_construction_cache_is_not_the_enclosing_scope_cache() {
 
 #[test]
 fn a_nested_construction_does_not_claim_its_enclosing_record() {
-    use crate::nurbs::proc_surface::{
-        decode_procedural_surface_resolving_refs, DecodedProceduralSurfaceDefinition,
+    use cadmpeg_asm::nurbs::proc_surface::{
+        procedural_surface_resolving_refs, DecodedProceduralSurfaceDefinition,
     };
-    use crate::nurbs::subtypes::SubtypeTables;
 
     let bytes = synthetic_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
     let record = &records[9];
     let owned = bytes[record.offset..record.offset + record.len].to_vec();
-    let decoded = decode_procedural_surface_resolving_refs(
-        &owned,
-        &owned,
-        &SubtypeTables::from_stream(&owned),
+    let decoded = procedural_surface_resolving_refs(
+        &record.tokens,
+        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(std::slice::from_ref(record)),
     )
     .expect("the record owns its extrusion");
     assert!(matches!(
@@ -20591,10 +20714,10 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     nested.splice(at..at, *b"\x0f\x0d\x14srf_srf_v_bl_spl_sur");
     let terminator = nested.len() - 1;
     nested.insert(terminator, 0x10);
-    assert!(decode_procedural_surface_resolving_refs(
-        &nested,
-        &nested,
-        &SubtypeTables::from_stream(&nested)
+    let nested_records = cadmpeg_asm::sab::frame(&nested, 0, nested.len(), 8).unwrap();
+    assert!(procedural_surface_resolving_refs(
+        &nested_records[0].tokens,
+        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&nested_records),
     )
     .is_none());
 }
@@ -20615,7 +20738,7 @@ fn subtype_table_walks_wide_strings_at_the_stream_ref_width() {
         active.extend_from_slice(b"\x0f\x0d\x08real_def\x10");
         active.push(0x11);
 
-        let tables = crate::nurbs::subtypes::SubtypeTables::from_stream(&active);
+        let tables = cadmpeg_asm::nurbs::subtypes::SubtypeTables::from_stream(&active);
         assert_eq!(tables.for_width(ref_width), [definition]);
     }
 }
@@ -20637,9 +20760,10 @@ fn rgb_attribute_chain_decodes_body_color() {
     t_dbl(&mut bytes, 0.3);
     t_end(&mut bytes);
 
-    let records = crate::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
-    let color = crate::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
+    let color =
+        cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!((color.r, color.g, color.b, color.a), (0.1, 0.2, 0.3, 1.0));
 }
 
@@ -20659,9 +20783,10 @@ fn truecolor_attribute_chain_decodes_argb() {
     bytes.extend_from_slice(&(0x8040_80c0i64).to_le_bytes());
     t_end(&mut bytes);
 
-    let records = crate::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
-    let color = crate::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
+    let color =
+        cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!(
         (color.r, color.g, color.b, color.a),
         (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 128.0 / 255.0)
@@ -20683,9 +20808,10 @@ fn bt_text_color_attribute_chain_decodes_rgb() {
     push_u8_string(&mut bytes, "4227264"); // 0x4080c0
     t_end(&mut bytes);
 
-    let records = crate::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
-    let color = crate::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
+    let color =
+        cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!(
         (color.r, color.g, color.b, color.a),
         (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 1.0)
@@ -20708,9 +20834,11 @@ fn bt_text_color_rejects_non_decimal_and_overwide_values() {
         push_u8_string(&mut bytes, value);
         t_end(&mut bytes);
 
-        let records = crate::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
+        let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
         let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
-        assert!(crate::brep::attributes::attribute_chain_color(&records[0], &by_index).is_none());
+        assert!(
+            cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).is_none()
+        );
     }
 }
 
@@ -20737,15 +20865,16 @@ fn invalid_color_attribute_does_not_hide_later_chain_color() {
     t_dbl(&mut bytes, 0.3);
     t_end(&mut bytes);
 
-    let records = crate::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
-    let color = crate::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
+    let color =
+        cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!((color.r, color.g, color.b, color.a), (0.1, 0.2, 0.3, 1.0));
 }
 
 #[test]
 fn transform_decodes_column_major_basis_and_scaled_translation() {
-    use crate::sab::{Record, Token};
+    use cadmpeg_asm::sab::{Record, Token};
 
     let record = Record {
         index: 0,
@@ -20762,7 +20891,7 @@ fn transform_decodes_column_major_basis_and_scaled_translation() {
         offset: 0,
         len: 0,
     };
-    let transform = crate::brep::attributes::decode_transform(&record, 60.0).unwrap();
+    let transform = cadmpeg_asm::brep::attributes::decode_transform(&record, 60.0).unwrap();
     assert_eq!(transform.rows[0], [1.0, 0.0, 0.0, 600.0]);
     assert_eq!(transform.rows[1], [0.0, 1.0, 0.0, 1200.0]);
     assert_eq!(transform.rows[2], [0.0, 0.0, 1.0, 1800.0]);
@@ -20771,7 +20900,7 @@ fn transform_decodes_column_major_basis_and_scaled_translation() {
 
 #[test]
 fn nurbs_curve_block_decodes_to_carrier() {
-    use crate::nurbs::core::decode_curve_cache;
+    use cadmpeg_asm::nurbs::core::decode_curve_cache;
 
     // A degree-2 nubs curve with two unique knots at stored multiplicity 2:
     // sum(mults) 4, n_poles = 4 - (degree - 1) = 3.
@@ -21396,8 +21525,9 @@ fn generated_spline_carriers_write_explicit_forward_sense() {
             .windows(b"\x0d\x09asmheader".len())
             .position(|window| window == b"\x0d\x09asmheader")
             .expect("generated ASM record table");
-        let records = crate::sab::frame(&generated_smbh, record_start, generated_smbh.len(), 8)
-            .expect("generated ASM records must frame");
+        let records =
+            cadmpeg_asm::sab::frame(&generated_smbh, record_start, generated_smbh.len(), 8)
+                .expect("generated ASM records must frame");
         let record = records
             .iter()
             .find(|record| record.head == head)
@@ -21405,10 +21535,10 @@ fn generated_spline_carriers_write_explicit_forward_sense() {
         let subtype = record
             .tokens
             .iter()
-            .position(|token| matches!(token, crate::sab::Token::SubtypeOpen))
+            .position(|token| matches!(token, cadmpeg_asm::sab::Token::SubtypeOpen))
             .expect("spline carrier subtype scope");
         assert!(subtype > 0);
-        assert_eq!(record.tokens[subtype - 1], crate::sab::Token::False);
+        assert_eq!(record.tokens[subtype - 1], cadmpeg_asm::sab::Token::False);
     }
 }
 
@@ -23152,7 +23282,7 @@ fn generated_f3d_rewrites_topology_bound_nurbs_curve() {
 
 #[test]
 fn nurbs_pcurve_block_decodes_without_length_scaling() {
-    use crate::nurbs::pcurve::decode_pcurve_cache;
+    use cadmpeg_asm::nurbs::pcurve::decode_pcurve_cache;
 
     // A degree-1 2D pcurve. Unlike model-space NURBS control points, these
     // are UV parameters and therefore must not be converted from cm to mm.
@@ -23166,25 +23296,30 @@ fn nurbs_pcurve_block_decodes_without_length_scaling() {
 }
 
 #[test]
-fn ref_pcurve_collects_intcurve_uv_candidates() {
+fn ref_pcurve_resolves_intcurve_uv_slot() {
     let mut intcurve = generated_curve_block();
     intcurve.extend_from_slice(&generated_pcurve_block());
 
-    let candidates = crate::nurbs::pcurve::decode_pcurve_cache_candidates_resolving_refs(
-        &intcurve,
-        &intcurve,
-        &crate::nurbs::subtypes::SubtypeTables::from_stream(&intcurve),
+    let pcurve = cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_resolving_refs(
+        &cadmpeg_asm::nurbs::toks::lex_test_span(&intcurve, 8),
+        2,
+        &cadmpeg_asm::nurbs::toks::test_table(&intcurve, 8),
+    )
+    .expect("intcurve slot 2 carries the UV cache");
+    assert_eq!(pcurve.control_points[0].u, 0.25);
+    assert_eq!(pcurve.control_points[1].v, 1.5);
+    assert!(
+        cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_resolving_refs(
+            &cadmpeg_asm::nurbs::toks::lex_test_span(&intcurve, 8),
+            1,
+            &cadmpeg_asm::nurbs::toks::test_table(&intcurve, 8),
+        )
+        .is_none()
     );
-    let pcurve = candidates
-        .first()
-        .expect("intcurve UV cache is a candidate");
-    assert!(pcurve.unambiguous_2d);
-    assert_eq!(pcurve.curve.control_points[0].u, 0.25);
-    assert_eq!(pcurve.curve.control_points[1].v, 1.5);
 }
 
 #[test]
-fn ref_pcurve_resolves_intcurve_subtype_candidates() {
+fn ref_pcurve_rejects_orphan_typed_slot() {
     let mut target = b"\x0f\x0d\x0bint_int_cur".to_vec();
     target.extend_from_slice(&generated_curve_block());
     target.extend_from_slice(&generated_pcurve_block());
@@ -23195,16 +23330,15 @@ fn ref_pcurve_resolves_intcurve_subtype_candidates() {
     let mut active = target;
     active.extend_from_slice(&source);
 
-    let candidates = crate::nurbs::pcurve::decode_pcurve_cache_candidates_resolving_refs(
-        &source,
-        &active,
-        &crate::nurbs::subtypes::SubtypeTables::from_stream(&active),
+    assert!(
+        cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_resolving_refs(
+            &cadmpeg_asm::nurbs::toks::lex_test_span(&source, 8),
+            2,
+            &cadmpeg_asm::nurbs::toks::test_table(&active, 8),
+        )
+        .is_none(),
+        "a pcurve without its typed support surface is not a carrier"
     );
-    let pcurve = candidates
-        .first()
-        .expect("intcurve subtype carries a UV candidate");
-    assert!(pcurve.unambiguous_2d);
-    assert_eq!(pcurve.curve.control_points[1].v, 1.5);
 }
 
 #[test]
@@ -23341,6 +23475,54 @@ fn unique_bs2_intcurve_role_is_its_ref_pcurve_carrier() {
 }
 
 #[test]
+fn negative_ref_pcurve_reverses_its_uv_parameterization() {
+    let smbh = with_pcurve_discriminator(
+        synthetic_geometry_with_ref_pcurve_on_nurbs_surface_smbh(),
+        -2,
+    );
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("reversed ref pcurve decode");
+    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } =
+        &result.ir.model.pcurves[0].geometry
+    else {
+        panic!("ref pcurve is not a NURBS");
+    };
+    assert_eq!(
+        control_points.first(),
+        Some(&cadmpeg_ir::math::Point2::new(0.75, 1.5))
+    );
+}
+
+#[test]
+fn ref_pcurve_selector_reversal_xors_intcurve_reversal() {
+    let smbh = with_pcurve_discriminator(
+        with_ref_pcurve_companion_reversed(
+            synthetic_geometry_with_ref_pcurve_on_nurbs_surface_smbh(),
+        ),
+        -2,
+    );
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("doubly reversed ref pcurve decode");
+    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } =
+        &result.ir.model.pcurves[0].geometry
+    else {
+        panic!("ref pcurve is not a NURBS");
+    };
+    assert_eq!(
+        control_points.first(),
+        Some(&cadmpeg_ir::math::Point2::new(0.25, 0.5))
+    );
+}
+
+#[test]
 fn generated_inline_pcurve_tail_requires_four_adjacent_booleans() {
     let decode = |smbh: Vec<u8>| {
         F3dCodec
@@ -23391,6 +23573,8 @@ fn generated_pcurve_geometry_dispatch_follows_discriminator() {
         ),
         synthetic_geometry_with_out_of_scope_pcurve_cache_smbh(),
         with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), 0),
+        with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), 1),
+        with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), -1),
         with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), 7),
         with_ref_pcurve_companion_name(synthetic_geometry_with_ref_pcurve_smbh(), b"badcurve"),
     ] {
@@ -23422,7 +23606,7 @@ fn generated_pcurve_reports_dangling_carrier_reference() {
     let mut smbh = synthetic_geometry_with_pcurve_smbh();
     let start = asm_header::record_stream_start(&smbh).unwrap();
     let limit = asm_header::solved_record_limit(&smbh).unwrap();
-    let records = crate::sab::frame(&smbh, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(&smbh, start, limit, 8).unwrap();
     let coedge = &records[7];
     let record = &mut smbh[coedge.offset..coedge.offset + coedge.len];
     let pcurve_ref = record.iter().rposition(|byte| *byte == 0x0c).unwrap();
@@ -24579,6 +24763,43 @@ fn f3d_without_brep(doc_type: &str, own_name: &str, targets: &[(&str, &str)]) ->
     zip.finish().unwrap().into_inner()
 }
 
+/// A minimal ASM text stream: the three header lines, an `asmheader`, one `body`
+/// record, and the terminator. Written from the encoding's own structure so the
+/// fixture exercises classification without carrying a decodable payload.
+fn synthetic_asm_text_stream() -> Vec<u8> {
+    let mut text = String::new();
+    text.push_str("21800 0 1 12           \n");
+    text.push_str("16 Autodesk Neutron 23 ASM 218.0.1.400 Unknown 8 Synthetic \n");
+    text.push_str("10 9.999999999999999547e-07 1.000000000000000036e-10 \n");
+    text.push_str("asmheader $-1 -1 @11 218.0.1.400 #\n");
+    text.push_str("body $-1 -1 $-1 $-1 $-1 $-1 #\n");
+    text.push_str("End-of-ASM-data\n");
+    text.into_bytes()
+}
+
+/// A BREP-less `.f3d` whose `Breps.BlobParts` holds text-encoded ASM members
+/// only. This is the shape of an early-generation archive: the text streams
+/// are the document's geometry carriers.
+fn f3d_with_text_brep(members: &[&str]) -> Vec<u8> {
+    let base = f3d_without_brep("part-design", "part.f3d", &[]);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut source = zip::ZipArchive::new(Cursor::new(base)).unwrap();
+    for i in 0..source.len() {
+        let mut entry = source.by_index(i).unwrap();
+        let name = entry.name().to_owned();
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
+        zip.start_file(name, stored).unwrap();
+        zip.write_all(&bytes).unwrap();
+    }
+    for member in members {
+        zip.start_file(*member, stored).unwrap();
+        zip.write_all(&synthetic_asm_text_stream()).unwrap();
+    }
+    zip.finish().unwrap().into_inner()
+}
+
 /// Wrap members into a `.f3z` archive with `Manifest.json` naming the root.
 fn f3z_archive(root_name: &str, members: &[(&str, &[u8])]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -24649,6 +24870,215 @@ fn part_without_brep_keeps_blocking_losses() {
         .losses
         .iter()
         .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Blocking));
+}
+
+/// A document with no ASM BREP stream has no selected stream, so the geometry
+/// and topology losses must not name a decode failure of one. Stating a cause
+/// that was never reached misreports which carrier is missing.
+#[test]
+fn brep_less_part_reports_an_absent_stream_not_a_failed_decode() {
+    let archive = f3d_without_brep("part-design", "part.f3d", &[]);
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    let message = |code: LossCode| {
+        let loss = decoded
+            .report
+            .losses
+            .iter()
+            .find(|loss| loss.code == code)
+            .unwrap_or_else(|| panic!("{code:?} not reported: {:?}", decoded.report.losses));
+        loss.message.clone()
+    };
+
+    let geometry = message(LossCode::GeometryNotTransferred);
+    assert!(
+        geometry.contains("declares no ASM BREP stream"),
+        "geometry loss must state the absent stream: {geometry}"
+    );
+    assert!(
+        !geometry.contains("selected stream"),
+        "no stream was selected, so none can have failed to decode: {geometry}"
+    );
+
+    let topology = message(LossCode::TopologyNotTransferred);
+    assert!(
+        topology.contains("declares no ASM BREP stream"),
+        "topology loss must state the absent stream: {topology}"
+    );
+
+    assert_eq!(
+        message(LossCode::MissingGeometryStream),
+        "no ASM BREP stream (.smb/.smbh) was found in the container"
+    );
+
+    // The decode ran; advising the reader to run it is container-only advice.
+    assert!(
+        !decoded
+            .report
+            .notes
+            .iter()
+            .any(|note| note.starts_with("container-level inspection only")),
+        "full decode must not carry container-only advice: {:?}",
+        decoded.report.notes
+    );
+}
+
+/// A document whose only geometry carrier uses the text encoding does declare a
+/// carrier. Reporting an absent stream names the wrong gap: the geometry is in
+/// the archive and its encoding is not read. The two statements send a reader to
+/// A geometry-less text carrier is reported as a carrier whose decode
+/// produced nothing, not as an absent stream.
+#[test]
+fn a_text_only_carrier_without_geometry_is_reported_as_empty_not_absent() {
+    let archive = f3d_with_text_brep(&[
+        "Fusion[Active]/Breps.BlobParts/BREP0.sat",
+        "Fusion[Active]/Breps.BlobParts/BREP1.sat",
+    ]);
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    let message = |code: LossCode| {
+        let loss = decoded
+            .report
+            .losses
+            .iter()
+            .find(|loss| loss.code == code)
+            .unwrap_or_else(|| panic!("{code:?} not reported: {:?}", decoded.report.losses));
+        loss.message.clone()
+    };
+
+    let geometry = message(LossCode::GeometryNotTransferred);
+    assert!(
+        geometry.contains("text-encoded ASM stream(s)") && geometry.contains("BREP0.sat"),
+        "geometry loss must name the empty text carrier: {geometry}"
+    );
+    assert!(
+        !geometry.contains("declares no ASM BREP stream"),
+        "a text carrier is a declared carrier: {geometry}"
+    );
+
+    let topology = message(LossCode::TopologyNotTransferred);
+    assert!(
+        topology.contains("text-encoded"),
+        "topology loss must name the encoding: {topology}"
+    );
+
+    assert_eq!(
+        message(LossCode::MissingGeometryStream),
+        "2 ASM BREP stream(s) are present in the text encoding (.sat/.smt) and produced no \
+         geometry; no binary stream (.smb/.smbh) was found"
+    );
+}
+
+/// A text carrier with a complete solid decodes through the shared B-rep
+/// path: the loopless closed sphere face reaches the model arenas with its
+/// radius in millimetres per the stream's unit rule.
+#[test]
+fn a_text_carrier_with_geometry_decodes_through_the_shared_brep_path() {
+    let mut text = String::new();
+    text.push_str("23200 0 2 2 \n");
+    text.push_str("16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic \n");
+    text.push_str("1 9.999999999999999547e-07 1.000000000000000036e-10 \n");
+    text.push_str("asmheader $-1 -1 @13 232.4.0.65535 #\n");
+    text.push_str("body $-1 -1 $-1 $2 $-1 $-1 #\n");
+    text.push_str("lump $-1 -1 $-1 $-1 $3 $1 #\n");
+    text.push_str("shell $-1 -1 $-1 $-1 $-1 $4 $-1 $2 #\n");
+    text.push_str("face $-1 -1 $-1 $-1 $-1 $3 $-1 $5 forward single #\n");
+    text.push_str("sphere-surface $-1 -1 $-1 0 0 0 25 1 0 0 0 0 1 forward_v I I I I #\n");
+    text.push_str("End-of-ASM-data\n");
+
+    let base = f3d_without_brep("part-design", "part.f3d", &[]);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut source = zip::ZipArchive::new(Cursor::new(base)).unwrap();
+    for i in 0..source.len() {
+        let mut entry = source.by_index(i).unwrap();
+        let name = entry.name().to_owned();
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
+        zip.start_file(name, stored).unwrap();
+        zip.write_all(&bytes).unwrap();
+    }
+    zip.start_file("Fusion[Active]/Breps.BlobParts/BREP0.sat", stored)
+        .unwrap();
+    zip.write_all(text.as_bytes()).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(decoded.ir.model.faces.len(), 1);
+    assert_eq!(decoded.ir.model.surfaces.len(), 1);
+    let surface = &decoded.ir.model.surfaces[0];
+    let cadmpeg_ir::geometry::SurfaceGeometry::Sphere { radius, .. } = &surface.geometry else {
+        panic!("sphere carrier expected, got {:?}", surface.geometry);
+    };
+    // 25 stream units at scale 1 (millimetres per unit) are 25 mm.
+    assert!((radius - 25.0).abs() < 1e-9);
+}
+
+/// Several BREP streams with no Design body map leave the selection ambiguous.
+/// The streams are present, so a note claiming none was found is false; the
+/// finding is that none of them is identified as the document's geometry.
+#[test]
+fn ambiguous_brep_selection_reports_the_streams_that_are_present() {
+    let archive = synthetic_ambiguous_multi_brep_f3d();
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(archive),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    let message = |code: LossCode| {
+        let loss = decoded
+            .report
+            .losses
+            .iter()
+            .find(|loss| loss.code == code)
+            .unwrap_or_else(|| panic!("{code:?} not reported: {:?}", decoded.report.losses));
+        loss.message.clone()
+    };
+
+    assert_eq!(
+        message(LossCode::MissingGeometryStream),
+        "2 ASM BREP stream(s) are present, but none of them was selected as the document's \
+         geometry stream"
+    );
+    let geometry = message(LossCode::GeometryNotTransferred);
+    assert!(
+        geometry.contains("2 BREP stream(s) were located") && geometry.contains("ambiguous"),
+        "geometry loss must state the ambiguous selection: {geometry}"
+    );
+    assert!(
+        !geometry.contains("selected stream"),
+        "no stream was selected: {geometry}"
+    );
+}
+
+/// Two BREP streams, no history partition to break the tie and no `Design1`
+/// pair to select the legacy complete set.
+fn synthetic_ambiguous_multi_brep_f3d() -> Vec<u8> {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    zip.start_file("Manifest.dat", stored).unwrap();
+    zip.write_all(b"synthetic-manifest").unwrap();
+    for name in ["first", "second"] {
+        let mut smb = synthetic_smbh();
+        smb[39..47].copy_from_slice(&2u64.to_le_bytes()); // no history partition
+        smb.truncate(60);
+        zip.start_file(
+            format!("FusionAssetName[Active]/Breps.BlobParts/BREP.{name}.smb"),
+            stored,
+        )
+        .unwrap();
+        zip.write_all(&smb).unwrap();
+    }
+    zip.finish().unwrap().into_inner()
 }
 
 #[test]
@@ -24922,6 +25352,285 @@ fn colliding_body_keys_bind_the_smallest_body() {
         Some("f3d:brep/c.smbh/brep:entity#1".to_owned())
     );
     assert_eq!(crate::materials::body_for_key(&body_keys, 11), None);
+}
+
+/// Push one same-segment reference: the `01` tag, a `u64` target, and the
+/// two-byte tail that names no other segment.
+fn push_design_reference(bytes: &mut Vec<u8>, target: u64) {
+    bytes.push(1);
+    bytes.extend(target.to_le_bytes());
+    bytes.extend([0, 0]);
+}
+
+/// Build a modern body-scope appearance-assignment record.
+///
+/// `node` is the record's browser-node entity, which is the owning body's
+/// design-entity suffix plus one.
+fn modern_appearance_record(node: u64, visual: &str, trailer: bool, token: bool) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend(lp_utf16_bytes("C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C"));
+    if token {
+        bytes.extend(lp_utf16_bytes("PrismMaterial-022"));
+    }
+    push_design_reference(&mut bytes, 7);
+    bytes.push(0);
+    push_design_reference(&mut bytes, node);
+    bytes.extend(lp_utf16_bytes("BodyName"));
+    bytes.extend(1.0f32.to_le_bytes());
+    bytes.extend([1, 1]);
+    bytes.extend(lp_utf16_bytes(visual));
+    bytes.extend(lp_utf16_bytes("08861000-1D69-CF2A-C082-CBD98E7E5D7F"));
+    if trailer {
+        bytes.extend(lp_utf16_bytes("005E1000-55CE-AFB6-81A1-36E3EF077C5F"));
+    }
+    bytes
+}
+
+const MODERN_VISUAL_GUID: &str = "251E92E9-B7B8-D3F3-C174-753263AF8709";
+
+#[test]
+fn modern_body_appearance_record_binds_through_its_browser_node_reference() {
+    let bytes = modern_appearance_record(292, MODERN_VISUAL_GUID, true, true);
+    assert_eq!(
+        crate::materials::browser_body_appearances(&bytes),
+        vec![(291, MODERN_VISUAL_GUID.to_owned())]
+    );
+}
+
+#[test]
+fn modern_appearance_record_without_its_trailer_binds_nothing() {
+    let bytes = modern_appearance_record(292, MODERN_VISUAL_GUID, false, true);
+    assert!(crate::materials::browser_body_appearances(&bytes).is_empty());
+}
+
+#[test]
+fn modern_appearance_record_without_a_physical_token_is_not_body_scoped() {
+    let bytes = modern_appearance_record(292, MODERN_VISUAL_GUID, true, false);
+    assert!(crate::materials::browser_body_appearances(&bytes).is_empty());
+}
+
+#[test]
+fn modern_appearance_record_refuses_a_browser_node_entity_of_zero() {
+    let bytes = modern_appearance_record(0, MODERN_VISUAL_GUID, true, true);
+    assert!(crate::materials::browser_body_appearances(&bytes).is_empty());
+}
+
+/// A report carrying the BREP-less geometry losses that `build_container_report`
+/// states before the design segment is classified.
+fn brep_less_geometry_report() -> cadmpeg_ir::report::DecodeReport {
+    let loss = |code: LossCode, severity| cadmpeg_ir::report::LossNote {
+        code,
+        severity,
+        message: "stated before classification".to_owned(),
+        provenance: None,
+    };
+    cadmpeg_ir::report::DecodeReport {
+        format: "f3d".to_owned(),
+        container_only: false,
+        geometry_transferred: false,
+        coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        losses: vec![
+            loss(LossCode::GeometryNotTransferred, Severity::Blocking),
+            loss(LossCode::TopologyNotTransferred, Severity::Blocking),
+            loss(LossCode::MissingGeometryStream, Severity::Error),
+        ],
+        notes: Vec::new(),
+    }
+}
+
+/// A design whose content is sketch curves declares no body, so it has no
+/// B-rep to lose: the sketch entities are its complete geometry.
+#[test]
+fn sketch_only_design_is_not_a_geometry_loss() {
+    let mut report = brep_less_geometry_report();
+    crate::decode::apply_sketch_only_classification(&mut report, 0, 0, 0, 13);
+    assert!(report.geometry_transferred);
+    assert!(
+        report
+            .losses
+            .iter()
+            .all(|loss| loss.severity < Severity::Error),
+        "sketch-only design must not keep blocking losses: {:?}",
+        report.losses
+    );
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("13 sketch entity(s)")));
+}
+
+/// A declared body whose BREP stream is absent is a real missing carrier. Its
+/// sketches do not stand in for the solid the document says it has.
+#[test]
+fn a_declared_body_without_a_brep_stream_keeps_its_geometry_losses() {
+    let mut report = brep_less_geometry_report();
+    crate::decode::apply_sketch_only_classification(&mut report, 0, 0, 1, 13);
+    assert!(!report.geometry_transferred);
+    assert_eq!(report.losses.len(), 3);
+}
+
+/// A document with no sketch entities transferred nothing, so nothing settles
+/// the loss. An imported drawing whose only entity the importer did not author
+/// produces exactly this: a document with no body and no sketch.
+#[test]
+fn a_document_without_sketch_entities_keeps_its_geometry_losses() {
+    let mut report = brep_less_geometry_report();
+    crate::decode::apply_sketch_only_classification(&mut report, 0, 0, 0, 0);
+    assert!(!report.geometry_transferred);
+    assert_eq!(report.losses.len(), 3);
+}
+
+/// A present BREP stream that produced no geometry is a decode failure, not a
+/// sketch-only design, however many sketches the document also carries.
+#[test]
+fn a_present_brep_stream_is_never_reclassified_as_sketch_only() {
+    let mut report = brep_less_geometry_report();
+    crate::decode::apply_sketch_only_classification(&mut report, 1, 0, 0, 13);
+    assert!(!report.geometry_transferred);
+    assert_eq!(report.losses.len(), 3);
+}
+
+/// A text-encoded carrier holds a B-rep this codec does not read. A document
+/// that has one is not sketch-only however many sketches it also carries:
+/// calling it complete would hide the whole of its solid geometry.
+#[test]
+fn a_text_brep_carrier_is_never_reclassified_as_sketch_only() {
+    let mut report = brep_less_geometry_report();
+    crate::decode::apply_sketch_only_classification(&mut report, 0, 2, 0, 13);
+    assert!(!report.geometry_transferred);
+    assert_eq!(report.losses.len(), 3);
+}
+
+/// The text encoding of an ASM stream carries the same entity model as the
+/// binary one, so its archive members are geometry carriers and must classify as
+/// such. Leaving them unclassified is what let the report state that a document
+/// holding one declares no carrier at all.
+#[test]
+fn text_encoded_asm_members_classify_as_geometry_carriers() {
+    for name in [
+        "Fusion[Active]/Breps.BlobParts/BREP0.sat",
+        "Fusion[Active]/Breps.BlobParts/BREP1.SAT",
+        "probe/body.smt",
+    ] {
+        assert_eq!(
+            crate::container::classify(name),
+            crate::container::role::BREP_TEXT,
+            "{name} must classify as a text-encoded BREP carrier"
+        );
+    }
+    // The binary roles keep their own labels: the new arm must not capture them.
+    assert_eq!(
+        crate::container::classify("a/b.smb"),
+        crate::container::role::BREP_SMB
+    );
+    assert_eq!(
+        crate::container::classify("a/b.smbh"),
+        crate::container::role::BREP_SMBH
+    );
+}
+
+/// A report carrying the unconditional appearance loss that
+/// `build_container_report` and `build_geometry_report` state before appearance
+/// decoding runs.
+fn appearance_loss_report() -> cadmpeg_ir::report::DecodeReport {
+    cadmpeg_ir::report::DecodeReport {
+        format: "f3d".to_owned(),
+        container_only: false,
+        geometry_transferred: false,
+        coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        losses: vec![cadmpeg_ir::report::LossNote {
+            code: LossCode::MaterialNotTransferred,
+            severity: Severity::Warning,
+            message: "Materials/appearances (.protein assets, ACT/design assignments) were not \
+                      transferred."
+                .to_owned(),
+            provenance: None,
+        }],
+        notes: Vec::new(),
+    }
+}
+
+fn opaque_appearance(guid: &str) -> cadmpeg_ir::appearance::Appearance {
+    cadmpeg_ir::appearance::Appearance {
+        id: cadmpeg_ir::ids::AppearanceId(format!("f3d:design:appearance#{guid}")),
+        name: Some("Prism-Opaque".to_owned()),
+        asset_guid: Some(guid.to_owned()),
+        library_id: None,
+        visual_guid: Some(guid.to_owned()),
+        physical_token: None,
+        schema: Some("PrismOpaqueSchema".to_owned()),
+        category: None,
+        base_color: Some(cadmpeg_ir::topology::Color {
+            r: 0.5,
+            g: 0.5,
+            b: 0.5,
+            a: 1.0,
+        }),
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    }
+}
+
+fn material_losses(report: &cadmpeg_ir::report::DecodeReport) -> Vec<&str> {
+    report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.category() == cadmpeg_ir::report::LossCategory::Material)
+        .map(|loss| loss.message.as_str())
+        .collect()
+}
+
+#[test]
+fn appearance_loss_stands_when_no_asset_decodes() {
+    let ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut report = appearance_loss_report();
+    crate::decode::reconcile_appearance_loss(&mut report, &ir, false);
+    assert_eq!(material_losses(&report).len(), 1);
+}
+
+#[test]
+fn appearance_loss_clears_when_an_unassigned_catalog_transfers() {
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.appearances = vec![opaque_appearance("2F0E19C1-0000-4000-8000-000000000001")];
+    let mut report = appearance_loss_report();
+    crate::decode::reconcile_appearance_loss(&mut report, &ir, false);
+    assert!(material_losses(&report).is_empty());
+}
+
+#[test]
+fn appearance_loss_counts_assets_whose_assignment_is_unresolved() {
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.appearances = vec![
+        opaque_appearance("2F0E19C1-0000-4000-8000-000000000001"),
+        opaque_appearance("2F0E19C1-0000-4000-8000-000000000002"),
+    ];
+    let mut report = appearance_loss_report();
+    crate::decode::reconcile_appearance_loss(&mut report, &ir, true);
+    let messages = material_losses(&report);
+    assert_eq!(messages.len(), 1);
+    assert!(messages[0].contains("2 Protein appearance asset(s)"));
+}
+
+#[test]
+fn appearance_loss_clears_when_an_assignment_resolves() {
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let appearance = opaque_appearance("2F0E19C1-0000-4000-8000-000000000001");
+    ir.model.appearance_bindings = vec![cadmpeg_ir::appearance::AppearanceBinding {
+        id: "f3d:appearance:body#0_1:2F0E19C1-0000-4000-8000-000000000001".to_owned(),
+        target: cadmpeg_ir::appearance::AppearanceTarget::Body(cadmpeg_ir::ids::BodyId(
+            "f3d:brep/a.smbh/brep:entity#1".to_owned(),
+        )),
+        appearance: appearance.id.clone(),
+        source_entity_id: None,
+        object_type: None,
+        channels: std::collections::BTreeMap::new(),
+    }];
+    ir.model.appearances = vec![appearance];
+    let mut report = appearance_loss_report();
+    crate::decode::reconcile_appearance_loss(&mut report, &ir, true);
+    assert!(material_losses(&report).is_empty());
 }
 
 #[path = "golden_tests.rs"]

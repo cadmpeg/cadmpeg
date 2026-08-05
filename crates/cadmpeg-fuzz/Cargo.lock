@@ -63,6 +63,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
+name = "cadmpeg-asm"
+version = "0.3.1"
+dependencies = [
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "serde",
+ "serde-value",
+]
+
+[[package]]
 name = "cadmpeg-codec-catia"
 version = "0.3.1"
 dependencies = [
@@ -88,6 +98,7 @@ dependencies = [
 name = "cadmpeg-codec-f3d"
 version = "0.3.1"
 dependencies = [
+ "cadmpeg-asm",
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
@@ -207,6 +218,7 @@ dependencies = [
 name = "cadmpeg-fuzz"
 version = "0.0.0"
 dependencies = [
+ "cadmpeg-asm",
  "cadmpeg-codec-catia",
  "cadmpeg-codec-creo",
  "cadmpeg-codec-f3d",

@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use crate::native::F3dNative;
-use crate::records::{
+use cadmpeg_asm::brep::records::{
     EdgeContinuity, EdgeOwnership, FaceSidedness, TolerantCoedgeParameters, TolerantEdgeTail,
     TolerantVertexTail, TransformHints, VertexOwnership, WireTopology,
 };

@@ -40,7 +40,7 @@ pub(crate) struct AttributeIndex<'a> {
     edge_timestamp_ordinals: HashMap<&'a str, usize>,
     coedge_timestamp_ordinals: HashMap<&'a str, usize>,
     vertex_timestamp_ordinals: HashMap<&'a str, usize>,
-    body_keys: HashMap<&'a str, &'a crate::records::BodyNativeKey>,
+    body_keys: HashMap<&'a str, &'a cadmpeg_asm::brep::records::BodyNativeKey>,
     assigned_body_keys: HashMap<&'a str, u64>,
 }
 

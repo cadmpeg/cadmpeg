@@ -104,7 +104,7 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
 }
 
 /// Decode the construction-history tail of an ASM stream: every `delta_state`
-/// record ([spec §2.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#23-delta_state-records)) from `bytes`, each with its `BulletinBoard` chain of
+/// record ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#32-delta_state-records)) from `bytes`, each with its `BulletinBoard` chain of
 /// per-entity insert/delete/update changes and the raw history-entity records
 /// framed between it and the next `delta_state`. `stream` is the source ZIP
 /// entry name, recorded in each decoded item's provenance. Returns `None` when
@@ -362,10 +362,10 @@ fn bind_complete_record_tables(
     width: usize,
     limits: &cadmpeg_core::decode::ResourceLimits,
 ) -> bool {
-    let Some(start) = crate::asm_header::record_stream_start(bytes) else {
+    let Some(start) = cadmpeg_asm::asm_header::record_stream_start(bytes) else {
         return false;
     };
-    let Ok(framed) = crate::sab::frame(bytes, start, bytes.len(), width) else {
+    let Ok(framed) = cadmpeg_asm::sab::frame(bytes, start, bytes.len(), width) else {
         return false;
     };
     if complete_table_binding_budget_exceeded(
@@ -393,9 +393,9 @@ fn bind_complete_record_tables(
         let Some(records) = materialize_record_table(state, &archive) else {
             return false;
         };
-        let Some(topology) =
-            historical_topology(&crate::brep::decode_history_topology(&records, bytes))
-        else {
+        let Some(topology) = historical_topology(
+            &crate::brep::decode_history_topology(&records, bytes, crate::ids::ID_FORMAT).asm,
+        ) else {
             return false;
         };
         state.record_table_complete = true;
@@ -420,12 +420,12 @@ fn bind_complete_record_tables(
 }
 
 struct HistoricalRecordArchive {
-    records: HashMap<i64, crate::sab::Record>,
+    records: HashMap<i64, cadmpeg_asm::sab::Record>,
 }
 
 fn historical_record_archive(
     states: &[AsmDeltaState],
-    active_records: &[crate::sab::Record],
+    active_records: &[cadmpeg_asm::sab::Record],
     bytes: &[u8],
     width: usize,
 ) -> Option<HistoricalRecordArchive> {
@@ -470,7 +470,7 @@ fn historical_record_archive(
         if bytes.get(offset..limit)? != record.raw_bytes {
             return None;
         }
-        let mut framed = crate::sab::frame(bytes, offset, limit, width).ok()?;
+        let mut framed = cadmpeg_asm::sab::frame(bytes, offset, limit, width).ok()?;
         if framed.len() != 1 {
             return None;
         }
@@ -485,7 +485,7 @@ fn historical_record_archive(
     for (&revision_ref, record) in &mut records {
         record.index = usize::try_from(*revision_entities.get(&revision_ref)?).ok()?;
         for token in std::sync::Arc::make_mut(&mut record.tokens) {
-            let crate::sab::Token::Ref(reference) = token else {
+            let cadmpeg_asm::sab::Token::Ref(reference) = token else {
                 continue;
             };
             if *reference >= 0 {
@@ -5363,7 +5363,9 @@ fn relation_map(items: &[AsmHistoricalRelation]) -> HashMap<i64, &[i64]> {
         .collect()
 }
 
-pub(crate) fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistoricalTopology> {
+pub(crate) fn historical_topology(
+    brep: &cadmpeg_asm::brep::AsmBrep,
+) -> Option<AsmHistoricalTopology> {
     fn entity_ref(id: &str) -> Option<i64> {
         id.rsplit_once('#')?
             .1
@@ -5649,7 +5651,7 @@ pub(crate) fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistori
 fn materialize_record_table(
     state: &AsmDeltaState,
     archive: &HistoricalRecordArchive,
-) -> Option<Vec<crate::sab::Record>> {
+) -> Option<Vec<cadmpeg_asm::sab::Record>> {
     if state.entity_versions.is_empty() {
         return None;
     }
@@ -5668,7 +5670,7 @@ fn materialize_record_table(
             return None;
         }
         for token in record.tokens.iter() {
-            let crate::sab::Token::Ref(reference) = token else {
+            let cadmpeg_asm::sab::Token::Ref(reference) = token else {
                 continue;
             };
             if *reference >= 0 && !present.contains(reference) {
@@ -5769,7 +5771,7 @@ fn decode_history_records(
     if start >= limit {
         return Vec::new();
     }
-    match crate::sab::frame_history(bytes, start, limit, width) {
+    match cadmpeg_asm::sab::frame_history(bytes, start, limit, width) {
         Ok(records) => records
             .into_iter()
             .map(|record| {
@@ -5777,7 +5779,7 @@ fn decode_history_records(
                     .tokens
                     .iter()
                     .filter_map(|token| match token {
-                        crate::sab::Token::Ref(value) => Some(*value),
+                        cadmpeg_asm::sab::Token::Ref(value) => Some(*value),
                         _ => None,
                     })
                     .collect();
@@ -6975,7 +6977,7 @@ mod tests {
         };
 
         let id = |slot| format!("f3d:brep:entity#{slot}");
-        let mut brep = crate::brep::Brep::default();
+        let mut brep = cadmpeg_asm::brep::AsmBrep::default();
         brep.bodies.push(Body {
             id: BodyId(id(1)),
             kind: BodyKind::Solid,
@@ -7938,7 +7940,7 @@ mod tests {
         let active = ["asmheader", "edge"]
             .into_iter()
             .enumerate()
-            .map(|(index, name)| crate::sab::Record {
+            .map(|(index, name)| cadmpeg_asm::sab::Record {
                 index,
                 name: name.into(),
                 head: name.into(),
@@ -7956,7 +7958,7 @@ mod tests {
 
         assert_eq!(table.len(), 2);
         assert_eq!(table[1].index, 1);
-        assert_eq!(&*table[1].tokens, [crate::sab::Token::Ref(1)]);
+        assert_eq!(&*table[1].tokens, [cadmpeg_asm::sab::Token::Ref(1)]);
     }
 
     #[test]

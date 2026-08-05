@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 use cadmpeg_ir::attributes::AttributeTarget;
-use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId, ShellId, VertexId};
+use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::Color;
 
@@ -101,219 +101,6 @@ pub struct CreationTimestamp {
     pub record_index: u32,
     /// Creation time as microseconds since the Unix epoch.
     pub unix_microseconds: f64,
-}
-
-/// Kernel continuity classification stored on one solved ASM edge record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct EdgeContinuity {
-    /// Globally unique deterministic identifier for this native record.
-    pub id: String,
-    /// Solved B-rep edge carrying the classification.
-    pub edge: EdgeId,
-    /// Source SAB record index.
-    pub record_index: u32,
-    /// Native curve-parameterization sense before IR carrier normalization.
-    pub sense: cadmpeg_ir::topology::Sense,
-    /// Native continuity token, normally `tangent` or `unknown`.
-    pub continuity: String,
-}
-
-/// Native owner-coedge selector stored on one ASM edge record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct EdgeOwnership {
-    /// Globally unique deterministic identifier for this native record.
-    pub id: String,
-    /// Solved B-rep edge carrying the selector.
-    pub edge: EdgeId,
-    /// Source SAB record index.
-    pub record_index: u32,
-    /// Selected coedge, or null when the native edge has no owner back-reference.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub owner_coedge: Option<CoedgeId>,
-}
-
-/// Native owner-edge and endpoint-slot fields stored on one ASM vertex.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct VertexOwnership {
-    /// Globally unique deterministic identifier for this native record.
-    pub id: String,
-    /// Solved B-rep vertex carrying the fields.
-    pub vertex: VertexId,
-    /// Source SAB record index.
-    pub record_index: u32,
-    /// Edge selected as this vertex record's native owner.
-    pub owning_edge: EdgeId,
-    /// Endpoint slot on `owning_edge`: `0` for start, `1` for end.
-    pub endpoint_index: u8,
-}
-
-/// Conditional containment direction on a double-sided ASM face.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum FaceContainment {
-    /// The face bounds the inside side of its surface.
-    In,
-    /// The face bounds the outside side of its surface.
-    Out,
-}
-
-/// Native sidedness fields stored on one ASM face record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct FaceSidedness {
-    /// Globally unique deterministic identifier for this native record.
-    pub id: String,
-    /// Solved B-rep face carrying the fields.
-    pub face: FaceId,
-    /// Source SAB record index.
-    pub record_index: u32,
-    /// Sense token stored in the native face record before carrier normalization.
-    pub native_sense: cadmpeg_ir::topology::Sense,
-    /// IR sense produced when `native_sense` was decoded.
-    pub normalized_sense: cadmpeg_ir::topology::Sense,
-    /// Conditional containment direction; absence denotes a single-sided face.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub containment: Option<FaceContainment>,
-}
-
-/// Native leading tolerance slots retained from one tolerant ASM vertex
-/// record. The record's three f64 tolerance slots are three independent
-/// tolerance evaluations, each using `-1` as its unset sentinel; the third
-/// slot is the effective vertex tolerance and is stored on the vertex, while
-/// the first two are retained here verbatim.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct TolerantVertexTail {
-    /// Globally unique deterministic identifier for this native record.
-    pub id: String,
-    /// Solved B-rep vertex carrying the tolerant record.
-    pub vertex: VertexId,
-    /// Source SAB record index.
-    pub record_index: u32,
-    /// The first two independent tolerance evaluations, retained verbatim in
-    /// native centimetres; `-1` denotes an unset evaluation.
-    pub leading_tolerances: [f64; 2],
-    /// Version-gated trailing LONG following the evaluated tolerance,
-    /// retained verbatim; absent in older streams, a small non-negative
-    /// per-entity change counter when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub trailing_field: Option<i64>,
-}
-
-/// Native tail retained from one tolerant ASM edge record: the entity
-/// serializer revision stamp followed by a version-gated LONG.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct TolerantEdgeTail {
-    /// Globally unique deterministic identifier for this native record.
-    pub id: String,
-    /// Solved B-rep edge carrying the tolerant record.
-    pub edge: EdgeId,
-    /// Source SAB record index.
-    pub record_index: u32,
-    /// Per-entity serializer revision stamp following the model-space
-    /// tolerance, matching the stream's revision value space.
-    pub entity_revision: i64,
-    /// Version-gated trailing LONG following the revision stamp, retained
-    /// verbatim; absent in older streams, a small non-negative per-entity
-    /// change counter when present.
-    pub trailing_field: Option<i64>,
-}
-
-/// Parameter interval stored by one tolerant ASM coedge.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct TolerantCoedgeParameters {
-    /// Globally unique deterministic identifier for this native record.
-    pub id: String,
-    /// Solved B-rep coedge carrying the tolerant interval.
-    pub coedge: CoedgeId,
-    /// Source SAB record index.
-    pub record_index: u32,
-    /// Native start and end parameters following the base coedge fields.
-    pub parameter_range: [f64; 2],
-    /// Release-selected fixed fields following the parameter interval.
-    #[serde(default)]
-    pub extension: TolerantCoedgeExtension,
-}
-
-/// Release-selected fixed fields following a tolerant-coedge parameter interval.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case", tag = "layout")]
-pub enum TolerantCoedgeExtension {
-    /// Releases below 215 have no fixed extension fields.
-    #[default]
-    None,
-    /// Releases 215 through 219 carry one nullable entity reference.
-    Reference {
-        /// Referenced record index; `None` is the native null reference.
-        target: Option<i64>,
-    },
-    /// Modern releases carry no embedded tolerant-curve payload.
-    Empty {
-        /// Nullable record reference preceding the zero selector.
-        target: Option<i64>,
-    },
-    /// Modern releases carry one balanced embedded tolerant-curve payload.
-    EmbeddedCurve {
-        /// Nullable record reference preceding the one selector.
-        target: Option<i64>,
-        /// Whether the embedded intcurve is evaluated with parameter negation.
-        #[serde(alias = "flag")]
-        curve_reversed: bool,
-        /// Number of tokens inside the balanced outer subtype delimiters.
-        payload_token_count: u32,
-        /// Optional parameter interval following the embedded subtype.
-        parameter_range: Option<[f64; 2]>,
-    },
-}
-
-/// Zero-payload ASM surface sentinel whose shape is supplied only by tessellation attributes.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct MeshSurfaceSentinel {
-    /// Globally unique deterministic identifier for this native record.
-    pub id: String,
-    /// Unknown exact-surface placeholder emitted for the sentinel record.
-    pub surface: cadmpeg_ir::ids::SurfaceId,
-    /// Source SAB record index.
-    pub record_index: u32,
-}
-
-/// Native side classification stored on an ASM wire record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum WireSide {
-    /// Wire bounds the inside side.
-    In,
-    /// Wire bounds the outside side.
-    Out,
-}
-
-/// Native wire record projected onto one neutral-IR shell.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct WireTopology {
-    /// Globally unique deterministic identifier for this native record.
-    pub id: String,
-    /// Neutral shell containing the wire.
-    pub shell: ShellId,
-    /// Source SAB record index.
-    pub record_index: u32,
-    /// Ordered edge ring owned through the wire's first-coedge reference.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub edges: Vec<EdgeId>,
-    /// Isolated vertex owned when the first-coedge reference is null.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub free_vertex: Option<VertexId>,
-    /// Native side classification.
-    pub side: WireSide,
 }
 
 /// Design `BulkStream` regeneration-recipe family.
@@ -2017,6 +1804,46 @@ pub struct DesignRuledSurfaceOperation {
     pub direction_entity_id: Option<String>,
 }
 
+/// Boundary condition a `SurfacePatch` component imposes against its adjacent
+/// face.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum DesignPatchContinuity {
+    /// Positional continuity only.
+    Connected,
+    /// First-derivative continuity.
+    Tangent,
+    /// Second-derivative continuity.
+    Curvature,
+    /// A serialized value whose continuity meaning is not settled.
+    Unknown(u32),
+}
+
+impl DesignPatchContinuity {
+    /// Decode the serialized continuity ordinal without discarding unknown values.
+    #[must_use]
+    pub fn from_code(code: u32) -> Self {
+        match code {
+            0 => Self::Connected,
+            1 => Self::Tangent,
+            2 => Self::Curvature,
+            code => Self::Unknown(code),
+        }
+    }
+
+    /// Return the serialized ordinal.
+    #[must_use]
+    pub fn code(self) -> u32 {
+        match self {
+            Self::Connected => 0,
+            Self::Tangent => 1,
+            Self::Curvature => 2,
+            Self::Unknown(code) => code,
+        }
+    }
+}
+
 /// Settings a `SurfacePatch` scope carries for one boundary component.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2027,8 +1854,8 @@ pub struct DesignSurfacePatchBoundary {
     pub record_index: u32,
     /// Source `IsSeedSel` flag.
     pub is_seed_selection: bool,
-    /// Source `PatchContinuity` ordinal. Retained without a neutral meaning.
-    pub continuity: u32,
+    /// Boundary condition this component imposes against its adjacent face.
+    pub continuity: DesignPatchContinuity,
     /// Source `PatchFlip` ordinal. Retained without a neutral meaning.
     pub flip: u32,
     /// Source `PatchScale` value.
@@ -2057,10 +1884,21 @@ pub struct DesignBaseFlangeOperation {
 }
 
 /// Bend position used by sheet-metal edge operations.
+///
+/// The position places the bend region against the selected edge: `Outside` and
+/// `Inside` put the bend beyond and within the source face boundary, `Adjacent`
+/// starts it at the boundary, and `TangentToSide` makes it tangent to the side
+/// reference plane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignBendPosition {
+    /// The bend lies outside the selected edge.
+    Outside,
+    /// The bend lies inside the selected edge.
+    Inside,
+    /// The bend starts at the selected edge.
+    Adjacent,
     /// The bend is tangent to the side reference plane.
     TangentToSide,
     /// A serialized value whose bend-position meaning is not settled.
@@ -2072,6 +1910,9 @@ impl DesignBendPosition {
     #[must_use]
     pub fn from_code(code: u32) -> Self {
         match code {
+            1 => Self::Outside,
+            2 => Self::Inside,
+            3 => Self::Adjacent,
             4 => Self::TangentToSide,
             code => Self::Unknown(code),
         }
@@ -2081,8 +1922,151 @@ impl DesignBendPosition {
     #[must_use]
     pub fn code(self) -> u32 {
         match self {
+            Self::Outside => 1,
+            Self::Inside => 2,
+            Self::Adjacent => 3,
             Self::TangentToSide => 4,
             Self::Unknown(code) => code,
+        }
+    }
+}
+
+/// Face pair an `EdgeFlange` height is measured from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum DesignSheetMetalHeightDatum {
+    /// The height is measured from the inner faces of the sheet.
+    InnerFaces,
+    /// The height is measured from the outer faces of the sheet.
+    OuterFaces,
+    /// A serialized value whose height-datum meaning is not settled.
+    Unknown(u32),
+}
+
+impl DesignSheetMetalHeightDatum {
+    /// Decode the serialized height-datum discriminator without discarding unknown values.
+    #[must_use]
+    pub fn from_code(code: u32) -> Self {
+        match code {
+            1 => Self::InnerFaces,
+            2 => Self::OuterFaces,
+            code => Self::Unknown(code),
+        }
+    }
+
+    /// Return the serialized discriminator.
+    #[must_use]
+    pub fn code(self) -> u32 {
+        match self {
+            Self::InnerFaces => 1,
+            Self::OuterFaces => 2,
+            Self::Unknown(code) => code,
+        }
+    }
+}
+
+/// Extent of an `EdgeFlange` along its selected edge.
+///
+/// The mode is carried by the count of width-distance parameter owners the scope
+/// adds to its ordered reference table, not by a discriminator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum DesignEdgeWidthMode {
+    /// The flange spans the complete selected edge and adds no width owner.
+    FullEdge,
+    /// The flange is centred on the edge and adds one width owner.
+    Symmetric,
+    /// The flange is measured from each end and adds two width owners.
+    TwoSides,
+}
+
+#[cfg(test)]
+impl DesignParameterScope {
+    /// Build a scope carrying only its identity, kind, and record index.
+    ///
+    /// Sheet-metal and other projection tests set the few typed members their
+    /// family reads and leave the rest empty, so a new member does not require
+    /// an edit in every test that constructs a scope.
+    pub(crate) fn empty(id: &str, kind: &str, record_index: u32) -> Self {
+        Self {
+            id: id.to_string(),
+            byte_offset: 0,
+            class_tag: String::new(),
+            record_index,
+            frame_length: 0,
+            kind: kind.to_string(),
+            kind_offset: 0,
+            extrude_prologue: None,
+            coil_operation: None,
+            coil_operation_offset: None,
+            coil_extent: None,
+            coil_extent_offset: None,
+            coil_section: None,
+            coil_section_offset: None,
+            coil_section_placement: None,
+            coil_section_placement_offset: None,
+            coil_clockwise: None,
+            coil_clockwise_offset: None,
+            feature_ordinal: 0,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
+            history_state_id_offset: 0,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: 0,
+            reference_count_offset: 0,
+            reference_members: Vec::new(),
+            reference_member_offsets: Vec::new(),
+            solid_primitive: None,
+            direct_face_operation: None,
+            move_operation: None,
+            scale_operation: None,
+            surface_stitch_operation: None,
+            surface_extend_operation: None,
+            surface_offset_operation: None,
+            ruled_surface_operation: None,
+            base_flange_operation: None,
+            surface_patch_boundaries: Vec::new(),
+            edge_flange_operation: None,
+            hem_operation: None,
+            fixed_extrude_parameters: None,
+            fixed_fillet_parameters: None,
+            fixed_chamfer_parameters: None,
+            path_feature_construction: None,
+            combine_operation: None,
+            thread_construction: None,
+            draft_operation: None,
+            circular_pattern_construction: None,
+            rectangular_pattern_construction: None,
+            assembly_alignment: None,
+            component_insert_construction: None,
+            copy_paste_component_operation: None,
+            mirror_construction: None,
+            copy_paste_bodies_operation: None,
+            base_feature_construction: None,
+            work_plane_transform: None,
+            work_plane_transform_offset: None,
+            work_plane_reference: None,
+            work_plane_reference_offset: None,
+            work_axis_construction: None,
+            joint_origin_transform: None,
+            joint_origin_transform_offset: None,
+            joint_origin_reference: None,
+            joint_origin_reference_offset: None,
+            work_point_position: None,
+            work_point_position_offset: None,
+            unclosed_construction_operand_groups: Vec::new(),
+            work_point_reference_type: None,
+            work_point_input_record_indices: Vec::new(),
+            extrude_profile: None,
+            sweep_profile: None,
+            base_flange_profile: None,
+            entity_id: None,
+            entity_suffix: None,
+            entity_reference_offset: None,
+            paired_class_tag: String::new(),
+            paired_byte_offset: 0,
         }
     }
 }
@@ -2105,18 +2089,35 @@ pub struct DesignEdgeFlangeOperation {
     pub height_owner_record_index: u32,
     /// Angle parameter-owner record.
     pub angle_owner_record_index: u32,
+    /// Width-distance parameter-owner records the edge-width mode adds, in source order.
+    pub width_distance_owner_record_indices: Vec<u32>,
     /// Indexed operation-settings record.
     pub settings_record_index: u32,
     /// Positive rule-derived inside bend radius in centimetres.
     pub bend_radius: f64,
     /// Byte offset of `bend_radius`.
     pub bend_radius_offset: u64,
-    /// Uninterpreted extent discriminator (DR-09).
-    pub extent_code: u32,
-    /// Uninterpreted height-datum discriminator (DR-09).
-    pub height_datum_code: u32,
-    /// Bend position relative to the selected side.
+    /// Uninterpreted side-reference discriminator (DR-09).
+    pub reference_side_code: u32,
+    /// Face pair the flange height is measured from.
+    pub height_datum: DesignSheetMetalHeightDatum,
+    /// Bend position relative to the selected edge.
     pub bend_position: DesignBendPosition,
+}
+
+impl DesignEdgeFlangeOperation {
+    /// Return the extent of the flange along its selected edge.
+    ///
+    /// The width-distance owner count carries the mode, and the parser refuses a
+    /// frame whose count exceeds the two-sided form.
+    #[must_use]
+    pub fn edge_width_mode(&self) -> DesignEdgeWidthMode {
+        match self.width_distance_owner_record_indices.len() {
+            0 => DesignEdgeWidthMode::FullEdge,
+            1 => DesignEdgeWidthMode::Symmetric,
+            _ => DesignEdgeWidthMode::TwoSides,
+        }
+    }
 }
 
 /// Fixed construction carried by a sheet-metal `Hem` scope.
@@ -2143,14 +2144,20 @@ pub struct DesignHemOperation {
     pub bend_radius: f64,
     /// Byte offset of `bend_radius`.
     pub bend_radius_offset: u64,
-    /// Uninterpreted hem-form discriminator.
+    /// Retained u32 at the offset once read as the hem-form discriminator. It
+    /// holds one value across every readable hem form, so it does not select the
+    /// form (DR-09A).
     pub form_code: u32,
-    /// Uninterpreted direction discriminator.
+    /// Retained u32 at the offset once read as the direction discriminator. It
+    /// holds one value in both authored direction states (DR-09A).
     pub direction_code: u32,
-    /// Serialized direction reversal.
-    pub is_flipped: bool,
-    /// Bend position relative to the selected side.
-    pub bend_position: DesignBendPosition,
+    /// Retained byte at the offset once read as the direction reversal. It is
+    /// clear in both authored direction states (DR-09A).
+    pub direction_reversal_byte: u8,
+    /// Retained u32 at the offset once read as the bend position. It holds one
+    /// value across every readable hem, and that value is not the code of the
+    /// authored bend position (DR-09A).
+    pub reference_side_code: u32,
 }
 
 /// Fixed construction carried by a uniform body-scale scope.
@@ -4316,45 +4323,6 @@ pub struct BodyVisibility {
     pub entity_suffix: u64,
     /// Display visibility after inverting the native hidden flag.
     pub visible: bool,
-}
-
-/// Native Design-join key stored on one ASM body record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct BodyNativeKey {
-    /// Globally unique deterministic identifier for this native record.
-    pub id: String,
-    /// Solved body carrying the key.
-    pub body: BodyId,
-    /// Source SAB body record index.
-    pub record_index: u32,
-    /// Zero-based body-record position within the BREP blob.
-    #[serde(default)]
-    pub body_ordinal: u32,
-    /// Basename of the BREP blob containing this body.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_brep: Option<String>,
-    /// Non-negative Design-join key; absence is the native `-1` null value.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub asm_body_key: Option<u64>,
-}
-
-/// Native rotation, reflection, and shear classifications on an ASM transform.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct TransformHints {
-    /// Globally unique deterministic identifier for this native record.
-    pub id: String,
-    /// Solved body referencing the transform record.
-    pub body: BodyId,
-    /// Source SAB transform record index.
-    pub record_index: u32,
-    /// The linear transform includes rotation.
-    pub rotation: bool,
-    /// The linear transform includes reflection.
-    pub reflection: bool,
-    /// The linear transform includes shear.
-    pub shear: bool,
 }
 
 /// One entity in the Fusion ACT change-tracking table.

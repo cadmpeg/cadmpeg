@@ -20,6 +20,6 @@ source = "spec"
 anchor = "`0..15` | magic `ASM BinaryFile8`"
 
 [[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/asm_header.rs"
+path = "crates/cadmpeg-asm/src/asm_header.rs"
 contains = "const HEADER_LEN: usize = 4242;"
 note = "Invented on purpose: no such constant exists."

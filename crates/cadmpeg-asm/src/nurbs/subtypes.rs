@@ -5,36 +5,6 @@ use crate::nurbs::reader::INT_WIDTHS;
 use crate::sab::Record;
 use cadmpeg_core::le::int_at as read_int;
 
-/// The construction `bytes` is, under its modern name: the first subtype
-/// definition `bytes` owns other than `ref`, canonicalized.
-pub(crate) fn owned_construction_subtype(bytes: &[u8], int_width: usize) -> Option<String> {
-    owned_subtype_defs(bytes, int_width)
-        .into_iter()
-        .map(|(_, name)| name)
-        .find(|name| *name != b"ref")
-        .map(|name| canonical_intcurve_kind(name).into())
-}
-
-fn canonical_intcurve_kind(name: &[u8]) -> &str {
-    match name {
-        b"bldcur" => "blend_int_cur",
-        b"blndsprngcur" => "spring_int_cur",
-        b"exactcur" => "exact_int_cur",
-        b"lawintcur" => "law_int_cur",
-        b"offintcur" => "off_int_cur",
-        b"offsetintcur" => "offset_int_cur",
-        b"offsurfintcur" => "off_surf_int_cur",
-        b"parasil" => "para_silh_int_cur",
-        b"parcur" => "par_int_cur",
-        b"projcur" => "proj_int_cur",
-        b"surfcur" => "surf_int_cur",
-        b"surfintcur" => "int_int_cur",
-        b"d5c2_cur" => "skin_int_cur",
-        b"subsetintcur" => "subset_int_cur",
-        _ => std::str::from_utf8(name).unwrap_or("intcurve"),
-    }
-}
-
 /// Byte offsets and names of the subtype definitions `bytes` itself owns: the
 /// `0x0f` openings at the outermost nesting level, in stream order, `ref`
 /// included. A definition inside a nested scope belongs to that scope's
@@ -196,16 +166,18 @@ impl SubtypeTables {
         }
     }
 
-    pub(crate) fn for_width(&self, int_width: usize) -> &[usize] {
+    /// The table built for `int_width`, or an empty slice for a width outside
+    /// the candidate set.
+    pub fn for_width(&self, int_width: usize) -> &[usize] {
         INT_WIDTHS
             .iter()
             .position(|&width| width == int_width)
             .map_or(&[], |slot| self.tables[slot].as_slice())
     }
 
-    /// Return the table index assigned to an absolute subtype-definition offset.
-    #[cfg(test)]
-    pub(crate) fn index_of_offset(&self, int_width: usize, offset: usize) -> Option<usize> {
+    /// Return the table index assigned to an absolute subtype-definition offset,
+    /// for tests.
+    pub fn index_of_offset(&self, int_width: usize, offset: usize) -> Option<usize> {
         self.for_width(int_width)
             .iter()
             .position(|candidate| *candidate == offset)
@@ -270,7 +242,10 @@ pub(crate) fn subtype_refs(bytes: &[u8], int_width: usize) -> Vec<usize> {
     refs
 }
 
-pub(crate) fn subtype_span(bytes: &[u8], start: usize, int_width: usize) -> Option<&[u8]> {
+/// The byte span of the subtype definition that opens at `start`: from its
+/// `0x0f` opening through the matching `0x10` close, nested definitions
+/// included.
+pub fn subtype_span(bytes: &[u8], start: usize, int_width: usize) -> Option<&[u8]> {
     let mut depth = 0usize;
     let mut pos = start;
     while pos < bytes.len() {
@@ -355,7 +330,10 @@ mod ownership_tests {
                 None
             );
             assert_eq!(
-                owned_construction_subtype(&bytes, int_width).as_deref(),
+                crate::nurbs::toks::owned_construction_subtype(&crate::nurbs::toks::lex_test_span(
+                    &bytes, int_width
+                ))
+                .as_deref(),
                 Some("defm_int_cur")
             );
         }

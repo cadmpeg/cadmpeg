@@ -2169,27 +2169,37 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             context,
             surface_parameter_ranges,
             first_pcurve_parameter_range,
+            cache_first,
             ..
         } = &procedural.definition
         {
+            // The conditional inline ranges belong to the context-first
+            // layout: a cache-first record stores its bounds in the shared
+            // context form and never stores inline ranges, independently of
+            // whether a referenced support resolved a cache.
+            let context_first = cache_first.is_none();
             let surface_ranges_valid =
                 surface_parameter_ranges
                     .iter()
                     .enumerate()
                     .all(|(side, ranges)| {
-                        ranges.is_some() == context.sides[side].surface.is_none()
-                            && ranges.is_none_or(|ranges| {
-                                ranges.into_iter().all(|range| {
-                                    range.iter().all(|value| value.is_finite())
-                                        && range[0] <= range[1]
-                                })
+                        (if context_first {
+                            ranges.is_some() == context.sides[side].surface.is_none()
+                        } else {
+                            ranges.is_none()
+                        }) && ranges.is_none_or(|ranges| {
+                            ranges.into_iter().all(|range| {
+                                range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
                             })
+                        })
                     });
-            let first_pcurve_range_valid = first_pcurve_parameter_range.is_some()
-                == context.sides[0].pcurve.is_none()
-                && first_pcurve_parameter_range.is_none_or(|range| {
-                    range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
-                });
+            let first_pcurve_range_valid = (if context_first {
+                first_pcurve_parameter_range.is_some() == context.sides[0].pcurve.is_none()
+            } else {
+                first_pcurve_parameter_range.is_none()
+            }) && first_pcurve_parameter_range.is_none_or(|range| {
+                range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
+            });
             if !support_context_is_finite(context)
                 || !surface_ranges_valid
                 || !first_pcurve_range_valid

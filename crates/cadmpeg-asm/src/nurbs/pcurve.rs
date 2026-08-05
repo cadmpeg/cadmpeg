@@ -1,18 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Cached parameter-space curve (pcurve) block decoding, patch layouts, and cache entry points.
 
-use crate::nurbs::core::{decode_curve_block, KnotPatchLayout};
+use crate::nurbs::core::KnotPatchLayout;
 use crate::nurbs::reader::{
     is_periodic, marker_at, marker_positions, read_knots, take_tagged_int, INT_WIDTHS,
 };
-use crate::nurbs::subtypes::{
-    decode_cache_resolving_refs, find_owned_subtype_marker, subtype_refs, subtype_span,
-    SubtypeTables,
-};
+use crate::nurbs::toks::{self, Cur};
+use crate::sab::Token;
 use cadmpeg_core::le::f64_at as read_f64;
 use cadmpeg_ir::math::Point2;
 
 /// The decoded payload of a 2D `nubs` or `nurbs` pcurve block.
+#[derive(Clone)]
 pub struct NurbsPcurve {
     /// Curve degree.
     pub degree: u32,
@@ -26,38 +25,28 @@ pub struct NurbsPcurve {
     pub periodic: bool,
 }
 
-/// One BS2 parse reachable from an explicit pcurve carrier.
-pub(crate) struct PcurveCandidate {
-    /// Decoded parameter-space curve.
-    pub(crate) curve: NurbsPcurve,
-    /// The same bytes do not also form a 3D NURBS curve block.
-    pub(crate) unambiguous_2d: bool,
-    /// This is the first BS2 block owned by an `exp_par_cur` definition.
-    pub(crate) authoritative: bool,
-}
-
 /// Writable value offsets for one 2D pcurve cache.
-pub(crate) struct PcurvePatchLayout {
+pub struct PcurvePatchLayout {
     /// Payload width of integer and enum fields.
-    pub(crate) int_width: usize,
+    pub int_width: usize,
     /// Tagged-integer payload offset for the curve degree.
-    pub(crate) degree_value_offset: usize,
+    pub degree_value_offset: usize,
     /// Tagged-double payload offsets in `(u, v)` pole order.
-    pub(crate) control_value_offsets: Vec<usize>,
+    pub control_value_offsets: Vec<usize>,
     /// Tagged-double payload offsets for homogeneous weights.
-    pub(crate) weight_value_offsets: Vec<usize>,
+    pub weight_value_offsets: Vec<usize>,
     /// Number of UV control points.
-    pub(crate) control_count: usize,
+    pub control_count: usize,
     /// Native unique-knot payloads and expanded run lengths.
-    pub(crate) knots: KnotPatchLayout,
+    pub knots: KnotPatchLayout,
     /// Payload offset for the closure enum.
-    pub(crate) periodic_value_offset: usize,
+    pub periodic_value_offset: usize,
     /// Offset immediately after the final UV control component.
-    pub(crate) control_end: usize,
+    pub control_end: usize,
 }
 
 /// Locate the final valid non-rational 2D pcurve block in a carrier record.
-pub(crate) fn final_pcurve_patch_layout(record: &[u8]) -> Option<PcurvePatchLayout> {
+pub fn final_pcurve_patch_layout(record: &[u8]) -> Option<PcurvePatchLayout> {
     INT_WIDTHS
         .into_iter()
         .find_map(|int_width| final_pcurve_patch_layout_at(record, int_width))
@@ -110,14 +99,6 @@ fn final_pcurve_patch_layout_at(record: &[u8], int_width: usize) -> Option<Pcurv
             })
         })
         .next_back()
-}
-
-/// Decode the parameter-space fit tolerance immediately following the UV cache.
-pub(crate) fn decode_pcurve_fit_tolerance(record: &[u8]) -> Option<f64> {
-    let layout = final_pcurve_patch_layout(record)?;
-    (record.get(layout.control_end) == Some(&0x06))
-        .then(|| read_f64(record, layout.control_end + 1))
-        .flatten()
 }
 
 fn decode_pcurve_block(b: &[u8], marker_pos: usize, int_width: usize) -> Option<NurbsPcurve> {
@@ -189,151 +170,101 @@ fn decode_pcurve_cache_at(record_bytes: &[u8], int_width: usize) -> Option<Nurbs
         .find_map(|pos| decode_pcurve_block(record_bytes, pos, int_width))
 }
 
-/// Decode a 2D pcurve cache, resolving a nested ASM subtype-table reference
-/// when the pcurve record delegates its UV carrier to an `intcurve` block.
-pub fn decode_pcurve_cache_resolving_refs(
-    record_bytes: &[u8],
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
+/// Decode a 2D `nubs`/`nurbs` pcurve block at token `marker_pos`, returning
+/// the pcurve and the token index just past the block. Token-space counterpart
+/// of [`decode_pcurve_block_with_end`].
+pub(crate) fn pcurve_block_with_end(
+    toks: &[Token],
+    marker_pos: usize,
+) -> Option<(NurbsPcurve, usize)> {
+    let rational = toks::marker_at(toks, marker_pos)?.rational();
+    let mut cur = Cur::at(toks, marker_pos + 1);
+    let degree = cur.take_long()?;
+    if !(1..=20).contains(&degree) {
+        return None;
+    }
+    let closure = cur.take_enum()?;
+    let n_uniq = cur.take_long()?;
+    if !(1..=1000).contains(&n_uniq) {
+        return None;
+    }
+    let (knots, n_poles) = toks::take_knot_table(&mut cur, n_uniq as usize, degree)?;
+    let mut control_points = Vec::new();
+    let mut weights = rational.then(Vec::new);
+    for _ in 0..n_poles {
+        let u = cur.take_f64()?;
+        let v = cur.take_f64()?;
+        control_points.push(Point2::new(u, v));
+        if let Some(weights) = weights.as_mut() {
+            weights.push(cur.take_f64()?);
+        }
+    }
+    Some((
+        NurbsPcurve {
+            degree: degree as u32,
+            knots,
+            control_points,
+            weights,
+            periodic: is_periodic(closure),
+        },
+        cur.pos(),
+    ))
+}
+
+fn pcurve_block(toks: &[Token], marker_pos: usize) -> Option<NurbsPcurve> {
+    pcurve_block_with_end(toks, marker_pos).map(|(pcurve, _)| pcurve)
+}
+
+/// Decode the BS2 field owned directly by an `exp_par_cur` scope.
+///
+/// The scope grammar makes its first owned B-spline block the pcurve. Nested
+/// support references are not searched because they belong to other fields.
+pub fn explicit_pcurve_cache(toks: &[Token]) -> Option<NurbsPcurve> {
+    let position = toks::owned_marker_positions(toks).into_iter().next()?;
+    pcurve_block(toks, position)
+}
+
+/// Resolve an explicit pcurve through one subtype-table reference.
+pub fn explicit_pcurve_cache_from_subtype_ref(
+    index: i64,
+    table: &toks::SubtypeTable,
 ) -> Option<NurbsPcurve> {
-    INT_WIDTHS.into_iter().find_map(|int_width| {
-        decode_cache_resolving_refs(
-            record_bytes,
-            active_bytes,
-            tables,
-            &mut Vec::new(),
-            decode_pcurve_cache_at,
-            int_width,
-        )
-    })
+    let index = usize::try_from(index).ok()?;
+    explicit_pcurve_cache(table.span(index)?)
 }
 
-/// Decode every candidate 2D `nubs`/`nurbs` block reachable from a pcurve
-/// carrier record: the record's own blocks plus, through nested `ref N`
-/// subtype references, the blocks of the definitions it links. A ref-form
-/// pcurve delegates its UV carrier to an `intcurve` entity whose record can
-/// hold several 2D blocks (side pcurves and construction machinery); the
-/// dimensional-role flag separates genuine BS2 blocks from BS3 blocks whose
-/// bytes also admit a BS2 parse. The caller uses endpoint agreement only when
-/// several genuine BS2 candidates remain.
-pub(crate) fn decode_pcurve_cache_candidates_resolving_refs(
-    record_bytes: &[u8],
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
-) -> Vec<PcurveCandidate> {
-    decode_pcurve_candidates(record_bytes, active_bytes, tables, false)
-}
-
-/// Decode candidates from the interior of an explicitly owned `exp_par_cur`
-/// scope. The scope opener is outside `record_bytes`, so ownership must enter
-/// through this boundary rather than be inferred from the interior bytes.
-pub(crate) fn decode_owned_pcurve_cache_candidates_resolving_refs(
-    record_bytes: &[u8],
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
-) -> Vec<PcurveCandidate> {
-    decode_pcurve_candidates(record_bytes, active_bytes, tables, true)
-}
-
-fn decode_pcurve_candidates(
-    record_bytes: &[u8],
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
-    owns_explicit_pcurve: bool,
-) -> Vec<PcurveCandidate> {
-    for int_width in INT_WIDTHS {
-        let mut out = Vec::new();
-        collect_pcurve_candidates(
-            record_bytes,
-            active_bytes,
-            tables,
-            &mut Vec::new(),
-            int_width,
-            owns_explicit_pcurve,
-            &mut out,
-        );
-        if !out.is_empty() {
-            return out;
-        }
-    }
-    Vec::new()
-}
-
-fn collect_pcurve_candidates(
-    bytes: &[u8],
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
-    seen: &mut Vec<usize>,
-    int_width: usize,
-    owns_explicit_pcurve: bool,
-    out: &mut Vec<PcurveCandidate>,
-) {
-    // A 3D curve block's bytes can also parse as a 2D block; such ambiguous
-    // reads rank after every unambiguous 2D block so an unverified caller
-    // taking the first candidate never picks a misread 3D carrier.
-    let mut ambiguous = Vec::new();
-    let owns_explicit_pcurve = owns_explicit_pcurve
-        || find_owned_subtype_marker(bytes, &[b"exp_par_cur"], int_width).is_some();
-    let mut claimed_owned_carrier = false;
-    for position in marker_positions(bytes) {
-        if let Some(pcurve) = decode_pcurve_block(bytes, position, int_width) {
-            let authoritative = owns_explicit_pcurve && !claimed_owned_carrier;
-            claimed_owned_carrier |= authoritative;
-            if decode_curve_block(bytes, position, int_width).is_some() {
-                ambiguous.push(PcurveCandidate {
-                    curve: pcurve,
-                    unambiguous_2d: false,
-                    authoritative,
-                });
-            } else {
-                out.push(PcurveCandidate {
-                    curve: pcurve,
-                    unambiguous_2d: true,
-                    authoritative,
-                });
-            }
-        }
-    }
-    out.append(&mut ambiguous);
-    let table = tables.for_width(int_width);
-    for index in subtype_refs(bytes, int_width) {
-        if seen.contains(&index) {
-            continue;
-        }
-        seen.push(index);
-        let Some(&target) = table.get(index) else {
-            continue;
-        };
-        let Some(span) = subtype_span(active_bytes, target, int_width) else {
-            continue;
-        };
-        collect_pcurve_candidates(span, active_bytes, tables, seen, int_width, false, out);
+/// The parameter-space fit tolerance immediately following the final valid 2D
+/// pcurve block in `toks`. Token-space counterpart of
+/// [`decode_pcurve_fit_tolerance`].
+pub fn pcurve_fit_tolerance(toks: &[Token]) -> Option<f64> {
+    let (_, end) = toks::marker_positions(toks)
+        .into_iter()
+        .filter_map(|pos| pcurve_block_with_end(toks, pos))
+        .next_back()?;
+    match toks.get(end) {
+        Some(Token::Double(value)) => Some(*value),
+        _ => None,
     }
 }
 
 #[cfg(test)]
 mod width_tests {
-    use super::*;
     use crate::nurbs::blend::{
-        decode_cyl_spl_sur_at, decode_rolling_ball_curve, decode_rolling_ball_side,
-        decode_rolling_ball_surface, DecodedRollingBallCurve,
+        decode_rolling_ball_curve, decode_rolling_ball_side, decode_rolling_ball_surface,
+        DecodedRollingBallCurve,
     };
-    use crate::nurbs::core::{
-        decode_curve_cache, decode_surface_cache, decode_surface_cache_resolving_refs_at,
-    };
+    use crate::nurbs::core::{decode_curve_cache, decode_surface_cache};
     use crate::nurbs::proc_curve::{
-        compound_patch_layout, decode_helix_definition, decode_procedural_curve_resolving_refs,
-        extrusion_patch_layout, helix_patch_layout, intersection_patch_layout,
-        projection_patch_layout, rolling_ball_patch_layout, silhouette_patch_layout,
-        spring_patch_layout, subset_patch_layout, surface_curve_patch_layout,
-        surface_offset_patch_layout, three_surface_patch_layout, vector_offset_patch_layout,
-        ProjectionTailPatchLayout,
+        compound_patch_layout, extrusion_patch_layout, helix_patch_layout,
+        intersection_patch_layout, projection_patch_layout, rolling_ball_patch_layout,
+        silhouette_patch_layout, spring_patch_layout, subset_patch_layout,
+        surface_curve_patch_layout, surface_offset_patch_layout, three_surface_patch_layout,
+        vector_offset_patch_layout, ProjectionTailPatchLayout,
     };
-    use crate::nurbs::proc_surface::{
-        decode_helix_spl_sur, decode_law_expression, decode_law_spl_sur, decode_sub_spl_sur,
-        DecodedProceduralSurfaceDefinition, EmbeddedLawExpression,
-    };
+    use crate::nurbs::proc_surface::{DecodedProceduralSurfaceDefinition, EmbeddedLawExpression};
     use crate::nurbs::reader::NUBS_MARKER;
+    use crate::nurbs::subtypes::SubtypeTables;
+    use crate::nurbs::toks::{lex_test_span, test_table};
     use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -435,36 +366,25 @@ mod width_tests {
     }
 
     #[test]
-    fn referenced_explicit_pcurve_marks_only_its_owned_bs2_carrier() {
+    fn intcurve_selector_uses_the_serialized_direct_slot() {
         for int_width in [4usize, 8] {
-            let mut active = vec![0x0f];
-            push_ident(&mut active, "int_int_cur");
-            active.extend_from_slice(&pcurve_block(int_width));
-            active.push(0x10);
+            let mut bytes = curve_block(int_width);
+            bytes.extend_from_slice(&pcurve_block(int_width));
+            let toks = crate::nurbs::toks::lex_test_span(&bytes, int_width);
+            let table = crate::nurbs::toks::test_table(&bytes, int_width);
 
-            active.push(0x0f);
-            push_ident(&mut active, "exp_par_cur");
-            active.extend_from_slice(&pcurve_block(int_width));
-            active.push(0x0f);
-            push_ident(&mut active, "ref");
-            push_int(&mut active, 0x04, 0, int_width);
-            active.extend_from_slice(&[0x10, 0x10]);
-
-            let record_start = active.len();
-            active.push(0x0f);
-            push_ident(&mut active, "ref");
-            push_int(&mut active, 0x04, 1, int_width);
-            active.push(0x10);
-            let tables = SubtypeTables::from_stream(&active);
-            let candidates = decode_pcurve_cache_candidates_resolving_refs(
-                &active[record_start..],
-                &active,
-                &tables,
+            assert!(
+                crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 2, &table)
+                    .is_some()
             );
-
-            assert_eq!(candidates.len(), 2);
-            assert!(candidates[0].authoritative);
-            assert!(!candidates[1].authoritative);
+            assert!(
+                crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, -2, &table)
+                    .is_some()
+            );
+            assert!(
+                crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 1, &table)
+                    .is_none()
+            );
         }
     }
 
@@ -572,11 +492,12 @@ mod width_tests {
             push_vector(&mut bytes, [7.0, 8.0, 9.0]);
             push_int(&mut bytes, 0x04, 1, int_width);
 
-            let mut position = 0;
-            let set = decode_law_expression(&bytes, &mut position, int_width, 0).unwrap();
-            let rotate = decode_law_expression(&bytes, &mut position, int_width, 0).unwrap();
-            let term = decode_law_expression(&bytes, &mut position, int_width, 0).unwrap();
-            assert_eq!(position, bytes.len());
+            let toks = lex_test_span(&bytes, int_width);
+            let mut cur = crate::nurbs::toks::Cur::at(&toks, 0);
+            let set = crate::nurbs::proc_surface::law_expression(&mut cur, 0).unwrap();
+            let rotate = crate::nurbs::proc_surface::law_expression(&mut cur, 0).unwrap();
+            let term = crate::nurbs::proc_surface::law_expression(&mut cur, 0).unwrap();
+            assert_eq!(cur.pos(), toks.len());
             assert!(matches!(
                 set,
                 EmbeddedLawExpression::Algebraic { operator, operands }
@@ -628,8 +549,9 @@ mod width_tests {
             }
             bytes.push(0x10);
 
-            let decoded = decode_law_spl_sur(&bytes, int_width)
-                .unwrap_or_else(|| panic!("law surface at width {int_width}"));
+            let decoded =
+                crate::nurbs::proc_surface::law_spl_sur(&lex_test_span(&bytes, int_width))
+                    .unwrap_or_else(|| panic!("law surface at width {int_width}"));
             let DecodedProceduralSurfaceDefinition::Law(construction) = decoded.definition else {
                 panic!("expected law surface at width {int_width}")
             };
@@ -658,8 +580,9 @@ mod width_tests {
             }
             bytes.push(0x10);
 
-            let decoded = decode_law_spl_sur(&bytes, int_width)
-                .unwrap_or_else(|| panic!("legacy law surface at width {int_width}"));
+            let decoded =
+                crate::nurbs::proc_surface::law_spl_sur(&lex_test_span(&bytes, int_width))
+                    .unwrap_or_else(|| panic!("legacy law surface at width {int_width}"));
             let DecodedProceduralSurfaceDefinition::Law(construction) = decoded.definition else {
                 panic!("expected legacy law surface")
             };
@@ -713,8 +636,11 @@ mod width_tests {
                 }
                 bytes.push(0x10);
 
-                let decoded = decode_law_spl_sur(&bytes, int_width)
-                    .unwrap_or_else(|| panic!("law tail {selector} at integer width {int_width}"));
+                let decoded =
+                    crate::nurbs::proc_surface::law_spl_sur(&lex_test_span(&bytes, int_width))
+                        .unwrap_or_else(|| {
+                            panic!("law tail {selector} at integer width {int_width}")
+                        });
                 let DecodedProceduralSurfaceDefinition::Law(construction) = decoded.definition
                 else {
                     panic!("expected law surface")
@@ -747,8 +673,9 @@ mod width_tests {
                 bytes.push(0x0b);
                 bytes.push(0x10);
 
-                let decoded = decode_sub_spl_sur(&bytes, int_width)
-                    .unwrap_or_else(|| panic!("{name} at integer width {int_width}"));
+                let decoded =
+                    crate::nurbs::proc_surface::sub_spl_sur(&lex_test_span(&bytes, int_width))
+                        .unwrap_or_else(|| panic!("{name} at integer width {int_width}"));
                 let DecodedProceduralSurfaceDefinition::SubSurface {
                     support,
                     parameter_ranges,
@@ -968,7 +895,7 @@ mod width_tests {
             bytes.extend_from_slice(&curve_block(int_width));
             bytes.push(0x10);
 
-            let decoded = decode_cyl_spl_sur_at(&bytes, int_width, None)
+            let decoded = crate::nurbs::blend::cyl_spl_sur(&lex_test_span(&bytes, int_width), None)
                 .unwrap_or_else(|| panic!("cache-less extrusion at width {int_width}"));
             assert_eq!(decoded.cache_fit_tolerance, None);
             let DecodedProceduralSurfaceDefinition::Extrusion {
@@ -1008,7 +935,10 @@ mod width_tests {
             bytes.extend_from_slice(&curve_block(int_width));
             bytes.push(0x10);
 
-            assert!(decode_helix_definition(&bytes, int_width).is_some());
+            assert!(
+                crate::nurbs::proc_curve::helix_definition(&lex_test_span(&bytes, int_width))
+                    .is_some()
+            );
             let layout = helix_patch_layout(&bytes, int_width)
                 .unwrap_or_else(|| panic!("helix layout at width {int_width}"));
             let range = layout
@@ -1047,8 +977,8 @@ mod width_tests {
             .map(|digits| u8::from_str_radix(std::str::from_utf8(digits).unwrap(), 16).unwrap())
             .collect::<Vec<_>>();
 
-        let definition =
-            decode_helix_definition(&bytes, 4).expect("current cache-less helix definition");
+        let definition = crate::nurbs::proc_curve::helix_definition(&lex_test_span(&bytes, 4))
+            .expect("current cache-less helix definition");
         let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
             angle_range,
             pitch,
@@ -1087,8 +1017,9 @@ mod width_tests {
             push_vector(&mut bytes, [5.0, 6.0, 7.0]);
             bytes.push(0x10);
 
-            let decoded = decode_helix_spl_sur(&bytes, int_width)
-                .unwrap_or_else(|| panic!("current helix surface at width {int_width}"));
+            let decoded =
+                crate::nurbs::proc_surface::helix_spl_sur(&lex_test_span(&bytes, int_width))
+                    .unwrap_or_else(|| panic!("current helix surface at width {int_width}"));
             let DecodedProceduralSurfaceDefinition::Helix(construction) = decoded.definition else {
                 panic!("expected helix surface definition")
             };
@@ -1230,11 +1161,9 @@ mod width_tests {
         record.extend_from_slice(b"ref");
         push_int(&mut record, 0x04, 0, 4);
         record.push(0x10);
-        let surface = decode_surface_cache_resolving_refs_at(
-            &record,
-            &active,
-            &SubtypeTables::from_stream(&active),
-            4,
+        let surface = crate::nurbs::core::surface_cache_resolving_refs(
+            &crate::nurbs::toks::lex_test_span(&record, 4),
+            &crate::nurbs::toks::test_table(&active, 4),
         )
         .expect("resolved width-4 ref");
         assert_eq!((surface.u_count, surface.v_count), (2, 2));
@@ -1250,11 +1179,9 @@ mod width_tests {
             let mut record = vec![0x0f];
             push_int(&mut record, 0x04, 0, int_width);
             record.push(0x10);
-            let surface = decode_surface_cache_resolving_refs_at(
-                &record,
-                &active,
-                &SubtypeTables::from_stream(&active),
-                int_width,
+            let surface = crate::nurbs::core::surface_cache_resolving_refs(
+                &crate::nurbs::toks::lex_test_span(&record, int_width),
+                &crate::nurbs::toks::test_table(&active, int_width),
             )
             .unwrap_or_else(|| panic!("compact subtype ref at width {int_width}"));
             assert_eq!((surface.u_count, surface.v_count), (2, 2));
@@ -1452,9 +1379,11 @@ mod width_tests {
 
             let mut active = support;
             active.extend_from_slice(&record);
-            let tables = SubtypeTables::from_stream(&active);
-            let decoded = decode_procedural_curve_resolving_refs(&record, &active, &tables)
-                .unwrap_or_else(|| panic!("cache-first intersection at width {int_width}"));
+            let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(
+                &lex_test_span(&record, int_width),
+                &test_table(&active, int_width),
+            )
+            .unwrap_or_else(|| panic!("cache-first intersection at width {int_width}"));
             let (context, flag) = decoded
                 .embedded_intersection
                 .expect("typed intersection context");
@@ -1510,9 +1439,11 @@ mod width_tests {
 
             let mut active = support;
             active.extend_from_slice(&record);
-            let tables = SubtypeTables::from_stream(&active);
-            let decoded = decode_procedural_curve_resolving_refs(&record, &active, &tables)
-                .unwrap_or_else(|| panic!("cache-first blend curve at width {int_width}"));
+            let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(
+                &lex_test_span(&record, int_width),
+                &test_table(&active, int_width),
+            )
+            .unwrap_or_else(|| panic!("cache-first blend curve at width {int_width}"));
             let (family, context, tail) =
                 decoded.embedded_surface_curve.expect("typed blend context");
             assert_eq!(family, SurfaceCurveFamily::Blend);
@@ -1573,9 +1504,11 @@ mod width_tests {
 
             let mut active = support;
             active.extend_from_slice(&record);
-            let tables = SubtypeTables::from_stream(&active);
-            let decoded = decode_procedural_curve_resolving_refs(&record, &active, &tables)
-                .unwrap_or_else(|| panic!("cache-first par curve at width {int_width}"));
+            let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(
+                &lex_test_span(&record, int_width),
+                &test_table(&active, int_width),
+            )
+            .unwrap_or_else(|| panic!("cache-first par curve at width {int_width}"));
             let (family, context, tail) =
                 decoded.embedded_surface_curve.expect("typed par context");
             assert_eq!(family, SurfaceCurveFamily::Parametric);

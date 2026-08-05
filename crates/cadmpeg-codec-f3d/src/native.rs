@@ -32,9 +32,9 @@ use crate::history_records::{
     AsmHistoricalTransition, AsmHistory, AsmHistoryRecord,
 };
 use crate::records::{
-    ActEntity, ActGuid, ActRootComponent, BodyNativeKey, BodyVisibility, ConstructionRecipe,
-    CreationTimestamp, DesignBodyBinding, DesignBodyBounds, DesignBodyMember,
-    DesignBodyRecipeOperand, DesignCanvasImage, DesignComponentOccurrence, DesignConfiguration,
+    ActEntity, ActGuid, ActRootComponent, BodyVisibility, ConstructionRecipe, CreationTimestamp,
+    DesignBodyBinding, DesignBodyBounds, DesignBodyMember, DesignBodyRecipeOperand,
+    DesignCanvasImage, DesignComponentOccurrence, DesignConfiguration,
     DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
     DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionLocusPair,
     DesignDimensionNullLocusPair, DesignDimensionRecipeRecord, DesignEdgeIdentityOperand,
@@ -42,11 +42,14 @@ use crate::records::{
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
     DesignFilletRadiusGroup, DesignMaterialAssignment, DesignParameter, DesignParameterCompanion,
     DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
-    DesignType, EdgeContinuity, EdgeOwnership, FaceSidedness, LostEdgeReference,
-    MeshSurfaceSentinel, PersistentDesignLink, PersistentReference, PersistentSubentityTag,
-    SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation, SketchSurface, SketchText,
+    DesignType, LostEdgeReference, PersistentDesignLink, PersistentReference,
+    PersistentSubentityTag, SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation,
+    SketchSurface, SketchText, XrefDesign, XrefReference,
+};
+use cadmpeg_asm::brep::records::{
+    BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceSidedness, MeshSurfaceSentinel,
     TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail, TransformHints,
-    VertexOwnership, WireTopology, XrefDesign, XrefReference,
+    VertexOwnership, WireTopology,
 };
 
 fn owner_indices<'a>(ids: impl IntoIterator<Item = &'a str>) -> HashMap<String, usize> {

@@ -62,7 +62,7 @@ pub struct ProjectInputs<'a> {
 // edge-identity and body-binding tables and forwards through the bundle.
 #[allow(
     clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag; a context struct would hide those inputs."
 )]
 pub fn project_parameter_design(
     native: &[DesignParameter],
@@ -601,6 +601,24 @@ pub fn project_parameter_design_with_edge_identities(
                             }
                         },
                     ),
+                Some(DesignFeatureFamily::SheetMetalEdgeFlange) => project_edge_flange(
+                    scope,
+                    owners,
+                    native,
+                    construction_groups,
+                    edge_operands,
+                    edge_identity_operands,
+                )
+                .unwrap_or_else(|| FeatureDefinition::Native {
+                    kind: scope.kind.clone(),
+                    parameters: parameters
+                        .iter()
+                        .map(|(_, parameter)| {
+                            (parameter.name.clone(), parameter.expression.clone())
+                        })
+                        .collect(),
+                    properties: native_scope_properties(scope, native_scope),
+                }),
                 None => {
                     if let Some(primitive) = scope.solid_primitive.as_ref() {
                         let operation = |operation| match operation {
@@ -1620,32 +1638,36 @@ fn project_draft(
     use cadmpeg_ir::features::{Angle, FeatureDefinition};
 
     let construction = scope.draft_operation.as_ref()?;
-    let stream = native_stream(&scope.id)?;
-    let mut groups = groups
-        .iter()
-        .filter(|group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == scope.record_index
-        })
-        .collect::<Vec<_>>();
-    groups.sort_by_key(|group| group.scope_reference_ordinal);
-    let [faces, neutral_plane] = groups.as_slice() else {
-        return None;
+    // Reference-table positions vary by group, so select groups by role. More
+    // than one neutral-plane group describes a parting-line draft with a pull
+    // direction and a parting tool. This operation keeps that scope native.
+    let faces = single_operand_group(groups, scope, ROLE_0X10)?;
+    let neutral_plane = single_operand_group(groups, scope, 0x0000_0021_0000_0000)?;
+    let member_of_scope = |group: &DesignConstructionOperandGroup| {
+        group
+            .members
+            .iter()
+            .all(|member| scope.reference_members.contains(member))
     };
-    if faces.scope_reference_ordinal != 2
-        || faces.record_index != scope.reference_members[2]
-        || faces.role != ROLE_0X10
-        || faces.members.as_slice() != &scope.reference_members[3..5]
-        || neutral_plane.scope_reference_ordinal != 5
-        || neutral_plane.record_index != scope.reference_members[5]
-        || neutral_plane.role != 0x0000_0021_0000_0000
-        || neutral_plane.members.as_slice() != &scope.reference_members[6..]
+    if !scope.reference_members.contains(&faces.record_index)
+        || !scope
+            .reference_members
+            .contains(&neutral_plane.record_index)
+        || !member_of_scope(faces)
+        || !member_of_scope(neutral_plane)
     {
         return None;
     }
+    // The decoded angle remains available when face recipes fail. Such a draft
+    // keeps its native face selections, and the decode report marks its
+    // definition incomplete.
+    let selection = |group: &DesignConstructionOperandGroup| {
+        resolved_historical_face_group(scope, group, face_operands)
+            .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone()))
+    };
     Some(FeatureDefinition::Draft {
-        faces: resolved_historical_face_group(scope, faces, face_operands)?,
-        neutral_plane: resolved_historical_face_group(scope, neutral_plane, face_operands)?,
+        faces: selection(faces),
+        neutral_plane: selection(neutral_plane),
         pull_direction: None,
         angle: Some(Angle(construction.angle)),
         outward: None,
@@ -1853,6 +1875,118 @@ fn project_base_flange(
         profile: ProfileRef::Sketch(neutral_sketch_id(placement)),
         thickness: Length(operation.thickness * 10.0),
         side: SheetMetalThicknessSide::Forward,
+    })
+}
+
+/// Project a sheet-metal `EdgeFlange` scope onto its neutral operation.
+///
+/// The typed operation supplies the bend position, height datum, and inside
+/// radius. Owner parameters supply the height, angle, and width. The projector
+/// keeps the native scope when an owner lacks a parameter.
+pub(crate) fn project_edge_flange(
+    scope: &DesignParameterScope,
+    owners: &[crate::records::DesignParameterOwner],
+    parameters: &[DesignParameter],
+    groups: &[DesignConstructionOperandGroup],
+    edge_operands: &[DesignEdgeOperand],
+    edge_identity_operands: &[DesignEdgeIdentityOperand],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use crate::records::{DesignBendPosition, DesignEdgeWidthMode, DesignSheetMetalHeightDatum};
+    use cadmpeg_ir::features::{
+        FeatureDefinition, Length, SheetMetalBendPosition, SheetMetalFlangeWidth,
+        SheetMetalHeightDatum,
+    };
+
+    let operation = scope.edge_flange_operation.as_ref()?;
+    let stream = native_stream(&scope.id)?;
+    let parameter = |owner_record_index, source_kind: &str| {
+        let mut matching = owners.iter().filter(|owner| {
+            native_stream(&owner.id) == Some(stream)
+                && owner.scope_record_index == scope.record_index
+                && owner.record_index == owner_record_index
+        });
+        let owner = matching.next()?;
+        if matching.next().is_some() {
+            return None;
+        }
+        parameters.iter().find(|parameter| {
+            native_stream(&parameter.id) == Some(stream)
+                && parameter.record_index == owner.parameter_record_index
+                && parameter.source_kind == source_kind
+        })
+    };
+
+    let height = design_length(parameter(
+        operation.height_owner_record_index,
+        "FlangeHeight",
+    )?)?;
+    let angle = design_angle(parameter(
+        operation.angle_owner_record_index,
+        "FlangeAngle",
+    )?)?;
+
+    // The width owners are ordered, and their parameter kinds name the mode
+    // independently of the owner count, so both must agree.
+    let width = match (
+        operation.edge_width_mode(),
+        operation.width_distance_owner_record_indices.as_slice(),
+    ) {
+        (DesignEdgeWidthMode::FullEdge, []) => SheetMetalFlangeWidth::FullEdge,
+        (DesignEdgeWidthMode::Symmetric, [owner]) => SheetMetalFlangeWidth::Symmetric {
+            width: design_length(parameter(*owner, "EdgeWidth")?)?,
+        },
+        (DesignEdgeWidthMode::TwoSides, [first, second]) => SheetMetalFlangeWidth::TwoSides {
+            first: design_length(parameter(*first, "EdgeWidth_1")?)?,
+            second: design_length(parameter(*second, "EdgeWidth_2")?)?,
+        },
+        _ => return None,
+    };
+
+    let height_datum = match operation.height_datum {
+        DesignSheetMetalHeightDatum::InnerFaces => SheetMetalHeightDatum::InnerFaces,
+        DesignSheetMetalHeightDatum::OuterFaces => SheetMetalHeightDatum::OuterFaces,
+        DesignSheetMetalHeightDatum::Unknown(_) => return None,
+    };
+    let bend_position = match operation.bend_position {
+        DesignBendPosition::Outside => SheetMetalBendPosition::Outside,
+        DesignBendPosition::Inside => SheetMetalBendPosition::Inside,
+        DesignBendPosition::Adjacent => SheetMetalBendPosition::Adjacent,
+        DesignBendPosition::TangentToSide => SheetMetalBendPosition::TangentToSide,
+        DesignBendPosition::Unknown(_) => return None,
+    };
+
+    // The role-`0x08` group carries the selected edges. The aggregate role-`0x43`
+    // group repeats them, so it contributes no separate selection.
+    let [edge_group_record_index] = operation.edge_group_record_indices.as_slice() else {
+        return None;
+    };
+    let mut matching = groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream)
+            && group.scope_record_index == scope.record_index
+            && group.record_index == *edge_group_record_index
+    });
+    let edge_group = matching.next()?;
+    if matching.next().is_some() || edge_group.role != 0x0000_0008_0000_0000 {
+        return None;
+    }
+    let edges = crate::design::edge_resolve::resolved_edge_group(
+        edge_group,
+        groups,
+        edge_operands,
+        edge_identity_operands,
+        scope.previous_history_state_id,
+        &neutral_feature_id(scope),
+        None,
+    );
+
+    Some(FeatureDefinition::SheetMetalEdgeFlange {
+        edges,
+        height,
+        angle,
+        height_datum,
+        bend_position,
+        width,
+        bend_radius: Length(operation.bend_radius * 10.0),
     })
 }
 
@@ -4046,6 +4180,32 @@ fn project_fixed_pipe(
     })
 }
 
+/// Map the boundary-settings continuity of a `SurfacePatch` scope onto one
+/// neutral continuity.
+///
+/// A `SurfacePatch` carries one continuity value. The projector returns it when
+/// every boundary carries the same value; mixed boundaries produce `None`.
+pub(crate) fn surface_patch_continuity(
+    scope: &DesignParameterScope,
+) -> Option<cadmpeg_ir::features::SurfaceContinuity> {
+    use cadmpeg_ir::features::SurfaceContinuity;
+
+    let boundaries = scope.surface_patch_boundaries.as_slice();
+    let (first, rest) = boundaries.split_first()?;
+    if rest
+        .iter()
+        .any(|other| other.continuity != first.continuity)
+    {
+        return None;
+    }
+    match first.continuity {
+        crate::records::DesignPatchContinuity::Connected => Some(SurfaceContinuity::Contact),
+        crate::records::DesignPatchContinuity::Tangent => Some(SurfaceContinuity::Tangent),
+        crate::records::DesignPatchContinuity::Curvature => Some(SurfaceContinuity::Curvature),
+        crate::records::DesignPatchContinuity::Unknown(_) => None,
+    }
+}
+
 pub(crate) fn project_surface_patch(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
@@ -4096,7 +4256,7 @@ pub(crate) fn project_surface_patch(
                 scope,
             )),
             support_faces: FaceSelection::Faces(Vec::new()),
-            continuity: None,
+            continuity: surface_patch_continuity(scope),
             merge_result: None,
         });
     }
@@ -4142,7 +4302,7 @@ pub(crate) fn project_surface_patch(
     Some(FeatureDefinition::FilledSurface {
         boundary: SurfaceBoundary::Path(boundary),
         support_faces: FaceSelection::Faces(Vec::new()),
-        continuity: None,
+        continuity: surface_patch_continuity(scope),
         merge_result: None,
     })
 }
@@ -4812,8 +4972,8 @@ pub(crate) fn project_extrude(
     }
     .filter(|angle| angle.0 != 0.0);
     let second_draft = side_two_draft.filter(|angle| angle.0 != 0.0);
-    // A side-two draft has nowhere to live outside the second side of a
-    // two-sided extent, so reject it rather than silently drop it.
+    // A side-two draft requires a two-sided extent. Other extents have no neutral
+    // field for it, so return None.
     if second_draft.is_some() && !matches!(shape, ExtentShape::TwoSided { .. }) {
         return None;
     }
