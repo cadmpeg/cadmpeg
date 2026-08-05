@@ -162,7 +162,8 @@ an acyclic chain ending in a dimensional base unit. Representation uncertainty
 is a linear tolerance in the representation's length unit.
 
 A conical surface permits zero reference radius at its placement origin. Its
-half-angle is converted from the representation's plane-angle unit to radians.
+finite half-angle is converted from the representation's plane-angle unit to
+radians without imposing a positive-angle restriction.
 An unknown NURBS closed or periodic LOGICAL value makes no periodicity
 assertion. A POLYLINE with `n` points is the degree-one NURBS having those
 points as control points and a clamped piecewise-linear knot vector.
@@ -186,6 +187,13 @@ underlying entity. A committed body graph contains complete ownership and
 valid referenced indices; recoverable non-manifold incidence is retained and
 reported without fabricating manifold ownership.
 
+Connected face sets are connected through common edges or common vertices.
+Edge-based and shell-based wireframe models retain their connected edge and
+vertex ownership. Faceted B-reps materialize polygon-loop straight edges and
+vertices as topology carriers. Oriented faces, subfaces, seam edges, subedges,
+connected-edge sub-sets, and connected-face sets resolve their inherited
+attributes before topology is committed.
+
 A face boundary is either an EDGE_LOOP coedge ring or a VERTEX_LOOP naming one
 vertex at a surface singularity. No zero-length edge is introduced for a
 vertex loop. A geometric set containing surfaces forms a sheet carrier;
@@ -203,6 +211,10 @@ A topology-referenced curve or surface whose geometry does not transfer keeps
 its STEP identity as an unknown carrier linked to the opaque entity record.
 The body topology remains connected. An optional pcurve that does not transfer
 is omitted from its coedge and produces a loss; it does not reject the body.
+An unowned pcurve is retained as an opaque source record rather than as an
+orphan carrier. If a mandatory topology relation cannot resolve, the complete
+root is not committed: records claimed only by that root remain named opaque,
+and downstream product bindings omit the uncommitted body.
 Two same-surface pcurves of one seam curve bind in occurrence order to the two
 coedge uses of that seam.
 

@@ -2701,33 +2701,56 @@ impl<'a> Builder<'a> {
                 format!("{unwritten_pmi} PMI annotation(s) were not written to STEP"),
             );
         }
+        // STEP-native source associations identify records already represented
+        // by the writer's own STEP graph. They are not lossy foreign-source
+        // metadata. Keep strict-mode rejection for associations from other
+        // codecs, which this writer cannot reproduce.
         let source_object_count = self
             .ir
             .model
             .surfaces
             .iter()
-            .filter(|surface| surface.source_object.is_some())
+            .filter(|surface| {
+                surface
+                    .source_object
+                    .as_ref()
+                    .is_some_and(|source| source.format != "step")
+            })
             .count()
             + self
                 .ir
                 .model
                 .curves
                 .iter()
-                .filter(|curve| curve.source_object.is_some())
+                .filter(|curve| {
+                    curve
+                        .source_object
+                        .as_ref()
+                        .is_some_and(|source| source.format != "step")
+                })
                 .count()
             + self
                 .ir
                 .model
                 .subds
                 .iter()
-                .filter(|subd| subd.source_object.is_some())
+                .filter(|subd| {
+                    subd.source_object
+                        .as_ref()
+                        .is_some_and(|source| source.format != "step")
+                })
                 .count()
             + self
                 .ir
                 .model
                 .tessellations
                 .iter()
-                .filter(|tessellation| tessellation.source_object.is_some())
+                .filter(|tessellation| {
+                    tessellation
+                        .source_object
+                        .as_ref()
+                        .is_some_and(|source| source.format != "step")
+                })
                 .count();
         if source_object_count > 0 {
             self.loss(

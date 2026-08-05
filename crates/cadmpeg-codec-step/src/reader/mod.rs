@@ -85,9 +85,13 @@ fn decode_exchange_mode(
         );
     }
 
-    let geometry = geometry::decode(exchange, &mut ir);
+    let mut geometry = geometry::decode(exchange, &mut ir);
     let dependencies = dependencies::decode(exchange);
     let topology = topology::decode(exchange, &mut ir);
+    geometry::associate_topology_carriers(exchange, &mut ir);
+    geometry::associate_free_geometric_set_members(exchange, &mut ir);
+    geometry::associate_free_representation_members(exchange, &mut ir);
+    retain_unowned_pcurves(exchange, &mut geometry, &mut ir);
     let product = product::decode(exchange, &geometry, &mut ir);
     let tessellation = tessellation::decode(exchange, &geometry, &mut ir);
     let pmi = pmi::decode(exchange, &geometry, &mut ir);
@@ -262,6 +266,48 @@ fn decode_exchange_mode(
         DecodeResult::new(ir, report, cadmpeg_ir::SourceFidelity::default()),
         opaque_offsets,
     )
+}
+
+fn retain_unowned_pcurves(
+    exchange: &Exchange,
+    geometry: &mut geometry::GeometryResult,
+    ir: &mut CadIr,
+) {
+    let owned = ir
+        .model
+        .coedges
+        .iter()
+        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.0.clone()))
+        .chain(ir.model.loops.iter().flat_map(|loop_| {
+            loop_
+                .vertex_uses
+                .iter()
+                .flat_map(|use_| use_.pcurves.iter().map(|pcurve| pcurve.pcurve.0.clone()))
+        }))
+        .collect::<BTreeSet<_>>();
+    let mut removed = 0;
+    ir.model.pcurves.retain(|pcurve| {
+        let keep = owned.contains(&pcurve.id.0);
+        if !keep {
+            removed += 1;
+        }
+        keep
+    });
+    if removed == 0 {
+        return;
+    }
+    geometry.typed_records.retain(|id| {
+        exchange.records.get(id).is_none_or(|record| {
+            !record
+                .partials
+                .iter()
+                .any(|partial| partial.name == "PCURVE")
+                || owned.contains(&format!("step:data:pcurve#{id}"))
+        })
+    });
+    geometry.warnings.push(format!(
+        "retained {removed} unowned pcurve carrier(s) as opaque source records"
+    ));
 }
 
 fn opaque_record_id(record: &parse::RawRecord) -> UnknownId {

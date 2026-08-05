@@ -592,7 +592,7 @@ pub enum Check {
     CoedgePairing,
     /// Wire edges, free vertices, or wire bodies violate topology ownership rules.
     WireTopology,
-    /// A face-bearing shell is disconnected through physical-edge incidence.
+    /// A face-bearing shell is disconnected through shared edges or vertices.
     ShellTopology,
     /// A geometry carrier cannot be reached from topology or retained construction data.
     CarrierReachability,

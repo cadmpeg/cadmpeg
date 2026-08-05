@@ -71,18 +71,33 @@ pub(super) fn decode(
             .parameter(1)
             .and_then(ValueExt::text)
             .filter(|name| !name.is_empty());
+        let has_shape_binding = shape_bindings.contains_key(&step_id);
         let mut bodies = shape_bindings.get(&step_id).cloned().unwrap_or_default();
-        let before = bodies.len();
+        let missing = bodies
+            .iter()
+            .filter(|body| {
+                !ir.model
+                    .bodies
+                    .iter()
+                    .any(|candidate| candidate.id == **body)
+            })
+            .map(|body| body.0.clone())
+            .collect::<Vec<_>>();
         bodies.retain(|body| {
             ir.model
                 .bodies
                 .iter()
                 .any(|candidate| candidate.id == *body)
         });
-        if before != bodies.len() {
+        if !missing.is_empty() {
             warnings.push(format!(
-                "PRODUCT #{step_id} has {} shape body reference(s) whose topology root did not commit",
-                before - bodies.len()
+                "PRODUCT #{step_id} omitted uncommitted shape body reference(s): {}",
+                missing.join(", ")
+            ));
+        }
+        if has_shape_binding && bodies.is_empty() {
+            warnings.push(format!(
+                "PRODUCT #{step_id} has a shape representation with no committed topology body"
             ));
         }
         ir.model.product_definitions.push(ProductDefinition {
@@ -466,10 +481,18 @@ fn representation_bodies(
             let Some(record) = exchange.records.get(&item) else {
                 return Vec::new();
             };
-            if matches!(
-                record.simple_name(),
-                Some("SHELL_BASED_SURFACE_MODEL" | "MANIFOLD_SOLID_BREP" | "BREP_WITH_VOIDS")
-            ) {
+            if [
+                "SHELL_BASED_SURFACE_MODEL",
+                "FACE_BASED_SURFACE_MODEL",
+                "FACETED_BREP",
+                "MANIFOLD_SOLID_BREP",
+                "BREP_WITH_VOIDS",
+                "SHELL_BASED_WIREFRAME_MODEL",
+                "EDGE_BASED_WIREFRAME_MODEL",
+            ]
+            .iter()
+            .any(|name| has_type(record, name))
+            {
                 return vec![BodyId(format!("step:data:body#{item}"))];
             }
             if record.simple_name() == Some("MAPPED_ITEM") {
@@ -497,6 +520,10 @@ fn representation_bodies(
     active.remove(&representation);
     cache.insert(representation, bodies.clone());
     bodies
+}
+
+fn has_type(record: &RawRecord, name: &str) -> bool {
+    record.partials.iter().any(|partial| partial.name == name)
 }
 
 fn occurrence_placements(
