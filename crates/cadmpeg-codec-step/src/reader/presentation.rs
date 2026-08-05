@@ -801,7 +801,7 @@ mod tests {
 
     #[test]
     fn surface_color_search_ignores_curve_style_colors() {
-        let exchange = crate::parse::parse(
+        let (exchange, _) = crate::parse::parse(
             b"ISO-10303-21;HEADER;ENDSEC;DATA;\
 #1=COLOUR_RGB('curve',0.,0.,1.);\
 #2=CURVE_STYLE('',#1);\

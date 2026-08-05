@@ -8,11 +8,11 @@ use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 
-use crate::parse::{self, Exchange, Value};
+use crate::parse::{self, Exchange, ParseDiagnostic, Value};
 
 mod dependencies;
 mod geometry;
@@ -27,29 +27,39 @@ pub(super) const MAX_RECORD_GRAPH_DEPTH: usize = 256;
 
 /// Decode a complete clear-text exchange structure.
 pub fn decode(input: &[u8], options: DecodeOptions) -> Result<DecodeResult, CodecError> {
-    let exchange = parse::parse(input).map_err(|error| CodecError::Malformed(error.to_string()))?;
-    Ok(decode_exchange(input, options, &exchange))
+    let (exchange, diagnostics) =
+        parse::parse(input).map_err(|error| CodecError::Malformed(error.to_string()))?;
+    Ok(decode_exchange(input, options, &exchange, &diagnostics))
 }
 
 pub(super) fn decode_exchange(
     input: &[u8],
     options: DecodeOptions,
     exchange: &Exchange,
+    diagnostics: &[ParseDiagnostic],
 ) -> DecodeResult {
-    decode_exchange_mode(input, options, exchange, true).0
+    decode_exchange_mode(input, options, exchange, diagnostics, true).0
 }
 
 pub(super) fn inspect_exchange(
     input: &[u8],
     exchange: &Exchange,
+    diagnostics: &[ParseDiagnostic],
 ) -> (DecodeResult, BTreeSet<usize>) {
-    decode_exchange_mode(input, DecodeOptions::default(), exchange, false)
+    decode_exchange_mode(
+        input,
+        DecodeOptions::default(),
+        exchange,
+        diagnostics,
+        false,
+    )
 }
 
 fn decode_exchange_mode(
     input: &[u8],
     options: DecodeOptions,
     exchange: &Exchange,
+    diagnostics: &[ParseDiagnostic],
     retain_opaque: bool,
 ) -> (DecodeResult, BTreeSet<usize>) {
     let mut ir = CadIr::empty(Units::default());
@@ -78,6 +88,18 @@ fn decode_exchange_mode(
             .map(|entry| format!("external reference {} -> {}", entry.name, entry.uri))
             .collect(),
     };
+    report.losses.extend(diagnostics.iter().map(|diagnostic| {
+        LossNote::new(
+            LossKind::NoncanonicalSourceSyntax,
+            diagnostic.message.clone(),
+        )
+        .with_provenance(cadmpeg_ir::LossProvenance {
+            format: "step".into(),
+            stream: String::new(),
+            offset: diagnostic.offset as u64,
+            tag: Some("complex_entity".into()),
+        })
+    }));
     if options.container_only {
         return (
             DecodeResult::new(ir, report, cadmpeg_ir::SourceFidelity::default()),

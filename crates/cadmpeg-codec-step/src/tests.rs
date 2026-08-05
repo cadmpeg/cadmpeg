@@ -131,7 +131,44 @@ fn parser_bounds_aggregate_anchor_materialization() {
 #[test]
 fn parser_rejects_duplicate_complex_partial_names() {
     let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=(A()A());ENDSEC;END-ISO-10303-21;";
-    assert!(crate::parse::parse(source).is_err());
+    let error = crate::parse::parse(source).expect_err("duplicate partial names must fail");
+    assert!(matches!(
+        error,
+        crate::parse::ParseError::Syntax { message, .. }
+            if message == "duplicate complex partial name"
+    ));
+}
+
+#[test]
+fn parser_reports_recoverable_noncanonical_complex_partial_order() {
+    let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=(NAMED_UNIT(#2)SOLID_ANGLE_UNIT()SI_UNIT($,.STERADIAN.));#2=DIMENSIONAL_EXPONENTS(0.,0.,0.,0.,0.,0.,0.);ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) =
+        crate::parse::parse(source).expect("noncanonical partial order is recoverable");
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].offset,
+        source
+            .windows(2)
+            .position(|window| window == b"#1")
+            .unwrap()
+    );
+    assert_eq!(
+        diagnostics[0].kind,
+        crate::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical
+    );
+    assert_eq!(
+        diagnostics[0].message,
+        "complex partial records are not alphabetical: observed (NAMED_UNIT, SOLID_ANGLE_UNIT, SI_UNIT), expected (NAMED_UNIT, SI_UNIT, SOLID_ANGLE_UNIT)"
+    );
+    assert_eq!(
+        exchange.records[&1]
+            .partials
+            .iter()
+            .map(|partial| partial.name.as_str())
+            .collect::<Vec<_>>(),
+        ["NAMED_UNIT", "SOLID_ANGLE_UNIT", "SI_UNIT"]
+    );
 }
 
 #[test]
@@ -230,7 +267,9 @@ fn codec_inspects_edition3_sections_and_external_references() {
         summary.entries[4].attributes["unknown_entities"],
         "EXAMPLE_RECORD:1"
     );
-    let exchange = crate::parse::parse(bytes).expect("parse opaque signature payload");
+    let (exchange, diagnostics) =
+        crate::parse::parse(bytes).expect("parse opaque signature payload");
+    assert!(diagnostics.is_empty());
     let signature = exchange.signature.expect("signature byte span");
     assert!(bytes[signature].windows(2).any(|bytes| bytes == b"@%"));
     assert_eq!(
@@ -3234,7 +3273,8 @@ fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
     });
     ir.model.faces[0].loops.push(inner);
     let output = export(&ir);
-    let exchange = crate::parse::parse(output.as_bytes()).unwrap();
+    let (exchange, diagnostics) = crate::parse::parse(output.as_bytes()).unwrap();
+    assert!(diagnostics.is_empty());
     let (face_step, outer_bound, inner_bound, outer_loop) = exchange
         .records
         .iter()
@@ -3383,7 +3423,8 @@ fn ap242_dimension_kinds_emit_concrete_schema_entities() {
     assert!(!text.contains(" = GEOMETRIC_TOLERANCE("));
     assert!(text.contains(",'diameter')"));
     assert!(text.contains(",'radius')"));
-    let exchange = crate::parse::parse(&output).unwrap();
+    let (exchange, diagnostics) = crate::parse::parse(&output).unwrap();
+    assert!(diagnostics.is_empty());
     let location = exchange
         .records
         .values()

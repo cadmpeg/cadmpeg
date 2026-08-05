@@ -2957,9 +2957,9 @@ impl Codec for StepCodec {
         if self.detect(bytes) == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
-        let exchange =
+        let (exchange, diagnostics) =
             parse::parse(bytes).map_err(|error| CodecError::Malformed(error.to_string()))?;
-        let (decoded, opaque_offsets) = reader::inspect_exchange(bytes, &exchange);
+        let (decoded, opaque_offsets) = reader::inspect_exchange(bytes, &exchange, &diagnostics);
         let mut entries = vec![ContainerEntry {
             name: "HEADER".into(),
             role: "metadata".into(),
@@ -3106,11 +3106,13 @@ impl Codec for StepCodec {
         } else {
             "edition unspecified"
         };
+        let mut notes = vec![format!("schema {schema}; {edition}")];
+        notes.extend(diagnostics.into_iter().map(|diagnostic| diagnostic.message));
         Ok(ContainerSummary {
             format: "step".into(),
             container_kind: "iso-10303-21-clear-text".into(),
             entries,
-            notes: vec![format!("schema {schema}; {edition}")],
+            notes,
         })
     }
 
