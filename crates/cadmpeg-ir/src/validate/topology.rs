@@ -5974,7 +5974,14 @@ pub(super) fn check_shell_connectivity(ir: &CadIr, findings: &mut Vec<Finding>) 
         .iter()
         .map(|loop_| (loop_.id.0.as_str(), loop_.face.0.as_str()))
         .collect::<HashMap<_, _>>();
+    let edges = ir
+        .model
+        .edges
+        .iter()
+        .map(|edge| (edge.id.0.as_str(), edge))
+        .collect::<HashMap<_, _>>();
     let mut faces_by_edge = HashMap::<&str, HashSet<&str>>::new();
+    let mut faces_by_vertex = HashMap::<&str, HashSet<&str>>::new();
     for coedge in &ir.model.coedges {
         let Some(face) = loop_faces.get(coedge.owner_loop.0.as_str()) else {
             continue;
@@ -5983,14 +5990,37 @@ pub(super) fn check_shell_connectivity(ir: &CadIr, findings: &mut Vec<Finding>) 
             .entry(coedge.edge.0.as_str())
             .or_default()
             .insert(*face);
+        if let Some(edge) = edges.get(coedge.edge.0.as_str()) {
+            faces_by_vertex
+                .entry(edge.start.0.as_str())
+                .or_default()
+                .insert(*face);
+            faces_by_vertex
+                .entry(edge.end.0.as_str())
+                .or_default()
+                .insert(*face);
+        }
+    }
+    for loop_ in &ir.model.loops {
+        let Some(face) = loop_faces.get(loop_.id.0.as_str()) else {
+            continue;
+        };
+        for vertex_use in &loop_.vertex_uses {
+            faces_by_vertex
+                .entry(vertex_use.vertex.0.as_str())
+                .or_default()
+                .insert(*face);
+        }
     }
     let mut neighbors = HashMap::<&str, HashSet<&str>>::new();
-    for edge_faces in faces_by_edge.values() {
-        for &face in edge_faces {
-            neighbors
-                .entry(face)
-                .or_default()
-                .extend(edge_faces.iter().copied().filter(|other| *other != face));
+    for incident_faces in faces_by_edge.values().chain(faces_by_vertex.values()) {
+        for &face in incident_faces {
+            neighbors.entry(face).or_default().extend(
+                incident_faces
+                    .iter()
+                    .copied()
+                    .filter(|other| *other != face),
+            );
         }
     }
 
@@ -6022,7 +6052,7 @@ pub(super) fn check_shell_connectivity(ir: &CadIr, findings: &mut Vec<Finding>) 
             findings.push(Finding {
                 check: Check::ShellTopology,
                 severity: Severity::Error,
-                message: "shell faces are disconnected through shared edges".into(),
+                message: "shell faces are disconnected through shared edges or vertices".into(),
                 entity: Some(shell.id.0.clone()),
             });
         }

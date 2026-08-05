@@ -47,7 +47,7 @@ use geometry_consistency::{
     check_procedural_support_consistency,
 };
 use geometry_payloads::{check_bounds, check_tessellations};
-use identity_order::{check_identity_and_order, check_version, collect_native_ids, entity_counts};
+use identity_order::{check_identity_and_order, check_version, collect_native_ids};
 use pmi::check_pmi;
 use presentation::check_presentation;
 use products::check_products;
@@ -66,6 +66,34 @@ use topology::{
 /// still rejecting NaN and non-positive values.
 fn nonpositive(x: f64) -> bool {
     !(x.is_finite() && x > 0.0)
+}
+
+macro_rules! define_registered_entity_census {
+    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
+        fn registered_entity_census(ir: &CadIr) -> BTreeMap<String, usize> {
+            BTreeMap::from([
+                $((stringify!($field).into(), ir.model.$field.len())),*
+            ])
+        }
+    };
+}
+crate::document::arena_registry!(define_registered_entity_census);
+
+/// Count the records represented by the IR arenas without running validation.
+pub(crate) fn entity_census(ir: &CadIr) -> BTreeMap<String, usize> {
+    let mut counts = registered_entity_census(ir);
+    counts.insert(
+        "surfaces_unknown_geometry".into(),
+        ir.model
+            .surfaces
+            .iter()
+            .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
+            .count(),
+    );
+    for loss in ir.native.loss_counts() {
+        counts.insert(format!("native.{}.{}", loss.format, loss.kind), loss.count);
+    }
+    counts
 }
 
 /// Validate `ir` and copy `losses` into the returned report unchanged.
@@ -113,7 +141,7 @@ fn validate_model_with_index(
     check_typed_references(ir, ids, &mut findings);
 
     ValidationReport {
-        entity_counts: entity_counts(ir),
+        entity_counts: entity_census(ir),
         findings,
         losses,
     }

@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use crate::annotations::{ExactnessNote, Provenance};
 use crate::codec::{CadirEncoder, Encoder};
 use crate::document::Model;
-use crate::examples::unit_cube;
+use crate::examples::{directed_subd_sum, unit_cube};
 use crate::features::ExtrudeDirection;
 use crate::geometry::{
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
@@ -437,6 +437,20 @@ fn cadir_encoder_streams_the_canonical_json_shape() {
     let mut canonical = ir.to_canonical_json().unwrap();
     canonical.push('\n');
     assert_eq!(encoded, canonical.as_bytes());
+}
+
+#[test]
+fn cadir_encoder_census_matches_validation_counts() {
+    let ir = directed_subd_sum();
+    let validation_counts = validate(&ir, Vec::new()).entity_counts;
+    let plan = CadirEncoder
+        .plan(crate::codec::EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .expect("plan CADIR export");
+
+    assert_eq!(plan.report().census.counts, validation_counts);
 }
 
 #[test]

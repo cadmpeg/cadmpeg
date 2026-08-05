@@ -12,3 +12,4 @@ crates/*/tests/golden/**/*.bin binary
 # records which line ending each card carried, so a converted `.igs` decodes
 # to a different document.
 crates/*/tests/golden/fixtures/** binary
+crates/*/tests/fixtures/** binary

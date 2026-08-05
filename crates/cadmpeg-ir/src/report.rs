@@ -134,6 +134,8 @@ pub enum LossKind {
     /// A decode-time diagnostic surfaced as a loss note; detail is in the
     /// message.
     DecodeDiagnostic,
+    /// The source uses a recoverable but noncanonical serialization.
+    NoncanonicalSourceSyntax,
     /// Standalone mesh vertices were stored at reduced (f32) precision by the
     /// source archive.
     MeshVertexPrecision,
@@ -205,6 +207,7 @@ impl LossKind {
             Self::AssemblyPlacementsNotTransferred => "assembly_placements_not_transferred",
             Self::RecordNotTyped => "record_not_typed",
             Self::DecodeDiagnostic => "decode_diagnostic",
+            Self::NoncanonicalSourceSyntax => "noncanonical_source_syntax",
             Self::MeshVertexPrecision => "mesh_vertex_precision",
             Self::ObjectRecordsUntransferred => "object_records_untransferred",
             Self::UnsupportedObjectFamily => "unsupported_object_family",
@@ -248,6 +251,7 @@ impl LossKind {
             }
             Self::RecordNotTyped
             | Self::DecodeDiagnostic
+            | Self::NoncanonicalSourceSyntax
             | Self::AssetNotTransferred
             | Self::PassthroughRecordOmitted
             | Self::PreservedSourceUnavailable => LossCategory::Other,
@@ -292,6 +296,7 @@ impl LossKind {
             | Self::CurvelessEdgeOmitted
             | Self::UnknownSurfaceFaceOmitted
             | Self::SubdOmitted
+            | Self::NoncanonicalSourceSyntax
             | Self::NoExportableSolids => Some(Severity::Warning),
             _ => None,
         }
@@ -630,7 +635,7 @@ pub enum Check {
     CoedgePairing,
     /// Wire edges, free vertices, or wire bodies violate topology ownership rules.
     WireTopology,
-    /// A face-bearing shell is disconnected through physical-edge incidence.
+    /// A face-bearing shell is disconnected through shared edges or vertices.
     ShellTopology,
     /// A geometry carrier cannot be reached from topology or retained construction data.
     CarrierReachability,
@@ -790,6 +795,19 @@ mod tests {
         assert_eq!(
             LossKind::AssemblyPlacementsNotTransferred.as_str(),
             "assembly_placements_not_transferred"
+        );
+    }
+
+    #[test]
+    fn noncanonical_source_syntax_is_a_strict_rejectable_warning() {
+        let kind = LossKind::NoncanonicalSourceSyntax;
+        assert_eq!(kind.as_str(), "noncanonical_source_syntax");
+        assert_eq!(kind.category(), LossCategory::Other);
+        assert_eq!(kind.default_severity(), Severity::Warning);
+        assert_eq!(kind.strict_floor(), Some(Severity::Warning));
+        assert_eq!(
+            LossNote::new(kind, "source order is noncanonical").strict_consequence(),
+            StrictConsequence::Reject
         );
     }
 }

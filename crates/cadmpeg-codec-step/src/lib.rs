@@ -352,6 +352,9 @@ struct Builder<'a> {
     /// is reached once per shell) and aggregated into a single counted loss.
     unknown_surface_faces: BTreeSet<String>,
 
+    /// Individual enclosing topology relations that could not be emitted.
+    topology_relation_losses: BTreeSet<String>,
+
     face_step_refs: HashMap<String, Ref>,
     /// First emitted exact solid or shell for each body, used by AP242 tessellation links.
     body_step_refs: HashMap<String, Ref>,
@@ -491,6 +494,7 @@ impl<'a> Builder<'a> {
             written_procedural_curves: BTreeSet::new(),
             curveless_edges: BTreeSet::new(),
             unknown_surface_faces: BTreeSet::new(),
+            topology_relation_losses: BTreeSet::new(),
             face_step_refs: HashMap::new(),
             body_step_refs: HashMap::new(),
             default_product_definition_shape: None,
@@ -524,6 +528,12 @@ impl<'a> Builder<'a> {
             message,
             provenance: None,
         });
+    }
+
+    fn topology_relation_loss(&mut self, identity: String, severity: Severity, message: String) {
+        if self.topology_relation_losses.insert(identity) {
+            self.loss(LossKind::TopologyNotTransferred, severity, message);
+        }
     }
 
     fn build(&mut self) {
@@ -1359,17 +1369,28 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let Some(outer) = self.emit_shell(outer_id.as_str(), closed) else {
-                self.loss(
-                    LossKind::TopologyNotTransferred,
+                self.topology_relation_loss(
+                    format!("region:{}:outer-shell:{}", region.id, outer_id),
                     Severity::Error,
                     format!("region {} has no writable outer shell", region.id),
                 );
                 continue;
             };
-            let voids: Vec<Ref> = void_ids
-                .iter()
-                .filter_map(|sid| self.emit_shell(sid.as_str(), closed))
-                .collect();
+            let mut voids = Vec::new();
+            for sid in void_ids {
+                if let Some(void) = self.emit_shell(sid.as_str(), closed) {
+                    voids.push(void);
+                } else {
+                    self.topology_relation_loss(
+                        format!("region:{}:void-shell:{}", region.id, sid),
+                        Severity::Error,
+                        format!(
+                            "region {} omitted void shell {} because it has no writable faces",
+                            region.id, sid
+                        ),
+                    );
+                }
+            }
             let mut shell_refs = Vec::with_capacity(1 + voids.len());
             shell_refs.push(outer);
             shell_refs.extend_from_slice(&voids);
@@ -1748,6 +1769,31 @@ impl<'a> Builder<'a> {
         for fid in &face_ids {
             if let Some(r) = self.emit_face(fid) {
                 face_refs.push(r);
+            } else {
+                let outer = self.faces.get(fid.as_str()).is_some_and(|face| {
+                    face.loops.iter().any(|loop_id| {
+                        self.loops
+                            .get(loop_id.as_str())
+                            .is_some_and(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer)
+                    }) || face.loops.first().is_some_and(|loop_id| {
+                        !face.loops.iter().any(|candidate| {
+                            self.loops
+                                .get(candidate.as_str())
+                                .is_some_and(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer)
+                        }) && self.loops.contains_key(loop_id.as_str())
+                    })
+                });
+                self.topology_relation_loss(
+                    format!("shell:{shell_id}:face:{fid}"),
+                    if outer {
+                        Severity::Error
+                    } else {
+                        Severity::Warning
+                    },
+                    format!(
+                        "shell {shell_id} omitted face {fid} because the face has no writable topology"
+                    ),
+                );
             }
         }
         if face_refs.is_empty() {
@@ -1799,9 +1845,36 @@ impl<'a> Builder<'a> {
                 };
                 let b = self.emitter.emit(kind, &format!("'',{loop_ref},.T."));
                 bound_refs.push(b);
+            } else {
+                let outer = self
+                    .loops
+                    .get(lid.as_str())
+                    .is_some_and(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer)
+                    || (i == 0
+                        && !loop_ids.iter().any(|id| {
+                            self.loops
+                                .get(id.as_str())
+                                .is_some_and(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer)
+                        }));
+                self.topology_relation_loss(
+                    format!("face:{face_id}:loop:{lid}"),
+                    if outer {
+                        Severity::Error
+                    } else {
+                        Severity::Warning
+                    },
+                    format!(
+                        "face {face_id} omitted loop {lid} because the loop has no writable topology"
+                    ),
+                );
             }
         }
         if bound_refs.is_empty() {
+            self.topology_relation_loss(
+                format!("face:{face_id}:bound-list"),
+                Severity::Error,
+                format!("face {face_id} has no writable bounds"),
+            );
             return None;
         }
         let flag = if same_sense { ".T." } else { ".F." };
@@ -1815,19 +1888,47 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_loop(&mut self, loop_id: &str) -> Option<Ref> {
-        let lp = self.loops.get(loop_id).copied()?;
+        let Some(lp) = self.loops.get(loop_id).copied() else {
+            self.topology_relation_loss(
+                format!("loop:{loop_id}:record"),
+                Severity::Warning,
+                format!("loop {loop_id} was omitted because its record is missing"),
+            );
+            return None;
+        };
         if lp.coedges.is_empty() && lp.vertex_uses.len() == 1 {
-            let vertex = self.emit_vertex(lp.vertex_uses[0].vertex.as_str())?;
+            let vertex_id = lp.vertex_uses[0].vertex.as_str();
+            let Some(vertex) = self.emit_vertex(vertex_id) else {
+                self.topology_relation_loss(
+                    format!("loop:{loop_id}:vertex:{vertex_id}"),
+                    Severity::Warning,
+                    format!("loop {loop_id} was omitted because vertex {vertex_id} is missing"),
+                );
+                return None;
+            };
             return Some(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
         }
         let coedge_ids: Vec<String> = lp.coedges.iter().map(|c| c.0.clone()).collect();
         let mut oe_refs = Vec::new();
         for cid in &coedge_ids {
             let Some(coedge) = self.coedges.get(cid.as_str()).copied() else {
+                self.topology_relation_loss(
+                    format!("loop:{loop_id}:coedge:{cid}"),
+                    Severity::Warning,
+                    format!("loop {loop_id} omitted coedge {cid} because its record is missing"),
+                );
                 continue;
             };
             let orientation = matches!(coedge.sense, Sense::Forward);
             let Some(edge_ref) = self.emit_edge(coedge.edge.as_str()) else {
+                self.topology_relation_loss(
+                    format!("loop:{loop_id}:edge:{}", coedge.edge),
+                    Severity::Warning,
+                    format!(
+                        "loop {loop_id} omitted edge {} because the edge is not writable",
+                        coedge.edge
+                    ),
+                );
                 continue;
             };
             let flag = if orientation { ".T." } else { ".F." };
@@ -1837,6 +1938,11 @@ impl<'a> Builder<'a> {
             oe_refs.push(oe);
         }
         if oe_refs.is_empty() {
+            self.topology_relation_loss(
+                format!("loop:{loop_id}:edge-list"),
+                Severity::Warning,
+                format!("loop {loop_id} has no writable edges"),
+            );
             return None;
         }
         Some(
@@ -1849,11 +1955,43 @@ impl<'a> Builder<'a> {
         if let Some(r) = self.edge_refs.get(edge_id) {
             return Some(*r);
         }
-        let edge = self.edges.get(edge_id).copied()?;
-        let v1 = self.emit_vertex(edge.start.as_str())?;
-        let v2 = self.emit_vertex(edge.end.as_str())?;
+        let Some(edge) = self.edges.get(edge_id).copied() else {
+            self.topology_relation_loss(
+                format!("edge:{edge_id}:record"),
+                Severity::Warning,
+                format!("edge {edge_id} was omitted because its record is missing"),
+            );
+            return None;
+        };
+        let Some(v1) = self.emit_vertex(edge.start.as_str()) else {
+            self.topology_relation_loss(
+                format!("edge:{edge_id}:start-vertex:{}", edge.start),
+                Severity::Warning,
+                format!(
+                    "edge {edge_id} was omitted because start vertex {} is missing",
+                    edge.start
+                ),
+            );
+            return None;
+        };
+        let Some(v2) = self.emit_vertex(edge.end.as_str()) else {
+            self.topology_relation_loss(
+                format!("edge:{edge_id}:end-vertex:{}", edge.end),
+                Severity::Warning,
+                format!(
+                    "edge {edge_id} was omitted because end vertex {} is missing",
+                    edge.end
+                ),
+            );
+            return None;
+        };
         let Some(curve_id) = &edge.curve else {
             self.curveless_edges.insert(edge_id.to_string());
+            self.topology_relation_loss(
+                format!("edge:{edge_id}:curve"),
+                Severity::Warning,
+                format!("edge {edge_id} was omitted because it has no 3D curve"),
+            );
             return None;
         };
         if self
@@ -1862,9 +2000,21 @@ impl<'a> Builder<'a> {
             .is_some_and(|curve| !geometry::curve_is_supported(&curve.geometry))
         {
             self.curveless_edges.insert(edge_id.to_string());
+            self.topology_relation_loss(
+                format!("edge:{edge_id}:unsupported-curve:{curve_id}"),
+                Severity::Warning,
+                format!("edge {edge_id} was omitted because curve {curve_id} is unsupported"),
+            );
             return None;
         }
-        let basis_curve = self.emit_curve(curve_id.as_str())?;
+        let Some(basis_curve) = self.emit_curve(curve_id.as_str()) else {
+            self.topology_relation_loss(
+                format!("edge:{edge_id}:curve:{curve_id}"),
+                Severity::Warning,
+                format!("edge {edge_id} was omitted because curve {curve_id} is not writable"),
+            );
+            return None;
+        };
         let associated = self.edge_coedges.get(edge_id).cloned().unwrap_or_default();
         let mut pcurve_refs = Vec::new();
         for (pcurve_id, surface_id) in associated {
@@ -2701,33 +2851,56 @@ impl<'a> Builder<'a> {
                 format!("{unwritten_pmi} PMI annotation(s) were not written to STEP"),
             );
         }
+        // STEP-native source associations identify records already represented
+        // by the writer's own STEP graph. They are not lossy foreign-source
+        // metadata. Keep strict-mode rejection for associations from other
+        // codecs, which this writer cannot reproduce.
         let source_object_count = self
             .ir
             .model
             .surfaces
             .iter()
-            .filter(|surface| surface.source_object.is_some())
+            .filter(|surface| {
+                surface
+                    .source_object
+                    .as_ref()
+                    .is_some_and(|source| source.format != "step")
+            })
             .count()
             + self
                 .ir
                 .model
                 .curves
                 .iter()
-                .filter(|curve| curve.source_object.is_some())
+                .filter(|curve| {
+                    curve
+                        .source_object
+                        .as_ref()
+                        .is_some_and(|source| source.format != "step")
+                })
                 .count()
             + self
                 .ir
                 .model
                 .subds
                 .iter()
-                .filter(|subd| subd.source_object.is_some())
+                .filter(|subd| {
+                    subd.source_object
+                        .as_ref()
+                        .is_some_and(|source| source.format != "step")
+                })
                 .count()
             + self
                 .ir
                 .model
                 .tessellations
                 .iter()
-                .filter(|tessellation| tessellation.source_object.is_some())
+                .filter(|tessellation| {
+                    tessellation
+                        .source_object
+                        .as_ref()
+                        .is_some_and(|source| source.format != "step")
+                })
                 .count();
         if source_object_count > 0 {
             self.loss(
@@ -2941,9 +3114,9 @@ impl Codec for StepCodec {
         if self.detect(bytes) == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
-        let exchange =
+        let (exchange, diagnostics) =
             parse::parse(bytes).map_err(|error| CodecError::Malformed(error.to_string()))?;
-        let (decoded, opaque_offsets) = reader::inspect_exchange(bytes, &exchange);
+        let (decoded, opaque_offsets) = reader::inspect_exchange(bytes, &exchange, &diagnostics);
         let mut entries = vec![ContainerEntry {
             name: "HEADER".into(),
             role: "metadata".into(),
@@ -3090,11 +3263,13 @@ impl Codec for StepCodec {
         } else {
             "edition unspecified"
         };
+        let mut notes = vec![format!("schema {schema}; {edition}")];
+        notes.extend(diagnostics.into_iter().map(|diagnostic| diagnostic.message));
         Ok(ContainerSummary {
             format: "step".into(),
             container_kind: "iso-10303-21-clear-text".into(),
             entries,
-            notes: vec![format!("schema {schema}; {edition}")],
+            notes,
         })
     }
 

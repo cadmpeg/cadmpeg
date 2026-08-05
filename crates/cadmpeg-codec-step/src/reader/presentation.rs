@@ -14,12 +14,18 @@ use cadmpeg_ir::topology::Color;
 
 use crate::parse::{Exchange, RawRecord, Value};
 
+use super::topology::TopologyResult;
+
 pub(super) struct PresentationResult {
     pub typed_records: BTreeSet<u64>,
     pub warnings: Vec<String>,
 }
 
-pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult {
+pub(super) fn decode(
+    exchange: &Exchange,
+    topology: &TopologyResult,
+    ir: &mut CadIr,
+) -> PresentationResult {
     let mut typed = BTreeSet::new();
     let mut warnings = Vec::new();
     let face_indices = ir
@@ -97,10 +103,19 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
             continue;
         };
         for target in items.iter().filter_map(ValueExt::reference) {
-            let body_id = format!("step:data:body#{target}");
-            if let Some(index) = body_indices.get(&body_id) {
-                ir.model.bodies[*index].visible = Some(false);
-            } else {
+            let body_ids = topology
+                .body_by_root
+                .get(&target)
+                .cloned()
+                .unwrap_or_else(|| vec![BodyId(format!("step:data:body#{target}"))]);
+            let mut hidden = false;
+            for body_id in body_ids {
+                if let Some(index) = body_indices.get(&body_id.0) {
+                    ir.model.bodies[*index].visible = Some(false);
+                    hidden = true;
+                }
+            }
+            if !hidden {
                 warnings.push(format!(
                     "INVISIBILITY #{id} targets unsupported item #{target}"
                 ));
@@ -134,7 +149,16 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
             .into_iter()
             .flatten()
             .filter_map(ValueExt::reference)
-            .map(|id| presentation_item(id, exchange, &entity_ids, &face_indices, &body_indices))
+            .flat_map(|id| {
+                presentation_item(
+                    id,
+                    exchange,
+                    topology,
+                    &entity_ids,
+                    &face_indices,
+                    &body_indices,
+                )
+            })
             .collect();
         ir.model.presentation_layers.push(PresentationLayer {
             id: LayerId(format!("step:presentation:layer#{layer_id}")),
@@ -233,47 +257,43 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
         let target_steps =
             expand_style_targets(target_step, exchange, &mut typed, &mut BTreeSet::new(), 0);
         for (ordinal, target_step) in target_steps.into_iter().enumerate() {
-            let face_id = format!("step:data:face#{target_step}");
-            let body_id = format!("step:data:body#{target_step}");
-            let edge_id = format!("step:data:edge#{target_step}");
-            let surface_id = format!("step:data:surface#{target_step}");
-            let curve_id = format!("step:data:curve#{target_step}");
-            let point_id = format!("step:data:point#{target_step}");
-            let tessellation_id = format!("step:tessellation:mesh#{target_step}");
-            let target = if let Some(&index) = face_indices.get(&face_id) {
-                ir.model.faces[index].color = Some(color);
-                AppearanceTarget::Face(FaceId(face_id))
-            } else if let Some(&index) = body_indices.get(&body_id) {
-                ir.model.bodies[index].color = Some(color);
-                AppearanceTarget::Body(BodyId(body_id))
-            } else if entity_ids.edges.contains(&edge_id) {
-                AppearanceTarget::Edge(EdgeId(edge_id))
-            } else if entity_ids.surfaces.contains(&surface_id) {
-                AppearanceTarget::Surface(SurfaceId(surface_id))
-            } else if entity_ids.curves.contains(&curve_id) {
-                AppearanceTarget::Curve(CurveId(curve_id))
-            } else if entity_ids.points.contains(&point_id) {
-                AppearanceTarget::Point(PointId(point_id))
-            } else if entity_ids.tessellations.contains(&tessellation_id) {
-                AppearanceTarget::Tessellation(tessellation_id)
-            } else if exchange.records.contains_key(&target_step) {
-                AppearanceTarget::Source {
-                    source_id: format!("#{target_step}"),
-                }
-            } else {
+            let targets = appearance_targets(
+                target_step,
+                exchange,
+                topology,
+                &entity_ids,
+                &face_indices,
+                &body_indices,
+            );
+            if targets.is_empty() {
                 warnings.push(format!(
                     "STYLED_ITEM #{style_id} targets unsupported item #{target_step}"
                 ));
                 continue;
-            };
-            ir.model.appearance_bindings.push(AppearanceBinding {
-                id: format!("step:presentation:binding#{style_id}:{ordinal}"),
-                target,
-                appearance: appearance_id.clone(),
-                source_entity_id: Some(format!("#{style_id}")),
-                object_type: None,
-                channels: BTreeMap::new(),
-            });
+            }
+            for (target_ordinal, target) in targets.into_iter().enumerate() {
+                match &target {
+                    AppearanceTarget::Face(face) => {
+                        if let Some(&index) = face_indices.get(&face.0) {
+                            ir.model.faces[index].color = Some(color);
+                        }
+                    }
+                    AppearanceTarget::Body(body) => {
+                        if let Some(&index) = body_indices.get(&body.0) {
+                            ir.model.bodies[index].color = Some(color);
+                        }
+                    }
+                    _ => {}
+                }
+                ir.model.appearance_bindings.push(AppearanceBinding {
+                    id: format!("step:presentation:binding#{style_id}:{ordinal}-{target_ordinal}"),
+                    target,
+                    appearance: appearance_id.clone(),
+                    source_entity_id: Some(format!("#{style_id}")),
+                    object_type: None,
+                    channels: BTreeMap::new(),
+                });
+            }
         }
         typed.insert(style_id);
         if let Some(overridden) = overridden_style(style) {
@@ -321,7 +341,132 @@ fn expand_style_targets(
     targets
 }
 
+fn appearance_targets(
+    id: u64,
+    exchange: &Exchange,
+    topology: &TopologyResult,
+    entity_ids: &EntityIds,
+    face_indices: &BTreeMap<String, usize>,
+    body_indices: &BTreeMap<String, usize>,
+) -> Vec<AppearanceTarget> {
+    if let Some(bodies) = topology.body_by_root.get(&id) {
+        return bodies
+            .iter()
+            .filter(|body| body_indices.contains_key(body.0.as_str()))
+            .cloned()
+            .map(AppearanceTarget::Body)
+            .collect();
+    }
+    if let Some(faces) = topology.faces_by_source.get(&id) {
+        return faces
+            .iter()
+            .filter(|face| face_indices.contains_key(face.0.as_str()))
+            .cloned()
+            .map(AppearanceTarget::Face)
+            .collect();
+    }
+    if let Some(edges) = topology.edges_by_source.get(&id) {
+        return edges
+            .iter()
+            .filter(|edge| entity_ids.edges.contains(edge.0.as_str()))
+            .cloned()
+            .map(AppearanceTarget::Edge)
+            .collect();
+    }
+    if let Some(vertices) = topology.vertices_by_source.get(&id) {
+        return vertices
+            .iter()
+            .filter(|vertex| entity_ids.vertices.contains(vertex.0.as_str()))
+            .cloned()
+            .map(AppearanceTarget::Vertex)
+            .collect();
+    }
+    let face_id = format!("step:data:face#{id}");
+    let body_id = format!("step:data:body#{id}");
+    let edge_id = format!("step:data:edge#{id}");
+    let surface_id = format!("step:data:surface#{id}");
+    let curve_id = format!("step:data:curve#{id}");
+    let point_id = format!("step:data:point#{id}");
+    let tessellation_id = format!("step:tessellation:mesh#{id}");
+    if face_indices.contains_key(&face_id) {
+        return vec![AppearanceTarget::Face(FaceId(face_id))];
+    }
+    if body_indices.contains_key(&body_id) {
+        return vec![AppearanceTarget::Body(BodyId(body_id))];
+    }
+    if entity_ids.edges.contains(&edge_id) {
+        return vec![AppearanceTarget::Edge(EdgeId(edge_id))];
+    }
+    if entity_ids.surfaces.contains(&surface_id) {
+        return vec![AppearanceTarget::Surface(SurfaceId(surface_id))];
+    }
+    if entity_ids.curves.contains(&curve_id) {
+        return vec![AppearanceTarget::Curve(CurveId(curve_id))];
+    }
+    if entity_ids.points.contains(&point_id) {
+        return vec![AppearanceTarget::Point(PointId(point_id))];
+    }
+    if entity_ids.tessellations.contains(&tessellation_id) {
+        return vec![AppearanceTarget::Tessellation(tessellation_id)];
+    }
+    if exchange.records.contains_key(&id) {
+        return vec![AppearanceTarget::Source {
+            source_id: format!("#{id}"),
+        }];
+    }
+    Vec::new()
+}
+
 fn presentation_item(
+    id: u64,
+    exchange: &Exchange,
+    topology: &TopologyResult,
+    entity_ids: &EntityIds,
+    face_indices: &BTreeMap<String, usize>,
+    body_indices: &BTreeMap<String, usize>,
+) -> Vec<PresentationItem> {
+    if let Some(bodies) = topology.body_by_root.get(&id) {
+        return bodies
+            .iter()
+            .filter(|body| body_indices.contains_key(body.0.as_str()))
+            .cloned()
+            .map(|body| PresentationItem::Body { body })
+            .collect();
+    }
+    if let Some(faces) = topology.faces_by_source.get(&id) {
+        return faces
+            .iter()
+            .filter(|face| face_indices.contains_key(face.0.as_str()))
+            .cloned()
+            .map(|face| PresentationItem::Face { face })
+            .collect();
+    }
+    if let Some(edges) = topology.edges_by_source.get(&id) {
+        return edges
+            .iter()
+            .filter(|edge| entity_ids.edges.contains(edge.0.as_str()))
+            .cloned()
+            .map(|edge| PresentationItem::Edge { edge })
+            .collect();
+    }
+    if let Some(vertices) = topology.vertices_by_source.get(&id) {
+        return vertices
+            .iter()
+            .filter(|vertex| entity_ids.vertices.contains(vertex.0.as_str()))
+            .cloned()
+            .map(|vertex| PresentationItem::Vertex { vertex })
+            .collect();
+    }
+    vec![presentation_item_one(
+        id,
+        exchange,
+        entity_ids,
+        face_indices,
+        body_indices,
+    )]
+}
+
+fn presentation_item_one(
     id: u64,
     exchange: &Exchange,
     entity_ids: &EntityIds,
@@ -656,7 +801,7 @@ mod tests {
 
     #[test]
     fn surface_color_search_ignores_curve_style_colors() {
-        let exchange = crate::parse::parse(
+        let (exchange, _) = crate::parse::parse(
             b"ISO-10303-21;HEADER;ENDSEC;DATA;\
 #1=COLOUR_RGB('curve',0.,0.,1.);\
 #2=CURVE_STYLE('',#1);\

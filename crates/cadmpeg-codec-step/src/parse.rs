@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Generic Part 21 record-graph parser.
+//!
+//! The parser accepts only source deviations whose value remains unambiguous:
+//! the deviation must be recoverable without guessing, observed in a real
+//! producer, represented by its own diagnostic kind, and rejectable by strict
+//! decode policy. Ambiguous records and duplicate names remain parse errors.
 
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
@@ -181,12 +186,32 @@ pub enum ParseError {
     },
 }
 
+/// A recoverable deviation from canonical Part 21 source syntax.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ParseDiagnosticKind {
+    /// Complex-entity partials are not in their canonical alphabetical order.
+    ComplexPartialsNotAlphabetical,
+}
+
+/// One attributable parser diagnostic that does not prevent recovery.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseDiagnostic {
+    /// Byte offset of the containing complex entity instance.
+    pub offset: usize,
+    /// Stable diagnostic classification.
+    pub kind: ParseDiagnosticKind,
+    /// Human-readable explanation, including the observed and canonical order.
+    pub message: String,
+}
+
 /// Parse one complete clear-text exchange structure and resolve DATA references.
-pub fn parse(input: &[u8]) -> Result<Exchange, ParseError> {
+pub fn parse(input: &[u8]) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
     Parser {
         tokens: lex(input)?,
         at: 0,
         depth: 0,
+        diagnostics: Vec::new(),
     }
     .exchange()
 }
@@ -195,10 +220,11 @@ struct Parser {
     tokens: Vec<Token>,
     at: usize,
     depth: usize,
+    diagnostics: Vec<ParseDiagnostic>,
 }
 
 impl Parser {
-    fn exchange(mut self) -> Result<Exchange, ParseError> {
+    fn exchange(mut self) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
         self.name("ISO-10303-21")?;
         self.punct(&TokenKind::Semicolon)?;
         self.name("HEADER")?;
@@ -337,15 +363,18 @@ impl Parser {
                 return Self::err_at(record.span.start, "unresolved instance reference");
             }
         }
-        Ok(Exchange {
-            header,
-            anchors,
-            references: reference_entries,
-            data,
-            signature,
-            records,
-            entity_ids: EntityIndex::default(),
-        })
+        Ok((
+            Exchange {
+                header,
+                anchors,
+                references: reference_entries,
+                data,
+                signature,
+                records,
+                entity_ids: EntityIndex::default(),
+            },
+            self.diagnostics,
+        ))
     }
 
     fn record(&mut self) -> Result<RawRecord, ParseError> {
@@ -361,8 +390,34 @@ impl Parser {
                 parts.push(self.partial()?);
             }
             self.at += 1;
-            if !parts.windows(2).all(|w| w[0].name < w[1].name) {
-                return Self::err_at(start, "complex partial records are not alphabetical");
+            let mut canonical_names = parts
+                .iter()
+                .map(|part| part.name.clone())
+                .collect::<Vec<_>>();
+            canonical_names.sort_unstable();
+            if canonical_names
+                .windows(2)
+                .any(|window| window[0] == window[1])
+            {
+                return Self::err_at(start, "duplicate complex partial name");
+            }
+            if !parts
+                .windows(2)
+                .all(|window| window[0].name < window[1].name)
+            {
+                let observed = parts
+                    .iter()
+                    .map(|part| part.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                self.diagnostics.push(ParseDiagnostic {
+                    offset: start,
+                    kind: ParseDiagnosticKind::ComplexPartialsNotAlphabetical,
+                    message: format!(
+                        "complex partial records are not alphabetical: observed ({observed}), expected ({})",
+                        canonical_names.join(", ")
+                    ),
+                });
             }
             parts
         } else {
@@ -618,8 +673,8 @@ mod tests {
     #[test]
     fn entity_index_is_not_part_of_exchange_equality() {
         let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=POINT();ENDSEC;END-ISO-10303-21;";
-        let indexed = parse(source).expect("required invariant");
-        let untouched = parse(source).expect("required invariant");
+        let (indexed, _) = parse(source).expect("required invariant");
+        let (untouched, _) = parse(source).expect("required invariant");
         assert_eq!(indexed.entities("POINT").count(), 1);
         assert_eq!(indexed, untouched);
     }

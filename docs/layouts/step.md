@@ -7,12 +7,11 @@
 Source of truth: [`docs/formats/step.md`](../../docs/formats/step.md).
 Table source: `docs/layouts/step.toml`.
 
-STEP has no record layout to tabulate. It is an ISO 10303-21 clear-text
-grammar: no magic bytes, no fixed-width fields, no column positions, no
-endianness, and no record sizes anywhere in `docs/formats/step.md` or
-`crates/cadmpeg-codec-step/`. The specification states the rule outright — a lexer
-never assigns line-based meaning to a token — and gives the layout entirely as
-EBNF.
+STEP has no fixed-width record layout to tabulate. It is an ISO 10303-21
+clear-text grammar with keyword-delimited sections and EBNF productions.
+Line breaks have the same separator role as other whitespace. The format fixes
+field position and width only inside the binary literal's quoted nibble
+sequence.
 
 The one bit-level rule in the format is the binary literal's nibble packing,
 recorded below as a slot layout because it is the only place the specification
@@ -35,7 +34,7 @@ Nibble-level, not byte-level: positions are hexadecimal digits inside a quoted l
 | Area | Spec | Reason |
 | ---- | ---- | ------ |
 | Exchange structure | §2 | N/A, text grammar. The exchange structure is an EBNF production over keyword-delimited sections. Nothing in it has a fixed byte position or width. |
-| Tokens and values | §3 | N/A, text grammar. Tokens are whitespace- and comment-separated and case-insensitive, and the specification states that a lexer never assigns line-based meaning to a token. |
-| Entity parameter slot order | §5 | Positional, but not stated in the specification. Each entity's parameter order is an EXPRESS external-mapping fact carried in the per-entity decoders as literal `.parameter(N)` indices; `step.md` states only the rule that makes such a table well-defined, namely that the partial records in a complex instance are ordered alphabetically by entity name. Tabulating it would mean transcribing the parser rather than the specification, so it is left out of this pass and recorded as a gap. |
+| Tokens and values | §3 | N/A, text grammar. Tokens are whitespace- and comment-separated, case-insensitive, and line-oriented layout has no semantic role. |
+| Entity parameter slot order | §5 | N/A, text grammar. Complex-instance partial records use ascending entity-name order. Entity-specific parameter positions come from EXPRESS external mapping and vary by entity type. |
 | Header section | §6 | N/A, text grammar. The header is a sequence of entity instances with the same token grammar as the data section. |
-| Edition 3 sections | §7 | N/A, text grammar. The anchor, reference, and signature sections are keyword-delimited entry lists. The edition 3 ZIP container layout and the Part 26 HDF5 layout are both recorded as open items, not as stated layouts. |
+| Edition 3 sections | §7 | N/A, text grammar. Anchor, reference, and signature sections use keyword-delimited entry lists. The table covers fixed byte-position fields only. |

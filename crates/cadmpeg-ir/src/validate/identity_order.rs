@@ -129,30 +129,3 @@ pub(super) fn collect_native_ids(ir: &CadIr) -> Vec<(String, &str)> {
         })
         .collect()
 }
-
-macro_rules! define_registered_entity_counts {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
-        fn registered_entity_counts(ir: &CadIr) -> BTreeMap<String, usize> {
-            BTreeMap::from([
-                $((stringify!($field).into(), ir.model.$field.len())),*
-            ])
-        }
-    };
-}
-crate::document::arena_registry!(define_registered_entity_counts);
-
-pub(super) fn entity_counts(ir: &CadIr) -> BTreeMap<String, usize> {
-    let mut counts = registered_entity_counts(ir);
-    counts.insert(
-        "surfaces_unknown_geometry".into(),
-        ir.model
-            .surfaces
-            .iter()
-            .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
-            .count(),
-    );
-    for loss in ir.native.loss_counts() {
-        counts.insert(format!("native.{}.{}", loss.format, loss.kind), loss.count);
-    }
-    counts
-}

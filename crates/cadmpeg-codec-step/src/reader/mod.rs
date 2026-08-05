@@ -8,11 +8,11 @@ use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 
-use crate::parse::{self, Exchange, Value};
+use crate::parse::{self, Exchange, ParseDiagnostic, Value};
 
 mod dependencies;
 mod geometry;
@@ -27,29 +27,39 @@ pub(super) const MAX_RECORD_GRAPH_DEPTH: usize = 256;
 
 /// Decode a complete clear-text exchange structure.
 pub fn decode(input: &[u8], options: DecodeOptions) -> Result<DecodeResult, CodecError> {
-    let exchange = parse::parse(input).map_err(|error| CodecError::Malformed(error.to_string()))?;
-    Ok(decode_exchange(input, options, &exchange))
+    let (exchange, diagnostics) =
+        parse::parse(input).map_err(|error| CodecError::Malformed(error.to_string()))?;
+    Ok(decode_exchange(input, options, &exchange, &diagnostics))
 }
 
 pub(super) fn decode_exchange(
     input: &[u8],
     options: DecodeOptions,
     exchange: &Exchange,
+    diagnostics: &[ParseDiagnostic],
 ) -> DecodeResult {
-    decode_exchange_mode(input, options, exchange, true).0
+    decode_exchange_mode(input, options, exchange, diagnostics, true).0
 }
 
 pub(super) fn inspect_exchange(
     input: &[u8],
     exchange: &Exchange,
+    diagnostics: &[ParseDiagnostic],
 ) -> (DecodeResult, BTreeSet<usize>) {
-    decode_exchange_mode(input, DecodeOptions::default(), exchange, false)
+    decode_exchange_mode(
+        input,
+        DecodeOptions::default(),
+        exchange,
+        diagnostics,
+        false,
+    )
 }
 
 fn decode_exchange_mode(
     input: &[u8],
     options: DecodeOptions,
     exchange: &Exchange,
+    diagnostics: &[ParseDiagnostic],
     retain_opaque: bool,
 ) -> (DecodeResult, BTreeSet<usize>) {
     let mut ir = CadIr::empty(Units::default());
@@ -78,6 +88,18 @@ fn decode_exchange_mode(
             .map(|entry| format!("external reference {} -> {}", entry.name, entry.uri))
             .collect(),
     };
+    report.losses.extend(diagnostics.iter().map(|diagnostic| {
+        LossNote::new(
+            LossKind::NoncanonicalSourceSyntax,
+            diagnostic.message.clone(),
+        )
+        .with_provenance(cadmpeg_ir::LossProvenance {
+            format: "step".into(),
+            stream: String::new(),
+            offset: diagnostic.offset as u64,
+            tag: Some("complex_entity".into()),
+        })
+    }));
     if options.container_only {
         return (
             DecodeResult::new(ir, report, cadmpeg_ir::SourceFidelity::default()),
@@ -88,10 +110,13 @@ fn decode_exchange_mode(
     let geometry = geometry::decode(exchange, &mut ir);
     let dependencies = dependencies::decode(exchange);
     let topology = topology::decode(exchange, &mut ir);
-    let product = product::decode(exchange, &geometry, &mut ir);
-    let tessellation = tessellation::decode(exchange, &geometry, &mut ir);
+    geometry::associate_topology_carriers(exchange, &mut ir);
+    geometry::associate_free_geometric_set_members(exchange, &mut ir);
+    geometry::associate_free_representation_members(exchange, &mut ir);
+    let product = product::decode(exchange, &geometry, &topology, &mut ir);
+    let tessellation = tessellation::decode(exchange, &geometry, &topology, &mut ir);
     let pmi = pmi::decode(exchange, &geometry, &mut ir);
-    let presentation = presentation::decode(exchange, &mut ir);
+    let presentation = presentation::decode(exchange, &topology, &mut ir);
     let validation = validation::decode(exchange, &geometry, &mut ir);
     report.notes.extend(dependencies.notes);
     report.notes.extend(validation.notes);
@@ -140,6 +165,7 @@ fn decode_exchange_mode(
             message,
             provenance: None,
         }));
+    report.losses.extend(tessellation.losses);
     report
         .losses
         .extend(pmi.warnings.into_iter().map(|message| LossNote {
@@ -164,6 +190,21 @@ fn decode_exchange_mode(
     typed_records.extend(pmi.typed_records);
     typed_records.extend(dependencies.typed_records);
     typed_records.extend(validation.typed_records);
+    let mut post_decode_warnings = Vec::new();
+    retain_unowned_pcurves(
+        exchange,
+        &mut ir,
+        &mut typed_records,
+        &mut post_decode_warnings,
+    );
+    report
+        .losses
+        .extend(post_decode_warnings.into_iter().map(|message| LossNote {
+            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
+            severity: Severity::Warning,
+            message,
+            provenance: None,
+        }));
 
     let opaque_offsets = if retain_opaque {
         BTreeSet::new()
@@ -181,15 +222,7 @@ fn decode_exchange_mode(
             .records
             .values()
             .filter(|record| !typed_records.contains(&record.id))
-            .map(|record| {
-                let kind = record
-                    .partials
-                    .iter()
-                    .map(|partial| partial.name.to_ascii_lowercase())
-                    .collect::<Vec<_>>()
-                    .join("_");
-                (record.id, format!("step:data:{kind}#{}", record.id))
-            })
+            .map(|record| (record.id, opaque_record_id(record).0))
             .collect::<BTreeMap<_, _>>();
         let mut opaque = Vec::with_capacity(exchange.records.len());
         for record in exchange.records.values() {
@@ -270,6 +303,173 @@ fn decode_exchange_mode(
         DecodeResult::new(ir, report, cadmpeg_ir::SourceFidelity::default()),
         opaque_offsets,
     )
+}
+
+fn retain_unowned_pcurves(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    typed_records: &mut BTreeSet<u64>,
+    warnings: &mut Vec<String>,
+) {
+    let owned = ir
+        .model
+        .coedges
+        .iter()
+        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.0.clone()))
+        .chain(ir.model.loops.iter().flat_map(|loop_| {
+            loop_
+                .vertex_uses
+                .iter()
+                .flat_map(|use_| use_.pcurves.iter().map(|pcurve| pcurve.pcurve.0.clone()))
+        }))
+        .collect::<BTreeSet<_>>();
+    let unowned = exchange
+        .records
+        .iter()
+        .filter(|(_, record)| {
+            record
+                .partials
+                .iter()
+                .any(|partial| partial.name == "PCURVE")
+        })
+        .map(|(&id, _)| id)
+        .filter(|id| !owned.contains(&format!("step:data:pcurve#{id}")))
+        .collect::<BTreeSet<_>>();
+    if unowned.is_empty() {
+        return;
+    }
+    let mut roots = BTreeSet::new();
+    for identity in ir
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| vertex.point.0.as_str())
+        .chain(
+            ir.model
+                .edges
+                .iter()
+                .filter_map(|edge| edge.curve.as_ref().map(|curve| curve.0.as_str())),
+        )
+        .chain(ir.model.faces.iter().map(|face| face.surface.0.as_str()))
+        .chain(
+            ir.model
+                .coedges
+                .iter()
+                .filter_map(|coedge| coedge.use_curve.as_ref().map(|curve| curve.0.as_str())),
+        )
+        .chain(
+            ir.model
+                .pcurves
+                .iter()
+                .filter(|pcurve| owned.contains(&pcurve.id.0))
+                .map(|pcurve| pcurve.id.0.as_str()),
+        )
+        .chain(
+            ir.model
+                .points
+                .iter()
+                .filter(|point| point.source_object.is_some())
+                .map(|point| point.id.0.as_str()),
+        )
+        .chain(
+            ir.model
+                .curves
+                .iter()
+                .filter(|curve| curve.source_object.is_some())
+                .map(|curve| curve.id.0.as_str()),
+        )
+        .chain(
+            ir.model
+                .surfaces
+                .iter()
+                .filter(|surface| surface.source_object.is_some())
+                .map(|surface| surface.id.0.as_str()),
+        )
+        .chain(
+            ir.model
+                .procedural_curves
+                .iter()
+                .map(|curve| curve.id.0.as_str()),
+        )
+        .chain(
+            ir.model
+                .procedural_surfaces
+                .iter()
+                .map(|surface| surface.id.0.as_str()),
+        )
+        .filter_map(step_id_from_ir)
+    {
+        roots.insert(identity);
+    }
+    let protected_roots = roots
+        .into_iter()
+        .filter(|id| !unowned.contains(id))
+        .collect::<BTreeSet<_>>();
+    let protected = record_closure(&protected_roots, exchange);
+    let removed_closure = record_closure(&unowned, exchange);
+    let removed = unowned.len();
+    ir.model
+        .pcurves
+        .retain(|pcurve| owned.contains(&pcurve.id.0));
+    ir.model.points.retain(|point| {
+        step_id_from_ir(&point.id.0)
+            .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
+    });
+    ir.model.curves.retain(|curve| {
+        step_id_from_ir(&curve.id.0)
+            .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
+    });
+    ir.model.surfaces.retain(|surface| {
+        step_id_from_ir(&surface.id.0)
+            .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
+    });
+    ir.model.procedural_curves.retain(|curve| {
+        step_id_from_ir(&curve.id.0)
+            .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
+    });
+    ir.model.procedural_surfaces.retain(|surface| {
+        step_id_from_ir(&surface.id.0)
+            .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
+    });
+    typed_records.retain(|id| !removed_closure.contains(id) || protected.contains(id));
+    warnings.push(format!(
+        "retained {removed} unowned pcurve carrier(s) as opaque source records"
+    ));
+}
+
+fn step_id_from_ir(identity: &str) -> Option<u64> {
+    identity.rsplit_once('#')?.1.parse().ok()
+}
+
+fn record_closure(roots: &BTreeSet<u64>, exchange: &Exchange) -> BTreeSet<u64> {
+    let mut closure = BTreeSet::new();
+    let mut pending = roots.iter().copied().collect::<Vec<_>>();
+    while let Some(id) = pending.pop() {
+        if !closure.insert(id) {
+            continue;
+        }
+        let Some(record) = exchange.records.get(&id) else {
+            continue;
+        };
+        let mut references = BTreeSet::new();
+        record
+            .partials
+            .iter()
+            .flat_map(|partial| partial.parameters.iter())
+            .for_each(|value| collect_references(value, &mut references));
+        pending.extend(references);
+    }
+    closure
+}
+
+fn opaque_record_id(record: &parse::RawRecord) -> UnknownId {
+    let kind = record
+        .partials
+        .iter()
+        .map(|partial| partial.name.to_ascii_lowercase())
+        .collect::<Vec<_>>()
+        .join("_");
+    UnknownId(format!("step:data:{kind}#{}", record.id))
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
