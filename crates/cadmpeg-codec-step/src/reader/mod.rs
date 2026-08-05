@@ -92,10 +92,10 @@ fn decode_exchange_mode(
     geometry::associate_free_geometric_set_members(exchange, &mut ir);
     geometry::associate_free_representation_members(exchange, &mut ir);
     retain_unowned_pcurves(exchange, &mut geometry, &mut ir);
-    let product = product::decode(exchange, &geometry, &mut ir);
-    let tessellation = tessellation::decode(exchange, &geometry, &mut ir);
+    let product = product::decode(exchange, &geometry, &topology, &mut ir);
+    let tessellation = tessellation::decode(exchange, &geometry, &topology, &mut ir);
     let pmi = pmi::decode(exchange, &geometry, &mut ir);
-    let presentation = presentation::decode(exchange, &mut ir);
+    let presentation = presentation::decode(exchange, &topology, &mut ir);
     let validation = validation::decode(exchange, &geometry, &mut ir);
     report.notes.extend(dependencies.notes);
     report.notes.extend(validation.notes);
@@ -144,6 +144,7 @@ fn decode_exchange_mode(
             message,
             provenance: None,
         }));
+    report.losses.extend(tessellation.losses);
     report
         .losses
         .extend(pmi.warnings.into_iter().map(|message| LossNote {
@@ -285,29 +286,145 @@ fn retain_unowned_pcurves(
                 .flat_map(|use_| use_.pcurves.iter().map(|pcurve| pcurve.pcurve.0.clone()))
         }))
         .collect::<BTreeSet<_>>();
-    let mut removed = 0;
-    ir.model.pcurves.retain(|pcurve| {
-        let keep = owned.contains(&pcurve.id.0);
-        if !keep {
-            removed += 1;
-        }
-        keep
-    });
-    if removed == 0 {
-        return;
-    }
-    geometry.typed_records.retain(|id| {
-        exchange.records.get(id).is_none_or(|record| {
-            !record
+    let unowned = exchange
+        .records
+        .iter()
+        .filter(|(_, record)| {
+            record
                 .partials
                 .iter()
                 .any(|partial| partial.name == "PCURVE")
-                || owned.contains(&format!("step:data:pcurve#{id}"))
         })
+        .map(|(&id, _)| id)
+        .filter(|id| !owned.contains(&format!("step:data:pcurve#{id}")))
+        .collect::<BTreeSet<_>>();
+    if unowned.is_empty() {
+        return;
+    }
+    let mut roots = BTreeSet::new();
+    for identity in ir
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| vertex.point.0.as_str())
+        .chain(
+            ir.model
+                .edges
+                .iter()
+                .filter_map(|edge| edge.curve.as_ref().map(|curve| curve.0.as_str())),
+        )
+        .chain(ir.model.faces.iter().map(|face| face.surface.0.as_str()))
+        .chain(
+            ir.model
+                .coedges
+                .iter()
+                .filter_map(|coedge| coedge.use_curve.as_ref().map(|curve| curve.0.as_str())),
+        )
+        .chain(
+            ir.model
+                .pcurves
+                .iter()
+                .filter(|pcurve| owned.contains(&pcurve.id.0))
+                .map(|pcurve| pcurve.id.0.as_str()),
+        )
+        .chain(
+            ir.model
+                .points
+                .iter()
+                .filter(|point| point.source_object.is_some())
+                .map(|point| point.id.0.as_str()),
+        )
+        .chain(
+            ir.model
+                .curves
+                .iter()
+                .filter(|curve| curve.source_object.is_some())
+                .map(|curve| curve.id.0.as_str()),
+        )
+        .chain(
+            ir.model
+                .surfaces
+                .iter()
+                .filter(|surface| surface.source_object.is_some())
+                .map(|surface| surface.id.0.as_str()),
+        )
+        .chain(
+            ir.model
+                .procedural_curves
+                .iter()
+                .map(|curve| curve.id.0.as_str()),
+        )
+        .chain(
+            ir.model
+                .procedural_surfaces
+                .iter()
+                .map(|surface| surface.id.0.as_str()),
+        )
+        .filter_map(step_id_from_ir)
+    {
+        roots.insert(identity);
+    }
+    let protected_roots = roots
+        .into_iter()
+        .filter(|id| !unowned.contains(id))
+        .collect::<BTreeSet<_>>();
+    let protected = record_closure(&protected_roots, exchange);
+    let removed_closure = record_closure(&unowned, exchange);
+    let removed = unowned.len();
+    ir.model
+        .pcurves
+        .retain(|pcurve| owned.contains(&pcurve.id.0));
+    ir.model.points.retain(|point| {
+        step_id_from_ir(&point.id.0)
+            .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
     });
+    ir.model.curves.retain(|curve| {
+        step_id_from_ir(&curve.id.0)
+            .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
+    });
+    ir.model.surfaces.retain(|surface| {
+        step_id_from_ir(&surface.id.0)
+            .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
+    });
+    ir.model.procedural_curves.retain(|curve| {
+        step_id_from_ir(&curve.id.0)
+            .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
+    });
+    ir.model.procedural_surfaces.retain(|surface| {
+        step_id_from_ir(&surface.id.0)
+            .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
+    });
+    geometry
+        .typed_records
+        .retain(|id| !removed_closure.contains(id) || protected.contains(id));
     geometry.warnings.push(format!(
         "retained {removed} unowned pcurve carrier(s) as opaque source records"
     ));
+}
+
+fn step_id_from_ir(identity: &str) -> Option<u64> {
+    identity.rsplit_once('#')?.1.parse().ok()
+}
+
+fn record_closure(roots: &BTreeSet<u64>, exchange: &Exchange) -> BTreeSet<u64> {
+    let mut closure = BTreeSet::new();
+    let mut pending = roots.iter().copied().collect::<Vec<_>>();
+    while let Some(id) = pending.pop() {
+        if !closure.insert(id) {
+            continue;
+        }
+        let Some(record) = exchange.records.get(&id) else {
+            continue;
+        };
+        let mut references = BTreeSet::new();
+        record
+            .partials
+            .iter()
+            .flat_map(|partial| partial.parameters.iter())
+            .for_each(|value| collect_references(value, &mut references));
+        pending.extend(references);
+    }
+    closure
 }
 
 fn opaque_record_id(record: &parse::RawRecord) -> UnknownId {

@@ -14,6 +14,7 @@ use cadmpeg_ir::transform::Transform;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::geometry::GeometryResult;
+use super::topology::TopologyResult;
 
 const MAX_OCCURRENCES: usize = 100_000;
 const MAX_ASSEMBLY_DEPTH: usize = 256;
@@ -26,6 +27,7 @@ pub(super) struct ProductResult {
 pub(super) fn decode(
     exchange: &Exchange,
     geometry: &GeometryResult,
+    topology: &TopologyResult,
     ir: &mut CadIr,
 ) -> ProductResult {
     let mut typed = BTreeSet::new();
@@ -57,7 +59,7 @@ pub(super) fn decode(
             Some((id, *formations.get(&record.parameter(2)?.reference()?)?))
         })
         .collect::<BTreeMap<_, _>>();
-    let shape_bindings = shape_bindings(exchange, &definitions);
+    let shape_bindings = shape_bindings(exchange, &definitions, topology);
 
     for (step_id, record) in exchange.entities("PRODUCT") {
         if record.simple_name() != Some("PRODUCT") {
@@ -89,6 +91,8 @@ pub(super) fn decode(
                 .iter()
                 .any(|candidate| candidate.id == *body)
         });
+        bodies.sort();
+        bodies.dedup();
         if !missing.is_empty() {
             warnings.push(format!(
                 "PRODUCT #{step_id} omitted uncommitted shape body reference(s): {}",
@@ -272,7 +276,7 @@ pub(super) fn decode(
     if !had_roots && !usages.is_empty() {
         warnings.push("assembly occurrence graph has no resolvable root".into());
     }
-    apply_body_placements(exchange, geometry, &usages, ir, &mut warnings);
+    apply_body_placements(exchange, geometry, topology, &usages, ir, &mut warnings);
     for (id, record) in exchange.entities_any(&[
         "APPLICATION_CONTEXT",
         "PRODUCT_CONTEXT",
@@ -314,6 +318,7 @@ pub(super) fn decode(
 fn apply_body_placements(
     exchange: &Exchange,
     geometry: &GeometryResult,
+    topology: &TopologyResult,
     usages: &BTreeMap<u64, Usage>,
     ir: &mut CadIr,
     warnings: &mut Vec<String>,
@@ -383,6 +388,7 @@ fn apply_body_placements(
         for body in representation_bodies(
             representation,
             exchange,
+            topology,
             &mut representation_cache,
             &mut BTreeSet::new(),
             0,
@@ -403,6 +409,7 @@ struct Usage {
 fn shape_bindings(
     exchange: &Exchange,
     definitions: &BTreeMap<u64, u64>,
+    topology: &TopologyResult,
 ) -> BTreeMap<u64, Vec<BodyId>> {
     let pds = exchange
         .entities("PRODUCT_DEFINITION_SHAPE")
@@ -425,6 +432,7 @@ fn shape_bindings(
             exchange,
             &pds,
             definitions,
+            topology,
             &mut representation_cache,
         ) {
             result.entry(product).or_default().extend(bodies);
@@ -438,6 +446,7 @@ fn shape_binding(
     exchange: &Exchange,
     pds: &BTreeMap<u64, u64>,
     definitions: &BTreeMap<u64, u64>,
+    topology: &TopologyResult,
     representation_cache: &mut BTreeMap<u64, Vec<BodyId>>,
 ) -> Option<(u64, Vec<BodyId>)> {
     let definition = *pds.get(&record.parameter(0)?.reference()?)?;
@@ -446,6 +455,7 @@ fn shape_binding(
     let bodies = representation_bodies(
         representation,
         exchange,
+        topology,
         representation_cache,
         &mut BTreeSet::new(),
         0,
@@ -456,6 +466,7 @@ fn shape_binding(
 fn representation_bodies(
     representation: u64,
     exchange: &Exchange,
+    topology: &TopologyResult,
     cache: &mut BTreeMap<u64, Vec<BodyId>>,
     active: &mut BTreeSet<u64>,
     depth: usize,
@@ -465,6 +476,11 @@ fn representation_bodies(
     }
     if depth >= 256 {
         return Vec::new();
+    }
+    if let Some(bodies) = topology.body_by_root.get(&representation) {
+        let bodies = bodies.clone();
+        cache.insert(representation, bodies.clone());
+        return bodies;
     }
     if !active.insert(representation) {
         return Vec::new();
@@ -481,19 +497,12 @@ fn representation_bodies(
             let Some(record) = exchange.records.get(&item) else {
                 return Vec::new();
             };
-            if [
-                "SHELL_BASED_SURFACE_MODEL",
-                "FACE_BASED_SURFACE_MODEL",
-                "FACETED_BREP",
-                "MANIFOLD_SOLID_BREP",
-                "BREP_WITH_VOIDS",
-                "SHELL_BASED_WIREFRAME_MODEL",
-                "EDGE_BASED_WIREFRAME_MODEL",
-            ]
-            .iter()
-            .any(|name| has_type(record, name))
-            {
-                return vec![BodyId(format!("step:data:body#{item}"))];
+            if super::topology::is_body_representation(record) {
+                return topology
+                    .body_by_root
+                    .get(&item)
+                    .cloned()
+                    .unwrap_or_default();
             }
             if record.simple_name() == Some("MAPPED_ITEM") {
                 let mapped_representation = record
@@ -506,6 +515,7 @@ fn representation_bodies(
                     return representation_bodies(
                         mapped_representation,
                         exchange,
+                        topology,
                         cache,
                         active,
                         depth + 1,
@@ -520,10 +530,6 @@ fn representation_bodies(
     active.remove(&representation);
     cache.insert(representation, bodies.clone());
     bodies
-}
-
-fn has_type(record: &RawRecord, name: &str) -> bool {
-    record.partials.iter().any(|partial| partial.name == name)
 }
 
 fn occurrence_placements(

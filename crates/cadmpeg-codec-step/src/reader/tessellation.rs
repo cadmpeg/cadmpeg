@@ -4,22 +4,27 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::{BodyId, ShellId};
+use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::report::{LossKind, LossNote};
 use cadmpeg_ir::tessellation::Tessellation;
+use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::geometry::GeometryResult;
+use super::topology::TopologyResult;
 
 pub(super) struct TessellationResult {
     pub typed_records: BTreeSet<u64>,
     pub warnings: Vec<String>,
+    pub losses: Vec<LossNote>,
 }
 
 pub(super) fn decode(
     exchange: &Exchange,
     geometry: &GeometryResult,
+    topology: &TopologyResult,
     ir: &mut CadIr,
 ) -> TessellationResult {
     let coordinates = exchange
@@ -34,34 +39,17 @@ pub(super) fn decode(
         .collect::<BTreeMap<_, _>>();
     let mut typed = BTreeSet::new();
     let mut warnings = Vec::new();
-    let mut item_bodies = BTreeMap::new();
+    let mut losses = Vec::new();
+    let mut item_bodies = BTreeMap::<u64, BTreeSet<BodyId>>::new();
+    let mut unresolved_items = BTreeSet::new();
+    let mut declared_items = BTreeSet::new();
     for (&id, record) in &exchange.records {
-        let body = match record.simple_name() {
-            Some("TESSELLATED_SOLID") => record
-                .parameter(2)
-                .and_then(ValueExt::reference)
-                .map(|solid| BodyId(format!("step:data:body#{solid}")))
-                .filter(|body| {
-                    ir.model
-                        .bodies
-                        .iter()
-                        .any(|candidate| candidate.id == *body)
-                }),
-            Some("TESSELLATED_SHELL") => record
-                .parameter(2)
-                .and_then(ValueExt::reference)
-                .and_then(|shell| body_for_shell(shell, ir)),
-            _ => continue,
-        };
-        let Some(body) = body else {
-            if !matches!(record.parameter(2), None | Some(Value::Omitted)) {
-                warnings.push(format!(
-                    "{} #{id} has no decoded exact body link",
-                    record.simple_name().expect("matched tessellated body")
-                ));
-            }
+        if !matches!(
+            record.simple_name(),
+            Some("TESSELLATED_SOLID" | "TESSELLATED_SHELL")
+        ) {
             continue;
-        };
+        }
         let Some(items) = record.parameter(1).and_then(ValueExt::list) else {
             warnings.push(format!(
                 "{} #{id} has no structured items",
@@ -69,10 +57,41 @@ pub(super) fn decode(
             ));
             continue;
         };
-        for item in items.iter().filter_map(ValueExt::reference) {
-            item_bodies.insert(item, body.clone());
+        let item_ids = items
+            .iter()
+            .filter_map(ValueExt::reference)
+            .collect::<Vec<_>>();
+        declared_items.extend(item_ids.iter().copied());
+        let candidates = linked_bodies(record, topology);
+        if candidates.is_empty() {
+            unresolved_items.extend(item_ids.iter().copied());
+            warnings.push(format!(
+                "{} #{id} has no decoded exact body link",
+                record.simple_name().expect("matched tessellated body")
+            ));
+        }
+        for item in item_ids {
+            item_bodies
+                .entry(item)
+                .or_default()
+                .extend(candidates.iter().cloned());
         }
         typed.insert(id);
+    }
+    for (&item, bodies) in &item_bodies {
+        if unresolved_items.contains(&item) || bodies.len() != 1 {
+            let detail = if bodies.is_empty() {
+                "no decoded body"
+            } else if bodies.len() > 1 {
+                "multiple candidate bodies"
+            } else {
+                "an unresolved container association"
+            };
+            let message =
+                format!("tessellation item #{item} has {detail}; mesh retained as detached");
+            warnings.push(message.clone());
+            losses.push(LossNote::new(LossKind::ReferenceGraphNotClosed, message));
+        }
     }
     for (&id, record) in &exchange.records {
         if !matches!(
@@ -210,12 +229,34 @@ pub(super) fn decode(
                 Vec::new()
             }
         };
+        if !declared_items.contains(&id) {
+            let message = format!(
+                "tessellation item #{id} is not declared by an exact body container; mesh retained as detached"
+            );
+            warnings.push(message.clone());
+            losses.push(LossNote::new(LossKind::ReferenceGraphNotClosed, message));
+        }
         ir.model.tessellations.push(Tessellation {
             faces: Vec::new(),
             chordal_deflection: None,
             id: format!("step:tessellation:mesh#{id}"),
-            body: item_bodies.get(&id).cloned(),
-            source_object: None,
+            body: (!unresolved_items.contains(&id))
+                .then(|| item_bodies.get(&id))
+                .flatten()
+                .filter(|bodies| bodies.len() == 1)
+                .and_then(|bodies| bodies.iter().next().cloned()),
+            source_object: (!declared_items.contains(&id)
+                || unresolved_items.contains(&id)
+                || item_bodies.get(&id).is_none_or(|bodies| bodies.len() != 1))
+            .then(|| SourceObjectAssociation {
+                format: "step".into(),
+                object_id: format!("#{id}"),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
             vertices: local_vertices,
             triangles: local_triangles,
             strip_lengths,
@@ -239,20 +280,29 @@ pub(super) fn decode(
     TessellationResult {
         typed_records: typed,
         warnings,
+        losses,
     }
 }
 
-fn body_for_shell(shell_step: u64, ir: &CadIr) -> Option<BodyId> {
-    let shell = ir
-        .model
-        .shells
-        .iter()
-        .find(|shell| shell.id == ShellId(format!("step:data:shell#{shell_step}")))?;
-    ir.model
-        .regions
-        .iter()
-        .find(|region| region.id == shell.region)
-        .map(|region| region.body.clone())
+fn linked_bodies(record: &RawRecord, topology: &TopologyResult) -> BTreeSet<BodyId> {
+    let Some(link) = record.parameter(2).and_then(ValueExt::reference) else {
+        return BTreeSet::new();
+    };
+    match record.simple_name() {
+        Some("TESSELLATED_SOLID") => topology
+            .body_by_root
+            .get(&link)
+            .into_iter()
+            .flatten()
+            .cloned()
+            .collect(),
+        Some("TESSELLATED_SHELL") => topology
+            .body_by_shell
+            .get(&link)
+            .cloned()
+            .unwrap_or_default(),
+        _ => BTreeSet::new(),
+    }
 }
 
 fn index_list(value: Option<&Value>) -> Option<Vec<u32>> {
