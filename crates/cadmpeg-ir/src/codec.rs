@@ -300,12 +300,11 @@ impl Encoder for CadirEncoder {
     }
 
     fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
-        let validation = crate::validate(input.ir, Vec::new());
         let report = ExportReport {
             format: "cadir".into(),
             census: EntityCensus {
                 basis: CensusBasis::IrArenas,
-                counts: validation.entity_counts,
+                counts: crate::validate::entity_census(input.ir),
             },
             fidelity: FidelityResolution::NotProvided,
             losses: Vec::new(),
