@@ -167,3 +167,85 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." through `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." define structural retention only. The specification gives no cryptographic validation conditions.
 
 **Need.** We must know the conditions to report a signature verification result.
+
+## 6. Topology and pcurve decisions
+
+### TP-01. Shared-edge ownership
+
+**Question.** When one STEP edge or vertex is referenced by multiple independent
+shell owners, should CADIR preserve one shared identity, create one occurrence
+identity per owner, or reject the conflicting topology?
+
+**Known.** The decoder uses owner-scoped edge and vertex identities when the
+source ownership is ambiguous. It keeps the per-occurrence rule and reports an
+identity collision when two committed drafts still claim the same destination
+identity.
+
+**Need.** We need a standards-valid shared-edge construction and its ownership
+semantics before changing the current rule.
+
+### TP-02. Seam pcurve selection
+
+**Question.** Which same-surface pcurve belongs to each seam coedge when a seam
+curve carries more than one candidate pcurve?
+
+**Known.** The source curve can carry multiple pcurves for one surface and the
+decoder associates one candidate with each coedge use.
+
+**Need.** We need the UV-continuity and orientation rule that selects a
+candidate. Serialized occurrence order is not a sufficient rule.
+
+### TP-03. Non-planar pcurve units
+
+**Question.** Which pcurve parameter axes are length-valued for cylinders,
+spheres, cones, tori, and other non-planar support surfaces?
+
+**Known.** Plane pcurve axes are length-valued and are scaled by the document
+length unit. Angular and mixed parameter axes require surface-specific rules.
+
+**Need.** We need the surface-axis table before scaling non-planar pcurve
+coordinates.
+
+### TP-04. Multiple outer loops
+
+**Question.** Can one STEP face contain multiple `FACE_OUTER_BOUND` loops, and
+if so, how should CADIR represent them?
+
+**Known.** The current topology model commits one ordered loop collection and
+requires one outer boundary for the usual face representation.
+
+**Need.** We need a valid construction and an IR representation decision for
+multiple disjoint outer regions.
+
+### TP-05. Partial solid and tolerant point carriers
+
+**Question.** Should CADIR gain a tolerant point carrier or a partial-solid
+representation for a solid with one missing mandatory vertex point?
+
+**Known.** Solid roots commit atomically. A missing mandatory point rejects the
+complete solid and reports the failed STEP carrier.
+
+**Need.** We need measured loss rates and an IR design before changing the
+atomic-solid invariant.
+
+### TP-06. Implicit face-plane orientation
+
+**Question.** Which winding rule defines the normal of an implicit face plane,
+and how does it compose with `ORIENTED_FACE` bound reversal?
+
+**Known.** The decoder derives a plane from non-collinear boundary points and
+composes explicit face and bound orientation.
+
+**Need.** We need a winding-based rule that uses the outer loop only and a
+degeneracy threshold for nearly collinear points.
+
+### TP-07. Pcurve recursion and normalization
+
+**Question.** What normalization and recursion guard rules apply to cyclic
+2D curve definitions, 2D `LINE` carriers, and complex `PCURVE` entities?
+
+**Known.** Supported 2D carriers decode as typed pcurves. Unsupported or cyclic
+carriers remain opaque.
+
+**Need.** We need fixtures for cycle handling, 2D line normalization, and
+complex `PCURVE` support before extending the typed domain.

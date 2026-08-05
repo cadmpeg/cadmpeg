@@ -1177,7 +1177,7 @@ fn decode_builds_faceted_brep_polygon_loops() {
         .expect("fixture is UTF-8")
         .replace(
             "#25=EDGE_LOOP('',(#22,#23,#24));",
-            "#25=POLY_LOOP('',(#3,#4,#5));",
+            "#25=POLY_LOOP('',(#3,#4,#5,#3));",
         )
         .replace("#30=OPEN_SHELL('',(#29));", "#30=CLOSED_SHELL('',(#29));")
         .replace(
@@ -1294,7 +1294,7 @@ fn sheet_root_salvages_independent_shells() {
         )
         .replace(
             "#33=ORIENTED_OPEN_SHELL('',#30,.F.);",
-            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);\n#34=OPEN_SHELL('',(#99));\n#99=UNSUPPORTED_FACE('',());",
+            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);\n#34=ORIENTED_OPEN_SHELL('',#99,.T.);\n#99=UNSUPPORTED_SHELL('',());",
         );
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -1311,6 +1311,11 @@ fn sheet_root_salvages_independent_shells() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("omitted 1 unresolved shell")));
+    assert!(decoded
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("shell carrier #34")));
     let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -1361,6 +1366,32 @@ fn shared_source_face_gets_one_owner_scoped_face_per_shell() {
 }
 
 #[test]
+fn brep_with_voids_scopes_edges_and_vertices_per_shell_after_shared_shell_use() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace("#30=OPEN_SHELL('',(#29));", "#30=CLOSED_SHELL('',(#29));")
+        .replace(
+            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);",
+            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);\n#34=CLOSED_SHELL('',(#29));\n#70=BREP_WITH_VOIDS('',#30,(#34));",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode scoped BREP with voids");
+
+    assert!(decoded.ir.model.bodies.iter().any(|body| {
+        body.id.as_str() == "step:data:body#70"
+            && body.kind == cadmpeg_ir::topology::BodyKind::Solid
+    }));
+    assert!(!decoded
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("root #70 rejected")));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn shell_wire_edge_applies_edge_and_occurrence_sense() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
@@ -1404,7 +1435,10 @@ fn unowned_pcurve_dependencies_are_retained_as_one_opaque_closure() {
         .expect("decode unowned pcurve");
     let unknowns = decoded
         .ir
-        .native_unknowns("step")
+        .native
+        .namespace("step")
+        .expect("STEP namespace")
+        .arena_as::<cadmpeg_ir::UnknownRecord>("unknowns")
         .expect("STEP unknown arena");
     assert!(unknowns
         .iter()
@@ -1412,6 +1446,14 @@ fn unowned_pcurve_dependencies_are_retained_as_one_opaque_closure() {
     assert!(unknowns
         .iter()
         .any(|record| record.id.0 == "step:data:definitional_representation#70"));
+    let line = unknowns
+        .iter()
+        .find(|record| record.id.0 == "step:data:line#71")
+        .expect("unowned pcurve line is retained");
+    assert!(line
+        .data
+        .as_deref()
+        .is_some_and(|data| data.starts_with(b"#71=LINE")));
     assert!(decoded
         .ir
         .model
@@ -1562,6 +1604,31 @@ fn decode_maps_a_two_dimensional_polyline_to_a_pcurve_nurbs() {
         ]
     ));
     assert_eq!(decoded.ir.model.bodies.len(), 1);
+}
+
+#[test]
+fn planar_pcurve_coordinates_follow_the_document_length_unit() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace("SI_UNIT(.MILLI.,.METRE.)", "SI_UNIT(.CENTI.,.METRE.)");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode non-millimetre planar pcurve");
+
+    let pcurve = decoded
+        .ir
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
+        .expect("planar pcurve");
+    assert!(matches!(
+        pcurve.geometry,
+        cadmpeg_ir::geometry::PcurveGeometry::Line { direction, .. }
+            if (direction.u - 10.0).abs() < 1.0e-12
+    ));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]
@@ -1793,22 +1860,66 @@ fn seam_edge_preserves_its_explicit_pcurve_reference() {
 }
 
 #[test]
+fn surface_curve_without_a_basis_keeps_a_curve_less_edge_and_reports_loss() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace("#16=LINE('',#3,#13);", "#16=UNSUPPORTED_CURVE('',());")
+        .replace(
+            "#57=SURFACE_CURVE('',#16,(#56),.PCURVE_S1.);",
+            "#57=SURFACE_CURVE('',*,(#56),.PCURVE_S1.);",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode surface curve without basis");
+
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert!(decoded
+        .ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.id.as_str() == "step:data:edge#19")
+        .is_some_and(|edge| edge.curve.is_none()));
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("STEP edge curve #19: surface-curve #57 has no resolvable basis")
+    }));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn subedge_inherits_parent_edge_geometry_without_losing_topology() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
         .replace(
             "#19=EDGE_CURVE('',#6,#7,#57,.T.);",
-            "#19=SUBEDGE('',#6,#7,#58);",
+            "#19=(EDGE('',#6,#7) SUBEDGE('',#58));",
         )
         .replace(
             "#57=SURFACE_CURVE('',#16,(#56),.PCURVE_S1.);",
-            "#57=SURFACE_CURVE('',#16,(#56),.PCURVE_S1.);\n#58=EDGE_CURVE('',#6,#7,#57,.T.);",
+            "#57=SURFACE_CURVE('',#18,(#56),.PCURVE_S1.);\n#58=EDGE_CURVE('',#6,#7,#18,.F.);",
+        )
+        .replace(
+            "#20=EDGE_CURVE('',#7,#8,#17,.T.);",
+            "#20=EDGE_CURVE('',#7,#8,#16,.T.);",
+        )
+        .replace(
+            "#21=EDGE_CURVE('',#8,#6,#18,.T.);",
+            "#21=EDGE_CURVE('',#8,#6,#17,.T.);",
         );
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode subedge");
 
     assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert!(decoded.ir.model.edges.iter().any(|edge| {
+        edge.id.as_str() == "step:data:edge#19"
+            && edge
+                .curve
+                .as_ref()
+                .is_some_and(|curve| curve.as_str() == "step:data:curve#18")
+    }));
     assert!(decoded
         .ir
         .native_unknowns("step")
@@ -1834,6 +1945,27 @@ fn oriented_face_subtype_composes_face_orientation() {
 
     assert_eq!(decoded.ir.model.bodies.len(), 1);
     assert_eq!(decoded.ir.model.faces.len(), 1);
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn complex_oriented_open_shell_preserves_shell_sense() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);",
+            "#33=(OPEN_SHELL('',(#29)) ORIENTED_OPEN_SHELL('',#30,.F.));",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex oriented shell");
+
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(
+        decoded.ir.model.faces[0].sense,
+        cadmpeg_ir::topology::Sense::Reversed
+    );
     let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -1919,7 +2051,7 @@ fn connected_edge_sub_set_is_accepted_as_a_wire_boundary() {
         )
         .replace(
             "#33=ORIENTED_OPEN_SHELL('',#30,.F.);",
-            "#33=CONNECTED_EDGE_SUB_SET('',(#19,#20,#21));",
+            "#33=CONNECTED_EDGE_SUB_SET('',(#19,#20,#21),#34);\n#34=CONNECTED_EDGE_SET('',(#19,#20,#21));",
         );
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -1928,6 +2060,138 @@ fn connected_edge_sub_set_is_accepted_as_a_wire_boundary() {
     assert_eq!(decoded.ir.model.bodies.len(), 1);
     assert_eq!(decoded.ir.model.bodies[0].kind, BodyKind::Wire);
     assert_eq!(decoded.ir.model.edges.len(), 3);
+    assert!(!decoded
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("has no resolvable parent")));
+    assert!(decoded
+        .ir
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| record.id.0 == "step:data:connected_edge_set#34"));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn connected_edge_sub_set_keeps_topology_when_parent_is_invalid() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+            "#31=EDGE_BASED_WIREFRAME_MODEL('',(#33));",
+        )
+        .replace(
+            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);",
+            "#33=CONNECTED_EDGE_SUB_SET('',(#19,#20,#21),#34);\n#34=UNSUPPORTED_SET('',());",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode subset with invalid parent");
+
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert!(decoded
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("parent #34 does not resolve")));
+    assert!(decoded
+        .ir
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| record.id.0 == "step:data:connected_edge_sub_set#33"));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn connected_face_sub_set_validates_and_uses_its_own_members() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+            "#31=FACE_BASED_SURFACE_MODEL('',(#34));",
+        )
+        .replace(
+            "#30=OPEN_SHELL('',(#29));",
+            "#30=CONNECTED_FACE_SET('',(#29));",
+        )
+        .replace(
+            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);",
+            "#34=CONNECTED_FACE_SUB_SET('',(#29),#30);",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode connected face subset");
+
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(decoded.ir.model.faces.len(), 1);
+    assert!(!decoded
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("CONNECTED_FACE_SUB_SET #34")));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn connected_edge_set_resolves_direct_oriented_and_seam_members() {
+    use cadmpeg_ir::topology::BodyKind;
+
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+            "#31=EDGE_BASED_WIREFRAME_MODEL('',(#70));",
+        )
+        .replace(
+            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);",
+            "#70=CONNECTED_EDGE_SET('',(#71,#72,#73));\n#71=ORIENTED_EDGE('',*,*,#19,.F.);\n#72=SEAM_EDGE('',*,*,#20,.T.,#56);\n#73=ORIENTED_EDGE('',*,*,#21,.T.);",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode direct oriented and seam edge members");
+
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(decoded.ir.model.bodies[0].kind, BodyKind::Wire);
+    assert_eq!(decoded.ir.model.edges.len(), 3);
+    let reversed = decoded
+        .ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.id.as_str().starts_with("step:data:edge#71-"))
+        .expect("oriented edge carrier");
+    assert!(reversed.start.as_str().contains("vertex#7"));
+    assert!(reversed.end.as_str().contains("vertex#6"));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn shared_edge_wire_model_marks_every_representation_typed() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+            "#31=EDGE_BASED_WIREFRAME_MODEL('',(#70));\n#70=CONNECTED_EDGE_SET('',(#19,#20,#21));\n#71=MANIFOLD_SURFACE_SHAPE_REPRESENTATION('',(#31),#2);",
+        )
+        .replace("#33=ORIENTED_OPEN_SHELL('',#30,.F.);", "#33=OPEN_SHELL('',(#29));");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode shared wire model representations");
+
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert!(!decoded
+        .ir
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| { record.id.0 == "step:data:manifold_surface_shape_representation#71" }));
     let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -1950,6 +2214,28 @@ fn complex_edge_and_oriented_edge_instances_use_named_attributes() {
 
     assert_eq!(decoded.ir.model.bodies.len(), 1);
     assert_eq!(decoded.ir.model.edges.len(), 3);
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn complex_advanced_face_uses_its_explicit_surface_carrier() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace("#28=PLANE('',#27);", "#28=CYLINDRICAL_SURFACE('',#27,5.);")
+        .replace(
+            "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+            "#29=(FACE('',(#26)) FACE_SURFACE('',#28,.T.) ADVANCED_FACE());",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex advanced face");
+
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert!(decoded.ir.model.surfaces.iter().any(|surface| {
+        surface.id.as_str() == "step:data:surface#28"
+            && matches!(surface.geometry, SurfaceGeometry::Cylinder { .. })
+    }));
     let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -1998,6 +2284,31 @@ fn decode_builds_a_sheet_from_a_geometric_surface_set() {
         "step:data:surface#11"
     );
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn geometric_surface_representation_salvages_valid_sibling_sets() {
+    let source = String::from_utf8(
+        include_bytes!("../tests/fixtures/ap242_geometric_set.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#13=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#12),#2);",
+        "#13=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#12,#99),#2);\n#99=UNSUPPORTED_SET('',());",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode geometric set with malformed sibling");
+
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(decoded.ir.model.faces.len(), 1);
+    assert!(decoded
+        .report
+        .losses
+        .iter()
+        .any(|loss| { loss.message.contains("skipped non-set member #99") }));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -4143,6 +4454,12 @@ fn edge_without_curve_is_reported_and_omitted() {
         .losses
         .iter()
         .any(|l| l.message.contains("edge(s) have no typed 3D curve")));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::TopologyNotTransferred
+            && loss
+                .message
+                .contains("was omitted because it has no 3D curve")
+    }));
 }
 
 #[test]
@@ -4236,6 +4553,70 @@ fn face_on_unknown_surface_is_skipped_and_reported() {
         report.losses
     );
     assert!(unknown_notes[0].message.contains("1 face(s)"));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::TopologyNotTransferred
+            && loss.message.contains("omitted face")
+    }));
+}
+
+#[test]
+fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
+    let mut outer_face = unit_cube();
+    outer_face.model.faces[0].loops.clear();
+    let report = write_step(&outer_face, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("report mode writes the surviving faces");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::TopologyNotTransferred
+            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.message.contains("has no writable bounds")
+    }));
+
+    let mut inner_loop = unit_cube();
+    inner_loop.model.faces[0]
+        .loops
+        .push(cadmpeg_ir::ids::LoopId(
+            "step:data:loop#missing-inner".into(),
+        ));
+    let report = write_step(&inner_loop, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("report mode writes the surviving outer loop");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::TopologyNotTransferred
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains("has no writable topology")
+    }));
+
+    let mut missing_edge = unit_cube();
+    missing_edge.model.coedges[0].edge = cadmpeg_ir::ids::EdgeId("step:data:edge#missing".into());
+    let report = write_step(&missing_edge, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("report mode writes the surviving coedges");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::TopologyNotTransferred
+            && loss.message.contains("loop")
+            && loss.message.contains("edge")
+    }));
+
+    let mut missing_void = unit_cube();
+    missing_void.model.regions[0]
+        .shells
+        .push(cadmpeg_ir::ids::ShellId(
+            "step:data:shell#missing-void".into(),
+        ));
+    let report = write_step(&missing_void, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("report mode writes the outer shell");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::TopologyNotTransferred
+            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.message.contains("omitted void shell")
+    }));
+
+    let options = StepWriteOptions {
+        unsupported: StepUnsupportedPolicy::Reject,
+        ..StepWriteOptions::default()
+    };
+    assert!(matches!(
+        write_step(&missing_void, &mut Vec::new(), &options),
+        Err(StepError::Unsupported(_))
+    ));
 }
 
 #[test]

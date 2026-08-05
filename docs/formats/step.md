@@ -200,7 +200,10 @@ ownership. Each independent connected edge set or wire shell receives
 owner-scoped neutral edge and vertex identities. Faceted B-reps materialize
 polygon-loop straight edges and vertices as topology carriers. Oriented faces,
 subfaces, seam edges, subedges, connected-edge subsets, and connected-face sets
-resolve inherited attributes before topology is committed.
+resolve inherited attributes before topology is committed. A connected-edge or
+connected-face subset resolves its own member list. Its parent reference must
+resolve to the matching parent set type for the subset record to be typed;
+parent lineage remains in the source records.
 
 Sheet and wire representations commit each independently resolvable shell or
 connected set. A failed member produces a decode loss. Solid roots, including
@@ -235,8 +238,15 @@ dependency closure stay named opaque records. A shared dependency remains
 typed when another retained carrier owns it. Failure of a mandatory topology
 relation rejects the complete solid root. Records owned only by that root stay
 opaque, and product bindings omit the body. Sheet and wire members use the
-independent-member salvage rule. Two same-surface pcurves of one seam curve
-bind in occurrence order to the seam's two coedge uses.
+independent-member salvage rule. A `SURFACE_CURVE` with a star or non-reference
+basis keeps its edge occurrence without a CADIR curve and produces a loss; the
+decoder does not fabricate a curve carrier. A pcurve on a plane scales both
+parameter axes and all length-valued 2D geometry by the document length unit.
+
+The writer records each omitted shell, face, loop, and edge relation as a
+topology-transfer loss. Omitted outer shells, void shells, and outer bounds
+are errors. Other omitted topology relations are warnings. The strict
+unsupported policy rejects output when any topology-transfer loss exists.
 
 Product shape binds through `PRODUCT_DEFINITION_SHAPE` and
 `SHAPE_DEFINITION_REPRESENTATION`. Every body-producing representation,

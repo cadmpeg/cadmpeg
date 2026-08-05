@@ -2551,3 +2551,29 @@ impl ValueExt for Value {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pcurve_trim_select_ignores_cartesian_point_coordinates() {
+        let value = Value::List(vec![
+            Value::Typed(
+                "CARTESIAN_POINT".into(),
+                Box::new(Value::List(vec![Value::Real(17.0), Value::Real(23.0)])),
+            ),
+            Value::Real(0.25),
+        ]);
+        assert_eq!(pcurve_trim_parameter(&value), Some(0.25));
+    }
+
+    #[test]
+    fn pcurve_trim_select_prefers_parameter_value() {
+        let value = Value::List(vec![
+            Value::Real(17.0),
+            Value::Typed("PARAMETER_VALUE".into(), Box::new(Value::Real(0.25))),
+        ]);
+        assert_eq!(pcurve_trim_parameter(&value), Some(0.25));
+    }
+}

@@ -342,9 +342,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
                 },
             );
             if outcome.failed != 0 {
+                let detail = failure_message
+                    .as_deref()
+                    .map_or_else(String::new, |message| format!(": {message}"));
                 result.warnings.push(format!(
-                    "STEP topology root #{id} omitted {} unresolved shell(s)",
-                    outcome.failed
+                    "STEP topology root #{id} omitted {} unresolved shell(s){detail}",
+                    outcome.failed,
                 ));
             }
         }
@@ -1752,6 +1755,7 @@ fn build_one(
             )?
         };
         if face_steps.is_empty() {
+            note_failure(failure, shell_step, "shell face list");
             return None;
         }
         let sid = shell_identity(id, shell_step, scope_root);
@@ -2539,10 +2543,10 @@ fn resolve_shell(
             typed.insert(reference);
             let shell_type =
                 most_specific(record, &["ORIENTED_OPEN_SHELL", "ORIENTED_CLOSED_SHELL"])?;
-            Some((
-                named_reference(record, shell_type, 1, 0)?,
-                named_logical(record, shell_type, 2, 0)?,
-            ))
+            let element = named_reference(record, shell_type, 1, 0)?;
+            let orientation = named_logical(record, shell_type, 2, 0)?;
+            let (base, element_orientation) = resolve_shell(element, exchange, typed)?;
+            Some((base, element_orientation == orientation))
         }
         _ => None,
     }
