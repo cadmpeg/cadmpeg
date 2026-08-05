@@ -1197,6 +1197,490 @@ fn model_brep_candidates(
     Ok(candidates)
 }
 
+/// Decode the document model from its text-encoded carriers.
+///
+/// The text encoding is the model carrier only when no binary stream decoded,
+/// so the caller runs this after the binary candidate loop. Every `.sat` and
+/// `.smt` entry that parses and produces geometry joins the merged graph;
+/// with more than one contributing entry, each graph is qualified by its
+/// entry basename.
+fn try_decode_text_model(
+    scan: &ContainerScan<'_>,
+) -> Result<Option<(BrepFacts, Brep)>, CodecError> {
+    let names: Vec<String> = container::text_brep_names(scan)
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    let mut parts: Vec<(BrepFacts, Brep)> = Vec::new();
+    for name in &names {
+        let bytes = scan.entry_bytes(name)?;
+        let Ok(stream) = cadmpeg_asm::sat::parse(bytes) else {
+            continue;
+        };
+        let decoded = brep::decode_text(&stream, bytes, name, crate::ids::ID_FORMAT);
+        if decoded.asm.surfaces.is_empty()
+            && decoded.asm.points.is_empty()
+            && decoded.asm.faces.is_empty()
+        {
+            continue;
+        }
+        // Facts for the report and source attributes. The header carries the
+        // stream's own unit; the decoded token values are already in the
+        // centimetre convention.
+        let mut header = stream.header.as_asm_header();
+        header.scale = Some(stream.header.scale);
+        parts.push((
+            BrepFacts {
+                name: name.clone(),
+                is_smbh: false,
+                uncompressed_len: bytes.len() as u64,
+                header: Some(header),
+                solved_record_limit: None,
+                sha256: sha256_hex(bytes),
+            },
+            decoded,
+        ));
+    }
+    let qualify = parts.len() > 1;
+    let mut merged: Option<(BrepFacts, Brep)> = None;
+    for (facts, mut part) in parts {
+        if qualify {
+            let namespace = facts.name.rsplit('/').next().unwrap_or(&facts.name);
+            part.qualify_ids(crate::ids::ID_FORMAT, namespace)?;
+        }
+        match &mut merged {
+            None => merged = Some((facts, part)),
+            Some((_, whole)) => whole.append(part),
+        }
+    }
+    Ok(merged)
+}
+
+/// Assemble the complete document result from one decoded model B-rep graph.
+///
+/// Both encodings converge here: the binary candidate loop and the text-stream
+/// decode hand over the merged graph, the facts of the primary carrier, the
+/// resolved body visibilities, and the count of candidates whose decode
+/// produced nothing.
+fn finish_model_decode<'a>(
+    ctx: &DecodeContext<'a>,
+    scan: &ContainerScan<'a>,
+    primary_model_brep: &BrepFacts,
+    mut brep: Brep,
+    body_visibilities: Vec<crate::records::BodyVisibility>,
+    undecoded_candidates: usize,
+) -> Result<DecodeResult, CodecError> {
+    let mut report = build_geometry_report(scan, &brep);
+    if undecoded_candidates != 0 {
+        report.losses.push(LossNote {
+            code: LossKind::GeometryNotTransferred,
+            severity: Severity::Warning,
+            message: format!(
+                "{undecoded_candidates} Design-referenced BREP blob(s) could not be decoded."
+            ),
+            provenance: None,
+        });
+    }
+    let decoded_materials = materials::decode_with_bodies(scan, &brep.asm.body_keys)?;
+    let annotation_records = std::mem::take(&mut brep.asm.annotation_records);
+    let (mut ir, mut native, unknowns) = build_geometry_ir(scan, primary_model_brep, brep);
+    let (subds, subd_losses) = crate::tsm::decode(scan)?;
+    ir.model.subds = subds;
+    project_mesh_bodies(scan, &mut ir, &mut report)?;
+    report.losses.extend(subd_losses);
+    native.body_visibilities = body_visibilities;
+    for history_brep in container::history_breps(scan) {
+        if let Some(history) = decode_asm_history(ctx, scan, history_brep)? {
+            native.asm_histories.push(history);
+        }
+    }
+    native.construction_recipes = crate::design::decode::parameters::decode_recipes(scan)?;
+    native.persistent_references =
+        crate::design::decode::sketch::decode_persistent_references(scan)?;
+    native.lost_edge_references = crate::design::decode::sketch::decode_lost_edge_references(scan)?;
+    native.design_material_assignments = crate::materials::decode_design_assignments(scan)?;
+    native.design_types = crate::design::decode::sketch::decode_types(scan)?;
+    native.design_parameters = crate::design::decode::parameters::decode_parameters(scan)?;
+    native.design_entity_headers = crate::design::decode::sketch::decode_entity_headers(scan)?;
+    native.design_record_headers =
+        crate::design::decode::sketch::decode_record_headers(scan, &native.design_entity_headers)?;
+    let sketch_relations = {
+        crate::design::decode::sketch::decode_sketch_relations(scan, &native.design_record_headers)?
+    };
+    native.sketch_relations = sketch_relations;
+    extend_related_design_records(scan, &mut native)?;
+    native.sketch_points = crate::design::decode::sketch::decode_sketch_points(scan)?;
+    native.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(scan)?;
+    native.sketch_curve_identities =
+        crate::design::decode::sketch::decode_sketch_curve_identities(scan)?;
+    native.sketch_surfaces = crate::design::decode::sketch::decode_sketch_surfaces(scan)?;
+    crate::design::decode::sketch::bind_sketch_graph(
+        &native.design_entity_headers,
+        &mut native.sketch_points,
+        &mut native.sketch_curve_identities,
+        &mut native.sketch_surfaces,
+        &mut native.sketch_relations,
+    )?;
+    crate::design::decode::operands::bind_extrude_selection_geometry(
+        &mut native.design_extrude_selection_members,
+        &native.design_extrude_selection_groups,
+        &native.design_parameter_scopes,
+        &native.sketch_points,
+        &native.sketch_curve_identities,
+    );
+    let dimension_inputs = crate::design::decode::dimension_frames::DimensionDecodeInputs {
+        scan,
+        parameters: &native.design_parameters,
+        owners: &native.design_parameter_owners,
+        companions: &native.design_parameter_companions,
+        scopes: &native.design_parameter_scopes,
+        headers: &native.design_record_headers,
+        points: &native.sketch_points,
+        curves: &native.sketch_curve_identities,
+    };
+    native.design_dimension_locus_pairs =
+        crate::design::decode::dimension_frames::decode_dimension_locus_pairs(&dimension_inputs)?;
+    native.design_dimension_annotation_frames =
+        crate::design::decode::dimension_frames::decode_dimension_annotation_frames(
+            &dimension_inputs,
+            &native.design_entity_headers,
+        )?;
+    native.design_dimension_locus_groups =
+        crate::design::decode::dimension_frames::decode_dimension_locus_groups(
+            &dimension_inputs,
+            &native.design_entity_headers,
+        )?;
+    native.design_dimension_null_locus_pairs =
+        crate::design::decode::dimension_frames::decode_dimension_null_locus_pairs(
+            &dimension_inputs,
+            &native.design_dimension_locus_pairs,
+            &native.design_dimension_locus_groups,
+        )?;
+    crate::design::dimensions::remove_dimension_frame_relations(
+        &mut native.sketch_relations,
+        &native.design_dimension_locus_pairs,
+        &native.design_dimension_locus_groups,
+        &native.design_dimension_null_locus_pairs,
+    );
+    crate::design::dimensions::bind_dimension_loci(
+        &native.design_sketch_placements,
+        &native.design_parameter_owners,
+        &native.design_dimension_locus_pairs,
+        &native.design_dimension_locus_groups,
+        &native.design_dimension_annotation_frames,
+        &native.design_dimension_null_locus_pairs,
+        &mut native.sketch_points,
+        &mut native.sketch_curve_identities,
+    )?;
+    native.design_body_members = crate::design::decode::body::decode_body_members(scan)?;
+    native.design_body_bindings = crate::design::decode::body::decode_design_body_bindings(
+        scan,
+        Some(&primary_model_brep.name),
+        &native.body_native_keys,
+    )?;
+    native.design_body_bounds =
+        crate::design::decode::body::decode_body_bounds(scan, &native.design_entity_headers)?;
+    crate::design::decode::body::bind_body_bounds(
+        &mut native.design_body_bounds,
+        &native.design_body_bindings,
+    );
+    native.design_configurations = crate::design::configurations::decode_configurations(scan)?;
+    ir.model.configurations =
+        crate::design::configurations::project_configurations(&native.design_configurations);
+    (ir.model.features, ir.model.parameters) =
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            &crate::design::feature_project::ProjectInputs {
+                native: &native.design_parameters,
+                owners: &native.design_parameter_owners,
+                scopes: &native.design_parameter_scopes,
+                construction_groups: &native.design_construction_operand_groups,
+                fillet_radius_groups: &native.design_fillet_radius_groups,
+                edge_operands: &native.design_edge_operands,
+                edge_identity_operands: &native.design_edge_identity_operands,
+                entity_selection_operands: &native.design_entity_selection_operands,
+                curve_identities: &native.sketch_curve_identities,
+                face_operands: &native.design_face_operands,
+                placements: &native.design_sketch_placements,
+                body_bindings: &native.design_body_bindings,
+                histories: &native.asm_histories,
+            },
+        );
+    crate::design::feature_project::bind_form_cages(
+        scan,
+        &native.design_parameter_scopes,
+        &mut ir.model.features,
+        &ir.model.subds,
+    )?;
+    ir.model.assets = crate::design::decode::canvas::project_canvas_images(
+        scan,
+        &native.design_parameter_scopes,
+        &native.design_canvas_images,
+        &mut ir.model.features,
+    )?;
+    crate::design::configurations::bind_configuration_parameter_overrides(
+        &mut ir.model.configurations,
+        &ir.model.parameters,
+    );
+    crate::design::configurations::bind_configuration_suppressed_features(
+        &mut ir.model.configurations,
+        &ir.model.features,
+    );
+    ir.model.feature_input_topologies = crate::history::project_feature_input_topologies(
+        &ir.model.features,
+        &native.design_parameter_scopes,
+        &native.asm_histories,
+        &native.design_edge_operands,
+    );
+    crate::history::bind_feature_outputs(
+        &mut ir.model.features,
+        &native.design_parameter_scopes,
+        &native.asm_histories,
+        &ir.model.bodies,
+    );
+    crate::history::bind_sweep_result_modes(&mut ir.model.features, &ir.model.bodies);
+    crate::history::bind_feature_body_selections(
+        &mut ir.model.features,
+        &crate::history::FeatureBodySelectionInputs {
+            scopes: &native.design_parameter_scopes,
+            groups: &native.design_construction_operand_groups,
+            body_recipe_operands: &native.design_body_recipe_operands,
+            histories: &native.asm_histories,
+            bodies: &ir.model.bodies,
+            regions: &ir.model.regions,
+            shells: &ir.model.shells,
+        },
+    );
+    crate::history::bind_feature_face_selections(
+        &mut ir.model.features,
+        &mut ir.model.feature_input_topologies,
+        &native.design_parameter_scopes,
+        &native.design_construction_operand_groups,
+        &native.design_face_operands,
+        &native.design_entity_selection_operands,
+        &native.design_body_recipe_operands,
+        &native.asm_histories,
+    );
+    crate::history::bind_feature_path_selections(
+        &mut ir.model.features,
+        &native.design_parameter_scopes,
+        &native.design_construction_operand_groups,
+        &native.design_entity_selection_operands,
+    );
+    crate::design::feature_project::bind_revolve_face_axes(
+        &mut ir.model.features,
+        &native.design_parameter_scopes,
+        &native.design_construction_operand_groups,
+        &native.design_entity_selection_operands,
+        &ir.model.faces,
+        &ir.model.surfaces,
+    );
+    (ir.model.sketches, ir.model.sketch_entities) =
+        crate::design::sketch_project::project_sketch_design(
+            &native.design_sketch_placements,
+            &native.sketch_points,
+            &native.sketch_curve_identities,
+            &native.sketch_texts,
+            ir.tolerances.linear,
+        );
+    (ir.model.spatial_sketches, ir.model.spatial_sketch_entities) =
+        crate::design::sketch_project::project_spatial_sketch_design(
+            &native.design_sketch_placements,
+            &native.sketch_points,
+            &native.sketch_curve_identities,
+            &native.sketch_surfaces,
+            &native.sketch_relations,
+            ir.tolerances.linear,
+        );
+    crate::design::profile_select::bind_sweep_sketch_selections(
+        &mut ir.model.features,
+        &crate::design::profile_select::SketchCurveSelectionResolution {
+            scopes: &native.design_parameter_scopes,
+            groups: &native.design_construction_operand_groups,
+            operands: &native.design_entity_selection_operands,
+            placements: &native.design_sketch_placements,
+            curve_identities: &native.sketch_curve_identities,
+            sketches: &ir.model.sketches,
+            sketch_entities: &ir.model.sketch_entities,
+        },
+    );
+    crate::design::profile_select::bind_split_face_sketch_selections(
+        &mut ir.model.features,
+        &crate::design::profile_select::SketchCurveSelectionResolution {
+            scopes: &native.design_parameter_scopes,
+            groups: &native.design_construction_operand_groups,
+            operands: &native.design_entity_selection_operands,
+            placements: &native.design_sketch_placements,
+            curve_identities: &native.sketch_curve_identities,
+            sketches: &ir.model.sketches,
+            sketch_entities: &ir.model.sketch_entities,
+        },
+    );
+    crate::design::profile_select::bind_loft_sketch_selections(
+        scan,
+        &native.design_construction_operand_groups,
+        &native.design_record_headers,
+        &crate::design::profile_select::LoftSketchResolution {
+            entities: &native.design_entity_headers,
+            entity_selection_operands: &native.design_entity_selection_operands,
+            placements: &native.design_sketch_placements,
+            curve_identities: &native.sketch_curve_identities,
+            spatial_sketches: &ir.model.spatial_sketches,
+        },
+        &mut ir.model.features,
+    )?;
+    crate::design::feature_project::bind_sketch_feature_geometry(
+        &mut ir.model.features,
+        &native.design_parameter_scopes,
+        &native.design_sketch_placements,
+        &ir.model.sketches,
+        &ir.model.spatial_sketches,
+    );
+    ir.model.spatial_sketch_constraints =
+        crate::design::sketch_project::project_spatial_sketch_constraints(
+            &native.design_sketch_placements,
+            &native.sketch_relations,
+            &native.sketch_points,
+            &native.sketch_curve_identities,
+            &native.sketch_surfaces,
+            &ir.model.spatial_sketch_entities,
+        );
+    crate::design::profile_select::bind_extrude_profile_selections(
+        &mut ir.model.features,
+        &native.design_parameter_scopes,
+        &native.design_extrude_selection_groups,
+        &native.design_extrude_selection_members,
+        &ir.model.sketches,
+        crate::design::profile_select::ExtrudeProfileResolution {
+            entities: &ir.model.sketch_entities,
+            spatial_sketches: &ir.model.spatial_sketches,
+            spatial_entities: &ir.model.spatial_sketch_entities,
+            histories: &native.asm_histories,
+            linear_tolerance: ir.tolerances.linear,
+            angular_tolerance: ir.tolerances.angular,
+        },
+    );
+    crate::history::discard_projection_caches(&mut native.asm_histories);
+    crate::design::face_resolve::bind_extrude_start_planes(
+        &mut ir.model.features,
+        &ir.model.sketches,
+        &mut crate::design::face_resolve::ExtrudeStartPlaneResolution {
+            faces: &ir.model.faces,
+            surfaces: &ir.model.surfaces,
+            groups: &native.design_construction_operand_groups,
+            operands: &mut native.design_face_operands,
+            linear_tolerance: ir.tolerances.linear,
+            angular_tolerance: ir.tolerances.angular,
+        },
+    );
+    ir.model.sketch_constraints = crate::design::constraints::project_sketch_constraints(
+        &native.design_sketch_placements,
+        &native.design_parameters,
+        &native.sketch_points,
+        &native.sketch_curve_identities,
+        &native.sketch_texts,
+        &native.sketch_relations,
+        &ir.model.sketch_entities,
+    );
+    let constraint_inputs = crate::design::dimensions::DimensionConstraintInputs {
+        placements: &native.design_sketch_placements,
+        parameters: &native.design_parameters,
+        owners: &native.design_parameter_owners,
+        pairs: &native.design_dimension_locus_pairs,
+        groups: &native.design_dimension_locus_groups,
+        annotation_frames: &native.design_dimension_annotation_frames,
+        null_pairs: &native.design_dimension_null_locus_pairs,
+        companions: &native.design_parameter_companions,
+        recipe_records: &native.design_dimension_recipe_records,
+        points: &native.sketch_points,
+        curves: &native.sketch_curve_identities,
+        entities: &ir.model.sketch_entities,
+    };
+    ir.model
+        .sketch_constraints
+        .extend(crate::design::dimensions::project_dimension_constraints(
+            &constraint_inputs,
+            &ir.model.spatial_sketches,
+            ir.tolerances.linear,
+        ));
+    ir.model.spatial_sketch_constraints.extend(
+        crate::design::dimensions::project_spatial_dimension_constraints(
+            &constraint_inputs,
+            &ir.model.spatial_sketches,
+            &ir.model.spatial_sketch_entities,
+            ir.tolerances.linear,
+        ),
+    );
+    crate::design::dimensions::bind_offset_dimension_parameters(
+        &mut ir.model.sketch_constraints,
+        &native.design_parameters,
+    );
+    ir.model
+        .sketch_constraints
+        .sort_by_key(|constraint| constraint.id.clone());
+    ir.model
+        .spatial_sketch_constraints
+        .sort_by_key(|constraint| constraint.id.clone());
+    let act = crate::act::decode(scan)?;
+    native.act_entities = act.entities;
+    native.act_guids = act.guids;
+    native.act_root_components = act.root_components;
+    report_unresolved_dimension_companions(&mut report, &native, &ir);
+    report_unresolved_configuration_rules(&mut report, &native, &ir);
+    if !native.lost_edge_references.is_empty() {
+        report.losses.push(LossNote {
+        code: LossKind::AttributesNotTransferred,
+            severity: Severity::Warning,
+            message: format!(
+                "{} source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and cannot be replayed without repair.",
+                native.lost_edge_references.len()
+            ),
+            provenance: None,
+        });
+    }
+    ir.model.appearances = decoded_materials.appearances;
+    ir.model.appearance_bindings = decoded_materials.bindings;
+    resolve_face_appearance_bindings(&mut ir, &decoded_materials.face_assignments);
+    apply_appearance_base_colors(&mut ir);
+    ir.model.appearance_bindings.sort_by(|a, b| a.id.cmp(&b.id));
+    reconcile_appearance_loss(&mut report, &ir, decoded_materials.has_topology_assignments);
+    annotate_docstruct(&mut ir, scan);
+    match crate::xref::decode(scan) {
+        Ok(Some(table)) => {
+            ir.model.occurrences = crate::xref::project_occurrences(&table);
+            crate::xref::bind_component_insert_features(
+                &mut ir.model.features,
+                &native.design_parameter_scopes,
+                &table,
+            );
+            native.xref_designs = table.designs;
+            native.xref_references = table.references;
+        }
+        Ok(None) => {}
+        Err(error) => report.losses.push(xref_parse_loss(&error)),
+    }
+    let (components, occurrences) = crate::design::components::project_local_components(
+        &native.design_parameter_scopes,
+        &native.design_component_occurrences,
+    );
+    ir.model.product_definitions.extend(components);
+    ir.model.occurrences.extend(occurrences);
+    ir.model.assembly_joints = crate::design::assembly::project_assembly_joints(
+        &native.design_parameter_scopes,
+        &native.design_component_occurrences,
+    );
+    report_design_projection_gaps(&mut report, &ir, &native);
+    native.store(ir.native.namespace_mut("f3d"))?;
+    let annotations = populate_annotations(
+        &ir,
+        scan,
+        &native,
+        Some((&primary_model_brep.name, &annotation_records)),
+        &unknowns,
+    );
+    let source_image = preserve_source_image(scan);
+    decode_result(ir, report, annotations, unknowns, source_image)
+}
+
 fn brep_identity_namespace(entry: &str) -> Option<&str> {
     entry.rsplit('/').next()?.strip_prefix("BREP.")
 }
@@ -1302,432 +1786,21 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             decoded_brep_count += 1;
         }
         if decoded_brep_count != 0 {
-            let mut report = build_geometry_report(&scan, &brep);
-            if decoded_brep_count != model_breps.len() {
-                report.losses.push(LossNote {
-                    code: LossKind::GeometryNotTransferred,
-                    severity: Severity::Warning,
-                    message: format!(
-                        "{} Design-referenced BREP blob(s) could not be decoded.",
-                        model_breps.len() - decoded_brep_count
-                    ),
-                    provenance: None,
-                });
-            }
-            let decoded_materials = materials::decode_with_bodies(&scan, &brep.asm.body_keys)?;
-            let annotation_records = std::mem::take(&mut brep.asm.annotation_records);
-            let (mut ir, mut native, unknowns) =
-                build_geometry_ir(&scan, &primary_model_brep, brep);
-            let (subds, subd_losses) = crate::tsm::decode(&scan)?;
-            ir.model.subds = subds;
-            project_mesh_bodies(&scan, &mut ir, &mut report)?;
-            report.losses.extend(subd_losses);
-            native.body_visibilities = body_visibilities;
-            for history_brep in container::history_breps(&scan) {
-                if let Some(history) = decode_asm_history(ctx, &scan, history_brep)? {
-                    native.asm_histories.push(history);
-                }
-            }
-            native.construction_recipes = crate::design::decode::parameters::decode_recipes(&scan)?;
-            native.persistent_references =
-                crate::design::decode::sketch::decode_persistent_references(&scan)?;
-            native.lost_edge_references =
-                crate::design::decode::sketch::decode_lost_edge_references(&scan)?;
-            native.design_material_assignments =
-                crate::materials::decode_design_assignments(&scan)?;
-            native.design_types = crate::design::decode::sketch::decode_types(&scan)?;
-            native.design_parameters = crate::design::decode::parameters::decode_parameters(&scan)?;
-            native.design_entity_headers =
-                crate::design::decode::sketch::decode_entity_headers(&scan)?;
-            native.design_record_headers = crate::design::decode::sketch::decode_record_headers(
+            return finish_model_decode(
+                ctx,
                 &scan,
-                &native.design_entity_headers,
-            )?;
-            let sketch_relations = {
-                crate::design::decode::sketch::decode_sketch_relations(
-                    &scan,
-                    &native.design_record_headers,
-                )?
-            };
-            native.sketch_relations = sketch_relations;
-            extend_related_design_records(&scan, &mut native)?;
-            native.sketch_points = crate::design::decode::sketch::decode_sketch_points(&scan)?;
-            native.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(&scan)?;
-            native.sketch_curve_identities =
-                crate::design::decode::sketch::decode_sketch_curve_identities(&scan)?;
-            native.sketch_surfaces = crate::design::decode::sketch::decode_sketch_surfaces(&scan)?;
-            crate::design::decode::sketch::bind_sketch_graph(
-                &native.design_entity_headers,
-                &mut native.sketch_points,
-                &mut native.sketch_curve_identities,
-                &mut native.sketch_surfaces,
-                &mut native.sketch_relations,
-            )?;
-            crate::design::decode::operands::bind_extrude_selection_geometry(
-                &mut native.design_extrude_selection_members,
-                &native.design_extrude_selection_groups,
-                &native.design_parameter_scopes,
-                &native.sketch_points,
-                &native.sketch_curve_identities,
+                &primary_model_brep,
+                brep,
+                body_visibilities,
+                model_breps.len() - decoded_brep_count,
             );
-            let dimension_inputs = crate::design::decode::dimension_frames::DimensionDecodeInputs {
-                scan: &scan,
-                parameters: &native.design_parameters,
-                owners: &native.design_parameter_owners,
-                companions: &native.design_parameter_companions,
-                scopes: &native.design_parameter_scopes,
-                headers: &native.design_record_headers,
-                points: &native.sketch_points,
-                curves: &native.sketch_curve_identities,
-            };
-            native.design_dimension_locus_pairs =
-                crate::design::decode::dimension_frames::decode_dimension_locus_pairs(
-                    &dimension_inputs,
-                )?;
-            native.design_dimension_annotation_frames =
-                crate::design::decode::dimension_frames::decode_dimension_annotation_frames(
-                    &dimension_inputs,
-                    &native.design_entity_headers,
-                )?;
-            native.design_dimension_locus_groups =
-                crate::design::decode::dimension_frames::decode_dimension_locus_groups(
-                    &dimension_inputs,
-                    &native.design_entity_headers,
-                )?;
-            native.design_dimension_null_locus_pairs =
-                crate::design::decode::dimension_frames::decode_dimension_null_locus_pairs(
-                    &dimension_inputs,
-                    &native.design_dimension_locus_pairs,
-                    &native.design_dimension_locus_groups,
-                )?;
-            crate::design::dimensions::remove_dimension_frame_relations(
-                &mut native.sketch_relations,
-                &native.design_dimension_locus_pairs,
-                &native.design_dimension_locus_groups,
-                &native.design_dimension_null_locus_pairs,
-            );
-            crate::design::dimensions::bind_dimension_loci(
-                &native.design_sketch_placements,
-                &native.design_parameter_owners,
-                &native.design_dimension_locus_pairs,
-                &native.design_dimension_locus_groups,
-                &native.design_dimension_annotation_frames,
-                &native.design_dimension_null_locus_pairs,
-                &mut native.sketch_points,
-                &mut native.sketch_curve_identities,
-            )?;
-            native.design_body_members = crate::design::decode::body::decode_body_members(&scan)?;
-            native.design_body_bindings = crate::design::decode::body::decode_design_body_bindings(
-                &scan,
-                Some(&primary_model_brep.name),
-                &native.body_native_keys,
-            )?;
-            native.design_body_bounds = crate::design::decode::body::decode_body_bounds(
-                &scan,
-                &native.design_entity_headers,
-            )?;
-            crate::design::decode::body::bind_body_bounds(
-                &mut native.design_body_bounds,
-                &native.design_body_bindings,
-            );
-            native.design_configurations =
-                crate::design::configurations::decode_configurations(&scan)?;
-            ir.model.configurations = crate::design::configurations::project_configurations(
-                &native.design_configurations,
-            );
-            (ir.model.features, ir.model.parameters) =
-                crate::design::feature_project::project_parameter_design_with_edge_identities(
-                    &crate::design::feature_project::ProjectInputs {
-                        native: &native.design_parameters,
-                        owners: &native.design_parameter_owners,
-                        scopes: &native.design_parameter_scopes,
-                        construction_groups: &native.design_construction_operand_groups,
-                        fillet_radius_groups: &native.design_fillet_radius_groups,
-                        edge_operands: &native.design_edge_operands,
-                        edge_identity_operands: &native.design_edge_identity_operands,
-                        entity_selection_operands: &native.design_entity_selection_operands,
-                        curve_identities: &native.sketch_curve_identities,
-                        face_operands: &native.design_face_operands,
-                        placements: &native.design_sketch_placements,
-                        body_bindings: &native.design_body_bindings,
-                        histories: &native.asm_histories,
-                    },
-                );
-            crate::design::feature_project::bind_form_cages(
-                &scan,
-                &native.design_parameter_scopes,
-                &mut ir.model.features,
-                &ir.model.subds,
-            )?;
-            ir.model.assets = crate::design::decode::canvas::project_canvas_images(
-                &scan,
-                &native.design_parameter_scopes,
-                &native.design_canvas_images,
-                &mut ir.model.features,
-            )?;
-            crate::design::configurations::bind_configuration_parameter_overrides(
-                &mut ir.model.configurations,
-                &ir.model.parameters,
-            );
-            crate::design::configurations::bind_configuration_suppressed_features(
-                &mut ir.model.configurations,
-                &ir.model.features,
-            );
-            ir.model.feature_input_topologies = crate::history::project_feature_input_topologies(
-                &ir.model.features,
-                &native.design_parameter_scopes,
-                &native.asm_histories,
-                &native.design_edge_operands,
-            );
-            crate::history::bind_feature_outputs(
-                &mut ir.model.features,
-                &native.design_parameter_scopes,
-                &native.asm_histories,
-                &ir.model.bodies,
-            );
-            crate::history::bind_sweep_result_modes(&mut ir.model.features, &ir.model.bodies);
-            crate::history::bind_feature_body_selections(
-                &mut ir.model.features,
-                &crate::history::FeatureBodySelectionInputs {
-                    scopes: &native.design_parameter_scopes,
-                    groups: &native.design_construction_operand_groups,
-                    body_recipe_operands: &native.design_body_recipe_operands,
-                    histories: &native.asm_histories,
-                    bodies: &ir.model.bodies,
-                    regions: &ir.model.regions,
-                    shells: &ir.model.shells,
-                },
-            );
-            crate::history::bind_feature_face_selections(
-                &mut ir.model.features,
-                &mut ir.model.feature_input_topologies,
-                &native.design_parameter_scopes,
-                &native.design_construction_operand_groups,
-                &native.design_face_operands,
-                &native.design_entity_selection_operands,
-                &native.design_body_recipe_operands,
-                &native.asm_histories,
-            );
-            crate::history::bind_feature_path_selections(
-                &mut ir.model.features,
-                &native.design_parameter_scopes,
-                &native.design_construction_operand_groups,
-                &native.design_entity_selection_operands,
-            );
-            crate::design::feature_project::bind_revolve_face_axes(
-                &mut ir.model.features,
-                &native.design_parameter_scopes,
-                &native.design_construction_operand_groups,
-                &native.design_entity_selection_operands,
-                &ir.model.faces,
-                &ir.model.surfaces,
-            );
-            (ir.model.sketches, ir.model.sketch_entities) =
-                crate::design::sketch_project::project_sketch_design(
-                    &native.design_sketch_placements,
-                    &native.sketch_points,
-                    &native.sketch_curve_identities,
-                    &native.sketch_texts,
-                    ir.tolerances.linear,
-                );
-            (ir.model.spatial_sketches, ir.model.spatial_sketch_entities) =
-                crate::design::sketch_project::project_spatial_sketch_design(
-                    &native.design_sketch_placements,
-                    &native.sketch_points,
-                    &native.sketch_curve_identities,
-                    &native.sketch_surfaces,
-                    &native.sketch_relations,
-                    ir.tolerances.linear,
-                );
-            crate::design::profile_select::bind_sweep_sketch_selections(
-                &mut ir.model.features,
-                &crate::design::profile_select::SketchCurveSelectionResolution {
-                    scopes: &native.design_parameter_scopes,
-                    groups: &native.design_construction_operand_groups,
-                    operands: &native.design_entity_selection_operands,
-                    placements: &native.design_sketch_placements,
-                    curve_identities: &native.sketch_curve_identities,
-                    sketches: &ir.model.sketches,
-                    sketch_entities: &ir.model.sketch_entities,
-                },
-            );
-            crate::design::profile_select::bind_split_face_sketch_selections(
-                &mut ir.model.features,
-                &crate::design::profile_select::SketchCurveSelectionResolution {
-                    scopes: &native.design_parameter_scopes,
-                    groups: &native.design_construction_operand_groups,
-                    operands: &native.design_entity_selection_operands,
-                    placements: &native.design_sketch_placements,
-                    curve_identities: &native.sketch_curve_identities,
-                    sketches: &ir.model.sketches,
-                    sketch_entities: &ir.model.sketch_entities,
-                },
-            );
-            crate::design::profile_select::bind_loft_sketch_selections(
-                &scan,
-                &native.design_construction_operand_groups,
-                &native.design_record_headers,
-                &crate::design::profile_select::LoftSketchResolution {
-                    entities: &native.design_entity_headers,
-                    entity_selection_operands: &native.design_entity_selection_operands,
-                    placements: &native.design_sketch_placements,
-                    curve_identities: &native.sketch_curve_identities,
-                    spatial_sketches: &ir.model.spatial_sketches,
-                },
-                &mut ir.model.features,
-            )?;
-            crate::design::feature_project::bind_sketch_feature_geometry(
-                &mut ir.model.features,
-                &native.design_parameter_scopes,
-                &native.design_sketch_placements,
-                &ir.model.sketches,
-                &ir.model.spatial_sketches,
-            );
-            ir.model.spatial_sketch_constraints =
-                crate::design::sketch_project::project_spatial_sketch_constraints(
-                    &native.design_sketch_placements,
-                    &native.sketch_relations,
-                    &native.sketch_points,
-                    &native.sketch_curve_identities,
-                    &native.sketch_surfaces,
-                    &ir.model.spatial_sketch_entities,
-                );
-            crate::design::profile_select::bind_extrude_profile_selections(
-                &mut ir.model.features,
-                &native.design_parameter_scopes,
-                &native.design_extrude_selection_groups,
-                &native.design_extrude_selection_members,
-                &ir.model.sketches,
-                crate::design::profile_select::ExtrudeProfileResolution {
-                    entities: &ir.model.sketch_entities,
-                    spatial_sketches: &ir.model.spatial_sketches,
-                    spatial_entities: &ir.model.spatial_sketch_entities,
-                    histories: &native.asm_histories,
-                    linear_tolerance: ir.tolerances.linear,
-                    angular_tolerance: ir.tolerances.angular,
-                },
-            );
-            crate::history::discard_projection_caches(&mut native.asm_histories);
-            crate::design::face_resolve::bind_extrude_start_planes(
-                &mut ir.model.features,
-                &ir.model.sketches,
-                &mut crate::design::face_resolve::ExtrudeStartPlaneResolution {
-                    faces: &ir.model.faces,
-                    surfaces: &ir.model.surfaces,
-                    groups: &native.design_construction_operand_groups,
-                    operands: &mut native.design_face_operands,
-                    linear_tolerance: ir.tolerances.linear,
-                    angular_tolerance: ir.tolerances.angular,
-                },
-            );
-            ir.model.sketch_constraints = crate::design::constraints::project_sketch_constraints(
-                &native.design_sketch_placements,
-                &native.design_parameters,
-                &native.sketch_points,
-                &native.sketch_curve_identities,
-                &native.sketch_texts,
-                &native.sketch_relations,
-                &ir.model.sketch_entities,
-            );
-            let constraint_inputs = crate::design::dimensions::DimensionConstraintInputs {
-                placements: &native.design_sketch_placements,
-                parameters: &native.design_parameters,
-                owners: &native.design_parameter_owners,
-                pairs: &native.design_dimension_locus_pairs,
-                groups: &native.design_dimension_locus_groups,
-                annotation_frames: &native.design_dimension_annotation_frames,
-                null_pairs: &native.design_dimension_null_locus_pairs,
-                companions: &native.design_parameter_companions,
-                recipe_records: &native.design_dimension_recipe_records,
-                points: &native.sketch_points,
-                curves: &native.sketch_curve_identities,
-                entities: &ir.model.sketch_entities,
-            };
-            ir.model.sketch_constraints.extend(
-                crate::design::dimensions::project_dimension_constraints(
-                    &constraint_inputs,
-                    &ir.model.spatial_sketches,
-                    ir.tolerances.linear,
-                ),
-            );
-            ir.model.spatial_sketch_constraints.extend(
-                crate::design::dimensions::project_spatial_dimension_constraints(
-                    &constraint_inputs,
-                    &ir.model.spatial_sketches,
-                    &ir.model.spatial_sketch_entities,
-                    ir.tolerances.linear,
-                ),
-            );
-            crate::design::dimensions::bind_offset_dimension_parameters(
-                &mut ir.model.sketch_constraints,
-                &native.design_parameters,
-            );
-            ir.model
-                .sketch_constraints
-                .sort_by_key(|constraint| constraint.id.clone());
-            ir.model
-                .spatial_sketch_constraints
-                .sort_by_key(|constraint| constraint.id.clone());
-            let act = crate::act::decode(&scan)?;
-            native.act_entities = act.entities;
-            native.act_guids = act.guids;
-            native.act_root_components = act.root_components;
-            report_unresolved_dimension_companions(&mut report, &native, &ir);
-            report_unresolved_configuration_rules(&mut report, &native, &ir);
-            if !native.lost_edge_references.is_empty() {
-                report.losses.push(LossNote {
-                code: LossKind::AttributesNotTransferred,
-                    severity: Severity::Warning,
-                    message: format!(
-                        "{} source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and cannot be replayed without repair.",
-                        native.lost_edge_references.len()
-                    ),
-                    provenance: None,
-                });
-            }
-            ir.model.appearances = decoded_materials.appearances;
-            ir.model.appearance_bindings = decoded_materials.bindings;
-            resolve_face_appearance_bindings(&mut ir, &decoded_materials.face_assignments);
-            apply_appearance_base_colors(&mut ir);
-            ir.model.appearance_bindings.sort_by(|a, b| a.id.cmp(&b.id));
-            reconcile_appearance_loss(&mut report, &ir, decoded_materials.has_topology_assignments);
-            annotate_docstruct(&mut ir, &scan);
-            match crate::xref::decode(&scan) {
-                Ok(Some(table)) => {
-                    ir.model.occurrences = crate::xref::project_occurrences(&table);
-                    crate::xref::bind_component_insert_features(
-                        &mut ir.model.features,
-                        &native.design_parameter_scopes,
-                        &table,
-                    );
-                    native.xref_designs = table.designs;
-                    native.xref_references = table.references;
-                }
-                Ok(None) => {}
-                Err(error) => report.losses.push(xref_parse_loss(&error)),
-            }
-            let (components, occurrences) = crate::design::components::project_local_components(
-                &native.design_parameter_scopes,
-                &native.design_component_occurrences,
-            );
-            ir.model.product_definitions.extend(components);
-            ir.model.occurrences.extend(occurrences);
-            ir.model.assembly_joints = crate::design::assembly::project_assembly_joints(
-                &native.design_parameter_scopes,
-                &native.design_component_occurrences,
-            );
-            report_design_projection_gaps(&mut report, &ir, &native);
-            native.store(ir.native.namespace_mut("f3d"))?;
-            let annotations = populate_annotations(
-                &ir,
-                &scan,
-                &native,
-                Some((&primary_model_brep.name, &annotation_records)),
-                &unknowns,
-            );
-            let source_image = preserve_source_image(&scan);
-            return decode_result(ir, report, annotations, unknowns, source_image);
         }
+    }
+
+    // No binary stream decoded: the model may be carried only in the text
+    // encoding.
+    if let Some((text_facts, text_brep)) = try_decode_text_model(&scan)? {
+        return finish_model_decode(ctx, &scan, &text_facts, text_brep, Vec::new(), 0);
     }
 
     // No decodable SAB stream: use container metadata.
@@ -3584,18 +3657,17 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     let text_breps = container::text_brep_names(scan);
 
     let (geometry, topology) = match (brep_count, selected) {
-        // The text carrier is present. This codec cannot read its encoding.
-        // Record that carrier state in the report.
+        // The text carrier is present but its decode produced no geometry.
         (0, _) if !text_breps.is_empty() => (
             format!(
                 "ASM BREP geometry was not transferred: the document's only geometry carrier is \
-                 the text-encoded ASM stream(s) `{}`, which this codec locates but does not read, \
-                 so no surfaces, curves, or points were produced.",
+                 the text-encoded ASM stream(s) `{}`, and their decode produced no surfaces, \
+                 curves, or points.",
                 text_breps.join("`, `")
             ),
             format!(
                 "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not \
-                 built: the carrier(s) `{}` use the text encoding, which is not read.",
+                 built from the text-encoded carrier(s) `{}`.",
                 text_breps.join("`, `")
             ),
         ),
@@ -3663,8 +3735,8 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
             severity: Severity::Error,
             message: if brep_count == 0 && !text_breps.is_empty() {
                 format!(
-                    "{} ASM BREP stream(s) are present in the text encoding (.sat/.smt), which is \
-                     not read; no binary stream (.smb/.smbh) was found",
+                    "{} ASM BREP stream(s) are present in the text encoding (.sat/.smt) and \
+                     produced no geometry; no binary stream (.smb/.smbh) was found",
                     text_breps.len()
                 )
             } else if brep_count == 0 {

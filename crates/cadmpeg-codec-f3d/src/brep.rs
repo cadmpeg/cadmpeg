@@ -9,8 +9,8 @@ use crate::records::{
 use cadmpeg_asm::brep::attributes::attribute_key;
 use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_asm::brep::{
-    collect_entity_adjacency, collect_owned_ids, decode_with_purpose, remap_owned_ids,
-    retain_root_entities, AsmBrep, DecodePurpose,
+    collect_entity_adjacency, collect_owned_ids, decode_with_header, decode_with_purpose,
+    remap_owned_ids, retain_root_entities, AsmBrep, DecodePurpose,
 };
 use cadmpeg_asm::ids::IdFormat;
 use cadmpeg_asm::sab::Record;
@@ -245,6 +245,28 @@ pub fn decode(records: &[Record], bytes: &[u8], stream: &str, format: IdFormat<'
         records,
         bytes,
         stream,
+        format,
+        DecodePurpose::Model,
+    ))
+}
+
+/// Decode a parsed text stream ([`cadmpeg_asm::sat`]) into the IR B-rep graph.
+///
+/// The text parser already typed the records and converted lengths into the
+/// binary centimetre convention, so the shared decode path runs unchanged.
+/// The header comes from the stream's ASCII header lines rather than a binary
+/// header parse of `bytes`.
+pub fn decode_text(
+    stream: &cadmpeg_asm::sat::TextStream,
+    bytes: &[u8],
+    entry: &str,
+    format: IdFormat<'_>,
+) -> Brep {
+    Brep::from_asm(decode_with_header(
+        &stream.records,
+        bytes,
+        Some(stream.header.as_asm_header()),
+        entry,
         format,
         DecodePurpose::Model,
     ))

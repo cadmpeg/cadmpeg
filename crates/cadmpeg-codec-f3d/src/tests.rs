@@ -24737,8 +24737,8 @@ fn synthetic_asm_text_stream() -> Vec<u8> {
 }
 
 /// A BREP-less `.f3d` whose `Breps.BlobParts` holds text-encoded ASM members
-/// only. This is the shape of an early-generation archive: a geometry carrier is
-/// present, and its encoding is one this codec does not read.
+/// only. This is the shape of an early-generation archive: the text streams
+/// are the document's geometry carriers.
 fn f3d_with_text_brep(members: &[&str]) -> Vec<u8> {
     let base = f3d_without_brep("part-design", "part.f3d", &[]);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -24886,9 +24886,10 @@ fn brep_less_part_reports_an_absent_stream_not_a_failed_decode() {
 /// A document whose only geometry carrier uses the text encoding does declare a
 /// carrier. Reporting an absent stream names the wrong gap: the geometry is in
 /// the archive and its encoding is not read. The two statements send a reader to
-/// different places, so the report must separate them.
+/// A geometry-less text carrier is reported as a carrier whose decode
+/// produced nothing, not as an absent stream.
 #[test]
-fn a_text_only_carrier_is_reported_as_unread_not_as_absent() {
+fn a_text_only_carrier_without_geometry_is_reported_as_empty_not_absent() {
     let archive = f3d_with_text_brep(&[
         "Fusion[Active]/Breps.BlobParts/BREP0.sat",
         "Fusion[Active]/Breps.BlobParts/BREP1.sat",
@@ -24909,7 +24910,7 @@ fn a_text_only_carrier_is_reported_as_unread_not_as_absent() {
     let geometry = message(LossCode::GeometryNotTransferred);
     assert!(
         geometry.contains("text-encoded ASM stream(s)") && geometry.contains("BREP0.sat"),
-        "geometry loss must name the unread text carrier: {geometry}"
+        "geometry loss must name the empty text carrier: {geometry}"
     );
     assert!(
         !geometry.contains("declares no ASM BREP stream"),
@@ -24918,15 +24919,63 @@ fn a_text_only_carrier_is_reported_as_unread_not_as_absent() {
 
     let topology = message(LossCode::TopologyNotTransferred);
     assert!(
-        topology.contains("text encoding"),
-        "topology loss must state the unread encoding: {topology}"
+        topology.contains("text-encoded"),
+        "topology loss must name the encoding: {topology}"
     );
 
     assert_eq!(
         message(LossCode::MissingGeometryStream),
-        "2 ASM BREP stream(s) are present in the text encoding (.sat/.smt), which is not read; no \
-         binary stream (.smb/.smbh) was found"
+        "2 ASM BREP stream(s) are present in the text encoding (.sat/.smt) and produced no \
+         geometry; no binary stream (.smb/.smbh) was found"
     );
+}
+
+/// A text carrier with a complete solid decodes through the shared B-rep
+/// path: the loopless closed sphere face reaches the model arenas with its
+/// radius in millimetres per the stream's unit rule.
+#[test]
+fn a_text_carrier_with_geometry_decodes_through_the_shared_brep_path() {
+    let mut text = String::new();
+    text.push_str("23200 0 2 2 \n");
+    text.push_str("16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic \n");
+    text.push_str("1 9.999999999999999547e-07 1.000000000000000036e-10 \n");
+    text.push_str("asmheader $-1 -1 @13 232.4.0.65535 #\n");
+    text.push_str("body $-1 -1 $-1 $2 $-1 $-1 #\n");
+    text.push_str("lump $-1 -1 $-1 $-1 $3 $1 #\n");
+    text.push_str("shell $-1 -1 $-1 $-1 $-1 $4 $-1 $2 #\n");
+    text.push_str("face $-1 -1 $-1 $-1 $-1 $3 $-1 $5 forward single #\n");
+    text.push_str("sphere-surface $-1 -1 $-1 0 0 0 25 1 0 0 0 0 1 forward_v I I I I #\n");
+    text.push_str("End-of-ASM-data\n");
+
+    let base = f3d_without_brep("part-design", "part.f3d", &[]);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut source = zip::ZipArchive::new(Cursor::new(base)).unwrap();
+    for i in 0..source.len() {
+        let mut entry = source.by_index(i).unwrap();
+        let name = entry.name().to_owned();
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
+        zip.start_file(name, stored).unwrap();
+        zip.write_all(&bytes).unwrap();
+    }
+    zip.start_file("Fusion[Active]/Breps.BlobParts/BREP0.sat", stored)
+        .unwrap();
+    zip.write_all(text.as_bytes()).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(decoded.ir.model.faces.len(), 1);
+    assert_eq!(decoded.ir.model.surfaces.len(), 1);
+    let surface = &decoded.ir.model.surfaces[0];
+    let cadmpeg_ir::geometry::SurfaceGeometry::Sphere { radius, .. } = &surface.geometry else {
+        panic!("sphere carrier expected, got {:?}", surface.geometry);
+    };
+    // 25 stream units at scale 1 (millimetres per unit) are 25 mm.
+    assert!((radius - 25.0).abs() < 1e-9);
 }
 
 /// Several BREP streams with no Design body map leave the selection ambiguous.
