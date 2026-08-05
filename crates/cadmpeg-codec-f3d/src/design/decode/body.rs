@@ -7,9 +7,10 @@ use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::RECIPES;
 use crate::ids::{self, native_stream};
 use crate::records::{
-    BodyNativeKey, ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector,
-    DesignBodyBinding, DesignBodyBounds, DesignBodyMember, DesignEntityHeader, DESIGN_MODULE_BODY,
+    ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector, DesignBodyBinding,
+    DesignBodyBounds, DesignBodyMember, DesignEntityHeader, DESIGN_MODULE_BODY,
 };
+use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_codec_core::le::{f64_at, u32_at, u32_at as read_u32, u64_at as read_u64};
 use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::math::Point3;

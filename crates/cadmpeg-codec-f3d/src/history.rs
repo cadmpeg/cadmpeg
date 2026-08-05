@@ -5363,7 +5363,9 @@ fn relation_map(items: &[AsmHistoricalRelation]) -> HashMap<i64, &[i64]> {
         .collect()
 }
 
-pub(crate) fn historical_topology(brep: &crate::brep::AsmBrep) -> Option<AsmHistoricalTopology> {
+pub(crate) fn historical_topology(
+    brep: &cadmpeg_asm::brep::AsmBrep,
+) -> Option<AsmHistoricalTopology> {
     fn entity_ref(id: &str) -> Option<i64> {
         id.rsplit_once('#')?
             .1
@@ -6975,7 +6977,7 @@ mod tests {
         };
 
         let id = |slot| format!("f3d:brep:entity#{slot}");
-        let mut brep = crate::brep::AsmBrep::default();
+        let mut brep = cadmpeg_asm::brep::AsmBrep::default();
         brep.bodies.push(Body {
             id: BodyId(id(1)),
             kind: BodyKind::Solid,

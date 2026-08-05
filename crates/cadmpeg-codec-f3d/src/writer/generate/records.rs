@@ -44,15 +44,15 @@ pub(crate) fn native_tolerant_coedge_extension(
     match extension {
         None
         | Some(
-            crate::records::TolerantCoedgeExtension::None
-            | crate::records::TolerantCoedgeExtension::Empty { target: None },
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::None
+            | cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: None },
         ) => {
             native_ref(records, -1);
             native_i64(records, 0);
             native_i64(records, 0);
             Ok(())
         }
-        Some(crate::records::TolerantCoedgeExtension::EmbeddedCurve {
+        Some(cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
             target: None,
             curve_reversed,
             parameter_range,
@@ -80,7 +80,7 @@ pub(crate) fn native_tolerant_coedge_extension(
             };
             let mut native_curve = curve.clone();
             if *curve_reversed {
-                crate::brep::geometry::reverse_nurbs_curve(&mut native_curve);
+                cadmpeg_asm::brep::geometry::reverse_nurbs_curve(&mut native_curve);
             }
             native_ref(records, -1);
             native_i64(records, 1);

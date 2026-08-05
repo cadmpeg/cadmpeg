@@ -2363,8 +2363,8 @@ fn native_face_sidedness(
     records.push(native_bool(containment.is_some()));
     if let Some(containment) = containment {
         records.push(match containment {
-            crate::records::FaceContainment::In => 0x0a,
-            crate::records::FaceContainment::Out => 0x0b,
+            cadmpeg_asm::brep::records::FaceContainment::In => 0x0a,
+            cadmpeg_asm::brep::records::FaceContainment::Out => 0x0b,
         });
     }
 }
@@ -2399,7 +2399,7 @@ fn native_wire_side(
         .copied()
         .filter(|wire| wire.edges == edges && wire.free_vertex.as_ref() == free_vertex);
     let side = match (matches.next(), matches.next()) {
-        (None, _) => crate::records::WireSide::Out,
+        (None, _) => cadmpeg_asm::brep::records::WireSide::Out,
         (Some(wire), None) => wire.side,
         (Some(_), Some(_)) => {
             return Err(CodecError::NotImplemented(format!(
@@ -2408,8 +2408,8 @@ fn native_wire_side(
         }
     };
     Ok(match side {
-        crate::records::WireSide::In => 0x0a,
-        crate::records::WireSide::Out => 0x0b,
+        cadmpeg_asm::brep::records::WireSide::In => 0x0a,
+        cadmpeg_asm::brep::records::WireSide::Out => 0x0b,
     })
 }
 

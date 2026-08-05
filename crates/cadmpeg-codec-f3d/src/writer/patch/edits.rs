@@ -295,7 +295,7 @@ pub(crate) fn validate_vertex_ownership_edits(
 
 pub(crate) fn validate_face_sidedness_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<usize, crate::records::FaceContainment>, CodecError> {
+) -> Result<BTreeMap<usize, cadmpeg_asm::brep::records::FaceContainment>, CodecError> {
     let baseline = native
         .baseline
         .map_or(&[][..], |native| native.face_sidedness.as_slice());
@@ -597,7 +597,7 @@ pub(crate) fn validate_tolerant_coedge_edits(
 
 pub(crate) fn validate_wire_topology_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<usize, crate::records::WireSide>, CodecError> {
+) -> Result<BTreeMap<usize, cadmpeg_asm::brep::records::WireSide>, CodecError> {
     let baseline_wires = native
         .baseline
         .map_or(&[][..], |native| native.wire_topologies.as_slice());

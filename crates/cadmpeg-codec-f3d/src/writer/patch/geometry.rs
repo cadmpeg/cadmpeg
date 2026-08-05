@@ -80,7 +80,7 @@ pub(crate) struct GeometryEdits<'a> {
     pub(crate) creation_timestamps: &'a BTreeMap<usize, f64>,
     pub(crate) edge_continuities: &'a BTreeMap<usize, (Sense, String)>,
     pub(crate) vertex_ownerships: &'a BTreeMap<usize, (i64, u8)>,
-    pub(crate) face_sidedness: &'a BTreeMap<usize, crate::records::FaceContainment>,
+    pub(crate) face_sidedness: &'a BTreeMap<usize, cadmpeg_asm::brep::records::FaceContainment>,
     pub(crate) tolerant_edges: &'a BTreeMap<usize, f64>,
     pub(crate) tolerant_vertices: &'a BTreeMap<usize, (f64, [f64; 2])>,
 }
@@ -254,8 +254,8 @@ pub(crate) fn patch_framed_geometry(
                 )));
             }
             let sense = match containment {
-                crate::records::FaceContainment::In => Sense::Reversed,
-                crate::records::FaceContainment::Out => Sense::Forward,
+                cadmpeg_asm::brep::records::FaceContainment::In => Sense::Reversed,
+                cadmpeg_asm::brep::records::FaceContainment::Out => Sense::Forward,
             };
             patch_sense_field(bytes, record, stream_ref_width(bytes), 10, sense)?;
         }
@@ -326,7 +326,7 @@ pub(crate) fn patch_framed_geometry(
             }
             if matches!(record.chunk(15), Some(sab::Token::True)) {
                 let mut native_curve = edit.curve.clone();
-                crate::brep::geometry::reverse_nurbs_curve(&mut native_curve);
+                cadmpeg_asm::brep::geometry::reverse_nurbs_curve(&mut native_curve);
                 patch_nurbs_curve_record(
                     bytes,
                     record,

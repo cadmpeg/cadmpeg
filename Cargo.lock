@@ -168,6 +168,9 @@ version = "0.3.1"
 dependencies = [
  "cadmpeg-codec-core",
  "cadmpeg-ir",
+ "schemars",
+ "serde",
+ "serde-value",
 ]
 
 [[package]]

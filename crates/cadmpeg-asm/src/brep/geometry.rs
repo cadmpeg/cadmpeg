@@ -2,13 +2,13 @@
 //! Decode analytic surfaces and 3D curves, select edge pcurves, reverse
 //! curve orientation, and recognize procedural carriers as analytic geometry.
 
-use crate::records::TolerantCoedgeExtension;
-use cadmpeg_asm::nurbs;
-use cadmpeg_asm::nurbs::proc_surface::{
+use super::records::TolerantCoedgeExtension;
+use crate::nurbs;
+use crate::nurbs::proc_surface::{
     DecodedProceduralSurfaceDefinition, EmbeddedRollingBall, EmbeddedScaledCompoundLoftShape,
 };
-use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
-use cadmpeg_asm::sab::{Record, Token};
+use crate::nurbs::reader::LEN_TO_MM;
+use crate::sab::{Record, Token};
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -75,7 +75,7 @@ pub(crate) fn is_analytic_curve(head: &str) -> bool {
 
 /// Decode an analytic surface carrier. Signed sphere and torus radii remain in
 /// the IR because they are part of the ASM carrier semantics.
-pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
+pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
     let c = collect_carrier(rec);
     let origin = *c.positions.first()?;
     match rec.head.as_str() {
@@ -399,7 +399,7 @@ pub(crate) fn pcurve_ranges_on_domain(
 }
 
 /// Decode an analytic curve carrier.
-pub(crate) fn decode_curve(rec: &Record) -> Option<CurveGeometry> {
+pub fn decode_curve(rec: &Record) -> Option<CurveGeometry> {
     let carrier = collect_carrier(rec);
     let base = *carrier.positions.first()?;
     match rec.head.as_str() {
@@ -472,7 +472,7 @@ pub(crate) fn record_reversed(rec: &Record) -> bool {
 
 /// Reparameterize a cached B-spline to its record's reversed sense,
 /// `C'(t) = C(-t)`, by reversing poles and weights and negating reversed knots.
-pub(crate) fn reverse_nurbs_curve(curve: &mut NurbsCurve) {
+pub fn reverse_nurbs_curve(curve: &mut NurbsCurve) {
     curve.control_points.reverse();
     if let Some(weights) = curve.weights.as_mut() {
         weights.reverse();

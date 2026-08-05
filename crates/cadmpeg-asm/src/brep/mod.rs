@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Build B-rep topology and geometry from a framed SAB record table.
 //!
-//! [`decode`] follows the topology chain from bodies through vertices and
-//! points. It creates analytic carriers for planes, cylinders, cones, spheres,
-//! tori, lines, circles, and ellipses. [`cadmpeg_asm::nurbs`] supplies cached NURBS
-//! surfaces, 3D curves, and pcurves for spline and procedural records.
+//! [`decode_with_purpose`] follows the topology chain from bodies through
+//! vertices and points. It creates analytic carriers for planes, cylinders,
+//! cones, spheres, tori, lines, circles, and ellipses. [`crate::nurbs`]
+//! supplies cached NURBS surfaces, 3D curves, and pcurves for spline and
+//! procedural records.
 //!
 //! Faces retain their loops and trims when a referenced surface has no decoded
 //! shape; a decoded construction produces a [`SurfaceGeometry::Procedural`]
@@ -16,28 +17,23 @@
 //! ASM model-space lengths become millimetres. Unit vectors, ratios, angles,
 //! knots, weights, and UV parameters keep their native scale.
 
-pub(crate) mod attributes;
+pub mod attributes;
 mod emit;
-pub(crate) mod geometry;
+pub mod geometry;
+pub mod records;
 mod topology;
 
-use crate::records::{
-    BodyNativeKey, CreationTimestamp, EdgeContinuity, EdgeOwnership, FaceSidedness,
-    MeshSurfaceSentinel, PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
-    TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail, TransformHints,
-    VertexOwnership, WireTopology,
-};
-use cadmpeg_asm::asm_header;
-use cadmpeg_asm::ids::IdFormat;
-use cadmpeg_asm::nurbs;
-use cadmpeg_asm::nurbs::proc_curve::{
+use crate::asm_header;
+use crate::ids::IdFormat;
+use crate::nurbs;
+use crate::nurbs::proc_curve::{
     CompoundDefinition, EmbeddedDeformable, EmbeddedIntersection, EmbeddedLawCurve,
     EmbeddedProjection, EmbeddedSilhouette, EmbeddedSpring, EmbeddedSurfaceOffset,
     EmbeddedThreeSurfaceIntersection, EmbeddedTwoSidedOffset, SubsetDefinition,
     VectorOffsetDefinition,
 };
-use cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurface;
-use cadmpeg_asm::sab::Record;
+use crate::nurbs::proc_surface::DecodedProceduralSurface;
+use crate::sab::Record;
 use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralSurface, Surface,
@@ -56,6 +52,11 @@ use self::emit::{
     emit_pcurves, emit_points, emit_vertices, project_subshell_faces,
 };
 use self::geometry::{clamp_edge_ranges_to_carrier_domains, classify_body_kinds};
+use self::records::{
+    BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceSidedness, MeshSurfaceSentinel,
+    TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail, TransformHints,
+    VertexOwnership, WireTopology,
+};
 use self::topology::{
     classify_edge_curve_senses, collect_wire_topology, decode_analytic_carriers,
     keep_faces_and_carriers, walk_reachable_topology,
@@ -137,59 +138,6 @@ pub struct AsmBrep {
     pub annotation_records: Vec<AnnotationRecord>,
 }
 
-/// The ASM B-rep graph plus links derived from Fusion attribute records.
-///
-/// The kernel graph is flattened so id qualification and body-key retention
-/// walk one top-level value tree; a nested field would hide the kernel arenas
-/// from [`retain_root_entities`], which only visits top-level sequences.
-#[derive(Default, Serialize, Deserialize)]
-pub struct Brep {
-    /// The format-independent ASM graph.
-    #[serde(flatten)]
-    pub asm: AsmBrep,
-    /// Typed sketch-curve provenance links.
-    pub sketch_curve_links: Vec<SketchCurveLink>,
-    /// Persistent design identifiers attached to solved entities.
-    pub persistent_design_links: Vec<PersistentDesignLink>,
-    /// Variable-width persistent tag groups attached to solved faces and edges.
-    pub persistent_subentity_tags: Vec<PersistentSubentityTag>,
-    /// Original authoring times attached to solved entities.
-    pub creation_timestamps: Vec<CreationTimestamp>,
-}
-
-impl Brep {
-    /// Wrap a decoded ASM graph and derive the Fusion attribute links.
-    fn from_asm(asm: AsmBrep) -> Self {
-        let sketch_curve_links = asm
-            .attributes
-            .iter()
-            .filter_map(attributes::sketch_curve_link)
-            .collect();
-        let persistent_design_links = asm
-            .attributes
-            .iter()
-            .flat_map(attributes::persistent_design_links)
-            .collect();
-        let persistent_subentity_tags = asm
-            .attributes
-            .iter()
-            .flat_map(attributes::persistent_subentity_tags)
-            .collect();
-        let creation_timestamps = asm
-            .attributes
-            .iter()
-            .filter_map(attributes::creation_timestamp)
-            .collect();
-        Self {
-            asm,
-            sketch_curve_links,
-            persistent_design_links,
-            persistent_subentity_tags,
-            creation_timestamps,
-        }
-    }
-}
-
 /// One sparse v1 annotation produced while SAB record offsets are available.
 pub struct AnnotationRecord {
     /// Globally unique IR entity id.
@@ -245,171 +193,6 @@ pub struct Stats {
     pub other_record_kinds: std::collections::BTreeMap<String, usize>,
 }
 
-impl Brep {
-    /// Map solved bodies to the selector used by this blob's Design body map.
-    pub fn body_selectors(&self) -> HashMap<BodyId, u64> {
-        let ordinal_mode = self
-            .asm
-            .body_native_keys
-            .iter()
-            .all(|body| body.asm_body_key.is_none());
-        self.asm
-            .body_native_keys
-            .iter()
-            .filter_map(|body| {
-                let selector = if ordinal_mode {
-                    Some(u64::from(body.body_ordinal))
-                } else {
-                    body.asm_body_key
-                }?;
-                Some((body.body.clone(), selector))
-            })
-            .collect()
-    }
-
-    /// Resolve the Design selectors present for this blob. An exact native
-    /// body key has precedence. A selector absent from the native-key domain
-    /// selects the body with the same zero-based ordinal.
-    pub(crate) fn body_selectors_for(
-        &self,
-        selectors: &HashSet<u64>,
-    ) -> Result<HashMap<BodyId, u64>, cadmpeg_codec_core::CodecError> {
-        let body_keys = self.asm.body_native_keys.iter().collect::<Vec<_>>();
-        let mut resolved = HashMap::new();
-        for selector in selectors {
-            let Some(body) = resolve_body_selector(&body_keys, *selector)? else {
-                continue;
-            };
-            if let Some(previous) = resolved.insert(body.clone(), *selector) {
-                return Err(cadmpeg_codec_core::CodecError::Malformed(format!(
-                    "F3D body {} is selected by both {previous} and {selector}",
-                    body.0
-                )));
-            }
-        }
-        Ok(resolved)
-    }
-
-    /// Retain the connected entity graph rooted at the body-map keys selected
-    /// for one BREP blob.
-    pub fn retain_body_keys(
-        &mut self,
-        selected_keys: &HashSet<u64>,
-    ) -> Result<(), cadmpeg_codec_core::CodecError> {
-        let annotations = std::mem::take(&mut self.asm.annotation_records);
-        let mut value = serde_value::to_value(&*self).map_err(|error| {
-            cadmpeg_codec_core::CodecError::Malformed(format!("BREP serialization failed: {error}"))
-        })?;
-        let mut owned = HashSet::new();
-        collect_owned_ids(&value, &mut owned);
-        let native_body_ids = self
-            .asm
-            .body_native_keys
-            .iter()
-            .map(|native| native.body.0.as_str())
-            .collect::<HashSet<_>>();
-        let mut roots = self
-            .body_selectors_for(selected_keys)?
-            .into_keys()
-            .map(|body| body.0)
-            .collect::<HashSet<_>>();
-        // A Design body map selects native ASM body records. Neutral roots
-        // projected from other saved top-level entities have no ASM body key
-        // and remain part of the selected BREP blob.
-        roots.extend(
-            self.asm
-                .bodies
-                .iter()
-                .filter(|body| !native_body_ids.contains(body.id.0.as_str()))
-                .map(|body| body.id.0.clone()),
-        );
-        let mut adjacency = HashMap::<String, HashSet<String>>::new();
-        collect_entity_adjacency(&value, &owned, &mut adjacency);
-        let mut reachable = roots;
-        let mut pending = reachable.iter().cloned().collect::<Vec<_>>();
-        while let Some(id) = pending.pop() {
-            for adjacent in adjacency.get(&id).into_iter().flatten() {
-                if reachable.insert(adjacent.clone()) {
-                    pending.push(adjacent.clone());
-                }
-            }
-        }
-        retain_root_entities(&mut value, &reachable);
-        let mut retained: Self = crate::value_tree::from_value(value).map_err(|error| {
-            cadmpeg_codec_core::CodecError::Malformed(format!(
-                "retained BREP graph is invalid: {error}"
-            ))
-        })?;
-        retained
-            .asm
-            .body_keys
-            .retain(|body, _| reachable.contains(&body.0));
-        retained.asm.annotation_records = annotations
-            .into_iter()
-            .filter(|annotation| reachable.contains(&annotation.id))
-            .collect();
-        *self = retained;
-        Ok(())
-    }
-
-    /// Qualify every entity owned by this graph so several BREP blobs can
-    /// coexist in one document model without record-index collisions.
-    pub fn qualify_ids(
-        &mut self,
-        format: IdFormat<'_>,
-        namespace: &str,
-    ) -> Result<(), cadmpeg_codec_core::CodecError> {
-        let annotations = std::mem::take(&mut self.asm.annotation_records);
-        let mut value = serde_value::to_value(&*self).map_err(|error| {
-            cadmpeg_codec_core::CodecError::Malformed(format!("BREP serialization failed: {error}"))
-        })?;
-        let mut owned = HashSet::new();
-        collect_owned_ids(&value, &mut owned);
-        let scheme_prefix = format!("{format}:");
-        let replacements = owned
-            .into_iter()
-            .map(|id| {
-                let replacement = format!(
-                    "{format}:brep/{namespace}/{}",
-                    id.strip_prefix(&scheme_prefix).unwrap_or(&id)
-                );
-                (id, replacement)
-            })
-            .collect::<HashMap<_, _>>();
-        remap_owned_ids(&mut value, &replacements);
-        let mut qualified: Self = crate::value_tree::from_value(value).map_err(|error| {
-            cadmpeg_codec_core::CodecError::Malformed(format!("qualified BREP is invalid: {error}"))
-        })?;
-        qualified.asm.annotation_records = annotations
-            .into_iter()
-            .map(|mut annotation| {
-                if let Some(id) = replacements.get(&annotation.id) {
-                    annotation.id.clone_from(id);
-                }
-                annotation
-            })
-            .collect();
-        *self = qualified;
-        Ok(())
-    }
-
-    /// Append a disjoint, already-qualified BREP graph.
-    pub fn append(&mut self, mut other: Self) {
-        self.asm.append(other.asm);
-        macro_rules! append_vecs {
-            ($($field:ident),+ $(,)?) => {
-                $(self.$field.append(&mut other.$field);)+
-            };
-        }
-        append_vecs!(
-            sketch_curve_links,
-            persistent_design_links,
-            persistent_subentity_tags,
-            creation_timestamps,
-        );
-    }
-}
-
 impl AsmBrep {
     /// Append a disjoint, already-qualified ASM graph.
     pub fn append(&mut self, mut other: Self) {
@@ -450,43 +233,6 @@ impl AsmBrep {
         );
         self.body_keys.extend(other.body_keys);
         self.stats.merge(other.stats);
-    }
-}
-
-/// Resolve one Design body selector within one BREP blob. Exact native keys
-/// take precedence; an absent key falls back to the zero-based body ordinal.
-pub(crate) fn resolve_body_selector(
-    body_keys: &[&BodyNativeKey],
-    selector: u64,
-) -> Result<Option<BodyId>, cadmpeg_codec_core::CodecError> {
-    let direct = body_keys
-        .iter()
-        .filter(|body| body.asm_body_key == Some(selector))
-        .map(|body| body.body.clone())
-        .collect::<Vec<_>>();
-    match direct.as_slice() {
-        [body] => return Ok(Some(body.clone())),
-        [] => {}
-        _ => {
-            return Err(cadmpeg_codec_core::CodecError::Malformed(format!(
-                "F3D body selector {selector} matches multiple native body keys"
-            )));
-        }
-    }
-    let Some(ordinal) = u32::try_from(selector).ok() else {
-        return Ok(None);
-    };
-    let ordinal = body_keys
-        .iter()
-        .filter(|body| body.body_ordinal == ordinal)
-        .map(|body| body.body.clone())
-        .collect::<Vec<_>>();
-    match ordinal.as_slice() {
-        [body] => Ok(Some(body.clone())),
-        [] => Ok(None),
-        _ => Err(cadmpeg_codec_core::CodecError::Malformed(format!(
-            "F3D body selector {selector} matches multiple body ordinals"
-        ))),
     }
 }
 
@@ -531,7 +277,12 @@ impl Stats {
     }
 }
 
-fn collect_owned_ids(value: &Value, out: &mut HashSet<String>) {
+/// Collect every `id` field value in a serialized value tree.
+#[allow(
+    clippy::implicit_hasher,
+    reason = "Callers pass default-hasher collections; a hasher parameter adds generic noise for one call shape."
+)]
+pub fn collect_owned_ids(value: &Value, out: &mut HashSet<String>) {
     match value {
         Value::Map(fields) => {
             if let Some(id) = fields
@@ -555,7 +306,8 @@ fn collect_owned_ids(value: &Value, out: &mut HashSet<String>) {
     }
 }
 
-fn value_string(value: &Value) -> Option<&str> {
+/// The string payload of a serialized value, unwrapping newtype layers.
+pub fn value_string(value: &Value) -> Option<&str> {
     match value {
         Value::String(value) => Some(value),
         Value::Newtype(value) => value_string(value),
@@ -563,7 +315,13 @@ fn value_string(value: &Value) -> Option<&str> {
     }
 }
 
-fn collect_entity_adjacency(
+/// Build the undirected id-adjacency of every entity in the top-level
+/// sequences of a serialized value tree.
+#[allow(
+    clippy::implicit_hasher,
+    reason = "Callers pass default-hasher collections; a hasher parameter adds generic noise for one call shape."
+)]
+pub fn collect_entity_adjacency(
     value: &Value,
     owned: &HashSet<String>,
     out: &mut HashMap<String, HashSet<String>>,
@@ -592,7 +350,8 @@ fn collect_entity_adjacency(
     }
 }
 
-pub(crate) fn entity_id(value: &Value) -> Option<&str> {
+/// The `id` field of a serialized entity map.
+pub fn entity_id(value: &Value) -> Option<&str> {
     let Value::Map(fields) = value else {
         return None;
     };
@@ -601,7 +360,12 @@ pub(crate) fn entity_id(value: &Value) -> Option<&str> {
         .and_then(value_string)
 }
 
-fn collect_references(value: &Value, owned: &HashSet<String>, out: &mut HashSet<String>) {
+/// Collect every string in a serialized value tree that names an owned id.
+#[allow(
+    clippy::implicit_hasher,
+    reason = "Callers pass default-hasher collections; a hasher parameter adds generic noise for one call shape."
+)]
+pub fn collect_references(value: &Value, owned: &HashSet<String>, out: &mut HashSet<String>) {
     match value {
         Value::String(id) if owned.contains(id) => {
             out.insert(id.clone());
@@ -624,7 +388,13 @@ fn collect_references(value: &Value, owned: &HashSet<String>, out: &mut HashSet<
     }
 }
 
-fn retain_root_entities(value: &mut Value, reachable: &HashSet<String>) {
+/// Retain only entities with a reachable `id` in the top-level sequences of a
+/// serialized value tree.
+#[allow(
+    clippy::implicit_hasher,
+    reason = "Callers pass default-hasher collections; a hasher parameter adds generic noise for one call shape."
+)]
+pub fn retain_root_entities(value: &mut Value, reachable: &HashSet<String>) {
     let Value::Map(fields) = value else {
         return;
     };
@@ -636,7 +406,12 @@ fn retain_root_entities(value: &mut Value, reachable: &HashSet<String>) {
     }
 }
 
-fn remap_owned_ids(value: &mut Value, replacements: &HashMap<String, String>) {
+/// Rewrite every string in a serialized value tree through `replacements`.
+#[allow(
+    clippy::implicit_hasher,
+    reason = "Callers pass default-hasher collections; a hasher parameter adds generic noise for one call shape."
+)]
+pub fn remap_owned_ids(value: &mut Value, replacements: &HashMap<String, String>) {
     match value {
         Value::String(id) => {
             if let Some(replacement) = replacements.get(id) {
@@ -670,7 +445,7 @@ pub(crate) fn count_kind(counts: &mut std::collections::BTreeMap<String, usize>,
 // ---- geometry carrier decode -------------------------------------------------
 
 /// Formats the stable IR id for the entity emitted from record `index`.
-pub(crate) fn id(format: IdFormat<'_>, index: i64) -> String {
+pub fn id(format: IdFormat<'_>, index: i64) -> String {
     format!("{format}:brep:entity#{index}")
 }
 
@@ -743,46 +518,22 @@ pub(crate) struct WireShellTopology {
     saved_free_edges: Vec<i64>,
 }
 
-/// Decode a framed active slice into the IR B-rep graph.
-///
-/// `stream` names the source ZIP entry for provenance. Ids are minted as
-/// `<format>:brep:entity#<record-index>`, unique across the `RecordTable`.
-pub fn decode(records: &[Record], bytes: &[u8], stream: &str, format: IdFormat<'_>) -> Brep {
-    Brep::from_asm(decode_with_purpose(
-        records,
-        bytes,
-        stream,
-        format,
-        DecodePurpose::Model,
-    ))
-}
-
-/// Decode only the topology and analytic measurements used to bind ASM
-/// history. Free-form carrier shapes are not materialized because historical
-/// binding consumes their stable record identities, not their control data.
-pub(crate) fn decode_history_topology(
-    records: &[Record],
-    bytes: &[u8],
-    format: IdFormat<'_>,
-) -> Brep {
-    Brep::from_asm(decode_with_purpose(
-        records,
-        bytes,
-        "history",
-        format,
-        DecodePurpose::History,
-    ))
-}
-
+/// Which outputs a decode materializes.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DecodePurpose {
+pub enum DecodePurpose {
     /// Transfer complete neutral geometry and retained native records.
     Model,
     /// Transfer stable topology plus measurements used by history binding.
     History,
 }
 
-fn decode_with_purpose(
+/// Decode a framed active slice into the ASM B-rep graph.
+///
+/// `stream` names the source ZIP entry for provenance. Ids are minted as
+/// `<format>:brep:entity#<record-index>`, unique across the `RecordTable`.
+/// [`DecodePurpose::History`] skips free-form carrier shapes because
+/// historical binding consumes stable record identities, not control data.
+pub fn decode_with_purpose(
     records: &[Record],
     bytes: &[u8],
     stream: &str,
@@ -802,7 +553,7 @@ fn decode_with_purpose(
     );
     let save_format_major = header
         .as_ref()
-        .and_then(cadmpeg_asm::asm_header::AsmHeader::save_format_major);
+        .and_then(crate::asm_header::AsmHeader::save_format_major);
     let header_scale = header.and_then(|header| header.scale).unwrap_or(1.0);
 
     let (mut carriers, inward_normal_surfaces) = decode_analytic_carriers(records);

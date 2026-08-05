@@ -528,7 +528,7 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
         .iter()
         .all(|parameters| matches!(
             parameters.extension,
-            crate::records::TolerantCoedgeExtension::Empty { target: None }
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: None }
         )));
 
     decoded.ir.model.coedges[0].sense = cadmpeg_ir::topology::Sense::Reversed;
@@ -570,7 +570,7 @@ fn decode_selects_tolerant_coedge_extension_from_save_format() {
                 t_long(&mut bytes, 0);
                 bytes
             },
-            crate::records::TolerantCoedgeExtension::EmbeddedCurve {
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
                 target: None,
                 curve_reversed: true,
                 payload_token_count: 1,
@@ -584,12 +584,12 @@ fn decode_selects_tolerant_coedge_extension_from_save_format() {
                 t_ref(&mut bytes, 17);
                 bytes
             },
-            crate::records::TolerantCoedgeExtension::Reference { target: Some(17) },
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::Reference { target: Some(17) },
         ),
         (
             21400u32,
             Vec::new(),
-            crate::records::TolerantCoedgeExtension::None,
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::None,
         ),
     ] {
         let mut smbh = synthetic_geometry_smbh();
@@ -660,7 +660,7 @@ fn tolerant_coedge_extension_ignores_payload_identifiers() {
             .map(|parameters| parameters.extension.clone())
             .collect::<Vec<_>>(),
         vec![
-            crate::records::TolerantCoedgeExtension::EmbeddedCurve {
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
                 target: None,
                 curve_reversed: true,
                 payload_token_count: 1,
@@ -772,12 +772,12 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     source_less.model.coedges[0].use_curve = Some(generated_curve_id);
     source_less.model.coedges[0].use_curve_parameter_range = Some([-2.0, 3.0]);
     f3d_native_mut(&mut source_less).tolerant_coedge_parameters =
-        vec![crate::records::TolerantCoedgeParameters {
+        vec![cadmpeg_asm::brep::records::TolerantCoedgeParameters {
             id: "generated:tolerant-coedge-parameters#0".into(),
             coedge: tolerant_coedge,
             record_index: 0,
             parameter_range: [0.0, 1.0],
-            extension: crate::records::TolerantCoedgeExtension::EmbeddedCurve {
+            extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
                 target: None,
                 curve_reversed: false,
                 payload_token_count: 0,
@@ -6227,29 +6227,31 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             .expect("generated edge continuity");
         metadata.continuity = "tangent".into();
         metadata.sense = cadmpeg_ir::topology::Sense::Reversed;
-        native.face_sidedness[0].containment = Some(crate::records::FaceContainment::In);
+        native.face_sidedness[0].containment =
+            Some(cadmpeg_asm::brep::records::FaceContainment::In);
         native.edge_ownerships[0].owner_coedge = Some(owner_coedge);
-        native.tolerant_vertex_tails = vec![crate::records::TolerantVertexTail {
+        native.tolerant_vertex_tails = vec![cadmpeg_asm::brep::records::TolerantVertexTail {
             id: "f3d:asm:tolerant-vertex-tail#generated".into(),
             vertex: tolerant_vertex,
             record_index: 0,
             leading_tolerances: [-1.0, -1.0],
             trailing_field: Some(0),
         }];
-        native.tolerant_edge_tails = vec![crate::records::TolerantEdgeTail {
+        native.tolerant_edge_tails = vec![cadmpeg_asm::brep::records::TolerantEdgeTail {
             id: "f3d:asm:tolerant-edge-tail#generated".into(),
             edge: tolerant_edge,
             record_index: 0,
             entity_revision: 22800,
             trailing_field: Some(1),
         }];
-        native.tolerant_coedge_parameters = vec![crate::records::TolerantCoedgeParameters {
-            id: "f3d:asm:tolerant-coedge-parameters#generated".into(),
-            coedge: tolerant_coedge,
-            record_index: 0,
-            parameter_range: [0.25, 0.75],
-            extension: crate::records::TolerantCoedgeExtension::None,
-        }];
+        native.tolerant_coedge_parameters =
+            vec![cadmpeg_asm::brep::records::TolerantCoedgeParameters {
+                id: "f3d:asm:tolerant-coedge-parameters#generated".into(),
+                coedge: tolerant_coedge,
+                record_index: 0,
+                parameter_range: [0.25, 0.75],
+                extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension::None,
+            }];
         native.body_visibilities = vec![crate::records::BodyVisibility {
             id: "f3d:design:body-visibility#generated".into(),
             body: visible_body,
@@ -6412,7 +6414,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         .all(|metadata| metadata.continuity == "unknown"));
     assert_eq!(
         f3d_native(&round_trip.ir).face_sidedness[0].containment,
-        Some(crate::records::FaceContainment::In)
+        Some(cadmpeg_asm::brep::records::FaceContainment::In)
     );
     assert_eq!(round_trip.ir.model.points, source_less.model.points);
     assert_eq!(round_trip.ir.model.surfaces, source_less.model.surfaces);
@@ -6424,7 +6426,8 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     {
         let mut native = f3d_native_mut(&mut edited);
         native.body_native_keys[0].asm_body_key = Some(84);
-        native.face_sidedness[0].containment = Some(crate::records::FaceContainment::Out);
+        native.face_sidedness[0].containment =
+            Some(cadmpeg_asm::brep::records::FaceContainment::Out);
         native.tolerant_vertex_tails[0].leading_tolerances = [3.5, -4.5];
     }
     let mut retained = Vec::new();
@@ -6436,7 +6439,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         .expect("retained double-sided containment round trip");
     assert_eq!(
         f3d_native(&retained.ir).face_sidedness[0].containment,
-        Some(crate::records::FaceContainment::Out)
+        Some(cadmpeg_asm::brep::records::FaceContainment::Out)
     );
     assert_eq!(retained.ir.model.vertices[0].tolerance, Some(0.05));
     assert_eq!(retained.ir.model.edges[0].tolerance, Some(0.06));
@@ -6489,14 +6492,14 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
         let tolerant_edge = source_less.model.edges[0].id.clone();
         {
             let mut native = f3d_native_mut(&mut source_less);
-            native.tolerant_vertex_tails = vec![crate::records::TolerantVertexTail {
+            native.tolerant_vertex_tails = vec![cadmpeg_asm::brep::records::TolerantVertexTail {
                 id: "f3d:asm:tolerant-vertex-tail#generated".into(),
                 vertex: tolerant_vertex,
                 record_index: 0,
                 leading_tolerances: [-1.0, -1.0],
                 trailing_field: vertex_trailing,
             }];
-            native.tolerant_edge_tails = vec![crate::records::TolerantEdgeTail {
+            native.tolerant_edge_tails = vec![cadmpeg_asm::brep::records::TolerantEdgeTail {
                 id: "f3d:asm:tolerant-edge-tail#generated".into(),
                 edge: tolerant_edge,
                 record_index: 0,
@@ -8206,12 +8209,12 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let tolerant_coedge = source_less.model.coedges[7].id.clone();
     f3d_native_mut(&mut source_less).tolerant_coedge_parameters =
-        vec![crate::records::TolerantCoedgeParameters {
+        vec![cadmpeg_asm::brep::records::TolerantCoedgeParameters {
             id: "f3d:asm:tolerant-coedge-parameters#cube".into(),
             coedge: tolerant_coedge,
             record_index: 0,
             parameter_range: [-1.5, 2.25],
-            extension: crate::records::TolerantCoedgeExtension::None,
+            extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension::None,
         }];
     let mut encoded = Vec::new();
     F3dCodec
@@ -9199,7 +9202,7 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
 
 #[test]
 fn generated_source_less_rejects_collapsed_native_topology_metadata() {
-    use crate::records::{EdgeContinuity, TolerantVertexTail};
+    use cadmpeg_asm::brep::records::{EdgeContinuity, TolerantVertexTail};
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let edge = source_less.model.edges[0].id.clone();
@@ -11371,7 +11374,7 @@ fn body_key_edit_does_not_rewrite_ordinal_design_selector() {
     let mut baseline = crate::native::F3dNative::default();
     baseline
         .body_native_keys
-        .push(crate::records::BodyNativeKey {
+        .push(cadmpeg_asm::brep::records::BodyNativeKey {
             id: "f3d:asm:body-native-key#1".into(),
             body: body.clone(),
             record_index: 1,
@@ -13514,7 +13517,7 @@ fn decode_transfers_generated_wire_body_topology() {
     assert_eq!(f3d_native(&result.ir).wire_topologies.len(), 1);
     assert_eq!(
         f3d_native(&result.ir).wire_topologies[0].side,
-        crate::records::WireSide::Out
+        cadmpeg_asm::brep::records::WireSide::Out
     );
     assert_eq!(
         result.ir.model.shells[0].wire_edges[0],
@@ -13526,7 +13529,7 @@ fn decode_transfers_generated_wire_body_topology() {
         .iter()
         .any(|loss| loss.message.contains("wire=")));
     update_f3d_native(&mut result.ir, |native| {
-        native.wire_topologies[0].side = crate::records::WireSide::In;
+        native.wire_topologies[0].side = cadmpeg_asm::brep::records::WireSide::In;
     });
     let mut edited = Vec::new();
     F3dCodec
@@ -13537,7 +13540,7 @@ fn decode_transfers_generated_wire_body_topology() {
         .expect("wire-side retained round trip");
     assert_eq!(
         f3d_native(&edited.ir).wire_topologies[0].side,
-        crate::records::WireSide::In
+        cadmpeg_asm::brep::records::WireSide::In
     );
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(
@@ -13863,7 +13866,7 @@ fn generated_source_less_writes_wire_body_topology() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     update_f3d_native(&mut source_less, |native| {
-        native.wire_topologies[0].side = crate::records::WireSide::In;
+        native.wire_topologies[0].side = cadmpeg_asm::brep::records::WireSide::In;
     });
     let expected_curve = source_less.model.curves[0].geometry.clone();
     let expected_points = source_less
@@ -13892,7 +13895,7 @@ fn generated_source_less_writes_wire_body_topology() {
     assert_eq!(round_trip.ir.model.shells[0].wire_edges.len(), 1);
     assert_eq!(
         f3d_native(&round_trip.ir).wire_topologies[0].side,
-        crate::records::WireSide::In
+        cadmpeg_asm::brep::records::WireSide::In
     );
     assert_eq!(round_trip.ir.model.edges.len(), 1);
     assert_eq!(
@@ -13926,7 +13929,7 @@ fn generated_source_less_writes_isolated_vertex_wire() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     update_f3d_native(&mut source_less, |native| {
-        native.wire_topologies[0].side = crate::records::WireSide::In;
+        native.wire_topologies[0].side = cadmpeg_asm::brep::records::WireSide::In;
     });
 
     let mut encoded = Vec::new();
@@ -13960,7 +13963,7 @@ fn generated_source_less_writes_isolated_vertex_wire() {
         wire.free_vertex,
         Some(round_trip.ir.model.vertices[0].id.clone())
     );
-    assert_eq!(wire.side, crate::records::WireSide::In);
+    assert_eq!(wire.side, cadmpeg_asm::brep::records::WireSide::In);
     let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
     assert!(
         validation.is_ok(),
@@ -14286,7 +14289,7 @@ fn generated_source_less_writes_multi_shell_wire_region() {
 
 #[test]
 fn analytic_carrier_decode_covers_each_shape() {
-    use crate::brep::geometry::{decode_curve, decode_surface};
+    use cadmpeg_asm::brep::geometry::{decode_curve, decode_surface};
     use cadmpeg_asm::sab::{Record, Token};
     use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 
@@ -20718,7 +20721,8 @@ fn rgb_attribute_chain_decodes_body_color() {
 
     let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
-    let color = crate::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
+    let color =
+        cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!((color.r, color.g, color.b, color.a), (0.1, 0.2, 0.3, 1.0));
 }
 
@@ -20740,7 +20744,8 @@ fn truecolor_attribute_chain_decodes_argb() {
 
     let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
-    let color = crate::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
+    let color =
+        cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!(
         (color.r, color.g, color.b, color.a),
         (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 128.0 / 255.0)
@@ -20764,7 +20769,8 @@ fn bt_text_color_attribute_chain_decodes_rgb() {
 
     let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
-    let color = crate::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
+    let color =
+        cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!(
         (color.r, color.g, color.b, color.a),
         (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 1.0)
@@ -20789,7 +20795,9 @@ fn bt_text_color_rejects_non_decimal_and_overwide_values() {
 
         let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
         let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
-        assert!(crate::brep::attributes::attribute_chain_color(&records[0], &by_index).is_none());
+        assert!(
+            cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).is_none()
+        );
     }
 }
 
@@ -20818,7 +20826,8 @@ fn invalid_color_attribute_does_not_hide_later_chain_color() {
 
     let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
-    let color = crate::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
+    let color =
+        cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!((color.r, color.g, color.b, color.a), (0.1, 0.2, 0.3, 1.0));
 }
 
@@ -20841,7 +20850,7 @@ fn transform_decodes_column_major_basis_and_scaled_translation() {
         offset: 0,
         len: 0,
     };
-    let transform = crate::brep::attributes::decode_transform(&record, 60.0).unwrap();
+    let transform = cadmpeg_asm::brep::attributes::decode_transform(&record, 60.0).unwrap();
     assert_eq!(transform.rows[0], [1.0, 0.0, 0.0, 600.0]);
     assert_eq!(transform.rows[1], [0.0, 1.0, 0.0, 1200.0]);
     assert_eq!(transform.rows[2], [0.0, 0.0, 1.0, 1800.0]);

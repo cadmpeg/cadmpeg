@@ -8,14 +8,15 @@ use super::geometry::{
 };
 use super::topology::{shell_faces, shell_wire_roots, subshell_ancestor_shells};
 use super::*;
-use crate::records::BodyNativeKey;
-use cadmpeg_asm::nurbs;
-use cadmpeg_asm::sab::{Record, Token};
+use crate::nurbs;
+use crate::sab::{Record, Token};
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId, LoopId, RegionId, ShellId};
+use cadmpeg_ir::ids::{EdgeId, FaceId, LoopId, RegionId, ShellId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Loop, LoopBoundaryRole, Shell};
 use std::collections::{HashMap, HashSet};
+
+const FORMAT: IdFormat<'static> = IdFormat("f3d");
 
 fn exact_circle_directrix() -> cadmpeg_ir::geometry::NurbsCurve {
     let center = Point3::new(2.0, 3.0, 4.0);
@@ -317,172 +318,6 @@ fn asm_stream_delimiters_are_not_application_records() {
 }
 
 #[test]
-fn brep_qualification_rewrites_owned_ids_and_cross_references() {
-    use cadmpeg_ir::ids::{BodyId, RegionId};
-    use cadmpeg_ir::topology::{Body, Region};
-
-    let body = BodyId("f3d:brep:entity#1".into());
-    let region = RegionId("f3d:brep:entity#2".into());
-    let mut brep = Brep {
-        asm: AsmBrep {
-            bodies: vec![Body {
-                id: body.clone(),
-                kind: Default::default(),
-                regions: vec![region.clone()],
-                transform: None,
-                name: None,
-                color: None,
-                visible: None,
-            }],
-            regions: vec![Region {
-                id: region,
-                body: body.clone(),
-                shells: Vec::new(),
-            }],
-            body_keys: HashMap::from([(body.clone(), 7)]),
-            body_native_keys: vec![BodyNativeKey {
-                id: "f3d:asm:body-native-key#1".into(),
-                body,
-                record_index: 1,
-                body_ordinal: 0,
-                source_brep: Some("BREP.source.smbh".into()),
-                asm_body_key: Some(7),
-            }],
-            annotation_records: vec![AnnotationRecord {
-                id: "f3d:brep:entity#1".into(),
-                stream: "asset/BREP.source.smbh".into(),
-                offset: 10,
-                tag: "body".into(),
-                derived_fields: Vec::new(),
-            }],
-            ..AsmBrep::default()
-        },
-        ..Brep::default()
-    };
-
-    brep.qualify_ids(crate::ids::ID_FORMAT, "source")
-        .expect("qualify BREP");
-
-    let qualified = BodyId("f3d:brep/source/brep:entity#1".into());
-    assert_eq!(brep.asm.bodies[0].id, qualified);
-    assert_eq!(brep.asm.regions[0].body, qualified);
-    assert_eq!(brep.asm.body_native_keys[0].body, qualified);
-    assert_eq!(brep.asm.body_keys.get(&qualified), Some(&7));
-    assert_eq!(brep.asm.annotation_records[0].id, qualified.0);
-    assert_eq!(
-        brep.asm.body_native_keys[0].source_brep.as_deref(),
-        Some("BREP.source.smbh")
-    );
-}
-
-#[test]
-fn body_key_retention_keeps_only_the_selected_connected_graph() {
-    use cadmpeg_ir::ids::{BodyId, RegionId};
-    use cadmpeg_ir::topology::{Body, Region};
-
-    let body = |index, region| Body {
-        id: BodyId(format!("f3d:brep:entity#{index}")),
-        kind: Default::default(),
-        regions: vec![RegionId(format!("f3d:brep:entity#{region}"))],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    };
-    let native_key = |index, key| BodyNativeKey {
-        id: format!("f3d:asm:body-native-key#{index}"),
-        body: BodyId(format!("f3d:brep:entity#{index}")),
-        record_index: index,
-        body_ordinal: index - 1,
-        source_brep: Some("BREP.source.smbh".into()),
-        asm_body_key: Some(key),
-    };
-    let mut brep = Brep {
-        asm: AsmBrep {
-            bodies: vec![body(1, 2), body(3, 4)],
-            regions: vec![
-                Region {
-                    id: RegionId("f3d:brep:entity#2".into()),
-                    body: BodyId("f3d:brep:entity#1".into()),
-                    shells: Vec::new(),
-                },
-                Region {
-                    id: RegionId("f3d:brep:entity#4".into()),
-                    body: BodyId("f3d:brep:entity#3".into()),
-                    shells: Vec::new(),
-                },
-            ],
-            body_keys: HashMap::from([
-                (BodyId("f3d:brep:entity#1".into()), 10),
-                (BodyId("f3d:brep:entity#3".into()), 20),
-            ]),
-            body_native_keys: vec![native_key(1, 10), native_key(3, 20)],
-            ..AsmBrep::default()
-        },
-        ..Brep::default()
-    };
-
-    brep.retain_body_keys(&HashSet::from([20]))
-        .expect("retain body graph");
-
-    assert_eq!(brep.asm.bodies.len(), 1);
-    assert_eq!(brep.asm.bodies[0].id.0, "f3d:brep:entity#3");
-    assert_eq!(brep.asm.regions.len(), 1);
-    assert_eq!(brep.asm.regions[0].id.0, "f3d:brep:entity#4");
-    assert_eq!(brep.asm.body_native_keys.len(), 1);
-    assert_eq!(brep.asm.body_keys.len(), 1);
-}
-
-#[test]
-fn body_key_retention_preserves_selectorless_neutral_roots() {
-    use cadmpeg_ir::topology::{Body, BodyKind};
-
-    let native_body = BodyId("f3d:brep:entity#1".into());
-    let projected_body = BodyId("f3d:brep:saved-edge-body#5".into());
-    let mut brep = Brep {
-        asm: AsmBrep {
-            bodies: vec![
-                Body {
-                    id: native_body.clone(),
-                    kind: BodyKind::Solid,
-                    regions: Vec::new(),
-                    transform: None,
-                    name: None,
-                    color: None,
-                    visible: None,
-                },
-                Body {
-                    id: projected_body.clone(),
-                    kind: BodyKind::Wire,
-                    regions: Vec::new(),
-                    transform: None,
-                    name: None,
-                    color: None,
-                    visible: None,
-                },
-            ],
-            body_keys: HashMap::from([(native_body.clone(), 10)]),
-            body_native_keys: vec![BodyNativeKey {
-                id: "f3d:asm:body-native-key#1".into(),
-                body: native_body,
-                record_index: 1,
-                body_ordinal: 0,
-                source_brep: Some("BREP.source.smbh".into()),
-                asm_body_key: Some(10),
-            }],
-            ..AsmBrep::default()
-        },
-        ..Brep::default()
-    };
-
-    brep.retain_body_keys(&HashSet::from([10]))
-        .expect("retain body graph");
-
-    assert_eq!(brep.asm.bodies.len(), 2);
-    assert!(brep.asm.bodies.iter().any(|body| body.id == projected_body));
-}
-
-#[test]
 fn saved_top_level_edge_projects_as_a_wire_body() {
     let record = |index, name: &str, head: &str, tokens: Vec<Token>| Record {
         index,
@@ -578,89 +413,23 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
     bytes.extend_from_slice(&2u32.to_le_bytes());
     bytes.extend_from_slice(&0u32.to_le_bytes());
 
-    let brep = decode(
+    let brep = decode_with_purpose(
         &records,
         &bytes,
         "BREP.saved-edge.smbh",
-        crate::ids::ID_FORMAT,
+        FORMAT,
+        DecodePurpose::Model,
     );
 
-    assert_eq!(brep.asm.bodies.len(), 1);
-    assert_eq!(
-        brep.asm.bodies[0].kind,
-        cadmpeg_ir::topology::BodyKind::Wire
-    );
-    assert_eq!(brep.asm.regions.len(), 1);
-    assert_eq!(brep.asm.shells.len(), 1);
-    assert_eq!(
-        brep.asm.shells[0].wire_edges,
-        vec![EdgeId(id(crate::ids::ID_FORMAT, 1))]
-    );
-    assert_eq!(brep.asm.edges.len(), 1);
-    assert_eq!(brep.asm.vertices.len(), 2);
-    assert_eq!(brep.asm.points.len(), 2);
-    assert_eq!(brep.asm.curves.len(), 1);
-}
-
-#[test]
-fn body_selectors_use_ordinals_only_for_an_all_null_key_lane() {
-    let native_key = |ordinal, key| BodyNativeKey {
-        id: format!("f3d:asm:body-native-key#{ordinal}"),
-        body: BodyId(format!("f3d:brep:entity#{ordinal}")),
-        record_index: ordinal,
-        body_ordinal: ordinal,
-        source_brep: Some("BREP.source.smb".into()),
-        asm_body_key: key,
-    };
-    let mut brep = Brep {
-        asm: AsmBrep {
-            body_native_keys: vec![native_key(0, None), native_key(1, None)],
-            ..AsmBrep::default()
-        },
-        ..Brep::default()
-    };
-
-    assert_eq!(brep.body_selectors().len(), 2);
-    assert_eq!(
-        brep.body_selectors()[&BodyId("f3d:brep:entity#1".into())],
-        1
-    );
-
-    brep.asm.body_native_keys[1].asm_body_key = Some(7);
-    assert_eq!(
-        brep.body_selectors(),
-        HashMap::from([(BodyId("f3d:brep:entity#1".into()), 7)])
-    );
-}
-
-#[test]
-fn design_body_selectors_prefer_exact_keys_then_fall_back_to_ordinals() {
-    let native_key = |ordinal, key| BodyNativeKey {
-        id: format!("f3d:asm:body-native-key#{ordinal}"),
-        body: BodyId(format!("f3d:brep:entity#{ordinal}")),
-        record_index: ordinal,
-        body_ordinal: ordinal,
-        source_brep: Some("BREP.source.smb".into()),
-        asm_body_key: Some(key),
-    };
-    let mut brep = Brep {
-        asm: AsmBrep {
-            body_native_keys: vec![native_key(0, 1), native_key(1, 0)],
-            ..AsmBrep::default()
-        },
-        ..Brep::default()
-    };
-
-    assert_eq!(
-        brep.body_selectors_for(&HashSet::from([0])).unwrap(),
-        HashMap::from([(BodyId("f3d:brep:entity#1".into()), 0)])
-    );
-
-    brep.asm.body_native_keys = vec![native_key(0, 436)];
-    assert_eq!(
-        brep.body_selectors_for(&HashSet::from([0])).unwrap(),
-        HashMap::from([(BodyId("f3d:brep:entity#0".into()), 0)])
-    );
+    assert_eq!(brep.bodies.len(), 1);
+    assert_eq!(brep.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Wire);
+    assert_eq!(brep.regions.len(), 1);
+    assert_eq!(brep.shells.len(), 1);
+    assert_eq!(brep.shells[0].wire_edges, vec![EdgeId(id(FORMAT, 1))]);
+    assert_eq!(brep.edges.len(), 1);
+    assert_eq!(brep.vertices.len(), 2);
+    assert_eq!(brep.points.len(), 2);
+    assert_eq!(brep.curves.len(), 1);
 }
 
 #[test]
@@ -735,14 +504,14 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     ];
     let mut brep = AsmBrep {
         shells: vec![Shell {
-            id: ShellId(id(crate::ids::ID_FORMAT, 3)),
+            id: ShellId(id(FORMAT, 3)),
             region: RegionId("region".into()),
             faces: Vec::new(),
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         }],
         loops: vec![Loop {
-            id: LoopId(id(crate::ids::ID_FORMAT, 4)),
+            id: LoopId(id(FORMAT, 4)),
             face: FaceId("face".into()),
             boundary_role: LoopBoundaryRole::Unspecified,
             coedges: Vec::new(),
@@ -760,22 +529,17 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     };
 
     assert_eq!(
-        emit_attributes(
-            &mut brep,
-            &records,
-            &by_index,
-            &reach,
-            crate::ids::ID_FORMAT
-        ),
+        emit_attributes(&mut brep, &records, &by_index, &reach, FORMAT),
         HashSet::from([1, 2])
     );
-    assert!(brep.attributes.iter().any(|attribute| attribute.target
-        == AttributeTarget::Shell(ShellId(id(crate::ids::ID_FORMAT, 3)))));
     assert!(brep
         .attributes
         .iter()
-        .any(|attribute| attribute.target
-            == AttributeTarget::Loop(LoopId(id(crate::ids::ID_FORMAT, 4)))));
+        .any(|attribute| attribute.target == AttributeTarget::Shell(ShellId(id(FORMAT, 3)))));
+    assert!(brep
+        .attributes
+        .iter()
+        .any(|attribute| attribute.target == AttributeTarget::Loop(LoopId(id(FORMAT, 4)))));
 }
 
 fn ident(bytes: &mut Vec<u8>, name: &str) {
@@ -807,8 +571,8 @@ fn generated_subshell_hierarchy_flattens_faces_onto_shell() {
     record(&mut bytes, "face", &[-1, -1, -1, -1]); // 4
     record(&mut bytes, "face", &[-1, -1, -1, -1]); // 5
 
-    let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8)
-        .expect("generated subshell bytes must frame");
+    let records =
+        crate::sab::frame(&bytes, 0, bytes.len(), 8).expect("generated subshell bytes must frame");
     let by_index = records
         .iter()
         .map(|record| (record.index as i64, record))
@@ -816,7 +580,7 @@ fn generated_subshell_hierarchy_flattens_faces_onto_shell() {
     let kept = [4, 5].into_iter().collect::<HashSet<_>>();
 
     assert_eq!(
-        shell_faces(&records[1], &by_index, &kept, crate::ids::ID_FORMAT),
+        shell_faces(&records[1], &by_index, &kept, FORMAT),
         vec![
             FaceId("f3d:brep:entity#4".into()),
             FaceId("f3d:brep:entity#5".into())
@@ -839,7 +603,7 @@ fn subshell_wires_project_onto_the_nearest_shell() {
     record(&mut bytes, "wire", &[]); // 5
     record(&mut bytes, "wire", &[]); // 6
 
-    let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8)
+    let records = crate::sab::frame(&bytes, 0, bytes.len(), 8)
         .expect("generated subshell-wire bytes must frame");
     let by_index = records
         .iter()

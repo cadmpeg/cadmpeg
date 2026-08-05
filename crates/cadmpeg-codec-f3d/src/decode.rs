@@ -2443,7 +2443,7 @@ fn populate_annotations(
     ir: &CadIr,
     scan: &ContainerScan,
     native: &F3dNative,
-    brep: Option<(&str, &[brep::AnnotationRecord])>,
+    brep: Option<(&str, &[cadmpeg_asm::brep::AnnotationRecord])>,
     unknowns: &[UnknownRecord],
 ) -> cadmpeg_ir::Annotations {
     use std::collections::{HashMap, HashSet};

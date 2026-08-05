@@ -123,7 +123,10 @@ pub(crate) fn validate_source_less_topology_tolerances(
         .filter(|parameters| {
             matches!(
                 parameters.extension,
-                crate::records::TolerantCoedgeExtension::EmbeddedCurve { target: None, .. }
+                cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
+                    target: None,
+                    ..
+                }
             )
         })
         .map(|parameters| parameters.coedge.as_str())
@@ -831,9 +834,9 @@ pub(crate) fn validate_source_less_design_links(
             )));
         }
         match &parameters.extension {
-            crate::records::TolerantCoedgeExtension::None
-            | crate::records::TolerantCoedgeExtension::Empty { target: None } => {}
-            crate::records::TolerantCoedgeExtension::EmbeddedCurve {
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::None
+            | cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: None } => {}
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
                 target: None,
                 parameter_range,
                 ..
@@ -870,10 +873,11 @@ pub(crate) fn validate_source_less_design_links(
                     )));
                 }
             }
-            crate::records::TolerantCoedgeExtension::Empty { target: Some(_) }
-            | crate::records::TolerantCoedgeExtension::Reference { .. }
-            | crate::records::TolerantCoedgeExtension::EmbeddedCurve {
-                target: Some(_), ..
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: Some(_) }
+            | cadmpeg_asm::brep::records::TolerantCoedgeExtension::Reference { .. }
+            | cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
+                target: Some(_),
+                ..
             } => {
                 return Err(CodecError::NotImplemented(format!(
                     "source-less F3D cannot relocate tolerant-coedge extension {}",

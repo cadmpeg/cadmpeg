@@ -427,7 +427,7 @@ pub(crate) fn patch_tolerant_coedge_parameters(
 
 pub(crate) fn patch_wire_topologies(
     bytes: &mut [u8],
-    edits: &BTreeMap<usize, crate::records::WireSide>,
+    edits: &BTreeMap<usize, cadmpeg_asm::brep::records::WireSide>,
 ) -> Result<(), CodecError> {
     if edits.is_empty() {
         return Ok(());
@@ -460,8 +460,8 @@ pub(crate) fn patch_wire_topologies(
             )));
         }
         bytes[offset] = match side {
-            crate::records::WireSide::In => 0x0a,
-            crate::records::WireSide::Out => 0x0b,
+            cadmpeg_asm::brep::records::WireSide::In => 0x0a,
+            cadmpeg_asm::brep::records::WireSide::Out => 0x0b,
         };
     }
     Ok(())
