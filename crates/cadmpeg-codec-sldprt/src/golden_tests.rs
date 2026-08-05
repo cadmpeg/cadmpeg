@@ -22,7 +22,7 @@
 use std::io::Cursor;
 
 use cadmpeg_codec_core::decode::InspectOptions;
-use cadmpeg_codec_core::golden::{elide_digests, snapshot_text, Branch, Harness};
+use cadmpeg_codec_core::golden::{elide_local_digests, snapshot_text, Branch, Harness};
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 
 use super::SldprtCodec;
@@ -66,20 +66,9 @@ fn decode_snapshot(bytes: &[u8]) -> String {
             Ok(mut result) => {
                 if let Some(source) = result.ir.source.as_mut() {
                     // The `native` lane digests cover retained source bytes and
-                    // are pinned; every digest below covers decoded content, so
-                    // a platform's libm moves it.
-                    elide_digests(
-                        &mut source.attributes,
-                        &[
-                            "brep_semantic_sha256",
-                            "semantic_sha256",
-                            "sldprt_neutral_configuration_sha256",
-                            "sldprt_neutral_feature_sha256",
-                            "sldprt_neutral_parameter_sha256",
-                            "sldprt_neutral_sketch_constraint_sha256",
-                            "sldprt_neutral_sketch_sha256",
-                        ],
-                    );
+                    // stay pinned; a `_local_sha256` digest covers decoded
+                    // content, so a platform's libm moves it.
+                    elide_local_digests(&mut source.attributes);
                 }
                 serde_json::json!({
                     "ir": serde_json::to_value(&result.ir).expect("serialize ir"),

@@ -154,6 +154,15 @@ impl SldprtCodec {
         Self::write_preserved_with_annotations(ir, &source_fidelity.annotations, &records, writer)
     }
 
+    /// Replay the retained source image when the document is untouched since the
+    /// decode that recorded its baseline, and write it semantically otherwise.
+    ///
+    /// The `document_local_sha256` baseline answers only "was this edited since
+    /// it was decoded?", bitwise and on this machine; see
+    /// [`decode::document_local_sha256`]. An absent baseline means the question
+    /// cannot be answered, so the document takes the semantic write path — the
+    /// conservative branch, which reproduces the document from the IR instead of
+    /// replaying bytes that may no longer describe it.
     fn write_preserved_with_annotations(
         ir: &CadIr,
         annotations: &Annotations,
@@ -163,8 +172,8 @@ impl SldprtCodec {
         let expected = ir
             .source
             .as_ref()
-            .and_then(|source| source.attributes.get("semantic_sha256"));
-        if expected.is_none_or(|expected| decode::semantic_hash(ir) != *expected) {
+            .and_then(|source| source.attributes.get("document_local_sha256"));
+        if expected.is_none_or(|expected| decode::document_local_sha256(ir) != *expected) {
             return writer::write_semantic_with_records(ir, annotations, records, writer);
         }
         let Some(record) = records

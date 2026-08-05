@@ -17,7 +17,7 @@ native CAD ── detect + inspect ──> container summary
 - `validate` reads or decodes an input and checks IR invariants.
 - `export` reads or decodes an input and writes CADIR, STEP, SLDPRT, F3D, Rhino, or FreeCAD without validation.
 - `convert` loads or decodes, validates, then exports. `--allow-invalid` continues export after validation errors.
-- `diff` reads or decodes two inputs and compares units, tolerances, the neutral model, native namespaces, source annotations, and retained records. ID-bearing records match by globally unique IDs. Vector position is not entity identity.
+- `diff` reads or decodes two inputs and compares units, tolerances, the neutral model, native namespaces, source metadata, source annotations, and retained records. ID-bearing records match by globally unique IDs. Vector position is not entity identity. A source attribute whose key ends in `_local_sha256` holds a machine-local content digest, which no two platforms reproduce; `diff` reports a difference in one under a separate informational section and keeps status 0.
 
 CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 5, including its required `subds` arena. Source annotations and retained records stay in the source-fidelity sidecar. `--allow-empty` permits geometry export when a source decode transferred no geometry.
 

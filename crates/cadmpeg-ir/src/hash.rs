@@ -33,22 +33,49 @@ pub fn canonical_json_sha256<T: Serialize>(value: &T) -> String {
     encode_hex(&hasher.finalize())
 }
 
-/// Returns the semantic digest of `ir` as seen by the `format` codec.
+/// Returns the machine-local content digest of `ir` as seen by the `format`
+/// codec, for recording as the `document_local_sha256` source attribute.
 ///
 /// The digest covers the document in canonical arena order with two
-/// normalizations: the recorded `semantic_sha256` attribute is dropped so a
+/// normalizations: the recorded `document_local_sha256` attribute is dropped so a
 /// document carrying its own digest hashes the same as one that does not, and
 /// the `format` unknown arena is reduced to record identities and links with
 /// `source_image_id` — the retained copy of the source container — excluded.
 /// Retained source bytes therefore never reach the digest, and the digest is
 /// stable across a decode that stores it.
-pub fn semantic_document_hash(ir: &CadIr, format: &str, source_image_id: &str) -> String {
+///
+/// # What this digest is, and is not
+///
+/// It is a bitwise SHA-256 over the decoded neutral content. Its one job is the
+/// write path's "was this document edited since it was decoded?" oracle: a
+/// writer that finds the recorded digest still equal to a freshly computed one
+/// replays the retained source bytes, and otherwise writes the document out
+/// through its own encoder.
+///
+/// It is not a portable identity. The decoded content includes values a codec
+/// derives through libm transcendentals, and glibc, MSVC, and Apple's libm
+/// disagree on those by one or two units in the last place, so the same file
+/// decoded on two platforms yields two different digests. It is equally not
+/// stable across a change to this function, to the serialized shape of any
+/// hashed type, or to a codec's arithmetic.
+///
+/// It is intentionally not tolerance-aware, and no amount of work can make it
+/// so. Tolerant equality — what [`cadmpeg_codec_core::compare`] and
+/// [`crate::diff`] implement — is not transitive, and a hash imposes an
+/// equivalence relation, so no digest can ever agree with an epsilon comparison.
+/// The digest therefore stays bitwise and states its limits, rather than
+/// pretending to a semantic identity it cannot deliver.
+///
+/// Every attribute holding a digest with these properties carries the
+/// [`cadmpeg_codec_core::compare::LOCAL_DIGEST_SUFFIX`] suffix; see
+/// [`crate::document::SourceMeta`] for the convention and for who relies on it.
+pub fn document_local_sha256(ir: &CadIr, format: &str, source_image_id: &str) -> String {
     let unknowns = reduced_unknowns(ir, format, source_image_id);
     canonical_json_sha256(&NormalizedDocument {
         ir_version: &ir.ir_version,
         source: ir.source.as_ref().map(|source| {
             let mut source = source.clone();
-            source.attributes.remove("semantic_sha256");
+            source.attributes.remove("document_local_sha256");
             source
         }),
         units: &ir.units,
@@ -195,7 +222,7 @@ fn encode_hex(digest: &[u8]) -> String {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use super::{canonical_json_sha256, semantic_document_hash, sha256_hex};
+    use super::{canonical_json_sha256, document_local_sha256, sha256_hex};
     use crate::document::CadIr;
     use crate::native::{Native, NativeRecord};
     use crate::units::Units;
@@ -361,10 +388,38 @@ mod tests {
         ir
     }
 
-    /// Both digest entry points over one fixed document. `semantic_document_hash`
+    /// Both digest entry points over one fixed document. `document_local_sha256`
     /// reduces the named format's unknown arena to identities and links and
     /// drops the retained source image, so it is pinned alongside the plain
     /// document digest.
+    ///
+    /// # Why two hex literals are pasted here
+    ///
+    /// This repository's rule is that an expectation comes from a specification
+    /// or an approximate comparison, never from a failing run. These two
+    /// literals are the sanctioned exception, and they must be read as such: a
+    /// digest algorithm has no specification outside its own output, so the only
+    /// possible source for the expected value is the algorithm as it stands. The
+    /// values below were captured once, deliberately, from the algorithm being
+    /// pinned.
+    ///
+    /// What this pins is the algorithm, not a correctness property. It says
+    /// nothing about whether either digest covers the right fields; the tests
+    /// above and beside it do that. The document it hashes is built from integer
+    /// and fractional literals only, with no transcendental anywhere in its
+    /// construction, so it is platform-independent by construction and these
+    /// literals hold on glibc, MSVC, and Apple's libm alike.
+    ///
+    /// A failure here means the digest algorithm changed: this function, the
+    /// serialized shape of any hashed type, the unknown reduction, or the
+    /// canonical JSON rendering underneath. Every baseline recorded in every
+    /// existing document is then stale, so every such document loses its
+    /// write-path fast path and takes the no-baseline branch. That is a decision
+    /// to state and accept out loud, never a side effect of an unrelated edit.
+    /// To make it deliberately: change the algorithm, run
+    /// `cargo test -p cadmpeg-ir --lib pins_document_digests` to read the two new
+    /// digests out of the failure, paste them here, and say in the commit body
+    /// that stored baselines are invalidated.
     #[test]
     fn pins_document_digests() {
         let ir = pinned_document();
@@ -373,8 +428,41 @@ mod tests {
             "00ac254ce62cf446f1d1dcea56ded050bd9a1ef2a53c846a8e7c588cd99bb071"
         );
         assert_eq!(
-            semantic_document_hash(&ir, "pin", "pin:source-image#0"),
+            document_local_sha256(&ir, "pin", "pin:source-image#0"),
             "83fa753fb39360b9e51859c9c07ddac6ff23ec17b179fa548cf33c4331170180"
+        );
+    }
+
+    /// The pinned document with the source metadata a decoded document carries:
+    /// one recorded baseline the digest must drop, and one ordinary attribute it
+    /// must keep.
+    fn pinned_document_with_source() -> CadIr {
+        let mut ir = pinned_document();
+        ir.source = Some(crate::document::SourceMeta {
+            format: "pin".into(),
+            attributes: [
+                ("document_local_sha256".to_owned(), "stale".to_owned()),
+                ("file_size".to_owned(), "4096".to_owned()),
+            ]
+            .into_iter()
+            .collect(),
+        });
+        ir
+    }
+
+    /// The digest over a document that carries source metadata, pinned for the
+    /// same reason and under the same rules as [`pins_document_digests`] — which
+    /// states why a pasted literal is legitimate here and what a failure means.
+    ///
+    /// This one additionally pins the normalization: the recorded baseline
+    /// attribute is dropped before hashing and every other attribute is kept, so
+    /// changing which attribute the digest ignores fails here.
+    #[test]
+    fn pins_document_digest_over_source_metadata() {
+        let ir = pinned_document_with_source();
+        assert_eq!(
+            document_local_sha256(&ir, "pin", "pin:source-image#0"),
+            "3750864814cc4d83c355df4e8c6942c3b7c682dc15c193b5c836540ad8c07d64"
         );
     }
 

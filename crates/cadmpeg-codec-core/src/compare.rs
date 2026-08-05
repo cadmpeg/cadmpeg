@@ -48,6 +48,15 @@
 //!   agrees only under exact equality, so no tolerance can rescue one.
 //! - Chaining comparisons through an intermediate proves nothing about the
 //!   endpoints. Compare the two values the question is actually about.
+//!
+//! ## Naming a digest that this relation cannot reconcile
+//!
+//! A codec still needs bitwise digests over decoded content: the write path asks
+//! "was this document edited since it was decoded?" and only a bitwise digest
+//! answers that cheaply. Such a digest is valid within one machine's decode and
+//! nowhere else, for exactly the reason stated above. It is therefore named with
+//! the [`LOCAL_DIGEST_SUFFIX`] suffix, and [`is_local_digest_attribute`] is the
+//! one place that decides whether a source attribute holds one.
 
 use std::fmt::Write as _;
 
@@ -59,6 +68,29 @@ use serde_json::Value;
 /// so small values compare absolutely. See the module documentation for why
 /// this magnitude.
 pub const FLOAT_TOLERANCE: f64 = 1e-12;
+
+/// Suffix reserved for a source attribute holding a machine-local content
+/// digest.
+///
+/// A key ending in this suffix holds a bitwise digest over decoded neutral
+/// content — the very values this module compares tolerantly. It is reproducible
+/// only under the same binary on the same platform, it is never a portable
+/// identity, and no tolerance can reconcile two of them. A codec that records a
+/// new digest of decoded content must name it with this suffix; a digest over
+/// retained source bytes is bit-exact everywhere and must not.
+pub const LOCAL_DIGEST_SUFFIX: &str = "_local_sha256";
+
+/// Whether a source attribute key names a machine-local content digest under the
+/// [`LOCAL_DIGEST_SUFFIX`] convention.
+///
+/// Two consumers depend on this: a structural diff reports such an attribute
+/// informationally rather than as a real difference, and the golden harness
+/// elides it from a snapshot. Both would otherwise report a platform as a
+/// change.
+#[must_use]
+pub fn is_local_digest_attribute(key: &str) -> bool {
+    key.ends_with(LOCAL_DIGEST_SUFFIX)
+}
 
 /// Whether two fractional numbers agree within [`FLOAT_TOLERANCE`] relative to
 /// the larger magnitude, with a floor of one so small values compare

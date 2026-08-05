@@ -139,6 +139,15 @@ impl F3dCodec {
         Self::write_preserved_bytes(ir, data, record.byte_len, &record.sha256, writer)
     }
 
+    /// Replay the retained source bytes when the document is untouched since the
+    /// decode that recorded its baseline, and patch the container otherwise.
+    ///
+    /// The `document_local_sha256` baseline answers only "was this edited since
+    /// it was decoded?", bitwise and on this machine; see
+    /// [`decode::document_local_sha256`]. Without it the question cannot be
+    /// answered at all, and this codec refuses rather than guess: replaying the
+    /// bytes could discard edits, and patching could rewrite a container that
+    /// needed no change.
     fn write_preserved_bytes(
         ir: &CadIr,
         data: &[u8],
@@ -149,15 +158,15 @@ impl F3dCodec {
         let expected = ir
             .source
             .as_ref()
-            .and_then(|source| source.attributes.get("semantic_sha256"))
-            .ok_or_else(|| CodecError::NotImplemented("IR has no F3D semantic baseline".into()))?;
+            .and_then(|source| source.attributes.get("document_local_sha256"))
+            .ok_or_else(|| CodecError::NotImplemented("IR has no F3D document baseline".into()))?;
         let hash = sha256_hex(data);
         if data.len() as u64 != byte_len || hash != sha256 {
             return Err(CodecError::Malformed(
                 "retained F3D source image failed integrity validation".into(),
             ));
         }
-        if decode::semantic_hash(ir) != *expected {
+        if decode::document_local_sha256(ir) != *expected {
             return writer::patch::write_semantic(ir, data, writer);
         }
         writer.write_all(data)?;

@@ -8,26 +8,77 @@
 //! tolerance and its caveats, including that the relation is not transitive:
 //! every verdict here concerns exactly the two documents passed in.
 //!
-//! The comparison covers units, tolerances, and every model and native arena. It
-//! does not cover [`crate::document::SourceMeta`], so the digest attributes
-//! recorded there — `semantic_sha256` and its neighbours — cannot make a diff
-//! report a difference. That is the only coherent treatment of a digest here: a
-//! digest is a bitwise fingerprint of values this module compares tolerantly, so
-//! two decodes that agree to fourteen significant digits hash differently and no
-//! tolerance can reconcile them. A caller that needs to compare source metadata
-//! must compare it directly and decide for itself which attributes are
-//! bit-reproducible.
+//! The comparison covers units, tolerances, every model and native arena, and
+//! [`crate::document::SourceMeta`] — the source format id and its attributes,
+//! where a codec records the program version, the object count, and the rest of
+//! what it read out of the container.
+//!
+//! One class of attribute is carved out. A machine-local digest, named by the
+//! [`cadmpeg_codec_core::compare::LOCAL_DIGEST_SUFFIX`] convention, is a bitwise
+//! fingerprint of the very values this module compares tolerantly: two decodes
+//! that agree to fourteen significant digits hash differently, and no tolerance
+//! can reconcile them. Reporting such a difference as a difference would make
+//! every cross-platform comparison of one file report that file as changed.
+//! [`SourceDiff::local_digests`] therefore reports them for information, outside
+//! [`IrDiff::is_empty`] and outside the exit code derived from it, while every
+//! other source attribute counts.
+//!
+//! A document with no `source` compares as one whose source is
+//! [`SourceMeta::default`]: an empty format id and no attributes. Two documents
+//! that both lack source metadata therefore agree, and a document that gained a
+//! populated one differs.
 
 use std::collections::BTreeMap;
 
-use cadmpeg_codec_core::compare::{floats_agree, values_agree};
+use cadmpeg_codec_core::compare::{floats_agree, is_local_digest_attribute, values_agree};
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::document::SourceMeta;
 use crate::CadIr;
+
+/// One differing source attribute.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct AttributeChange {
+    /// Attribute key.
+    pub key: String,
+    /// Value in the left-hand document, absent when only the right-hand document
+    /// carries the key.
+    pub left: Option<String>,
+    /// Value in the right-hand document, absent when only the left-hand document
+    /// carries the key.
+    pub right: Option<String>,
+}
+
+/// Changes in the two documents' source metadata.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SourceDiff {
+    /// `(left, right)` source format ids, present only when they differ.
+    pub format_change: Option<(String, String)>,
+    /// Differing attributes, each a difference.
+    pub attributes: Vec<AttributeChange>,
+    /// Differing machine-local digest attributes, reported for information and
+    /// never counted as a difference.
+    ///
+    /// See the module documentation: such a digest cannot agree across platforms,
+    /// so a verdict that turned on one would call the same file changed.
+    pub local_digests: Vec<AttributeChange>,
+}
+
+impl SourceDiff {
+    /// Returns `true` when nothing that counts as a difference changed.
+    ///
+    /// [`Self::local_digests`] is deliberately not consulted.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.format_change.is_none() && self.attributes.is_empty()
+    }
+}
 
 /// A modified entity and its differing top-level fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -62,15 +113,21 @@ pub struct IrDiff {
     pub unit_change: Option<(crate::units::Units, crate::units::Units)>,
     /// `(left, right)` tolerances, present only when the two documents' tolerances differ.
     pub tolerance_change: Option<(crate::units::Tolerances, crate::units::Tolerances)>,
+    /// Source-metadata changes, including the informational digest section.
+    pub source: SourceDiff,
     /// Per-arena diffs, one entry per arena compared.
     pub per_arena: Vec<ArenaDiff>,
 }
 
 impl IrDiff {
-    /// Returns `true` when neither units, tolerances, nor any arena differ.
+    /// Returns `true` when neither units, tolerances, source metadata, nor any
+    /// arena differ.
+    ///
+    /// A difference confined to [`SourceDiff::local_digests`] leaves this `true`.
     pub fn is_empty(&self) -> bool {
         self.unit_change.is_none()
             && self.tolerance_change.is_none()
+            && self.source.is_empty()
             && self.per_arena.iter().all(|arena| {
                 arena.added.is_empty() && arena.removed.is_empty() && arena.modified.is_empty()
             })
@@ -206,11 +263,52 @@ fn tolerances_agree(left: crate::units::Tolerances, right: crate::units::Toleran
     floats_agree(left.linear, right.linear) && floats_agree(left.angular, right.angular)
 }
 
-/// Compare units, tolerances, and every entity arena by stable entity ID.
+/// Compare the source metadata of two documents, classifying each differing
+/// attribute as a difference or as an informational machine-local digest.
+///
+/// An absent `source` compares as [`SourceMeta::default`]; the module
+/// documentation states why.
+fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
+    let absent = SourceMeta::default();
+    let left = left.source.as_ref().unwrap_or(&absent);
+    let right = right.source.as_ref().unwrap_or(&absent);
+    let mut result = SourceDiff {
+        format_change: (left.format != right.format)
+            .then(|| (left.format.clone(), right.format.clone())),
+        ..SourceDiff::default()
+    };
+    let keys = left
+        .attributes
+        .keys()
+        .chain(right.attributes.keys())
+        .collect::<std::collections::BTreeSet<_>>();
+    for key in keys {
+        let before = left.attributes.get(key);
+        let after = right.attributes.get(key);
+        if before == after {
+            continue;
+        }
+        let change = AttributeChange {
+            key: key.clone(),
+            left: before.cloned(),
+            right: after.cloned(),
+        };
+        if is_local_digest_attribute(key) {
+            result.local_digests.push(change);
+        } else {
+            result.attributes.push(change);
+        }
+    }
+    result
+}
+
+/// Compare units, tolerances, source metadata, and every entity arena by stable
+/// entity ID.
 ///
 /// Fractional numbers compare within the tolerance stated by
 /// [`cadmpeg_codec_core::compare`]; integers, strings, enums, and structure
-/// compare exactly.
+/// compare exactly. Source attributes are strings and compare exactly; a
+/// machine-local digest among them is reported without counting as a difference.
 pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
     // `Units` carries only the `LengthUnit` enum, so exact comparison is the
     // correct relation for it; there is no float to tolerate.
@@ -223,6 +321,7 @@ pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
     IrDiff {
         unit_change,
         tolerance_change,
+        source: diff_source(left, right),
         per_arena,
     }
 }
@@ -232,6 +331,7 @@ pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
 mod tests {
     use super::diff;
     use crate::examples::unit_cube;
+    use cadmpeg_codec_core::compare;
 
     #[test]
     fn detects_changes_in_all_document_dimensions() {
@@ -391,25 +491,120 @@ mod tests {
         );
     }
 
-    /// `source` metadata, including the digest attributes, is outside what this
-    /// comparison covers, so a digest that cannot agree across platforms cannot
-    /// make a diff report a difference either.
-    #[test]
-    fn source_metadata_is_outside_the_comparison() {
-        let left = unit_cube();
-        let mut right = left.clone();
-        let source = right
-            .source
-            .get_or_insert_with(|| crate::document::SourceMeta {
-                format: "synthetic".into(),
-                ..Default::default()
-            });
-        source
-            .attributes
-            .insert("semantic_sha256".into(), "0".repeat(64));
+    /// A cube carrying source metadata with the given attributes.
+    fn with_source(attributes: &[(&str, &str)]) -> crate::CadIr {
+        let mut ir = unit_cube();
+        ir.source = Some(crate::document::SourceMeta {
+            format: "synthetic".into(),
+            attributes: attributes
+                .iter()
+                .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+                .collect(),
+        });
+        ir
+    }
 
+    /// An ordinary source attribute that moved is a difference. Before this was
+    /// compared, a `program_version` or `object_count` change between two
+    /// documents was invisible.
+    #[test]
+    fn a_source_attribute_difference_is_a_difference() {
+        let left = with_source(&[("program_version", "1.0"), ("object_count", "3")]);
+        let right = with_source(&[("program_version", "1.1"), ("object_count", "3")]);
+
+        let result = diff(&left, &right);
+        assert!(!result.is_empty());
+        assert_eq!(
+            result.source.attributes,
+            [super::AttributeChange {
+                key: "program_version".to_owned(),
+                left: Some("1.0".to_owned()),
+                right: Some("1.1".to_owned()),
+            }]
+        );
+        assert!(result.source.local_digests.is_empty());
+    }
+
+    /// An attribute present on one side only is a difference in either direction.
+    #[test]
+    fn an_added_or_removed_source_attribute_is_a_difference() {
+        let left = with_source(&[("object_count", "3")]);
+        let right = with_source(&[]);
+
+        let forward = diff(&left, &right);
+        assert!(!forward.is_empty());
+        assert_eq!(forward.source.attributes[0].left.as_deref(), Some("3"));
+        assert_eq!(forward.source.attributes[0].right, None);
+
+        let backward = diff(&right, &left);
+        assert!(!backward.is_empty());
+        assert_eq!(backward.source.attributes[0].left, None);
+        assert_eq!(backward.source.attributes[0].right.as_deref(), Some("3"));
+    }
+
+    /// A machine-local digest is a bitwise fingerprint of tolerantly compared
+    /// values, so two platforms' decodes of one file disagree on it while
+    /// agreeing on the model. Such a difference is reported and does not make the
+    /// documents different.
+    #[test]
+    fn a_machine_local_digest_difference_is_reported_but_is_not_a_difference() {
+        let left = with_source(&[("document_local_sha256", &"0".repeat(64))]);
+        let right = with_source(&[("document_local_sha256", &"1".repeat(64))]);
+
+        let result = diff(&left, &right);
         assert_ne!(left.source, right.source);
-        assert!(diff(&left, &right).is_empty());
+        assert!(result.is_empty(), "{result:?}");
+        assert!(result.source.attributes.is_empty());
+        assert_eq!(
+            result
+                .source
+                .local_digests
+                .iter()
+                .map(|change| change.key.as_str())
+                .collect::<Vec<_>>(),
+            ["document_local_sha256"]
+        );
+    }
+
+    /// The carve-out follows the naming convention rather than a list of today's
+    /// keys, so a digest a codec adds tomorrow is classified without changing
+    /// this module.
+    #[test]
+    fn the_carve_out_follows_the_suffix_convention() {
+        let key = format!("future_codec_thing{}", compare::LOCAL_DIGEST_SUFFIX);
+        let left = with_source(&[(&key, "a"), ("footer_fingerprint", "f")]);
+        let right = with_source(&[(&key, "b"), ("footer_fingerprint", "f")]);
+        let result = diff(&left, &right);
+        assert!(result.is_empty(), "{result:?}");
+        assert_eq!(result.source.local_digests[0].key, key);
+
+        // A digest over retained source bytes carries no such suffix, so a change
+        // in one stays a difference.
+        let right = with_source(&[(&key, "b"), ("footer_fingerprint", "g")]);
+        let result = diff(&left, &right);
+        assert!(!result.is_empty());
+        assert_eq!(result.source.attributes[0].key, "footer_fingerprint");
+    }
+
+    /// A document with no source metadata compares against one that has some
+    /// without panicking, in either order, and an absent source equals an empty
+    /// one.
+    #[test]
+    fn absent_source_metadata_compares_without_panicking() {
+        let mut bare = unit_cube();
+        bare.source = None;
+        let populated = with_source(&[("object_count", "3")]);
+
+        for (left, right) in [(&bare, &populated), (&populated, &bare)] {
+            let result = diff(left, right);
+            assert!(!result.is_empty());
+            assert!(result.source.format_change.is_some());
+            assert_eq!(result.source.attributes.len(), 1);
+        }
+
+        let mut empty_source = unit_cube();
+        empty_source.source = Some(crate::document::SourceMeta::default());
+        assert!(diff(&bare, &empty_source).is_empty());
     }
 
     #[test]
