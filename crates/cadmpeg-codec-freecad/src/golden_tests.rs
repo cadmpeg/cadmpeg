@@ -19,11 +19,14 @@
 //! reporting shared with every other codec; this module supplies only this
 //! codec's branches.
 
+use std::collections::BTreeSet;
 use std::io::Cursor;
 use std::path::Path;
 
+use cadmpeg_codec_core::compare::floats_agree;
 use cadmpeg_codec_core::decode::InspectOptions;
 use cadmpeg_codec_core::golden::{snapshot_text, Branch, Harness};
+use cadmpeg_codec_step::StepCodec;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, EncodeInput, Encoder};
 
 use super::FcstdCodec;
@@ -201,4 +204,285 @@ fn golden_snapshots_hold() {
 #[test]
 fn golden_output_is_deterministic() {
     harness().check_determinism(&branches());
+}
+
+/// Serializes what one fixture exports as, or the refusal the export reports.
+///
+/// The STEP encoder writes these bytes, not this codec. The tree lives beside
+/// this crate's goldens because this crate owns their inputs, and the pairing is
+/// the point: this is the only artifact in the repository that pins STEP output
+/// by content, and what moves it is a change on either side of the pipeline.
+///
+/// An export error is frozen too: refusing to write is contract-relevant
+/// behavior, so this never panics on codec output.
+fn step_snapshot(bytes: &[u8]) -> String {
+    let decoded =
+        match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
+            Ok(decoded) => decoded,
+            Err(error) => return format!("decode_error: {error}\n"),
+        };
+    let mut exported = Vec::new();
+    match Encoder::plan(
+        &StepCodec::default(),
+        EncodeInput {
+            ir: &decoded.ir,
+            fidelity: Some(&decoded.source_fidelity),
+        },
+    )
+    .and_then(|plan| plan.write_to(&mut exported))
+    {
+        Ok(_) => String::from_utf8(exported).expect("the STEP writer produces UTF-8"),
+        Err(error) => format!("export_error: {error}\n"),
+    }
+}
+
+/// Compares two STEP texts, holding structure exact and numbers to a tolerance.
+///
+/// [`cadmpeg_codec_core::golden::snapshots_agree`] cannot do this: STEP is not
+/// JSON, so it falls back to a line comparison, and a line comparison of an
+/// exchange file reports a platform as a regression. These texts carry the same
+/// decoded geometry the `decode` branch compares tolerantly — a conical face's
+/// origin is `cos(half_angle)` scaled, and glibc, the MSVC runtime, and Apple's
+/// libm disagree in the last place — so the same tolerance has to reach here.
+///
+/// Every non-numeric character still compares exactly, so an entity name, an
+/// instance number, or a record's shape cannot move under this.
+///
+/// # Errors
+///
+/// Returns a description locating the first line that disagrees.
+fn step_texts_agree(expected: &str, actual: &str) -> Result<(), String> {
+    let expected = expected.replace("\r\n", "\n");
+    let actual = actual.replace("\r\n", "\n");
+    if expected == actual {
+        return Ok(());
+    }
+    let mut expected_lines = expected.lines();
+    let mut actual_lines = actual.lines();
+    let mut line = 0usize;
+    loop {
+        line += 1;
+        match (expected_lines.next(), actual_lines.next()) {
+            (None, None) => return Ok(()),
+            (Some(left), Some(right)) if lines_agree(left, right) => {}
+            (left, right) => {
+                return Err(format!(
+                    "at line {line}\n    golden: {}\n    actual: {}",
+                    left.unwrap_or("<end of file>"),
+                    right.unwrap_or("<end of file>")
+                ))
+            }
+        }
+    }
+}
+
+/// Whether two STEP lines agree, tolerating only last-place disagreement between
+/// two numeric literals in the same position.
+fn lines_agree(left: &str, right: &str) -> bool {
+    if left == right {
+        return true;
+    }
+    let mut left = step_tokens(left).into_iter();
+    let mut right = step_tokens(right).into_iter();
+    loop {
+        match (left.next(), right.next()) {
+            (None, None) => return true,
+            (Some(StepToken::Number(one)), Some(StepToken::Number(two))) => {
+                if !floats_agree(one, two) {
+                    return false;
+                }
+            }
+            (Some(StepToken::Text(one)), Some(StepToken::Text(two))) => {
+                if one != two {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
+}
+
+/// One run of a STEP line: a numeric literal, or the text between two of them.
+#[derive(Debug, PartialEq)]
+enum StepToken<'a> {
+    /// A real or integer literal.
+    Number(f64),
+    /// Everything else, compared exactly.
+    Text(&'a str),
+}
+
+/// Splits a STEP line into numeric literals and the text around them.
+///
+/// A literal starts at a digit and runs over digits, one decimal point, and one
+/// exponent. The sign is deliberately left in the surrounding text, so a sign
+/// flip is a difference rather than something a tolerance could absorb.
+///
+/// An instance reference such as `#307` stays in the surrounding text and
+/// compares exactly: it names a record rather than measuring anything, and one
+/// record standing where another used to must fail. The whole run is consumed
+/// either way, so the digits after the first cannot start a literal of their own.
+fn step_tokens(line: &str) -> Vec<StepToken<'_>> {
+    let bytes = line.as_bytes();
+    let mut tokens = Vec::new();
+    let mut text_start = 0usize;
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if !bytes[index].is_ascii_digit() {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < bytes.len() && bytes[index].is_ascii_digit() {
+            index += 1;
+        }
+        if index < bytes.len() && bytes[index] == b'.' {
+            index += 1;
+            while index < bytes.len() && bytes[index].is_ascii_digit() {
+                index += 1;
+            }
+            if index < bytes.len() && (bytes[index] == b'E' || bytes[index] == b'e') {
+                let exponent = index;
+                index += 1;
+                if index < bytes.len() && (bytes[index] == b'+' || bytes[index] == b'-') {
+                    index += 1;
+                }
+                if index < bytes.len() && bytes[index].is_ascii_digit() {
+                    while index < bytes.len() && bytes[index].is_ascii_digit() {
+                        index += 1;
+                    }
+                } else {
+                    index = exponent;
+                }
+            }
+        }
+        if start > 0 && bytes[start - 1] == b'#' {
+            continue;
+        }
+        let Ok(value) = line[start..index].parse::<f64>() else {
+            continue;
+        };
+        tokens.push(StepToken::Text(&line[text_start..start]));
+        tokens.push(StepToken::Number(value));
+        text_start = index;
+    }
+    tokens.push(StepToken::Text(&line[text_start..]));
+    tokens
+}
+
+/// Compares every fixture's STEP export against `tests/golden/step/`.
+fn check_step_branch(update: bool) -> Vec<String> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/step");
+    let mut failures = Vec::new();
+    let mut produced = BTreeSet::new();
+    for (name, bytes) in harness().fixture_inputs() {
+        let actual = step_snapshot(&bytes);
+        let path = dir.join(format!("{name}.step"));
+        produced.insert(format!("{name}.step"));
+        if update {
+            std::fs::write(&path, actual.as_bytes())
+                .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
+            continue;
+        }
+        match std::fs::read_to_string(&path) {
+            Ok(expected) => {
+                if let Err(mismatch) = step_texts_agree(&expected, &actual) {
+                    failures.push(format!(
+                        "fixture `{name}`: STEP export diverged from {}\n    {mismatch}",
+                        path.display()
+                    ));
+                }
+            }
+            Err(error) => failures.push(format!(
+                "fixture `{name}`: cannot read {} ({error}); regenerate with `{REGENERATE}`",
+                path.display()
+            )),
+        }
+    }
+    for orphan in std::fs::read_dir(&dir)
+        .unwrap_or_else(|error| panic!("read {}: {error}", dir.display()))
+        .map(|entry| entry.expect("directory entry").file_name())
+        .map(|name| name.to_string_lossy().into_owned())
+        .filter(|name| !produced.contains(name))
+    {
+        failures.push(format!(
+            "golden `{orphan}` under {} has no fixture behind it; delete the golden or restore the input",
+            dir.display()
+        ));
+    }
+    failures
+}
+
+/// Every committed STEP golden still matches what the export produces.
+#[test]
+fn step_goldens_hold() {
+    let failures = check_step_branch(std::env::var_os("UPDATE_GOLDEN").is_some());
+    assert!(
+        failures.is_empty(),
+        "{} STEP golden(s) drifted; if the change is intended regenerate with `{REGENERATE}` and review the diff:\n\n{}",
+        failures.len(),
+        failures.join("\n\n")
+    );
+}
+
+/// Exporting the same document twice produces identical text.
+#[test]
+fn step_output_is_deterministic() {
+    for (name, bytes) in harness().fixture_inputs() {
+        assert!(
+            step_snapshot(&bytes) == step_snapshot(&bytes),
+            "fixture `{name}`: two STEP exports in one process disagree"
+        );
+    }
+}
+
+/// [`step_texts_agree`] tolerates a platform's libm and nothing else.
+mod step_comparison {
+    use super::step_texts_agree;
+
+    /// The two values one exported vector carries with and without a one
+    /// unit-in-the-last-place perturbation of every libm transcendental.
+    const LINUX_VECTOR: &str = "#95 = VECTOR('',#37,0.8823529411764706);\n";
+    const PERTURBED_VECTOR: &str = "#95 = VECTOR('',#37,0.8823529411764707);\n";
+
+    #[test]
+    fn last_place_disagreement_agrees() {
+        assert!(step_texts_agree(LINUX_VECTOR, PERTURBED_VECTOR).is_ok());
+    }
+
+    #[test]
+    fn a_moved_instance_reference_disagrees() {
+        let moved = "#95 = VECTOR('',#38,0.8823529411764706);\n";
+        assert!(step_texts_agree(LINUX_VECTOR, moved).is_err());
+    }
+
+    #[test]
+    fn a_renumbered_record_disagrees() {
+        let moved = "#96 = VECTOR('',#37,0.8823529411764706);\n";
+        assert!(step_texts_agree(LINUX_VECTOR, moved).is_err());
+    }
+
+    #[test]
+    fn a_different_entity_disagrees() {
+        let moved = "#95 = DIRECTION('',#37,0.8823529411764706);\n";
+        assert!(step_texts_agree(LINUX_VECTOR, moved).is_err());
+    }
+
+    #[test]
+    fn a_sign_flip_disagrees() {
+        let moved = "#95 = VECTOR('',#37,-0.8823529411764706);\n";
+        assert!(step_texts_agree(LINUX_VECTOR, moved).is_err());
+    }
+
+    #[test]
+    fn a_change_above_the_tolerance_disagrees() {
+        let moved = "#95 = VECTOR('',#37,0.8823539411764706);\n";
+        let error = step_texts_agree(LINUX_VECTOR, moved)
+            .expect_err("a change above the tolerance must be reported");
+        assert!(error.contains("at line 1"), "{error}");
+    }
+
+    #[test]
+    fn a_dropped_record_disagrees() {
+        assert!(step_texts_agree(&format!("{LINUX_VECTOR}#96 = X();\n"), LINUX_VECTOR).is_err());
+    }
 }
