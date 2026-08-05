@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fuzz target for F3D SAB record stream framing.
 //!
-//! Feeds arbitrary bytes through `cadmpeg_codec_f3d::sab::frame` to exercise
+//! Feeds arbitrary bytes through `cadmpeg_asm::sab::frame` to exercise
 //! the token-by-token binary parser. Contract: no input may panic.
 
 #![no_main]
 
-use cadmpeg_codec_f3d::sab::frame;
+use cadmpeg_asm::sab::frame;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

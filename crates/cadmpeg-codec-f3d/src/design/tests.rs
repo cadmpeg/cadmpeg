@@ -4801,21 +4801,41 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     draft_scope.kind = "Draft".into();
     draft_scope.frame_length = 361;
     draft_scope.reference_members = vec![175, 176, 181, 182, 186, 190, 193];
+    let expected = Some(DesignDraftOperation {
+        angle: 0.4,
+        angle_record_index: 175,
+        angle_offset: (draft_start + 40) as u64,
+        opposite_angle_record_index: 176,
+        opposite_angle_offset: (draft_start + 155) as u64,
+    });
     assert_eq!(
         exact_draft_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &draft_scope),
-        Some(DesignDraftOperation {
-            angle: 0.4,
-            angle_record_index: 175,
-            angle_offset: (draft_start + 40) as u64,
-            opposite_angle_record_index: 176,
-            opposite_angle_offset: (draft_start + 155) as u64,
-        })
+        expected
     );
-    draft_scope.reference_members.swap(0, 1);
+
+    // The ordered reference table is in record-index order, so the scalar lanes
+    // hold no fixed position in it. Their local ordinals order them, and moving
+    // them within the table must not change the recovered operation.
+    draft_scope.reference_members = vec![181, 182, 186, 190, 193, 175, 176];
+    assert_eq!(
+        exact_draft_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &draft_scope),
+        expected
+    );
+
+    // A table that reaches only one of the two lanes has no complete operation.
+    draft_scope.reference_members = vec![175, 181, 182, 186, 190, 193];
     assert_eq!(
         exact_draft_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &draft_scope),
         None
     );
+
+    // Fewer than six references cannot carry the two lanes plus both groups.
+    draft_scope.reference_members = vec![175, 176, 181, 182, 186];
+    assert_eq!(
+        exact_draft_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &draft_scope),
+        None
+    );
+    draft_scope.reference_members = vec![175, 176, 181, 182, 186, 190, 193];
 
     let fillet_start = bytes.len();
     for (record_index, ordinal, value) in [
@@ -6865,87 +6885,574 @@ fn base_flange_scope_has_exact_profile_and_thickness_fields() {
 }
 
 #[test]
-fn edge_flange_scope_binds_each_edge_and_aggregate_operand() {
+fn edge_flange_scope_resolves_every_role_from_its_marked_slot() {
+    // The ordered reference table is in record-index order, so the fixture
+    // deliberately lists the settings record before the edge and aggregate
+    // groups: a reader that assigned roles by table position would mis-bind it.
+    let references = [201, 204, 207, 218, 221, 240, 243, 251, 254];
+    let frame = edge_flange_frame(&EdgeFlangeFixture {
+        header_shift: 0,
+        width_count: 1,
+        result_count: 2,
+        bend_position: 2,
+        height_datum: 1,
+        reference_side: 4,
+        bend_radius: 0.25,
+        wrapper: 201,
+        settings: 207,
+        angle_owner: 218,
+        height_owner: 204,
+        aggregate_group: 240,
+        edge_group: 251,
+    });
+
+    let operation = crate::design::decode::scopes::exact_edge_flange_operation(
+        &frame.bytes,
+        0,
+        frame.paired_at,
+        &references,
+    )
+    .expect("fixed EdgeFlange operation");
+    assert_eq!(operation.edge_wrapper_record_indices, [201]);
+    assert_eq!(operation.edge_group_record_indices, [251]);
+    assert_eq!(operation.edge_operand_record_indices, [254]);
+    assert_eq!(operation.aggregate_group_record_index, 240);
+    assert_eq!(operation.aggregate_operand_record_indices, [243]);
+    assert_eq!(operation.height_owner_record_index, 204);
+    assert_eq!(operation.angle_owner_record_index, 218);
+    assert_eq!(operation.settings_record_index, 207);
+    assert_eq!(operation.bend_radius, 0.25);
+    assert_eq!(operation.bend_radius_offset, frame.bend_radius_offset);
+    assert_eq!(
+        operation.bend_position,
+        crate::records::DesignBendPosition::Inside
+    );
+    assert_eq!(
+        operation.height_datum,
+        crate::records::DesignSheetMetalHeightDatum::InnerFaces
+    );
+    // The one table entry no slot claims is the width-distance owner, which
+    // makes this the symmetric edge-width mode.
+    assert_eq!(operation.width_distance_owner_record_indices, [221]);
+    assert_eq!(
+        operation.edge_width_mode(),
+        crate::records::DesignEdgeWidthMode::Symmetric
+    );
+}
+
+#[test]
+fn edge_flange_scope_reads_the_shifted_header_form() {
+    // The optional four-byte header member is not announced, so the same frame
+    // written four bytes later must still read through reference agreement.
+    let references = [201, 204, 207, 218, 240, 243, 251, 254];
+    for header_shift in [0usize, 4] {
+        let frame = edge_flange_frame(&EdgeFlangeFixture {
+            header_shift,
+            width_count: 0,
+            result_count: 1,
+            bend_position: 3,
+            height_datum: 2,
+            reference_side: 4,
+            bend_radius: 0.5,
+            wrapper: 201,
+            settings: 207,
+            angle_owner: 218,
+            height_owner: 204,
+            aggregate_group: 240,
+            edge_group: 251,
+        });
+
+        let operation = crate::design::decode::scopes::exact_edge_flange_operation(
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            &references,
+        )
+        .expect("fixed EdgeFlange operation");
+        assert_eq!(
+            operation.bend_position,
+            crate::records::DesignBendPosition::Adjacent
+        );
+        assert_eq!(
+            operation.height_datum,
+            crate::records::DesignSheetMetalHeightDatum::OuterFaces
+        );
+        assert_eq!(
+            operation.edge_width_mode(),
+            crate::records::DesignEdgeWidthMode::FullEdge
+        );
+        assert!(operation.width_distance_owner_record_indices.is_empty());
+    }
+}
+
+#[test]
+fn edge_flange_scope_refuses_a_frame_whose_group_operand_is_absent() {
+    // Record 254 is the edge group's operand. Without it the table has no entry
+    // three after the group, so the frame is refused rather than half-bound.
+    let references = [201, 204, 207, 218, 240, 243, 251, 255];
+    let frame = edge_flange_frame(&EdgeFlangeFixture {
+        header_shift: 0,
+        width_count: 0,
+        result_count: 1,
+        bend_position: 1,
+        height_datum: 2,
+        reference_side: 4,
+        bend_radius: 0.25,
+        wrapper: 201,
+        settings: 207,
+        angle_owner: 218,
+        height_owner: 204,
+        aggregate_group: 240,
+        edge_group: 251,
+    });
+
+    assert!(crate::design::decode::scopes::exact_edge_flange_operation(
+        &frame.bytes,
+        0,
+        frame.paired_at,
+        &references,
+    )
+    .is_none());
+}
+
+/// Field values written into a synthetic single-edge `EdgeFlange` frame.
+struct EdgeFlangeFixture {
+    header_shift: usize,
+    /// Width-distance parameter owners the edge-width mode adds to the table.
+    width_count: usize,
+    result_count: usize,
+    bend_position: u32,
+    height_datum: u32,
+    reference_side: u32,
+    bend_radius: f64,
+    wrapper: u32,
+    settings: u32,
+    angle_owner: u32,
+    height_owner: u32,
+    aggregate_group: u32,
+    edge_group: u32,
+}
+
+/// A synthetic frame plus the offsets the reader is expected to derive.
+struct EdgeFlangeFrame {
+    bytes: Vec<u8>,
+    paired_at: usize,
+    bend_radius_offset: u64,
+}
+
+/// Build a single-edge `EdgeFlange` frame from the settled fixed-section layout.
+///
+/// Every offset is computed from the layout rather than counted by hand, so the
+/// fixture stays correct when a field width changes.
+fn edge_flange_frame(fixture: &EdgeFlangeFixture) -> EdgeFlangeFrame {
     fn reference(bytes: &mut [u8], at: usize, record_index: u32) {
         bytes[at] = 1;
         bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
     }
 
-    let references = [
-        101, 102, 103, 111, 112, 113, 121, 122, 123, 131, 132, 133, 140, 141, 150, 151, 152, 153,
-        160, 170,
-    ];
-    let mut bytes = vec![0; 814];
-    bytes[30..34].copy_from_slice(&4u32.to_le_bytes());
-    let common = 133;
-    bytes[common..common + 4].copy_from_slice(&2u32.to_le_bytes());
-    bytes[common + 4..common + 8].copy_from_slice(&4u32.to_le_bytes());
-    for (ordinal, record_index) in [101, 111, 121, 131].into_iter().enumerate() {
-        reference(&mut bytes, common + 8 + ordinal * 11, record_index);
-    }
-    reference(&mut bytes, common + 52, 170);
-    bytes[common + 63..common + 67].copy_from_slice(&2u32.to_le_bytes());
-    reference(&mut bytes, common + 67, 141);
-    reference(&mut bytes, common + 78, 140);
-    bytes[common + 89..common + 93].copy_from_slice(&4u32.to_le_bytes());
-    bytes[237..245].copy_from_slice(&0.25f64.to_le_bytes());
-    bytes[251..255].copy_from_slice(&5u32.to_le_bytes());
+    let common = 85 + fixture.header_shift;
+    let wrapper_at = common + 8;
+    let settings_at = wrapper_at + 11;
+    let datum_at = settings_at + 11;
+    let angle_at = datum_at + 4;
+    let height_at = angle_at + 11;
+    let side_at = height_at + 11;
+    let radius_at = side_at + 15;
+    let result_count_at = radius_at + 14;
+    let aggregate_at = radius_at + 22 + fixture.result_count * 15;
+    let edge_group_at = aggregate_at + 27;
+    let paired_at =
+        493 + fixture.result_count * 15 + fixture.width_count * 11 + fixture.header_shift;
 
-    let operation =
-        crate::design::decode::scopes::exact_edge_flange_operation(&bytes, 0, 814, &references)
-            .expect("fixed EdgeFlange operation");
-    assert_eq!(operation.edge_wrapper_record_indices, [101, 111, 121, 131]);
-    assert_eq!(operation.edge_group_record_indices, [102, 112, 122, 132]);
-    assert_eq!(operation.edge_operand_record_indices, [103, 113, 123, 133]);
-    assert_eq!(operation.aggregate_group_record_index, 150);
-    assert_eq!(
-        operation.aggregate_operand_record_indices,
-        [151, 152, 153, 160]
+    let mut bytes = vec![0; paired_at.max(edge_group_at + 11)];
+    bytes[common..common + 4].copy_from_slice(&fixture.bend_position.to_le_bytes());
+    bytes[common + 4..common + 8].copy_from_slice(&1u32.to_le_bytes());
+    reference(&mut bytes, wrapper_at, fixture.wrapper);
+    reference(&mut bytes, settings_at, fixture.settings);
+    bytes[datum_at..datum_at + 4].copy_from_slice(&fixture.height_datum.to_le_bytes());
+    reference(&mut bytes, angle_at, fixture.angle_owner);
+    reference(&mut bytes, height_at, fixture.height_owner);
+    bytes[side_at..side_at + 4].copy_from_slice(&fixture.reference_side.to_le_bytes());
+    bytes[radius_at..radius_at + 8].copy_from_slice(&fixture.bend_radius.to_le_bytes());
+    let result_count = u32::try_from(fixture.result_count).expect("result count fits u32");
+    bytes[result_count_at..result_count_at + 4].copy_from_slice(&result_count.to_le_bytes());
+    reference(&mut bytes, aggregate_at, fixture.aggregate_group);
+    reference(&mut bytes, edge_group_at, fixture.edge_group);
+
+    EdgeFlangeFrame {
+        bytes,
+        paired_at,
+        bend_radius_offset: u64::try_from(radius_at).expect("radius offset fits u64"),
+    }
+}
+
+#[test]
+fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
+    use crate::records::{
+        DesignBendPosition, DesignEdgeFlangeOperation, DesignParameterKind, DesignParameterScope,
+        DesignSheetMetalHeightDatum,
+    };
+    use cadmpeg_ir::features::{
+        FeatureDefinition, SheetMetalBendPosition, SheetMetalFlangeWidth, SheetMetalHeightDatum,
+    };
+
+    let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
+    let mut scope = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#900"),
+        "EdgeFlange",
+        382,
     );
-    assert_eq!(operation.height_owner_record_index, 140);
-    assert_eq!(operation.angle_owner_record_index, 141);
-    assert_eq!(operation.bend_radius, 0.25);
-    assert_eq!(operation.bend_radius_offset, 237);
-    assert_eq!(
-        operation.bend_position,
-        crate::records::DesignBendPosition::TangentToSide
+    scope.reference_members = vec![383, 385, 388, 393, 396, 399, 402, 404, 407, 411];
+    scope.edge_flange_operation = Some(DesignEdgeFlangeOperation {
+        edge_wrapper_record_indices: vec![383],
+        edge_group_record_indices: vec![385],
+        edge_operand_record_indices: vec![388],
+        aggregate_group_record_index: 404,
+        aggregate_operand_record_indices: vec![407],
+        height_owner_record_index: 399,
+        angle_owner_record_index: 402,
+        width_distance_owner_record_indices: vec![393, 396],
+        settings_record_index: 411,
+        bend_radius: 0.25,
+        bend_radius_offset: 156,
+        reference_side_code: 4,
+        height_datum: DesignSheetMetalHeightDatum::InnerFaces,
+        bend_position: DesignBendPosition::Adjacent,
+    });
+
+    let owner =
+        |record_index: u32, parameter_record_index: u32| crate::records::DesignParameterOwner {
+            id: format!("{stream}:design-parameter-owner#{record_index}"),
+            byte_offset: 0,
+            class_tag: "000".into(),
+            record_index,
+            scope_record_index: 382,
+            local_ordinal: 0,
+            evaluated_value: 0.0,
+            evaluated_value_offset: 0,
+            parameter_record_index,
+            owned_ordinal: 0,
+            variant: None,
+            companion_record_index: 0,
+        };
+    let parameter = |record_index: u32, source_kind: &str, unit: &str, evaluated_value: f64| {
+        crate::records::DesignParameter {
+            id: format!("{stream}:design-parameter#{record_index}"),
+            byte_offset: 0,
+            class_tag: "000".into(),
+            record_index,
+            family_discriminator: None,
+            family_discriminator_offset: None,
+            source_ordinal: 0,
+            owner_record_index: None,
+            expression: String::new(),
+            expression_offset: 0,
+            source_kind: source_kind.into(),
+            source_kind_offset: 0,
+            kind: DesignParameterKind::Dimension,
+            unit: Some(unit.into()),
+            unit_offset: None,
+            name: source_kind.into(),
+            name_offset: 0,
+            evaluated_value,
+            evaluated_value_offset: 0,
+        }
+    };
+    let owners = [
+        owner(393, 392),
+        owner(396, 395),
+        owner(399, 398),
+        owner(402, 401),
+    ];
+    // Stored lengths are centimetres and stored angles are radians.
+    let parameters = [
+        parameter(392, "EdgeWidth_1", "mm", 3.0),
+        parameter(395, "EdgeWidth_2", "mm", 1.5),
+        parameter(398, "FlangeHeight", "mm", 2.5),
+        parameter(401, "FlangeAngle", "deg", std::f64::consts::FRAC_PI_2),
+    ];
+    let group = crate::records::DesignConstructionOperandGroup {
+        id: format!("{stream}:design-construction-operand-group#385"),
+        scope_record_index: 382,
+        scope_reference_ordinal: 1,
+        record_index: 385,
+        byte_offset: 0,
+        class_tag: "000".into(),
+        members: vec![388],
+        lost_edge_references: Vec::new(),
+        member_offsets: vec![0],
+        frame: crate::records::DesignConstructionOperandGroupFrame {
+            member_count_offset: 0,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            auxiliary_paths: Vec::new(),
+            trailing_record_indices: Vec::new(),
+            trailing_record_offsets: Vec::new(),
+            trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
+            opaque_index: 0,
+            opaque_index_offset: 0,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 0,
+            variant: false,
+        },
+        role: 0x0000_0008_0000_0000,
+        extrude_role: None,
+        extrude_face_role: None,
+        role_offset: 0,
+        paired_class_tag: "000".into(),
+        paired_byte_offset: 0,
+    };
+
+    let definition = crate::design::feature_project::project_edge_flange(
+        &scope,
+        &owners,
+        &parameters,
+        std::slice::from_ref(&group),
+        &[],
+        &[],
+    )
+    .expect("typed EdgeFlange definition");
+
+    let FeatureDefinition::SheetMetalEdgeFlange {
+        height,
+        angle,
+        height_datum,
+        bend_position,
+        width,
+        bend_radius,
+        ..
+    } = definition
+    else {
+        panic!("expected a sheet-metal edge flange");
+    };
+    assert!((height.0 - 25.0).abs() < 1e-12);
+    assert!((angle.0 - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+    assert_eq!(height_datum, SheetMetalHeightDatum::InnerFaces);
+    assert_eq!(bend_position, SheetMetalBendPosition::Adjacent);
+    assert!((bend_radius.0 - 2.5).abs() < 1e-12);
+    let SheetMetalFlangeWidth::TwoSides { first, second } = width else {
+        panic!("expected a two-sided flange width");
+    };
+    assert!((first.0 - 30.0).abs() < 1e-12);
+    assert!((second.0 - 15.0).abs() < 1e-12);
+}
+
+#[test]
+fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
+    use crate::records::{
+        DesignBendPosition, DesignEdgeFlangeOperation, DesignParameterScope,
+        DesignSheetMetalHeightDatum,
+    };
+
+    let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
+    let mut scope = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#901"),
+        "EdgeFlange",
+        317,
+    );
+    scope.reference_members = vec![318, 320, 323, 328, 331, 334, 336, 339, 343];
+    scope.edge_flange_operation = Some(DesignEdgeFlangeOperation {
+        edge_wrapper_record_indices: vec![318],
+        edge_group_record_indices: vec![320],
+        edge_operand_record_indices: vec![323],
+        aggregate_group_record_index: 336,
+        aggregate_operand_record_indices: vec![339],
+        height_owner_record_index: 331,
+        angle_owner_record_index: 334,
+        width_distance_owner_record_indices: vec![328],
+        settings_record_index: 343,
+        bend_radius: 0.25,
+        bend_radius_offset: 156,
+        reference_side_code: 4,
+        height_datum: DesignSheetMetalHeightDatum::OuterFaces,
+        bend_position: DesignBendPosition::Inside,
+    });
+
+    // The symmetric mode needs one `EdgeWidth` parameter. Without it the scope
+    // has no complete width, so no partial neutral flange is reported.
+    assert!(
+        crate::design::feature_project::project_edge_flange(&scope, &[], &[], &[], &[], &[],)
+            .is_none()
+    );
+}
+
+#[test]
+fn surface_patch_continuity_needs_every_boundary_to_agree() {
+    use crate::records::{DesignParameterScope, DesignPatchContinuity, DesignSurfacePatchBoundary};
+    use cadmpeg_ir::features::SurfaceContinuity;
+
+    let boundary = |continuity: DesignPatchContinuity| DesignSurfacePatchBoundary {
+        scope_reference_ordinal: 0,
+        record_index: 0,
+        is_seed_selection: false,
+        continuity,
+        flip: 2,
+        scale: -1.0,
+        model_reference: 0,
+    };
+    let scope_with = |boundaries: Vec<DesignSurfacePatchBoundary>| {
+        let mut scope = DesignParameterScope::empty("f3d:test:scope#1", "SurfacePatch", 1);
+        scope.surface_patch_boundaries = boundaries;
+        scope
+    };
+
+    for (code, expected) in [
+        (DesignPatchContinuity::Connected, SurfaceContinuity::Contact),
+        (DesignPatchContinuity::Tangent, SurfaceContinuity::Tangent),
+        (
+            DesignPatchContinuity::Curvature,
+            SurfaceContinuity::Curvature,
+        ),
+    ] {
+        let scope = scope_with(vec![boundary(code), boundary(code)]);
+        assert_eq!(
+            crate::design::feature_project::surface_patch_continuity(&scope),
+            Some(expected)
+        );
+    }
+
+    // A patch whose boundaries impose different conditions has no single neutral
+    // continuity, and one with no boundary record has none to report.
+    let mixed = scope_with(vec![
+        boundary(DesignPatchContinuity::Tangent),
+        boundary(DesignPatchContinuity::Connected),
+    ]);
+    assert!(crate::design::feature_project::surface_patch_continuity(&mixed).is_none());
+    assert!(
+        crate::design::feature_project::surface_patch_continuity(&scope_with(Vec::new())).is_none()
+    );
+    assert!(
+        crate::design::feature_project::surface_patch_continuity(&scope_with(vec![boundary(
+            DesignPatchContinuity::Unknown(9)
+        )]))
+        .is_none()
     );
 }
 
 #[test]
 fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
+    // The table deliberately places the groups before the owners so a reader
+    // assigning roles by table position cannot pass, and it is exercised under
+    // both header shifts because the shift is not announced by any member.
+    let references = [240, 243, 251, 254, 301, 304, 308, 311];
+    for header_shift in [0usize, 4] {
+        let frame = hem_frame(&HemFixture {
+            header_shift,
+            wrapper: 308,
+            settings: 311,
+            gap_owner: 301,
+            length_owner: 304,
+            aggregate_group: 240,
+            edge_group: 251,
+            bend_radius: 0.25,
+        });
+
+        let operation = crate::design::decode::scopes::exact_hem_operation(
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            &references,
+        )
+        .expect("fixed Hem operation");
+        assert_eq!(operation.edge_wrapper_record_index, 308);
+        assert_eq!(operation.settings_record_index, 311);
+        assert_eq!(operation.gap_owner_record_index, 301);
+        assert_eq!(operation.length_owner_record_index, 304);
+        assert_eq!(operation.aggregate_group_record_index, 240);
+        assert_eq!(operation.aggregate_operand_record_index, 243);
+        assert_eq!(operation.edge_group_record_index, 251);
+        assert_eq!(operation.edge_operand_record_index, 254);
+        assert_eq!(operation.bend_radius, 0.25);
+        assert_eq!(operation.bend_radius_offset, frame.bend_radius_offset);
+        // These four values are retained, not interpreted: each holds one value
+        // across every readable hem form and direction state (DR-09A).
+        assert_eq!(operation.form_code, 3);
+        assert_eq!(operation.direction_code, 1);
+        assert_eq!(operation.direction_reversal_byte, 0);
+        assert_eq!(operation.reference_side_code, 4);
+    }
+}
+
+#[test]
+fn hem_scope_refuses_a_frame_whose_owner_slot_is_absent() {
+    // The rolled form places its owner references at other offsets, so the
+    // two-owner reader must refuse a frame whose owner slot does not agree.
+    let references = [240, 243, 251, 254, 301, 304, 308, 311];
+    let mut frame = hem_frame(&HemFixture {
+        header_shift: 0,
+        wrapper: 308,
+        settings: 311,
+        gap_owner: 301,
+        length_owner: 304,
+        aggregate_group: 240,
+        edge_group: 251,
+        bend_radius: 0.25,
+    });
+    // Move the length-owner reference one byte later, as the rolled form does.
+    let at = 85 + 53;
+    frame.bytes[at..at + 11].fill(0);
+    frame.bytes[at + 1] = 1;
+    frame.bytes[at + 2..at + 6].copy_from_slice(&304u32.to_le_bytes());
+    assert!(crate::design::decode::scopes::exact_hem_operation(
+        &frame.bytes,
+        0,
+        frame.paired_at,
+        &references,
+    )
+    .is_none());
+}
+
+/// Field values written into a synthetic two-owner `Hem` frame.
+struct HemFixture {
+    header_shift: usize,
+    wrapper: u32,
+    settings: u32,
+    gap_owner: u32,
+    length_owner: u32,
+    aggregate_group: u32,
+    edge_group: u32,
+    bend_radius: f64,
+}
+
+/// A synthetic frame plus the offsets the reader is expected to derive.
+struct HemFrame {
+    bytes: Vec<u8>,
+    paired_at: usize,
+    bend_radius_offset: u64,
+}
+
+/// Build a two-owner `Hem` frame from the settled fixed-section layout.
+///
+/// Every offset is computed from the layout rather than counted by hand.
+fn hem_frame(fixture: &HemFixture) -> HemFrame {
     fn reference(bytes: &mut [u8], at: usize, record_index: u32) {
         bytes[at] = 1;
         bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
     }
 
-    let references = [201, 202, 203, 204, 205, 206, 207, 208];
-    let mut bytes = vec![0; 494];
-    bytes[85..89].copy_from_slice(&3u32.to_le_bytes());
-    bytes[89..93].copy_from_slice(&1u32.to_le_bytes());
-    reference(&mut bytes, 93, 203);
-    reference(&mut bytes, 104, 208);
-    bytes[115..119].copy_from_slice(&1u32.to_le_bytes());
-    bytes[121..125].copy_from_slice(&4u32.to_le_bytes());
-    reference(&mut bytes, 127, 201);
-    reference(&mut bytes, 138, 202);
-    bytes[156..164].copy_from_slice(&0.25f64.to_le_bytes());
+    let common = 85 + fixture.header_shift;
+    let paired_at = 494 + fixture.header_shift;
+    let mut bytes = vec![0; paired_at];
+    bytes[common..common + 4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[common + 4..common + 8].copy_from_slice(&1u32.to_le_bytes());
+    reference(&mut bytes, common + 8, fixture.wrapper);
+    reference(&mut bytes, common + 19, fixture.settings);
+    bytes[common + 30..common + 34].copy_from_slice(&1u32.to_le_bytes());
+    bytes[common + 36..common + 40].copy_from_slice(&4u32.to_le_bytes());
+    reference(&mut bytes, common + 42, fixture.gap_owner);
+    reference(&mut bytes, common + 53, fixture.length_owner);
+    let radius_at = common + 71;
+    bytes[radius_at..radius_at + 8].copy_from_slice(&fixture.bend_radius.to_le_bytes());
+    reference(&mut bytes, common + 108, fixture.aggregate_group);
+    reference(&mut bytes, common + 135, fixture.edge_group);
 
-    let operation = crate::design::decode::scopes::exact_hem_operation(&bytes, 0, 494, &references)
-        .expect("fixed Hem operation");
-    assert_eq!(operation.edge_wrapper_record_index, 203);
-    assert_eq!(operation.edge_group_record_index, 204);
-    assert_eq!(operation.edge_operand_record_index, 205);
-    assert_eq!(operation.aggregate_group_record_index, 206);
-    assert_eq!(operation.aggregate_operand_record_index, 207);
-    assert_eq!(operation.gap_owner_record_index, 201);
-    assert_eq!(operation.length_owner_record_index, 202);
-    assert_eq!(operation.bend_radius, 0.25);
-    assert_eq!(operation.bend_radius_offset, 156);
-    assert_eq!(
-        operation.bend_position,
-        crate::records::DesignBendPosition::TangentToSide
-    );
+    HemFrame {
+        bytes,
+        paired_at,
+        bend_radius_offset: u64::try_from(radius_at).expect("radius offset fits u64"),
+    }
 }
 
 #[test]

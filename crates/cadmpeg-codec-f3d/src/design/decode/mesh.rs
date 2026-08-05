@@ -2,7 +2,7 @@
 //! Join mesh-geometry containers to their bodies through the Design segment.
 //!
 //! A mesh body's geometry lives in a `.paramesh` container ([spec §1.1.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#112-mesh-geometry-containers)),
-//! and three Design record classes join the container to its body ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)):
+//! and three Design record classes join the container to its body ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)):
 //! the entry-name class stores the blob-part entry name, the GUID class stores
 //! the GUID the container's protobuf message carries as `fusion_uuid`, and the
 //! mesh-body class carries the affine map between container coordinates and
@@ -24,13 +24,15 @@ const MESH_BODY_SECOND_MATRIX_AT: usize =
     MESH_BODY_FIRST_MATRIX_AT + MATRIX_BYTES + MESH_BODY_MATRIX_SEPARATOR_BYTES;
 
 /// One mesh body's geometry, in model millimetres.
-pub struct MeshBody {
+pub(crate) struct MeshBody {
     /// Deterministic native identifier, keyed by the mesh-body record.
-    pub id: String,
+    pub(crate) id: String,
     /// Vertex positions in model millimetres.
-    pub vertices: Vec<cadmpeg_ir::math::Point3>,
+    pub(crate) vertices: Vec<cadmpeg_ir::math::Point3>,
     /// Triangle corner indices into `vertices`.
-    pub triangles: Vec<[u32; 3]>,
+    pub(crate) triangles: Vec<[u32; 3]>,
+    /// The attribute channels the container's registry declares.
+    pub(crate) attributes: Vec<crate::paramesh::MeshAttribute>,
 }
 
 /// A finite, orientation-preserving row-major affine map.
@@ -56,11 +58,11 @@ impl MeshAffineTransform {
         let cells = self.0;
         cadmpeg_ir::math::Point3::new(
             (cells[0] * x + cells[1] * y + cells[2] * z + cells[3])
-                * crate::nurbs::reader::LEN_TO_MM,
+                * cadmpeg_asm::nurbs::reader::LEN_TO_MM,
             (cells[4] * x + cells[5] * y + cells[6] * z + cells[7])
-                * crate::nurbs::reader::LEN_TO_MM,
+                * cadmpeg_asm::nurbs::reader::LEN_TO_MM,
             (cells[8] * x + cells[9] * y + cells[10] * z + cells[11])
-                * crate::nurbs::reader::LEN_TO_MM,
+                * cadmpeg_asm::nurbs::reader::LEN_TO_MM,
         )
     }
 }
@@ -73,7 +75,7 @@ fn mesh_body_transform(payload: &[u8]) -> Option<MeshAffineTransform> {
 }
 
 /// Result of decoding and joining one `.paramesh` entry.
-pub enum MeshContainerOutcome {
+pub(crate) enum MeshContainerOutcome {
     /// Geometry and its Design body record were decoded and joined.
     Joined(MeshBody),
     /// The container decoded, but no complete Design join named it.
@@ -144,7 +146,9 @@ fn indexed_records(bytes: &[u8]) -> Vec<IndexedRecord<'_>> {
 
 /// Decode every mesh body: one per `.paramesh` container joined to the
 /// mesh-body record that names its GUID record.
-pub fn decode_mesh_bodies(scan: &ContainerScan) -> Result<Vec<MeshContainerOutcome>, CodecError> {
+pub(crate) fn decode_mesh_bodies(
+    scan: &ContainerScan,
+) -> Result<Vec<MeshContainerOutcome>, CodecError> {
     let design_streams = scan
         .entries
         .iter()
@@ -213,6 +217,7 @@ pub fn decode_mesh_bodies(scan: &ContainerScan) -> Result<Vec<MeshContainerOutco
                 .map(|point| transform.transform(point))
                 .collect(),
             triangles: container.triangles,
+            attributes: container.attributes,
         }));
     }
     Ok(outcomes)

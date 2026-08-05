@@ -10,11 +10,11 @@ use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 
-use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::{
     f3d_native, validate_assembly_projection, validate_configuration_projection,
 };
 use crate::{decode, F3dCodec};
+use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 pub(crate) mod edits;
 pub(crate) mod geometry;
 pub(crate) mod records;

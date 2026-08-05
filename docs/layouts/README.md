@@ -153,7 +153,7 @@ A claim that a parser agrees with the table.
 
 ```toml
 [[record.code]]
-path = "crates/cadmpeg-codec-f3d/src/asm_header.rs"
+path = "crates/cadmpeg-asm/src/asm_header.rs"
 contains = "const HEADER_LEN: usize = 47;"
 note = "..."
 ```

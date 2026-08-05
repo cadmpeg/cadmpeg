@@ -18,8 +18,8 @@ use super::native_bytes::{native_f64, native_i64, native_ref};
 use super::native_geometry::native_nurbs_curve;
 use super::preconditions::DesignBindingsValidated;
 use crate::native::F3dNative;
-use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::native_bool;
+use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
 pub(crate) fn tolerant_coedge_range(
     index: &NativeGenerationIndex<'_>,
@@ -44,15 +44,15 @@ pub(crate) fn native_tolerant_coedge_extension(
     match extension {
         None
         | Some(
-            crate::records::TolerantCoedgeExtension::None
-            | crate::records::TolerantCoedgeExtension::Empty { target: None },
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::None
+            | cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: None },
         ) => {
             native_ref(records, -1);
             native_i64(records, 0);
             native_i64(records, 0);
             Ok(())
         }
-        Some(crate::records::TolerantCoedgeExtension::EmbeddedCurve {
+        Some(cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
             target: None,
             curve_reversed,
             parameter_range,
@@ -80,7 +80,7 @@ pub(crate) fn native_tolerant_coedge_extension(
             };
             let mut native_curve = curve.clone();
             if *curve_reversed {
-                crate::brep::geometry::reverse_nurbs_curve(&mut native_curve);
+                cadmpeg_asm::brep::geometry::reverse_nurbs_curve(&mut native_curve);
             }
             native_ref(records, -1);
             native_i64(records, 1);
@@ -848,7 +848,7 @@ fn encode_sketch_relation(
     Ok(())
 }
 
-/// Write one same-segment reference ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata) "**References.**"): the
+/// Write one same-segment reference ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata) "**References.**"): the
 /// presence byte, the u64 target entity id, and the two zero flag bytes.
 fn write_reference(out: &mut Vec<u8>, target: u32) {
     out.push(1);

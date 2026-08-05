@@ -3429,7 +3429,7 @@ pub enum PcurveGeometry {
 
 /// A pcurve carrier: the 2D image of a coedge in its face's surface parameter
 /// space. Referenced by a coedge; the owning surface establishes whether a
-/// parameter dimension is a length (relevant to unit scaling, see [F3D spec §6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#6-topology-records)).
+/// parameter dimension is a length (relevant to unit scaling, see [F3D spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#5-topology-records)).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Pcurve {

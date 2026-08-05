@@ -5,7 +5,7 @@
 use cadmpeg_core::le::{f64_at, u32_at};
 
 use super::sketch::IndexedRecordOffsets;
-use crate::records::DesignSurfacePatchBoundary;
+use crate::records::{DesignPatchContinuity, DesignSurfacePatchBoundary};
 
 /// Payload offset of the record's class level, past the indexed header of a
 /// record whose display name is empty.
@@ -60,7 +60,7 @@ fn exact_surface_patch_boundary(bytes: &[u8], at: usize) -> Option<DesignSurface
         scope_reference_ordinal: 0,
         record_index: 0,
         is_seed_selection,
-        continuity: u32_at(bytes, payload + 3)?,
+        continuity: DesignPatchContinuity::from_code(u32_at(bytes, payload + 3)?),
         flip: u32_at(bytes, payload + 7)?,
         scale,
         model_reference,

@@ -145,6 +145,7 @@ dependencies = [
  "cadmpeg-codec-iges",
  "cadmpeg-codec-nx",
  "cadmpeg-codec-rhino",
+ "cadmpeg-codec-sat",
  "cadmpeg-codec-sldprt",
  "cadmpeg-codec-step",
  "cadmpeg-container",
@@ -161,6 +162,17 @@ dependencies = [
  "thiserror",
  "toml",
  "zip",
+]
+
+[[package]]
+name = "cadmpeg-asm"
+version = "0.3.1"
+dependencies = [
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "schemars",
+ "serde",
+ "serde-value",
 ]
 
 [[package]]
@@ -192,6 +204,7 @@ dependencies = [
 name = "cadmpeg-codec-f3d"
 version = "0.3.1"
 dependencies = [
+ "cadmpeg-asm",
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
@@ -261,6 +274,15 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
+]
+
+[[package]]
+name = "cadmpeg-codec-sat"
+version = "0.3.1"
+dependencies = [
+ "cadmpeg-asm",
+ "cadmpeg-core",
+ "cadmpeg-ir",
 ]
 
 [[package]]
