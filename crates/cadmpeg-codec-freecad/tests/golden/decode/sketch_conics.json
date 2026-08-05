@@ -1,0 +1,283 @@
+{
+  "ir": {
+    "ir_version": "5",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [
+        {
+          "definition": {
+            "definition": "sketch",
+            "sketch": "fcstd:design:sketch#ConicArcs",
+            "space": "planar"
+          },
+          "id": "fcstd:design:feature#ConicArcs",
+          "name": "ConicArcs",
+          "native_ref": "fcstd:native:object#ConicArcs",
+          "ordinal": 0,
+          "source_tag": "Sketcher::SketchObject",
+          "suppressed": null
+        }
+      ],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [
+        {
+          "construction": false,
+          "geometry": {
+            "end": {
+              "u": 9.210609940028851,
+              "v": 3.8941834230865053
+            },
+            "kind": "line",
+            "start": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:design:sketch-entity#ConicArcs:1",
+          "native_ref": "fcstd:native:property#ConicArcs:Geometry",
+          "sketch": "fcstd:design:sketch#ConicArcs"
+        },
+        {
+          "construction": false,
+          "geometry": {
+            "center": {
+              "u": 0.0,
+              "v": 0.0
+            },
+            "end_angle": 2.1,
+            "kind": "arc",
+            "radius": 10.0,
+            "start_angle": 0.4
+          },
+          "id": "fcstd:design:sketch-entity#ConicArcs:2",
+          "native_ref": "fcstd:native:property#ConicArcs:Geometry",
+          "sketch": "fcstd:design:sketch#ConicArcs"
+        },
+        {
+          "construction": false,
+          "geometry": {
+            "end": {
+              "u": 0.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "start": {
+              "u": -5.048461045998575,
+              "v": 8.632093666488737
+            }
+          },
+          "id": "fcstd:design:sketch-entity#ConicArcs:3",
+          "native_ref": "fcstd:native:property#ConicArcs:Geometry",
+          "sketch": "fcstd:design:sketch#ConicArcs"
+        },
+        {
+          "construction": false,
+          "geometry": {
+            "end": {
+              "u": 35.81461747315012,
+              "v": 6.4431072570229535
+            },
+            "kind": "line",
+            "start": {
+              "u": 30.0,
+              "v": 0.0
+            }
+          },
+          "id": "fcstd:design:sketch-entity#ConicArcs:4",
+          "native_ref": "fcstd:native:property#ConicArcs:Geometry",
+          "sketch": "fcstd:design:sketch#ConicArcs"
+        },
+        {
+          "construction": false,
+          "geometry": {
+            "center": {
+              "u": 30.0,
+              "v": 0.0
+            },
+            "end_angle": 2.4,
+            "kind": "ellipse",
+            "major_angle": 0.7,
+            "major_radius": 9.0,
+            "minor_radius": 4.0,
+            "start_angle": 0.3
+          },
+          "id": "fcstd:design:sketch-entity#ConicArcs:5",
+          "native_ref": "fcstd:native:property#ConicArcs:Geometry",
+          "sketch": "fcstd:design:sketch#ConicArcs"
+        },
+        {
+          "construction": false,
+          "geometry": {
+            "end": {
+              "u": 30.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "start": {
+              "u": 23.18351028748487,
+              "v": -2.208887720314782
+            }
+          },
+          "id": "fcstd:design:sketch-entity#ConicArcs:6",
+          "native_ref": "fcstd:native:property#ConicArcs:Geometry",
+          "sketch": "fcstd:design:sketch#ConicArcs"
+        },
+        {
+          "construction": false,
+          "geometry": {
+            "center": {
+              "u": 60.0,
+              "v": -6.0
+            },
+            "kind": "ellipse",
+            "major_angle": 1.1,
+            "major_radius": 12.0,
+            "minor_radius": 5.0
+          },
+          "id": "fcstd:design:sketch-entity#ConicArcs:7",
+          "native_ref": "fcstd:native:property#ConicArcs:Geometry",
+          "sketch": "fcstd:design:sketch#ConicArcs"
+        }
+      ],
+      "sketches": [
+        {
+          "id": "fcstd:design:sketch#ConicArcs",
+          "name": "ConicArcs",
+          "native_ref": "fcstd:native:object#ConicArcs",
+          "placement": {
+            "kind": "resolved",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "profiles": [
+            [
+              {
+                "entity": "fcstd:design:sketch-entity#ConicArcs:1",
+                "reversed": false
+              },
+              {
+                "entity": "fcstd:design:sketch-entity#ConicArcs:2",
+                "reversed": false
+              },
+              {
+                "entity": "fcstd:design:sketch-entity#ConicArcs:3",
+                "reversed": false
+              }
+            ],
+            [
+              {
+                "entity": "fcstd:design:sketch-entity#ConicArcs:4",
+                "reversed": false
+              },
+              {
+                "entity": "fcstd:design:sketch-entity#ConicArcs:5",
+                "reversed": false
+              },
+              {
+                "entity": "fcstd:design:sketch-entity#ConicArcs:6",
+                "reversed": false
+              }
+            ],
+            [
+              {
+                "entity": "fcstd:design:sketch-entity#ConicArcs:7",
+                "reversed": false
+              }
+            ]
+          ]
+        }
+      ],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {
+      "__elided": "native arenas are pinned by digest, not by value",
+      "__serialized_len": 110883,
+      "__sha256": "0ae3e6e3f1d1f149a88a3040b482050d7665c6215a3342c2f756d1ddb6540aad"
+    },
+    "source": {
+      "attributes": {
+        "application_domains": "Sketcher",
+        "archive_entry_count": "1",
+        "document_kind": "application-document",
+        "document_root": "Document",
+        "file_version": "1",
+        "object_count": "1",
+        "physical_archive_bytes": "1348",
+        "physical_ledger_spans": "8",
+        "program_version": "1.1R20260414 (Git shallow)",
+        "schema_version": "4"
+      },
+      "format": "fcstd"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "container_only": false,
+    "format": "fcstd",
+    "geometry_transferred": false,
+    "losses": [],
+    "notes": [
+      "SchemaVersion=4",
+      "FileVersion=1",
+      "document root=Document",
+      "document kind=application-document",
+      "object count=1",
+      "physical ledger spans=8 coverage=exact",
+      "ProgramVersion=1.1R20260414 (Git shallow)"
+    ]
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "version": "3"
+  }
+}

@@ -121,3 +121,18 @@ generator = "freecad_fcstd/author_assembly_fixture.py"
 license = "CC0-1.0"
 sha256 = "e1a563bd89e46c00237b65ac543482aaa361c833deef759164143687d0de557b"
 notes = "Deterministic standalone component targeted by the product-assembly fixture's relative external link."
+
+# Not a FreeCAD-saved document. `Document.xml` is authored directly by the
+# generator below, because the geometry it carries reaches decoder arms that no
+# FreeCAD-saved fixture here exercises. It is a parser input only: it is not
+# evidence about what FreeCAD writes, and it supports no format-support claim.
+[[file]]
+filename = "freecad_fcstd/fixtures/sketch_conics.FCStd"
+format = "fcstd"
+author = "cadmpeg project contributors"
+authoring_app = "none; Document.xml authored directly"
+authoring_app_version = "n/a"
+generator = "freecad_fcstd/author_sketch_conics_fixture.py"
+license = "CC0-1.0"
+sha256 = "bdbd3d9a832a300180a0d0c0aa1c0a00ee5c99a947ce126ca75d46d04b510d7f"
+notes = "Circular and elliptical arcs with nonzero sweep and an ellipse whose major axis is not axis aligned, closed into profile chains by line segments so the decoder's arc and ellipse endpoint evaluation must reproduce the endpoints for the chains to close."

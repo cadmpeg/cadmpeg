@@ -1,0 +1,79 @@
+{
+  "entries": [
+    {
+      "name": "Document.xml",
+      "payload_len": 7536,
+      "payload_sha256": "3fe1af18e7186078e8959c1cde59c238fa5ff2ddca49017d0102cb3cc34067d1"
+    }
+  ],
+  "report": {
+    "census": {
+      "basis": "ir_arenas",
+      "counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "assembly_joints": 0,
+        "assets": 0,
+        "attributes": 0,
+        "bodies": 0,
+        "coedges": 0,
+        "configurations": 0,
+        "curves": 0,
+        "drawings": 0,
+        "edges": 0,
+        "faces": 0,
+        "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
+        "features": 1,
+        "loops": 0,
+        "native.fcstd.applications": 1,
+        "native.fcstd.attachments": 1,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.design_census": 1,
+        "native.fcstd.document": 1,
+        "native.fcstd.entries": 1,
+        "native.fcstd.logical_ledger": 19,
+        "native.fcstd.objects": 1,
+        "native.fcstd.physical_ledger": 8,
+        "native.fcstd.properties": 9,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 0,
+        "parameters": 0,
+        "pcurves": 0,
+        "pmi": 0,
+        "points": 0,
+        "presentation_documents": 0,
+        "presentation_layers": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 0,
+        "product_definitions": 0,
+        "regions": 0,
+        "semantic_annotations": 0,
+        "shells": 0,
+        "sketch_constraints": 0,
+        "sketch_entities": 7,
+        "sketches": 1,
+        "spatial_sketch_constraints": 0,
+        "spatial_sketch_entities": 0,
+        "spatial_sketches": 0,
+        "spreadsheets": 0,
+        "subds": 0,
+        "surfaces": 0,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 0,
+        "view_presentations": 0
+      }
+    },
+    "fidelity": {
+      "status": "not_consumed"
+    },
+    "format": "fcstd",
+    "losses": [],
+    "notes": [
+      "semantic FCStd archive written for SchemaVersion=4 FileVersion=1",
+      "unsupported retained entries and unedited XML records were preserved"
+    ],
+    "write_path": "patched"
+  }
+}
