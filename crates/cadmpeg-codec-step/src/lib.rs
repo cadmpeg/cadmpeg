@@ -2902,13 +2902,17 @@ impl Encoder for StepCodec {
 
     fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
         let mut bytes = Vec::new();
-        let report = write_step(input.ir, &mut bytes, &self.options).map_err(CodecError::from)?;
-        let fidelity = if input.fidelity.is_some() {
+        let mut report =
+            write_step(input.ir, &mut bytes, &self.options).map_err(CodecError::from)?;
+        // `write_step` takes no fidelity sidecar, so the report it returns
+        // states the only resolution it can see. Whether the caller supplied
+        // one is known here, and only here.
+        report.fidelity = if input.fidelity.is_some() {
             FidelityResolution::NotConsumed
         } else {
             FidelityResolution::NotProvided
         };
-        Ok(ExportPlan::buffered(report, fidelity, bytes))
+        Ok(ExportPlan::buffered(report, bytes))
     }
 }
 

@@ -168,19 +168,18 @@ impl Encoder for RhinoEncoder {
                 basis: cadmpeg_ir::CensusBasis::IrArenas,
                 counts: validation.entity_counts,
             },
-            fidelity: FidelityResolution::NotProvided,
+            fidelity: if input.fidelity.is_some() {
+                FidelityResolution::NotConsumed
+            } else {
+                FidelityResolution::NotProvided
+            },
             // The 3DM writer builds every chunk from the neutral IR; it has no
             // retained-source branch.
             write_path: WritePath::Synthesized,
             losses,
             notes: vec![format!("3DM archive version {}", self.version.value())],
         };
-        let fidelity = if input.fidelity.is_some() {
-            FidelityResolution::NotConsumed
-        } else {
-            FidelityResolution::NotProvided
-        };
-        Ok(ExportPlan::buffered(report, fidelity, bytes))
+        Ok(ExportPlan::buffered(report, bytes))
     }
 }
 

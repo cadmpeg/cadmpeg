@@ -275,14 +275,17 @@ impl Encoder for SldprtCodec {
             .source
             .as_ref()
             .is_some_and(|source| source.format == "sldprt");
-        let fidelity = match (input.fidelity.is_some() || expects_preserved_source, replay) {
+        // The writer above reports the resolution it could see; this branch is
+        // the only place that knows whether the retained source image was
+        // actually replayed.
+        report.fidelity = match (input.fidelity.is_some() || expects_preserved_source, replay) {
             (_, true) => FidelityResolution::Replayed,
             (true, false) => FidelityResolution::Degraded {
                 reason: "preserved SLDPRT source image is unavailable".into(),
             },
             (false, false) => FidelityResolution::NotProvided,
         };
-        if matches!(fidelity, FidelityResolution::Degraded { .. }) {
+        if matches!(report.fidelity, FidelityResolution::Degraded { .. }) {
             report.losses.push(LossNote {
                 code: cadmpeg_ir::LossKind::PreservedSourceUnavailable,
                 severity: Severity::Blocking,
@@ -290,7 +293,7 @@ impl Encoder for SldprtCodec {
                 provenance: None,
             });
         }
-        Ok(ExportPlan::buffered(report, fidelity, bytes))
+        Ok(ExportPlan::buffered(report, bytes))
     }
 }
 

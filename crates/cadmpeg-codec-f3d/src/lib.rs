@@ -272,7 +272,7 @@ impl Encoder for F3dCodec {
                 basis: cadmpeg_ir::CensusBasis::IrArenas,
                 counts: validation.entity_counts,
             },
-            fidelity: FidelityResolution::NotProvided,
+            fidelity,
             write_path,
             losses,
             notes: vec![
@@ -280,7 +280,7 @@ impl Encoder for F3dCodec {
                 "entity counts are derived from the IR".into(),
             ],
         };
-        Ok(ExportPlan::buffered(report, fidelity, bytes))
+        Ok(ExportPlan::buffered(report, bytes))
     }
 }
 

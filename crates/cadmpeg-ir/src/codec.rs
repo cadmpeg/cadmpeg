@@ -251,21 +251,28 @@ pub struct ExportPlan<'a> {
 
 impl<'a> ExportPlan<'a> {
     /// Creates a plan whose bytes have already been materialized.
-    pub fn buffered(report: ExportReport, fidelity: FidelityResolution, bytes: Vec<u8>) -> Self {
+    ///
+    /// The plan reports exactly the report it is given. `ExportReport::fidelity`
+    /// is the one place an encoder states how it resolved source fidelity; a
+    /// constructor that also took it as an argument would let the two disagree
+    /// and would silently pick a winner.
+    pub fn buffered(report: ExportReport, bytes: Vec<u8>) -> Self {
         Self {
-            report: ExportReport { fidelity, ..report },
+            report,
             payload: ExportPayload::Buffered(bytes),
         }
     }
 
     /// Creates a plan that writes through a deferred, report-invariant operation.
+    ///
+    /// The report is reported verbatim, for the reason given on
+    /// [`ExportPlan::buffered`].
     pub fn deferred(
         report: ExportReport,
-        fidelity: FidelityResolution,
         write: impl FnOnce(&mut dyn Write) -> Result<(), CodecError> + 'a,
     ) -> Self {
         Self {
-            report: ExportReport { fidelity, ..report },
+            report,
             payload: ExportPayload::Deferred(Box::new(write)),
         }
     }
@@ -312,19 +319,18 @@ impl Encoder for CadirEncoder {
                 basis: CensusBasis::IrArenas,
                 counts: validation.entity_counts,
             },
-            fidelity: FidelityResolution::NotProvided,
+            fidelity: if input.fidelity.is_some() {
+                FidelityResolution::NotConsumed
+            } else {
+                FidelityResolution::NotProvided
+            },
             // CADIR is the neutral document itself: there is no container to
             // replay or patch, so this encoder has one path and states it.
             write_path: WritePath::Synthesized,
             losses: Vec::new(),
             notes: Vec::new(),
         };
-        let fidelity = if input.fidelity.is_some() {
-            FidelityResolution::NotConsumed
-        } else {
-            FidelityResolution::NotProvided
-        };
-        Ok(ExportPlan::deferred(report, fidelity, move |writer| {
+        Ok(ExportPlan::deferred(report, move |writer| {
             let mut json = input
                 .ir
                 .to_canonical_json()
