@@ -8,11 +8,9 @@
 //! Vertex coordinates are container coordinates; the mesh-body Design record
 //! stores the scale that relates them to model space.
 //!
-//! The registry also declares the container's attribute channels. A channel
-//! names its own value and index streams, so stream names are per-container
-//! slots rather than fixed names. A channel with no index stream stores one
-//! value per vertex; a channel with one addresses triangle corners through an
-//! order this codec does not resolve (PM-03).
+//! The registry declares attribute channels with value and index streams. Vertex
+//! channels store one value per vertex. Indexed channels select values for
+//! triangle corners; PM-03 leaves that order unresolved.
 
 use cadmpeg_codec_core::le::{u16_at, u32_at, u64_at};
 use cadmpeg_codec_core::CodecError;
@@ -21,7 +19,7 @@ use cadmpeg_codec_core::CodecError;
 const MAGIC: [u8; 12] = [
     0x89, 0x55, 0x44, 0x50, 0x4D, 0x45, 0x53, 0x48, 0x0D, 0x0A, 0x1A, 0x0A,
 ];
-/// The only defined container version.
+/// Container version accepted by this decoder.
 const VERSION: u32 = 2;
 /// Byte offset of the u64 protobuf byte count.
 const PROTOBUF_COUNT_AT: usize = 0x30;
@@ -133,16 +131,14 @@ fn take_varint(message: &[u8], at: &mut usize) -> Option<u64> {
     }
 }
 
-/// One protobuf field value. Only the two wire types the registry uses are
-/// represented.
+/// One protobuf field value for a wire type used by the registry.
 enum ProtobufValue<'a> {
     Varint(u64),
     Bytes(&'a [u8]),
 }
 
-/// Read every field of a protobuf message in stored order. A field of any
-/// other wire type ends the walk, because its length is not known here and a
-/// later field cannot be located past it.
+/// Read protobuf fields in stored order. The registry uses two wire types; a
+/// different type ends the walk because its length is unknown.
 fn protobuf_fields(message: &[u8]) -> Vec<(u64, ProtobufValue<'_>)> {
     let mut fields = Vec::new();
     let mut at = 0usize;
@@ -281,8 +277,8 @@ fn protobuf_fusion_uuid(message: &[u8]) -> Result<String, CodecError> {
     Ok(value.to_owned())
 }
 
-/// Read one `MessagePack` value, returning the string keys and integer values of
-/// a map. Only the encodings a stream-name table uses are accepted.
+/// Read one `MessagePack` value from a stream-name table. The table uses string
+/// keys and integer values.
 fn message_pack_name_table(bytes: &[u8]) -> Result<Vec<(String, u64)>, CodecError> {
     fn take_integer(bytes: &[u8], at: &mut usize) -> Result<u64, CodecError> {
         let tag = *bytes
@@ -487,8 +483,8 @@ fn inflate_stream(body: &[u8]) -> Result<MeshStream, CodecError> {
         return Err(malformed("paramesh stream carries an undefined encoding"));
     }
     // `lzma-rs` reads the properties byte and the four-byte dictionary size
-    // from the stream, which the container stores as a properties byte and a
-    // base-2 dictionary exponent instead.
+    // from the stream. The container stores a properties byte and a base-2
+    // dictionary exponent.
     let mut framed = Vec::with_capacity(5 + payload.len());
     framed.push(LZMA_PROPERTIES);
     framed.extend_from_slice(&(1u32 << LZMA_DICTIONARY_LOG).to_le_bytes());
@@ -721,10 +717,10 @@ pub(crate) fn decode_mesh_container(bytes: &[u8]) -> Result<MeshContainer, Codec
     })
 }
 
-/// Collect every attribute channel the registry declares, in registry order.
+/// Collect registry-declared attribute channels in registry order.
 ///
-/// A channel whose value stream the container does not hold is skipped: the
-/// registry is the declaration, and only a present stream carries values.
+/// The registry declares the channel; its value stream supplies the data. A
+/// missing value stream causes the decoder to skip the channel.
 fn registry_attributes(
     message: &[u8],
     name_table: &[(String, u64)],
@@ -761,11 +757,9 @@ fn registry_attributes(
             item_size: element_bytes(streams.element_code),
             values: stream.bytes.clone(),
         };
-        // A vertex-domain channel stores exactly one value per vertex. A width
-        // that divides its stream into another count contradicts the element
-        // code, so the layout is unsettled rather than settled wrongly. The
-        // geometry does not depend on the channel, so the channel is left for
-        // the report instead of failing the container.
+        // A vertex-domain channel stores one value per vertex. A conflicting
+        // element width leaves the item size unset. The mesh geometry remains
+        // available, and the report records the channel.
         if attribute.domain == MeshAttributeDomain::Vertex
             && attribute
                 .count()
@@ -1040,9 +1034,8 @@ mod tests {
         assert_eq!(attribute.count(), Some(5));
     }
 
-    /// A triangle-domain channel is declared under its own registry field, and
-    /// an element code that does not settle the element width leaves the
-    /// element count unstated rather than guessed.
+    /// A triangle-domain channel uses its registry field. An unresolved element
+    /// code leaves the element count unset.
     #[test]
     fn triangle_domain_channel_keeps_an_unsettled_element_width_unstated() {
         let registry = channel_entry(REGISTRY_TRIANGLE_CHANNEL, None, 7, "r0", None);
@@ -1060,10 +1053,9 @@ mod tests {
         assert_eq!(attribute.count(), None);
     }
 
-    /// A vertex-domain channel whose element width divides its stream into a
-    /// count other than the vertex count contradicts its element code, so its
-    /// layout is left unsettled rather than settled wrongly. The container
-    /// still decodes, because the geometry does not depend on the channel.
+    /// A vertex-domain channel with a conflicting count leaves its item size
+    /// unset. The mesh geometry remains available, and the report records the
+    /// channel.
     #[test]
     fn vertex_domain_channel_leaves_a_contradicted_count_unsettled() {
         let registry = channel_entry(REGISTRY_VERTEX_CHANNEL, Some(3), ELEMENT_PAIR, "r0", None);
@@ -1079,9 +1071,8 @@ mod tests {
         assert_eq!(mesh.attributes[0].count(), None);
     }
 
-    /// A channel whose value stream the container does not hold is skipped:
-    /// the registry declares channels, and only a present stream carries
-    /// values.
+    /// The registry declares the channel; its value stream supplies the data.
+    /// A missing value stream causes the decoder to skip the channel.
     #[test]
     fn a_channel_naming_an_absent_stream_is_skipped() {
         let registry = channel_entry(
@@ -1161,8 +1152,7 @@ mod tests {
         );
     }
 
-    /// A corner run that does not close into whole triangles is refused rather
-    /// than truncated.
+    /// The decoder rejects a corner run that ends before a complete triangle.
     #[test]
     fn container_refuses_a_partial_triangle() {
         let container = container(
@@ -1173,7 +1163,7 @@ mod tests {
         assert!(decode_mesh_container(&container).is_err());
     }
 
-    /// A corner index naming no vertex is refused.
+    /// The decoder rejects a corner index outside the vertex stream.
     #[test]
     fn container_refuses_a_corner_index_beyond_the_vertex_stream() {
         let container = container(
@@ -1184,8 +1174,8 @@ mod tests {
         assert!(decode_mesh_container(&container).is_err());
     }
 
-    /// Stream bytes are not interpreted under a component type that the
-    /// implemented decoder does not support.
+    /// The decoder rejects a vertex descriptor with an unsupported component
+    /// type.
     #[test]
     fn container_refuses_a_vertex_descriptor_with_the_wrong_component_type() {
         let mut container = container(GUID, &[0.0, 0.0, 0.0], &[0, 0]);

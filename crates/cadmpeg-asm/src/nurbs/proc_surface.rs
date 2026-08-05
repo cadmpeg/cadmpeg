@@ -26,8 +26,8 @@ pub struct DecodedProceduralSurface {
     /// taper family) decoded from its subtype-dispatched inline fields.
     pub definition: DecodedProceduralSurfaceDefinition,
     /// `surface_fit_tolerance` of the cached B-spline block, if present.
-    /// `0.0` indicates fidelity to the procedural surface rather than
-    /// identity with a primitive ([spec §6.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#65-nubsnurbs-blocks-b-spline-curves-and-surfaces)).
+    /// `0.0` marks fidelity to the procedural surface. Primitive identity uses
+    /// a separate value ([spec §6.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#65-nubsnurbs-blocks-b-spline-curves-and-surfaces)).
     pub cache_fit_tolerance: Option<f64>,
 }
 
@@ -583,8 +583,8 @@ fn g2_blend_spl_sur(
         // Revision-gated layout: revision integer, two scalars, two sides in
         // the variable-blend side layout, center curve with endpoints, two
         // radii, radius selector, optional U/V bounds, shape prologue,
-        // shared tail, and three trailing integers. Only the modern name
-        // stores it.
+        // shared tail, and three trailing integers. The modern name uses this
+        // layout.
         (name == "g2_blend_spl_sur").then_some(())?;
         let revision = cur.take_long()?;
         (revision > 0).then_some(())?;
@@ -1518,9 +1518,9 @@ impl RevisionLoftMemberForm {
 const LOFT_ASM_EXTENSION_ABSENT_THROUGH: u32 = 22600;
 
 /// Whether a revision-gated loft profile member in this stream carries the ASM
-/// integer. The gate keys on the stream save format, not on the record's own
-/// serializer revision stamp: one revision stamp takes the integer in a later
-/// stream and omits it in an earlier one.
+/// integer. The stream save format selects this gate. The record serializer
+/// revision remains a separate field; one revision can carry the integer in a
+/// later stream and omit it in an earlier stream.
 fn revision_loft_carries_asm_extension(table: &SubtypeTable) -> bool {
     table
         .save_format_version()
@@ -1842,7 +1842,7 @@ fn loft_spl_sur(
     let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?;
     let mut cur = Cur::at(span, 2);
-    // Only the modern name stores the revision-gated layout.
+    // The modern name uses the revision-gated layout.
     if matches!(cur.peek(), Some(Token::Long(_))) && name == "loft_spl_sur" {
         if let Some(decoded) = revision_loft(span, cur.pos(), resolver) {
             return Some(decoded);
@@ -1990,7 +1990,7 @@ fn revision_compound_loft(
     }
     let flags = [cur.take_bool()?, cur.take_bool()?];
     let kind = cur.take_long()?;
-    // Only the kind-zero payload is defined for the revision layout.
+    // The revision layout defines the kind-zero payload.
     (kind == 0).then_some(())?;
     let kind_flags = [cur.take_bool()?, cur.take_bool()?];
     let selector = cur.take_long()?;
@@ -2006,9 +2006,8 @@ fn revision_compound_loft(
         cur.take_optional_range_value()?,
         cur.take_optional_range_value()?,
     ];
-    // The trailing curve is present exactly when both parameter values are
-    // present. Nothing in the stream marks its absence; the parameter pair
-    // is what selects it.
+    // Both parameter values select a trailing curve. The stream has no separate
+    // marker; the parameter pair selects it.
     let trailing_curve = if interval.iter().all(Option::is_some) {
         let (curve, curve_end) = curve_block(span, cur.pos())?;
         cur.set_pos(curve_end);
@@ -2661,7 +2660,7 @@ fn sweep_spl_sur(
     let span = toks::subtype_span(toks, start)?;
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
-        // Only `sweep_sur` stores the revision-gated layout.
+        // The revision-gated layout belongs to `sweep_sur`.
         (name == "sweep_sur").then_some(())?;
         return revision_sweep_sur(span, cur.pos(), resolver?);
     }
@@ -3170,15 +3169,12 @@ pub struct RevisionSurfaceTail {
     pub tail_flag: bool,
 }
 
-/// Parse the shared revision-gated surface tail (GC-08). It opens with an enum
-/// selecting the approximation-cache form: `0` stores the solved NURBS surface
-/// followed by its fit tolerance; `2` stores no cache and no fit tolerance, and
-/// instead stores the U parameter interval and the V parameter interval in the
-/// optional bool-gated encoding followed by four enums holding U closure, V
-/// closure, U singularity, and V singularity. Both forms then continue into six
-/// counted discontinuity arrays and one boolean. Other values have no defined
-/// grammar; they fail so the containing record is retained verbatim through the
-/// native-preservation path rather than misparsed.
+/// Parse the shared revision-gated surface tail (GC-08).
+///
+/// Form `0` carries the solved NURBS surface and fit tolerance. Form `2` carries
+/// U/V intervals in the optional bool-gated form, four closure and singularity
+/// enums, six discontinuity arrays, and a terminating boolean. The decoder
+/// retains the containing record in native form for other values.
 pub fn revision_surface_tail(cur: &mut Cur<'_>) -> Option<RevisionSurfaceTail> {
     let enumeration = cur.take_enum()?;
     let (fit_tolerance, parameterization) = match enumeration {
@@ -3238,7 +3234,7 @@ fn off_spl_sur(
     let span = toks::subtype_span(toks, start)?;
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
-        // Only the modern name stores the revision-gated layout.
+        // The modern name uses the revision-gated layout.
         modern.then_some(())?;
         let table = resolver?;
         let revision = cur.take_long()?;
@@ -3246,13 +3242,11 @@ fn off_spl_sur(
         let (support, support_bounds) = optional_embedded_surface_with_bounds(&mut cur, table)?;
         let support = support?;
         let distance = cur.take_f64()? * LEN_TO_MM;
-        // One four-boolean carrier run: the leading pair carrying record-level
-        // progenitor orientation state, then the two-boolean ASM extension
-        // prefix. The first boolean repeats the support reference's sense flag
-        // and orients the offset displacement; the second leaves the point set
-        // unchanged. This run occupies the byte positions the pre-revision
-        // layout reads as the U/V sense enums but shares no grammar with them,
-        // so it travels in the revision form rather than those IR slots.
+        // Four booleans carry the record orientation pair and the ASM extension
+        // pair. The first repeats the support sense and orients the offset
+        // displacement. The second leaves the point set unchanged. The revision
+        // form reads these positions where the earlier form reads U/V sense
+        // enums.
         let mut flags = Vec::with_capacity(4);
         for _ in 0..4 {
             flags.push(cur.take_bool()?);
@@ -3333,8 +3327,8 @@ fn rot_spl_sur(
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated layout: revision integer, profile curve with two
-        // optional endpoints, axis origin and direction, shared tail. Only the
-        // modern name stores it.
+        // optional endpoints, axis origin and direction, shared tail. The
+        // modern name uses this layout.
         (name == "rot_spl_sur").then_some(())?;
         let revision = cur.take_long()?;
         (revision > 0).then_some(())?;
@@ -3434,8 +3428,8 @@ fn sum_spl_sur(
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated layout: revision integer, two curves each with two
-        // optional endpoints, model-space origin, shared tail. Only the modern
-        // name stores it.
+        // optional endpoints, model-space origin, shared tail. The modern name
+        // uses this layout.
         (name == "sum_spl_sur").then_some(())?;
         let revision = cur.take_long()?;
         (revision > 0).then_some(())?;
@@ -3544,8 +3538,8 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated layout: revision integer, shared tail, four optional
-        // parameter values, and the extension as an enum. Only the modern name
-        // stores it.
+        // parameter values, and the extension as an enum. The modern name uses
+        // this layout.
         (name == "exact_spl_sur").then_some(())?;
         let revision = cur.take_long()?;
         (revision > 0).then_some(())?;
@@ -3557,10 +3551,9 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
         // The two unextended parameter intervals, each an ordered [lo, hi] pair
-        // of optional bounds. This subtype serializes them U-then-V; the loft
-        // wrap ranges sharing `RevisionRanges` serialize V-then-U, so the order
-        // is per subtype and is not a property of that type. Stored positionally
-        // here and labelled only by the specification.
+        // of optional bounds. This subtype serializes them U-then-V; loft wrap
+        // ranges sharing `RevisionRanges` serialize V-then-U. Store the
+        // intervals by position and use the specification's labels.
         let unextended_ranges = [
             [
                 cur.take_optional_range_value()?,
@@ -4147,10 +4140,9 @@ fn procedural_resolving_refs(
         }
         return Some(decoded);
     }
-    // References are followed only when the record carries no construction of
-    // its own. A record that owns one but failed to decode it is a refusal:
-    // its references are that construction's supports, and decoding one of them
-    // would report a support as the record's own surface.
+    // Follow references for records whose own construction is absent. A record
+    // with an undecoded construction keeps its native data; its references
+    // belong to that construction's supports.
     if toks::owned_subtype_defs(toks)
         .iter()
         .any(|(_, name)| *name != "ref")
@@ -4190,9 +4182,9 @@ mod tail_selector_tests {
         }
     }
 
-    /// A shared revision-gated surface tail whose opening enum selects a
-    /// cache form with no defined grammar. The helper must reject it so the
-    /// containing record is retained verbatim rather than misparsed.
+    /// A shared revision-gated surface tail whose opening enum selects an
+    /// undefined cache form. The helper rejects the form and retains the
+    /// containing record verbatim.
     #[test]
     fn undefined_tail_form_is_rejected_for_verbatim_retention() {
         // Enum with value 1, followed by a value that could otherwise open a

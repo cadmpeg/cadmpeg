@@ -271,10 +271,9 @@ struct DesignProjectionGaps {
     unresolved_edge_selections: usize,
 }
 
-/// Whether a face selection names the faces the operation acts on.
+/// Returns whether a face selection supplies the operation's neutral faces.
 ///
-/// A native or absent selection proves one source operand but no neutral face,
-/// so an operation depending on it is not a complete neutral definition.
+/// Native or absent selections leave the definition incomplete.
 fn face_selection_is_resolved(selection: &cadmpeg_ir::features::FaceSelection) -> bool {
     use cadmpeg_ir::features::FaceSelection;
 
@@ -298,8 +297,8 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         | FeatureDefinition::FreeformSurfaceUnresolved
         | FeatureDefinition::BoundarySurfaceUnresolved
         | FeatureDefinition::DraftUnresolved => true,
-        // A draft carries its angle even when the face recipes do not resolve to
-        // active B-rep faces, so the selections decide completeness.
+        // The draft angle remains available when face recipes fail; selections
+        // determine completeness.
         FeatureDefinition::Draft {
             faces,
             neutral_plane,
@@ -2182,15 +2181,12 @@ fn project_mesh_bodies(
     Ok(count)
 }
 
-/// Project the attribute channels whose element layout the registry settles,
-/// and count the rest by the domain they address.
+/// Project channels with a settled element layout and count unresolved channels
+/// by domain.
 ///
-/// A vertex-domain channel stores one value per vertex, so its values need no
-/// index and transfer as a tessellation channel. A corner-domain channel
-/// deduplicates its values per vertex and selects one per corner through an
-/// index stream this codec does not resolve
-/// ([open item PM-03](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d-open-items.md)),
-/// so its values are counted, not projected under an invented mapping.
+/// Vertex channels transfer as tessellation channels. Corner channels use an
+/// index stream to select values; PM-03 leaves that order unresolved, so the
+/// decoder reports them.
 fn mesh_attribute_channels(
     attributes: &[crate::paramesh::MeshAttribute],
     unresolved: &mut std::collections::BTreeMap<crate::paramesh::MeshAttributeDomain, usize>,
@@ -2215,7 +2211,8 @@ fn mesh_attribute_channels(
     channels
 }
 
-/// Report every mesh attribute channel that was not projected, by domain.
+/// Report mesh attribute channels that the projector left unresolved, grouped by
+/// domain.
 fn report_unresolved_mesh_attributes(
     report: &mut DecodeReport,
     unresolved: &std::collections::BTreeMap<crate::paramesh::MeshAttributeDomain, usize>,
@@ -2276,9 +2273,10 @@ fn xref_parse_loss(error: &CodecError) -> LossNote {
     }
 }
 
-/// Reclassify a mesh-body document: a body whose geometry is a mesh container
-/// stores no B-rep, so a document carrying only mesh bodies is not missing
-/// geometry ([spec §1.1.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#112-mesh-geometry-containers)).
+/// Classify a mesh-body document.
+///
+/// Mesh bodies use tessellation as their geometry carrier. The report marks
+/// geometry as transferred and records vertex precision.
 fn apply_mesh_body_classification(report: &mut DecodeReport, scan: &ContainerScan, bodies: usize) {
     if !scan.breps.is_empty() {
         return;
@@ -2302,17 +2300,11 @@ fn apply_mesh_body_classification(report: &mut DecodeReport, scan: &ContainerSca
     });
 }
 
-/// Reclassify a sketch-only design: a document whose content is sketch curves
-/// declares no body, so it has no B-rep to transfer.
+/// Classify a design whose geometry consists of sketch curves.
 ///
-/// Four facts must hold together. The container declares no BREP stream in
-/// either encoding, so no geometry carrier is present to decode — a text carrier
-/// counts, because it holds a B-rep this codec does not read, and calling that
-/// document complete would hide the whole of its geometry. The design segment
-/// declares no body, which separates a design that never had a solid from one
-/// whose body exists and whose carrier is missing; that second case is a real
-/// geometry loss and keeps its blocking notes. Sketch entities reached the IR, so
-/// the content the document does carry was transferred.
+/// The container has zero BREP streams and the Design segment has zero bodies.
+/// The decoder transferred sketch entities, so the report marks geometry as
+/// transferred and records a sketch-only summary.
 pub(crate) fn apply_sketch_only_classification(
     report: &mut DecodeReport,
     brep_streams: usize,
@@ -3230,9 +3222,9 @@ fn extend_related_design_records(
 }
 
 /// Frame and decode one Design-selected or explicit fallback BREP SAB stream.
-/// Returns `None` when the stream
-/// is not a decodable `BinaryFile4`/`BinaryFile8` SAB, or frames but yields no
-/// geometry (leaving the caller to fall back to the container-metadata IR).
+///
+/// The function returns `None` for an invalid header or a framed stream with no
+/// geometry. The caller then builds the container-metadata IR.
 fn try_decode_brep(
     scan: &ContainerScan,
     brep_entry: &BrepFacts,
@@ -3423,7 +3415,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
             severity: Severity::Warning,
             message: format!(
                 "{} face(s) rest on spline/procedural surfaces whose shape was not decoded into a \
-                 typed carrier (no inline cached B-spline block — the cache is reached through a \
+                 typed carrier (no inline cached B-spline block: the cache is reached through a \
                  subtype reference, or the record is a procedural form this codec does not \
                  evaluate); the face, its loops, and trims are emitted with an unknown-geometry \
                  surface linking to the preserved record bytes. Topology is transferred; the \
@@ -3581,16 +3573,10 @@ fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
     (ir, unknowns)
 }
 
-/// State the geometry and topology losses from the container's BREP-stream
-/// state, not from one assumed cause.
+/// Build geometry and topology loss notes from the container state.
 ///
-/// This path runs when no BREP stream reached the model, which happens for four
-/// distinct reasons: the container declares no ASM BREP carrier at all, its only
-/// carrier uses the text encoding that this codec does not read, a selected
-/// binary stream did not decode, or several streams are present with no Design
-/// body map to select between them. Only the third case is a decode failure.
-/// Naming that cause for the others overstates the geometry gap and hides which
-/// carrier is actually missing.
+/// The report names the BREP carrier state. A failed binary decode gets a
+/// decode-failure note. Each remaining state gets its own loss description.
 fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
     let brep_count = scan.breps.len();
@@ -3598,10 +3584,8 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     let text_breps = container::text_brep_names(scan);
 
     let (geometry, topology) = match (brep_count, selected) {
-        // A text carrier is present but unread, so the container does declare a
-        // carrier. Reporting "no ASM BREP stream" here would name the wrong gap:
-        // the geometry exists in the archive and this codec cannot read its
-        // encoding.
+        // The text carrier is present. This codec cannot read its encoding.
+        // Record that carrier state in the report.
         (0, _) if !text_breps.is_empty() => (
             format!(
                 "ASM BREP geometry was not transferred: the document's only geometry carrier is \
@@ -3639,7 +3623,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         (_, None) => (
             format!(
                 "ASM BREP geometry was not transferred: {brep_count} BREP stream(s) were located, \
-                 but none of them is the document's geometry stream — the Design body map that \
+                 but none of them is the document's geometry stream. The Design body map that \
                  binds a body to its blob was not read, so the selection is ambiguous."
             ),
             "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built: \
@@ -3671,9 +3655,8 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         },
     ];
 
-    // An absent carrier and an unselectable one are different findings. The
-    // second is reachable only through container-only inspection: a full decode
-    // rejects an ambiguous selection before it builds a report.
+    // An absent carrier and an unselectable carrier produce different findings.
+    // Full decode rejects an ambiguous selection before it builds this report.
     if selected.is_none() {
         losses.push(LossNote {
             code: LossKind::MissingGeometryStream,
@@ -3703,9 +3686,8 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         coverage: std::collections::BTreeMap::new(),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         losses,
-        // `summarize` describes what container inspection alone can state. A
-        // full decode did run the design and body-binding passes, so keeping
-        // its advice to "run decode" would contradict the report it sits in.
+        // `summarize` contains advice for container inspection. Full decode has
+        // already run the design and body-binding passes, so drop that advice.
         notes: summary
             .notes
             .into_iter()
@@ -3714,13 +3696,11 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     }
 }
 
-/// Settle the appearance loss note against the appearances the IR carries.
+/// Resolve the appearance loss note against the appearances in the IR.
 ///
-/// [`build_geometry_report`] and [`build_container_report`] state the loss
-/// before appearance decoding runs, so every path that fills
-/// `ir.model.appearances` settles it here. `has_topology_assignments` separates
-/// a document-local catalog that nothing assigns, which is a complete transfer,
-/// from a serialized assignment that failed to resolve, which is a loss.
+/// The report adds this note before appearance decoding. This function removes
+/// it when the IR carries a complete document-local catalog and keeps it when a
+/// serialized assignment failed to resolve.
 pub(crate) fn reconcile_appearance_loss(
     report: &mut DecodeReport,
     ir: &CadIr,

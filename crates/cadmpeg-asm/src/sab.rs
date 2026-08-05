@@ -14,8 +14,8 @@
 use cadmpeg_codec_core::le::{f64_at as read_f64, int_at as read_i, vec3_at as read_vec3};
 use std::sync::Arc;
 
-/// A decoded SAB token. Only the payload this codec consumes is retained with a
-/// typed value; all tokens are still framed so record boundaries stay exact.
+/// A decoded SAB token. The codec assigns typed values to the payload it
+/// consumes; framing preserves every token so record boundaries stay exact.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     /// `0x02` unsigned 8-bit.
@@ -64,10 +64,9 @@ impl Token {
     /// Whether this token is a payload identifier ([`Token::Ident`] or
     /// [`Token::SubIdent`]).
     ///
-    /// Positional field semantics — `chunk[i]` in the topology field tables and
-    /// every serialized token count — are defined over the value tokens alone,
-    /// because identifiers name the construction that follows rather than carry
-    /// a field. [`Record::chunk`] and [`Record::chunk_len`] skip them.
+    /// Positional field semantics in topology tables and serialized counts use
+    /// value tokens. Payload identifiers name constructions; [`Record::chunk`]
+    /// and [`Record::chunk_len`] skip them.
     pub fn is_payload_ident(&self) -> bool {
         matches!(self, Token::Ident(_) | Token::SubIdent(_))
     }
@@ -92,10 +91,9 @@ pub struct Record {
 }
 
 impl Record {
-    /// The `chunk[i]` value: the `i`-th payload value token, as topology field
-    /// tables index them. Payload identifiers are not chunks: they name the
-    /// construction that follows, so indexing skips them and `chunk[i]` means
-    /// the same field whether or not the record embeds a named subtype.
+    /// Returns the `i`th payload value token. Payload identifiers leave field
+    /// positions unchanged, so `chunk[i]` has the same meaning in records with
+    /// and without named subtypes.
     pub fn chunk(&self, i: usize) -> Option<&Token> {
         self.chunks().nth(i)
     }
@@ -219,11 +217,11 @@ pub fn payload_token_offset(
     None
 }
 
-/// A framing error: an unrecognized tag or a truncated token payload leaves the
-/// stream un-synchronizable, so the caller falls back to metadata-only decode.
+/// A framing error records an unrecognized tag or truncated token payload. The
+/// caller falls back to metadata-only decode.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FrameError {
-    /// Byte offset where framing could not continue.
+    /// Byte offset where framing stopped.
     pub offset: usize,
     /// What went wrong.
     pub reason: String,
@@ -468,17 +466,15 @@ fn frame_impl(
             match lexed {
                 Lexed::Terminator if depth == 0 => break,
                 Lexed::Terminator => {
-                    // A terminator inside a subtype scope is not a record end;
-                    // preserve nothing but keep scanning (does not occur in
-                    // well-formed streams, guarded defensively).
+                    // A terminator inside a subtype scope closes that scope.
+                    // Keep scanning the record.
                 }
                 Lexed::SubIdent(s) if !name_done => name_parts.push(s),
                 Lexed::Ident(s) if !name_done => {
                     name_parts.push(s);
                     name_done = true;
-                    // The history partition opens with the delta_state record;
-                    // stop at its name before consuming a payload the active
-                    // slice does not include.
+                    // The history partition opens with the delta_state record.
+                    // Stop at its name; the active slice ends before its payload.
                     if name_parts.first().is_some_and(|n| n == "delta_state") {
                         is_delta = true;
                         break;
@@ -977,8 +973,8 @@ mod tests {
             bytes.push(tag);
             bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
         }
-        // Three f64 tolerance slots — two unevaluated `-1` sentinels and the
-        // evaluated tolerance last — followed by an integer 0.
+        // The fixture writes two `-1` sentinels, the evaluated tolerance, and
+        // integer 0.
         for value in [-1.0f64, -1.0, 0.001] {
             bytes.push(0x06);
             bytes.extend_from_slice(&value.to_le_bytes());

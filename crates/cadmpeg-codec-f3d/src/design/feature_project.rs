@@ -62,7 +62,7 @@ pub struct ProjectInputs<'a> {
 // edge-identity and body-binding tables and forwards through the bundle.
 #[allow(
     clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
+    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag; a context struct would hide those inputs."
 )]
 pub fn project_parameter_design(
     native: &[DesignParameter],
@@ -1638,11 +1638,9 @@ fn project_draft(
     use cadmpeg_ir::features::{Angle, FeatureDefinition};
 
     let construction = scope.draft_operation.as_ref()?;
-    // The ordered reference table is in record-index order, so neither group
-    // holds a fixed table position. Each is selected by its role instead. A
-    // scope carrying more than one neutral-plane group is a parting-line draft:
-    // it also names a pull direction and a parting tool, which this operation
-    // does not represent, so it keeps its native form.
+    // Reference-table positions vary by group, so select groups by role. More
+    // than one neutral-plane group describes a parting-line draft with a pull
+    // direction and a parting tool. This operation keeps that scope native.
     let faces = single_operand_group(groups, scope, ROLE_0X10)?;
     let neutral_plane = single_operand_group(groups, scope, 0x0000_0021_0000_0000)?;
     let member_of_scope = |group: &DesignConstructionOperandGroup| {
@@ -1660,10 +1658,9 @@ fn project_draft(
     {
         return None;
     }
-    // The signed angle is decoded whether or not the face recipes resolve to
-    // active B-rep faces. An unresolved recipe therefore degrades to its native
-    // selection rather than discarding the operation; the decode report still
-    // counts such a draft as an incomplete definition.
+    // The decoded angle remains available when face recipes fail. Such a draft
+    // keeps its native face selections, and the decode report marks its
+    // definition incomplete.
     let selection = |group: &DesignConstructionOperandGroup| {
         resolved_historical_face_group(scope, group, face_operands)
             .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone()))
@@ -1883,11 +1880,9 @@ fn project_base_flange(
 
 /// Project a sheet-metal `EdgeFlange` scope onto its neutral operation.
 ///
-/// The scope's typed operation supplies the bend position, the height datum and
-/// the inside bend radius directly. The height, the angle and the width come
-/// from the parameters the scope's owner records name, so a scope whose owners
-/// do not resolve to one parameter each keeps its native form instead of
-/// reporting a partial operation.
+/// The typed operation supplies the bend position, height datum, and inside
+/// radius. Owner parameters supply the height, angle, and width. The projector
+/// keeps the native scope when an owner lacks a parameter.
 pub(crate) fn project_edge_flange(
     scope: &DesignParameterScope,
     owners: &[crate::records::DesignParameterOwner],
@@ -4188,10 +4183,8 @@ fn project_fixed_pipe(
 /// Map the boundary-settings continuity of a `SurfacePatch` scope onto one
 /// neutral continuity.
 ///
-/// Continuity is stored per boundary and the neutral operation carries one
-/// value, so only a scope whose boundaries agree has a neutral continuity. A
-/// scope mixing continuities keeps the field absent rather than reporting the
-/// condition of one boundary as the condition of the patch.
+/// A `SurfacePatch` carries one continuity value. The projector returns it when
+/// every boundary carries the same value; mixed boundaries produce `None`.
 pub(crate) fn surface_patch_continuity(
     scope: &DesignParameterScope,
 ) -> Option<cadmpeg_ir::features::SurfaceContinuity> {
@@ -4979,8 +4972,8 @@ pub(crate) fn project_extrude(
     }
     .filter(|angle| angle.0 != 0.0);
     let second_draft = side_two_draft.filter(|angle| angle.0 != 0.0);
-    // A side-two draft has nowhere to live outside the second side of a
-    // two-sided extent, so reject it rather than silently drop it.
+    // A side-two draft requires a two-sided extent. Other extents have no neutral
+    // field for it, so return None.
     if second_draft.is_some() && !matches!(shape, ExtentShape::TwoSided { .. }) {
         return None;
     }

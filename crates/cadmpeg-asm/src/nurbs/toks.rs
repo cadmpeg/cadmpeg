@@ -1,22 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Token-space cursor and subtype walkers over framed [`Token`] payloads.
 //!
-//! These are the encoding-independent counterparts of the byte-level readers
-//! in [`crate::nurbs::reader`] and walkers in [`crate::nurbs::subtypes`]. The
-//! framer resolves the stream's integer width and retains payload identifiers,
-//! so a token walk needs no width probing and recognizes a subtype
-//! definition's name as a token rather than a byte pattern. Positions are
-//! token indices within one record's payload; they serve the same role the
-//! byte offsets served — ordering and identity — without binding the decoder
-//! to one serialization.
+//! These walkers mirror the byte readers in [`crate::nurbs::reader`] and the
+//! subtype walkers in [`crate::nurbs::subtypes`]. The framer resolves integer
+//! width and retains payload identifiers, so the walkers use token names and
+//! positions. Token positions identify fields within a record payload without
+//! depending on serialized byte offsets.
 
 use crate::sab::Token;
 
 /// A cursor over one record's payload tokens.
 ///
-/// `take_*` methods consume one token (or one counted group) and return its
-/// value, or return `None` without advancing when the next token is not of the
-/// requested kind — the same contract as the byte cursors they replace.
+/// `take_*` methods consume one token or counted group and return its value.
+/// A failed type match leaves the cursor position unchanged.
 #[derive(Clone, Copy)]
 pub struct Cur<'a> {
     toks: &'a [Token],
@@ -205,10 +201,10 @@ impl<'a> Cur<'a> {
     }
 }
 
-/// Read a knot table of `n` `(knot, multiplicity)` pairs from the cursor,
-/// returning the expanded clamped knot vector and pole count
-/// `sum(mult) - (degree - 1)`. Endpoint multiplicities are stored as `degree`
-/// rather than `degree + 1`; expansion adds one at each end.
+/// Read a knot table of `n` `(knot, multiplicity)` pairs from the cursor.
+///
+/// Expansion adds one to each endpoint multiplicity. The pole count is
+/// `sum(mult) - (degree - 1)`.
 pub(crate) fn take_knot_table(
     cur: &mut Cur<'_>,
     n: usize,
@@ -277,8 +273,8 @@ pub(crate) fn marker_positions(toks: &[Token]) -> Vec<usize> {
 }
 
 /// Token indices of the `nubs`/`nurbs` markers `toks` itself owns: those
-/// outside every construction nested within it. A leading `SubtypeOpen` is the
-/// span's own scope opening and is not counted as nesting.
+/// outside every construction nested within it. The span's outer
+/// `SubtypeOpen` sets the initial nesting depth.
 pub(crate) fn owned_marker_positions(toks: &[Token]) -> Vec<usize> {
     let mut out = Vec::new();
     let mut depth = 0usize;
@@ -325,10 +321,9 @@ pub(crate) fn owned_subtype_defs(toks: &[Token]) -> Vec<(usize, &str)> {
 /// one of `names`, with the matched name. Names are tried in order; the first
 /// name with a hit wins.
 ///
-/// A construction claims a record only through the definition the record owns.
-/// Records nest complete constructions as supports, so a decoder that accepted
-/// any matching marker anywhere in the record would claim records belonging to
-/// the construction that encloses it.
+/// A construction owns a record through its own definition. Nested definitions
+/// belong to their enclosing construction, so this function ignores matching
+/// markers in nested scopes.
 pub(crate) fn find_owned_subtype_marker<'n>(
     toks: &[Token],
     names: &[&'n str],
@@ -487,9 +482,8 @@ pub fn payload_subtype_toks<'r>(
 /// back to the record table.
 pub struct SubtypeTable {
     defs: Vec<(std::sync::Arc<[Token]>, usize)>,
-    /// The stream's ASM save format version, from the `asmheader` record. Some
-    /// revision-gated grammars key on it; the framer does not carry it in the
-    /// tokens, so the table transports it into token-space decoders.
+    /// The stream's ASM save format version from the `asmheader` record. Tokens
+    /// omit this value, so the table carries it into token-space decoders.
     save_format_version: Option<u32>,
 }
 
@@ -540,7 +534,7 @@ impl SubtypeTable {
 ///
 /// # Panics
 ///
-/// Panics when the span does not lex as one record's payload.
+/// Panics when `bytes` fails to lex as one record payload.
 pub fn lex_test_span(bytes: &[u8], ref_width: usize) -> std::sync::Arc<[Token]> {
     let mut wrapped = vec![0x0d, 1, b'x'];
     wrapped.extend_from_slice(bytes);
@@ -592,7 +586,7 @@ mod tests {
 
     #[test]
     fn owned_defs_skip_nested_constructions() {
-        // { exactcur { ref 3 } } — the ref belongs to the nested scope.
+        // The ref belongs to the nested `ref` scope.
         let toks = [
             Token::SubtypeOpen,
             ident("exactcur"),
