@@ -266,7 +266,6 @@ impl Encoder for SldprtCodec {
                 Self::encode_with_annotations(input.ir, &Annotations::default(), &[], &mut bytes)?
             }
         };
-        let write_path = report.write_path;
         let replay = input
             .fidelity
             .and_then(|value| value.retained_record("sldprt:file:source-image#0"))
@@ -283,14 +282,6 @@ impl Encoder for SldprtCodec {
             },
             (false, false) => FidelityResolution::NotProvided,
         };
-        if replay {
-            report.notes[0] = match write_path {
-                WritePath::VerbatimReplay => "preserved source container replayed verbatim",
-                WritePath::Patched => "preserved source container replayed with semantic patches",
-                WritePath::Synthesized => "source container regenerated from IR",
-            }
-            .into();
-        }
         if matches!(fidelity, FidelityResolution::Degraded { .. }) {
             report.losses.push(LossNote {
                 code: cadmpeg_ir::LossKind::PreservedSourceUnavailable,
@@ -319,9 +310,6 @@ impl SldprtCodec {
         records: &[SourceRecord<'_>],
         writer: &mut dyn Write,
     ) -> Result<ExportReport, CodecError> {
-        let replay = records
-            .iter()
-            .any(|record| record.id.0 == "sldprt:file:source-image#0");
         let write_path = Self::write_preserved_with_annotations(ir, annotations, records, writer)?;
         let validation = cadmpeg_ir::validate(ir, Vec::new());
         Ok(ExportReport {
@@ -334,10 +322,12 @@ impl SldprtCodec {
             write_path,
             losses: Vec::new(),
             notes: vec![
-                if replay {
-                    "preserved source container replayed verbatim"
-                } else {
-                    "source container regenerated from IR"
+                match write_path {
+                    WritePath::VerbatimReplay => "preserved source container replayed verbatim",
+                    WritePath::Patched => {
+                        "preserved source container replayed with semantic patches"
+                    }
+                    WritePath::Synthesized => "source container regenerated from IR",
                 }
                 .into(),
                 "entity counts are derived from the IR".into(),
