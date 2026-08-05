@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::draft::ModelDraft;
+use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
@@ -45,6 +45,7 @@ pub(super) fn is_body_representation(record: &RawRecord) -> bool {
 }
 
 pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
+    let mut commit_session = CommitSession::new(ir);
     let mut result = TopologyResult {
         typed_records: BTreeSet::new(),
         warnings: Vec::new(),
@@ -121,7 +122,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         let outcome = build_wire(model, exchange, &vertices, &edges, &point_positions);
         let mut committed = 0;
         for mut built in outcome.built {
-            if let Err(error) = built.draft.commit_model(ir) {
+            if let Err(error) = commit_session.commit_model(built.draft, ir) {
                 result.warnings.push(format!(
                     "EDGE_BASED_WIREFRAME_MODEL #{model} conflicts with decoded topology: {error}"
                 ));
@@ -166,7 +167,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         );
         let mut committed = 0;
         for mut built in outcome.built {
-            if let Err(error) = built.draft.commit_model(ir) {
+            if let Err(error) = commit_session.commit_model(built.draft, ir) {
                 result.warnings.push(format!(
                     "SHELL_BASED_WIREFRAME_MODEL #{model} conflicts with decoded topology: {error}"
                 ));
@@ -275,7 +276,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         let mut body_by_shell = BTreeMap::<u64, BTreeSet<BodyId>>::new();
         for mut built in outcome.built {
             drop_existing_surfaces(&mut built.draft, ir);
-            if let Err(error) = built.draft.commit_model(ir) {
+            if let Err(error) = commit_session.commit_model(built.draft, ir) {
                 result.warnings.push(format!(
                     "STEP topology root #{id} conflicts with decoded topology: {error}",
                 ));
@@ -346,7 +347,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
             ));
             continue;
         };
-        if let Err(error) = built.draft.commit_model(ir) {
+        if let Err(error) = commit_session.commit_model(built.draft, ir) {
             result.warnings.push(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} conflicts with decoded topology: {error}"
             ));
