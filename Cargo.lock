@@ -146,6 +146,7 @@ dependencies = [
  "cadmpeg-codec-iges",
  "cadmpeg-codec-nx",
  "cadmpeg-codec-rhino",
+ "cadmpeg-codec-sat",
  "cadmpeg-codec-sldprt",
  "cadmpeg-codec-step",
  "cadmpeg-container",
@@ -281,6 +282,15 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
+]
+
+[[package]]
+name = "cadmpeg-codec-sat"
+version = "0.3.1"
+dependencies = [
+ "cadmpeg-asm",
+ "cadmpeg-codec-core",
+ "cadmpeg-ir",
 ]
 
 [[package]]

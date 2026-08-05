@@ -159,3 +159,15 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `asm.md` §7.1 gives the header lines. The flags word keeps its binary semantics, so bit 0 is the history-partition flag. No further text-specific marking is known, and the record grammar for a text history partition is not known.
 
 **Need.** A reader must know the marking to separate the solved records from history records; without it, a history-bearing text stream would read history records as model records.
+
+## 3. Neutral projection
+
+### NP-01. Unset tolerant-vertex sentinel in the neutral vertex tolerance
+
+**Question.** How does the neutral model represent a tolerant vertex whose evaluated tolerance slot holds the `-1` unset sentinel?
+
+**Known.** `asm.md` §5.2 "**Tolerant vertex:**" gives the three tolerance slots and the `-1` sentinel. The decoder retains a negative evaluated slot verbatim in the neutral vertex tolerance. The IR validator requires a positive finite topology tolerance, so a decoded stream that carries the unset sentinel fails validation. The writers select `tvertex` regeneration and accept tolerant-tail edits by the presence of the neutral tolerance, so a `None` projection changes write behavior.
+
+**Conflict.** The decoder and the IR validator disagree on the sentinel. A decision must select one representation: a `None` neutral tolerance with the sentinel retained natively, or a validator rule for the sentinel.
+
+**Need.** A stream whose tolerant vertex has an unset evaluated slot must decode and validate. The item blocks a clean validation of such streams in both encodings.

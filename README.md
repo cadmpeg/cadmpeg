@@ -70,6 +70,7 @@ wrote part.step (2125 entities)
 - **Creo `.prt`** — [L1](docs/format-support.md#support-ladder)
 - **STEP Part 21 AP203/AP214/AP242** — [L9](docs/format-support.md#support-ladder)
 - **IGES 5.3 Fixed ASCII** — [L8](docs/format-support.md#support-ladder)
+- **ASM `.sat`/`.smt`/`.smb`/`.sab` streams** — bare ShapeManager B-rep streams, binary and text encodings
 
 [Format support](docs/format-support.md) holds profiles and scoring rules. [`docs/formats/`](docs/formats/) holds byte semantics and open items.
 
