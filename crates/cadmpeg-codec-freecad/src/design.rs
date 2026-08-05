@@ -1896,16 +1896,17 @@ fn endpoints(entity: &SketchEntity) -> Option<(Point2, Point2)> {
             start_angle: Some(start),
             end_angle: Some(end),
         } => {
+            let major = Point2::new(major_angle.0.cos(), major_angle.0.sin());
+            let minor = Point2::new(-major.v, major.u);
             let point = |parameter: f64| {
-                let major = Point2::new(major_angle.0.cos(), major_angle.0.sin());
-                let minor = Point2::new(-major.v, major.u);
+                let (along_major, along_minor) = (parameter.cos(), parameter.sin());
                 Point2::new(
                     center.u
-                        + major_radius.0 * parameter.cos() * major.u
-                        + minor_radius.0 * parameter.sin() * minor.u,
+                        + major_radius.0 * along_major * major.u
+                        + minor_radius.0 * along_minor * minor.u,
                     center.v
-                        + major_radius.0 * parameter.cos() * major.v
-                        + minor_radius.0 * parameter.sin() * minor.v,
+                        + major_radius.0 * along_major * major.v
+                        + minor_radius.0 * along_minor * minor.v,
                 )
             };
             Some((point(start.0), point(end.0)))
