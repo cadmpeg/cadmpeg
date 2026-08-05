@@ -70,9 +70,10 @@ pub(crate) fn embedded_pcurve_geometry(pcurve: nurbs::pcurve::NurbsPcurve) -> Pc
     }
 }
 
-/// The decoded B-rep graph plus loss accounting.
+/// The decoded ASM B-rep graph plus loss accounting. Every field is a fact
+/// of the ASM stream, independent of the format that references the stream.
 #[derive(Default, Serialize, Deserialize)]
-pub struct Brep {
+pub struct AsmBrep {
     /// Bodies.
     pub bodies: Vec<Body>,
     /// Regions.
@@ -101,14 +102,6 @@ pub struct Brep {
     pub procedural_surfaces: Vec<ProceduralSurface>,
     /// Native procedural definitions for solved curve caches.
     pub procedural_curves: Vec<ProceduralCurve>,
-    /// Typed sketch-curve provenance links.
-    pub sketch_curve_links: Vec<SketchCurveLink>,
-    /// Persistent design identifiers attached to solved entities.
-    pub persistent_design_links: Vec<PersistentDesignLink>,
-    /// Variable-width persistent tag groups attached to solved faces and edges.
-    pub persistent_subentity_tags: Vec<PersistentSubentityTag>,
-    /// Original authoring times attached to solved entities.
-    pub creation_timestamps: Vec<CreationTimestamp>,
     /// Kernel continuity classifications stored on solved edges.
     pub edge_continuities: Vec<EdgeContinuity>,
     /// Native owner-coedge selectors stored on solved edges.
@@ -142,6 +135,59 @@ pub struct Brep {
     /// Source locations for emitted B-rep and synthetic child records.
     #[serde(skip)]
     pub annotation_records: Vec<AnnotationRecord>,
+}
+
+/// The ASM B-rep graph plus links derived from Fusion attribute records.
+///
+/// The kernel graph is flattened so id qualification and body-key retention
+/// walk one top-level value tree; a nested field would hide the kernel arenas
+/// from [`retain_root_entities`], which only visits top-level sequences.
+#[derive(Default, Serialize, Deserialize)]
+pub struct Brep {
+    /// The format-independent ASM graph.
+    #[serde(flatten)]
+    pub asm: AsmBrep,
+    /// Typed sketch-curve provenance links.
+    pub sketch_curve_links: Vec<SketchCurveLink>,
+    /// Persistent design identifiers attached to solved entities.
+    pub persistent_design_links: Vec<PersistentDesignLink>,
+    /// Variable-width persistent tag groups attached to solved faces and edges.
+    pub persistent_subentity_tags: Vec<PersistentSubentityTag>,
+    /// Original authoring times attached to solved entities.
+    pub creation_timestamps: Vec<CreationTimestamp>,
+}
+
+impl Brep {
+    /// Wrap a decoded ASM graph and derive the Fusion attribute links.
+    fn from_asm(asm: AsmBrep) -> Self {
+        let sketch_curve_links = asm
+            .attributes
+            .iter()
+            .filter_map(attributes::sketch_curve_link)
+            .collect();
+        let persistent_design_links = asm
+            .attributes
+            .iter()
+            .flat_map(attributes::persistent_design_links)
+            .collect();
+        let persistent_subentity_tags = asm
+            .attributes
+            .iter()
+            .flat_map(attributes::persistent_subentity_tags)
+            .collect();
+        let creation_timestamps = asm
+            .attributes
+            .iter()
+            .filter_map(attributes::creation_timestamp)
+            .collect();
+        Self {
+            asm,
+            sketch_curve_links,
+            persistent_design_links,
+            persistent_subentity_tags,
+            creation_timestamps,
+        }
+    }
 }
 
 /// One sparse v1 annotation produced while SAB record offsets are available.
@@ -203,10 +249,12 @@ impl Brep {
     /// Map solved bodies to the selector used by this blob's Design body map.
     pub fn body_selectors(&self) -> HashMap<BodyId, u64> {
         let ordinal_mode = self
+            .asm
             .body_native_keys
             .iter()
             .all(|body| body.asm_body_key.is_none());
-        self.body_native_keys
+        self.asm
+            .body_native_keys
             .iter()
             .filter_map(|body| {
                 let selector = if ordinal_mode {
@@ -226,7 +274,7 @@ impl Brep {
         &self,
         selectors: &HashSet<u64>,
     ) -> Result<HashMap<BodyId, u64>, cadmpeg_codec_core::CodecError> {
-        let body_keys = self.body_native_keys.iter().collect::<Vec<_>>();
+        let body_keys = self.asm.body_native_keys.iter().collect::<Vec<_>>();
         let mut resolved = HashMap::new();
         for selector in selectors {
             let Some(body) = resolve_body_selector(&body_keys, *selector)? else {
@@ -248,13 +296,14 @@ impl Brep {
         &mut self,
         selected_keys: &HashSet<u64>,
     ) -> Result<(), cadmpeg_codec_core::CodecError> {
-        let annotations = std::mem::take(&mut self.annotation_records);
+        let annotations = std::mem::take(&mut self.asm.annotation_records);
         let mut value = serde_value::to_value(&*self).map_err(|error| {
             cadmpeg_codec_core::CodecError::Malformed(format!("BREP serialization failed: {error}"))
         })?;
         let mut owned = HashSet::new();
         collect_owned_ids(&value, &mut owned);
         let native_body_ids = self
+            .asm
             .body_native_keys
             .iter()
             .map(|native| native.body.0.as_str())
@@ -268,7 +317,8 @@ impl Brep {
         // projected from other saved top-level entities have no ASM body key
         // and remain part of the selected BREP blob.
         roots.extend(
-            self.bodies
+            self.asm
+                .bodies
                 .iter()
                 .filter(|body| !native_body_ids.contains(body.id.0.as_str()))
                 .map(|body| body.id.0.clone()),
@@ -291,9 +341,10 @@ impl Brep {
             ))
         })?;
         retained
+            .asm
             .body_keys
             .retain(|body, _| reachable.contains(&body.0));
-        retained.annotation_records = annotations
+        retained.asm.annotation_records = annotations
             .into_iter()
             .filter(|annotation| reachable.contains(&annotation.id))
             .collect();
@@ -308,7 +359,7 @@ impl Brep {
         format: IdFormat<'_>,
         namespace: &str,
     ) -> Result<(), cadmpeg_codec_core::CodecError> {
-        let annotations = std::mem::take(&mut self.annotation_records);
+        let annotations = std::mem::take(&mut self.asm.annotation_records);
         let mut value = serde_value::to_value(&*self).map_err(|error| {
             cadmpeg_codec_core::CodecError::Malformed(format!("BREP serialization failed: {error}"))
         })?;
@@ -329,7 +380,7 @@ impl Brep {
         let mut qualified: Self = crate::value_tree::from_value(value).map_err(|error| {
             cadmpeg_codec_core::CodecError::Malformed(format!("qualified BREP is invalid: {error}"))
         })?;
-        qualified.annotation_records = annotations
+        qualified.asm.annotation_records = annotations
             .into_iter()
             .map(|mut annotation| {
                 if let Some(id) = replacements.get(&annotation.id) {
@@ -343,6 +394,24 @@ impl Brep {
     }
 
     /// Append a disjoint, already-qualified BREP graph.
+    pub fn append(&mut self, mut other: Self) {
+        self.asm.append(other.asm);
+        macro_rules! append_vecs {
+            ($($field:ident),+ $(,)?) => {
+                $(self.$field.append(&mut other.$field);)+
+            };
+        }
+        append_vecs!(
+            sketch_curve_links,
+            persistent_design_links,
+            persistent_subentity_tags,
+            creation_timestamps,
+        );
+    }
+}
+
+impl AsmBrep {
+    /// Append a disjoint, already-qualified ASM graph.
     pub fn append(&mut self, mut other: Self) {
         macro_rules! append_vecs {
             ($($field:ident),+ $(,)?) => {
@@ -364,10 +433,6 @@ impl Brep {
             pcurves,
             procedural_surfaces,
             procedural_curves,
-            sketch_curve_links,
-            persistent_design_links,
-            persistent_subentity_tags,
-            creation_timestamps,
             edge_continuities,
             edge_ownerships,
             vertex_ownerships,
@@ -683,7 +748,13 @@ pub(crate) struct WireShellTopology {
 /// `stream` names the source ZIP entry for provenance. Ids are minted as
 /// `<format>:brep:entity#<record-index>`, unique across the `RecordTable`.
 pub fn decode(records: &[Record], bytes: &[u8], stream: &str, format: IdFormat<'_>) -> Brep {
-    decode_with_purpose(records, bytes, stream, format, DecodePurpose::Model)
+    Brep::from_asm(decode_with_purpose(
+        records,
+        bytes,
+        stream,
+        format,
+        DecodePurpose::Model,
+    ))
 }
 
 /// Decode only the topology and analytic measurements used to bind ASM
@@ -694,7 +765,13 @@ pub(crate) fn decode_history_topology(
     bytes: &[u8],
     format: IdFormat<'_>,
 ) -> Brep {
-    decode_with_purpose(records, bytes, "history", format, DecodePurpose::History)
+    Brep::from_asm(decode_with_purpose(
+        records,
+        bytes,
+        "history",
+        format,
+        DecodePurpose::History,
+    ))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -711,8 +788,8 @@ fn decode_with_purpose(
     stream: &str,
     format: IdFormat<'_>,
     purpose: DecodePurpose,
-) -> Brep {
-    let mut out = Brep::default();
+) -> AsmBrep {
+    let mut out = AsmBrep::default();
 
     // Index records by RecordTable index (== position for a framed slice).
     let by_index: HashMap<i64, &Record> = records.iter().map(|r| (r.index as i64, r)).collect();

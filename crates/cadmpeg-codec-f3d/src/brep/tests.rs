@@ -324,36 +324,39 @@ fn brep_qualification_rewrites_owned_ids_and_cross_references() {
     let body = BodyId("f3d:brep:entity#1".into());
     let region = RegionId("f3d:brep:entity#2".into());
     let mut brep = Brep {
-        bodies: vec![Body {
-            id: body.clone(),
-            kind: Default::default(),
-            regions: vec![region.clone()],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        }],
-        regions: vec![Region {
-            id: region,
-            body: body.clone(),
-            shells: Vec::new(),
-        }],
-        body_keys: HashMap::from([(body.clone(), 7)]),
-        body_native_keys: vec![BodyNativeKey {
-            id: "f3d:asm:body-native-key#1".into(),
-            body,
-            record_index: 1,
-            body_ordinal: 0,
-            source_brep: Some("BREP.source.smbh".into()),
-            asm_body_key: Some(7),
-        }],
-        annotation_records: vec![AnnotationRecord {
-            id: "f3d:brep:entity#1".into(),
-            stream: "asset/BREP.source.smbh".into(),
-            offset: 10,
-            tag: "body".into(),
-            derived_fields: Vec::new(),
-        }],
+        asm: AsmBrep {
+            bodies: vec![Body {
+                id: body.clone(),
+                kind: Default::default(),
+                regions: vec![region.clone()],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            }],
+            regions: vec![Region {
+                id: region,
+                body: body.clone(),
+                shells: Vec::new(),
+            }],
+            body_keys: HashMap::from([(body.clone(), 7)]),
+            body_native_keys: vec![BodyNativeKey {
+                id: "f3d:asm:body-native-key#1".into(),
+                body,
+                record_index: 1,
+                body_ordinal: 0,
+                source_brep: Some("BREP.source.smbh".into()),
+                asm_body_key: Some(7),
+            }],
+            annotation_records: vec![AnnotationRecord {
+                id: "f3d:brep:entity#1".into(),
+                stream: "asset/BREP.source.smbh".into(),
+                offset: 10,
+                tag: "body".into(),
+                derived_fields: Vec::new(),
+            }],
+            ..AsmBrep::default()
+        },
         ..Brep::default()
     };
 
@@ -361,13 +364,13 @@ fn brep_qualification_rewrites_owned_ids_and_cross_references() {
         .expect("qualify BREP");
 
     let qualified = BodyId("f3d:brep/source/brep:entity#1".into());
-    assert_eq!(brep.bodies[0].id, qualified);
-    assert_eq!(brep.regions[0].body, qualified);
-    assert_eq!(brep.body_native_keys[0].body, qualified);
-    assert_eq!(brep.body_keys.get(&qualified), Some(&7));
-    assert_eq!(brep.annotation_records[0].id, qualified.0);
+    assert_eq!(brep.asm.bodies[0].id, qualified);
+    assert_eq!(brep.asm.regions[0].body, qualified);
+    assert_eq!(brep.asm.body_native_keys[0].body, qualified);
+    assert_eq!(brep.asm.body_keys.get(&qualified), Some(&7));
+    assert_eq!(brep.asm.annotation_records[0].id, qualified.0);
     assert_eq!(
-        brep.body_native_keys[0].source_brep.as_deref(),
+        brep.asm.body_native_keys[0].source_brep.as_deref(),
         Some("BREP.source.smbh")
     );
 }
@@ -395,36 +398,39 @@ fn body_key_retention_keeps_only_the_selected_connected_graph() {
         asm_body_key: Some(key),
     };
     let mut brep = Brep {
-        bodies: vec![body(1, 2), body(3, 4)],
-        regions: vec![
-            Region {
-                id: RegionId("f3d:brep:entity#2".into()),
-                body: BodyId("f3d:brep:entity#1".into()),
-                shells: Vec::new(),
-            },
-            Region {
-                id: RegionId("f3d:brep:entity#4".into()),
-                body: BodyId("f3d:brep:entity#3".into()),
-                shells: Vec::new(),
-            },
-        ],
-        body_keys: HashMap::from([
-            (BodyId("f3d:brep:entity#1".into()), 10),
-            (BodyId("f3d:brep:entity#3".into()), 20),
-        ]),
-        body_native_keys: vec![native_key(1, 10), native_key(3, 20)],
+        asm: AsmBrep {
+            bodies: vec![body(1, 2), body(3, 4)],
+            regions: vec![
+                Region {
+                    id: RegionId("f3d:brep:entity#2".into()),
+                    body: BodyId("f3d:brep:entity#1".into()),
+                    shells: Vec::new(),
+                },
+                Region {
+                    id: RegionId("f3d:brep:entity#4".into()),
+                    body: BodyId("f3d:brep:entity#3".into()),
+                    shells: Vec::new(),
+                },
+            ],
+            body_keys: HashMap::from([
+                (BodyId("f3d:brep:entity#1".into()), 10),
+                (BodyId("f3d:brep:entity#3".into()), 20),
+            ]),
+            body_native_keys: vec![native_key(1, 10), native_key(3, 20)],
+            ..AsmBrep::default()
+        },
         ..Brep::default()
     };
 
     brep.retain_body_keys(&HashSet::from([20]))
         .expect("retain body graph");
 
-    assert_eq!(brep.bodies.len(), 1);
-    assert_eq!(brep.bodies[0].id.0, "f3d:brep:entity#3");
-    assert_eq!(brep.regions.len(), 1);
-    assert_eq!(brep.regions[0].id.0, "f3d:brep:entity#4");
-    assert_eq!(brep.body_native_keys.len(), 1);
-    assert_eq!(brep.body_keys.len(), 1);
+    assert_eq!(brep.asm.bodies.len(), 1);
+    assert_eq!(brep.asm.bodies[0].id.0, "f3d:brep:entity#3");
+    assert_eq!(brep.asm.regions.len(), 1);
+    assert_eq!(brep.asm.regions[0].id.0, "f3d:brep:entity#4");
+    assert_eq!(brep.asm.body_native_keys.len(), 1);
+    assert_eq!(brep.asm.body_keys.len(), 1);
 }
 
 #[test]
@@ -434,43 +440,46 @@ fn body_key_retention_preserves_selectorless_neutral_roots() {
     let native_body = BodyId("f3d:brep:entity#1".into());
     let projected_body = BodyId("f3d:brep:saved-edge-body#5".into());
     let mut brep = Brep {
-        bodies: vec![
-            Body {
-                id: native_body.clone(),
-                kind: BodyKind::Solid,
-                regions: Vec::new(),
-                transform: None,
-                name: None,
-                color: None,
-                visible: None,
-            },
-            Body {
-                id: projected_body.clone(),
-                kind: BodyKind::Wire,
-                regions: Vec::new(),
-                transform: None,
-                name: None,
-                color: None,
-                visible: None,
-            },
-        ],
-        body_keys: HashMap::from([(native_body.clone(), 10)]),
-        body_native_keys: vec![BodyNativeKey {
-            id: "f3d:asm:body-native-key#1".into(),
-            body: native_body,
-            record_index: 1,
-            body_ordinal: 0,
-            source_brep: Some("BREP.source.smbh".into()),
-            asm_body_key: Some(10),
-        }],
+        asm: AsmBrep {
+            bodies: vec![
+                Body {
+                    id: native_body.clone(),
+                    kind: BodyKind::Solid,
+                    regions: Vec::new(),
+                    transform: None,
+                    name: None,
+                    color: None,
+                    visible: None,
+                },
+                Body {
+                    id: projected_body.clone(),
+                    kind: BodyKind::Wire,
+                    regions: Vec::new(),
+                    transform: None,
+                    name: None,
+                    color: None,
+                    visible: None,
+                },
+            ],
+            body_keys: HashMap::from([(native_body.clone(), 10)]),
+            body_native_keys: vec![BodyNativeKey {
+                id: "f3d:asm:body-native-key#1".into(),
+                body: native_body,
+                record_index: 1,
+                body_ordinal: 0,
+                source_brep: Some("BREP.source.smbh".into()),
+                asm_body_key: Some(10),
+            }],
+            ..AsmBrep::default()
+        },
         ..Brep::default()
     };
 
     brep.retain_body_keys(&HashSet::from([10]))
         .expect("retain body graph");
 
-    assert_eq!(brep.bodies.len(), 2);
-    assert!(brep.bodies.iter().any(|body| body.id == projected_body));
+    assert_eq!(brep.asm.bodies.len(), 2);
+    assert!(brep.asm.bodies.iter().any(|body| body.id == projected_body));
 }
 
 #[test]
@@ -576,18 +585,21 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
         crate::ids::ID_FORMAT,
     );
 
-    assert_eq!(brep.bodies.len(), 1);
-    assert_eq!(brep.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Wire);
-    assert_eq!(brep.regions.len(), 1);
-    assert_eq!(brep.shells.len(), 1);
+    assert_eq!(brep.asm.bodies.len(), 1);
     assert_eq!(
-        brep.shells[0].wire_edges,
+        brep.asm.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Wire
+    );
+    assert_eq!(brep.asm.regions.len(), 1);
+    assert_eq!(brep.asm.shells.len(), 1);
+    assert_eq!(
+        brep.asm.shells[0].wire_edges,
         vec![EdgeId(id(crate::ids::ID_FORMAT, 1))]
     );
-    assert_eq!(brep.edges.len(), 1);
-    assert_eq!(brep.vertices.len(), 2);
-    assert_eq!(brep.points.len(), 2);
-    assert_eq!(brep.curves.len(), 1);
+    assert_eq!(brep.asm.edges.len(), 1);
+    assert_eq!(brep.asm.vertices.len(), 2);
+    assert_eq!(brep.asm.points.len(), 2);
+    assert_eq!(brep.asm.curves.len(), 1);
 }
 
 #[test]
@@ -601,7 +613,10 @@ fn body_selectors_use_ordinals_only_for_an_all_null_key_lane() {
         asm_body_key: key,
     };
     let mut brep = Brep {
-        body_native_keys: vec![native_key(0, None), native_key(1, None)],
+        asm: AsmBrep {
+            body_native_keys: vec![native_key(0, None), native_key(1, None)],
+            ..AsmBrep::default()
+        },
         ..Brep::default()
     };
 
@@ -611,7 +626,7 @@ fn body_selectors_use_ordinals_only_for_an_all_null_key_lane() {
         1
     );
 
-    brep.body_native_keys[1].asm_body_key = Some(7);
+    brep.asm.body_native_keys[1].asm_body_key = Some(7);
     assert_eq!(
         brep.body_selectors(),
         HashMap::from([(BodyId("f3d:brep:entity#1".into()), 7)])
@@ -629,7 +644,10 @@ fn design_body_selectors_prefer_exact_keys_then_fall_back_to_ordinals() {
         asm_body_key: Some(key),
     };
     let mut brep = Brep {
-        body_native_keys: vec![native_key(0, 1), native_key(1, 0)],
+        asm: AsmBrep {
+            body_native_keys: vec![native_key(0, 1), native_key(1, 0)],
+            ..AsmBrep::default()
+        },
         ..Brep::default()
     };
 
@@ -638,7 +656,7 @@ fn design_body_selectors_prefer_exact_keys_then_fall_back_to_ordinals() {
         HashMap::from([(BodyId("f3d:brep:entity#1".into()), 0)])
     );
 
-    brep.body_native_keys = vec![native_key(0, 436)];
+    brep.asm.body_native_keys = vec![native_key(0, 436)];
     assert_eq!(
         brep.body_selectors_for(&HashSet::from([0])).unwrap(),
         HashMap::from([(BodyId("f3d:brep:entity#0".into()), 0)])
@@ -715,7 +733,7 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
         record(3, "shell", "shell", vec![Token::Ref(1)]),
         record(4, "loop", "loop", vec![Token::Ref(2)]),
     ];
-    let mut brep = Brep {
+    let mut brep = AsmBrep {
         shells: vec![Shell {
             id: ShellId(id(crate::ids::ID_FORMAT, 3)),
             region: RegionId("region".into()),
@@ -730,7 +748,7 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
             coedges: Vec::new(),
             vertex_uses: Vec::new(),
         }],
-        ..Brep::default()
+        ..AsmBrep::default()
     };
     let by_index = records
         .iter()

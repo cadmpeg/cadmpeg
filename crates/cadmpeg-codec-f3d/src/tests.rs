@@ -13478,18 +13478,13 @@ fn history_topology_decode_matches_full_brep_graph() {
         let limit = asm_header::solved_record_limit(&bytes).expect("solved record limit");
         let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).expect("frame BREP");
 
-        let full = crate::history::historical_topology(&crate::brep::decode(
-            &records,
-            &bytes,
-            "full",
-            crate::ids::ID_FORMAT,
-        ))
+        let full = crate::history::historical_topology(
+            &crate::brep::decode(&records, &bytes, "full", crate::ids::ID_FORMAT).asm,
+        )
         .expect("full topology");
-        let history = crate::history::historical_topology(&crate::brep::decode_history_topology(
-            &records,
-            &bytes,
-            crate::ids::ID_FORMAT,
-        ))
+        let history = crate::history::historical_topology(
+            &crate::brep::decode_history_topology(&records, &bytes, crate::ids::ID_FORMAT).asm,
+        )
         .expect("history topology");
 
         assert_eq!(history, full);

@@ -1255,7 +1255,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 Some(keys) => part.body_selectors_for(keys)?,
                 None => part.body_selectors(),
             };
-            for body in &mut part.bodies {
+            for body in &mut part.asm.bodies {
                 if let Some(visibility) = body_selectors.get(&body.id).and_then(|selector| {
                     all_body_visibility.get(&(blob_name.to_owned(), *selector))
                 }) {
@@ -1275,7 +1275,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                     None => part.body_selectors(),
                 };
             }
-            for body in &part.bodies {
+            for body in &part.asm.bodies {
                 if let Some((body_selector, visibility)) =
                     body_selectors.get(&body.id).and_then(|selector| {
                         all_body_visibility
@@ -1315,8 +1315,8 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                     provenance: None,
                 });
             }
-            let decoded_materials = materials::decode_with_bodies(&scan, &brep.body_keys)?;
-            let annotation_records = std::mem::take(&mut brep.annotation_records);
+            let decoded_materials = materials::decode_with_bodies(&scan, &brep.asm.body_keys)?;
+            let annotation_records = std::mem::take(&mut brep.asm.annotation_records);
             let (mut ir, mut native, unknowns) =
                 build_geometry_ir(&scan, &primary_model_brep, brep);
             let (subds, subd_losses) = crate::tsm::decode(&scan)?;
@@ -3259,7 +3259,10 @@ fn try_decode_brep(
     };
 
     let decoded = brep::decode(&records, bytes, &brep_entry.name, crate::ids::ID_FORMAT);
-    if decoded.surfaces.is_empty() && decoded.points.is_empty() && decoded.faces.is_empty() {
+    if decoded.asm.surfaces.is_empty()
+        && decoded.asm.points.is_empty()
+        && decoded.asm.faces.is_empty()
+    {
         return Ok(None);
     }
     Ok(Some(decoded))
@@ -3276,40 +3279,40 @@ fn build_geometry_ir(
     ir.source = Some(source);
     ir.tolerances = tolerances;
 
-    ir.model.bodies = brep.bodies;
-    ir.model.regions = brep.regions;
-    ir.model.shells = brep.shells;
-    ir.model.faces = brep.faces;
-    ir.model.loops = brep.loops;
-    ir.model.coedges = brep.coedges;
-    ir.model.edges = brep.edges;
-    ir.model.vertices = brep.vertices;
-    ir.model.points = brep.points;
-    ir.model.surfaces = brep.surfaces;
-    ir.model.curves = brep.curves;
-    ir.model.pcurves = brep.pcurves;
-    ir.model.procedural_surfaces = brep.procedural_surfaces;
-    ir.model.procedural_curves = brep.procedural_curves;
+    ir.model.bodies = brep.asm.bodies;
+    ir.model.regions = brep.asm.regions;
+    ir.model.shells = brep.asm.shells;
+    ir.model.faces = brep.asm.faces;
+    ir.model.loops = brep.asm.loops;
+    ir.model.coedges = brep.asm.coedges;
+    ir.model.edges = brep.asm.edges;
+    ir.model.vertices = brep.asm.vertices;
+    ir.model.points = brep.asm.points;
+    ir.model.surfaces = brep.asm.surfaces;
+    ir.model.curves = brep.asm.curves;
+    ir.model.pcurves = brep.asm.pcurves;
+    ir.model.procedural_surfaces = brep.asm.procedural_surfaces;
+    ir.model.procedural_curves = brep.asm.procedural_curves;
     let native = F3dNative {
-        body_native_keys: brep.body_native_keys,
+        body_native_keys: brep.asm.body_native_keys,
         sketch_curve_links: brep.sketch_curve_links,
         persistent_design_links: brep.persistent_design_links,
         persistent_subentity_tags: brep.persistent_subentity_tags,
-        edge_continuities: brep.edge_continuities,
-        edge_ownerships: brep.edge_ownerships,
-        vertex_ownerships: brep.vertex_ownerships,
-        face_sidedness: brep.face_sidedness,
-        tolerant_vertex_tails: brep.tolerant_vertex_tails,
-        tolerant_edge_tails: brep.tolerant_edge_tails,
-        tolerant_coedge_parameters: brep.tolerant_coedge_parameters,
-        mesh_surface_sentinels: brep.mesh_surface_sentinels,
-        wire_topologies: brep.wire_topologies,
-        transform_hints: brep.transform_hints,
+        edge_continuities: brep.asm.edge_continuities,
+        edge_ownerships: brep.asm.edge_ownerships,
+        vertex_ownerships: brep.asm.vertex_ownerships,
+        face_sidedness: brep.asm.face_sidedness,
+        tolerant_vertex_tails: brep.asm.tolerant_vertex_tails,
+        tolerant_edge_tails: brep.asm.tolerant_edge_tails,
+        tolerant_coedge_parameters: brep.asm.tolerant_coedge_parameters,
+        mesh_surface_sentinels: brep.asm.mesh_surface_sentinels,
+        wire_topologies: brep.asm.wire_topologies,
+        transform_hints: brep.asm.transform_hints,
         creation_timestamps: brep.creation_timestamps,
         ..F3dNative::default()
     };
-    ir.model.attributes = brep.attributes;
-    (ir, native, brep.unknowns)
+    ir.model.attributes = brep.asm.attributes;
+    (ir, native, brep.asm.unknowns)
 }
 
 /// Source metadata attributes and kernel tolerances from the primary model BREP header.
@@ -3375,7 +3378,7 @@ fn format_kind_counts(counts: &std::collections::BTreeMap<String, usize>) -> Str
 }
 
 fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
-    let s = &decoded.stats;
+    let s = &decoded.asm.stats;
     let mut losses = Vec::new();
 
     if s.nurbs_surfaces > 0 {

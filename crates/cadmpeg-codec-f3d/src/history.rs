@@ -393,11 +393,9 @@ fn bind_complete_record_tables(
         let Some(records) = materialize_record_table(state, &archive) else {
             return false;
         };
-        let Some(topology) = historical_topology(&crate::brep::decode_history_topology(
-            &records,
-            bytes,
-            crate::ids::ID_FORMAT,
-        )) else {
+        let Some(topology) = historical_topology(
+            &crate::brep::decode_history_topology(&records, bytes, crate::ids::ID_FORMAT).asm,
+        ) else {
             return false;
         };
         state.record_table_complete = true;
@@ -5365,7 +5363,7 @@ fn relation_map(items: &[AsmHistoricalRelation]) -> HashMap<i64, &[i64]> {
         .collect()
 }
 
-pub(crate) fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistoricalTopology> {
+pub(crate) fn historical_topology(brep: &crate::brep::AsmBrep) -> Option<AsmHistoricalTopology> {
     fn entity_ref(id: &str) -> Option<i64> {
         id.rsplit_once('#')?
             .1
@@ -6977,7 +6975,7 @@ mod tests {
         };
 
         let id = |slot| format!("f3d:brep:entity#{slot}");
-        let mut brep = crate::brep::Brep::default();
+        let mut brep = crate::brep::AsmBrep::default();
         brep.bodies.push(Body {
             id: BodyId(id(1)),
             kind: BodyKind::Solid,

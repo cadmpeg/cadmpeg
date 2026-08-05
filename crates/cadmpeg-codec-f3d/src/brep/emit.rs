@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Emit decoded carriers, pcurves, and topology entities into the [`Brep`]
+//! Emit decoded carriers, pcurves, and topology entities into the [`AsmBrep`]
 //! graph, one pass per entity kind.
 
 use crate::records::{
@@ -45,8 +45,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use std::collections::{HashMap, HashSet};
 
 use super::attributes::{
-    attribute_chain_color, attribute_chain_name, collect_attributes, creation_timestamp,
-    decode_transform, persistent_design_links, persistent_subentity_tags, sketch_curve_link,
+    attribute_chain_color, attribute_chain_name, collect_attributes, decode_transform,
     source_attribute, unknown_record_id,
 };
 use super::geometry::{
@@ -59,13 +58,13 @@ use super::topology::{
     loop_chain, region_chain, ring_coedges, shell_chain, shell_faces, subshell_ancestor_shells,
 };
 use super::{
-    embedded_pcurve_geometry, id, inherited_attribute_target, AnnotationRecord, Brep, Carriers,
+    embedded_pcurve_geometry, id, inherited_attribute_target, AnnotationRecord, AsmBrep, Carriers,
     Reachable, WireShellTopology,
 };
 /// Emit a kept surface carrier and, when present, its procedural-surface
 /// construction and nested support carriers.
 fn emit_carrier_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     r: &Record,
     i: i64,
     carriers: &mut Carriers,
@@ -378,7 +377,7 @@ fn emit_carrier_surface(
 /// Emit a kept 3D curve carrier (with its `:reversed` clone when shared) and
 /// any procedural-curve construction and nested support carriers.
 fn emit_deformable_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedDeformableSurface>,
     format: IdFormat<'_>,
@@ -496,7 +495,7 @@ fn emit_deformable_surface(
 }
 
 fn emit_loft_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: EmbeddedLoft,
     format: IdFormat<'_>,
@@ -599,12 +598,12 @@ fn emit_loft_surface(
 }
 
 fn emit_compound_loft_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: EmbeddedCompoundLoft,
     format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
-    let map_scale = |out: &mut Brep, name: &str, scale: EmbeddedCompoundLoftScale| {
+    let map_scale = |out: &mut AsmBrep, name: &str, scale: EmbeddedCompoundLoftScale| {
         let members = scale
                                     .members
                                     .into_iter()
@@ -780,13 +779,13 @@ fn emit_compound_loft_surface(
 }
 
 fn emit_scaled_compound_loft_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedScaledCompoundLoft>,
     format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
     let embedded = *embedded;
-    let map_scale = |out: &mut Brep, name: &str, scale: EmbeddedCompoundLoftScale| {
+    let map_scale = |out: &mut AsmBrep, name: &str, scale: EmbeddedCompoundLoftScale| {
         let members = scale
                                     .members
                                     .into_iter()
@@ -874,7 +873,7 @@ fn emit_scaled_compound_loft_surface(
         .collect::<Vec<_>>()
         .try_into()
         .expect("three scaled compound-loft scales");
-    let map_direction = |out: &mut Brep, name: &str, direction| match direction {
+    let map_direction = |out: &mut AsmBrep, name: &str, direction| match direction {
         EmbeddedCompoundLoftDirection::Vector(value) => {
             cadmpeg_ir::geometry::CompoundLoftDirection::Vector { value }
         }
@@ -974,13 +973,13 @@ fn emit_scaled_compound_loft_surface(
 }
 
 fn emit_law_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedLawSurface>,
     format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
     fn map_law_expression(
-        out: &mut Brep,
+        out: &mut AsmBrep,
         owner: i64,
         path: &str,
         expression: EmbeddedLawExpression,
@@ -1062,7 +1061,7 @@ fn emit_law_surface(
             }
         }
     }
-    let map_formula = |out: &mut Brep, path: &str, formula: EmbeddedLawFormula| {
+    let map_formula = |out: &mut AsmBrep, path: &str, formula: EmbeddedLawFormula| {
         cadmpeg_ir::geometry::LawFormula {
             name: formula.name,
             variables: formula
@@ -1095,13 +1094,13 @@ fn emit_law_surface(
 }
 
 fn emit_skin_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedSkinSurface>,
     format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
     fn map_law_expression(
-        out: &mut Brep,
+        out: &mut AsmBrep,
         owner: i64,
         path: &str,
         expression: EmbeddedLawExpression,
@@ -1314,13 +1313,13 @@ fn emit_skin_surface(
 }
 
 fn emit_net_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedNetSurface>,
     format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
     fn map_net_law(
-        out: &mut Brep,
+        out: &mut AsmBrep,
         owner: i64,
         path: &str,
         expression: EmbeddedLawExpression,
@@ -1539,13 +1538,13 @@ fn emit_net_surface(
 }
 
 fn emit_sweep_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedSweepSurface>,
     format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
     fn map_sweep_law(
-        out: &mut Brep,
+        out: &mut AsmBrep,
         owner: i64,
         path: &str,
         expression: EmbeddedLawExpression,
@@ -1910,7 +1909,7 @@ fn emit_sweep_surface(
 }
 
 fn emit_g2_blend_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: Box<EmbeddedG2Blend>,
     format: IdFormat<'_>,
@@ -2017,7 +2016,7 @@ fn emit_g2_blend_surface(
 }
 
 fn emit_variable_blend_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     construction: Box<EmbeddedVariableBlend>,
     format: IdFormat<'_>,
@@ -2112,14 +2111,14 @@ fn emit_variable_blend_surface(
 }
 
 fn emit_revision_compound_loft_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     construction: Box<EmbeddedRevisionCompoundLoft>,
     format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
     let convert_profile = |scope: String,
                            profile: Vec<EmbeddedLoftProfileMember>,
-                           out: &mut Brep|
+                           out: &mut AsmBrep|
      -> Vec<cadmpeg_ir::geometry::LoftProfileMember> {
         profile
             .into_iter()
@@ -2161,38 +2160,40 @@ fn emit_revision_compound_loft_surface(
             })
             .collect()
     };
-    let convert_path =
-        |scope: String, path: EmbeddedLoftPath, out: &mut Brep| -> cadmpeg_ir::geometry::LoftPath {
-            let curve = path.curve.map(|geometry| {
-                let id = CurveId(format!("{scope}:path"));
+    let convert_path = |scope: String,
+                        path: EmbeddedLoftPath,
+                        out: &mut AsmBrep|
+     -> cadmpeg_ir::geometry::LoftPath {
+        let curve = path.curve.map(|geometry| {
+            let id = CurveId(format!("{scope}:path"));
+            out.curves.push(Curve {
+                id: id.clone(),
+                geometry: CurveGeometry::Nurbs(geometry),
+                source_object: None,
+            });
+            id
+        });
+        let auxiliaries = path
+            .auxiliaries
+            .into_iter()
+            .enumerate()
+            .map(|(auxiliary_index, geometry)| {
+                let id = CurveId(format!("{scope}:auxiliary:{auxiliary_index}"));
                 out.curves.push(Curve {
                     id: id.clone(),
                     geometry: CurveGeometry::Nurbs(geometry),
                     source_object: None,
                 });
                 id
-            });
-            let auxiliaries = path
-                .auxiliaries
-                .into_iter()
-                .enumerate()
-                .map(|(auxiliary_index, geometry)| {
-                    let id = CurveId(format!("{scope}:auxiliary:{auxiliary_index}"));
-                    out.curves.push(Curve {
-                        id: id.clone(),
-                        geometry: CurveGeometry::Nurbs(geometry),
-                        source_object: None,
-                    });
-                    id
-                })
-                .collect();
-            cadmpeg_ir::geometry::LoftPath {
-                curve,
-                endpoints: path.endpoints,
-                auxiliaries,
-                flag: path.flag,
-            }
-        };
+            })
+            .collect();
+        cadmpeg_ir::geometry::LoftPath {
+            curve,
+            endpoints: path.endpoints,
+            auxiliaries,
+            flag: path.flag,
+        }
+    };
     let base = format!("{format}:brep:procedural_surface#{i}:cloft:base");
     let base_profile = convert_profile(base.clone(), construction.base_profile, &mut *out);
     let base_path = convert_path(base, construction.base_path, &mut *out);
@@ -2254,7 +2255,7 @@ fn emit_revision_compound_loft_surface(
 }
 
 fn emit_revision_g2_blend_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     construction: Box<EmbeddedRevisionG2Blend>,
     format: IdFormat<'_>,
@@ -2327,7 +2328,7 @@ fn emit_revision_g2_blend_surface(
 }
 
 fn emit_vertex_blend_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     construction: EmbeddedVertexBlend,
     format: IdFormat<'_>,
@@ -2428,7 +2429,7 @@ fn emit_vertex_blend_surface(
     reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
 )]
 fn emit_blend_surface(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     supports: Box<[Option<SurfaceGeometry>; 2]>,
     spine: Option<NurbsCurve>,
@@ -2583,7 +2584,7 @@ fn emit_blend_surface(
 }
 
 fn emit_carrier_curve(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     carriers: &mut Carriers,
     reversed_curve_refs: &HashSet<i64>,
@@ -2957,7 +2958,7 @@ fn emit_carrier_curve(
 }
 
 fn emit_silhouette_curve(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: EmbeddedSilhouette,
     format: IdFormat<'_>,
@@ -3012,7 +3013,7 @@ fn emit_silhouette_curve(
 }
 
 fn emit_surface_offset_curve(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: EmbeddedSurfaceOffset,
     format: IdFormat<'_>,
@@ -3074,7 +3075,7 @@ fn emit_surface_offset_curve(
 }
 
 fn emit_spring_curve(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: EmbeddedSpring,
     format: IdFormat<'_>,
@@ -3125,7 +3126,7 @@ fn emit_spring_curve(
 }
 
 fn emit_projection_curve(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: EmbeddedProjection,
     format: IdFormat<'_>,
@@ -3178,13 +3179,13 @@ fn emit_projection_curve(
 }
 
 fn emit_law_curve(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     i: i64,
     embedded: EmbeddedLawCurve,
     format: IdFormat<'_>,
 ) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
     fn map_law_curve(
-        out: &mut Brep,
+        out: &mut AsmBrep,
         owner: i64,
         path: &str,
         expression: EmbeddedLawExpression,
@@ -3328,7 +3329,7 @@ fn emit_law_curve(
 /// Pass 3: emit surface and curve carriers in `RecordTable` order for
 /// deterministic output.
 pub(crate) fn emit_carrier_records(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     carriers: &mut Carriers,
     reach: &Reachable,
@@ -3370,7 +3371,7 @@ pub(crate) fn emit_carrier_records(
 
 /// Emit reachable pcurve carriers with their wrapper and fit-tolerance tails.
 pub(crate) fn emit_pcurves(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     carriers: &mut Carriers,
     reach: &Reachable,
@@ -3414,7 +3415,7 @@ pub(crate) fn emit_pcurves(
 
 /// Emit reachable point carriers, scaled to millimetres.
 pub(crate) fn emit_points(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     reach: &Reachable,
     format: IdFormat<'_>,
@@ -3440,7 +3441,7 @@ pub(crate) fn emit_points(
 
 /// Emit reachable vertices with their tolerant tails and ownership records.
 pub(crate) fn emit_vertices(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     reach: &Reachable,
@@ -3512,7 +3513,7 @@ pub(crate) fn emit_vertices(
 /// Emit reachable edges with parameter ranges, tolerant tails, ownership, and
 /// continuity records, folding reversed senses onto the shared carrier.
 pub(crate) fn emit_edges(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     reach: &Reachable,
@@ -3644,7 +3645,7 @@ pub(crate) fn emit_edges(
 /// Emit reachable coedges with pcurve links, tolerant parameters, and any
 /// embedded use-curve carrier.
 pub(crate) fn emit_coedges(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     token_table: &nurbs::toks::SubtypeTable,
     save_format_major: Option<u32>,
@@ -3761,7 +3762,7 @@ pub(crate) fn emit_coedges(
 
 /// Emit reachable loops with their coedge rings filtered to kept coedges.
 pub(crate) fn emit_loops(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     reach: &Reachable,
@@ -3791,7 +3792,7 @@ pub(crate) fn emit_loops(
 /// Emit reachable faces, folding surface reversal into the normalized sense and
 /// recording native sidedness.
 pub(crate) fn emit_faces(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     reach: &Reachable,
@@ -3864,7 +3865,7 @@ pub(crate) fn emit_faces(
     reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
 )]
 pub(crate) fn emit_containers(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     reach: &Reachable,
@@ -4001,7 +4002,7 @@ pub(crate) fn emit_containers(
 /// Project subshell-owned faces onto their nearest shell ancestor, since the
 /// neutral IR has no subshell arena.
 pub(crate) fn project_subshell_faces(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     format: IdFormat<'_>,
@@ -4024,7 +4025,7 @@ pub(crate) fn project_subshell_faces(
 /// Emit direct and inherited entity attributes and derive the link, tag, and
 /// timestamp projections. Returns the set of emitted attribute record indices.
 pub(crate) fn emit_attributes(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     reach: &Reachable,
@@ -4103,33 +4104,13 @@ pub(crate) fn emit_attributes(
                 .push(source_attribute(record, target, format));
         }
     }
-    out.sketch_curve_links = out
-        .attributes
-        .iter()
-        .filter_map(sketch_curve_link)
-        .collect();
-    out.persistent_design_links = out
-        .attributes
-        .iter()
-        .flat_map(persistent_design_links)
-        .collect();
-    out.persistent_subentity_tags = out
-        .attributes
-        .iter()
-        .flat_map(persistent_subentity_tags)
-        .collect();
-    out.creation_timestamps = out
-        .attributes
-        .iter()
-        .filter_map(creation_timestamp)
-        .collect();
     emitted_attributes
 }
 
 /// Preserve undecoded carriers and opaque cached procedural surfaces referenced
 /// by real topology as passthrough unknown records.
 pub(crate) fn emit_passthrough_unknowns(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     bytes: &[u8],
     reach: &Reachable,
@@ -4157,7 +4138,7 @@ pub(crate) fn emit_passthrough_unknowns(
 
 /// Count record kinds that were neither emitted nor preserved.
 pub(crate) fn count_other_records(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     reach: &Reachable,
     emitted_attributes: &HashSet<i64>,
@@ -4207,7 +4188,7 @@ pub(crate) fn count_other_records(
 /// Emit annotation records mapping every emitted entity, attribute, unknown,
 /// and synthetic procedural id back to its source record offset.
 pub(crate) fn emit_annotation_records(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     stream: &str,

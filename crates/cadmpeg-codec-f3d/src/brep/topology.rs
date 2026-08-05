@@ -21,7 +21,7 @@ use super::geometry::{
     pcurve_ranges_on_domain, procedural_surface_definition_is_exact_carrier, record_reversed,
     reverse_nurbs_curve, reverse_nurbs_pcurve, reverse_procedural_curve_definition, sense_at,
 };
-use super::{count_kind, id, Brep, Carriers, DecodePurpose, Reachable, WireShellTopology};
+use super::{count_kind, id, AsmBrep, Carriers, DecodePurpose, Reachable, WireShellTopology};
 /// Pass 1: classify carriers and decode analytic geometry. Returns the seeded
 /// carrier maps and the set of carriers whose native normal is inward.
 pub(crate) fn decode_analytic_carriers(records: &[Record]) -> (Carriers, HashSet<i64>) {
@@ -60,7 +60,7 @@ pub(crate) fn decode_analytic_carriers(records: &[Record]) -> (Carriers, HashSet
     reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
 )]
 pub(crate) fn keep_faces_and_carriers(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     token_table: &nurbs::toks::SubtypeTable,
@@ -230,7 +230,7 @@ pub(crate) fn keep_faces_and_carriers(
     reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
 )]
 pub(crate) fn walk_reachable_topology(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     by_index: &HashMap<i64, &Record>,
     token_table: &nurbs::toks::SubtypeTable,
     carriers: &mut Carriers,
@@ -512,7 +512,7 @@ pub(crate) fn walk_reachable_topology(
     reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
 )]
 pub(crate) fn collect_wire_topology(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     bytes: &[u8],
@@ -653,7 +653,7 @@ pub(crate) fn collect_wire_topology(
     reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
 )]
 fn keep_wire_edge(
-    out: &mut Brep,
+    out: &mut AsmBrep,
     edge_index: i64,
     by_index: &HashMap<i64, &Record>,
     token_table: &nurbs::toks::SubtypeTable,

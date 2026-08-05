@@ -15,7 +15,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Sense;
 use std::collections::{HashMap, HashSet};
 
-use super::Brep;
+use super::AsmBrep;
 /// Ordered typed values pulled from a carrier record's payload.
 pub(crate) struct Carrier {
     pub(crate) positions: Vec<[f64; 3]>,
@@ -1041,7 +1041,7 @@ fn cross_vector(first: Vector3, second: Vector3) -> Vector3 {
 /// domain by floating-point noise back onto the domain boundary. Native edge
 /// ranges and cache knot vectors are stored independently and can disagree in
 /// their last few bits; a genuine domain violation is left for validation.
-pub(crate) fn clamp_edge_ranges_to_carrier_domains(out: &mut Brep) {
+pub(crate) fn clamp_edge_ranges_to_carrier_domains(out: &mut AsmBrep) {
     let domains: HashMap<&str, [f64; 2]> = out
         .curves
         .iter()
@@ -1074,7 +1074,7 @@ pub(crate) fn clamp_edge_ranges_to_carrier_domains(out: &mut Brep) {
     }
 }
 
-pub(crate) fn classify_body_kinds(out: &mut Brep) {
+pub(crate) fn classify_body_kinds(out: &mut AsmBrep) {
     let mut shell_bodies = HashMap::new();
     for region in &out.regions {
         for shell in &region.shells {
