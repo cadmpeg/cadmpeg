@@ -118,7 +118,7 @@ use cadmpeg_codec_core::decode::{DecodeContext, View};
 use cadmpeg_codec_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::{
@@ -179,7 +179,7 @@ impl SldprtCodec {
         let expected = ir
             .source
             .as_ref()
-            .and_then(|source| source.attributes.get("document_local_sha256"));
+            .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE));
         if expected.is_none_or(|expected| decode::document_local_sha256(ir) != *expected) {
             return Self::write_semantic(ir, annotations, records, writer);
         }

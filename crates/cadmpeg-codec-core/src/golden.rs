@@ -147,6 +147,27 @@ impl Harness {
             .unwrap_or_else(|error| panic!("read fixture {}: {error}", input.display()))
     }
 
+    /// The frozen fixture inputs as `(stem, bytes)`, in sorted stem order.
+    ///
+    /// Exposed for checks that consume the same inputs as the snapshot branches
+    /// without pinning an artifact, such as a round-trip over the encoder. It
+    /// carries the same guard against an empty fixture directory.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the fixture directory cannot be read, holds no input with the
+    /// configured extension, or a listed fixture cannot be read.
+    #[must_use]
+    pub fn fixture_inputs(&self) -> Vec<(String, Vec<u8>)> {
+        self.fixtures()
+            .into_iter()
+            .map(|name| {
+                let bytes = self.fixture_bytes(&name);
+                (name, bytes)
+            })
+            .collect()
+    }
+
     /// Compares every branch for every fixture and asserts that none drifted.
     ///
     /// Set `UPDATE_GOLDEN` to rewrite the golden outputs instead of comparing;

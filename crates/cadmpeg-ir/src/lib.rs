@@ -57,6 +57,7 @@ pub mod presentation;
 pub mod products;
 mod provenance;
 pub mod report;
+pub mod roundtrip;
 pub mod schema;
 pub mod semantic_annotations;
 pub mod sketches;

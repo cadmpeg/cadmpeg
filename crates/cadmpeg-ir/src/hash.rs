@@ -33,6 +33,17 @@ pub fn canonical_json_sha256<T: Serialize>(value: &T) -> String {
     encode_hex(&hasher.finalize())
 }
 
+/// The source-attribute key under which a codec records
+/// [`document_local_sha256`].
+///
+/// This one key gates the whole-document write decision: an encoder that finds
+/// the recorded value still equal to a freshly computed one replays its retained
+/// bytes, and otherwise runs its writer. Other `_local_sha256` attributes answer
+/// narrower questions — which lane changed, and how — so they are not
+/// interchangeable with this one and removing them does not move the same
+/// branch.
+pub const DOCUMENT_LOCAL_DIGEST_ATTRIBUTE: &str = "document_local_sha256";
+
 /// Returns the machine-local content digest of `ir` as seen by the `format`
 /// codec, for recording as the `document_local_sha256` source attribute.
 ///

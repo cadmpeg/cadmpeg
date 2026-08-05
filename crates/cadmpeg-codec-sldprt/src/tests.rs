@@ -2102,11 +2102,11 @@ fn retained_source_image_round_trips_byte_exactly() {
             .iter()
             .any(|candidate| candidate.id == coedge.radial_next));
     }
-    let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(&result.ir, &result.source_fidelity, &mut encoded)
-        .unwrap();
-    assert_eq!(encoded, source);
+    cadmpeg_ir::roundtrip::verbatim_replay_holds(
+        &SldprtCodec,
+        "retained_source_image_round_trips_byte_exactly",
+        &source,
+    );
 }
 
 #[test]
@@ -2120,13 +2120,15 @@ fn encoder_writes_source_less_ir() {
         .for_each(|edge| edge.param_range = None);
 
     let mut encoded = Vec::new();
-    SldprtCodec
+    let report = SldprtCodec
         .plan(cadmpeg_ir::codec::EncodeInput {
             ir: &ir,
             fidelity: None,
         })
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
+    // No retained source content reached the writer, so it authored every byte.
+    assert_eq!(report.write_path, cadmpeg_ir::WritePath::Synthesized);
     let scan = container::scan_bytes(&encoded);
     assert_eq!(scan.blocks.len(), 1);
     assert_eq!(scan.directory.len(), 1);
@@ -17878,11 +17880,11 @@ fn decode_binds_generic_extrusion_to_its_dissectable_sketch_child() {
             ..
         } if profile == &sketch.id
     ));
-    let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
-        .unwrap();
-    assert_eq!(encoded, original);
+    cadmpeg_ir::roundtrip::verbatim_replay_holds(
+        &SldprtCodec,
+        "decode_projects_sketch_feature_dependencies",
+        &original,
+    );
 }
 
 #[test]

@@ -103,9 +103,10 @@ pub fn decode(
     // not claim.
     let hash = crate::decode::document_local_sha256(&root.ir);
     if let Some(source) = &mut root.ir.source {
-        source
-            .attributes
-            .insert("document_local_sha256".into(), hash);
+        source.attributes.insert(
+            cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
+            hash,
+        );
     }
     Ok(DecodeResult::new(
         root.ir,

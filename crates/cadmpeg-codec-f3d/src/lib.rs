@@ -108,7 +108,7 @@ use cadmpeg_codec_core::decode::{DecodeContext, View};
 use cadmpeg_codec_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::{FidelityResolution, WritePath};
 use std::io::Write;
@@ -164,7 +164,7 @@ impl F3dCodec {
         let expected = ir
             .source
             .as_ref()
-            .and_then(|source| source.attributes.get("document_local_sha256"))
+            .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE))
             .ok_or_else(|| CodecError::NotImplemented("IR has no F3D document baseline".into()))?;
         let hash = sha256_hex(data);
         if data.len() as u64 != byte_len || hash != sha256 {
