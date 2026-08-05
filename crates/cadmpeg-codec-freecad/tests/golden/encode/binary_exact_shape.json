@@ -1,0 +1,86 @@
+{
+  "entries": [
+    {
+      "name": "Document.xml",
+      "payload_len": 7408,
+      "payload_sha256": "369ddcee74721bd75fb2db8709b5234e6df7cea5a803428b1acbcb69389ea2fc"
+    },
+    {
+      "name": "BinaryCarrier.Shape.bin",
+      "payload_len": 2387,
+      "payload_sha256": "13c7069f83d648e0f1e22bc8bc0876e9119e93ef10ef557dc6630d08f076ca11"
+    }
+  ],
+  "report": {
+    "census": {
+      "basis": "ir_arenas",
+      "counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "assembly_joints": 0,
+        "assets": 0,
+        "attributes": 0,
+        "bodies": 1,
+        "coedges": 9,
+        "configurations": 0,
+        "curves": 4,
+        "drawings": 0,
+        "edges": 5,
+        "faces": 3,
+        "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
+        "features": 1,
+        "loops": 3,
+        "native.fcstd.applications": 2,
+        "native.fcstd.attachments": 1,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 1,
+        "native.fcstd.design_census": 1,
+        "native.fcstd.document": 1,
+        "native.fcstd.entries": 2,
+        "native.fcstd.logical_ledger": 74,
+        "native.fcstd.objects": 2,
+        "native.fcstd.physical_ledger": 15,
+        "native.fcstd.properties": 36,
+        "native.fcstd.shape_payloads": 1,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 0,
+        "parameters": 0,
+        "pcurves": 9,
+        "pmi": 0,
+        "points": 3,
+        "presentation_documents": 0,
+        "presentation_layers": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 0,
+        "product_definitions": 0,
+        "regions": 1,
+        "semantic_annotations": 0,
+        "shells": 1,
+        "sketch_constraints": 0,
+        "sketch_entities": 0,
+        "sketches": 0,
+        "spatial_sketch_constraints": 0,
+        "spatial_sketch_entities": 0,
+        "spatial_sketches": 0,
+        "spreadsheets": 0,
+        "subds": 0,
+        "surfaces": 3,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 3,
+        "view_presentations": 0
+      }
+    },
+    "fidelity": {
+      "status": "not_consumed"
+    },
+    "format": "fcstd",
+    "losses": [],
+    "notes": [
+      "semantic FCStd archive written for SchemaVersion=4 FileVersion=1",
+      "unsupported retained entries and unedited XML records were preserved"
+    ],
+    "write_path": "patched"
+  }
+}

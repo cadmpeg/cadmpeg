@@ -517,6 +517,77 @@ fn compare_bytes(update: bool, path: &Path, actual: &[u8], failures: &mut Vec<St
     }
 }
 
+/// Serializes the document a generated container decodes to, with every digest
+/// over that container's own bytes elided.
+///
+/// A digest is bit-exact wherever its input is, and the input here is a
+/// container this lane just wrote from values the repository compares
+/// tolerantly. `active_brep_sha256` covers the written B-rep stream, and the
+/// retained-record digests in source fidelity cover the written entries; all of
+/// them move on a platform whose libm differs, and no tolerance can reconcile a
+/// hash. Eliding them costs nothing, because the content each one covers is
+/// compared directly in the same snapshot. The suffix decides, not a list of
+/// keys, so a new digest is elided without editing this function.
+fn generated_container_snapshot(bytes: &[u8]) -> String {
+    let mut ir = match decode_result(bytes) {
+        Ok(result) => result.ir,
+        Err(error) => {
+            let value = serde_json::json!({ "decode_error": error.to_string() });
+            return serde_json::to_string_pretty(&value).expect("serialize decode error");
+        }
+    };
+    if let Some(source) = ir.source.as_mut() {
+        for (key, value) in &mut source.attributes {
+            if key.ends_with("_sha256") {
+                cadmpeg_codec_core::golden::ELIDED_DIGEST.clone_into(value);
+            }
+        }
+    }
+    ir.to_canonical_json().expect("serialize canonical ir")
+}
+
+/// Compares produced bytes against a golden container by the document each
+/// decodes to, tolerating last-place disagreement in decoded numbers.
+///
+/// Byte equality short-circuits, so an unchanged writer costs one comparison.
+/// Otherwise both containers decode and their snapshots go through
+/// [`snapshots_agree`]. A golden that no longer decodes is reported rather than
+/// silently agreeing with a fresh snapshot that does not decode either, because
+/// the two error texts would have to match for that to happen.
+///
+/// The comparison covers the decoded document. It does not cover the decode
+/// report or source fidelity, which describe the container this lane just wrote
+/// rather than the document it carries.
+fn compare_decoded_bytes(update: bool, path: &Path, actual: &[u8], failures: &mut Vec<String>) {
+    if update {
+        compare_bytes(update, path, actual, failures);
+        return;
+    }
+    let expected = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            failures.push(format!(
+                "{}: cannot read golden ({error}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`",
+                path.display()
+            ));
+            return;
+        }
+    };
+    if expected == actual {
+        return;
+    }
+    if let Err(mismatch) = snapshots_agree(
+        &generated_container_snapshot(&expected),
+        &generated_container_snapshot(actual),
+    ) {
+        failures.push(format!(
+            "{}: the produced container decodes differently: {mismatch}\n    {}",
+            path.display(),
+            first_byte_diff(&expected, actual)
+        ));
+    }
+}
+
 fn remove_if_exists(path: &Path) {
     if path.exists() {
         std::fs::remove_file(path)
@@ -524,11 +595,37 @@ fn remove_if_exists(path: &Path) {
     }
 }
 
+/// How a lane's produced bytes are held to their golden.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ByteComparison {
+    /// The bytes must match the golden exactly.
+    ///
+    /// Measured, not assumed: perturbing every libm transcendental by one unit
+    /// in the last place moves neither the replay lane's 53 artifacts nor the
+    /// patch lane's 52. Replay copies the retained container, and the patch
+    /// writer rewrites records whose values it carries across rather than
+    /// recomputing them, so no decoded double reaches either output.
+    Exact,
+    /// The bytes must decode to the same document as the golden does.
+    ///
+    /// The generate lane writes geometry the decoder derived through libm, so
+    /// five of its 53 artifacts — `projection_curve`, `silhouette_curve`,
+    /// `spring_curve`, `surface_intersection_curve`, and
+    /// `surface_offset_curve` — move under that same shim. A container's bytes
+    /// have no numeric structure to compare tolerantly, so the comparison moves
+    /// to the document inside them, where the repository's float tolerance
+    /// applies. Byte equality still short-circuits, and
+    /// [`golden_output_is_deterministic`] still requires two runs in one process
+    /// to agree bit for bit.
+    Decoded,
+}
+
 fn compare_encode(
     update: bool,
     root: &Path,
     dir: &str,
     name: &str,
+    comparison: ByteComparison,
     outcome: Option<Result<Vec<u8>, String>>,
     failures: &mut Vec<String>,
 ) {
@@ -539,7 +636,12 @@ fn compare_encode(
             if update {
                 remove_if_exists(&err_path);
             }
-            compare_bytes(update, &bin_path, &encoded, failures);
+            match comparison {
+                ByteComparison::Exact => compare_bytes(update, &bin_path, &encoded, failures),
+                ByteComparison::Decoded => {
+                    compare_decoded_bytes(update, &bin_path, &encoded, failures);
+                }
+            }
         }
         Some(Err(message)) => {
             if update {
@@ -595,6 +697,7 @@ fn golden_snapshots_are_byte_identical() {
             &root,
             "replay",
             name,
+            ByteComparison::Exact,
             replay_outcome(&input),
             &mut failures,
         );
@@ -603,6 +706,7 @@ fn golden_snapshots_are_byte_identical() {
             &root,
             "generate",
             name,
+            ByteComparison::Decoded,
             generate_outcome(&input),
             &mut failures,
         );
@@ -611,6 +715,7 @@ fn golden_snapshots_are_byte_identical() {
             &root,
             "patch",
             name,
+            ByteComparison::Exact,
             patch_outcome(&input),
             &mut failures,
         );
