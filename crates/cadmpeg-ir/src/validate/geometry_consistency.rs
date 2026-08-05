@@ -12,11 +12,7 @@ use crate::geometry::PcurveGeometry;
 use crate::math::Point3;
 use crate::topology::Sense;
 
-/// Maximum distance, in the document's length unit, between an evaluated
-/// carrier point and the vertex position it must coincide with. Exact carriers
-/// agree to rational-weight rounding (well under `1e-3` mm); real mismatches
-/// observed from decoder defects start orders of magnitude above this bound.
-const COINCIDENCE_TOLERANCE: f64 = 0.01;
+use crate::units::COINCIDENCE_TOLERANCE;
 
 fn distance(a: Point3, b: Point3) -> f64 {
     ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()

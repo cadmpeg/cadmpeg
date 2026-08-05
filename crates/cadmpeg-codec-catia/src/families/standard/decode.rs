@@ -1844,6 +1844,10 @@ pub(crate) fn try_decode_standard(
         "bound_consolidated_standard_face_surface_count".to_string(),
         consolidated_curve_bindings.standard_face_surfaces,
     );
+    report.coverage.insert(
+        "bound_consolidated_standard_face_pcurve_count".to_string(),
+        consolidated_curve_bindings.standard_face_pcurves,
+    );
     Some(FamilyOutput {
         ir,
         report,

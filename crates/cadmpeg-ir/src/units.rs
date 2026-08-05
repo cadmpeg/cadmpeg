@@ -33,6 +33,14 @@ impl Default for Units {
     }
 }
 
+/// Maximum distance, in the document's length unit, between an evaluated
+/// carrier point and the vertex position it must coincide with. Exact carriers
+/// agree to rational-weight rounding (well under `1e-3` mm); real mismatches
+/// from decoder defects start orders of magnitude above this bound. A decoder
+/// that binds a carrier to topology applies the same bound, so a binding it
+/// accepts is one the topology contract also accepts.
+pub const COINCIDENCE_TOLERANCE: f64 = 0.01;
+
 /// Document-wide linear and angular tolerances.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

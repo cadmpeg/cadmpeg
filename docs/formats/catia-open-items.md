@@ -428,6 +428,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must resolve the directrix identity when the interval binding is not unique.
 
+### SN-27. Consolidated class-`0x27` plane carrier
+
+**Question.** What are the fields of a `b2`, `b3`, or `b4 03 27` record, and which of them does its second payload byte select?
+
+**Known.** The payload is that byte pair followed by a whole number of `f64le` values. The count changes with the second byte: `e4` gives 7 values, `c4` gives 8, and `ec` gives 6. A decoded value group holds an in-plane point, an in-plane unit direction with one component absent, and a trailing triple. No decoder reads the class.
+
+**Need.** A consolidated edge side whose carrier is one of these records has no bound support. `catia.md` §6.3 "A resolved edge block binds" then recovers the side's chart relation to a standard plane face from the block's shared 3D loci, which needs that face to exist. A side with no standard face keeps no pcurve.
+
 ## 4. Object stream
 
 ### OS-01. Multi-surface class-`0x5f` face
