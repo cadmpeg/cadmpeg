@@ -300,7 +300,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         let mut body_ids = Vec::new();
         let mut body_by_shell = BTreeMap::<u64, BTreeSet<BodyId>>::new();
         for mut built in outcome.built {
-            drop_existing_surfaces(&mut built.draft, ir);
+            drop_committed_surfaces(&mut built.draft, &commit_session);
             if let Err(error) = commit_session.commit_model(built.draft, ir) {
                 result.warnings.push(topology_commit_error(
                     &format!("STEP topology root #{id}"),
@@ -1385,17 +1385,71 @@ struct Built {
     shell_sources: BTreeSet<u64>,
 }
 
-fn drop_existing_surfaces(draft: &mut ModelDraft, ir: &CadIr) {
-    let existing = ir
-        .model
-        .surfaces
-        .iter()
-        .map(|surface| surface.id.clone())
-        .collect::<BTreeSet<_>>();
+fn drop_committed_surfaces(draft: &mut ModelDraft, session: &CommitSession) {
+    // Implicit surfaces can be staged by multiple roots. The session is the
+    // authority on which ones a prior root committed; a pre-loop snapshot is
+    // wrong because commits add surfaces while the loop is running.
     draft
         .model_mut()
         .surfaces
-        .retain(|surface| !existing.contains(&surface.id));
+        .retain(|surface| !session.contains(surface.id.as_str()));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::drop_committed_surfaces;
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::draft::{CommitSession, ModelDraft};
+    use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::topology::Vertex;
+    use cadmpeg_ir::units::Units;
+
+    fn surface_draft(id: &str) -> ModelDraft {
+        let mut draft = ModelDraft::new();
+        draft
+            .insert(Surface {
+                id: SurfaceId(id.into()),
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            })
+            .expect("insert surface into draft");
+        draft
+    }
+
+    #[test]
+    fn cross_root_surface_filter_tracks_successful_commits_only() {
+        let committed_id = "step:data:surface#implicit-face-1";
+        let rejected_id = "step:data:surface#implicit-face-2";
+        let mut ir = CadIr::empty(Units::default());
+        let mut session = CommitSession::new(&ir);
+
+        session
+            .commit_model(surface_draft(committed_id), &mut ir)
+            .expect("first root commit");
+        let mut second_root = surface_draft(committed_id);
+        drop_committed_surfaces(&mut second_root, &session);
+        assert!(second_root.model().surfaces.is_empty());
+
+        let mut rejected_root = surface_draft(rejected_id);
+        rejected_root
+            .insert(Vertex {
+                id: "step:data:vertex#rejected".into(),
+                point: "step:data:point#missing".into(),
+                tolerance: None,
+            })
+            .expect("insert invalid root reference");
+        assert!(session.commit_model(rejected_root, &mut ir).is_err());
+
+        let mut later_root = surface_draft(rejected_id);
+        drop_committed_surfaces(&mut later_root, &session);
+        assert_eq!(later_root.model().surfaces.len(), 1);
+    }
 }
 
 #[allow(

@@ -395,6 +395,15 @@ impl CommitSession {
         Self { identities }
     }
 
+    /// Reports whether `identity` is already owned by the base document or a
+    /// prior successful commit in this session.
+    ///
+    /// Identity ownership is kind-blind: this checks all neutral and native
+    /// arenas, not whether a record exists in one particular arena.
+    pub fn contains(&self, identity: &str) -> bool {
+        self.identities.contains(identity)
+    }
+
     /// Validates and commits one model draft into `base`.
     ///
     /// Validation is completed before either destination is changed. On
@@ -705,5 +714,31 @@ mod tests {
             .commit_model(point_draft(rejected_identity), &mut ir)
             .expect("rejected identity was not absorbed into the session");
         assert_eq!(ir.model.points.len(), 1);
+    }
+
+    #[test]
+    fn commit_session_contains_tracks_only_successful_commits() {
+        let committed_identity = "test:model:point#committed";
+        let rejected_identity = "test:model:point#rejected";
+        let mut ir = CadIr::empty(Units::default());
+        let mut session = CommitSession::new(&ir);
+
+        assert!(!session.contains(committed_identity));
+        session
+            .commit_model(point_draft(committed_identity), &mut ir)
+            .expect("point commit");
+        assert!(session.contains(committed_identity));
+
+        let mut rejected = ModelDraft::new();
+        rejected
+            .insert(Vertex {
+                id: rejected_identity.into(),
+                point: "test:model:point#missing".into(),
+                tolerance: None,
+            })
+            .expect("insert rejected vertex");
+        assert!(!session.contains(rejected_identity));
+        assert!(session.commit_model(rejected, &mut ir).is_err());
+        assert!(!session.contains(rejected_identity));
     }
 }
