@@ -25,7 +25,7 @@ members = [
 exclude = ["crates/cadmpeg-fuzz"]
 
 [workspace.package]
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/cadmpeg/cadmpeg"
@@ -33,20 +33,20 @@ homepage = "https://github.com/cadmpeg/cadmpeg"
 rust-version = "1.88"
 
 [workspace.dependencies]
-cadmpeg-asm = { path = "crates/cadmpeg-asm", version = "0.3.1" }
-cadmpeg-core = { path = "crates/cadmpeg-core", version = "0.3.1" }
-cadmpeg-container = { path = "crates/cadmpeg-container", version = "0.3.1" }
-cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.3.1" }
-cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.3.1" }
-cadmpeg-codec-freecad = { path = "crates/cadmpeg-codec-freecad", version = "0.3.1" }
-cadmpeg-codec-sldprt = { path = "crates/cadmpeg-codec-sldprt", version = "0.3.1" }
-cadmpeg-codec-catia = { path = "crates/cadmpeg-codec-catia", version = "0.3.1" }
-cadmpeg-codec-creo = { path = "crates/cadmpeg-codec-creo", version = "0.3.1" }
-cadmpeg-codec-nx = { path = "crates/cadmpeg-codec-nx", version = "0.3.1" }
-cadmpeg-codec-rhino = { path = "crates/cadmpeg-codec-rhino", version = "0.3.1" }
-cadmpeg-codec-iges = { path = "crates/cadmpeg-codec-iges", version = "0.3.1" }
-cadmpeg-codec-step = { path = "crates/cadmpeg-codec-step", version = "0.3.1" }
-cadmpeg-codec-sat = { path = "crates/cadmpeg-codec-sat", version = "0.3.1" }
+cadmpeg-asm = { path = "crates/cadmpeg-asm", version = "0.4.0" }
+cadmpeg-core = { path = "crates/cadmpeg-core", version = "0.4.0" }
+cadmpeg-container = { path = "crates/cadmpeg-container", version = "0.4.0" }
+cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.4.0" }
+cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.4.0" }
+cadmpeg-codec-freecad = { path = "crates/cadmpeg-codec-freecad", version = "0.4.0" }
+cadmpeg-codec-sldprt = { path = "crates/cadmpeg-codec-sldprt", version = "0.4.0" }
+cadmpeg-codec-catia = { path = "crates/cadmpeg-codec-catia", version = "0.4.0" }
+cadmpeg-codec-creo = { path = "crates/cadmpeg-codec-creo", version = "0.4.0" }
+cadmpeg-codec-nx = { path = "crates/cadmpeg-codec-nx", version = "0.4.0" }
+cadmpeg-codec-rhino = { path = "crates/cadmpeg-codec-rhino", version = "0.4.0" }
+cadmpeg-codec-iges = { path = "crates/cadmpeg-codec-iges", version = "0.4.0" }
+cadmpeg-codec-step = { path = "crates/cadmpeg-codec-step", version = "0.4.0" }
+cadmpeg-codec-sat = { path = "crates/cadmpeg-codec-sat", version = "0.4.0" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
