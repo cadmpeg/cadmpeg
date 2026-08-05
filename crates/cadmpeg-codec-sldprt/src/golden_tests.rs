@@ -19,6 +19,7 @@
 //! reporting shared with every other codec; this module supplies only this
 //! codec's branches.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
 use cadmpeg_codec_core::decode::InspectOptions;
@@ -87,41 +88,235 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     snapshot_text(&value)
 }
 
-/// Serializes the census of the document a byte string decodes to: how many
-/// entities landed in each neutral arena, plus its units and tolerances.
+/// The key of a `SolidWorks` identifier: everything after its last `#`.
+fn identifier_key(id: &str) -> Option<&str> {
+    id.starts_with("sldprt:")
+        .then(|| id.rsplit_once('#'))
+        .flatten()
+        .map(|(_, key)| key)
+}
+
+/// Splits an identifier key into its head component and the rest.
+fn split_key(key: &str) -> (&str, Option<&str>) {
+    key.split_once(':')
+        .map_or((key, None), |(head, rest)| (head, Some(rest)))
+}
+
+/// The identifier scopes whose key head is a container section ordinal.
 ///
-/// This is what a rewritten container can be held to. Entity identity cannot be:
-/// several `SolidWorks` identifiers embed the position of the record they came
-/// from, so repacking the compound file renumbers them — rewriting
-/// `body_display_list` moves one tessellation from
-/// `sldprt:displaylist:record#247:0` to `#248:0` while the tessellation itself is
-/// unchanged. A census still fails the moment the writer drops, duplicates, or
-/// invents an entity.
+/// `container::Section::ordinal` supplies the head for every record read out of
+/// a named container section, and these are the scopes that carry one. The
+/// `brep` and `appearance` scopes are deliberately absent: their heads are
+/// Parasolid entity and attribute tags, which live inside a payload the writer
+/// replays unchanged, so they must compare exactly.
+const SECTION_SCOPED_IDENTIFIERS: [&str; 6] = [
+    "sldprt:displaylist:",
+    "sldprt:feature-input:",
+    "sldprt:file:",
+    "sldprt:history:",
+    "sldprt:metadata:",
+    "sldprt:model:",
+];
+
+/// Every container byte position one identifier carries, as
+/// `(family, position)` pairs sharing a rank space.
 ///
-/// The `native.*` rows are excluded for the same reason: they count records of
-/// the container the writer just rebuilt, not entities of the document it
-/// carried. Rewriting `analytic_cylinder` produces a container whose decode finds
-/// one more unclassified top-level block than the input's, which is a fact about
-/// the repack.
-fn arena_census(bytes: &[u8]) -> String {
+/// This codec mints two of them, and only two:
+///
+/// | component | what it locates | minted at |
+/// | --- | --- | --- |
+/// | key head, in a [`SECTION_SCOPED_IDENTIFIERS`] scope | the marker byte offset of the block the record was read from | `container::Section::ordinal` |
+/// | second component of `sldprt:metadata:*` | the record's byte offset inside that block's payload | `metadata::attribute` |
+///
+/// Every other key component is an index within its record — a configuration
+/// index, a feature index, a sketch-entity index — and carries no byte position,
+/// so it is compared exactly.
+///
+/// The second component moves for a reason of its own: a rewritten SW Objects
+/// payload omits the `moTransRefPlaneData_c` gap, which no field of the document
+/// records. `docs/formats/sldprt-open-items.md` CM-07 holds the byte evidence.
+/// Closing CM-07 would let the writer reproduce the payload byte for byte and
+/// this component could then compare exactly.
+fn byte_positions(id: &str) -> Vec<(String, u64)> {
+    let Some(key) = identifier_key(id) else {
+        return Vec::new();
+    };
+    if !SECTION_SCOPED_IDENTIFIERS
+        .iter()
+        .any(|scope| id.starts_with(scope))
+    {
+        return Vec::new();
+    }
+    let (head, rest) = split_key(key);
+    let Ok(section) = head.parse::<u64>() else {
+        return Vec::new();
+    };
+    let mut positions = vec![(String::from("section"), section)];
+    if id.starts_with("sldprt:metadata:") {
+        if let Some(offset) = rest
+            .map(split_key)
+            .and_then(|(offset, _)| offset.parse().ok())
+        {
+            positions.push((format!("record@{section}"), offset));
+        }
+    }
+    positions
+}
+
+/// Rewrites one identifier, replacing each byte position it carries with that
+/// position's rank in `ranks`.
+fn normalize_identifier(id: &str, ranks: &BTreeMap<(String, u64), usize>) -> Option<String> {
+    let positions = byte_positions(id);
+    if positions.is_empty() {
+        return None;
+    }
+    let (prefix, key) = id.rsplit_once('#')?;
+    let mut components = key.split(':').map(String::from).collect::<Vec<_>>();
+    for (index, position) in positions.iter().enumerate() {
+        let rank = ranks.get(position)?;
+        *components.get_mut(index)? = format!("<{rank}>");
+    }
+    Some(format!("{prefix}#{}", components.join(":")))
+}
+
+/// Walks a decoded document, applying `visit` to every identifier it carries,
+/// as an object key or as a value.
+fn walk_identifiers(value: &mut serde_json::Value, visit: &mut impl FnMut(&str) -> Option<String>) {
+    match value {
+        serde_json::Value::String(text) => {
+            if let Some(replacement) = visit(text) {
+                *text = replacement;
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                walk_identifiers(item, visit);
+            }
+        }
+        serde_json::Value::Object(fields) => {
+            let renames = fields
+                .keys()
+                .filter_map(|key| visit(key).map(|replacement| (key.clone(), replacement)))
+                .collect::<Vec<_>>();
+            for (from, to) in renames {
+                if let Some(field) = fields.remove(&from) {
+                    fields.insert(to, field);
+                }
+            }
+            for (_, field) in fields.iter_mut() {
+                walk_identifiers(field, visit);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Serializes the neutral document a byte string decodes to, with every
+/// container byte position an identifier carries replaced by its rank.
+///
+/// # Why the identifiers need normalizing at all
+///
+/// This codec derives an identifier from where in the container it read the
+/// record: see [`byte_positions`] for the two components that hold one and where
+/// each is minted. Repacking the container moves those bytes without changing
+/// what they say — re-deflating one block to five more bytes shifts every later
+/// block — so a rewrite that changed nothing still renames the entities. Their
+/// *order* survives, and that is what the rank captures: two documents agree
+/// here when their records sit in the same relative order, whatever the repack
+/// did to the offsets. A record that moved past another, appeared, or vanished
+/// still fails.
+///
+/// # What is compared and what is not
+///
+/// The neutral model, the units, and the tolerances — the document. Two parts of
+/// the decode describe the *container* the writer just rebuilt rather than the
+/// document it carries, and neither is a claim about the write:
+///
+/// - `ir.native`, which retains that container's records. A rewrite adds the
+///   `Contents/SolidWorks` document envelope whenever the document names an
+///   active configuration and no retained block carries one, because that
+///   envelope is where the container states which configuration is active.
+/// - `ir.source.attributes`, which counts those records and repeats the envelope
+///   fields the writer just materialized.
+fn neutral_document(bytes: &[u8]) -> String {
     let value =
         match SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
             Ok(result) => {
-                let counts = cadmpeg_ir::validate(&result.ir, Vec::new())
-                    .entity_counts
-                    .into_iter()
-                    .filter(|(arena, _)| !arena.starts_with("native."))
-                    .collect::<std::collections::BTreeMap<_, _>>();
-                serde_json::json!({
-                    "counts": counts,
+                let mut document = serde_json::json!({
+                    "model": serde_json::to_value(&result.ir.model).expect("serialize model"),
                     "units": serde_json::to_value(result.ir.units).expect("serialize units"),
                     "tolerances": serde_json::to_value(result.ir.tolerances)
                         .expect("serialize tolerances"),
-                })
+                });
+                let mut positions = BTreeSet::new();
+                walk_identifiers(&mut document, &mut |id| {
+                    positions.extend(byte_positions(id));
+                    None
+                });
+                let mut ranks = BTreeMap::new();
+                for (family, position) in positions {
+                    let rank = ranks
+                        .keys()
+                        .filter(|(seen, _): &&(String, u64)| *seen == family)
+                        .count();
+                    ranks.insert((family, position), rank);
+                }
+                walk_identifiers(&mut document, &mut |id| normalize_identifier(id, &ranks));
+                document
             }
             Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
         };
     snapshot_text(&value)
+}
+
+/// [`normalize_identifier`] replaces container byte positions and nothing else.
+///
+/// A normalization broad enough to absorb a repack would, if it reached one
+/// component too far, also absorb a writer that dropped a record or renumbered
+/// entities — and [`fixtures_survive_the_semantic_write_path`] would then pass on
+/// a document the writer had changed. This pins the boundary: distinct positions
+/// take distinct ranks, indices survive untouched, and a scope whose head is a
+/// Parasolid tag is left alone.
+#[test]
+fn normalization_replaces_only_container_positions() {
+    let ranks = BTreeMap::from([
+        (("section".to_string(), 247_u64), 0_usize),
+        (("section".to_string(), 400), 1),
+        (("record@247".to_string(), 0), 0),
+        (("record@247".to_string(), 269), 1),
+    ]);
+
+    // Two sections rank apart.
+    assert_ne!(
+        normalize_identifier("sldprt:model:feature#247:0", &ranks),
+        normalize_identifier("sldprt:model:feature#400:0", &ranks)
+    );
+    // Two records of one section rank apart.
+    assert_ne!(
+        normalize_identifier("sldprt:metadata:part_record#247:0", &ranks),
+        normalize_identifier("sldprt:metadata:part_record#247:269", &ranks)
+    );
+    // Indices after the position survive.
+    assert_eq!(
+        normalize_identifier("sldprt:model:sketch-entity#247:0:0:1", &ranks).as_deref(),
+        Some("sldprt:model:sketch-entity#<0>:0:0:1")
+    );
+    assert_ne!(
+        normalize_identifier("sldprt:model:sketch-entity#247:0:0:1", &ranks),
+        normalize_identifier("sldprt:model:sketch-entity#247:0:0:2", &ranks)
+    );
+    // A Parasolid entity tag is not a container position.
+    assert_eq!(normalize_identifier("sldprt:brep:face#247", &ranks), None);
+    assert_eq!(
+        normalize_identifier("sldprt:appearance:entity53#247", &ranks),
+        None
+    );
+    // A metadata record offset is a position; the second component of any other
+    // scope is an index and stays exact.
+    assert_eq!(
+        normalize_identifier("sldprt:feature-input:class#247:106", &ranks).as_deref(),
+        Some("sldprt:feature-input:class#<0>:106")
+    );
 }
 
 /// Every committed golden still matches what the codec produces.
@@ -163,10 +358,10 @@ fn fixtures_replay_verbatim() {
 /// retained image is still current and must run the writer.
 ///
 /// Two outcomes are contract-conforming and both are asserted. A write must
-/// decode back to the same census — see [`arena_census`] for what a rewritten
-/// container can and cannot be held to. A byte comparison is not the contract
-/// here: the writer repacks a compound file, and a stored byte golden would pin
-/// one packing forever.
+/// decode back to the same document — see [`neutral_document`] for the one
+/// normalization that comparison applies and why. A byte comparison is not the
+/// contract here: the writer repacks the container, and a stored byte golden
+/// would pin one packing forever.
 ///
 /// A refusal must be `NotImplemented`, which names a capability this codec has
 /// not built. Any other refusal means the writer misread or corrupted records it
@@ -177,7 +372,7 @@ fn fixtures_replay_verbatim() {
 fn fixtures_survive_the_semantic_write_path() {
     let mut written_count = 0usize;
     for (name, bytes) in harness().fixture_inputs() {
-        let expected = arena_census(&bytes);
+        let expected = neutral_document(&bytes);
         semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
             SemanticOutcome::Written { report, bytes, .. } => {
                 written_count += 1;
@@ -186,8 +381,8 @@ fn fixtures_survive_the_semantic_write_path() {
                     WritePath::Patched,
                     "fixture `{name}`: retained records fed the write, so it patched rather than synthesized"
                 );
-                if let Err(mismatch) = snapshots_agree(&expected, &arena_census(bytes)) {
-                    panic!("fixture `{name}`: the semantically written document decodes to a different census: {mismatch}");
+                if let Err(mismatch) = snapshots_agree(&expected, &neutral_document(bytes)) {
+                    panic!("fixture `{name}`: the semantically written container decodes to a different document: {mismatch}");
                 }
             }
             SemanticOutcome::Refused { error } => {
