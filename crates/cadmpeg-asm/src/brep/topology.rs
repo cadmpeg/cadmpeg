@@ -16,10 +16,11 @@ use std::collections::{HashMap, HashSet};
 
 use super::attributes::unknown_record_id;
 use super::geometry::{
-    analytic_procedural_surface, decode_curve, decode_surface, is_analytic_curve,
-    is_analytic_surface, is_coedge_record, is_edge_record, is_vertex_record,
+    analytic_procedural_surface, coedge_pcurve_ref, decode_curve, decode_surface,
+    is_analytic_curve, is_analytic_surface, is_coedge_record, is_edge_record, is_vertex_record,
     pcurve_ranges_on_domain, procedural_surface_definition_is_exact_carrier, record_reversed,
     reverse_nurbs_curve, reverse_nurbs_pcurve, reverse_procedural_curve_definition, sense_at,
+    vertex_point_ref,
 };
 use super::{count_kind, id, AsmBrep, Carriers, DecodePurpose, Reachable, WireShellTopology};
 /// Pass 1: classify carriers and decode analytic geometry. Returns the seeded
@@ -287,7 +288,7 @@ pub(crate) fn walk_reachable_topology(
                         break;
                     }
                     kept_coedges.insert(ci);
-                    if let Some(pc) = ce.ref_at(10) {
+                    if let Some(pc) = coedge_pcurve_ref(ce) {
                         if let Some(prec) = by_index.get(&pc) {
                             if purpose == DecodePurpose::History {
                                 pcurve_geo
@@ -391,7 +392,7 @@ pub(crate) fn walk_reachable_topology(
                                         if let Some(v) = by_index.get(&vi) {
                                             if is_vertex_record(v) {
                                                 kept_vertices.insert(vi);
-                                                if let Some(pi) = v.ref_at(5) {
+                                                if let Some(pi) = vertex_point_ref(v) {
                                                     kept_points.insert(pi);
                                                 }
                                             }
@@ -617,7 +618,10 @@ pub(crate) fn collect_wire_topology(
                     if !vertices.contains(&vertex) {
                         vertices.push(vertex);
                     }
-                    if let Some(point) = by_index.get(&vertex).and_then(|record| record.ref_at(5)) {
+                    if let Some(point) = by_index
+                        .get(&vertex)
+                        .and_then(|record| vertex_point_ref(record))
+                    {
                         reach.points.insert(point);
                     }
                 }
@@ -689,7 +693,7 @@ fn keep_wire_edge(
                 .filter(|vertex| is_vertex_record(vertex))
             {
                 kept_vertices.insert(vertex_index);
-                if let Some(point_index) = vertex.ref_at(5) {
+                if let Some(point_index) = vertex_point_ref(vertex) {
                     kept_points.insert(point_index);
                 }
             }

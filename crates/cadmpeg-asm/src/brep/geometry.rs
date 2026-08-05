@@ -226,6 +226,28 @@ fn deterministic_ref_direction(axis: Vector3) -> Vector3 {
     )
 }
 
+/// The vertex record's point reference. The modern layout stores the
+/// endpoint-index integer at chunk 4 and the point at chunk 5; the
+/// save-format 700 layout stores no endpoint index and the point at chunk 4.
+/// A modern record always carries the integer, so the legacy branch is
+/// unreachable for it.
+pub(crate) fn vertex_point_ref(record: &Record) -> Option<i64> {
+    match record.chunk(4) {
+        Some(Token::Long(_)) => record.ref_at(5),
+        _ => record.ref_at(4),
+    }
+}
+
+/// The coedge record's pcurve reference: chunk 10 after the reserved integer
+/// in the modern layout, chunk 9 in the save-format 700 layout that stores
+/// no reserved integer.
+pub(crate) fn coedge_pcurve_ref(record: &Record) -> Option<i64> {
+    match record.chunk(9) {
+        Some(Token::Long(_)) => record.ref_at(10),
+        _ => record.ref_at(9),
+    }
+}
+
 pub(crate) fn is_vertex_record(record: &Record) -> bool {
     matches!(record.head.as_str(), "vertex" | "tvertex")
 }

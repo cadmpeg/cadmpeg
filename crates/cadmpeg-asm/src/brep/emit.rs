@@ -49,10 +49,10 @@ use super::attributes::{
     source_attribute, unknown_record_id,
 };
 use super::geometry::{
-    collect_carrier, double_at, is_asm_stream_delimiter, is_coedge_record, is_edge_record,
-    is_known_record_head, is_vertex_record, norm3, pcurve_inline_tail_flags,
+    coedge_pcurve_ref, collect_carrier, double_at, is_asm_stream_delimiter, is_coedge_record,
+    is_edge_record, is_known_record_head, is_vertex_record, norm3, pcurve_inline_tail_flags,
     pcurve_parameter_range, record_reversed, reverse_curve_geometry, reverse_nurbs_curve,
-    scale_point, sense_at, tolerant_coedge_extension,
+    scale_point, sense_at, tolerant_coedge_extension, vertex_point_ref,
 };
 use super::topology::{
     loop_chain, region_chain, ring_coedges, shell_chain, shell_faces, subshell_ancestor_shells,
@@ -3455,7 +3455,7 @@ pub(crate) fn emit_vertices(
     for r in records {
         let i = r.index as i64;
         if is_vertex_record(r) && kept_vertices.contains(&i) {
-            if let Some(pi) = r.ref_at(5) {
+            if let Some(pi) = vertex_point_ref(r) {
                 if kept_points.contains(&pi) {
                     out.vertices.push(Vertex {
                         id: VertexId(id(format, i)),
@@ -3465,10 +3465,19 @@ pub(crate) fn emit_vertices(
                         // unevaluated sentinel and is retained verbatim
                         // without unit conversion.
                         tolerance: matches!(r.head.as_str(), "tvertex")
-                            .then(|| match r.chunk(8) {
-                                Some(Token::Double(value)) if *value < 0.0 => Some(*value),
-                                Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
-                                _ => None,
+                            .then(|| {
+                                // The save-format 700 layout stores one
+                                // tolerance directly after the point.
+                                let slot = if matches!(r.chunk(4), Some(Token::Long(_))) {
+                                    8
+                                } else {
+                                    5
+                                };
+                                match r.chunk(slot) {
+                                    Some(Token::Double(value)) if *value < 0.0 => Some(*value),
+                                    Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
+                                    _ => None,
+                                }
                             })
                             .flatten(),
                     });
@@ -3733,8 +3742,7 @@ pub(crate) fn emit_coedges(
                 radial_next: partner
                     .map_or_else(|| CoedgeId(id(format, i)), |p| CoedgeId(id(format, p))),
                 sense: sense_at(r, 7),
-                pcurves: r
-                    .ref_at(10)
+                pcurves: coedge_pcurve_ref(r)
                     .filter(|p| kept_pcurves.contains(p))
                     .map(|p| cadmpeg_ir::topology::PcurveUse {
                         pcurve: PcurveId(id(format, p)),

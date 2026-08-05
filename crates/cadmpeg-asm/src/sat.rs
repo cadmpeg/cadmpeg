@@ -1057,8 +1057,8 @@ fn head_shapes(head: &str) -> &'static [&'static [Slot]] {
             shape![R, R, R, R, Sense, R, L, R, D, D, R],
             shape![R, R, R, R, Sense, R, L, R, D, D],
             // Save format 700 stores the tolerant coedge without the base
-            // reserved integer and with two trailing integers.
-            shape![R, R, R, R, Sense, R, R, L, L],
+            // reserved integer; the two parameters stay doubles.
+            shape![R, R, R, R, Sense, R, R, D, D],
         ],
         "edge" => &[shape![R, D, R, D, R, R, Sense, S]],
         "tedge" => &[
@@ -1066,7 +1066,9 @@ fn head_shapes(head: &str) -> &'static [&'static [Slot]] {
             shape![R, D, R, D, R, R, Sense, S, DLen, L],
             shape![R, D, R, D, R, R, Sense, S, DLen],
         ],
-        "vertex" => &[shape![R, L, R]],
+        // Save format 700 stores the vertex without the endpoint-index
+        // integer: owning edge, then point.
+        "vertex" => &[shape![R, L, R], shape![R, R]],
         "tvertex" => &[
             shape![R, L, R, DLenSentinel, DLenSentinel, DLenSentinel, L],
             shape![R, L, R, DLenSentinel, DLenSentinel, DLenSentinel],
