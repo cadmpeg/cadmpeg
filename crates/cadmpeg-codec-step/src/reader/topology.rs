@@ -332,7 +332,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
                     .join(", ")
             ));
         }
-        let Some(mut built) = build_geometric_set(id, record, exchange, &geometry_ids) else {
+        let Some(mut built) =
+            build_geometric_set(id, record, exchange, &geometry_ids, &mut result.warnings)
+        else {
             if mark_standalone_geometric_set(
                 id,
                 record,
@@ -518,14 +520,8 @@ fn build_wire_set(
     scoped: bool,
 ) -> Option<Built> {
     let set = exchange.records.get(&set_id)?;
-    let set_type = if has_type(set, "CONNECTED_EDGE_SET") {
-        "CONNECTED_EDGE_SET"
-    } else if has_type(set, "CONNECTED_EDGE_SUB_SET") {
-        "CONNECTED_EDGE_SUB_SET"
-    } else {
-        return None;
-    };
-    let used_edges = named_refs(set, set_type, 1)?;
+    let set_type = most_specific(set, &["CONNECTED_EDGE_SUB_SET", "CONNECTED_EDGE_SET"])?;
+    let used_edges = connected_set_members(set, set_type)?;
     if used_edges.is_empty() {
         return None;
     }
@@ -847,17 +843,32 @@ fn build_geometric_set(
     representation: &RawRecord,
     exchange: &Exchange,
     geometry_ids: &GeometryIds,
+    warnings: &mut Vec<String>,
 ) -> Option<Built> {
     let set_ids = refs(representation.parameter(1)?)?;
     let mut typed = BTreeSet::from([id]);
     let mut surfaces = Vec::new();
     for set_id in set_ids {
-        let set = exchange.records.get(&set_id)?;
-        if set.simple_name() != Some("GEOMETRIC_SET") {
+        let Some(set) = exchange.records.get(&set_id) else {
+            warnings.push(format!(
+                "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped missing set #{set_id}"
+            ));
             continue;
-        }
+        };
+        let Some(set_type) = most_specific(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
+            warnings.push(format!(
+                "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped non-set member #{set_id}"
+            ));
+            continue;
+        };
+        let Some(items) = named_refs(set, set_type, 1) else {
+            warnings.push(format!(
+                "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped set #{set_id} with no member list"
+            ));
+            continue;
+        };
         typed.insert(set_id);
-        for surface_step in refs(set.parameter(1)?)? {
+        for surface_step in items {
             let surface = SurfaceId(format!("step:data:surface#{surface_step}"));
             if geometry_ids.surfaces.contains(surface.as_str()) {
                 surfaces.push((surface_step, surface));
@@ -933,6 +944,7 @@ struct EdgeDef {
     curve: Option<u64>,
     same: bool,
     parent: Option<u64>,
+    pcurve: Option<u64>,
 }
 #[derive(Clone)]
 struct OrientedDef {
@@ -973,44 +985,78 @@ fn edge_def_for(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> Opt
         return None;
     }
     let record = exchange.records.get(&id)?;
-    let result = if has_type(record, "EDGE_CURVE") {
-        let (start, end) = edge_vertices(record)?;
-        Some(EdgeDef {
-            start,
-            end,
-            curve: Some(edge_geometry(record)?),
-            same: edge_same_sense(record)?,
-            parent: None,
-        })
-    } else if has_type(record, "EDGE") {
-        let (start, end) = edge_vertices(record)?;
-        Some(EdgeDef {
-            start,
-            end,
-            curve: None,
-            same: true,
-            parent: None,
-        })
-    } else if has_type(record, "SUBEDGE") {
-        let (start, end) = edge_vertices(record)?;
-        let parent = named_reference(record, "SUBEDGE", 3, 0).or_else(|| {
-            record
-                .partials
-                .iter()
-                .flat_map(|partial| partial.parameters.iter())
-                .filter_map(ValueExt::reference)
-                .next_back()
-        })?;
-        let parent_def = edge_def_for(parent, exchange, active)?;
-        Some(EdgeDef {
-            start,
-            end,
-            curve: parent_def.curve,
-            same: parent_def.same,
-            parent: Some(parent),
-        })
-    } else {
-        None
+    let result = match most_specific(
+        record,
+        &[
+            "EDGE_CURVE",
+            "SEAM_EDGE",
+            "ORIENTED_EDGE",
+            "SUBEDGE",
+            "EDGE",
+        ],
+    )? {
+        "EDGE_CURVE" => {
+            let (start, end) = edge_vertices(record)?;
+            Some(EdgeDef {
+                start,
+                end,
+                curve: Some(edge_geometry(record)?),
+                same: edge_same_sense(record)?,
+                parent: None,
+                pcurve: None,
+            })
+        }
+        "EDGE" => {
+            let (start, end) = edge_vertices(record)?;
+            Some(EdgeDef {
+                start,
+                end,
+                curve: None,
+                same: true,
+                parent: None,
+                pcurve: None,
+            })
+        }
+        "SUBEDGE" => {
+            let (start, end) = edge_vertices(record)?;
+            let parent = subedge_parent(record)?;
+            let parent_def = edge_def_for(parent, exchange, active)?;
+            Some(EdgeDef {
+                start,
+                end,
+                curve: parent_def.curve,
+                same: parent_def.same,
+                parent: Some(parent),
+                pcurve: parent_def.pcurve,
+            })
+        }
+        "ORIENTED_EDGE" | "SEAM_EDGE" => {
+            let element = oriented_edge_reference(record)?;
+            let element_def = edge_def_for(element, exchange, active)?;
+            let forward = oriented_edge_forward(record)?;
+            Some(EdgeDef {
+                start: element_def.start,
+                end: element_def.end,
+                curve: element_def.curve,
+                same: element_def.same == forward,
+                parent: Some(element),
+                pcurve: if most_specific(record, &["SEAM_EDGE"]).is_some() {
+                    record
+                        .partial("SEAM_EDGE")
+                        .and_then(|partial| {
+                            partial
+                                .parameters
+                                .iter()
+                                .rev()
+                                .find_map(ValueExt::reference)
+                        })
+                        .or(element_def.pcurve)
+                } else {
+                    element_def.pcurve
+                },
+            })
+        }
+        _ => None,
     };
     active.remove(&id);
     result
@@ -1049,6 +1095,29 @@ fn oriented_defs(exchange: &Exchange) -> BTreeMap<u64, OrientedDef> {
             ))
         })
         .collect()
+}
+
+fn subedge_parent(record: &RawRecord) -> Option<u64> {
+    if record.partials.len() == 1 {
+        return entity_parameter(record, "SUBEDGE", 3).and_then(ValueExt::reference);
+    }
+    record
+        .partial("SUBEDGE")
+        .and_then(|partial| {
+            partial
+                .parameters
+                .iter()
+                .rev()
+                .find_map(ValueExt::reference)
+        })
+        .or_else(|| {
+            record
+                .partials
+                .iter()
+                .flat_map(|partial| partial.parameters.iter())
+                .filter_map(ValueExt::reference)
+                .next_back()
+        })
 }
 
 fn named_reference(
@@ -1257,7 +1326,7 @@ fn staged_topology(
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct RootKey {
     solid: bool,
-    shell_keys: Vec<(u64, bool)>,
+    shell_keys: Vec<(u64, Option<bool>)>,
 }
 
 #[derive(Clone)]
@@ -1298,16 +1367,24 @@ fn root_shell_steps(root: &RawRecord, exchange: &Exchange) -> Option<Vec<u64>> {
 }
 
 fn root_key(root: &RawRecord, exchange: &Exchange) -> Option<RootKey> {
-    let mut shell_keys = root_shell_steps(root, exchange)?
-        .into_iter()
-        .map(|shell| {
-            if has_type(root, "FACE_BASED_SURFACE_MODEL") {
-                Some((shell, true))
-            } else {
-                resolve_shell(shell, exchange, &mut BTreeSet::new())
-            }
-        })
-        .collect::<Option<Vec<_>>>()?;
+    let mut shell_keys = Vec::new();
+    let mut resolved = 0;
+    for shell in root_shell_steps(root, exchange)? {
+        let key = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
+            Some((shell, Some(true)))
+        } else {
+            resolve_shell(shell, exchange, &mut BTreeSet::new())
+                .map(|(resolved_shell, forward)| (resolved_shell, Some(forward)))
+                .or(Some((shell, None)))
+        };
+        if key.as_ref().is_some_and(|(_, forward)| forward.is_some()) {
+            resolved += 1;
+        }
+        shell_keys.push(key?);
+    }
+    if resolved == 0 {
+        return None;
+    }
     shell_keys.sort_unstable();
     Some(RootKey {
         solid: has_type(root, "MANIFOLD_SOLID_BREP")
@@ -1469,25 +1546,15 @@ fn build_one(
         color: None,
         visible: None,
     };
-    let mut used_v = BTreeSet::new();
-    let mut used_e = BTreeSet::new();
+    let mut used_v = BTreeSet::<(u64, u64)>::new();
+    let mut used_e = BTreeSet::<(u64, u64)>::new();
     let mut used_shells = BTreeSet::new();
     let mut used_faces = BTreeSet::new();
     let mut radial = BTreeMap::<EdgeId, Vec<usize>>::new();
-    let mut poly_edges = BTreeMap::<EdgeId, (u64, u64)>::new();
-    let mut poly_points = BTreeSet::new();
+    let mut poly_edges = BTreeMap::<(u64, EdgeId), (u64, u64)>::new();
+    let mut poly_points = BTreeSet::<(u64, u64)>::new();
     let mut pcurve_use_counts = BTreeMap::<(u64, u64), usize>::new();
     let mut implicit_surface_ids = BTreeSet::new();
-    let scoped_shell_step = if scope_edges {
-        let shell_reference = *shell_steps.first()?;
-        if has_type(root, "FACE_BASED_SURFACE_MODEL") {
-            shell_reference
-        } else {
-            resolve_shell(shell_reference, exchange, &mut BTreeSet::new())?.0
-        }
-    } else {
-        0
-    };
     for &shell_reference in shell_steps {
         let (shell_step, shell_forward) = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
             typed.insert(shell_reference);
@@ -1500,16 +1567,10 @@ fn build_one(
         }
         let sr = exchange.records.get(&shell_step)?;
         let face_steps = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
-            named_refs(sr, connected_face_set_type(sr)?, 1)?
+            let set_type = connected_face_set_type(sr)?;
+            connected_set_members(sr, set_type)?
         } else {
-            if !has_type(sr, "OPEN_SHELL") && !has_type(sr, "CLOSED_SHELL") {
-                return None;
-            }
-            let shell_type = if has_type(sr, "OPEN_SHELL") {
-                "OPEN_SHELL"
-            } else {
-                "CLOSED_SHELL"
-            };
+            let shell_type = most_specific(sr, &["OPEN_SHELL", "CLOSED_SHELL"])?;
             named_refs(sr, shell_type, 1)?
         };
         if face_steps.is_empty() {
@@ -1607,7 +1668,7 @@ fn build_one(
                         }],
                     });
                     loop_ids.push((has_type(br, "FACE_OUTER_BOUND"), lid));
-                    used_v.insert(vertex_step);
+                    used_v.insert((shell_step, vertex_step));
                     typed.extend([bound_step, loop_step]);
                     continue;
                 }
@@ -1644,9 +1705,9 @@ fn build_one(
                             scope_root,
                         );
                         poly_edges
-                            .entry(edge_id.clone())
+                            .entry((shell_step, edge_id.clone()))
                             .or_insert((canonical_start, canonical_end));
-                        poly_points.extend([start_point, end_point]);
+                        poly_points.extend([(shell_step, start_point), (shell_step, end_point)]);
                         let cid = CoedgeId(format!(
                             "step:data:coedge#poly-{loop_step}-{index}-face-{face_step}{face_suffix}"
                         ));
@@ -1786,8 +1847,8 @@ fn build_one(
                         ))
                         .or_default()
                         .push(coedges.len() - 1);
-                    used_e.insert(o.edge);
-                    used_v.extend([edge.start, edge.end]);
+                    used_e.insert((shell_step, o.edge));
+                    used_v.extend([(shell_step, edge.start), (shell_step, edge.end)]);
                     typed.extend([use_step, o.edge]);
                     if let Some(parent) = edge.parent {
                         typed.insert(parent);
@@ -1843,7 +1904,7 @@ fn build_one(
         region.shells.push(sid);
         typed.insert(shell_step);
     }
-    for edge_id in used_e {
+    for (shell_step, edge_id) in used_e {
         let e = edefs.get(&edge_id)?;
         let (start, end) = if e.same {
             (e.start, e.end)
@@ -1851,38 +1912,38 @@ fn build_one(
             (e.end, e.start)
         };
         edges.push(Edge {
-            id: scoped_edge_id(edge_id, id, scoped_shell_step, scope_edges, scope_root),
+            id: scoped_edge_id(edge_id, id, shell_step, scope_edges, scope_root),
             curve: edge_curve_id(e, exchange),
-            start: scoped_vertex_id(start, id, scoped_shell_step, scope_edges, scope_root),
-            end: scoped_vertex_id(end, id, scoped_shell_step, scope_edges, scope_root),
+            start: scoped_vertex_id(start, id, shell_step, scope_edges, scope_root),
+            end: scoped_vertex_id(end, id, shell_step, scope_edges, scope_root),
             param_range: None,
             tolerance: None,
         });
     }
-    for (edge_identity, (start, end)) in poly_edges {
+    for ((shell_step, edge_identity), (start, end)) in poly_edges {
         edges.push(Edge {
             id: edge_identity,
             curve: None,
-            start: scoped_poly_vertex_id(start, id, scoped_shell_step, scope_edges, scope_root),
-            end: scoped_poly_vertex_id(end, id, scoped_shell_step, scope_edges, scope_root),
+            start: scoped_poly_vertex_id(start, id, shell_step, scope_edges, scope_root),
+            end: scoped_poly_vertex_id(end, id, shell_step, scope_edges, scope_root),
             param_range: None,
             tolerance: None,
         });
     }
-    for vertex_id in used_v {
+    for (shell_step, vertex_id) in used_v {
         let v = vdefs.get(&vertex_id)?;
         point_positions.get(&v.point)?;
         vertices.push(Vertex {
-            id: scoped_vertex_id(vertex_id, id, scoped_shell_step, scope_edges, scope_root),
+            id: scoped_vertex_id(vertex_id, id, shell_step, scope_edges, scope_root),
             point: PointId(format!("step:data:point#{}", v.point)),
             tolerance: None,
         });
         typed.insert(vertex_id);
     }
-    for point_id in poly_points {
+    for (shell_step, point_id) in poly_points {
         point_positions.get(&point_id)?;
         vertices.push(Vertex {
-            id: scoped_poly_vertex_id(point_id, id, scoped_shell_step, scope_edges, scope_root),
+            id: scoped_poly_vertex_id(point_id, id, shell_step, scope_edges, scope_root),
             point: PointId(format!("step:data:point#{point_id}")),
             tolerance: None,
         });
@@ -2175,22 +2236,27 @@ fn resolve_shell(
     typed: &mut BTreeSet<u64>,
 ) -> Option<(u64, bool)> {
     let record = exchange.records.get(&reference)?;
-    if has_type(record, "OPEN_SHELL") || has_type(record, "CLOSED_SHELL") {
-        return Some((reference, true));
+    match most_specific(
+        record,
+        &[
+            "ORIENTED_OPEN_SHELL",
+            "ORIENTED_CLOSED_SHELL",
+            "OPEN_SHELL",
+            "CLOSED_SHELL",
+        ],
+    )? {
+        "OPEN_SHELL" | "CLOSED_SHELL" => Some((reference, true)),
+        "ORIENTED_OPEN_SHELL" | "ORIENTED_CLOSED_SHELL" => {
+            typed.insert(reference);
+            let shell_type =
+                most_specific(record, &["ORIENTED_OPEN_SHELL", "ORIENTED_CLOSED_SHELL"])?;
+            Some((
+                named_reference(record, shell_type, 1, 0)?,
+                named_logical(record, shell_type, 2, 0)?,
+            ))
+        }
+        _ => None,
     }
-    if has_type(record, "ORIENTED_OPEN_SHELL") || has_type(record, "ORIENTED_CLOSED_SHELL") {
-        typed.insert(reference);
-        let shell_type = if has_type(record, "ORIENTED_OPEN_SHELL") {
-            "ORIENTED_OPEN_SHELL"
-        } else {
-            "ORIENTED_CLOSED_SHELL"
-        };
-        return Some((
-            named_reference(record, shell_type, 1, 0)?,
-            named_logical(record, shell_type, 2, 0)?,
-        ));
-    }
-    None
 }
 
 #[derive(Default)]
@@ -2217,8 +2283,17 @@ fn face_attributes(
     if !active.insert(record.id) {
         return None;
     }
-    let result = (|| {
-        if has_type(record, "ORIENTED_FACE") {
+    let result = (|| match most_specific(
+        record,
+        &[
+            "ORIENTED_FACE",
+            "SUBFACE",
+            "ADVANCED_FACE",
+            "FACE_SURFACE",
+            "FACE",
+        ],
+    )? {
+        "ORIENTED_FACE" => {
             let face_element = oriented_face_element(record)?;
             let mut base = face_attributes(exchange.records.get(&face_element)?, exchange, active)?;
             let orientation = oriented_face_orientation(record)?;
@@ -2228,7 +2303,8 @@ fn face_attributes(
             base.same_sense = base.same_sense == orientation;
             base.typed.insert(face_element);
             Some(base)
-        } else if has_type(record, "SUBFACE") {
+        }
+        "SUBFACE" => {
             let parent = subface_parent(record)?;
             let mut parent_info =
                 face_attributes(exchange.records.get(&parent)?, exchange, active)?;
@@ -2240,7 +2316,8 @@ fn face_attributes(
                 same_sense: parent_info.same_sense,
                 typed: parent_info.typed,
             })
-        } else if has_type(record, "FACE") {
+        }
+        "FACE" => {
             let bounds = direct_face_bounds(record, exchange)?;
             Some(FaceInfo {
                 bounds,
@@ -2248,19 +2325,20 @@ fn face_attributes(
                 same_sense: true,
                 typed: BTreeSet::new(),
             })
-        } else if has_type(record, "ADVANCED_FACE") || has_type(record, "FACE_SURFACE") {
+        }
+        "ADVANCED_FACE" | "FACE_SURFACE" => {
             let bounds = direct_face_bounds(record, exchange)?;
-            let surface = direct_face_surface(record, &bounds)?;
-            let same_sense = direct_face_same_sense(record)?;
+            let governing = most_specific(record, &["ADVANCED_FACE", "FACE_SURFACE"])?;
+            let surface = direct_face_surface(record, &bounds, governing)?;
+            let same_sense = direct_face_same_sense(record, governing)?;
             Some(FaceInfo {
                 bounds,
                 surface: Some(surface),
                 same_sense,
                 typed: BTreeSet::new(),
             })
-        } else {
-            None
         }
+        _ => None,
     })();
     active.remove(&record.id);
     result
@@ -2286,7 +2364,14 @@ fn direct_face_bounds(record: &RawRecord, exchange: &Exchange) -> Option<Vec<u64
     })
 }
 
-fn direct_face_surface(record: &RawRecord, bounds: &[u64]) -> Option<u64> {
+fn direct_face_surface(record: &RawRecord, bounds: &[u64], governing: &str) -> Option<u64> {
+    if record.partials.len() > 1 {
+        return named_reference(record, governing, 2, 0).or_else(|| {
+            (governing == "ADVANCED_FACE")
+                .then(|| named_reference(record, "FACE_SURFACE", 2, 0))
+                .flatten()
+        });
+    }
     record
         .partials
         .iter()
@@ -2295,7 +2380,14 @@ fn direct_face_surface(record: &RawRecord, bounds: &[u64]) -> Option<u64> {
         .find(|reference| !bounds.contains(reference))
 }
 
-fn direct_face_same_sense(record: &RawRecord) -> Option<bool> {
+fn direct_face_same_sense(record: &RawRecord, governing: &str) -> Option<bool> {
+    if record.partials.len() > 1 {
+        return named_logical(record, governing, 3, 0).or_else(|| {
+            (governing == "ADVANCED_FACE")
+                .then(|| named_logical(record, "FACE_SURFACE", 3, 0))
+                .flatten()
+        });
+    }
     record
         .partials
         .iter()
@@ -2327,7 +2419,7 @@ fn oriented_face_orientation(record: &RawRecord) -> Option<bool> {
         .into_iter()
         .flat_map(|partial| partial.parameters.iter())
         .find_map(ValueExt::logical)
-        .or_else(|| direct_face_same_sense(record))
+        .or_else(|| direct_face_same_sense(record, "ORIENTED_FACE"))
 }
 
 fn subface_parent(record: &RawRecord) -> Option<u64> {
@@ -2357,14 +2449,24 @@ fn has_type(record: &RawRecord, name: &str) -> bool {
     record.partials.iter().any(|partial| partial.name == name)
 }
 
+/// Returns the first partial name present in a subtype-first dispatch chain.
+/// Complex STEP instances carry every inherited partial, so the first hit is
+/// the governing subtype and its attributes must drive decoding.
+fn most_specific<'a>(record: &RawRecord, chain: &[&'a str]) -> Option<&'a str> {
+    chain.iter().copied().find(|name| has_type(record, name))
+}
+
 fn connected_face_set_type(record: &RawRecord) -> Option<&'static str> {
-    if has_type(record, "CONNECTED_FACE_SET") {
-        Some("CONNECTED_FACE_SET")
-    } else if has_type(record, "CONNECTED_FACE_SUB_SET") {
-        Some("CONNECTED_FACE_SUB_SET")
-    } else {
-        None
-    }
+    most_specific(record, &["CONNECTED_FACE_SUB_SET", "CONNECTED_FACE_SET"])
+}
+
+fn connected_set_members(record: &RawRecord, set_type: &str) -> Option<Vec<u64>> {
+    let base_type = match set_type {
+        "CONNECTED_EDGE_SUB_SET" => "CONNECTED_EDGE_SET",
+        "CONNECTED_FACE_SUB_SET" => "CONNECTED_FACE_SET",
+        _ => set_type,
+    };
+    named_refs(record, set_type, 1).or_else(|| named_refs(record, base_type, 1))
 }
 
 fn entity_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Option<&'a Value> {
