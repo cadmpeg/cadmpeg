@@ -144,7 +144,7 @@ pub(crate) fn try_decode_e5(
             &mut topology_annotations,
             topology,
             &surfaces,
-        ) && neutral_model_is_admissible(&topology_ir, &unknowns)
+        ) && neutral_model_is_admissible(&mut topology_ir, &unknowns)
     });
     if topology_transferred {
         ir = topology_ir;

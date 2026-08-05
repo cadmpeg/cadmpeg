@@ -716,13 +716,23 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the delimiter grammar to separate adjacent surface records without a false marker match.
 
-### FV-09. Recoverable geometry in the object-stream path
+### FV-09. Object-stream loop membership and face resolution
 
-**Question.** Does a float-packed inner-no-FBB file carry B-rep geometry and topology a decoder can recover, or does the object-stream path admit only retained payloads?
+**Question.** Which `b5 03 62` loop allocations belong to the B-rep of an object-stream body, and what leaves an isolated face and its loop unresolved in a body whose other faces and loops resolve?
 
-**Known.** `catia.md` §11 "A nested-`V5_CFV2` file without a standard FBB spine" defines the object-stream grammar for this variant. The decoder transfers no geometry for it and says so with blocking `geometry_not_transferred` and `topology_not_transferred` losses. The decode snapshots committed before this tree had a reader disagree: they record a transferred surface for the cone input and a body with three edges, vertices, and procedural curves for the topology input. No commit between those snapshots and now changes this decode path, so the snapshots never matched the decoder they shipped with, and which side is right is unresolved.
+**Known.** `catia.md` §11 "A nested-`V5_CFV2` file without a standard FBB spine" defines the object-stream grammar for this variant. The variant carries recoverable B-rep geometry and topology: the decoder resolves the face, loop, coedge, edge, vertex, pcurve, and carrier graph of an object-stream body and transfers it. The transfer then prunes the elements whose references do not close. A small number of `62` allocations stay outside every face, and an isolated face-and-loop pair drops out of an otherwise resolved body, which leaves a residual blocking `topology_not_transferred` loss reporting a maximal reference-closed subset.
 
-**Need.** We must know whether the variant admits recoverable geometry, to tell a capability that regressed from geometry a decoder should never have emitted.
+**Need.** We must separate an unreferenced `62` allocation, which the membership rule admits, from a face whose loop reference fails to resolve, so that pruning cannot hide a decode defect behind a legal exclusion.
+
+**Note.** Until this tree the resolved graph did not reach the document at all. `assemble::neutral_model_is_admissible` judged the candidate model before `cadmpeg-ir` sorts each arena by entity id, and a `b5 03` id embeds an unpadded decimal `object_id`, so `catia:b5:face#10` preceded `catia:b5:face#9` and every topology arena failed the strict arena-order check together. The route then fell back to bare surface carriers. The gate now canonicalizes the candidate first, which is the form `DecodeResult::new` publishes. No identity change was needed: a cross-reference is an id string, so arena order carries no reference semantics.
+
+### FV-10. Float-packed fixture validity
+
+**Question.** What object-stream and analytic-carrier records must a synthesized float-packed inner-no-FBB input contain to be a valid specimen of the variant?
+
+**Known.** `catia.md` §6.7 "For `b5 03 29`, the 185-byte payload is" fixes the cone chart and §6.7 "`b5 03 5d` (vertex identity)" fixes the native vertex-identity chain. The committed golden fixtures for this variant satisfy neither and reach no geometry path, so no golden fixture exercises the object-stream transfer route. Route coverage is a programmatically synthesized object stream held in the crate's tests, which decodes end to end through the container.
+
+**Need.** We must know the minimum valid record set to synthesize golden fixtures that hold the object-stream route under snapshot.
 
 ## 8. Appearance
 

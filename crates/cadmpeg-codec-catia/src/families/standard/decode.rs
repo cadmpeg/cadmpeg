@@ -1594,7 +1594,7 @@ pub(crate) fn try_decode_standard(
         &mut bound_standard_limit_curve_count,
     )
     .and_then(|()| {
-        neutral_model_is_admissible(&topology_ir, &unknowns)
+        neutral_model_is_admissible(&mut topology_ir, &unknowns)
             .then_some(())
             .ok_or(StandardTopologyFailure::InadmissibleNeutralModel)
     });
