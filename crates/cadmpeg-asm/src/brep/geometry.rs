@@ -444,7 +444,7 @@ pub(crate) fn sense_at(rec: &Record, i: usize) -> Sense {
 }
 
 /// The record-level sense bit of an `intcurve` or `spline` carrier: the boolean
-/// token immediately before the record's subtype scope ([spec §7.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#76-intcurve-and-spline-subtypes)). `true`
+/// token immediately before the record's subtype scope ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#66-intcurve-and-spline-subtypes)). `true`
 /// marks geometry as the reverse of its cached definition. A reversed intcurve
 /// negates the cache parameterization (`C(t) = cache(-t)`), and a reversed
 /// spline surface flips the cache normal.

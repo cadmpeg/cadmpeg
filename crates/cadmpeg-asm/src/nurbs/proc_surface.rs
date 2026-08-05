@@ -27,7 +27,7 @@ pub struct DecodedProceduralSurface {
     pub definition: DecodedProceduralSurfaceDefinition,
     /// `surface_fit_tolerance` of the cached B-spline block, if present.
     /// `0.0` indicates fidelity to the procedural surface rather than
-    /// identity with a primitive ([spec §7.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#75-nubsnurbs-blocks-b-spline-curves-and-surfaces)).
+    /// identity with a primitive ([spec §6.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#65-nubsnurbs-blocks-b-spline-curves-and-surfaces)).
     pub cache_fit_tolerance: Option<f64>,
 }
 

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode Fusion `.protein` appearance assets and bind them to B-rep bodies.
 //!
-//! Material and appearance semantics are defined in [spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials).
+//! Material and appearance semantics are defined in [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
 //! [`decode`] reads appearance records without resolving body bindings.
 //! [`decode_with_bodies`] joins Protein assets, Design assignments, ACT
 //! channels, and ASM body keys through the design-entity join backbone in
-//! [spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials).
+//! [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
 
 use std::collections::BTreeMap;
 use std::io::{Cursor, Write};
@@ -367,7 +367,7 @@ fn logical_to_physical(bytes: &[u8], logical_offset: usize) -> Option<usize> {
 /// Appearance assets and body bindings from one material decode.
 ///
 /// Bindings follow the design-entity join backbone in
-/// [spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials).
+/// [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
 #[derive(Default)]
 pub struct DecodedMaterials {
     /// Merged appearance records, deduplicated by [`AppearanceId`].
@@ -387,7 +387,7 @@ pub struct DecodedMaterials {
 /// Decode `.protein` assets and Design and ACT assignments without ASM body
 /// bindings.
 ///
-/// The [spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials)
+/// The [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials)
 /// `asm_body_key` join is skipped. Use [`decode_with_bodies`] when ASM body keys
 /// are available.
 pub fn decode(scan: &ContainerScan) -> Result<DecodedMaterials, CodecError> {
@@ -397,7 +397,7 @@ pub fn decode(scan: &ContainerScan) -> Result<DecodedMaterials, CodecError> {
 /// Decode appearance assets and resolve body bindings through
 /// `body_keys` (`BodyId` to the ASM `Body.chunk[1]` value), closing the
 /// design-entity join backbone in
-/// [spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials).
+/// [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
 pub fn decode_with_bodies<S: std::hash::BuildHasher>(
     scan: &ContainerScan,
     body_keys: &std::collections::HashMap<BodyId, u64, S>,
@@ -815,7 +815,7 @@ pub(crate) struct BodyAppearanceOverride {
 /// Decode per-body appearance overrides from browser body records in every
 /// Design `BulkStream` and join them to ASM body keys through the BREP
 /// body-map record
-/// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
+/// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
 fn decode_body_appearance_overrides(
     scan: &ContainerScan,
 ) -> Result<Vec<BodyAppearanceOverride>, CodecError> {
@@ -847,7 +847,7 @@ fn decode_body_appearance_overrides(
 ///
 /// The face GUID joins the BREP face that carries the same GUID in its
 /// `NEUTRON_Material_attrib_def` attribute
-/// ([spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials)).
+/// ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials)).
 pub struct FaceAppearanceAssignment {
     /// The face GUID shared with the BREP face attribute.
     pub face_guid: String,
@@ -860,7 +860,7 @@ pub struct FaceAppearanceAssignment {
 /// A face assignment ends with the `BA5EE55E-…` marker GUID; the two
 /// length-prefixed UTF-16 strings before the marker are the 36-character
 /// face GUID and the bound visual GUID
-/// ([spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials)).
+/// ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials)).
 fn decode_face_appearance_assignments(
     scan: &ContainerScan,
 ) -> Result<Vec<FaceAppearanceAssignment>, CodecError> {
@@ -912,7 +912,7 @@ pub(crate) fn face_appearance_assignments(bytes: &[u8]) -> Vec<FaceAppearanceAss
 }
 
 /// The marker GUID pair that opens the appearance fields of a browser body
-/// record ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
+/// record ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
 const BODY_RECORD_MARKER_GUIDS: [&str; 2] = [
     "D87FBE62-3B12-4CA8-9014-BAD31ABDB101",
     "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C",
@@ -926,7 +926,7 @@ const BODY_RECORD_MARKER_GUIDS: [&str; 2] = [
 /// body's design-entity suffix, the marker GUID pair, the physical-material
 /// token, the browser-node GUID with the node's entity (the body suffix plus
 /// one), the display name, an f32 opacity, the `01 01` marker, and the bound
-/// visual GUID ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
+/// visual GUID ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
 /// The scan requires the head entity and node entity to agree before
 /// accepting a record.
 pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
@@ -1009,7 +1009,7 @@ enum AssignmentGeneration {
 /// The run is one reference, one null reference, then the record's browser
 /// node. A browser node's entity is the owning body's design-entity suffix plus
 /// one, so the node reference names the body
-/// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
+/// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
 /// A record that carries no physical-material token is face-scoped and resolves
 /// to no body.
 fn referenced_body_suffix(

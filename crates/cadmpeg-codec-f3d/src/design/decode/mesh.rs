@@ -2,7 +2,7 @@
 //! Join mesh-geometry containers to their bodies through the Design segment.
 //!
 //! A mesh body's geometry lives in a `.paramesh` container ([spec §1.1.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#112-mesh-geometry-containers)),
-//! and three Design record classes join the container to its body ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)):
+//! and three Design record classes join the container to its body ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)):
 //! the entry-name class stores the blob-part entry name, the GUID class stores
 //! the GUID the container's protobuf message carries as `fusion_uuid`, and the
 //! mesh-body class carries the affine map between container coordinates and

@@ -370,7 +370,7 @@ pub struct DecodedProceduralCurve {
     /// Embedded support context and recursive formulas of a `law_int_cur`.
     pub embedded_law: Option<EmbeddedLawCurve>,
     /// `surface_fit_tolerance` of the cached B-spline block, if present
-    /// ([spec §7.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#75-nubsnurbs-blocks-b-spline-curves-and-surfaces)).
+    /// ([spec §6.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#65-nubsnurbs-blocks-b-spline-curves-and-surfaces)).
     pub cache_fit_tolerance: Option<f64>,
 }
 

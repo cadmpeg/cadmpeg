@@ -12606,7 +12606,7 @@ fn asm_header_parses_documented_fields() {
 }
 
 /// Flag bits 1 to 7 hold the save format's revision number
-/// ([spec §3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#3-asm-binary-header)):
+/// ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#1-asm-binary-header)):
 /// save format 22300 carries revision 2 and 22500 carries revision 3. Those
 /// bits are assigned, so they leave the uninterpreted set; bits 8 and above
 /// stay in it.
@@ -12644,7 +12644,7 @@ fn asm_header_absent_on_non_asm_bytes() {
     assert!(!asm_header::has_asm_magic(b"PK\x03\x04"));
 }
 
-/// The `BinaryFile4` fixed header ([spec §3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#3-asm-binary-header)): 15-byte magic, four little-endian
+/// The `BinaryFile4` fixed header ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#1-asm-binary-header)): 15-byte magic, four little-endian
 /// u32 words (save-format version, record count, entity count, flags), then the same
 /// tagged string/double sequence as `BinaryFile8`.
 fn bf4_header_prefix(flags: u32) -> Vec<u8> {

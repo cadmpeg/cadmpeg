@@ -19,7 +19,7 @@
 //! u-major order.
 //!
 //! Integer-family payloads (`0x04` int, `0x0c` ref, `0x15` enum) are 4 bytes in
-//! `BinaryFile4` streams and 8 in `BinaryFile8` ([spec §3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#3-asm-binary-header)); doubles are always
+//! `BinaryFile4` streams and 8 in `BinaryFile8` ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#1-asm-binary-header)); doubles are always
 //! 8. Record bytes omit the stream width, so each decoder tests both layouts
 //! and validates tags, degrees, counts, and block extents.
 

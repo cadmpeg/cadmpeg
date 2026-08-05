@@ -104,7 +104,7 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
 }
 
 /// Decode the construction-history tail of an ASM stream: every `delta_state`
-/// record ([spec §2.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#23-delta_state-records)) from `bytes`, each with its `BulletinBoard` chain of
+/// record ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#32-delta_state-records)) from `bytes`, each with its `BulletinBoard` chain of
 /// per-entity insert/delete/update changes and the raw history-entity records
 /// framed between it and the next `delta_state`. `stream` is the source ZIP
 /// entry name, recorded in each decoded item's provenance. Returns `None` when

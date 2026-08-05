@@ -12,141 +12,17 @@ Each item has these parts:
 
 Each item has an identifier. Use the identifier in commit messages and in code comments.
 
-A reference to the specification gives the section number and the start of the paragraph. An example is `f3d.md` §7.3 `off_spl_sur`. Do not use line numbers. Line numbers become incorrect when the specification changes. The `scripts/check-doc-anchors.py` command makes sure that each reference finds exactly one paragraph.
+A reference to the specification gives the section number and the start of the paragraph. An example is `f3d.md` §3.1 "**The ACT segment.**". Do not use line numbers. Line numbers become incorrect when the specification changes. The `scripts/check-doc-anchors.py` command makes sure that each reference finds exactly one paragraph.
 
 This document uses ASD-STE100 Simplified Technical English. Record names, field names, and token values are technical names. They keep their source spelling.
 
-## 1. Geometry carriers
-
-### GC-01. `VBL_OFFSURF` and `skin_spl_sur2` payload layout
-
-**Question.** What fields does a `VBL_OFFSURF` payload have? What fields does a `skin_spl_sur2` payload have?
-
-**Known.** `VBL_OFFSURF` has the second spelling `offsetvbsur`. Most of these records include a final solved cache. The cache gives the exact face shape. An offset surface whose support is a `VBL_SURF` stays an `off_spl_sur` with the vertex-blend surface in the support slot: it is accepted on read in that form and is retained in it, and no rewrite into `VBL_OFFSURF` occurs. A `skin_spl_sur`, `skin_spl_sur2`, or `skinsur` payload written from the field order in `f3d.md` §7.3 is refused on read, in a cache-first and in a context-first arrangement. The layouts are speculative, so a refusal separates neither a wrong field order from a wrong field count nor either of those from an unaccepted record name.
-
-**Need.** Some records do not include a cache. For those records, the field layout is the only source of the face shape. We must know the layout to read them and to write them. The decoder keeps these records as opaque bytes now.
-
-### GC-05. Second boolean of the `off_spl_sur` sense pair
-
-**Question.** What does the second boolean of the revision-gated `off_spl_sur` sense pair control?
-
-**Known.** `f3d.md` §7.3 `off_spl_sur` gives the first boolean and the offset construction. The second boolean does not select the offset side and does not move the offset surface. It is set only in records whose first boolean is also set, and those records have a support surface whose stored parameterization is reflected relative to the model. All four states are accepted on read with either sign of the stored distance, and each is retained. A state change alone does not make the reader solve the cache again, so a record whose tail stores a cache gives no surface that separates the states.
-
-**Need.** We must know which value to write when we make this record from a neutral model. `false` is the value for a surface built directly from a support surface and a distance, so the item blocks only the reflected case. **Blocked on a specimen:** a document whose `off_spl_sur` record stores a reflected support and a tail without a cache lets us read the states off the solved surface, and no such document is available to read.
-
-### GC-07. `off_spl_sur` extension run
-
-**Question.** What are the field roles of the extension run in an `off_spl_sur` record?
-
-**Known.** `f3d.md` §7.3 `off_spl_sur` gives the run's field sequence, the prefix states that require it, the zero first integer, and the unit-independent tolerance. A run written to that sequence is accepted on read and is retained field for field, so the sequence is the true layout. The first fields agree with the start of a surface-to-surface intersection payload. That start is a presence logical, a six-integer header, an intersection curve, two pcurve logicals, and a tolerance. The four `-1` integers at the end are more than the three endpoint-term slots of that layout. The five integers after the leading zero are retained verbatim and have no established meaning. A run whose four `-1` integers hold `0 1 2 3` is refused on read, and so is a run whose two post-curve logicals are both true; a refusal does not give the accepted sets.
-
-**Need.** We can now make a record that has a run, but only by copying a run we read. To make one from a neutral model we must know what the five integers, the two logicals, and the four `-1` integers hold, and which values each accepts.
-
-### GC-08. Shared revision-gated surface tail enum values other than `0` and `2`
-
-**Question.** What layouts do the shared revision-gated surface tail enum values other than `0` and `2` select?
-
-**Known.** `f3d.md` §7.3 "**Revision-gated spline-surface forms**" gives the layouts of `0` and `2`. Zero selects the solved cache and its fit tolerance; two replaces both with the two bool-gated parameter intervals and four closure and singularity enums. The decoder keeps a record with any other value as opaque bytes. Values `3` and `4` paired with the complete value-zero cache payload are refused on read. Tails written with the spelling `historical`, `optimal`, `none`, or `summary` and with the payload the same-named `law_spl_sur` mode selects are also refused. Each refusal rejects only the complete submitted value-and-layout pair; it does not reject that numeral with another layout or narrow the accepted spelling set.
-
-**Need.** We cannot read a record with a value other than `0` or `2`. **Blocked on a specimen:** a document whose shared surface tail carries another value gives that value's layout, and a document whose `off_spl_sur` tail carries form `2` shows the cacheless form on that carrier; no such document is available to read.
-
-### GC-13. `cl_loft_spl_sur` tail kind values
-
-**Question.** What are the nonzero values of the revision-gated `cl_loft_spl_sur` tail-kind integer? What layout does each nonzero value select?
-
-**Known.** `f3d.md` §7.3 `cl_loft_spl_sur` gives the kind-zero payload. The revision-gated form takes tail kind `0`; no nonzero kind has a known occurrence in that form. The decoder rejects every nonzero kind. A revision-gated payload written with tail kind `6` or `7` and with the kind-6 or kind-7 payload of the form that is not revision-gated is refused on read. A refusal separates a kind the revision-gated form does not have from a payload the revision-gated form encodes differently, so it does not bound the kind set.
-
-**Need.** We cannot read a record with a nonzero kind.
-
-### GC-16. Token tags of a revision-gated `VBL_SURF` `deg` boundary
-
-**Question.** Which token tags does a revision-gated `VBL_SURF` `deg` boundary use for its location and for its two normals?
-
-**Known.** `f3d.md` §7.3 `VBL_SURF` gives the revision-form tag changes for the type names, the magic location, the support bounds, the curve endpoints, and circle form `3`. It does not give the tags of a `deg` boundary. The decoder writes `0x13` and two `0x14` tokens. In a record whose boundaries are accepted, a `plane` support stores its location in one `0x13` and each of its two directions in one `0x14`, and the leading triple of a boundary is one `0x14`, so the decoder's choice agrees with the tags the same record uses for a location and for a direction. A record whose boundary count is raised by one with a `deg` boundary appended is refused on read, with equal and with distinct normals alike. The appended boundary does not agree geometrically with the other boundaries and the record stores no cache to fall back on, so the refusal does not bear on the tags.
-
-**Need.** A wrong tag makes a file that the reader refuses.
-
-### GC-18. Blend-value selector values
-
-**Question.** We must find three answers:
-
-- whether selector values outside `0` through `7` exist
-- the cross-sections selectors `2`, `4`, `5`, and `6` build
-- the relation between a selector-seven `edge_offset` length and the solved second-side contact distance
-
-**Known.** `f3d.md` §7.3 `var_blend_spl_sur` gives the layouts of selectors `0` through `7`, the classified cross-section families, the side order, and the contact offsets. Selectors `2`, `4`, `5`, and `6` carry no selector-local payload; each retains its numeric value and continues at the same common tail. Their records store current solved caches, so the caches do not identify the cross-section laws. A rebuilt selector-seven surface meets its first side at the stored offset exactly and its second side short of the stored offset by near one per cent, far above the achieved fit tolerance, so the selector-seven offset is not exactly the second-side contact distance and no other relation is established.
-
-**Need.** A record using a selector outside `0` through `7` would extend the value set. A record whose selector `2`, `4`, `5`, or `6` cache is not current would rebuild into the corresponding cross-section law.
-
-### GC-19. Third-slot raise predicate of a `tvertex` record
-
-**Question.** Which incident edges contribute the third slot's `1e-6` raise?
-
-**Known.** `f3d.md` §6.2 "**Tolerant vertex:**" gives the three slots, the first slot's content — the vertex's own stored tolerance, unit-converted like the other two slots — the second slot's construction from the incident edge-endpoint gaps and tolerant-edge tolerances, the third slot's raise over the incident edges that are not tolerant, and the set-state relation between the second and third slots. The predicate that selects which incident edges contribute the raise is narrower than "every edge that is not tolerant": some records carry a third slot equal to the second where that rule predicts a raise. A record whose second and third slots are equal does not separate candidate predicates.
-
-**Need.** To write the third slot exactly we must know the contribution predicate. The decoder retains the stored slots, so the item blocks only writing from a neutral model.
-
-### GC-21. Revision-gated `loft_spl_sur` type-zero member and ASM-integer gate
-
-**Question.** What do the two nullable spline slots of a type-zero profile member hold, and are they BS2 pcurves or BS3 curves? What form does a type-zero member take in a save-format-23200 stream? At which save format version does the ASM integer start?
-
-**Known.** `f3d.md` §7.3 `loft_spl_sur` gives the two member forms and the save-format gate of the ASM integer. A type-zero member stores two nullable spline slots in place of the support surface and the first flag. The decoder keeps both slots and reads them as BS2 pcurves. Every observed type-zero slot is the null-spline sentinel, and that sentinel is the same token for a BS2 and a BS3 slot, so the slot type is undetermined: only a type-zero member with a non-null slot separates them, by the count of scalars per control point. No type-zero member occurs in a save-format-23200 stream. No stream with a save format version between 22600 and 23200 holds a revision-gated loft. The decoder reads the ASM integer in each stream with a save format version above 22600.
-
-**Need.** We keep the two slots without a change. To write them from a neutral model, we must know what they hold. To write a type-zero member into a save-format-23200 stream, or into a stream with a save format version between 22600 and 23200, we must know if that stream keeps the ASM integer. **Blocked on a specimen:** a document whose type-zero member carries a non-null spline slot separates the slot types by the count of scalars per control point, and a save-format-23200 stream holding a revision-gated loft settles the gate; no such document is available to read.
-
-### GC-23. Cache-first intcurve leading enum values other than `0` and `2`
-
-**Question.** What layouts do the cache-first intcurve leading enum values other than `0` and `2` select?
-
-**Known.** `f3d.md` §7.3 "**Cache-first subtype selection**" gives the layouts of `0` and `2`. The decoder reads both and retains a record with any other value verbatim. Value `2` paired with the complete value-zero cache payload is refused on read; the valid value-two layout replaces that cache rather than retaining it. A `par_int_cur` whose leading enum carries the spelling `summary`, `historical`, or `optimal` over an otherwise untouched cache-first payload is also refused. Each refusal rejects only the complete submitted value-and-layout pair and does not narrow other layouts or spellings.
-
-**Need.** We cannot read a record with a value other than `0` or `2`. **Blocked on a specimen:** a document whose cache-first intcurve leading enum carries a value other than `0` or `2` gives that value's layout, and no such document is available to read. GC-27 gives the separate limit that value `2` reaches.
-
-### GC-24. Binding of the law formula text infix operator `O`
-
-**Question.** What are the precedence and associativity of the infix operator `O` in stored law formula text?
-
-**Known.** `f3d.md` §7.3 "**Law formulas**" gives `O` as composition with the right operand innermost, and gives the `MTRAIL` curve as a rail direction requiring no further construction input. A writer parenthesizes both `O` operands, so stored text never exercises the operator's binding against a neighbouring operator and never chains two occurrences. A `law_int_cur` written from the field order in `f3d.md` §7.3 over a solved curve cache is refused on read, and the refusal covers the smallest form, whose law is `null_law` and which carries no operator at all. The field order and the arity encoding are both speculative, so the refusal bears on neither the operator token spellings nor the binding, and it does not show that the record is unreachable by a different field order.
-
-**Need.** We must know the binding to parse law text that a different writer produced without full parenthesization. Text this codec emits is unaffected, because it parenthesizes both operands.
-
-### GC-25. Payload after a true shared revision-gated surface tail logical
-
-**Question.** What follows the closing logical of the shared revision-gated surface tail when that logical is true?
-
-**Known.** `f3d.md` §7.3 "**Revision-gated spline-surface forms**" ends the tail with six counted float arrays and one logical, for each value of the form enum. The specification gives no payload after that logical, and the decoder ends the tail there for either value.
-
-**Need.** A false logical is the only state the decoder can account for. A carrier whose tail is its last field, such as the revision-gated `cyl_spl_sur`, would end its scope at a true logical and drop the bytes after it without a diagnostic, and would then write the record back short. A carrier with its own fields after the tail, such as `rb_blend_spl_sur` and `var_blend_spl_sur`, reads those fields at the wrong offset instead and keeps the whole record as opaque bytes. No subtype scope has a full-consumption check that would separate the two outcomes from a correct decode. **Blocked on a specimen:** a document whose shared revision-gated surface tail closes with a true logical shows what follows it, and no such document is available to read.
-
-### GC-26. Position of the `sss_blend_spl_sur` third-side graph
-
-**Question.** Does the third-side graph of an `sss_blend_spl_sur` record come between the shared revision-gated surface tail and the three trailing integers, or after those integers?
-
-**Known.** `f3d.md` §7.6 `rb_blend_spl_sur` puts the third-side graph after the tail and before the three `tail_extension` integers. The two-support subtypes end with the tail and those integers, which fixes the integers as the last fields of that scope but does not fix the third-side graph against them. Replacing only the accepted subtype name `rb_blend_spl_sur` with `sss_blend_spl_sur` is refused in a fresh reader session while the unchanged control is accepted. The rename-only payload is therefore not the `sss_blend_spl_sur` grammar, but the refusal does not select either candidate graph position.
-
-**Need.** The decoder and the source-less writer both use the position the specification gives. The wrong position makes every `sss_blend_spl_sur` record fail its decode and stay opaque, and makes a generated record ungrammatical. **Blocked on a specimen:** a document holding an `sss_blend_spl_sur` record fixes the graph position against the trailing integers, and no such document is available to read.
-
-### GC-27. Solved carrier of a cache-first intcurve that stores no cache
-
-**Question.** Which curve gives the parameter domain of a cache-first intcurve record whose leading enum is `2` and whose construction stores no curve block?
-
-**Known.** `f3d.md` §7.3 "**Cache-first subtype selection**" gives the layout of leading enum `2`: the record stores a bool-gated curve interval and a closed-form enum in place of the solved-curve cache and the fit tolerance that enum `0` stores. The shared cache-first context takes its parameter domain from the record's solved curve, and the record-level search takes the first curve block in the record as that curve. A form-`2` record therefore has a solved carrier only when a nested construction stores a curve block.
-
-**Need.** A form-`2` record that stores no curve block anywhere gives the context no parameter domain, so the decoder retains the record verbatim and the neutral model loses the curve. To read such a record the shared context and every carrier that builds it must accept a record with no solved curve. Whether the record then takes its domain from the interval the form stores, from the support surfaces, or from a curve outside the record is not established. **Blocked on a specimen:** a document holding a form-`2` record whose construction stores no curve block settles which of the three the domain comes from, and no such document is available to read.
-
-### GC-28. Parameter chart of a procedural spline support cache
-
-**Question.** How does a pcurve in a procedural spline support's construction chart map to the parameter chart of that support's solved NURBS cache?
-
-**Known.** A cache-first intcurve support can store `spline`, a subtype-table reference to a procedural spline-surface construction, and four optional bounds. The referenced construction supplies a solved NURBS cache. The intcurve pcurve uses the procedural construction's parameter chart. That chart is not necessarily the solved cache's chart. A `cl_loft_spl_sur` support can map one construction-chart isoline to a nonlinear curve in the solved cache chart. The intcurve and the cache therefore do not establish a direct pcurve-on-surface relation without a chart map.
-
-**Need.** The decoder currently attaches the construction-chart pcurve directly to the solved NURBS support. This relation is invalid when the charts differ. We must retain or derive the exact chart map before the neutral support relation can be complete. A fitted map is not sufficient because it does not preserve the stored construction semantics.
+## 1. B-rep stream text encoding
 
 ### GC-29. Header-line field roles of a text-encoded B-rep stream
 
 **Question.** What are the field roles of the three header lines of a `.sat` or `.smt` B-rep stream?
 
-**Known.** `f3d.md` §1.1.3 gives the record grammar and the terminator. The first header line begins with the save format and continues with three more integers. The second line holds the producing application and version as length-prefixed strings. The third line holds two tolerance values. The binary header's field assignment (§2.2) does not transfer: the text header carries no flags word, so the history-partition bit that the `.smbh` extension mirrors has no counterpart, and how a text stream declares a history partition is unknown. The counts on the first line are not the record count: a stream whose only record is `asmheader` and a stream carrying a full solid both give a small value there.
+**Known.** `f3d.md` §1.1.3 gives the record grammar and the terminator. The first header line begins with the save format and continues with three more integers. The second line holds the producing application and version as length-prefixed strings. The third line holds two tolerance values. The binary header's field assignment (`asm.md` §1) does not transfer: the text header carries no flags word, so the history-partition bit that the `.smbh` extension mirrors has no counterpart, and how a text stream declares a history partition is unknown. The counts on the first line are not the record count: a stream whose only record is `asmheader` and a stream carrying a full solid both give a small value there.
 
 **Need.** The text encoding is a geometry carrier, so a decoder must frame it before it can read a document whose geometry is in that form. The record grammar is enough to frame the records, but not to establish whether a stream declares construction history, and history determines which records are the solved model. Writing the encoding needs the field roles as well.
 
@@ -156,7 +32,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the run of LP-UTF16 GUIDs after an ACT table's counted entry list hold? What gives its length?
 
-**Known.** `f3d.md` §8.1 "**The ACT segment.**" gives the two-byte prologue, the counted `(reference, entity key)` entries, and the join from each entry to its change group. The run after the last entry is a sequence of 36-character GUID strings and has no count of its own.
+**Known.** `f3d.md` §3.1 "**The ACT segment.**" gives the two-byte prologue, the counted `(reference, entity key)` entries, and the join from each entry to its change group. The run after the last entry is a sequence of 36-character GUID strings and has no count of its own.
 
 **Need.** We must know the run to write an ACT table. A reader that stops after the counted entries keeps every change-version join, so the item blocks writing only.
 
@@ -164,7 +40,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How do the recipe records inside one non-locus indexed-parameter-companion variant relate to each other as an operation?
 
-**Known.** `f3d.md` §8.1 "Within a dimensional companion," gives the containment order and the retention order. `f3d.md` §8.1 "An edge recipe's words" gives the edge-recipe-subsequence join. `f3d.md` §8.1 "A recipe-backed linear dimension" gives the measurement rule for a recipe-backed linear dimension that has no locus.
+**Known.** `f3d.md` §3.1 "Within a dimensional companion," gives the containment order and the retention order. `f3d.md` §3.1 "An edge recipe's words" gives the edge-recipe-subsequence join. `f3d.md` §3.1 "A recipe-backed linear dimension" gives the measurement rule for a recipe-backed linear dimension that has no locus.
 
 **Need.** We must know the operation to build a neutral dimension from more than one recipe record.
 
@@ -172,7 +48,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What is the layout of an `EdgeFlange` frame whose height extent terminates at a selected object rather than at a distance?
 
-**Known.** `f3d.md` §8.1 "A single-edge `EdgeFlange` scope has" gives the distance-extent layout, the header shift, the bend-position values, the height-datum values, and the edge-width mode. A to-object frame adds three ordered references and inserts a marked reference pair into the fixed operation section between the height-owner reference and the result-record run. Its frame length does not satisfy the distance-extent length relation for any result-record count, so the to-object form is a separate layout and the decoder refuses it. The height-datum discriminator still carries the outer-faces value in a to-object frame, where the height datum has no effect.
+**Known.** `f3d.md` §3.1 "A single-edge `EdgeFlange` scope has" gives the distance-extent layout, the header shift, the bend-position values, the height-datum values, and the edge-width mode. A to-object frame adds three ordered references and inserts a marked reference pair into the fixed operation section between the height-owner reference and the result-record run. Its frame length does not satisfy the distance-extent length relation for any result-record count, so the to-object form is a separate layout and the decoder refuses it. The height-datum discriminator still carries the outer-faces value in a to-object frame, where the height datum has no effect.
 
 **Need.** A to-object height extent has no neutral extent without the inserted pair's roles. The decoder retains the scope as a native record, so the item blocks the extent semantics of that form only.
 
@@ -180,7 +56,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which field selects the hem form, which field carries the hem direction, and what is the layout of the rolled and teardrop frames?
 
-**Known.** `f3d.md` §8.1 "A `Hem` scope names one parameter" gives the two-owner layout, the header shift, the parameter source kinds of each form, and the four retained fields.
+**Known.** `f3d.md` §3.1 "A `Hem` scope names one parameter" gives the two-owner layout, the header shift, the parameter source kinds of each form, and the four retained fields.
 
 The parameter set separates a rolled hem, which owns `HemRadius` and `HemAngle`, and a teardrop hem, which owns three parameters, from the two-owner forms. It does not separate a flat hem from an open one: both own `HemGap` and `HemLength`. A flat hem's `HemGap` holds a small value its form does not use, which is a value difference and not a selector.
 
@@ -201,7 +77,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 - `CoilPrimitive` section-placement values other than `3`
 - the fixed u32 value at primary-header offset 26 in each record
 
-**Known.** `f3d.md` §8.1 "`SpirePrimitive` selects the Coil" gives the `SpirePrimitive` fields. `f3d.md` §8.1 "`CoilPrimitive` is the compact" gives the `CoilPrimitive` fields. Each field has one known value. The two records use different numbers for the same meaning, so a value from one record does not transfer to the other. The ten-reference `CoilPrimitive` form's member layout is settled and its section placement precedes its section shape in the stream, which is the opposite of the order the compact form's offsets assume.
+**Known.** `f3d.md` §3.1 "`SpirePrimitive` selects the Coil" gives the `SpirePrimitive` fields. `f3d.md` §3.1 "`CoilPrimitive` is the compact" gives the `CoilPrimitive` fields. Each field has one known value. The two records use different numbers for the same meaning, so a value from one record does not transfer to the other. The ten-reference `CoilPrimitive` form's member layout is settled and its section placement precedes its section shape in the stream, which is the opposite of the order the compact form's offsets assume.
 
 **Need.** We must know the value sets to build these two features in a neutral model. **Blocked on specimens:** every discriminator carries one value in the records available. Settling it needs one coil per creation type, one per boolean operation, and a grid of section shape against section placement, one coil per file. The compact form is absent, so whether it is the same class as the ten-reference form is also open.
 
@@ -209,7 +85,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 **Question.** Which entity does the member identity of the eighth ordered `CoilPrimitive` reference select? What is the layout of the larger ten-reference `CoilPrimitive` form?
 
-**Known.** `f3d.md` §8.1 "`CoilPrimitive` is the compact" gives all eight references of the 427-byte form. The eighth is a counted selection group with one persistently identified member. It is not a compact parameter: the scope owns exactly five parameters, and the five parameter references name all of them. A larger `CoilPrimitive` form has a 573-byte frame and ten ordered references with no known layout.
+**Known.** `f3d.md` §3.1 "`CoilPrimitive` is the compact" gives all eight references of the 427-byte form. The eighth is a counted selection group with one persistently identified member. It is not a compact parameter: the scope owns exactly five parameters, and the five parameter references name all of them. A larger `CoilPrimitive` form has a 573-byte frame and ten ordered references with no known layout.
 
 **Need.** We must know the selected entity to keep the complete feature input set. The eighth ordered reference is the tool body in the compact form only; in the ten-reference form the tool body is the tenth and the eighth is a parameter.
 
@@ -217,7 +93,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 **Question.** What construction does each `refType` value of the placement class select?
 
-**Known.** `f3d.md` §8.1 "A `Sketch` scope joined" gives the member order, the version gates, and the identity-marked matrix. `refType` is a u32 whose value does not change the member sequence, and the reference members it selects between — `rOrigin`, `rXAxis`, `rZAxis`, `rEdgeReferences`, `rPlaneReferences`, and `values` — are present at every value.
+**Known.** `f3d.md` §3.1 "A `Sketch` scope joined" gives the member order, the version gates, and the identity-marked matrix. `refType` is a u32 whose value does not change the member sequence, and the reference members it selects between — `rOrigin`, `rXAxis`, `rZAxis`, `rEdgeReferences`, `rPlaneReferences`, and `values` — are present at every value.
 
 **Need.** We must know which references a given `refType` requires to write a placement that Fusion re-solves rather than accepts as stored.
 
@@ -225,7 +101,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 **Question.** What construction does each `refType` value of the point-data class select?
 
-**Known.** `f3d.md` §8.1 "A direct `WorkPoint` scope" gives the member order, the version gates, and the input count each `refType` implies. The stored `point3d` is the solved position for every value, so a reader needs no join to place the point.
+**Known.** `f3d.md` §3.1 "A direct `WorkPoint` scope" gives the member order, the version gates, and the input count each `refType` implies. The stored `point3d` is the solved position for every value, so a reader needs no join to place the point.
 
 **Need.** A writer must emit the `refType` that matches the inputs it writes, and a neutral model that edits an input must know which rule re-solves the point.
 
@@ -233,7 +109,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 **Question.** Which field holds the boundary side of a `SurfacePatch` component? What does `PatchScale` hold?
 
-**Known.** `f3d.md` §8.1 "A surface-patch boundary-settings record has" gives the member order, the offsets, and the types. `PatchContinuity` value `0` imposes positional continuity, `1` imposes tangency, and `2` imposes curvature; the value is stored per boundary component, and one patch can impose a different condition on each of its boundaries.
+**Known.** `f3d.md` §3.1 "A surface-patch boundary-settings record has" gives the member order, the offsets, and the types. `PatchContinuity` value `0` imposes positional continuity, `1` imposes tangency, and `2` imposes curvature; the value is stored per boundary component, and one patch can impose a different condition on each of its boundaries.
 
 `PatchFlip` does not hold the boundary side. It carries the value `2` in every record, including in patches that differ only in the authored boundary side. `PatchScale` is `-1.0` in every record, so no mapping from it to a neutral value is decidable in either direction. `IsSeedSel` is set on exactly one boundary component of a patch.
 
@@ -243,7 +119,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 **Question.** Which recipe field assigns the active B-rep edge identity when the candidate set is empty, disjoint, or has more than one intersection?
 
-**Known.** `f3d.md` §8.1 "An edge operand has" gives the result of these cases. An empty leading reference set identifies an unresolved edge-bearing operand. A disjoint set does the same. `f3d.md` §8.1 "For each selector, an" keeps an unresolved identity without a change.
+**Known.** `f3d.md` §3.1 "An edge operand has" gives the result of these cases. An empty leading reference set identifies an unresolved edge-bearing operand. A disjoint set does the same. `f3d.md` §3.1 "For each selector, an" keeps an unresolved identity without a change.
 
 **Need.** The neutral model needs one edge identity per operand.
 
@@ -251,7 +127,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 **Question.** Which field selects one active B-rep face candidate when two rules both fail?
 
-**Known.** `f3d.md` §8.1 "An `Extrude` face-group member" gives the two rules that work. The first rule applies when every effective active candidate has a support mapping and every mapping names the same non-empty predecessor-face set. The second rule uses a counted-boundary predecessor set.
+**Known.** `f3d.md` §3.1 "An `Extrude` face-group member" gives the two rules that work. The first rule applies when every effective active candidate has a support mapping and every mapping names the same non-empty predecessor-face set. The second rule uses a counted-boundary predecessor set.
 
 **Need.** The neutral model needs one face per recipe member.
 
@@ -265,7 +141,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 - what the context UUID names
 - what the optional slot of the fixed member tail holds
 
-**Known.** `f3d.md` §8.1 "A nested entity-selection member" states that an identity absent from the preceding state gives no candidate. `f3d.md` §8.1 "An Extrude selection resolves" gives a fallback chain that ends in native retention. `f3d.md` §8.1 "The first identity-wrapper record" gives the presence encoding of the optional slot. The marker is zero when the slot is absent and one when the slot is present.
+**Known.** `f3d.md` §3.1 "A nested entity-selection member" states that an identity absent from the preceding state gives no candidate. `f3d.md` §3.1 "An Extrude selection resolves" gives a fallback chain that ends in native retention. `f3d.md` §3.1 "The first identity-wrapper record" gives the presence encoding of the optional slot. The marker is zero when the slot is absent and one when the slot is present.
 
 **Need.** Each unknown makes one Extrude selection fall back to native retention. The neutral model then has no selection.
 
@@ -273,7 +149,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 **Question.** Which field determines the extent form when an extent discriminator and the stored termination reference disagree?
 
-**Known.** `f3d.md` §8.1 "The extent form is carried by" gives the two per-side discriminators, their enum, and the parameter and reference set each value implies. Every implication holds in both directions, so no record separates the discriminator from the reference: the two never disagree. Extent value `3` does not occur, so neither its termination-entity search nor the tool-body extension mode of value `4` is exercised.
+**Known.** `f3d.md` §3.1 "The extent form is carried by" gives the two per-side discriminators, their enum, and the parameter and reference set each value implies. Every implication holds in both directions, so no record separates the discriminator from the reference: the two never disagree. Extent value `3` does not occur, so neither its termination-entity search nor the tool-body extension mode of value `4` is exercised.
 
 **Need.** A writer needs to know which field a reader follows before it can emit a record where the two differ, and whether value `3` may be written without a termination reference. A design authored with a to-object termination whose side is then switched to `to next` without clearing the object settles it.
 
@@ -281,7 +157,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 **Question.** What do the construction-group scalar fields hold? What does the variant byte control? What do the group-role values outside the defined feature-specific sets mean? What does the boolean of the compact flag record a trailing reference names select?
 
-**Known.** `f3d.md` §8.1 "Every `Extrude`, `Extrusion`, `Fillet`," gives the member order and the value limits. The group holds a nonzero u32 `ordinal`, a nonnegative finite f64 `scalar`, and a second copy of `ordinal` that one container generation omits. The value of `variant` is zero or one. The same paragraph defines the Extrude roles `0x08`, `0x41`, and `0x11` only. Roles `0x81` and `0x100` name no defined operand family, and `0x100` does not fit in one byte. `scalar` is not equal to a compact-parameter value in the same feature scope, with or without unit scaling. `ordinal` is below 256, has one value for all groups of one feature scope, and does not decrease with the record index. A `variant` value of one occurs only on a scope that has no history state. The two optional references that follow the member run, and the count that opens the identity run, have no reader. The compact flag record occurs on `SplitFace` and `SurfaceDeleteFace` groups; the decoder retains its boolean, and the scope kind, not that boolean, selects the operation, so the boolean carries no read meaning.
+**Known.** `f3d.md` §3.1 "Every `Extrude`, `Extrusion`, `Fillet`," gives the member order and the value limits. The group holds a nonzero u32 `ordinal`, a nonnegative finite f64 `scalar`, and a second copy of `ordinal` that one container generation omits. The value of `variant` is zero or one. The same paragraph defines the Extrude roles `0x08`, `0x41`, and `0x11` only. Roles `0x81` and `0x100` name no defined operand family, and `0x100` does not fit in one byte. `scalar` is not equal to a compact-parameter value in the same feature scope, with or without unit scaling. `ordinal` is below 256, has one value for all groups of one feature scope, and does not decrease with the record index. A `variant` value of one occurs only on a scope that has no history state. The two optional references that follow the member run, and the count that opens the identity run, have no reader. The compact flag record occurs on `SplitFace` and `SurfaceDeleteFace` groups; the decoder retains its boolean, and the scope kind, not that boolean, selects the operation, so the boolean carries no read meaning.
 
 **Note.** The u32 word before `role` is zero in every record, so a reader that takes `role` as a u64 starting at that word and a reader that takes it as a u32 starting after it name the same value. The decoder takes the u64. Nothing separates the two readings.
 
@@ -291,7 +167,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 **Question.** What do the signed selector and kind fields of a construction-operand entity-tracking path select?
 
-**Known.** `f3d.md` §8.1 "A construction-operand entity-tracking path" gives the complete wrapper and carrier grammar. The selector is a signed i32, the kind is a u32, and the two optional related identities retain their ordered positions independently. The primary and related identities also occur as persistent Sketch-curve identities. Selector values `-1`, `1`, and `2` and kind values `1`, `2`, and `3` occur.
+**Known.** `f3d.md` §3.1 "A construction-operand entity-tracking path" gives the complete wrapper and carrier grammar. The selector is a signed i32, the kind is a u32, and the two optional related identities retain their ordered positions independently. The primary and related identities also occur as persistent Sketch-curve identities. Selector values `-1`, `1`, and `2` and kind values `1`, `2`, and `3` occur.
 
 **Need.** The decoder retains both discriminators and every identity. Their semantic meanings are required to generate an entity-tracking path from neutral selection intent.
 
@@ -299,7 +175,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 **Question.** What is the topology meaning of the root scalar, the prelude scalars, and the side-clause scalars of a face-recipe node?
 
-**Known.** `f3d.md` §8.1 "An `Extrude` face-group member" gives the node structure. The payload is a `-1`-delimited root scalar, two one-word prelude runs, and two topology side clauses. The root scalar, the first prelude scalar, and every side scalar keep their source field order and their repetitions. `f3d.md` §8.1 "The face-node `-1`-delimited grammar" states that the delimiter value does not change the retained field value or the side structure. `f3d.md` §8.1 "The structured edge-recipe program" gives a role to these scalars in an **edge** recipe only.
+**Known.** `f3d.md` §3.1 "An `Extrude` face-group member" gives the node structure. The payload is a `-1`-delimited root scalar, two one-word prelude runs, and two topology side clauses. The root scalar, the first prelude scalar, and every side scalar keep their source field order and their repetitions. `f3d.md` §3.1 "The face-node `-1`-delimited grammar" states that the delimiter value does not change the retained field value or the side structure. `f3d.md` §3.1 "The structured edge-recipe program" gives a role to these scalars in an **edge** recipe only.
 
 **Need.** We must know the meaning to build face topology from a recipe without the edge-recipe rule.
 
@@ -307,7 +183,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 **Question.** Which join connects a `Move` or `RemoveBody` construction-group identity with role `0x0000000400000000` to a neutral body identity?
 
-**Known.** `f3d.md` §8.1 "A `Move` scope references" and `f3d.md` §8.1 "A `RemoveBody` scope references" give the record layout.
+**Known.** `f3d.md` §3.1 "A `Move` scope references" and `f3d.md` §3.1 "A `RemoveBody` scope references" give the record layout.
 
 **Need.** Without the join, the neutral model has no body selection for these two features.
 
@@ -315,7 +191,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 **Question.** Which field selects the input body for a form-33 `Combine` body-recipe identity that intersects more than one input body and has no matching occurrence elsewhere in the Design stream?
 
-**Known.** `f3d.md` §8.1 "A `Combine` scope stores" gives the complete persistent identity and the agreement rule. The identity is the stream GUID, the asset GUID, the context GUID, the ordered `(Design reference, form)` clauses, the recipe Design id, and the recipe selector. Repeated occurrences of that identity select the same stable history body when every resolved occurrence agrees.
+**Known.** `f3d.md` §3.1 "A `Combine` scope stores" gives the complete persistent identity and the agreement rule. The identity is the stream GUID, the asset GUID, the context GUID, the ordered `(Design reference, form)` clauses, the recipe Design id, and the recipe selector. Repeated occurrences of that identity select the same stable history body when every resolved occurrence agrees.
 
 **Need.** This item is the case in which the agreement rule has no input. The neutral model then has no body selection.
 
@@ -323,7 +199,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 **Question.** How do the signed angle, the neutral-plane orientation, the explicit pull direction, and the outward-material convention of a `Draft` scope relate to each other? Which references of a parting-line draft name its pull direction and its parting tool?
 
-**Known.** `f3d.md` §8.1 "A `Draft` scope has" gives the field roles and both group forms. The first scalar is the nonzero signed draft angle in radians and the second reserves the opposite-side angle at zero.
+**Known.** `f3d.md` §3.1 "A `Draft` scope has" gives the field roles and both group forms. The first scalar is the nonzero signed draft angle in radians and the second reserves the opposite-side angle at zero.
 
 A neutral-plane draft and a parting-line draft authored to the same result show the angle sign and the pull direction are independent stored fields whose combination fixes the geometry: a draft authored at `+7` degrees with the default pull direction and one authored at `-7` degrees with the pull direction reversed carry the two angle signs and produce the same result. Neither the pull direction nor the outward flag is therefore derivable from the angle sign alone.
 
@@ -337,7 +213,7 @@ A parting-line draft carries two role-`0x0000002100000000` groups where a neutra
 
 **Question.** What do the class-365 whole-body operand fields after the asset UUID and the context UUID hold? This question excludes the bounded nested-record join and the body-recipe join.
 
-**Known.** `f3d.md` §8.1 "A class-365 whole-body member" gives the reference count, the ordered `(Design reference, form)` pairs, the asset UUID, the context UUID, the `u32 2`, the four zero bytes, the paired header, and the nested indexed headers. The `u32 2` is a literal that never varies. The four bytes after it are not always zero, and the u32 after those takes a broad range of small values. The `0x01`-tagged value before the two UUIDs is a reference whose target is the containing entity plus three, so the two zero bytes after it are that reference's flags.
+**Known.** `f3d.md` §3.1 "A class-365 whole-body member" gives the reference count, the ordered `(Design reference, form)` pairs, the asset UUID, the context UUID, the `u32 2`, the four zero bytes, the paired header, and the nested indexed headers. The `u32 2` is a literal that never varies. The four bytes after it are not always zero, and the u32 after those takes a broad range of small values. The `0x01`-tagged value before the two UUIDs is a reference whose target is the containing entity plus three, so the two zero bytes after it are that reference's flags.
 
 **Need.** We must know what the two variable u32 select to write a complete class-365 member.
 
@@ -345,7 +221,7 @@ A parting-line draft carries two role-`0x0000002100000000` groups where a neutra
 
 **Question.** What do the six-byte fields after the Base Feature body suffixes and after the Base Feature record references hold?
 
-**Known.** `f3d.md` §8.1 "**References.**" resolves the six bytes that follow an eleven-byte element: they are the target entity ID's high half and the two reference flags. A fifteen-byte element already carries the full entity ID, so its six bytes are instead the two flags and a further u32 member of the element. The `u16 0` then `u32 1` form is that member holding `1`: the flags are both clear, and a cross-segment reference would put `1` in the second flag byte rather than in the u32. The value is uniform across a scope's body-entity run.
+**Known.** `f3d.md` §3.1 "**References.**" resolves the six bytes that follow an eleven-byte element: they are the target entity ID's high half and the two reference flags. A fifteen-byte element already carries the full entity ID, so its six bytes are instead the two flags and a further u32 member of the element. The `u16 0` then `u32 1` form is that member holding `1`: the flags are both clear, and a cross-segment reference would put `1` in the second flag byte rather than in the u32. The value is uniform across a scope's body-entity run.
 
 **Need.** We must know what the per-element u32 selects to write a Base Feature from a neutral model. It is `1` on one scope and `0` on every other, and it does not track the body count, so we cannot say what selects it.
 
@@ -358,9 +234,9 @@ A parting-line draft carries two role-`0x0000002100000000` groups where a neutra
 - the five bytes between a `txt_tag` record's rotation and its colour components, the two bytes between its height and its anchor coordinates, and the eleven bytes between those coordinates and its text string, ten of them below class version 4
 - the targets of the reference run a `txt_tag` record writes after its text string, the three bytes and eight unclassified bytes around its font weight, and the pairs of its leading block
 
-**Known.** `f3d.md` §8.1 "Sketch text occupies two record classes" gives the two class GUIDs and the identity keys. `f3d.md` §8.1 "In a `textex_tag` record the property block" and `f3d.md` §8.1 "In a `txt_tag` record the twenty-nine bytes" give each class's members up to the text string, including the anchor-point coordinates of the `txt_tag` class. `f3d.md` §8.1 "A `textex_tag` record writes two optional" and `f3d.md` §8.1 "A `textex_tag` record's class tail opens" give the remaining members and the placement transform. A `txt_tag` record's f64 directly after the property block is its stored rotation in radians about the anchor; zero is explicit. The `textex_tag` form derives frame-text rotation and anchor from its transform. The colour components come from the run ahead of the font family. The decoder reads both forms. A `txt_tag` record stores no width factor.
+**Known.** `f3d.md` §3.1 "Sketch text occupies two record classes" gives the two class GUIDs and the identity keys. `f3d.md` §3.1 "In a `textex_tag` record the property block" and `f3d.md` §3.1 "In a `txt_tag` record the twenty-nine bytes" give each class's members up to the text string, including the anchor-point coordinates of the `txt_tag` class. `f3d.md` §3.1 "A `textex_tag` record writes two optional" and `f3d.md` §3.1 "A `textex_tag` record's class tail opens" give the remaining members and the placement transform. A `txt_tag` record's f64 directly after the property block is its stored rotation in radians about the anchor; zero is explicit. The `textex_tag` form derives frame-text rotation and anchor from its transform. The colour components come from the run ahead of the font family. The decoder reads both forms. A `txt_tag` record stores no width factor.
 
-The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 0`, and `u8 0`. It is the same in every record of both classes. Its field boundaries are thus fixed, but no field in it changes, so no field in it has a meaning we can read. Of the three bytes after the horizontal-alignment enum, only the first is ever set. The single byte after the vertical-alignment enum is set when that byte is set, and clear when it is clear. The two are one flag written twice, or one flag and an echo of it. The alignment enums change independently of each other, so neither flag byte continues an alignment value. `f3d.md` §8.1 "Sketch text occupies two record classes" gives the leading block that both classes carry.
+The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 0`, and `u8 0`. It is the same in every record of both classes. Its field boundaries are thus fixed, but no field in it changes, so no field in it has a meaning we can read. Of the three bytes after the horizontal-alignment enum, only the first is ever set. The single byte after the vertical-alignment enum is set when that byte is set, and clear when it is clear. The two are one flag written twice, or one flag and an echo of it. The alignment enums change independently of each other, so neither flag byte continues an alignment value. `f3d.md` §3.1 "Sketch text occupies two record classes" gives the leading block that both classes carry.
 
 **Need.** We must know the meanings to write sketch text from a neutral model. A record that sets one of the two flag bytes and clears the other separates them. A class tail that differs from the constant above gives its fields a meaning. Nothing else in a sketch-text record changes with either.
 
@@ -374,7 +250,7 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 - the first of the two text-frame references
 - the zero `u8` that closes the circular-pattern class
 
-**Known.** `f3d.md` §8.1 "A sketch-relation class writes" gives the member sequence of each class, and each sequence closes the record on its exact end. The fields above have a width and no meaning. The decoder consumes them and transfers nothing from them.
+**Known.** `f3d.md` §3.1 "A sketch-relation class writes" gives the member sequence of each class, and each sequence closes the record on its exact end. The fields above have a width and no meaning. The decoder consumes them and transfers nothing from them.
 
 **Need.** A pattern relation must be written back from a neutral model, and these members must carry the values the source would have written. The map keys and values are small integers in the range of record indices, so they may be a per-instance record grouping that a writer must rebuild rather than copy.
 
@@ -392,7 +268,7 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 
 **Question.** What do the `EntityGenesis` values `0x4` and `0x8` mean?
 
-**Known.** `f3d.md` §8.1 "A sketch-curve record contains" gives the origin bitfield and assigns bits `0x2`, `0x80`, and `0x100`. The values in the records available are `0x0`, `0x2`, `0x4`, and `0x8`. A document's sketch curves can carry `0x8` while some of their centre points carry `0x0`, and a sketch-text record carries `0x4` while its frame curves carry `0x0`, so neither value follows the record class or the owning sketch.
+**Known.** `f3d.md` §3.1 "A sketch-curve record contains" gives the origin bitfield and assigns bits `0x2`, `0x80`, and `0x100`. The values in the records available are `0x0`, `0x2`, `0x4`, and `0x8`. A document's sketch curves can carry `0x8` while some of their centre points carry `0x0`, and a sketch-text record carries `0x4` while its frame curves carry `0x0`, so neither value follows the record class or the owning sketch.
 
 **Need.** A writer must emit the value the source would have written. Without the bit meanings, a neutral model cannot choose between `0x0`, `0x4`, and `0x8`.
 
@@ -400,7 +276,7 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 
 **Question.** What does `ref_b`, the second member of the `sketch_attrib_def` payload, name?
 
-**Known.** `f3d.md` §6.6 "`sketch_attrib_def` is source-link metadata" names it, gives its position in all three payload forms, and gives its range. It is zero in most links, and the decoder keeps a non-zero value as written. A non-zero value repeats across the links of one stream and is drawn from a small set per document. Where a document has sketch text, the values that recur most are the Design entity ids of its sketch-text records, and the `sketch_curve_id` beside them matches no sketch-curve record's persistent identity in that document. Where a document has no sketch text, non-zero values still occur and the `sketch_curve_id` beside them does match a stored sketch-curve identity. So the field names neither a sketch text in particular nor, by itself, the namespace `sketch_curve_id` is drawn from. One document spells it `18446744073709551615` throughout, the all-ones 64-bit pattern, where `0` is the value every other document writes for a link with no such reference.
+**Known.** `asm.md` §5.6 "`sketch_attrib_def` is source-link metadata" names it, gives its position in all three payload forms, and gives its range. It is zero in most links, and the decoder keeps a non-zero value as written. A non-zero value repeats across the links of one stream and is drawn from a small set per document. Where a document has sketch text, the values that recur most are the Design entity ids of its sketch-text records, and the `sketch_curve_id` beside them matches no sketch-curve record's persistent identity in that document. Where a document has no sketch text, non-zero values still occur and the `sketch_curve_id` beside them does match a stored sketch-curve identity. So the field names neither a sketch text in particular nor, by itself, the namespace `sketch_curve_id` is drawn from. One document spells it `18446744073709551615` throughout, the all-ones 64-bit pattern, where `0` is the value every other document writes for a link with no such reference.
 
 **Need.** A writer must choose the value to emit for a link a neutral model does not carry. Without the meaning, only a link decoded from source restores it.
 
@@ -416,9 +292,9 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 
 **Question.** Where does the second container generation store the two `Assemble` operand occurrence paths, and how does each path join to its operand frame?
 
-**Known.** `f3d.md` §8.1 "An `Assemble` scope stores two operand frames" gives the operand-frame layout of the 627-, 633-, 637-, 692-, 732-, and 772-byte forms, and `f3d.md` §8.1 "Except in the 772-byte class-261 form" gives the two occurrence-path records, their record indices five and two below the first operand construction in a four-owner scope, and 39 and 36 below it in an eight-owner scope.
+**Known.** `f3d.md` §3.1 "An `Assemble` scope stores two operand frames" gives the operand-frame layout of the 627-, 633-, 637-, 692-, 732-, and 772-byte forms, and `f3d.md` §3.1 "Except in the 772-byte class-261 form" gives the two occurrence-path records, their record indices five and two below the first operand construction in a four-owner scope, and 39 and 36 below it in an eight-owner scope.
 
-The paired class tag does not select the frame layout. `f3d.md` §8.1 "A parameter scope is one logical indexed record" already states that both class tags are per-file dynamic values. Documents exist whose `Assemble` scopes pair with class 262 and whose 633- and 637-byte frames satisfy every fixed member of the 633- and 637-byte layouts: the marked operand references stand at scope offsets 24 and 164 and at 28 and 168, the two rigid row-major transforms stand at offsets 36 and 176 and at 40 and 180, and every zero-byte run between them holds zero. So frame length alone selects the layout.
+The paired class tag does not select the frame layout. `f3d.md` §3.1 "A parameter scope is one logical indexed record" already states that both class tags are per-file dynamic values. Documents exist whose `Assemble` scopes pair with class 262 and whose 633- and 637-byte frames satisfy every fixed member of the 633- and 637-byte layouts: the marked operand references stand at scope offsets 24 and 164 and at 28 and 168, the two rigid row-major transforms stand at offsets 36 and 176 and at 40 and 180, and every zero-byte run between them holds zero. So frame length alone selects the layout.
 
 The same documents do not hold the two path records. The record indices five and two below the first frame's construction record are absent from the Design stream, and no indexed record stands between the scope's paired header and that construction record. The occurrence GUIDs of those scopes instead occur as a run of length-prefixed UTF-16LE 36-character values at a 76-byte stride inside the region the paired header opens, which the record-header index does not enter.
 
@@ -428,7 +304,7 @@ The same documents do not hold the two path records. The record indices five and
 
 **Question.** May two local component-occurrence carriers in one Design stream carry equal component GUIDs and unequal component-record references?
 
-**Known.** `f3d.md` §8.1 "A local component occurrence is an indexed carrier" states that equal component GUIDs name the same reusable local component definition, and each carrier stores the same u64 component-record reference twice. The validator holds one component-record reference per component GUID per stream and reports a carrier that contradicts an earlier one.
+**Known.** `f3d.md` §3.1 "A local component occurrence is an indexed carrier" states that equal component GUIDs name the same reusable local component definition, and each carrier stores the same u64 component-record reference twice. The validator holds one component-record reference per component GUID per stream and reports a carrier that contradicts an earlier one.
 
 Documents exist with two unplaced ordinal-one carriers whose component GUIDs are equal, whose occurrence GUIDs differ, and whose component-record references differ. Both carriers satisfy every fixed member of the 229-byte frame, and both duplicate their own component-record reference across offsets 24 and 197, so neither is a misread frame.
 
@@ -438,7 +314,7 @@ Documents exist with two unplaced ordinal-one carriers whose component GUIDs are
 
 **Question.** What names the two joined component occurrences of a 772-byte class-261 `Assemble` scope?
 
-**Known.** `f3d.md` §8.1 "An `Assemble` scope stores two operand frames" gives the form's two operand references, its two rigid connector transforms, and its ten owner lanes. `f3d.md` §8.1 "Except in the 772-byte class-261 form" states that this form stores no occurrence-path records. The decoder reads both connector transforms and the alignment angle and offset, and the validator accepts the form with frames and no paths.
+**Known.** `f3d.md` §3.1 "An `Assemble` scope stores two operand frames" gives the form's two operand references, its two rigid connector transforms, and its ten owner lanes. `f3d.md` §3.1 "Except in the 772-byte class-261 form" states that this form stores no occurrence-path records. The decoder reads both connector transforms and the alignment angle and offset, and the validator accepts the form with frames and no paths.
 
 A neutral assembly joint needs one occurrence per operand. Every other form supplies it from the first occurrence GUID of the operand's path record. This form has no path record, so each operand is identified only by the marked reference the frame stores, which names a construction record after the scope's paired header.
 
@@ -466,7 +342,7 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 
 **Question.** What does the LP-UTF16 asset GUID of a cross-document reference name?
 
-**Known.** `f3d.md` §8.1 "**References.**" gives the cross-document form. The eight-byte value the item once asked about is the reference's target entity ID, and the ASCII GUID after it is the target record's type GUID; both resolve against the segment the reference's segment ID names in the target document. The UTF-16 asset GUID between them is one value per link and does not equal the target segment's own asset GUID.
+**Known.** `f3d.md` §3.1 "**References.**" gives the cross-document form. The eight-byte value the item once asked about is the reference's target entity ID, and the ASCII GUID after it is the target record's type GUID; both resolve against the segment the reference's segment ID names in the target document. The UTF-16 asset GUID between them is one value per link and does not equal the target segment's own asset GUID.
 
 **Need.** A writer must emit this GUID to build a cross-document reference, and we cannot derive it from either end of the link.
 
@@ -484,7 +360,7 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 
 **Question.** What are the unit tags of a Distance value other than the three known length tags?
 
-**Known.** `f3d.md` §8.2 "Boolean stores one u8." gives the tag structure `(quantity class << 12) | unit index`, with the unit index one-based, and gives three length tags: `0x200d` is centimetre, `0x200e` is millimetre, and `0x2016` is inch. The decoder converts these three to millimetres and returns no unit for every other tag. The tag is a property of the asset and does not track the document display length unit, so a change of that unit does not enumerate further tags. The schema `unit` attribute of a Distance property does not predict the tag, and one record mixes tags across its own members, so the attribute does not bound the tag set.
+**Known.** `f3d.md` §3.2 "Boolean stores one u8." gives the tag structure `(quantity class << 12) | unit index`, with the unit index one-based, and gives three length tags: `0x200d` is centimetre, `0x200e` is millimetre, and `0x2016` is inch. The decoder converts these three to millimetres and returns no unit for every other tag. The tag is a property of the asset and does not track the document display length unit, so a change of that unit does not enumerate further tags. The schema `unit` attribute of a Distance property does not predict the tag, and one record mixes tags across its own members, so the attribute does not bound the tag set.
 
 **Need.** A Distance with an unknown tag gets no unit. The neutral model then has a value with no scale. We must know which further unit indexes the length class `0x2` has, and whether a Distance takes a quantity class other than length.
 
@@ -492,7 +368,7 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 
 **Question.** What does each texture map-channel integer value mean?
 
-**Known.** `f3d.md` §8.2 "`UnifiedBitmapSchema` and `BumpMapSchema` records" names the map-channel property. The application defines the value meanings.
+**Known.** `f3d.md` §3.2 "`UnifiedBitmapSchema` and `BumpMapSchema` records" names the map-channel property. The application defines the value meanings.
 
 **Need.** We must know the meanings to map a texture to the correct channel in a neutral model.
 
@@ -500,7 +376,7 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 
 **Question.** Which member does a `TextureMap2dSchema` closure omit from its value block?
 
-**Known.** `f3d.md` §8.2 "An `InstanceProperties` record opens with" states that such a block is one four-byte slot shorter than its closure, and that only omitting `texture_MapChannel_ID_Advanced` or `texture_MapChannel` leaves every surviving member at its schema default. The two are byte-degenerate: both are four-byte integers at adjacent positions, and the surviving pair reads `1` and `0` under either choice, which are the two members' declared defaults in either assignment.
+**Known.** `f3d.md` §3.2 "An `InstanceProperties` record opens with" states that such a block is one four-byte slot shorter than its closure, and that only omitting `texture_MapChannel_ID_Advanced` or `texture_MapChannel` leaves every surviving member at its schema default. The two are byte-degenerate: both are four-byte integers at adjacent positions, and the surviving pair reads `1` and `0` under either choice, which are the two members' declared defaults in either assignment.
 
 **Need.** A writer must emit the same member set the reader expects, and the two choices shift every following member by four bytes. A texture asset authored with a map channel other than `1`, or with a non-default advanced channel id, separates them.
 
@@ -508,7 +384,7 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 
 **Question.** How does a face-scoped appearance assignment in the browser-node-reference generation name its face?
 
-**Known.** `f3d.md` §8.1 "A browser body record carries" gives the record and its body-scope form. A face-scoped record of this generation carries no physical-material preset name and no `299`-tagged head, so neither body-identity form applies. Its presentation envelope holds two lowercase GUIDs before the visual GUID. Neither GUID appears in the B-rep stream, and the stream carries no `NEUTRON_Material_attrib_def` attribute, so the §8.2 face appearance join has no operand. A document that assigns one face appearance writes two such records naming the same visual GUID, alongside one body-scope record.
+**Known.** `f3d.md` §3.1 "A browser body record carries" gives the record and its body-scope form. A face-scoped record of this generation carries no physical-material preset name and no `299`-tagged head, so neither body-identity form applies. Its presentation envelope holds two lowercase GUIDs before the visual GUID. Neither GUID appears in the B-rep stream, and the stream carries no `NEUTRON_Material_attrib_def` attribute, so the §3.2 face appearance join has no operand. A document that assigns one face appearance writes two such records naming the same visual GUID, alongside one body-scope record.
 
 **Need.** Face colour cannot transfer for this generation without the face operand. A document assigning distinct appearances to two named faces of one body separates the two GUIDs and fixes which one carries face identity.
 
@@ -516,7 +392,7 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 
 **Question.** Which Canvas fields hold the visibility state, the mirroring state, and the crop state?
 
-**Known.** `f3d.md` §8.1 "A `Canvas` scope names" gives the Canvas geometry record. It holds the opacity, the plane frame, both boundary segments, the label, and the image asset. It names no visibility field, no mirroring field, and no crop field. The decoder reads the opacity and the plane frame only.
+**Known.** `f3d.md` §3.1 "A `Canvas` scope names" gives the Canvas geometry record. It holds the opacity, the plane frame, both boundary segments, the label, and the image asset. It names no visibility field, no mirroring field, and no crop field. The decoder reads the opacity and the plane frame only.
 
 **Need.** A neutral canvas needs these three states to show the image correctly.
 
@@ -524,7 +400,7 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 
 **Question.** What is the precedence of the `color-adesk-attrib` record and the `material-adesk-attrib` record against direct colours and appearance assignments? What do the twelve bytes and the eight bytes of a per-face assignment entry hold?
 
-**Known.** `f3d.md` §8.2 "Color attribute records include" gives the content of both records. `color-adesk-attrib` holds a palette index. `material-adesk-attrib` holds a library lookup pair. `f3d.md` §8.2 "An explicit `rgb_color-st-attrib` or" gives the precedence of the two other colour records only. An explicit `rgb_color-st-attrib` or `truecolor-adesk-attrib` on a body or a face gives that target its neutral colour. If neither is present, one appearance binding with a base colour gives the colour. `f3d.md` §8.2 "Per-face appearance assignments live" gives the assignment entry; its two unnamed byte runs have a width and no meaning.
+**Known.** `f3d.md` §3.2 "Color attribute records include" gives the content of both records. `color-adesk-attrib` holds a palette index. `material-adesk-attrib` holds a library lookup pair. `f3d.md` §3.2 "An explicit `rgb_color-st-attrib` or" gives the precedence of the two other colour records only. An explicit `rgb_color-st-attrib` or `truecolor-adesk-attrib` on a body or a face gives that target its neutral colour. If neither is present, one appearance binding with a base colour gives the colour. `f3d.md` §3.2 "Per-face appearance assignments live" gives the assignment entry; its two unnamed byte runs have a width and no meaning.
 
 **Need.** A target can have more than one colour source. We must know the order to select one neutral colour, and the entry byte runs to write a per-face assignment from a neutral model.
 
@@ -603,6 +479,6 @@ A code-4 channel stores authored corner colours exactly, in the sRGB scale and w
   - `f85f2e62-7627-4922-a16d-53e1275d2aac` (add-in `Scene`)
 - which of the two matrices of an `EA90DA22-556C-4C61-89BB-20C2681B7A9D` record governs the map from container coordinates to model space, and whether that matrix is the complete map
 
-**Known.** `f3d.md` §8.1 "A mesh body's geometry container" gives the three decoded classes. Each of the five classes above occurs once per mesh body and does not occur in a document without one. The `EA90DA22-556C-4C61-89BB-20C2681B7A9D` record stores two equal affine matrices. Applying either matrix to container coordinates in model centimetres supplies the complete nonuniform scale and translation of a placed mesh. Separate mesh bodies retain separate containers, identities, and matrices even when their geometry bytes are equal.
+**Known.** `f3d.md` §3.1 "A mesh body's geometry container" gives the three decoded classes. Each of the five classes above occurs once per mesh body and does not occur in a document without one. The `EA90DA22-556C-4C61-89BB-20C2681B7A9D` record stores two equal affine matrices. Applying either matrix to container coordinates in model centimetres supplies the complete nonuniform scale and translation of a placed mesh. Separate mesh bodies retain separate containers, identities, and matrices even when their geometry bytes are equal.
 
 **Need.** We must know the five payloads to write a mesh body from a neutral model, which duplicate matrix governs if they differ, and how a negative-determinant matrix affects triangle winding.

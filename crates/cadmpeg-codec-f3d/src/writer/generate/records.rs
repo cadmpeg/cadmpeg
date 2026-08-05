@@ -848,7 +848,7 @@ fn encode_sketch_relation(
     Ok(())
 }
 
-/// Write one same-segment reference ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata) "**References.**"): the
+/// Write one same-segment reference ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata) "**References.**"): the
 /// presence byte, the u64 target entity id, and the two zero flag bytes.
 fn write_reference(out: &mut Vec<u8>, target: u32) {
     out.push(1);

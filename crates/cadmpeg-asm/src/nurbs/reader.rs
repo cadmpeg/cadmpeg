@@ -277,7 +277,7 @@ pub(crate) fn take_native_string(
         0x07 => (usize::from(*bytes.get(*position + 1)?), 2),
         0x08 => (usize::from(u16_at(bytes, *position + 1)?), 3),
         // The `0x09` length prefix is the stream's integer width, not a fixed
-        // four bytes ([spec §4.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#41-tag-table)).
+        // four bytes ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#21-tag-table)).
         0x09 => (
             usize::try_from(read_int(bytes, *position + 1, int_width)?).ok()?,
             1 + int_width,

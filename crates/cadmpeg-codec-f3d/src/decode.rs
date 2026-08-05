@@ -3749,7 +3749,7 @@ pub(crate) fn reconcile_appearance_loss(
 
 /// Join per-face appearance assignments to BREP faces through the face GUID
 /// carried by each face's `NEUTRON_Material_attrib_def` attribute
-/// ([spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials)).
+/// ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials)).
 pub(crate) fn resolve_face_appearance_bindings(
     ir: &mut CadIr,
     face_assignments: &[materials::FaceAppearanceAssignment],

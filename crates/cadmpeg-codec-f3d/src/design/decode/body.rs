@@ -372,7 +372,7 @@ pub(crate) struct BodyBinding {
 /// Parse every BREP body-map record in a Design `BulkStream`: a `u32` pair
 /// count, `count` pairs of `(u64 asm_body_key, u64 entity_suffix)`, the
 /// trailing record ref and pad, then the length-prefixed UTF-16 blob name
-/// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
+/// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
 pub(crate) fn body_bindings(bytes: &[u8]) -> Vec<BodyBinding> {
     let needle: Vec<u8> = "BREP.".encode_utf16().flat_map(u16::to_le_bytes).collect();
     let mut out = Vec::new();
@@ -505,7 +505,7 @@ pub fn bind_body_bounds(bounds: &mut [DesignBodyBounds], bindings: &[DesignBodyB
 /// Each BREP body-map record resolves blob-qualified body selectors to Design
 /// entity suffixes, and each entity's browser-node record carries a hidden flag
 /// directly after the node GUID
-/// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
+/// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
 /// The result maps each blob and body selector to its display visibility;
 /// bodies without records are absent.
 #[derive(Debug, Clone)]

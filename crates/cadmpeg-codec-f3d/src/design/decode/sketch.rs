@@ -606,7 +606,7 @@ fn skip_counted_run(bytes: &[u8], at: usize, stride: usize) -> Option<usize> {
     (end <= bytes.len()).then_some(end)
 }
 
-/// Parse one Design `MetaStream` segment ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)) into its type table.
+/// Parse one Design `MetaStream` segment ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)) into its type table.
 ///
 /// The stream is a segment header, a type table, a named-entity list, two
 /// record indexes, and an optional trailing property block, in that order. Each
@@ -701,7 +701,7 @@ pub(crate) fn parse_design_type_table(bytes: &[u8]) -> Option<Vec<DesignType>> {
 }
 
 /// Decode the type table of every design `MetaStream` entry in `scan`
-/// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)). A stream that does not close on its own end contributes
+/// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)). A stream that does not close on its own end contributes
 /// nothing.
 pub fn decode_types(scan: &ContainerScan) -> Result<Vec<DesignType>, CodecError> {
     let mut out = Vec::new();
@@ -974,7 +974,7 @@ pub(crate) fn parse_legacy_sketch_container_members(
 }
 
 /// Decode every self-validating per-entity design `BulkStream` header (spec
-/// [§8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)): a three-digit class tag, an entity suffix, a UTF-16LE entity ID
+/// [§3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)): a three-digit class tag, an entity suffix, a UTF-16LE entity ID
 /// whose numeric suffix must match the header's entity suffix, and, for
 /// sketch-typed entities, the trailing reference-list header. Headers occur in
 /// the fixed layout or in the `EntityGenesis` layout.
@@ -1161,7 +1161,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
     Ok(out)
 }
 
-/// Decode the indexed dynamic-class record headers ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)) that `entities`'
+/// Decode the indexed dynamic-class record headers ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)) that `entities`'
 /// reference-list entries point at: a `u32` record index and a three-digit
 /// class tag, for each record index named by any [`DesignEntityHeader`] in
 /// `entities`.
@@ -1185,7 +1185,7 @@ pub fn decode_record_headers(
     decode_headers_for_indices(scan, &wanted)
 }
 
-/// Decode the indexed dynamic-class record headers ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)) named by
+/// Decode the indexed dynamic-class record headers ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)) named by
 /// `indices` directly, bypassing entity reference lists. Used to fetch record
 /// headers referenced by records other than [`DesignEntityHeader`] (for
 /// example, sketch relation records).
@@ -1486,7 +1486,7 @@ pub(crate) fn trailing_sketch_owner_reference(bytes: &[u8], from: usize) -> Opti
     u32_at(bytes, tail + 1)
 }
 
-/// Decode every sketch-point record ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata), `pt_tag`) from each design
+/// Decode every sketch-point record ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata), `pt_tag`) from each design
 /// `BulkStream` entry in `scan`: the persistent point id, a paired record
 /// reference, and the sketch `(u, v)` coordinates, converted centimetre→
 /// millimetre. Records whose scaled coordinates are non-finite are skipped.
@@ -2127,7 +2127,7 @@ fn decode_sketch_point_variant(
     ))
 }
 
-/// Decode every sketch-curve record ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata), `crv_primary_id`/
+/// Decode every sketch-curve record ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata), `crv_primary_id`/
 /// `crv_secondary_id`) from each design `BulkStream` entry in `scan`: the
 /// curve's persistent primary and secondary identities plus its NURBS, circular
 /// arc, line, or referenced analytic geometry.
@@ -3106,7 +3106,7 @@ struct RelationClassMembers {
 /// Consume the members `class` writes between the property block and the base
 /// class's `ParentNode`, advancing `cursor` past them and recording every
 /// present reference among them in the auxiliary run
-/// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
+/// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
 fn parse_relation_class_members(
     payload: &[u8],
     cursor: &mut usize,
@@ -3199,7 +3199,7 @@ fn parse_relation_class_members(
 }
 
 /// Parse one sketch-relation record body whose class is known
-/// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
+/// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
 ///
 /// The payload is `u8 1`, a u32 count and that many `(reference, u32 relation
 /// ordinal)` pairs, the property-block presence byte and its block, the
