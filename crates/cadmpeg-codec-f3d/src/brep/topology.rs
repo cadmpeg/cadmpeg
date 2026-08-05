@@ -19,8 +19,7 @@ use super::geometry::{
     analytic_procedural_surface, decode_curve, decode_surface, is_analytic_curve,
     is_analytic_surface, is_coedge_record, is_edge_record, is_vertex_record,
     pcurve_ranges_on_domain, procedural_surface_definition_is_exact_carrier, record_reversed,
-    reverse_nurbs_curve, reverse_nurbs_pcurve, reverse_procedural_curve_definition,
-    select_face_pcurve, sense_at,
+    reverse_nurbs_curve, reverse_nurbs_pcurve, reverse_procedural_curve_definition, sense_at,
 };
 use super::{count_kind, id, Brep, Carriers, DecodePurpose, Reachable, WireShellTopology};
 /// Pass 1: classify carriers and decode analytic geometry. Returns the seeded
@@ -240,13 +239,12 @@ pub(crate) fn walk_reachable_topology(
     format: IdFormat<'_>,
 ) {
     let Carriers {
-        surface_geo,
-        procedural_surface_defs,
         curve_geo,
         procedural_curve_defs,
         cacheless_procedural_curve_defs,
         pcurve_geo,
         pcurve_parameter_ranges,
+        ..
     } = &mut *carriers;
     let Reachable {
         faces: kept_faces,
@@ -306,7 +304,7 @@ pub(crate) fn walk_reachable_topology(
                                 // field. A nonzero-discriminator ref form names one
                                 // of the target intcurve's two pcurve slots; its
                                 // sign composes with the intcurve sense bit.
-                                let candidates = match (prec.chunk(3), prec.chunk(4)) {
+                                let decoded = match (prec.chunk(3), prec.chunk(4)) {
                                     (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
                                         if let Some(span) = nurbs::toks::payload_subtype_toks(
                                             prec,
@@ -328,14 +326,6 @@ pub(crate) fn walk_reachable_topology(
                                         } else {
                                             None
                                         }
-                                        .map(|curve| {
-                                            vec![nurbs::pcurve::PcurveCandidate {
-                                                curve,
-                                                unambiguous_2d: true,
-                                                authoritative: true,
-                                            }]
-                                        })
-                                        .unwrap_or_default()
                                     }
                                     (
                                         Some(Token::Long(selector)),
@@ -354,61 +344,19 @@ pub(crate) fn walk_reachable_topology(
                                                     if (*selector < 0) ^ record_reversed(intcurve) {
                                                         reverse_nurbs_pcurve(&mut curve);
                                                     }
-                                                    vec![nurbs::pcurve::PcurveCandidate {
-                                                        curve,
-                                                        unambiguous_2d: true,
-                                                        authoritative: true,
-                                                    }]
+                                                    curve
                                                 })
                                             })
-                                            .unwrap_or_default()
                                     }
-                                    _ => Vec::new(),
+                                    _ => None,
                                 };
                                 let edge =
                                     ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied();
-                                let authoritative_count = candidates
-                                    .iter()
-                                    .filter(|candidate| candidate.authoritative)
-                                    .count();
-                                let decoded = if authoritative_count == 1 {
-                                    candidates
-                                        .into_iter()
-                                        .find(|candidate| candidate.authoritative)
-                                        .and_then(|candidate| {
-                                            pcurve_ranges_on_domain(&candidate.curve, edge)
-                                                .and_then(|ranges| ranges.into_iter().next())
-                                                .map(|range| (candidate.curve, range))
-                                        })
-                                } else if candidates
-                                    .iter()
-                                    .filter(|candidate| candidate.unambiguous_2d)
-                                    .count()
-                                    == 1
-                                {
-                                    let candidate = candidates
-                                        .into_iter()
-                                        .find(|candidate| candidate.unambiguous_2d)
-                                        .expect("one unambiguous candidate");
-                                    let range = pcurve_ranges_on_domain(&candidate.curve, edge)
-                                        .and_then(|ranges| ranges.into_iter().next());
-                                    range.map(|range| (candidate.curve, range))
-                                } else {
-                                    select_face_pcurve(
-                                        candidates
-                                            .into_iter()
-                                            .map(|candidate| candidate.curve)
-                                            .collect(),
-                                        face.ref_at(7)
-                                            .and_then(|surface| surface_geo.get(&surface))
-                                            .map(|(geometry, _)| geometry),
-                                        face.ref_at(7).is_some_and(|surface| {
-                                            procedural_surface_defs.contains_key(&surface)
-                                        }),
-                                        edge,
-                                        by_index,
-                                    )
-                                };
+                                let decoded = decoded.and_then(|decoded| {
+                                    pcurve_ranges_on_domain(&decoded, edge)
+                                        .and_then(|ranges| ranges.into_iter().next())
+                                        .map(|range| (decoded, range))
+                                });
                                 if let Some((decoded, parameter_range)) = decoded {
                                     pcurve_geo.insert(
                                         pc,

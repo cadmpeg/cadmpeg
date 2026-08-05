@@ -1267,6 +1267,25 @@ fn with_ref_pcurve_companion_name(mut bytes: Vec<u8>, name: &[u8; 8]) -> Vec<u8>
     bytes
 }
 
+fn with_ref_pcurve_companion_reversed(mut bytes: Vec<u8>) -> Vec<u8> {
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let pcurve = records
+        .iter()
+        .find(|record| record.head == "pcurve")
+        .expect("generated pcurve record");
+    let companion_index = pcurve.ref_at(4).expect("generated ref-form companion");
+    let companion = &records[usize::try_from(companion_index).unwrap()];
+    let offset = bytes[companion.offset..companion.offset + companion.len]
+        .windows(b"\x0d\x04nubs".len())
+        .position(|window| window == b"\x0d\x04nubs")
+        .map(|offset| companion.offset + offset)
+        .expect("generated intcurve cache marker");
+    bytes.splice(offset..offset, [0x0a]);
+    bytes
+}
+
 fn synthetic_geometry_with_procedural_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -23232,24 +23251,30 @@ fn nurbs_pcurve_block_decodes_without_length_scaling() {
 }
 
 #[test]
-fn ref_pcurve_collects_intcurve_uv_candidates() {
+fn ref_pcurve_resolves_intcurve_uv_slot() {
     let mut intcurve = generated_curve_block();
     intcurve.extend_from_slice(&generated_pcurve_block());
 
-    let candidates = cadmpeg_asm::nurbs::pcurve::pcurve_cache_candidates_resolving_refs(
+    let pcurve = cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_resolving_refs(
         &cadmpeg_asm::nurbs::toks::lex_test_span(&intcurve, 8),
+        2,
         &cadmpeg_asm::nurbs::toks::test_table(&intcurve, 8),
+    )
+    .expect("intcurve slot 2 carries the UV cache");
+    assert_eq!(pcurve.control_points[0].u, 0.25);
+    assert_eq!(pcurve.control_points[1].v, 1.5);
+    assert!(
+        cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_resolving_refs(
+            &cadmpeg_asm::nurbs::toks::lex_test_span(&intcurve, 8),
+            1,
+            &cadmpeg_asm::nurbs::toks::test_table(&intcurve, 8),
+        )
+        .is_none()
     );
-    let pcurve = candidates
-        .first()
-        .expect("intcurve UV cache is a candidate");
-    assert!(pcurve.unambiguous_2d);
-    assert_eq!(pcurve.curve.control_points[0].u, 0.25);
-    assert_eq!(pcurve.curve.control_points[1].v, 1.5);
 }
 
 #[test]
-fn ref_pcurve_resolves_intcurve_subtype_candidates() {
+fn ref_pcurve_rejects_orphan_typed_slot() {
     let mut target = b"\x0f\x0d\x0bint_int_cur".to_vec();
     target.extend_from_slice(&generated_curve_block());
     target.extend_from_slice(&generated_pcurve_block());
@@ -23260,15 +23285,15 @@ fn ref_pcurve_resolves_intcurve_subtype_candidates() {
     let mut active = target;
     active.extend_from_slice(&source);
 
-    let candidates = cadmpeg_asm::nurbs::pcurve::pcurve_cache_candidates_resolving_refs(
-        &cadmpeg_asm::nurbs::toks::lex_test_span(&source, 8),
-        &cadmpeg_asm::nurbs::toks::test_table(&active, 8),
+    assert!(
+        cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_resolving_refs(
+            &cadmpeg_asm::nurbs::toks::lex_test_span(&source, 8),
+            2,
+            &cadmpeg_asm::nurbs::toks::test_table(&active, 8),
+        )
+        .is_none(),
+        "a pcurve without its typed support surface is not a carrier"
     );
-    let pcurve = candidates
-        .first()
-        .expect("intcurve subtype carries a UV candidate");
-    assert!(pcurve.unambiguous_2d);
-    assert_eq!(pcurve.curve.control_points[1].v, 1.5);
 }
 
 #[test]
@@ -23405,6 +23430,54 @@ fn unique_bs2_intcurve_role_is_its_ref_pcurve_carrier() {
 }
 
 #[test]
+fn negative_ref_pcurve_reverses_its_uv_parameterization() {
+    let smbh = with_pcurve_discriminator(
+        synthetic_geometry_with_ref_pcurve_on_nurbs_surface_smbh(),
+        -2,
+    );
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("reversed ref pcurve decode");
+    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } =
+        &result.ir.model.pcurves[0].geometry
+    else {
+        panic!("ref pcurve is not a NURBS");
+    };
+    assert_eq!(
+        control_points.first(),
+        Some(&cadmpeg_ir::math::Point2::new(0.75, 1.5))
+    );
+}
+
+#[test]
+fn ref_pcurve_selector_reversal_xors_intcurve_reversal() {
+    let smbh = with_pcurve_discriminator(
+        with_ref_pcurve_companion_reversed(
+            synthetic_geometry_with_ref_pcurve_on_nurbs_surface_smbh(),
+        ),
+        -2,
+    );
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("doubly reversed ref pcurve decode");
+    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } =
+        &result.ir.model.pcurves[0].geometry
+    else {
+        panic!("ref pcurve is not a NURBS");
+    };
+    assert_eq!(
+        control_points.first(),
+        Some(&cadmpeg_ir::math::Point2::new(0.25, 0.5))
+    );
+}
+
+#[test]
 fn generated_inline_pcurve_tail_requires_four_adjacent_booleans() {
     let decode = |smbh: Vec<u8>| {
         F3dCodec
@@ -23455,6 +23528,8 @@ fn generated_pcurve_geometry_dispatch_follows_discriminator() {
         ),
         synthetic_geometry_with_out_of_scope_pcurve_cache_smbh(),
         with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), 0),
+        with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), 1),
+        with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), -1),
         with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), 7),
         with_ref_pcurve_companion_name(synthetic_geometry_with_ref_pcurve_smbh(), b"badcurve"),
     ] {

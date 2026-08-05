@@ -382,6 +382,88 @@ pub fn procedural_curve_resolving_refs(
     procedural_curve_recursive(toks, table, &mut Vec::new())
 }
 
+/// Resolve the signed pcurve slot carried by an `intcurve` reference.
+///
+/// A typed construction owns its pcurves alongside the corresponding support
+/// surfaces. A plain generated `intcurve` has one direct UV block, which is
+/// the second slot in the ref-form grammar. The selector's sign is handled by
+/// the owning PCURVE decoder because it composes with the intcurve sense bit.
+pub fn pcurve_for_selector_resolving_refs(
+    toks: &[Token],
+    selector: i64,
+    table: &SubtypeTable,
+) -> Option<NurbsPcurve> {
+    let slot = match selector {
+        1 | -1 => 0,
+        2 | -2 => 1,
+        _ => return None,
+    };
+    let has_typed_construction = crate::nurbs::toks::owned_construction_subtype(toks).is_some();
+    if let Some(decoded) = procedural_curve_resolving_refs(toks, table) {
+        if let Some(pcurve) = selected_pcurve(&decoded, slot) {
+            return Some(pcurve);
+        }
+        if decoded.native_kind != "intcurve" {
+            return None;
+        }
+    }
+    if has_typed_construction {
+        return None;
+    }
+    (slot == 1).then(|| direct_pcurve_after_curve(toks))?
+}
+
+fn selected_optional_pcurve(
+    surfaces: &[Option<SurfaceGeometry>; 2],
+    pcurves: &[Option<NurbsPcurve>; 2],
+    slot: usize,
+) -> Option<NurbsPcurve> {
+    surfaces.get(slot)?.as_ref()?;
+    pcurves.get(slot)?.clone()
+}
+
+fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<NurbsPcurve> {
+    if let Some(context) = decoded.embedded_two_sided_offset.as_ref() {
+        return selected_optional_pcurve(&context.surfaces, &context.pcurves, slot);
+    }
+    if let Some((context, _)) = decoded.embedded_intersection.as_ref() {
+        return selected_optional_pcurve(&context.surfaces, &context.pcurves, slot);
+    }
+    if let Some(context) = decoded.embedded_three_surface_intersection.as_ref() {
+        return context.pcurves.get(slot).cloned();
+    }
+    if let Some((_, context, _)) = decoded.embedded_surface_curve.as_ref() {
+        return selected_optional_pcurve(&context.surfaces, &context.pcurves, slot);
+    }
+    if let Some(context) = decoded.embedded_silhouette.as_ref() {
+        return selected_optional_pcurve(&context.context.surfaces, &context.context.pcurves, slot);
+    }
+    if let Some(context) = decoded.embedded_surface_offset.as_ref() {
+        return selected_optional_pcurve(&context.context.surfaces, &context.context.pcurves, slot);
+    }
+    if let Some(context) = decoded.embedded_spring.as_ref() {
+        return selected_optional_pcurve(&context.surfaces, &context.pcurves, slot);
+    }
+    if let Some(context) = decoded.embedded_deformable.as_ref() {
+        return selected_optional_pcurve(&context.surfaces, &context.pcurves, slot);
+    }
+    if let Some(context) = decoded.embedded_projection.as_ref() {
+        return context.pcurves.get(slot).cloned();
+    }
+    if let Some(context) = decoded.embedded_law.as_ref() {
+        return selected_optional_pcurve(&context.context.surfaces, &context.context.pcurves, slot);
+    }
+    None
+}
+
+fn direct_pcurve_after_curve(toks: &[Token]) -> Option<NurbsPcurve> {
+    let position = crate::nurbs::toks::owned_marker_positions(toks)
+        .into_iter()
+        .next()?;
+    let (_, end) = curve_block(toks, position)?;
+    pcurve_block_with_end(toks, end).map(|(pcurve, _)| pcurve)
+}
+
 /// Decode an exact procedural curve construction that has no solved cache.
 pub fn cacheless_procedural_curve_resolving_refs(
     toks: &[Token],

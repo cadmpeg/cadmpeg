@@ -9,7 +9,6 @@ use cadmpeg_asm::nurbs::proc_surface::{
 };
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 use cadmpeg_asm::sab::{Record, Token};
-use cadmpeg_ir::eval;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -227,11 +226,6 @@ fn deterministic_ref_direction(axis: Vector3) -> Vector3 {
     )
 }
 
-/// Maximum distance, in millimeters, between a pcurve endpoint mapped through
-/// the face surface and the edge's vertex position for the pcurve to count as
-/// that surface's parameter-space image.
-const PCURVE_ENDPOINT_TOLERANCE_MM: f64 = 0.01;
-
 pub(crate) fn is_vertex_record(record: &Record) -> bool {
     matches!(record.head.as_str(), "vertex" | "tvertex")
 }
@@ -353,20 +347,6 @@ pub(crate) fn is_asm_stream_delimiter(name: &str) -> bool {
     matches!(name, "Begin-of-ASM-History-Data" | "End-of-ASM-data")
 }
 
-/// The millimeter-space position of an edge-record vertex reference.
-fn vertex_position(by_index: &HashMap<i64, &Record>, vertex: i64) -> Option<Point3> {
-    let vertex_record = by_index.get(&vertex).filter(|r| is_vertex_record(r))?;
-    let point_record = by_index.get(&vertex_record.ref_at(5)?)?;
-    collect_carrier(point_record)
-        .positions
-        .first()
-        .map(|p| scale_point(*p))
-}
-
-pub(crate) fn distance(a: Point3, b: Point3) -> f64 {
-    ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
-}
-
 pub(crate) fn edge_pcurve_parameter_ranges(edge: &Record) -> Option<[[f64; 2]; 2]> {
     let (Some(Token::Double(start)), Some(Token::Double(end))) = (edge.chunk(4), edge.chunk(6))
     else {
@@ -416,88 +396,6 @@ pub(crate) fn pcurve_ranges_on_domain(
         ranges.push([first, last]);
     }
     Some(ranges)
-}
-
-/// Select the candidate 2D block that is the face surface's parameter-space
-/// image of the coedge: its endpoints, mapped through the surface, land on the
-/// owning edge's vertex positions. On a non-NURBS surface, or when the edge's
-/// vertex positions cannot be read, the first candidate passes unverified. An
-/// empty result means no candidate is the surface's image of this edge.
-pub(crate) fn select_face_pcurve(
-    candidates: Vec<nurbs::pcurve::NurbsPcurve>,
-    surface: Option<&SurfaceGeometry>,
-    exact_procedural_parameterization: bool,
-    edge: Option<&Record>,
-    by_index: &HashMap<i64, &Record>,
-) -> Option<(nurbs::pcurve::NurbsPcurve, [f64; 2])> {
-    // Procedural surfaces retain an evaluated NURBS cache, but their pcurves
-    // are expressed on the exact construction's parameterization. Evaluating
-    // those UVs on the cache can drift between knots and is not a valid
-    // candidate test. Candidate discovery orders unambiguous BS2 carriers
-    // before ambiguous 3D interpretations, so the first candidate is the
-    // authoritative exact-space carrier in this case.
-    if exact_procedural_parameterization {
-        let candidate = candidates.into_iter().next()?;
-        let range = pcurve_ranges_on_domain(&candidate, edge)?[0];
-        return Some((candidate, range));
-    }
-    let Some(SurfaceGeometry::Nurbs(surface)) = surface else {
-        let candidate = candidates.into_iter().next()?;
-        let range = pcurve_ranges_on_domain(&candidate, edge)?[0];
-        return Some((candidate, range));
-    };
-    let vertex_pair = edge.and_then(|edge| {
-        Some((
-            vertex_position(by_index, edge.ref_at(3)?)?,
-            vertex_position(by_index, edge.ref_at(5)?)?,
-        ))
-    });
-    let Some((start, end)) = vertex_pair else {
-        let candidate = candidates.into_iter().next()?;
-        let range = pcurve_ranges_on_domain(&candidate, edge)?[0];
-        return Some((candidate, range));
-    };
-    let mut best: Option<(f64, nurbs::pcurve::NurbsPcurve, [f64; 2])> = None;
-    for candidate in candidates {
-        let uv_at = |t: f64| {
-            eval::nurbs_pcurve_uv(
-                candidate.degree,
-                &candidate.knots,
-                &candidate.control_points,
-                candidate.weights.as_deref(),
-                t,
-            )
-        };
-        let Some(parameter_ranges) = pcurve_ranges_on_domain(&candidate, edge) else {
-            continue;
-        };
-        let Some((mismatch, range)) = parameter_ranges
-            .into_iter()
-            .filter_map(|[first, second]| {
-                let (uv0, uv1) = (uv_at(first)?, uv_at(second)?);
-                let (p0, p1) = (
-                    eval::nurbs_surface_point(surface, uv0.u, uv0.v)?,
-                    eval::nurbs_surface_point(surface, uv1.u, uv1.v)?,
-                );
-                // Coedge sense can reverse traversal independently of the
-                // edge carrier, so accept either endpoint assignment.
-                let forward = distance(p0, start).max(distance(p1, end));
-                let reversed = distance(p0, end).max(distance(p1, start));
-                Some((forward.min(reversed), [first, second]))
-            })
-            .min_by(|(left, _), (right, _)| left.total_cmp(right))
-        else {
-            continue;
-        };
-        if mismatch <= PCURVE_ENDPOINT_TOLERANCE_MM
-            && best
-                .as_ref()
-                .is_none_or(|(current, _, _)| mismatch < *current)
-        {
-            best = Some((mismatch, candidate, range));
-        }
-    }
-    best.map(|(_, candidate, range)| (candidate, range))
 }
 
 /// Decode an analytic curve carrier.
@@ -564,12 +462,30 @@ pub(crate) fn record_reversed(rec: &Record) -> bool {
                 _ => false,
             })
         })
+        .or_else(|| {
+            // A plain `intcurve` companion has no subtype scope after its
+            // base header; its sense remains the fourth payload value.
+            (rec.head == "intcurve").then(|| matches!(rec.chunk(3), Some(Token::True)))
+        })
         .unwrap_or(false)
 }
 
 /// Reparameterize a cached B-spline to its record's reversed sense,
 /// `C'(t) = C(-t)`, by reversing poles and weights and negating reversed knots.
 pub(crate) fn reverse_nurbs_curve(curve: &mut NurbsCurve) {
+    curve.control_points.reverse();
+    if let Some(weights) = curve.weights.as_mut() {
+        weights.reverse();
+    }
+    curve.knots.reverse();
+    for knot in &mut curve.knots {
+        *knot = -*knot;
+    }
+}
+
+/// Reparameterize a referenced pcurve to its opposite orientation, preserving
+/// its UV chart while negating the parameterization.
+pub(crate) fn reverse_nurbs_pcurve(curve: &mut nurbs::pcurve::NurbsPcurve) {
     curve.control_points.reverse();
     if let Some(weights) = curve.weights.as_mut() {
         weights.reverse();

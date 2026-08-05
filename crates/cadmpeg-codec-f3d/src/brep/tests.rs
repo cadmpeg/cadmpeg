@@ -5,7 +5,6 @@
 use super::geometry::{
     analytic_procedural_surface, edge_pcurve_parameter_ranges, is_asm_stream_delimiter,
     is_known_record_head, pcurve_ranges_on_domain, point_vector, rational_four_arc_circle,
-    select_face_pcurve,
 };
 use super::topology::{shell_faces, shell_wire_roots, subshell_ancestor_shells};
 use super::*;
@@ -829,124 +828,6 @@ fn subshell_wires_project_onto_the_nearest_shell() {
         .map(|record| (record.index as i64, record))
         .collect::<HashMap<_, _>>();
     assert_eq!(shell_wire_roots(&records[1], &by_index), [4, 5, 6]);
-}
-
-#[test]
-fn exact_procedural_pcurve_bypasses_nurbs_cache_parameterization() {
-    let records = [
-        Record {
-            index: 1,
-            name: "point".into(),
-            head: "point".into(),
-            tokens: vec![Token::Position([0.0, 0.0, 0.0])].into(),
-            offset: 0,
-            len: 0,
-        },
-        Record {
-            index: 2,
-            name: "point".into(),
-            head: "point".into(),
-            tokens: vec![Token::Position([1.0, 0.0, 0.0])].into(),
-            offset: 0,
-            len: 0,
-        },
-        Record {
-            index: 3,
-            name: "vertex".into(),
-            head: "vertex".into(),
-            tokens: vec![
-                Token::Ref(-1),
-                Token::Long(-1),
-                Token::Ref(-1),
-                Token::Ref(-1),
-                Token::Long(0),
-                Token::Ref(1),
-            ]
-            .into(),
-            offset: 0,
-            len: 0,
-        },
-        Record {
-            index: 4,
-            name: "vertex".into(),
-            head: "vertex".into(),
-            tokens: vec![
-                Token::Ref(-1),
-                Token::Long(-1),
-                Token::Ref(-1),
-                Token::Ref(-1),
-                Token::Long(1),
-                Token::Ref(2),
-            ]
-            .into(),
-            offset: 0,
-            len: 0,
-        },
-        Record {
-            index: 5,
-            name: "edge".into(),
-            head: "edge".into(),
-            tokens: vec![
-                Token::Ref(-1),
-                Token::Long(-1),
-                Token::Ref(-1),
-                Token::Ref(3),
-                Token::Double(0.0),
-                Token::Ref(4),
-            ]
-            .into(),
-            offset: 0,
-            len: 0,
-        },
-    ];
-    let by_index = records
-        .iter()
-        .map(|record| (record.index as i64, record))
-        .collect::<HashMap<_, _>>();
-    let cache = SurfaceGeometry::Nurbs(cadmpeg_ir::geometry::NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 1.0, 0.0),
-        ],
-        weights: None,
-        u_periodic: false,
-        v_periodic: false,
-    });
-    let candidate = || nurbs::pcurve::NurbsPcurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![
-            cadmpeg_ir::math::Point2::new(10.0, 10.0),
-            cadmpeg_ir::math::Point2::new(11.0, 10.0),
-        ],
-        weights: None,
-        periodic: false,
-    };
-
-    assert!(select_face_pcurve(
-        vec![candidate()],
-        Some(&cache),
-        false,
-        Some(&records[4]),
-        &by_index,
-    )
-    .is_none());
-    assert!(select_face_pcurve(
-        vec![candidate()],
-        Some(&cache),
-        true,
-        Some(&records[4]),
-        &by_index,
-    )
-    .is_some());
 }
 
 #[test]

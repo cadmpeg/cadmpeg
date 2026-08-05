@@ -11,6 +11,7 @@ use cadmpeg_codec_core::le::f64_at as read_f64;
 use cadmpeg_ir::math::Point2;
 
 /// The decoded payload of a 2D `nubs` or `nurbs` pcurve block.
+#[derive(Clone)]
 pub struct NurbsPcurve {
     /// Curve degree.
     pub degree: u32,
@@ -22,16 +23,6 @@ pub struct NurbsPcurve {
     pub weights: Option<Vec<f64>>,
     /// Whether the parameter curve is periodic.
     pub periodic: bool,
-}
-
-/// One BS2 parse reachable from an explicit pcurve carrier.
-pub struct PcurveCandidate {
-    /// Decoded parameter-space curve.
-    pub curve: NurbsPcurve,
-    /// The same bytes do not also form a 3D NURBS curve block.
-    pub unambiguous_2d: bool,
-    /// This is the first BS2 block owned by an `exp_par_cur` definition.
-    pub authoritative: bool,
 }
 
 /// Writable value offsets for one 2D pcurve cache.
@@ -224,6 +215,24 @@ fn pcurve_block(toks: &[Token], marker_pos: usize) -> Option<NurbsPcurve> {
     pcurve_block_with_end(toks, marker_pos).map(|(pcurve, _)| pcurve)
 }
 
+/// Decode the BS2 field owned directly by an `exp_par_cur` scope.
+///
+/// The scope grammar makes its first owned B-spline block the pcurve. Nested
+/// support references are not searched because they belong to other fields.
+pub fn explicit_pcurve_cache(toks: &[Token]) -> Option<NurbsPcurve> {
+    let position = toks::owned_marker_positions(toks).into_iter().next()?;
+    pcurve_block(toks, position)
+}
+
+/// Resolve an explicit pcurve through one subtype-table reference.
+pub fn explicit_pcurve_cache_from_subtype_ref(
+    index: i64,
+    table: &toks::SubtypeTable,
+) -> Option<NurbsPcurve> {
+    let index = usize::try_from(index).ok()?;
+    explicit_pcurve_cache(table.span(index)?)
+}
+
 /// The parameter-space fit tolerance immediately following the final valid 2D
 /// pcurve block in `toks`. Token-space counterpart of
 /// [`decode_pcurve_fit_tolerance`].
@@ -238,80 +247,8 @@ pub fn pcurve_fit_tolerance(toks: &[Token]) -> Option<f64> {
     }
 }
 
-/// Decode every candidate 2D block reachable from a pcurve carrier's payload
-/// tokens, in the same order and with the same ambiguity ranking as the byte
-/// walk. Token-space counterpart of
-/// [`decode_pcurve_cache_candidates_resolving_refs`].
-pub fn pcurve_cache_candidates_resolving_refs(
-    toks: &[Token],
-    table: &toks::SubtypeTable,
-) -> Vec<PcurveCandidate> {
-    let mut out = Vec::new();
-    collect_candidates(toks, table, &mut Vec::new(), false, &mut out);
-    out
-}
-
-/// Candidates from the interior of an explicitly owned `exp_par_cur` scope.
-/// The scope opener is outside `toks`, so ownership must enter through this
-/// boundary rather than be inferred from the interior tokens.
-pub fn owned_pcurve_cache_candidates_resolving_refs(
-    toks: &[Token],
-    table: &toks::SubtypeTable,
-) -> Vec<PcurveCandidate> {
-    let mut out = Vec::new();
-    collect_candidates(toks, table, &mut Vec::new(), true, &mut out);
-    out
-}
-
-fn collect_candidates(
-    toks: &[Token],
-    table: &toks::SubtypeTable,
-    seen: &mut Vec<usize>,
-    owns_explicit_pcurve: bool,
-    out: &mut Vec<PcurveCandidate>,
-) {
-    // A 3D curve block's tokens can also parse as a 2D block; such ambiguous
-    // reads rank after every unambiguous 2D block so an unverified caller
-    // taking the first candidate never picks a misread 3D carrier.
-    let mut ambiguous = Vec::new();
-    let owns_explicit_pcurve =
-        owns_explicit_pcurve || toks::find_owned_subtype_marker(toks, &["exp_par_cur"]).is_some();
-    let mut claimed_owned_carrier = false;
-    for position in toks::marker_positions(toks) {
-        if let Some(pcurve) = pcurve_block(toks, position) {
-            let authoritative = owns_explicit_pcurve && !claimed_owned_carrier;
-            claimed_owned_carrier |= authoritative;
-            if crate::nurbs::core::curve_block(toks, position).is_some() {
-                ambiguous.push(PcurveCandidate {
-                    curve: pcurve,
-                    unambiguous_2d: false,
-                    authoritative,
-                });
-            } else {
-                out.push(PcurveCandidate {
-                    curve: pcurve,
-                    unambiguous_2d: true,
-                    authoritative,
-                });
-            }
-        }
-    }
-    out.append(&mut ambiguous);
-    for index in toks::subtype_refs(toks) {
-        if seen.contains(&index) {
-            continue;
-        }
-        seen.push(index);
-        let Some(span) = table.span(index) else {
-            continue;
-        };
-        collect_candidates(span, table, seen, false, out);
-    }
-}
-
 #[cfg(test)]
 mod width_tests {
-    use super::*;
     use crate::nurbs::blend::{
         decode_rolling_ball_curve, decode_rolling_ball_side, decode_rolling_ball_surface,
         DecodedRollingBallCurve,
@@ -429,34 +366,25 @@ mod width_tests {
     }
 
     #[test]
-    fn referenced_explicit_pcurve_marks_only_its_owned_bs2_carrier() {
+    fn intcurve_selector_uses_the_serialized_direct_slot() {
         for int_width in [4usize, 8] {
-            let mut active = vec![0x0f];
-            push_ident(&mut active, "int_int_cur");
-            active.extend_from_slice(&pcurve_block(int_width));
-            active.push(0x10);
+            let mut bytes = curve_block(int_width);
+            bytes.extend_from_slice(&pcurve_block(int_width));
+            let toks = crate::nurbs::toks::lex_test_span(&bytes, int_width);
+            let table = crate::nurbs::toks::test_table(&bytes, int_width);
 
-            active.push(0x0f);
-            push_ident(&mut active, "exp_par_cur");
-            active.extend_from_slice(&pcurve_block(int_width));
-            active.push(0x0f);
-            push_ident(&mut active, "ref");
-            push_int(&mut active, 0x04, 0, int_width);
-            active.extend_from_slice(&[0x10, 0x10]);
-
-            let record_start = active.len();
-            active.push(0x0f);
-            push_ident(&mut active, "ref");
-            push_int(&mut active, 0x04, 1, int_width);
-            active.push(0x10);
-            let candidates = pcurve_cache_candidates_resolving_refs(
-                &crate::nurbs::toks::lex_test_span(&active[record_start..], int_width),
-                &crate::nurbs::toks::test_table(&active, int_width),
+            assert!(
+                crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 2, &table)
+                    .is_some()
             );
-
-            assert_eq!(candidates.len(), 2);
-            assert!(candidates[0].authoritative);
-            assert!(!candidates[1].authoritative);
+            assert!(
+                crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, -2, &table)
+                    .is_some()
+            );
+            assert!(
+                crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 1, &table)
+                    .is_none()
+            );
         }
     }
 
