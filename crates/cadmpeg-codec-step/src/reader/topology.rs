@@ -1449,7 +1449,6 @@ fn staged_topology(
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct RootKey {
-    solid: bool,
     shell_keys: Vec<(u64, Option<bool>)>,
 }
 
@@ -1510,12 +1509,7 @@ fn root_key(root: &RawRecord, exchange: &Exchange) -> Option<RootKey> {
         return None;
     }
     shell_keys.sort_unstable();
-    Some(RootKey {
-        solid: has_type(root, "MANIFOLD_SOLID_BREP")
-            || has_type(root, "BREP_WITH_VOIDS")
-            || has_type(root, "FACETED_BREP"),
-        shell_keys,
-    })
+    Some(RootKey { shell_keys })
 }
 
 #[allow(
