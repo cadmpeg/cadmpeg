@@ -377,6 +377,16 @@ pub(crate) fn try_decode_freeform_surfaces(
             uncounted,
         );
     }
+    if topology_transferred {
+        coverage.insert(
+            "transferred_object_stream_face_count".to_string(),
+            ir.model.faces.len(),
+        );
+        coverage.insert(
+            "transferred_object_stream_loop_count".to_string(),
+            ir.model.loops.len(),
+        );
+    }
     if let Some([control_03, control_05, uncounted, unresolved]) = typed_face_counts {
         coverage.insert(
             "typed_object_stream_face_terminal_control_03_count".to_string(),
