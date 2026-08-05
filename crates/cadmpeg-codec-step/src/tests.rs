@@ -7,7 +7,7 @@
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
 
-use cadmpeg_codec_core::decode::InspectOptions;
+use cadmpeg_codec_core::decode::{DecodeMode, InspectOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry,
@@ -130,7 +130,7 @@ fn parser_bounds_aggregate_anchor_materialization() {
 
 #[test]
 fn parser_rejects_duplicate_complex_partial_names() {
-    let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=(A()A());ENDSEC;END-ISO-10303-21;";
+    let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=(B()A()B());ENDSEC;END-ISO-10303-21;";
     let error = crate::parse::parse(source).expect_err("duplicate partial names must fail");
     assert!(matches!(
         error,
@@ -168,6 +168,94 @@ fn parser_reports_recoverable_noncanonical_complex_partial_order() {
             .map(|partial| partial.name.as_str())
             .collect::<Vec<_>>(),
         ["NAMED_UNIT", "SOLID_ANGLE_UNIT", "SI_UNIT"]
+    );
+}
+
+#[test]
+fn decode_salvages_noncanonical_complex_partial_order_with_provenance() {
+    let bytes = include_bytes!("../tests/fixtures/noncanonical_solid_angle.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("salvage mode accepts recoverable source order");
+    let losses = result
+        .report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::LossKind::NoncanonicalSourceSyntax)
+        .collect::<Vec<_>>();
+
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].severity, cadmpeg_ir::Severity::Warning);
+    let provenance = losses[0].provenance.as_ref().expect("source provenance");
+    assert_eq!(provenance.format, "step");
+    assert_eq!(provenance.stream, "");
+    assert_eq!(
+        provenance.offset,
+        bytes.windows(2).position(|window| window == b"#1").unwrap() as u64
+    );
+    assert_eq!(provenance.tag.as_deref(), Some("complex_entity"));
+    assert_eq!(result.ir.native_unknowns("step").unwrap().len(), 0);
+    assert_eq!(
+        result.ir.source.as_ref().unwrap().attributes["bytes_named_opaque"],
+        "0"
+    );
+}
+
+#[test]
+fn strict_decode_rejects_noncanonical_complex_partial_order() {
+    let bytes = include_bytes!("../tests/fixtures/noncanonical_solid_angle.p21");
+    let mut options = DecodeOptions::default();
+    options.policy.mode = DecodeMode::Strict;
+    let error = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect_err("strict mode rejects noncanonical source order");
+
+    assert!(matches!(
+        error,
+        cadmpeg_codec_core::CodecError::Malformed(_)
+    ));
+}
+
+#[test]
+fn inspect_accepts_noncanonical_complex_partial_order_and_reports_a_note() {
+    let bytes = include_bytes!("../tests/fixtures/noncanonical_solid_angle.p21");
+    let summary = StepCodec::default()
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
+        .expect("inspection describes recoverable source order");
+
+    assert!(summary
+        .notes
+        .iter()
+        .any(|note| note.contains("complex partial records are not alphabetical")));
+}
+
+#[test]
+fn exporting_a_salvaged_noncanonical_unit_repairs_partial_order() {
+    let bytes = include_bytes!("../tests/fixtures/noncanonical_solid_angle.p21");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode noncanonical unit fixture");
+    let mut output = Vec::new();
+    write_step(&decoded.ir, &mut output, &StepWriteOptions::default()).expect("export salvaged IR");
+
+    let (exchange, diagnostics) = crate::parse::parse(&output).expect("parse repaired output");
+    assert!(diagnostics.is_empty());
+    let unit = exchange
+        .records
+        .values()
+        .find(|record| {
+            record
+                .partials
+                .iter()
+                .any(|partial| partial.name == "SOLID_ANGLE_UNIT")
+        })
+        .expect("exported solid-angle unit");
+    assert_eq!(
+        unit.partials
+            .iter()
+            .map(|partial| partial.name.as_str())
+            .collect::<Vec<_>>(),
+        ["NAMED_UNIT", "SI_UNIT", "SOLID_ANGLE_UNIT"]
     );
 }
 
