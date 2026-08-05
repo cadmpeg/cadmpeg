@@ -93,7 +93,7 @@ where
 pub enum SemanticOutcome {
     /// The writer ran and produced bytes.
     Written {
-        /// The document that was written, with its baseline attributes removed.
+        /// The document that was written, with its baseline removed.
         ir: Box<CadIr>,
         /// The encoder's report, whose `write_path` is not
         /// [`WritePath::VerbatimReplay`].
@@ -109,42 +109,6 @@ pub enum SemanticOutcome {
         /// variant rather than on wording.
         error: CodecError,
     },
-}
-
-impl SemanticOutcome {
-    /// The written document, report, and bytes.
-    ///
-    /// # Panics
-    ///
-    /// Panics when the encoder refused. Call this only from a codec whose
-    /// semantic path is known to run without a baseline; match on the outcome
-    /// otherwise.
-    pub fn expect_written(&self) -> (&CadIr, &ExportReport, &[u8]) {
-        match self {
-            Self::Written { ir, report, bytes } => (ir, report, bytes),
-            Self::Refused { error } => {
-                panic!(
-                    "the semantic write path was expected to run, but the encoder refused: {error}"
-                )
-            }
-        }
-    }
-
-    /// The refusal message.
-    ///
-    /// # Panics
-    ///
-    /// Panics when the encoder wrote. Call this only from a codec whose semantic
-    /// path is known to need a baseline.
-    pub fn expect_refused(&self) -> &CodecError {
-        match self {
-            Self::Refused { error } => error,
-            Self::Written { report, .. } => panic!(
-                "the encoder was expected to refuse without a baseline, but it wrote by the {} path",
-                report.write_path
-            ),
-        }
-    }
 }
 
 /// Decodes `fixture`, removes the document-level write baseline, encodes it, and

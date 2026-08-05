@@ -22,6 +22,7 @@ use cadmpeg_codec_core::golden::{elide_local_digests, snapshots_agree};
 use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, DecodeResult, EncodeInput, Encoder};
 use cadmpeg_ir::examples;
+use cadmpeg_ir::roundtrip::{semantic_roundtrip, verbatim_replay_holds, SemanticOutcome};
 use cadmpeg_ir::WritePath;
 
 use super::{
@@ -762,6 +763,49 @@ fn golden_output_is_deterministic() {
             patch_outcome(&bytes),
             "fixture `{name}`: nondeterministic patch"
         );
+    }
+}
+
+/// Every committed fixture replays its retained bytes back to itself.
+///
+/// The `replay` artifacts pin what the encoder produced; this pins that it
+/// equals the input, which is a different claim and the one "replay" names.
+/// [`cadmpeg_ir::roundtrip::verbatim_replay_holds`] asserts the write path too,
+/// so a fixture that stopped replaying could not pass here by having its writer
+/// happen to reproduce the container.
+#[test]
+fn fixtures_replay_verbatim() {
+    for (name, _) in fixtures() {
+        let input = read_fixture(name).expect("committed fixture");
+        verbatim_replay_holds(&F3dCodec, name, &input);
+    }
+}
+
+/// Without its baseline, this codec refuses to write rather than guess.
+///
+/// [`cadmpeg_ir::roundtrip::semantic_roundtrip`] removes the document baseline,
+/// which is the only thing that can show the retained container still describes
+/// the document. Fusion's writer declines at that point, so the semantic write
+/// path is not reachable through this helper for this codec, and the refusal is
+/// what gets asserted. That refusal is the safety property: replaying a container
+/// whose currency cannot be established would silently discard edits, and this
+/// fails if the codec ever starts doing so.
+#[test]
+fn fixtures_refuse_to_write_without_a_baseline() {
+    for (name, _) in fixtures() {
+        let input = read_fixture(name).expect("committed fixture");
+        semantic_roundtrip(&F3dCodec, name, &input, |outcome| {
+            match outcome {
+            SemanticOutcome::Refused { error } => assert!(
+                matches!(error, CodecError::NotImplemented(_)),
+                "fixture `{name}`: a missing baseline is an unbuilt capability, not a malformed input: {error}"
+            ),
+            SemanticOutcome::Written { report, .. } => panic!(
+                "fixture `{name}`: the baseline was removed, yet the encoder wrote by the {} path",
+                report.write_path
+            ),
+        }
+        });
     }
 }
 
