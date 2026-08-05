@@ -566,3 +566,23 @@ An `r0` stream declares three components of type f32 and boolean `U = true`. Whe
 **Known.** `f3d.md` §8.1 "A mesh body's geometry container" gives the three decoded classes. Each of the five classes above occurs once per mesh body and does not occur in a document without one. The `EA90DA22-556C-4C61-89BB-20C2681B7A9D` record stores two equal affine matrices. Applying either matrix to container coordinates in model centimetres supplies the complete nonuniform scale and translation of a placed mesh. Separate mesh bodies retain separate containers, identities, and matrices even when their geometry bytes are equal.
 
 **Need.** We must know the five payloads to write a mesh body from a neutral model, which duplicate matrix governs if they differ, and how a negative-determinant matrix affects triangle winding.
+
+## 7. Test evidence
+
+### EV-01. Typed feature projection reached only by a direct call
+
+**Question.** Which scope kinds does the feature dispatcher promote to a typed definition when a real document supplies them?
+
+**Known.** `crates/cadmpeg-codec-f3d/src/design/feature_project.rs` holds thirteen gates that promote a scope kind to a typed definition. Twelve are arms of one chain in `project_parameter_design_with_edge_identities` that tests `scope.kind` and falls through to `FeatureDefinition::Native`. The thirteenth is in `bind_form_cages`, which filters the scope list for kind `Form`. A kill test disabled each gate in turn, so that the scope fell through to a native record, and ran the complete f3d suite. Ten gates stayed green with the gate disabled: `JointOrigin`, `WorkPlane`, `WorkPoint`, `BaseFlange`, `RemoveBody`, `SurfaceStitch`, `CopyPaste`, `CopyPasteBodies`, `Base Feature`, and `Form`. Two gates have a test that reaches them through the dispatcher: `WorkAxis`, and the pair `SplitFace` and `DeleteFace`.
+
+The projector leaves are tested. `crates/cadmpeg-codec-f3d/src/design/tests.rs` calls `project_remove_body` and `project_surface_stitch` and their siblings directly, with a scope value the test builds. No golden fixture under `crates/cadmpeg-codec-f3d/tests/golden/fixtures` carries any of the twelve untested scope kinds, so no decode golden pins the dispatcher path.
+
+**Need.** A change to the scope-kind string, to the gate order, or to the record shape that carries the kind removes ten typed definitions with the suite green. We need one synthesized fixture per promoted kind, with a decode golden that pins the typed definition it produces.
+
+### EV-02. Generate goldens that do not separate their inputs
+
+**Question.** Which generate-writer behaviour do the `attributes`, `sketch_link`, and `topology_base` goldens each pin?
+
+**Known.** `crates/cadmpeg-codec-f3d/tests/golden/generate` holds `attributes.bin`, `sketch_link.bin`, and `topology_base.bin`. The three are byte-identical and each is 2,055 bytes. Their source fixtures under `tests/golden/fixtures` differ from one another, and their decode goldens under `tests/golden/decode` differ from one another. The generate writer therefore maps three different inputs to one output, and two of the three names separate nothing.
+
+**Need.** A reader of the golden tree counts three generate cases where one exists. We must find whether the generate lane is meant to discard what separates these inputs. If it is, two names must go or must state that they are duplicates. If it is not, the writer drops content that the decode side keeps.

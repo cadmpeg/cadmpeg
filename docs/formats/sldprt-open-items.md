@@ -429,3 +429,15 @@ Observed gap:
 **Known.** Both forms contain scalar triples that can satisfy the unit-vector invariant.
 
 **Need.** We must know the discriminator to parse the reference without choosing a width from geometric plausibility.
+
+## 6. Write-path evidence
+
+### EV-01. Unpinned edit validators
+
+**Question.** Which edit shape does each write-path validator refuse?
+
+**Known.** `crates/cadmpeg-codec-sldprt/src/history.rs` guards `sync_neutral_features` with five validators, called from two places in the same function: `validate_compact_body_selection_edits`, `validate_compact_edge_selection_edits`, `validate_compact_surface_selection_edits`, `validate_surface_sweep_profile_edits`, and `validate_embedded_helix_edits`. A kill test made all five return `Ok` for every input and ran the complete sldprt suite. One test failed, and it covers the compact body-selection validator. The other four have no test that reaches their refusal.
+
+Each of the five opens with a guard that returns `Ok` when the document carries no native graph, so a neutral-only document passes all five without a check.
+
+**Need.** We need one negative test for each of the four unpinned validators. The test must build the edit shape that the validator refuses and must assert the error through the encode path, so that removing the validator fails the suite.

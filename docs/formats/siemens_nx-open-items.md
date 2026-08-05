@@ -535,3 +535,13 @@ member as a neutral suppression or visibility state.
 **Known.** `siemens_nx.md` §2.3 "Each `/Root/materialsTif/<name>` file entry contains one TIFF stream." and `siemens_nx.md` §9.4 "The type-81 definition reference selects an attribute class when it equals" define preview and texture assets, the material-texture catalog, and topology-owned Parasolid attributes.
 
 **Need.** We must know the relation to assign material and appearance state to neutral faces.
+
+## 4. Test evidence
+
+### TE-01. Equal topology goldens
+
+**Question.** What does the `topology_partition_stream` decode golden pin that `topology_part_prt` does not?
+
+**Known.** `crates/cadmpeg-codec-nx/tests/golden/topology_part_prt.json` and `crates/cadmpeg-codec-nx/tests/golden/topology_partition_stream.json` are byte-identical. The two inputs are equal by construction. `topology_part_prt` in `crates/cadmpeg-codec-nx/src/test_support.rs` returns `prt_with_partition(&topology_partition_stream())`, and the `fixtures` function in `src/tests.rs` wraps the `topology_partition_stream` entry with the same `prt_with_partition`. Two golden names therefore cover one input and one decoder result.
+
+**Need.** We must decide which of the two names keeps its golden. If the partition-stream case is meant to cover a separate path, its input must change so that its golden separates that path.
