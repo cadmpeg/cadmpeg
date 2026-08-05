@@ -523,12 +523,12 @@ fn compare_bytes(update: bool, path: &Path, actual: &[u8], failures: &mut Vec<St
 ///
 /// A digest is bit-exact wherever its input is, and the input here is a
 /// container this lane just wrote from values the repository compares
-/// tolerantly. `active_brep_sha256` covers the written B-rep stream, and the
-/// retained-record digests in source fidelity cover the written entries; all of
-/// them move on a platform whose libm differs, and no tolerance can reconcile a
-/// hash. Eliding them costs nothing, because the content each one covers is
-/// compared directly in the same snapshot. The suffix decides, not a list of
-/// keys, so a new digest is elided without editing this function.
+/// tolerantly. `active_brep_sha256`, for instance, covers the written B-rep
+/// stream, and it moves on a platform whose libm differs while the stream's
+/// contents agree to fourteen significant digits; no tolerance can reconcile a
+/// hash. Eliding costs nothing, because the content each digest covers is
+/// compared directly in the same snapshot. The `_sha256` suffix decides, not a
+/// list of keys, so a new digest is elided without editing this function.
 fn generated_container_snapshot(bytes: &[u8]) -> String {
     let mut ir = match decode_result(bytes) {
         Ok(result) => result.ir,
