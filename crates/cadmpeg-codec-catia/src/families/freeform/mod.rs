@@ -1140,6 +1140,25 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
         .iter()
         .map(|coedge| loop_surfaces.get(&coedge.owner_loop).cloned())
         .collect::<Vec<_>>();
+    let face_tolerances = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| (face.id.clone(), face.tolerance))
+        .collect::<HashMap<_, _>>();
+    let coedge_face_tolerances = ir
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| {
+            let loop_ = ir
+                .model
+                .loops
+                .iter()
+                .find(|value| value.id == coedge.owner_loop)?;
+            face_tolerances.get(&loop_.face).copied().flatten()
+        })
+        .collect::<Vec<_>>();
     let attachable_edges = ir
         .model
         .edges
@@ -1670,12 +1689,10 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                                 .iter()
                                 .find(|value| &value.id == surface)?
                                 .geometry;
-                            let face_allowance = ir
-                                .model
-                                .faces
-                                .iter()
-                                .find(|face| &face.surface == surface)
-                                .and_then(|face| face.tolerance)
+                            let face_allowance = coedge_face_tolerances
+                                .get(*coedge)
+                                .copied()
+                                .flatten()
                                 .map_or(edge_allowance, |value| edge_allowance.max(value));
                             pcurve_lift_reaches_endpoints(
                                 &geometry,
