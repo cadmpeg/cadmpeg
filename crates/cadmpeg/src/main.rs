@@ -186,6 +186,9 @@ enum InputFormat {
     Iges,
     /// ISO 10303 STEP.
     Step,
+    /// Bare ASM `.sat`/`.smt`/`.smb`/`.sab` stream.
+    #[value(alias = "smt", alias = "smb", alias = "sab")]
+    Sat,
     /// Canonical CADIR JSON.
     Cadir,
 }
@@ -208,6 +211,7 @@ impl InputFormat {
             Self::Rhino => ForcedInput::Codec("rhino"),
             Self::Iges => ForcedInput::Codec("iges"),
             Self::Step => ForcedInput::Codec("step"),
+            Self::Sat => ForcedInput::Codec("sat"),
             Self::Cadir => ForcedInput::Cadir,
         }
     }
