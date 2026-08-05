@@ -1690,7 +1690,7 @@ fn failed_mandatory_point_root_remains_opaque_and_unbound() {
         .any(|record| record.id.0 == "step:data:shell_based_surface_model#31"));
     assert!(decoded.report.losses.iter().any(|loss| loss
         .message
-        .contains("does not resolve to a complete connected topology graph")));
+        .contains("STEP topology root #31 rejected: vertex point #3")));
 }
 
 #[test]
@@ -1718,7 +1718,7 @@ fn failed_void_shell_does_not_commit_the_outer_brep() {
         .any(|record| record.id.0 == "step:data:brep_with_voids#31"));
     assert!(decoded.report.losses.iter().any(|loss| loss
         .message
-        .contains("STEP topology root #31 does not resolve")));
+        .contains("STEP topology root #31 rejected: face carrier #99")));
 }
 
 #[test]
@@ -1760,11 +1760,9 @@ fn single_edge_loop_must_close_at_its_endpoint() {
         .expect("decode open single-edge loop");
 
     assert!(decoded.ir.model.bodies.is_empty());
-    assert!(decoded
-        .report
-        .losses
-        .iter()
-        .any(|loss| loss.message.contains("does not resolve to a complete")));
+    assert!(decoded.report.losses.iter().any(|loss| loss
+        .message
+        .contains("STEP topology root #31 rejected: edge loop continuity #25")));
 }
 
 #[test]

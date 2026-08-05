@@ -107,13 +107,12 @@ fn decode_exchange_mode(
         );
     }
 
-    let mut geometry = geometry::decode(exchange, &mut ir);
+    let geometry = geometry::decode(exchange, &mut ir);
     let dependencies = dependencies::decode(exchange);
     let topology = topology::decode(exchange, &mut ir);
     geometry::associate_topology_carriers(exchange, &mut ir);
     geometry::associate_free_geometric_set_members(exchange, &mut ir);
     geometry::associate_free_representation_members(exchange, &mut ir);
-    retain_unowned_pcurves(exchange, &mut geometry, &mut ir);
     let product = product::decode(exchange, &geometry, &topology, &mut ir);
     let tessellation = tessellation::decode(exchange, &geometry, &topology, &mut ir);
     let pmi = pmi::decode(exchange, &geometry, &mut ir);
@@ -191,6 +190,21 @@ fn decode_exchange_mode(
     typed_records.extend(pmi.typed_records);
     typed_records.extend(dependencies.typed_records);
     typed_records.extend(validation.typed_records);
+    let mut post_decode_warnings = Vec::new();
+    retain_unowned_pcurves(
+        exchange,
+        &mut ir,
+        &mut typed_records,
+        &mut post_decode_warnings,
+    );
+    report
+        .losses
+        .extend(post_decode_warnings.into_iter().map(|message| LossNote {
+            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
+            severity: Severity::Warning,
+            message,
+            provenance: None,
+        }));
 
     let opaque_offsets = if retain_opaque {
         BTreeSet::new()
@@ -293,8 +307,9 @@ fn decode_exchange_mode(
 
 fn retain_unowned_pcurves(
     exchange: &Exchange,
-    geometry: &mut geometry::GeometryResult,
     ir: &mut CadIr,
+    typed_records: &mut BTreeSet<u64>,
+    warnings: &mut Vec<String>,
 ) {
     let owned = ir
         .model
@@ -416,10 +431,8 @@ fn retain_unowned_pcurves(
         step_id_from_ir(&surface.id.0)
             .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
     });
-    geometry
-        .typed_records
-        .retain(|id| !removed_closure.contains(id) || protected.contains(id));
-    geometry.warnings.push(format!(
+    typed_records.retain(|id| !removed_closure.contains(id) || protected.contains(id));
+    warnings.push(format!(
         "retained {removed} unowned pcurve carrier(s) as opaque source records"
     ));
 }

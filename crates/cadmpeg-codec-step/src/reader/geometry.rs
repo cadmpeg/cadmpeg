@@ -978,6 +978,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         .iter()
         .map(|surface| surface.id.clone())
         .collect::<BTreeSet<_>>();
+    let planar_surface_ids = ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Plane { .. }))
+        .map(|surface| surface.id.clone())
+        .collect::<BTreeSet<_>>();
     for (id, record) in exchange.entities("PCURVE") {
         if record.simple_name() != Some("PCURVE") {
             continue;
@@ -1006,6 +1013,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                     .map(|decoded| (*curve, decoded))
             })
             .collect::<Vec<_>>();
+        let planar_surface = surface.clone();
         let Some((curve_step, (geometry, geometry_records))) = surface
             .filter(|surface| decoded_surfaces.contains(surface))
             .and(match decoded.as_slice() {
@@ -1016,9 +1024,14 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             warnings.push(format!("PCURVE #{id} has no decoded surface or 2D curve"));
             continue;
         };
+        let mut geometry = geometry.clone();
+        if planar_surface_ids.contains(planar_surface.as_ref().expect("surface was filtered above"))
+        {
+            scale_planar_pcurve_geometry(&mut geometry, scale);
+        }
         ir.model.pcurves.push(Pcurve {
             id: PcurveId(format!("step:data:pcurve#{id}")),
-            geometry: geometry.clone(),
+            geometry,
             wrapper_reversed: None,
             native_tail_flags: None,
             parameter_range: None,
@@ -2165,14 +2178,107 @@ fn decode_pcurve_geometry(
 }
 
 fn pcurve_trim_parameter(value: &Value) -> Option<f64> {
+    fn bare_number(value: &Value) -> Option<f64> {
+        match value {
+            Value::Integer(value) => Some(*value as f64),
+            Value::Real(value) => Some(*value),
+            _ => None,
+        }
+    }
+
     match value {
-        Value::Integer(value) => Some(*value as f64),
-        Value::Real(value) => Some(*value),
-        Value::Typed(_, value) => pcurve_trim_parameter(value),
-        Value::List(values) => values.iter().find_map(pcurve_trim_parameter),
+        Value::Integer(_) | Value::Real(_) => bare_number(value),
+        Value::Typed(name, value) if name == "PARAMETER_VALUE" => bare_number(value),
+        Value::List(values) => values
+            .iter()
+            .find_map(|value| match value {
+                Value::Typed(name, value) if name == "PARAMETER_VALUE" => bare_number(value),
+                _ => None,
+            })
+            .or_else(|| {
+                values.iter().find_map(|value| match value {
+                    Value::Integer(_) | Value::Real(_) => bare_number(value),
+                    _ => None,
+                })
+            }),
         _ => None,
     }
     .filter(|value| value.is_finite())
+}
+
+fn scale_planar_pcurve_geometry(geometry: &mut PcurveGeometry, scale: f64) {
+    fn point(point: &mut Point2, scale: f64) {
+        point.u *= scale;
+        point.v *= scale;
+    }
+
+    match geometry {
+        PcurveGeometry::Line { origin, direction } => {
+            point(origin, scale);
+            point(direction, scale);
+        }
+        PcurveGeometry::Circle { center, radius, .. } => {
+            point(center, scale);
+            *radius *= scale;
+        }
+        PcurveGeometry::Ellipse {
+            center,
+            major_radius,
+            minor_radius,
+            ..
+        } => {
+            point(center, scale);
+            *major_radius *= scale;
+            *minor_radius *= scale;
+        }
+        PcurveGeometry::Parabola {
+            vertex,
+            focal_distance,
+            ..
+        } => {
+            point(vertex, scale);
+            *focal_distance *= scale;
+        }
+        PcurveGeometry::Hyperbola {
+            center,
+            major_radius,
+            minor_radius,
+            ..
+        } => {
+            point(center, scale);
+            *major_radius *= scale;
+            *minor_radius *= scale;
+        }
+        PcurveGeometry::Harmonic {
+            center,
+            cosine,
+            sine,
+        }
+        | PcurveGeometry::Hyperbolic {
+            center,
+            cosine,
+            sine,
+        } => {
+            point(center, scale);
+            point(cosine, scale);
+            point(sine, scale);
+        }
+        PcurveGeometry::Nurbs { control_points, .. } => {
+            for control_point in control_points {
+                point(control_point, scale);
+            }
+        }
+        PcurveGeometry::Trimmed { basis, .. } => {
+            scale_planar_pcurve_geometry(basis, scale);
+        }
+        PcurveGeometry::Offset { distance, basis } => {
+            *distance *= scale;
+            scale_planar_pcurve_geometry(basis, scale);
+        }
+        PcurveGeometry::PolarHarmonic { .. }
+        | PcurveGeometry::PolarNurbs { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. } => {}
+    }
 }
 
 fn polyline_pcurve(record: &RawRecord, points: &BTreeMap<u64, Point2>) -> Option<PcurveGeometry> {
