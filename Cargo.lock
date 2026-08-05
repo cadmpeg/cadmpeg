@@ -139,7 +139,6 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "cadmpeg-codec-catia",
- "cadmpeg-codec-core",
  "cadmpeg-codec-creo",
  "cadmpeg-codec-f3d",
  "cadmpeg-codec-freecad",
@@ -149,6 +148,7 @@ dependencies = [
  "cadmpeg-codec-sldprt",
  "cadmpeg-codec-step",
  "cadmpeg-container",
+ "cadmpeg-core",
  "cadmpeg-ir",
  "clap",
  "crc32fast",
@@ -167,7 +167,7 @@ dependencies = [
 name = "cadmpeg-codec-catia"
 version = "0.3.1"
 dependencies = [
- "cadmpeg-codec-core",
+ "cadmpeg-core",
  "cadmpeg-ir",
  "memchr",
  "schemars",
@@ -177,20 +177,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "cadmpeg-codec-core"
-version = "0.3.1"
-dependencies = [
- "schemars",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
 name = "cadmpeg-codec-creo"
 version = "0.3.1"
 dependencies = [
- "cadmpeg-codec-core",
+ "cadmpeg-core",
  "cadmpeg-ir",
  "regex",
  "serde",
@@ -202,8 +192,8 @@ dependencies = [
 name = "cadmpeg-codec-f3d"
 version = "0.3.1"
 dependencies = [
- "cadmpeg-codec-core",
  "cadmpeg-container",
+ "cadmpeg-core",
  "cadmpeg-ir",
  "lzma-rs",
  "memchr",
@@ -222,8 +212,9 @@ dependencies = [
 name = "cadmpeg-codec-freecad"
 version = "0.3.1"
 dependencies = [
- "cadmpeg-codec-core",
+ "cadmpeg-codec-step",
  "cadmpeg-container",
+ "cadmpeg-core",
  "cadmpeg-ir",
  "flate2",
  "roxmltree",
@@ -237,7 +228,7 @@ dependencies = [
 name = "cadmpeg-codec-iges"
 version = "0.3.1"
 dependencies = [
- "cadmpeg-codec-core",
+ "cadmpeg-core",
  "cadmpeg-ir",
  "serde",
  "serde_json",
@@ -249,7 +240,7 @@ dependencies = [
 name = "cadmpeg-codec-nx"
 version = "0.3.1"
 dependencies = [
- "cadmpeg-codec-core",
+ "cadmpeg-core",
  "cadmpeg-ir",
  "flate2",
  "roxmltree",
@@ -262,7 +253,7 @@ dependencies = [
 name = "cadmpeg-codec-rhino"
 version = "0.3.1"
 dependencies = [
- "cadmpeg-codec-core",
+ "cadmpeg-core",
  "cadmpeg-ir",
  "crc32fast",
  "flate2",
@@ -276,8 +267,8 @@ dependencies = [
 name = "cadmpeg-codec-sldprt"
 version = "0.3.1"
 dependencies = [
- "cadmpeg-codec-core",
  "cadmpeg-container",
+ "cadmpeg-core",
  "cadmpeg-ir",
  "crc32fast",
  "flate2",
@@ -293,7 +284,7 @@ dependencies = [
 name = "cadmpeg-codec-step"
 version = "0.3.1"
 dependencies = [
- "cadmpeg-codec-core",
+ "cadmpeg-core",
  "cadmpeg-ir",
  "encoding_rs",
  "thiserror",
@@ -303,7 +294,7 @@ dependencies = [
 name = "cadmpeg-container"
 version = "0.3.1"
 dependencies = [
- "cadmpeg-codec-core",
+ "cadmpeg-core",
  "crc32fast",
  "flate2",
  "zip",
@@ -311,11 +302,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-core"
+version = "0.3.1"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "cadmpeg-ir"
 version = "0.3.1"
 dependencies = [
  "base64",
- "cadmpeg-codec-core",
+ "cadmpeg-core",
  "schemars",
  "serde",
  "serde_json",

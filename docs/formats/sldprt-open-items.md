@@ -148,6 +148,20 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the precedence to select one final record.
 
+### CM-07. `moTransRefPlaneData_c` gap
+
+**Question.** What does the byte run between the `moTransRefPlaneData_c` class token and the first of its nine f64 values encode, and what fixes its length?
+
+**Known.** `sldprt.md` §8 "**Materials / metadata**" gives the field offsets of each document metadata record from the end of its class token. Every other record in that table starts its fields at token end +0. This one starts them after a gap. The decoder finds the value block by the first offset in `0..64` at which nine finite f64 values satisfy the extent constraints.
+
+Observed gap:
+
+| gap length | bytes | record that follows |
+| --- | --- | --- |
+| 8 | `ff ff ff ff ff ff ff ff` | plane center xyz |
+
+**Need.** We must know the gap to write the record back. A writer that omits it moves every later record in the SW Objects payload, which moves the byte offset each `sldprt:metadata:` identifier carries, so a rewrite that changes nothing still renames those attributes.
+
 ## 4. Auxiliary lanes
 
 ### AL-01. DisplayLists face ranges

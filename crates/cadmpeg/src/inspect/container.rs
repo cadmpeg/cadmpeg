@@ -4,8 +4,8 @@
 use std::fmt::Write as _;
 
 use anyhow::{Context, Result};
-use cadmpeg_codec_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
 use cadmpeg_container::{ArchiveSnapshot, EntryRecord};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
 
 /// Lists the ZIP entries in `bytes`.
 ///

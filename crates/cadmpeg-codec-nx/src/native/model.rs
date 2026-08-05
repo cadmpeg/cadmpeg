@@ -8,7 +8,7 @@
 
 use crate::container::Container;
 use crate::parasolid::Stream;
-use cadmpeg_codec_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, View};
 
 #[allow(
     clippy::wildcard_imports,

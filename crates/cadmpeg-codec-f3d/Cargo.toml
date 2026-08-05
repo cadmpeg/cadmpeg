@@ -23,11 +23,11 @@ categories = ["encoding", "parser-implementations", "graphics"]
 # `schema` builds the `JsonSchema` derives. It is off by default: the
 # derives are only consumed by `cadmpeg_ir::cadir_json_schema()`, and
 # generating them costs 22% of this crate tree's compile time.
-schema = ["dep:schemars", "cadmpeg-codec-core/schema", "cadmpeg-ir/schema"]
+schema = ["dep:schemars", "cadmpeg-core/schema", "cadmpeg-ir/schema"]
 
 [dependencies]
 cadmpeg-container.workspace = true
-cadmpeg-codec-core.workspace = true
+cadmpeg-core.workspace = true
 cadmpeg-ir.workspace = true
 zip.workspace = true
 lzma-rs.workspace = true
@@ -42,10 +42,10 @@ roxmltree.workspace = true
 memchr.workspace = true
 
 [dev-dependencies]
-# Enables `cadmpeg_codec_core::golden`, the shared snapshot harness.
+# Enables `cadmpeg_core::golden`, the shared snapshot harness.
 # Feature unification applies it to the test build only, so the published
 # library is unchanged.
-cadmpeg-codec-core = { workspace = true, features = ["golden"] }
+cadmpeg-core = { workspace = true, features = ["golden"] }
 
 [lints]
 workspace = true

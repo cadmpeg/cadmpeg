@@ -250,14 +250,14 @@ pub(crate) fn patch_payload(
     ir: &cadmpeg_ir::CadIr,
     block_id: &str,
     payload: &mut [u8],
-) -> Result<(), cadmpeg_codec_core::CodecError> {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{ParameterValue, PmiDimensionSubtype};
 
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Ok(());
     };
     let native = crate::native::SldprtNative::load(namespace).map_err(|error| {
-        cadmpeg_codec_core::CodecError::Malformed(format!("invalid SLDPRT native PMI: {error}"))
+        cadmpeg_core::CodecError::Malformed(format!("invalid SLDPRT native PMI: {error}"))
     })?;
     let records_by_id = native
         .pmi_dimensions
@@ -281,7 +281,7 @@ pub(crate) fn patch_payload(
             continue;
         };
         if parameters.next().is_some() {
-            return Err(cadmpeg_codec_core::CodecError::Malformed(format!(
+            return Err(cadmpeg_core::CodecError::Malformed(format!(
                 "multiple parameters reference PMI record {}",
                 record.id
             )));
@@ -290,7 +290,7 @@ pub(crate) fn patch_payload(
         let empty_subtype_is_count = semantic.subtype == PmiDimensionSubtype::Count;
         let subtype = dimension_subtype(record, empty_subtype_is_count);
         if semantic.subtype != subtype {
-            return Err(cadmpeg_codec_core::CodecError::NotImplemented(format!(
+            return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                 "SLDPRT PMI record {} changes dimension subtype",
                 record.id
             )));
@@ -306,7 +306,7 @@ pub(crate) fn patch_payload(
             ) => length.0 / 1000.0,
             (PmiDimensionSubtype::Count, Some(ParameterValue::Integer(count))) => *count as f64,
             _ => {
-                return Err(cadmpeg_codec_core::CodecError::NotImplemented(format!(
+                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                     "SLDPRT PMI record {} has a value incompatible with its dimension subtype",
                     record.id
                 )));
@@ -322,7 +322,7 @@ pub(crate) fn patch_payload(
             .ok()
             .filter(|value| *value < 128)
             .ok_or_else(|| {
-                cadmpeg_codec_core::CodecError::NotImplemented(format!(
+                cadmpeg_core::CodecError::NotImplemented(format!(
                     "SLDPRT PMI record {} requires fixint precision",
                     record.id
                 ))
@@ -346,13 +346,13 @@ pub(crate) fn patch_payload(
                 semantic.display_text.as_deref(),
                 record.display_text.as_deref(),
             ) else {
-                return Err(cadmpeg_codec_core::CodecError::NotImplemented(format!(
+                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                     "SLDPRT PMI record {} changes optional display text",
                     record.id
                 )));
             };
             if text.len() != previous.len() {
-                return Err(cadmpeg_codec_core::CodecError::NotImplemented(format!(
+                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                     "SLDPRT PMI record {} changes display-text width",
                     record.id
                 )));
@@ -368,21 +368,19 @@ fn patch_bytes(
     offset: u64,
     bytes: &[u8],
     record: &str,
-) -> Result<(), cadmpeg_codec_core::CodecError> {
+) -> Result<(), cadmpeg_core::CodecError> {
     let start = usize::try_from(offset).map_err(|_| {
-        cadmpeg_codec_core::CodecError::Malformed(format!(
+        cadmpeg_core::CodecError::Malformed(format!(
             "SLDPRT PMI record {record} exceeds address space"
         ))
     })?;
     let end = start.checked_add(bytes.len()).ok_or_else(|| {
-        cadmpeg_codec_core::CodecError::Malformed(format!(
-            "SLDPRT PMI record {record} offset overflows"
-        ))
+        cadmpeg_core::CodecError::Malformed(format!("SLDPRT PMI record {record} offset overflows"))
     })?;
     payload
         .get_mut(start..end)
         .ok_or_else(|| {
-            cadmpeg_codec_core::CodecError::Malformed(format!(
+            cadmpeg_core::CodecError::Malformed(format!(
                 "SLDPRT PMI record {record} lies outside its block"
             ))
         })?
@@ -711,7 +709,7 @@ fn parse_array(bytes: &[u8], cursor: &mut usize, len: usize, depth: usize) -> Op
     // Every element encodes as at least one marker byte, so a length exceeding
     // the unread input cannot be satisfied and is rejected before allocating.
     let remaining = bytes.len().saturating_sub(*cursor);
-    let len = cadmpeg_codec_core::cursor::bounded_len(len as u64, 1, remaining)?;
+    let len = cadmpeg_core::cursor::bounded_len(len as u64, 1, remaining)?;
     let mut values = Vec::with_capacity(len);
     for _ in 0..len {
         values.push(parse_value(bytes, cursor, depth + 1)?);

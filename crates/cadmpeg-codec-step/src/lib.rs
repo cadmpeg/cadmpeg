@@ -58,7 +58,7 @@ mod writer;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
 
-use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::appearance::Appearance;
 use cadmpeg_ir::codec::{
     Codec, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
@@ -74,7 +74,7 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::CadIr;
-use cadmpeg_ir::FidelityResolution;
+use cadmpeg_ir::{FidelityResolution, WritePath};
 
 use writer::{real, refs, string, Emitter, Ref};
 
@@ -3052,6 +3052,9 @@ impl<'a> Builder<'a> {
                 counts: self.emitter.counts(),
             },
             fidelity: FidelityResolution::NotProvided,
+            // STEP is a target-only format here: every record is emitted from
+            // the neutral IR, with no source container to replay or patch.
+            write_path: WritePath::Synthesized,
             losses: self.losses.clone(),
             notes: self.notes.clone(),
         }
@@ -3072,13 +3075,17 @@ impl Encoder for StepCodec {
 
     fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
         let mut bytes = Vec::new();
-        let report = write_step(input.ir, &mut bytes, &self.options).map_err(CodecError::from)?;
-        let fidelity = if input.fidelity.is_some() {
+        let mut report =
+            write_step(input.ir, &mut bytes, &self.options).map_err(CodecError::from)?;
+        // `write_step` takes no fidelity sidecar, so the report it returns
+        // states the only resolution it can see. Whether the caller supplied
+        // one is known here, and only here.
+        report.fidelity = if input.fidelity.is_some() {
             FidelityResolution::NotConsumed
         } else {
             FidelityResolution::NotProvided
         };
-        Ok(ExportPlan::buffered(report, fidelity, bytes))
+        Ok(ExportPlan::buffered(report, bytes))
     }
 }
 
@@ -3099,8 +3106,8 @@ impl Codec for StepCodec {
 
     fn inspect_impl(
         &self,
-        _ctx: &cadmpeg_codec_core::decode::DecodeContext<'_>,
-        root: cadmpeg_codec_core::decode::View<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        root: cadmpeg_core::decode::View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let bytes = root.window();
         refuse_alternate_encoding(bytes)?;
@@ -3268,8 +3275,8 @@ impl Codec for StepCodec {
 
     fn decode_impl(
         &self,
-        ctx: &cadmpeg_codec_core::decode::DecodeContext<'_>,
-        root: cadmpeg_codec_core::decode::View<'_>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        root: cadmpeg_core::decode::View<'_>,
     ) -> Result<DecodeResult, CodecError> {
         let bytes = root.window();
         refuse_alternate_encoding(bytes)?;

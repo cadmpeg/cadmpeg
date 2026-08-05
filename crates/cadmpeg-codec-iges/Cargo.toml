@@ -19,7 +19,7 @@ keywords = ["cad", "iges", "geometry", "brep"]
 categories = ["encoding", "parser-implementations", "graphics"]
 
 [dependencies]
-cadmpeg-codec-core.workspace = true
+cadmpeg-core.workspace = true
 cadmpeg-ir.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -27,10 +27,10 @@ sha2.workspace = true
 toml = "1.1"
 
 [dev-dependencies]
-# Enables `cadmpeg_codec_core::golden`, the shared snapshot harness.
+# Enables `cadmpeg_core::golden`, the shared snapshot harness.
 # Feature unification applies it to the test build only, so the published
 # library is unchanged.
-cadmpeg-codec-core = { workspace = true, features = ["golden"] }
+cadmpeg-core = { workspace = true, features = ["golden"] }
 
 [lints]
 workspace = true

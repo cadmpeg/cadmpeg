@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_codec_core::le::{take_f64s, take_u32 as read_u32, u32_at};
+use cadmpeg_core::le::{take_f64s, take_u32 as read_u32, u32_at};
 
 use crate::wire;
 

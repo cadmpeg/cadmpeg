@@ -5096,11 +5096,10 @@ pub(crate) fn with_expand_bytes<R>(
     data: &[u8],
     f: impl FnOnce(crate::mesh::MeshExpand<'_>) -> R,
 ) -> R {
-    let arena = cadmpeg_codec_core::decode::DecodeArena::new();
-    let policy = cadmpeg_codec_core::decode::DecodePolicy::default();
-    let (ctx, root) =
-        cadmpeg_codec_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
-            .expect("root view");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+        .expect("root view");
     f(crate::mesh::MeshExpand::new(&ctx, root))
 }
 

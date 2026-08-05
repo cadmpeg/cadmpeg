@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::brep::ShapePayloadRecord;
 use crate::native::{JointRecord, ObjectRecord, ProductNodeRecord, PropertyRecord};
-use cadmpeg_codec_core::decode::DecodeContext;
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
     CopyOnChangePolicy, ExternalDocumentReference, ExternalResolution, Occurrence,

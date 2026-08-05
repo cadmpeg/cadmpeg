@@ -429,6 +429,10 @@ pub(crate) const TRANSFERRED_LEGACY_PARAMETER_COUNT: CoverageKey =
     CoverageKey("transferred_legacy_parameter_count");
 pub(crate) const TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT: CoverageKey =
     CoverageKey("transferred_legacy_selector_parameter_count");
+pub(crate) const TRANSFERRED_OBJECT_STREAM_FACE_COUNT: CoverageKey =
+    CoverageKey("transferred_object_stream_face_count");
+pub(crate) const TRANSFERRED_OBJECT_STREAM_LOOP_COUNT: CoverageKey =
+    CoverageKey("transferred_object_stream_loop_count");
 pub(crate) const TRANSFERRED_PARAMETER_COUNT: CoverageKey =
     CoverageKey("transferred_parameter_count");
 pub(crate) const TRANSFERRED_RELATION_PROGRAM_INPUT_PARAMETER_COUNT: CoverageKey =
@@ -746,6 +750,8 @@ pub(crate) const ALL: &[CoverageKey] = &[
     TRANSFERRED_LEGACY_FORMULA_COUNT,
     TRANSFERRED_LEGACY_PARAMETER_COUNT,
     TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT,
+    TRANSFERRED_OBJECT_STREAM_FACE_COUNT,
+    TRANSFERRED_OBJECT_STREAM_LOOP_COUNT,
     TRANSFERRED_PARAMETER_COUNT,
     TRANSFERRED_RELATION_PROGRAM_INPUT_PARAMETER_COUNT,
     TRANSFERRED_SKETCH_CONSTRAINT_COUNT,

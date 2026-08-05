@@ -54,7 +54,19 @@ pub(crate) fn annotate(
     annotations.exactness(id, exactness);
 }
 
-pub(crate) fn neutral_model_is_admissible(ir: &CadIr, pending_unknowns: &[UnknownRecord]) -> bool {
+/// Judge one candidate neutral model in the form the pipeline publishes it.
+///
+/// [`DecodeResult::new`](cadmpeg_ir::codec::DecodeResult::new) sorts every arena
+/// by entity id before a decoded document leaves the codec, so canonical arena
+/// order is a property of the pipeline rather than of any one emit pass. The
+/// candidate's model arenas are canonicalized here for the same reason: read in
+/// native traversal order, an otherwise complete model is rejected over an arena
+/// order the pipeline would have replaced.
+pub(crate) fn neutral_model_is_admissible(
+    ir: &mut CadIr,
+    pending_unknowns: &[UnknownRecord],
+) -> bool {
+    ir.model.finalize();
     cadmpeg_ir::validate::validate_with_additional_native_identities(
         ir,
         pending_unknowns.iter().map(|record| record.id.as_str()),
@@ -824,8 +836,8 @@ mod route_tests {
 
     #[test]
     fn neutral_model_admissibility_rejects_invalid_topology() {
-        let valid = CadIr::empty(Units::default());
-        assert!(neutral_model_is_admissible(&valid, &[]));
+        let mut valid = CadIr::empty(Units::default());
+        assert!(neutral_model_is_admissible(&mut valid, &[]));
 
         let mut invalid = CadIr::empty(Units::default());
         invalid.model.shells.push(Shell {
@@ -835,7 +847,54 @@ mod route_tests {
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         });
-        assert!(!neutral_model_is_admissible(&invalid, &[]));
+        assert!(!neutral_model_is_admissible(&mut invalid, &[]));
+    }
+
+    /// Decimal object-id keys reach the gate in native traversal order, in which
+    /// `#10` follows `#9` but precedes it lexicographically. The gate must judge
+    /// that arena in the order the pipeline publishes it.
+    #[test]
+    fn neutral_model_admissibility_canonicalizes_arena_order() {
+        let mut ir = CadIr::empty(Units::default());
+        for key in [9_u32, 10] {
+            ir.model.curves.push(Curve {
+                id: CurveId(format!("catia:test:curve#{key}")),
+                geometry: CurveGeometry::Line {
+                    origin: Point3::new(0.0, 0.0, f64::from(key)),
+                    direction: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            });
+        }
+        let unsorted = cadmpeg_ir::validate::validate_with_additional_native_identities(
+            &ir,
+            std::iter::empty(),
+            Vec::new(),
+        );
+        assert!(unsorted
+            .findings
+            .iter()
+            .any(|finding| finding.check == cadmpeg_ir::report::Check::ArenaOrder));
+
+        neutral_model_is_admissible(&mut ir, &[]);
+
+        assert_eq!(
+            ir.model
+                .curves
+                .iter()
+                .map(|curve| curve.id.0.clone())
+                .collect::<Vec<_>>(),
+            ["catia:test:curve#10", "catia:test:curve#9"]
+        );
+        let sorted = cadmpeg_ir::validate::validate_with_additional_native_identities(
+            &ir,
+            std::iter::empty(),
+            Vec::new(),
+        );
+        assert!(!sorted
+            .findings
+            .iter()
+            .any(|finding| finding.check == cadmpeg_ir::report::Check::ArenaOrder));
     }
 
     #[test]
@@ -868,7 +927,7 @@ mod route_tests {
             links: Vec::new(),
         }];
 
-        assert!(neutral_model_is_admissible(&ir, &unknowns));
+        assert!(neutral_model_is_admissible(&mut ir, &unknowns));
     }
 
     #[test]

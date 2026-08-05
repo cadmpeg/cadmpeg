@@ -11,8 +11,8 @@
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_value::Value;
 
-use cadmpeg_codec_core::decode::DecodeContext;
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{EntityRewrite, Model};
 use cadmpeg_ir::report::{LossKind, LossNote, Severity};
@@ -97,9 +97,16 @@ pub fn decode(
     ));
     make_sibling_ordinals_unique(&mut root.ir.model.occurrences);
     root.ir.finalize();
-    let hash = crate::decode::semantic_hash(&root.ir);
+    // The merged document is a different document from the root member, so its
+    // write-path baseline is restamped over the merged content. See
+    // `crate::decode::document_local_sha256` for what the baseline does and does
+    // not claim.
+    let hash = crate::decode::document_local_sha256(&root.ir);
     if let Some(source) = &mut root.ir.source {
-        source.attributes.insert("semantic_sha256".into(), hash);
+        source.attributes.insert(
+            cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
+            hash,
+        );
     }
     Ok(DecodeResult::new(
         root.ir,

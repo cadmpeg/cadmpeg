@@ -8,7 +8,7 @@
 //! that path so the ~60 emission sites route through one audited helper instead
 //! of one hand-copied block each.
 
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;

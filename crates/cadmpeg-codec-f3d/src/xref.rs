@@ -10,8 +10,8 @@
 
 use serde::Deserialize;
 
-use cadmpeg_codec_core::le::u32_at;
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::le::u32_at;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::products::{
     ExternalDocumentReference, ExternalResolution, Occurrence, OccurrenceParent, PrototypeReference,

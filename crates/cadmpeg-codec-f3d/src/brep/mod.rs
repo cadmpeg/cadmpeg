@@ -224,7 +224,7 @@ impl Brep {
     pub(crate) fn body_selectors_for(
         &self,
         selectors: &HashSet<u64>,
-    ) -> Result<HashMap<BodyId, u64>, cadmpeg_codec_core::CodecError> {
+    ) -> Result<HashMap<BodyId, u64>, cadmpeg_core::CodecError> {
         let body_keys = self.body_native_keys.iter().collect::<Vec<_>>();
         let mut resolved = HashMap::new();
         for selector in selectors {
@@ -232,7 +232,7 @@ impl Brep {
                 continue;
             };
             if let Some(previous) = resolved.insert(body.clone(), *selector) {
-                return Err(cadmpeg_codec_core::CodecError::Malformed(format!(
+                return Err(cadmpeg_core::CodecError::Malformed(format!(
                     "F3D body {} is selected by both {previous} and {selector}",
                     body.0
                 )));
@@ -246,10 +246,10 @@ impl Brep {
     pub fn retain_body_keys(
         &mut self,
         selected_keys: &HashSet<u64>,
-    ) -> Result<(), cadmpeg_codec_core::CodecError> {
+    ) -> Result<(), cadmpeg_core::CodecError> {
         let annotations = std::mem::take(&mut self.annotation_records);
         let mut value = serde_value::to_value(&*self).map_err(|error| {
-            cadmpeg_codec_core::CodecError::Malformed(format!("BREP serialization failed: {error}"))
+            cadmpeg_core::CodecError::Malformed(format!("BREP serialization failed: {error}"))
         })?;
         let mut owned = HashSet::new();
         collect_owned_ids(&value, &mut owned);
@@ -285,9 +285,7 @@ impl Brep {
         }
         retain_root_entities(&mut value, &reachable);
         let mut retained: Self = crate::value_tree::from_value(value).map_err(|error| {
-            cadmpeg_codec_core::CodecError::Malformed(format!(
-                "retained BREP graph is invalid: {error}"
-            ))
+            cadmpeg_core::CodecError::Malformed(format!("retained BREP graph is invalid: {error}"))
         })?;
         retained
             .body_keys
@@ -302,10 +300,10 @@ impl Brep {
 
     /// Qualify every entity owned by this graph so several BREP blobs can
     /// coexist in one document model without record-index collisions.
-    pub fn qualify_ids(&mut self, namespace: &str) -> Result<(), cadmpeg_codec_core::CodecError> {
+    pub fn qualify_ids(&mut self, namespace: &str) -> Result<(), cadmpeg_core::CodecError> {
         let annotations = std::mem::take(&mut self.annotation_records);
         let mut value = serde_value::to_value(&*self).map_err(|error| {
-            cadmpeg_codec_core::CodecError::Malformed(format!("BREP serialization failed: {error}"))
+            cadmpeg_core::CodecError::Malformed(format!("BREP serialization failed: {error}"))
         })?;
         let mut owned = HashSet::new();
         collect_owned_ids(&value, &mut owned);
@@ -321,7 +319,7 @@ impl Brep {
             .collect::<HashMap<_, _>>();
         remap_owned_ids(&mut value, &replacements);
         let mut qualified: Self = crate::value_tree::from_value(value).map_err(|error| {
-            cadmpeg_codec_core::CodecError::Malformed(format!("qualified BREP is invalid: {error}"))
+            cadmpeg_core::CodecError::Malformed(format!("qualified BREP is invalid: {error}"))
         })?;
         qualified.annotation_records = annotations
             .into_iter()
@@ -387,7 +385,7 @@ impl Brep {
 pub(crate) fn resolve_body_selector(
     body_keys: &[&BodyNativeKey],
     selector: u64,
-) -> Result<Option<BodyId>, cadmpeg_codec_core::CodecError> {
+) -> Result<Option<BodyId>, cadmpeg_core::CodecError> {
     let direct = body_keys
         .iter()
         .filter(|body| body.asm_body_key == Some(selector))
@@ -397,7 +395,7 @@ pub(crate) fn resolve_body_selector(
         [body] => return Ok(Some(body.clone())),
         [] => {}
         _ => {
-            return Err(cadmpeg_codec_core::CodecError::Malformed(format!(
+            return Err(cadmpeg_core::CodecError::Malformed(format!(
                 "F3D body selector {selector} matches multiple native body keys"
             )));
         }
@@ -413,7 +411,7 @@ pub(crate) fn resolve_body_selector(
     match ordinal.as_slice() {
         [body] => Ok(Some(body.clone())),
         [] => Ok(None),
-        _ => Err(cadmpeg_codec_core::CodecError::Malformed(format!(
+        _ => Err(cadmpeg_core::CodecError::Malformed(format!(
             "F3D body selector {selector} matches multiple body ordinals"
         ))),
     }

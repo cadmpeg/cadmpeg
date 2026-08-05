@@ -2,7 +2,7 @@
 //! Decode the boundary-settings record a `SurfacePatch` scope references once
 //! per boundary component.
 
-use cadmpeg_codec_core::le::{f64_at, u32_at};
+use cadmpeg_core::le::{f64_at, u32_at};
 
 use super::sketch::IndexedRecordOffsets;
 use crate::records::DesignSurfacePatchBoundary;

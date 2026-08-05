@@ -7,7 +7,7 @@
 use cadmpeg_codec_catia::CatiaCodec;
 use cadmpeg_ir::codec::{Codec, CodecEntry, DecodeOptions};
 
-use cadmpeg_codec_core::decode::InspectOptions;
+use cadmpeg_core::decode::InspectOptions;
 use libfuzzer_sys::fuzz_target;
 use std::io::Cursor;
 

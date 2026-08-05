@@ -3,7 +3,7 @@
 
 use std::io::{Seek, SeekFrom, Write};
 
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -3625,10 +3625,7 @@ mod tests {
                 })
                 .and_then(|plan| plan.write_to(&mut output))
                 .expect_err("invalid tolerance must not be serialized");
-            assert!(matches!(
-                error,
-                cadmpeg_codec_core::CodecError::Malformed(_)
-            ));
+            assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
             assert_eq!(output, [0xaa]);
         }
     }

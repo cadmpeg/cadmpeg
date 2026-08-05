@@ -18,10 +18,14 @@
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use cadmpeg_codec_core::golden::{elide_digests, snapshots_agree};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::golden::{elide_local_digests, snapshot_text, snapshots_agree};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, DecodeResult, EncodeInput, Encoder};
 use cadmpeg_ir::examples;
+use cadmpeg_ir::roundtrip::{
+    mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, MutationOutcome, SemanticOutcome,
+};
+use cadmpeg_ir::{CadIr, WritePath};
 
 use super::{
     f3d_with_configuration, f3d_with_smbh, f3d_with_smbh_and_protein, synthetic_comp_spl_sur_smbh,
@@ -318,7 +322,7 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     match decode_result(bytes) {
         Ok(mut result) => {
             if let Some(source) = result.ir.source.as_mut() {
-                elide_digests(&mut source.attributes, &["semantic_sha256"]);
+                elide_local_digests(&mut source.attributes);
             }
             let ir = result
                 .ir
@@ -357,28 +361,48 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
     text
 }
 
+/// Encodes an unedited decode result. Every fixture carries its own baseline, so
+/// this lane takes the verbatim-replay branch and the assertion below pins that:
+/// without it the lane would silently become a byte copy of the input the day the
+/// baseline stopped matching, and pass either way.
 fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let result = decode_result(bytes).ok()?;
     let mut out = Vec::new();
-    Some(
-        match F3dCodec
-            .plan(EncodeInput {
-                ir: &result.ir,
-                fidelity: Some(&result.source_fidelity),
-            })
-            .and_then(|plan| plan.write_to(&mut out))
-        {
-            Ok(_) => Ok(out),
-            Err(error) => Err(error.to_string()),
-        },
-    )
+    let outcome = match F3dCodec.plan(EncodeInput {
+        ir: &result.ir,
+        fidelity: Some(&result.source_fidelity),
+    }) {
+        Ok(plan) => {
+            let path = plan.write_path();
+            match plan.write_to(&mut out) {
+                Ok(_) => {
+                    assert_eq!(
+                        path,
+                        WritePath::VerbatimReplay,
+                        "the replay lane must take the verbatim-replay write path"
+                    );
+                    Ok(out)
+                }
+                Err(error) => Err(error.to_string()),
+            }
+        }
+        Err(error) => Err(error.to_string()),
+    };
+    Some(outcome)
 }
 
 fn generate_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let result = decode_result(bytes).ok()?;
     let mut out = Vec::new();
     Some(match F3dCodec.encode(&result.ir, &mut out) {
-        Ok(_) => Ok(out),
+        Ok(report) => {
+            assert_eq!(
+                report.write_path,
+                WritePath::Synthesized,
+                "the generate lane withholds the sidecar, so the writer must author every byte"
+            );
+            Ok(out)
+        }
         Err(error) => Err(error.to_string()),
     })
 }
@@ -397,7 +421,14 @@ fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
             &result.source_fidelity,
             &mut out,
         ) {
-            Ok(()) => Ok(out),
+            Ok(path) => {
+                assert_eq!(
+                    path,
+                    WritePath::Patched,
+                    "the patch lane edits the IR, so the writer must run"
+                );
+                Ok(out)
+            }
             Err(error) => Err(error.to_string()),
         },
     )
@@ -489,6 +520,77 @@ fn compare_bytes(update: bool, path: &Path, actual: &[u8], failures: &mut Vec<St
     }
 }
 
+/// Serializes the document a generated container decodes to, with every digest
+/// over that container's own bytes elided.
+///
+/// A digest is bit-exact wherever its input is, and the input here is a
+/// container this lane just wrote from values the repository compares
+/// tolerantly. `active_brep_sha256`, for instance, covers the written B-rep
+/// stream, and it moves on a platform whose libm differs while the stream's
+/// contents agree to fourteen significant digits; no tolerance can reconcile a
+/// hash. Eliding costs nothing, because the content each digest covers is
+/// compared directly in the same snapshot. The `_sha256` suffix decides, not a
+/// list of keys, so a new digest is elided without editing this function.
+fn generated_container_snapshot(bytes: &[u8]) -> String {
+    let mut ir = match decode_result(bytes) {
+        Ok(result) => result.ir,
+        Err(error) => {
+            let value = serde_json::json!({ "decode_error": error.to_string() });
+            return serde_json::to_string_pretty(&value).expect("serialize decode error");
+        }
+    };
+    if let Some(source) = ir.source.as_mut() {
+        for (key, value) in &mut source.attributes {
+            if key.ends_with("_sha256") {
+                cadmpeg_core::golden::ELIDED_DIGEST.clone_into(value);
+            }
+        }
+    }
+    ir.to_canonical_json().expect("serialize canonical ir")
+}
+
+/// Compares produced bytes against a golden container by the document each
+/// decodes to, tolerating last-place disagreement in decoded numbers.
+///
+/// Byte equality short-circuits, so an unchanged writer costs one comparison.
+/// Otherwise both containers decode and their snapshots go through
+/// [`snapshots_agree`]. A golden that no longer decodes is reported rather than
+/// silently agreeing with a fresh snapshot that does not decode either, because
+/// the two error texts would have to match for that to happen.
+///
+/// The comparison covers the decoded document. It does not cover the decode
+/// report or source fidelity, which describe the container this lane just wrote
+/// rather than the document it carries.
+fn compare_decoded_bytes(update: bool, path: &Path, actual: &[u8], failures: &mut Vec<String>) {
+    if update {
+        compare_bytes(update, path, actual, failures);
+        return;
+    }
+    let expected = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            failures.push(format!(
+                "{}: cannot read golden ({error}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`",
+                path.display()
+            ));
+            return;
+        }
+    };
+    if expected == actual {
+        return;
+    }
+    if let Err(mismatch) = snapshots_agree(
+        &generated_container_snapshot(&expected),
+        &generated_container_snapshot(actual),
+    ) {
+        failures.push(format!(
+            "{}: the produced container decodes differently: {mismatch}\n    {}",
+            path.display(),
+            first_byte_diff(&expected, actual)
+        ));
+    }
+}
+
 fn remove_if_exists(path: &Path) {
     if path.exists() {
         std::fs::remove_file(path)
@@ -496,11 +598,37 @@ fn remove_if_exists(path: &Path) {
     }
 }
 
+/// How a lane's produced bytes are held to their golden.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ByteComparison {
+    /// The bytes must match the golden exactly.
+    ///
+    /// Measured, not assumed: perturbing every libm transcendental by one unit
+    /// in the last place moves neither the replay lane's 53 artifacts nor the
+    /// patch lane's 52. Replay copies the retained container, and the patch
+    /// writer rewrites records whose values it carries across rather than
+    /// recomputing them, so no decoded double reaches either output.
+    Exact,
+    /// The bytes must decode to the same document as the golden does.
+    ///
+    /// The generate lane writes geometry the decoder derived through libm, so
+    /// five of its 53 artifacts — `projection_curve`, `silhouette_curve`,
+    /// `spring_curve`, `surface_intersection_curve`, and
+    /// `surface_offset_curve` — move under that same shim. A container's bytes
+    /// have no numeric structure to compare tolerantly, so the comparison moves
+    /// to the document inside them, where the repository's float tolerance
+    /// applies. Byte equality still short-circuits, and
+    /// [`golden_output_is_deterministic`] still requires two runs in one process
+    /// to agree bit for bit.
+    Decoded,
+}
+
 fn compare_encode(
     update: bool,
     root: &Path,
     dir: &str,
     name: &str,
+    comparison: ByteComparison,
     outcome: Option<Result<Vec<u8>, String>>,
     failures: &mut Vec<String>,
 ) {
@@ -511,7 +639,12 @@ fn compare_encode(
             if update {
                 remove_if_exists(&err_path);
             }
-            compare_bytes(update, &bin_path, &encoded, failures);
+            match comparison {
+                ByteComparison::Exact => compare_bytes(update, &bin_path, &encoded, failures),
+                ByteComparison::Decoded => {
+                    compare_decoded_bytes(update, &bin_path, &encoded, failures);
+                }
+            }
         }
         Some(Err(message)) => {
             if update {
@@ -567,6 +700,7 @@ fn golden_snapshots_are_byte_identical() {
             &root,
             "replay",
             name,
+            ByteComparison::Exact,
             replay_outcome(&input),
             &mut failures,
         );
@@ -575,6 +709,7 @@ fn golden_snapshots_are_byte_identical() {
             &root,
             "generate",
             name,
+            ByteComparison::Decoded,
             generate_outcome(&input),
             &mut failures,
         );
@@ -583,6 +718,7 @@ fn golden_snapshots_are_byte_identical() {
             &root,
             "patch",
             name,
+            ByteComparison::Exact,
             patch_outcome(&input),
             &mut failures,
         );
@@ -630,6 +766,157 @@ fn golden_output_is_deterministic() {
             "fixture `{name}`: nondeterministic patch"
         );
     }
+}
+
+/// Every committed fixture replays its retained bytes back to itself.
+///
+/// The `replay` artifacts pin what the encoder produced; this pins that it
+/// equals the input, which is a different claim and the one "replay" names.
+/// [`cadmpeg_ir::roundtrip::verbatim_replay_holds`] asserts the write path too,
+/// so a fixture that stopped replaying could not pass here by having its writer
+/// happen to reproduce the container.
+#[test]
+fn fixtures_replay_verbatim() {
+    for (name, _) in fixtures() {
+        let input = read_fixture(name).expect("committed fixture");
+        verbatim_replay_holds(&F3dCodec, name, &input);
+    }
+}
+
+/// Without its baseline, this codec refuses to write rather than guess.
+///
+/// [`cadmpeg_ir::roundtrip::semantic_roundtrip`] removes the document baseline,
+/// which is the only thing that can show the retained container still describes
+/// the document. Fusion's writer declines at that point, so the semantic write
+/// path is not reachable through this helper for this codec, and the refusal is
+/// what gets asserted. That refusal is the safety property: replaying a container
+/// whose currency cannot be established would silently discard edits, and this
+/// fails if the codec ever starts doing so.
+#[test]
+fn fixtures_refuse_to_write_without_a_baseline() {
+    for (name, _) in fixtures() {
+        let input = read_fixture(name).expect("committed fixture");
+        semantic_roundtrip(&F3dCodec, name, &input, |outcome| {
+            match outcome {
+            SemanticOutcome::Refused { error } => assert!(
+                matches!(error, CodecError::NotImplemented(_)),
+                "fixture `{name}`: a missing baseline is an unbuilt capability, not a malformed input: {error}"
+            ),
+            SemanticOutcome::Written { report, .. } => panic!(
+                "fixture `{name}`: the baseline was removed, yet the encoder wrote by the {} path",
+                report.write_path
+            ),
+        }
+        });
+    }
+}
+
+/// How far the mutation lane moves a point, in millimetres.
+///
+/// Large enough that the tolerant comparator cannot mistake a dropped edit for
+/// last-place disagreement, and small enough to stay inside the coordinate range
+/// the fixtures already occupy.
+const MUTATION_MM: f64 = 1.0;
+
+/// The one committed fixture with no point to move.
+///
+/// `container_metadata_only` carries a container and no B-rep stream, so
+/// `model.points` is empty and there is nothing for the point patcher to
+/// rewrite. Naming it here rather than skipping empty arenas quietly means a
+/// fixture that stops carrying points fails this test instead of leaving the
+/// lane silently narrower.
+const FIXTURES_WITHOUT_POINTS: [&str; 1] = ["container_metadata_only"];
+
+/// Serializes the neutral document: the model and the unit and tolerance
+/// declarations it is expressed in.
+///
+/// This is deliberately narrower than the whole IR. `ir.source` describes the
+/// container the document came out of, and a patched container is a different
+/// container: its length and its digests move because the writer rewrote it,
+/// which is the write succeeding rather than the document changing. The native
+/// `f3d` arenas are likewise keyed by position in a container that just moved.
+/// What must survive a patch unchanged, apart from the edit, is the model.
+fn neutral_document(ir: &CadIr) -> String {
+    snapshot_text(&serde_json::json!({
+        "model": serde_json::to_value(&ir.model).expect("serialize model"),
+        "units": serde_json::to_value(&ir.units).expect("serialize units"),
+        "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),
+    }))
+}
+
+/// An edit to a decoded document survives the patch writer.
+///
+/// [`cadmpeg_ir::roundtrip::semantic_roundtrip`] cannot reach this writer: it
+/// removes the baseline and this codec then refuses, which
+/// [`fixtures_refuse_to_write_without_a_baseline`] pins. A user reaches the
+/// writer the other way, by editing a value and leaving the baseline where the
+/// decoder stamped it, so that is what
+/// [`cadmpeg_ir::roundtrip::mutation_roundtrip`] does here.
+///
+/// The check is not that the bytes round-trip. Bytes that round-trip while the
+/// edit vanishes are the failure this exists to catch, so the patched container
+/// is decoded and its neutral document must equal the edited document: the moved
+/// coordinate comes back moved, and nothing else moved with it.
+#[test]
+fn an_edit_survives_the_patch_writer() {
+    let mut edited_count = 0usize;
+    let mut skipped: Vec<&str> = Vec::new();
+    for (name, _) in fixtures() {
+        let input = read_fixture(name).expect("committed fixture");
+        let ran = mutation_roundtrip(
+            &F3dCodec,
+            name,
+            &input,
+            WritePath::Patched,
+            |ir| {
+                let Some(point) = ir.model.points.first_mut() else {
+                    return false;
+                };
+                point.position.x += MUTATION_MM;
+                true
+            },
+            |outcome| match outcome {
+                MutationOutcome::Written { edited, bytes, .. } => {
+                    let round_trip = decode_result(bytes).unwrap_or_else(|error| {
+                        panic!("fixture `{name}`: patched output does not decode: {error}")
+                    });
+                    let moved = edited.model.points[0].position.x;
+                    let returned = round_trip.ir.model.points[0].position.x;
+                    assert!(
+                        (returned - moved).abs() <= 1e-9,
+                        "fixture `{name}`: the patch writer produced a container that round-trips, but the \
+                         edited coordinate came back as {returned} rather than {moved}; the edit was dropped"
+                    );
+                    if let Err(mismatch) = snapshots_agree(
+                        &neutral_document(edited),
+                        &neutral_document(&round_trip.ir),
+                    ) {
+                        panic!(
+                            "fixture `{name}`: the patched container decodes to a different document: {mismatch}"
+                        );
+                    }
+                }
+                MutationOutcome::Refused { error } => {
+                    panic!("fixture `{name}`: the patch writer declined to move a point: {error}")
+                }
+            },
+        );
+        if ran {
+            edited_count += 1;
+        } else {
+            skipped.push(name);
+        }
+    }
+    assert_eq!(
+        skipped, FIXTURES_WITHOUT_POINTS,
+        "the set of fixtures with no point to move changed; this lane covers every other fixture, so \
+         a new name here narrows it and a missing one means a fixture lost its geometry"
+    );
+    assert_eq!(
+        edited_count,
+        fixtures().len() - FIXTURES_WITHOUT_POINTS.len(),
+        "every fixture that carries a point must reach the patch writer"
+    );
 }
 
 /// The tripwire that makes a frozen input auditable: every committed fixture

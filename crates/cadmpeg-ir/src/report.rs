@@ -510,10 +510,48 @@ pub struct ExportReport {
     pub census: EntityCensus,
     /// How decode-time source fidelity was handled.
     pub fidelity: FidelityResolution,
+    /// Which write path produced the exported bytes.
+    pub write_path: WritePath,
     /// Omitted, normalized, or reduced content.
     pub losses: Vec<LossNote>,
     /// Informational details about the export path.
     pub notes: Vec<String>,
+}
+
+/// Which of an encoder's write paths produced the exported bytes.
+///
+/// An encoder that retains its source bytes has two ways to answer "write this
+/// document": copy the retained bytes out, or run the writer. The two are
+/// indistinguishable from the output alone whenever the writer happens to
+/// reproduce the input, so a round-trip test that only compares bytes cannot say
+/// which one it exercised — and a test over an unedited document takes the copy
+/// path, proving nothing about the writer. This value is set at the branch the
+/// encoder actually took, never derived from the output afterwards, so the
+/// distinction is a fact the caller can assert on.
+///
+/// The variants are ordered by how much of the output the encoder authored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum WritePath {
+    /// Retained source bytes were copied to the output unchanged. No writer code
+    /// ran, so the output says nothing about the writer.
+    VerbatimReplay,
+    /// The writer ran and consumed retained source content, rewriting part of a
+    /// container it did not author in full.
+    Patched,
+    /// The writer ran over neutral IR content alone, authoring every output byte.
+    Synthesized,
+}
+
+impl fmt::Display for WritePath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::VerbatimReplay => "verbatim_replay",
+            Self::Patched => "patched",
+            Self::Synthesized => "synthesized",
+        })
+    }
 }
 
 /// How an encoder resolved optional source fidelity.

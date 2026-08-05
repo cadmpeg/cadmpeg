@@ -3,8 +3,8 @@
 
 use std::io::Read;
 
-use cadmpeg_codec_core::decode::{DecodeContext, ExpandSpec, View};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::decode::{DecodeContext, ExpandSpec, View};
+use cadmpeg_core::CodecError;
 use flate2::read::{DeflateDecoder, ZlibDecoder};
 
 /// Inflates a zlib member under the decode budget, retaining a nonempty prefix
@@ -73,7 +73,7 @@ pub fn inflate_bounded_probe(bytes: &[u8], cap: usize) -> Option<Vec<u8>> {
 mod tests {
     use std::io::Write as _;
 
-    use cadmpeg_codec_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use flate2::{write::DeflateEncoder, write::ZlibEncoder, Compression};
 
     use super::*;

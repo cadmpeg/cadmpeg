@@ -4,8 +4,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
 
-use cadmpeg_codec_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
-use cadmpeg_codec_core::{CodecError, ContainerEntry};
+use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
+use cadmpeg_core::{CodecError, ContainerEntry};
 use zip::CompressionMethod;
 
 /// Compression methods supported by [`ArchiveSnapshot::open`].
@@ -656,7 +656,7 @@ fn partition(len: u64, regions: &[Region]) -> Result<Vec<PhysicalSpan>, CodecErr
 mod tests {
     use std::io::{Cursor, Write as _};
 
-    use cadmpeg_codec_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use zip::write::SimpleFileOptions;
 
     use super::*;

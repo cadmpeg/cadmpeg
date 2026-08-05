@@ -3,8 +3,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_codec_core::decode::DecodeContext;
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, PcurveGeometry, Surface, SurfaceGeometry,

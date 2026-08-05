@@ -1,14 +1,84 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Structural comparison of IR documents.
+//!
+//! Numbers compare through [`cadmpeg_core::compare`], so a coordinate that
+//! differs only in the last place — what the same file decoded under two
+//! platforms' libm produces — is not reported as a change, while an integer
+//! count, index, or degree that moved by one always is. That module states the
+//! tolerance and its caveats, including that the relation is not transitive:
+//! every verdict here concerns exactly the two documents passed in.
+//!
+//! The comparison covers units, tolerances, every model and native arena, and
+//! [`crate::document::SourceMeta`] — the source format id and its attributes,
+//! where a codec records the program version, the object count, and the rest of
+//! what it read out of the container.
+//!
+//! One class of attribute is carved out. A machine-local digest, named by the
+//! [`cadmpeg_core::compare::LOCAL_DIGEST_SUFFIX`] convention, is a bitwise
+//! fingerprint of the very values this module compares tolerantly: two decodes
+//! that agree to fourteen significant digits hash differently, and no tolerance
+//! can reconcile them. Reporting such a difference as a difference would make
+//! every cross-platform comparison of one file report that file as changed.
+//! [`SourceDiff::local_digests`] therefore reports them for information, outside
+//! [`IrDiff::is_empty`] and outside the exit code derived from it, while every
+//! other source attribute counts.
+//!
+//! A document with no `source` compares as one whose source is
+//! [`SourceMeta::default`]: an empty format id and no attributes. Two documents
+//! that both lack source metadata therefore agree, and a document that gained a
+//! populated one differs.
 
 use std::collections::BTreeMap;
+
+use cadmpeg_core::compare::{floats_agree, is_local_digest_attribute, values_agree};
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::document::SourceMeta;
 use crate::CadIr;
+
+/// One differing source attribute.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct AttributeChange {
+    /// Attribute key.
+    pub key: String,
+    /// Value in the left-hand document, absent when only the right-hand document
+    /// carries the key.
+    pub left: Option<String>,
+    /// Value in the right-hand document, absent when only the left-hand document
+    /// carries the key.
+    pub right: Option<String>,
+}
+
+/// Changes in the two documents' source metadata.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SourceDiff {
+    /// `(left, right)` source format ids, present only when they differ.
+    pub format_change: Option<(String, String)>,
+    /// Differing attributes, each a difference.
+    pub attributes: Vec<AttributeChange>,
+    /// Differing machine-local digest attributes, reported for information and
+    /// never counted as a difference.
+    ///
+    /// See the module documentation: such a digest cannot agree across platforms,
+    /// so a verdict that turned on one would call the same file changed.
+    pub local_digests: Vec<AttributeChange>,
+}
+
+impl SourceDiff {
+    /// Returns `true` when nothing that counts as a difference changed.
+    ///
+    /// [`Self::local_digests`] is deliberately not consulted.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.format_change.is_none() && self.attributes.is_empty()
+    }
+}
 
 /// A modified entity and its differing top-level fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -43,21 +113,33 @@ pub struct IrDiff {
     pub unit_change: Option<(crate::units::Units, crate::units::Units)>,
     /// `(left, right)` tolerances, present only when the two documents' tolerances differ.
     pub tolerance_change: Option<(crate::units::Tolerances, crate::units::Tolerances)>,
+    /// Source-metadata changes, including the informational digest section.
+    pub source: SourceDiff,
     /// Per-arena diffs, one entry per arena compared.
     pub per_arena: Vec<ArenaDiff>,
 }
 
 impl IrDiff {
-    /// Returns `true` when neither units, tolerances, nor any arena differ.
+    /// Returns `true` when neither units, tolerances, source metadata, nor any
+    /// arena differ.
+    ///
+    /// A difference confined to [`SourceDiff::local_digests`] leaves this `true`.
     pub fn is_empty(&self) -> bool {
         self.unit_change.is_none()
             && self.tolerance_change.is_none()
+            && self.source.is_empty()
             && self.per_arena.iter().all(|arena| {
                 arena.added.is_empty() && arena.removed.is_empty() && arena.modified.is_empty()
             })
     }
 }
 
+/// Top-level field names whose values do not agree, tolerating last-place
+/// disagreement in fractional numbers at any depth beneath a field.
+///
+/// A field present on one side and absent on the other always counts as
+/// differing, so an `Option` that gained or lost a value is reported even when
+/// the value would have agreed.
 fn differing_fields<T: Serialize>(left: &T, right: &T) -> Vec<String> {
     let (Ok(Value::Object(left)), Ok(Value::Object(right))) =
         (serde_json::to_value(left), serde_json::to_value(right))
@@ -68,7 +150,11 @@ fn differing_fields<T: Serialize>(left: &T, right: &T) -> Vec<String> {
         .chain(right.keys())
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
-        .filter(|key| left.get(*key) != right.get(*key))
+        .filter(|key| match (left.get(*key), right.get(*key)) {
+            (Some(before), Some(after)) => values_agree(before, after).is_err(),
+            (None, None) => false,
+            _ => true,
+        })
         .cloned()
         .collect()
 }
@@ -100,9 +186,17 @@ where
         .iter()
         .filter_map(|(id, before)| {
             let after = right.get(id)?;
-            (*before != *after).then(|| ModifiedEntity {
+            // Exact equality is the fast path and skips serializing the pair.
+            // Anything else goes to the tolerant field comparison, which decides
+            // whether the entity moved at all: an empty field list means every
+            // difference was below the tolerance.
+            if *before == *after {
+                return None;
+            }
+            let fields = differing_fields(*before, *after);
+            (!fields.is_empty()).then(|| ModifiedEntity {
                 id: (*id).to_owned(),
-                fields: differing_fields(*before, *after),
+                fields,
             })
         })
         .collect();
@@ -163,17 +257,71 @@ fn diff_native_namespaces(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
         .collect()
 }
 
-/// Compare units, tolerances, and every entity arena by stable entity ID.
+/// Whether two tolerance declarations agree, each component within the
+/// comparator's tolerance.
+fn tolerances_agree(left: crate::units::Tolerances, right: crate::units::Tolerances) -> bool {
+    floats_agree(left.linear, right.linear) && floats_agree(left.angular, right.angular)
+}
+
+/// Compare the source metadata of two documents, classifying each differing
+/// attribute as a difference or as an informational machine-local digest.
+///
+/// An absent `source` compares as [`SourceMeta::default`]; the module
+/// documentation states why.
+fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
+    let absent = SourceMeta::default();
+    let left = left.source.as_ref().unwrap_or(&absent);
+    let right = right.source.as_ref().unwrap_or(&absent);
+    let mut result = SourceDiff {
+        format_change: (left.format != right.format)
+            .then(|| (left.format.clone(), right.format.clone())),
+        ..SourceDiff::default()
+    };
+    let keys = left
+        .attributes
+        .keys()
+        .chain(right.attributes.keys())
+        .collect::<std::collections::BTreeSet<_>>();
+    for key in keys {
+        let before = left.attributes.get(key);
+        let after = right.attributes.get(key);
+        if before == after {
+            continue;
+        }
+        let change = AttributeChange {
+            key: key.clone(),
+            left: before.cloned(),
+            right: after.cloned(),
+        };
+        if is_local_digest_attribute(key) {
+            result.local_digests.push(change);
+        } else {
+            result.attributes.push(change);
+        }
+    }
+    result
+}
+
+/// Compare units, tolerances, source metadata, and every entity arena by stable
+/// entity ID.
+///
+/// Fractional numbers compare within the tolerance stated by
+/// [`cadmpeg_core::compare`]; integers, strings, enums, and structure
+/// compare exactly. Source attributes are strings and compare exactly; a
+/// machine-local digest among them is reported without counting as a difference.
 pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
+    // `Units` carries only the `LengthUnit` enum, so exact comparison is the
+    // correct relation for it; there is no float to tolerate.
     let unit_change =
         (left.units != right.units).then(|| (left.units.clone(), right.units.clone()));
-    let tolerance_change =
-        (left.tolerances != right.tolerances).then_some((left.tolerances, right.tolerances));
+    let tolerance_change = (!tolerances_agree(left.tolerances, right.tolerances))
+        .then_some((left.tolerances, right.tolerances));
     let mut per_arena = diff_arenas(left, right);
     per_arena.extend(diff_native_namespaces(left, right));
     IrDiff {
         unit_change,
         tolerance_change,
+        source: diff_source(left, right),
         per_arena,
     }
 }
@@ -183,6 +331,7 @@ pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
 mod tests {
     use super::diff;
     use crate::examples::unit_cube;
+    use cadmpeg_core::compare;
 
     #[test]
     fn detects_changes_in_all_document_dimensions() {
@@ -224,6 +373,238 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    /// Modified entity IDs in one arena of a diff.
+    fn modified(result: &super::IrDiff, kind: &str) -> Vec<String> {
+        result
+            .per_arena
+            .iter()
+            .find(|arena| arena.kind == kind)
+            .expect("every model arena appears in every diff")
+            .modified
+            .iter()
+            .map(|entity| entity.id.clone())
+            .collect()
+    }
+
+    /// Index of a point whose `x` is at unit magnitude or above, so a relative
+    /// perturbation of it is a real perturbation. A zero coordinate would make
+    /// either direction of these tests vacuous.
+    fn scaled_point(ir: &crate::CadIr) -> usize {
+        ir.model
+            .points
+            .iter()
+            .position(|point| point.position.x.abs() >= 1.0)
+            .expect("the cube fixture places points away from the origin")
+    }
+
+    /// A coordinate moved by one unit in the last place, which is what the same
+    /// file decoded under two platforms' libm produces.
+    #[test]
+    fn a_last_place_coordinate_move_is_not_a_difference() {
+        let left = unit_cube();
+        let mut right = left.clone();
+        let index = scaled_point(&left);
+        let before = right.model.points[index].position.x;
+        let after = f64::from_bits(before.to_bits() + 1);
+        assert_ne!(
+            before.to_bits(),
+            after.to_bits(),
+            "the coordinate must move, or this test proves nothing"
+        );
+        right.model.points[index].position.x = after;
+
+        assert_ne!(
+            serde_json::to_value(&left.model.points).unwrap(),
+            serde_json::to_value(&right.model.points).unwrap(),
+            "the serialized documents must differ, or exact equality would pass too"
+        );
+        let result = diff(&left, &right);
+        assert!(result.is_empty(), "{result:?}");
+    }
+
+    /// A tolerance declaration moved in the last place is the same declaration.
+    #[test]
+    fn a_last_place_tolerance_move_is_not_a_difference() {
+        let left = unit_cube();
+        let mut right = left.clone();
+        right.tolerances.linear = f64::from_bits(left.tolerances.linear.to_bits() + 1);
+        assert!(diff(&left, &right).is_empty());
+
+        right.tolerances.linear = left.tolerances.linear * 2.0;
+        assert!(diff(&left, &right).tolerance_change.is_some());
+    }
+
+    /// A change with physical meaning stays reported. A relative `1e-6` on a
+    /// coordinate is six orders above the tolerance.
+    #[test]
+    fn a_genuine_coordinate_change_is_still_reported() {
+        let left = unit_cube();
+        let mut right = left.clone();
+        let index = scaled_point(&left);
+        let point = &mut right.model.points[index].position;
+        point.x = point.x.mul_add(1e-6, point.x);
+
+        let result = diff(&left, &right);
+        assert!(!result.is_empty());
+        assert_eq!(
+            modified(&result, "points"),
+            [left.model.points[index].id.0.clone()]
+        );
+    }
+
+    /// An integer field is never tolerated, however large its magnitude and
+    /// however small the change relative to it.
+    #[test]
+    fn an_integer_field_differing_by_one_is_always_reported() {
+        use crate::geometry::{Curve, CurveGeometry, NurbsCurve};
+        use crate::ids::CurveId;
+        use crate::math::Point3;
+
+        let nurbs = |degree: u32| Curve {
+            id: CurveId("synthetic:tolerance:curve#nurbs".into()),
+            geometry: CurveGeometry::Nurbs(NurbsCurve {
+                degree,
+                knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                control_points: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(2.0, 0.0, 0.0),
+                ],
+                weights: None,
+                periodic: false,
+            }),
+            source_object: None,
+        };
+
+        let mut left = unit_cube();
+        let mut right = left.clone();
+        left.model.curves.push(nurbs(2));
+        right.model.curves.push(nurbs(3));
+
+        let result = diff(&left, &right);
+        assert!(!result.is_empty());
+        assert_eq!(
+            modified(&result, "curves"),
+            ["synthetic:tolerance:curve#nurbs"]
+        );
+    }
+
+    /// A cube carrying source metadata with the given attributes.
+    fn with_source(attributes: &[(&str, &str)]) -> crate::CadIr {
+        let mut ir = unit_cube();
+        ir.source = Some(crate::document::SourceMeta {
+            format: "synthetic".into(),
+            attributes: attributes
+                .iter()
+                .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+                .collect(),
+        });
+        ir
+    }
+
+    /// An ordinary source attribute that moved is a difference. Before this was
+    /// compared, a `program_version` or `object_count` change between two
+    /// documents was invisible.
+    #[test]
+    fn a_source_attribute_difference_is_a_difference() {
+        let left = with_source(&[("program_version", "1.0"), ("object_count", "3")]);
+        let right = with_source(&[("program_version", "1.1"), ("object_count", "3")]);
+
+        let result = diff(&left, &right);
+        assert!(!result.is_empty());
+        assert_eq!(
+            result.source.attributes,
+            [super::AttributeChange {
+                key: "program_version".to_owned(),
+                left: Some("1.0".to_owned()),
+                right: Some("1.1".to_owned()),
+            }]
+        );
+        assert!(result.source.local_digests.is_empty());
+    }
+
+    /// An attribute present on one side only is a difference in either direction.
+    #[test]
+    fn an_added_or_removed_source_attribute_is_a_difference() {
+        let left = with_source(&[("object_count", "3")]);
+        let right = with_source(&[]);
+
+        let forward = diff(&left, &right);
+        assert!(!forward.is_empty());
+        assert_eq!(forward.source.attributes[0].left.as_deref(), Some("3"));
+        assert_eq!(forward.source.attributes[0].right, None);
+
+        let backward = diff(&right, &left);
+        assert!(!backward.is_empty());
+        assert_eq!(backward.source.attributes[0].left, None);
+        assert_eq!(backward.source.attributes[0].right.as_deref(), Some("3"));
+    }
+
+    /// A machine-local digest is a bitwise fingerprint of tolerantly compared
+    /// values, so two platforms' decodes of one file disagree on it while
+    /// agreeing on the model. Such a difference is reported and does not make the
+    /// documents different.
+    #[test]
+    fn a_machine_local_digest_difference_is_reported_but_is_not_a_difference() {
+        let left = with_source(&[("document_local_sha256", &"0".repeat(64))]);
+        let right = with_source(&[("document_local_sha256", &"1".repeat(64))]);
+
+        let result = diff(&left, &right);
+        assert_ne!(left.source, right.source);
+        assert!(result.is_empty(), "{result:?}");
+        assert!(result.source.attributes.is_empty());
+        assert_eq!(
+            result
+                .source
+                .local_digests
+                .iter()
+                .map(|change| change.key.as_str())
+                .collect::<Vec<_>>(),
+            ["document_local_sha256"]
+        );
+    }
+
+    /// The carve-out follows the naming convention rather than a list of today's
+    /// keys, so a digest a codec adds tomorrow is classified without changing
+    /// this module.
+    #[test]
+    fn the_carve_out_follows_the_suffix_convention() {
+        let key = format!("future_codec_thing{}", compare::LOCAL_DIGEST_SUFFIX);
+        let left = with_source(&[(&key, "a"), ("footer_fingerprint", "f")]);
+        let right = with_source(&[(&key, "b"), ("footer_fingerprint", "f")]);
+        let result = diff(&left, &right);
+        assert!(result.is_empty(), "{result:?}");
+        assert_eq!(result.source.local_digests[0].key, key);
+
+        // A digest over retained source bytes carries no such suffix, so a change
+        // in one stays a difference.
+        let right = with_source(&[(&key, "b"), ("footer_fingerprint", "g")]);
+        let result = diff(&left, &right);
+        assert!(!result.is_empty());
+        assert_eq!(result.source.attributes[0].key, "footer_fingerprint");
+    }
+
+    /// A document with no source metadata compares against one that has some
+    /// without panicking, in either order, and an absent source equals an empty
+    /// one.
+    #[test]
+    fn absent_source_metadata_compares_without_panicking() {
+        let mut bare = unit_cube();
+        bare.source = None;
+        let populated = with_source(&[("object_count", "3")]);
+
+        for (left, right) in [(&bare, &populated), (&populated, &bare)] {
+            let result = diff(left, right);
+            assert!(!result.is_empty());
+            assert!(result.source.format_change.is_some());
+            assert_eq!(result.source.attributes.len(), 1);
+        }
+
+        let mut empty_source = unit_cube();
+        empty_source.source = Some(crate::document::SourceMeta::default());
+        assert!(diff(&bare, &empty_source).is_empty());
     }
 
     #[test]

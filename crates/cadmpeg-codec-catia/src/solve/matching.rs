@@ -2,7 +2,7 @@
 //!
 //! Pure combinatorics over caller-supplied domains; no byte knowledge.
 
-use cadmpeg_codec_core::decode::WorkBudget;
+use cadmpeg_core::decode::WorkBudget;
 use std::collections::{HashSet, VecDeque};
 
 pub(crate) fn domains_have_distinct_matching<'a>(

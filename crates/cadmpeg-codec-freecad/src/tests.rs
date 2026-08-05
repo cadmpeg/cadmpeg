@@ -1,6 +1,6 @@
 use std::io::{Cursor, Write};
 
-use cadmpeg_codec_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, ExtrusionDirectionSource, FeatureDefinition,
     InnerWireTaper, Length, PathRef, RevolveExtent, ShellJoin, ShellMode, SweepOrientation,
@@ -4986,7 +4986,7 @@ fn rejects_unsafe_names() {
     let error = FcstdCodec
         .inspect(
             &mut Cursor::new(unsafe_name),
-            &cadmpeg_codec_core::decode::InspectOptions::default(),
+            &cadmpeg_core::decode::InspectOptions::default(),
         )
         .expect_err("unsafe path must fail");
     assert!(error.to_string().contains("unsafe ZIP entry path"));
@@ -5606,7 +5606,7 @@ fn legacy_layout_is_inspectable_but_explicitly_refused_for_decode() {
     let summary = FcstdCodec
         .inspect(
             &mut Cursor::new(&bytes),
-            &cadmpeg_codec_core::decode::InspectOptions::default(),
+            &cadmpeg_core::decode::InspectOptions::default(),
         )
         .expect("legacy inspection");
     assert!(summary.notes.iter().any(|note| note == "SchemaVersion=3"));
@@ -5955,7 +5955,7 @@ fn inspects_and_closes_physical_ledger() {
     let summary = FcstdCodec
         .inspect(
             &mut Cursor::new(&bytes),
-            &cadmpeg_codec_core::decode::InspectOptions::default(),
+            &cadmpeg_core::decode::InspectOptions::default(),
         )
         .expect("inspect");
     assert_eq!(summary.format, "fcstd");

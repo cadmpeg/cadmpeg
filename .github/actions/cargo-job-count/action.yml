@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+name: Match cargo's job count to the runner
+description: >
+  Export CARGO_BUILD_JOBS as the runner's core count, overriding the `jobs`
+  cap in .cargo/config.toml.
+
+runs:
+  using: composite
+  steps:
+    # `.cargo/config.toml` caps `jobs` at 6 so the final burst of very large
+    # concurrent links cannot push a developer machine past systemd-oomd's
+    # pressure threshold. Runners have 3 to 4 cores, where that cap is
+    # oversubscription rather than a limit: a full test build on 3 cores takes
+    # 287s at `jobs=3` and 476s at `jobs=6`. An environment variable beats the
+    # config file, so the cap keeps protecting the machine it was written for.
+    - name: Export CARGO_BUILD_JOBS
+      shell: bash
+      run: |
+        set -euo pipefail
+        # `nproc` on Linux and on the Windows runner's Git Bash; macOS has
+        # neither GNU coreutils nor `nproc`.
+        cores="$(nproc 2>/dev/null || sysctl -n hw.logicalcpu)"
+        echo "runner reports ${cores} cores"
+        echo "CARGO_BUILD_JOBS=${cores}" >> "$GITHUB_ENV"

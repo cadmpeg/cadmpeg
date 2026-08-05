@@ -8,7 +8,7 @@ use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_
 use crate::wire::records::{
     a_family_frames, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
 };
-use cadmpeg_codec_core::le::{u16_at as u16_le, u32_at as u32_le};
+use cadmpeg_core::le::{u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::geometry::{
     NurbsCurve, NurbsSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative,
     RollingBallJetSite, SurfaceGeometry,
