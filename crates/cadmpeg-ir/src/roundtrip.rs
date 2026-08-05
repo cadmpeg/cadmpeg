@@ -8,17 +8,32 @@
 //! cases, and over an unedited document it always takes the copy. It then passes
 //! no matter what the writer does, because the writer never ran.
 //!
-//! There are exactly two entry points here, and each one names the path it
-//! covers, so choosing wrong is a compile-time or assertion-time event rather
-//! than a green test that proves nothing:
+//! There are exactly three entry points here, one per way the question can be
+//! asked:
 //!
 //! - [`verbatim_replay_holds`] covers the copy. It asserts the copy happened and
 //!   that the copy is faithful. It says nothing about the writer.
-//! - [`semantic_roundtrip`] covers the writer. It removes the baseline first, so
+//! - [`semantic_roundtrip`] covers the writer with the baseline taken away, so
 //!   the copy is not available, and asserts the copy did not happen.
+//! - [`mutation_roundtrip`] covers the writer with the baseline left in place
+//!   and a value edited, which is how a user reaches it. It asserts the write
+//!   path the caller named.
 //!
-//! There is deliberately no third, path-agnostic entry point. One would be the
-//! trap this module exists to close.
+//! Each names the path it covers, so choosing wrong is an assertion-time event.
+//! There is deliberately no path-agnostic entry point. One would be the trap
+//! this module exists to close.
+//!
+//! ## Why the third one is not the trap
+//!
+//! Removing the baseline and editing a value both deny the copy, but they are
+//! not the same test and one does not subsume the other. Removing the baseline
+//! asks a codec what it does when it cannot establish whether its retained bytes
+//! are current; a codec that needs the baseline to write at all answers by
+//! refusing, and its writer is then unreachable from that helper. Editing a
+//! value asks what the writer produces for a document that differs from the
+//! retained bytes in one known place, which is the only question whose answer
+//! can be checked against the edit. `Fusion` needs both: it refuses the first
+//! and patches the second.
 //!
 //! This lives in `cadmpeg-ir` rather than beside the golden harness in
 //! `cadmpeg_codec_core::golden` because it drives [`Encoder`], which
@@ -208,6 +223,142 @@ pub fn semantic_roundtrip<C>(
         Err(error) => SemanticOutcome::Refused { error },
     };
     check(&outcome);
+}
+
+/// What the writer did for a document that was edited with its baseline left in
+/// place.
+#[derive(Debug)]
+pub enum MutationOutcome {
+    /// The writer ran and produced bytes.
+    Written {
+        /// The document as decoded, before the mutation.
+        baseline: Box<CadIr>,
+        /// The document that was written: `baseline` with the mutation applied.
+        edited: Box<CadIr>,
+        /// The encoder's report, whose `write_path` is the one the caller named.
+        report: Box<ExportReport>,
+        /// The bytes the writer produced.
+        bytes: Vec<u8>,
+    },
+    /// The encoder refused the edit. A writer may decline an edit it has not
+    /// built, and that refusal is its contract.
+    Refused {
+        /// The refusal. Carried as the error itself so a caller asserts on the
+        /// variant rather than on wording.
+        error: CodecError,
+    },
+}
+
+/// Decodes `fixture`, applies `mutate` to the decoded document, encodes it with
+/// the write baseline left in place, and hands the outcome to `check`.
+///
+/// Returns whether `mutate` reported an edit. A caller that sweeps a fixture set
+/// counts the fixtures it skipped and says why, rather than passing on the ones
+/// it happened to reach.
+///
+/// # Why the edit rather than the strip
+///
+/// [`semantic_roundtrip`] denies the verbatim-replay shortcut by removing the
+/// [`DOCUMENT_LOCAL_DIGEST_ATTRIBUTE`] baseline. That moves only the branch, and
+/// a codec whose writer needs the baseline to plan its edit answers by refusing,
+/// which leaves its writer uncovered. This helper denies the shortcut the way a
+/// user does: it leaves the baseline where the decoder stamped it and changes a
+/// value, so the digest the encoder recomputes no longer matches and the writer
+/// runs with everything it retains still available.
+///
+/// It also makes the write checkable. The strip asks the writer to reproduce a
+/// document; an edit asks it to carry one known change, so `check` can decode
+/// the output and demand that change back. A writer that round-trips bytes while
+/// dropping the edit passes the first question and fails the second, and that is
+/// the failure this helper exists to catch.
+///
+/// # Panics
+///
+/// Panics when the decode fails, when `mutate` reports an edit that left the
+/// document equal to the decode, when `mutate` removed the baseline (which would
+/// make this [`semantic_roundtrip`] under another name), when the write fails
+/// after planning succeeded, or when the encoder took a write path other than
+/// `expected_path`. Also panics when `expected_path` is
+/// [`WritePath::VerbatimReplay`]: the document was edited, so replaying the
+/// retained bytes would discard the edit and no caller may expect it.
+pub fn mutation_roundtrip<C>(
+    codec: &C,
+    label: &str,
+    fixture: &[u8],
+    expected_path: WritePath,
+    mutate: impl FnOnce(&mut CadIr) -> bool,
+    check: impl FnOnce(&MutationOutcome),
+) -> bool
+where
+    C: Codec + Encoder,
+{
+    assert_ne!(
+        expected_path,
+        WritePath::VerbatimReplay,
+        "{label}: this helper edits the document, so replaying the retained bytes would discard the edit; \
+         no caller may name that path as expected"
+    );
+    let mut decoded = CodecEntry::decode(
+        codec,
+        &mut std::io::Cursor::new(fixture.to_vec()),
+        &DecodeOptions::default(),
+    )
+    .unwrap_or_else(|error| panic!("{label}: decode failed: {error}"));
+    let baseline = decoded.ir.clone();
+    if !mutate(&mut decoded.ir) {
+        return false;
+    }
+    assert!(
+        decoded.ir != baseline,
+        "{label}: the mutation reported an edit but left the document equal to the decode, so the encoder \
+         would still be free to replay its retained bytes and this test would describe nothing"
+    );
+    assert!(
+        decoded
+            .ir
+            .source
+            .as_ref()
+            .is_some_and(|source| source.attributes.contains_key(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE)),
+        "{label}: the mutation removed `{DOCUMENT_LOCAL_DIGEST_ATTRIBUTE}`; this helper covers the edited \
+         document with its baseline intact, and without it the codec answers a different question"
+    );
+    // The plan borrows the document, so the write finishes and the borrow ends
+    // before the outcome takes ownership of it.
+    let written = match Encoder::plan(
+        codec,
+        EncodeInput {
+            ir: &decoded.ir,
+            fidelity: Some(&decoded.source_fidelity),
+        },
+    ) {
+        Ok(plan) => {
+            let path = ExportPlan::write_path(&plan);
+            let mut bytes = Vec::new();
+            let report = plan
+                .write_to(&mut bytes)
+                .unwrap_or_else(|error| panic!("{label}: write failed: {error}"));
+            Ok((path, report, bytes))
+        }
+        Err(error) => Err(error),
+    };
+    let outcome = match written {
+        Ok((path, report, bytes)) => {
+            assert_eq!(
+                path, expected_path,
+                "{label}: the document was edited, so the encoder was expected to write by the \
+                 {expected_path} path, but it took the {path} path"
+            );
+            MutationOutcome::Written {
+                baseline: Box::new(baseline),
+                edited: Box::new(decoded.ir),
+                report: Box::new(report),
+                bytes,
+            }
+        }
+        Err(error) => MutationOutcome::Refused { error },
+    };
+    check(&outcome);
+    true
 }
 
 /// Locates the first differing byte, or the length disagreement when one side is

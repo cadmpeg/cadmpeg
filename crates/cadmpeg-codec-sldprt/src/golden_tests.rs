@@ -28,7 +28,10 @@ use cadmpeg_codec_core::golden::{
 };
 use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
-use cadmpeg_ir::roundtrip::{semantic_roundtrip, verbatim_replay_holds, SemanticOutcome};
+use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, Length, Termination};
+use cadmpeg_ir::roundtrip::{
+    mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, MutationOutcome, SemanticOutcome,
+};
 use cadmpeg_ir::WritePath;
 
 use super::SldprtCodec;
@@ -241,32 +244,34 @@ fn walk_identifiers(value: &mut serde_json::Value, visit: &mut impl FnMut(&str) 
 fn neutral_document(bytes: &[u8]) -> String {
     let value =
         match SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-            Ok(result) => {
-                let mut document = serde_json::json!({
-                    "model": serde_json::to_value(&result.ir.model).expect("serialize model"),
-                    "units": serde_json::to_value(result.ir.units).expect("serialize units"),
-                    "tolerances": serde_json::to_value(result.ir.tolerances)
-                        .expect("serialize tolerances"),
-                });
-                let mut positions = BTreeSet::new();
-                walk_identifiers(&mut document, &mut |id| {
-                    positions.extend(byte_positions(id));
-                    None
-                });
-                let mut ranks = BTreeMap::new();
-                for (family, position) in positions {
-                    let rank = ranks
-                        .keys()
-                        .filter(|(seen, _): &&(String, u64)| *seen == family)
-                        .count();
-                    ranks.insert((family, position), rank);
-                }
-                walk_identifiers(&mut document, &mut |id| normalize_identifier(id, &ranks));
-                document
-            }
+            Ok(result) => normalized_document(&result.ir),
             Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
         };
     snapshot_text(&value)
+}
+
+/// The model, units, and tolerances with container byte positions rank-normalized.
+fn normalized_document(ir: &cadmpeg_ir::CadIr) -> serde_json::Value {
+    let mut document = serde_json::json!({
+        "model": serde_json::to_value(&ir.model).expect("serialize model"),
+        "units": serde_json::to_value(&ir.units).expect("serialize units"),
+        "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),
+    });
+    let mut positions = BTreeSet::new();
+    walk_identifiers(&mut document, &mut |id| {
+        positions.extend(byte_positions(id));
+        None
+    });
+    let mut ranks = BTreeMap::new();
+    for (family, position) in positions {
+        let rank = ranks
+            .keys()
+            .filter(|(seen, _): &&(String, u64)| *seen == family)
+            .count();
+        ranks.insert((family, position), rank);
+    }
+    walk_identifiers(&mut document, &mut |id| normalize_identifier(id, &ranks));
+    document
 }
 
 /// [`normalize_identifier`] replaces container byte positions and nothing else.
@@ -400,3 +405,174 @@ fn fixtures_survive_the_semantic_write_path() {
          add a fixture the writer can write, or this lane is dead"
     );
 }
+
+/// How far the mutation lane moves an extrusion depth, in millimetres.
+///
+/// Far enough that the tolerant comparator cannot mistake a dropped edit for
+/// last-place disagreement.
+const MUTATION_MM: f64 = 3.0;
+
+/// Every statement of a one-sided blind extrusion depth in `ir`.
+///
+/// A blind depth is the plainest dimensional edit this codec has: one number a
+/// user types into a feature dialog, carried by the neutral feature arena and by
+/// a retained history record at once, which is what makes the write interesting.
+///
+/// The document states it in two places, and an edit means both: the feature's
+/// own definition, and each configuration's evaluated state for that feature.
+/// Moving only the first leaves the document self-inconsistent, and the writer
+/// then re-derives the configuration state from the feature and the output
+/// disagrees with the input for a reason that is not a lost edit.
+fn blind_extrude_lengths(ir: &mut cadmpeg_ir::CadIr) -> Vec<&mut Length> {
+    fn depth(definition: &mut FeatureDefinition) -> Option<&mut Length> {
+        let FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::OneSided { side },
+            ..
+        } = definition
+        else {
+            return None;
+        };
+        match &mut side.termination {
+            Termination::Blind { length } => Some(length),
+            _ => None,
+        }
+    }
+    let features = ir
+        .model
+        .features
+        .iter_mut()
+        .filter_map(|feature| depth(&mut feature.definition));
+    let states = ir
+        .model
+        .configurations
+        .iter_mut()
+        .flat_map(|configuration| configuration.feature_states.values_mut())
+        .filter_map(|state| depth(&mut state.definition));
+    features.chain(states).collect()
+}
+
+/// An edited extrusion depth survives the semantic write path.
+///
+/// [`fixtures_survive_the_semantic_write_path`] removes the document baseline and
+/// leaves the document itself alone. `prepare_features_for_write` then finds the
+/// per-lane `sldprt_neutral_feature_local_sha256` baseline still present and still
+/// matching and returns on its unchanged-baseline branch, so `sync_neutral_features`
+/// — the pass that carries a neutral feature edit into the retained history
+/// records — is not reached from the fixture corpus at all. Editing a depth is
+/// what reaches it: the neutral feature hash moves, the native history hash does
+/// not, and the write runs the synchronization.
+///
+/// # What this asserts, and what it cannot
+///
+/// It asserts that the edit comes back: every place the document states the depth
+/// states the edited value after the write. It also asserts that no B-rep arena
+/// changed size, so a face or edge lost during the rewrite still fails here.
+///
+/// It does not compare the written document as a whole, because the written
+/// B-rep is not the retained one. `retained_partition` replays the source
+/// Parasolid payload only while `brep_local_sha256` still matches, and that digest
+/// covers the whole `model` rather than the B-rep arenas its name refers to. A
+/// depth edit touches no B-rep entity and still moves it, so the writer discards
+/// the retained payload and re-authors the geometry from neutral IR, minting fresh
+/// Parasolid entity tags in a different order. The geometry survives; the tags and
+/// the arena order do not. Rank-normalizing them the way [`byte_positions`]
+/// normalizes container offsets would not rescue the comparison, because the
+/// re-authored tags do not preserve the original relative order either — and a
+/// normalization wide enough to absorb that would also absorb a writer that
+/// dropped a record, which is the thing this suite must not do.
+#[test]
+fn an_edited_depth_survives_the_semantic_write_path() {
+    let mut edited_count = 0usize;
+    for (name, bytes) in harness().fixture_inputs() {
+        let ran = mutation_roundtrip(
+            &SldprtCodec,
+            &name,
+            &bytes,
+            WritePath::Patched,
+            |ir| {
+                let depths = blind_extrude_lengths(ir);
+                if depths.is_empty() {
+                    return false;
+                }
+                for depth in depths {
+                    depth.0 += MUTATION_MM;
+                }
+                true
+            },
+            |outcome| match outcome {
+                MutationOutcome::Written { edited, bytes, .. } => {
+                    let mut written = SldprtCodec
+                        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+                        .unwrap_or_else(|error| {
+                            panic!("fixture `{name}`: written container does not decode: {error}")
+                        });
+                    let mut expected = edited.clone();
+                    let moved = depths(&mut expected);
+                    let returned = depths(&mut written.ir);
+                    assert_eq!(
+                        returned.len(),
+                        moved.len(),
+                        "fixture `{name}`: the written container states {} blind depths where the edited \
+                         document states {}; the edited feature was dropped or duplicated",
+                        returned.len(),
+                        moved.len()
+                    );
+                    for (index, (returned, moved)) in returned.iter().zip(&moved).enumerate() {
+                        assert!(
+                            (returned - moved).abs() <= 1e-9,
+                            "fixture `{name}`: blind depth {index} came back as {returned} rather than \
+                             {moved}; the edit was dropped"
+                        );
+                    }
+                    assert_eq!(
+                        arena_sizes(&written.ir),
+                        arena_sizes(edited),
+                        "fixture `{name}`: the re-authored B-rep is not the same size as the one that was \
+                         written; entities were lost or invented"
+                    );
+                }
+                MutationOutcome::Refused { error } => panic!(
+                    "fixture `{name}`: the writer declined to move an extrusion depth: {error}"
+                ),
+            },
+        );
+        if ran {
+            edited_count += 1;
+        }
+    }
+    assert_eq!(
+        edited_count, FIXTURES_WITH_A_BLIND_DEPTH,
+        "the number of fixtures carrying a one-sided blind extrusion changed; this lane is the only \
+         one that reaches `sync_neutral_features` from the corpus, so a drop here narrows it silently"
+    );
+}
+
+/// Every blind depth in `ir`, by value.
+fn depths(ir: &mut cadmpeg_ir::CadIr) -> Vec<f64> {
+    blind_extrude_lengths(ir)
+        .into_iter()
+        .map(|length| length.0)
+        .collect()
+}
+
+/// The size of each topological arena, so a rewrite that loses one fails.
+fn arena_sizes(ir: &cadmpeg_ir::CadIr) -> [usize; 8] {
+    let model = &ir.model;
+    [
+        model.bodies.len(),
+        model.regions.len(),
+        model.shells.len(),
+        model.faces.len(),
+        model.loops.len(),
+        model.coedges.len(),
+        model.edges.len(),
+        model.vertices.len(),
+    ]
+}
+
+/// How many committed fixtures carry a one-sided blind extrusion.
+///
+/// Most of this corpus covers geometry and container structure and holds no
+/// feature history at all, so the lane above is narrow by construction rather
+/// than by omission.
+const FIXTURES_WITH_A_BLIND_DEPTH: usize = 1;

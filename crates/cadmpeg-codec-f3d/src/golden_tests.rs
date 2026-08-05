@@ -18,12 +18,14 @@
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use cadmpeg_codec_core::golden::{elide_local_digests, snapshots_agree};
+use cadmpeg_codec_core::golden::{elide_local_digests, snapshot_text, snapshots_agree};
 use cadmpeg_codec_core::CodecError;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, DecodeResult, EncodeInput, Encoder};
 use cadmpeg_ir::examples;
-use cadmpeg_ir::roundtrip::{semantic_roundtrip, verbatim_replay_holds, SemanticOutcome};
-use cadmpeg_ir::WritePath;
+use cadmpeg_ir::roundtrip::{
+    mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, MutationOutcome, SemanticOutcome,
+};
+use cadmpeg_ir::{CadIr, WritePath};
 
 use super::{
     f3d_with_configuration, f3d_with_smbh, f3d_with_smbh_and_protein, synthetic_comp_spl_sur_smbh,
@@ -807,6 +809,114 @@ fn fixtures_refuse_to_write_without_a_baseline() {
         }
         });
     }
+}
+
+/// How far the mutation lane moves a point, in millimetres.
+///
+/// Large enough that the tolerant comparator cannot mistake a dropped edit for
+/// last-place disagreement, and small enough to stay inside the coordinate range
+/// the fixtures already occupy.
+const MUTATION_MM: f64 = 1.0;
+
+/// The one committed fixture with no point to move.
+///
+/// `container_metadata_only` carries a container and no B-rep stream, so
+/// `model.points` is empty and there is nothing for the point patcher to
+/// rewrite. Naming it here rather than skipping empty arenas quietly means a
+/// fixture that stops carrying points fails this test instead of leaving the
+/// lane silently narrower.
+const FIXTURES_WITHOUT_POINTS: [&str; 1] = ["container_metadata_only"];
+
+/// Serializes the neutral document: the model and the unit and tolerance
+/// declarations it is expressed in.
+///
+/// This is deliberately narrower than the whole IR. `ir.source` describes the
+/// container the document came out of, and a patched container is a different
+/// container: its length and its digests move because the writer rewrote it,
+/// which is the write succeeding rather than the document changing. The native
+/// `f3d` arenas are likewise keyed by position in a container that just moved.
+/// What must survive a patch unchanged, apart from the edit, is the model.
+fn neutral_document(ir: &CadIr) -> String {
+    snapshot_text(&serde_json::json!({
+        "model": serde_json::to_value(&ir.model).expect("serialize model"),
+        "units": serde_json::to_value(&ir.units).expect("serialize units"),
+        "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),
+    }))
+}
+
+/// An edit to a decoded document survives the patch writer.
+///
+/// [`cadmpeg_ir::roundtrip::semantic_roundtrip`] cannot reach this writer: it
+/// removes the baseline and this codec then refuses, which
+/// [`fixtures_refuse_to_write_without_a_baseline`] pins. A user reaches the
+/// writer the other way, by editing a value and leaving the baseline where the
+/// decoder stamped it, so that is what
+/// [`cadmpeg_ir::roundtrip::mutation_roundtrip`] does here.
+///
+/// The check is not that the bytes round-trip. Bytes that round-trip while the
+/// edit vanishes are the failure this exists to catch, so the patched container
+/// is decoded and its neutral document must equal the edited document: the moved
+/// coordinate comes back moved, and nothing else moved with it.
+#[test]
+fn an_edit_survives_the_patch_writer() {
+    let mut edited_count = 0usize;
+    let mut skipped: Vec<&str> = Vec::new();
+    for (name, _) in fixtures() {
+        let input = read_fixture(name).expect("committed fixture");
+        let ran = mutation_roundtrip(
+            &F3dCodec,
+            name,
+            &input,
+            WritePath::Patched,
+            |ir| {
+                let Some(point) = ir.model.points.first_mut() else {
+                    return false;
+                };
+                point.position.x += MUTATION_MM;
+                true
+            },
+            |outcome| match outcome {
+                MutationOutcome::Written { edited, bytes, .. } => {
+                    let round_trip = decode_result(bytes).unwrap_or_else(|error| {
+                        panic!("fixture `{name}`: patched output does not decode: {error}")
+                    });
+                    let moved = edited.model.points[0].position.x;
+                    let returned = round_trip.ir.model.points[0].position.x;
+                    assert!(
+                        (returned - moved).abs() <= 1e-9,
+                        "fixture `{name}`: the patch writer produced a container that round-trips, but the \
+                         edited coordinate came back as {returned} rather than {moved}; the edit was dropped"
+                    );
+                    if let Err(mismatch) = snapshots_agree(
+                        &neutral_document(edited),
+                        &neutral_document(&round_trip.ir),
+                    ) {
+                        panic!(
+                            "fixture `{name}`: the patched container decodes to a different document: {mismatch}"
+                        );
+                    }
+                }
+                MutationOutcome::Refused { error } => {
+                    panic!("fixture `{name}`: the patch writer declined to move a point: {error}")
+                }
+            },
+        );
+        if ran {
+            edited_count += 1;
+        } else {
+            skipped.push(name);
+        }
+    }
+    assert_eq!(
+        skipped, FIXTURES_WITHOUT_POINTS,
+        "the set of fixtures with no point to move changed; this lane covers every other fixture, so \
+         a new name here narrows it and a missing one means a fixture lost its geometry"
+    );
+    assert_eq!(
+        edited_count,
+        fixtures().len() - FIXTURES_WITHOUT_POINTS.len(),
+        "every fixture that carries a point must reach the patch writer"
+    );
 }
 
 /// The tripwire that makes a frozen input auditable: every committed fixture
