@@ -5569,41 +5569,72 @@ pub(crate) fn b5_plane_payload(origin: [f64; 3]) -> Vec<u8> {
     plane
 }
 
+/// Encode one `0x18` object reference: the lead byte, then the id as a
+/// little-endian `u16`. See `wire::object_ref`.
+pub(crate) fn b5_object_ref(id: u32) -> [u8; 3] {
+    let [low, high] = u16::try_from(id)
+        .expect("object id fits a `0x18` reference")
+        .to_le_bytes();
+    [0x18, low, high]
+}
+
 pub(crate) fn b5_closed_triangle_stream() -> Vec<u8> {
-    let mut bytes = Vec::new();
-    let plane = b5_plane_payload([0.0; 3]);
-    append_b5_record(&mut bytes, 0x27, 100, &plane);
-    for (id, start, end) in [
+    b5_closed_triangle_stream_over_edges([300, 301, 302])
+}
+
+/// Build the closed-triangle object stream over caller-chosen edge object ids.
+///
+/// The `62` loop payload interleaves one pcurve reference and one edge reference
+/// per member and closes with the support-surface reference, so an edge id
+/// appears both in its `5e` allocation and in the loop member that uses it.
+pub(crate) fn b5_closed_triangle_stream_over_edges(edges: [u32; 3]) -> Vec<u8> {
+    const SURFACE: u32 = 100;
+    const LOOP: u32 = 400;
+    const FACE: u32 = 500;
+    let pcurves = [
         (200u32, [0.0, 0.0], [1.0, 0.0]),
         (201, [1.0, 0.0], [0.0, 1.0]),
         (202, [0.0, 1.0], [0.0, 0.0]),
-    ] {
+    ];
+
+    let mut bytes = Vec::new();
+    let plane = b5_plane_payload([0.0; 3]);
+    append_b5_record(&mut bytes, 0x27, SURFACE, &plane);
+    for (id, start, end) in pcurves {
         append_b5_record(
             &mut bytes,
             0x21,
             id,
-            &b5_linear_pcurve_payload(100, start, end),
+            &b5_linear_pcurve_payload(
+                u16::try_from(SURFACE).expect("support surface id fits a `u16`"),
+                start,
+                end,
+            ),
         );
     }
-    for id in [300u32, 301, 302] {
+    for id in edges {
         append_b5_record(&mut bytes, 0x5e, id, &[]);
     }
-    append_b5_record(
-        &mut bytes,
-        0x62,
-        400,
-        &[
-            0x87, 0x18, 200, 0, 0x18, 44, 1, 0x18, 201, 0, 0x18, 45, 1, 0x18, 202, 0, 0x18, 46, 1,
-            0x18, 100, 0, 0x83, 0x05, 0x05, 0x03, 0x01, 0x00, 0xff, 0xff, 0x01, 0x00, 0x01, 0x00,
-            0xff, 0xff, 0x01, 0x00, 0x01, 0x00, 0xff, 0xff, 0x01, 0x00, 0x01,
-        ],
-    );
-    append_b5_record(
-        &mut bytes,
-        0x5f,
-        500,
-        &[0x82, 0x18, 100, 0, 0x18, 144, 1, 0x05],
-    );
+
+    let mut loop_payload = vec![0x87];
+    for ((pcurve, _, _), edge) in pcurves.into_iter().zip(edges) {
+        loop_payload.extend_from_slice(&b5_object_ref(pcurve));
+        loop_payload.extend_from_slice(&b5_object_ref(edge));
+    }
+    loop_payload.extend_from_slice(&b5_object_ref(SURFACE));
+    loop_payload.extend_from_slice(&[0x83, 0x05, 0x05, 0x03]);
+    for _ in 0..pcurves.len() {
+        loop_payload.extend_from_slice(&[0x01, 0x00, 0xff, 0xff, 0x01, 0x00]);
+    }
+    loop_payload.push(0x01);
+    append_b5_record(&mut bytes, 0x62, LOOP, &loop_payload);
+
+    let mut face_payload = vec![0x82];
+    face_payload.extend_from_slice(&b5_object_ref(SURFACE));
+    face_payload.extend_from_slice(&b5_object_ref(LOOP));
+    face_payload.push(0x05);
+    append_b5_record(&mut bytes, 0x5f, FACE, &face_payload);
+
     for point in [[0.0f32, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
         bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
         for value in point {
@@ -20132,6 +20163,59 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
         .pcurves
         .iter()
         .all(|pcurve| pcurve.parameter_range == Some([0.0, 1.0])));
+    assert!(result.report.losses.iter().all(|loss| {
+        !matches!(
+            loss.code.category(),
+            cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
+        ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
+    }));
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+/// A `b5 03` object id reaches the neutral model as an unpadded decimal key, so
+/// an edge triple such as `9`, `10`, `11` is emitted in ascending native order
+/// and sorts the other way. The route must still transfer the topology: a
+/// cross-reference is an id string, so arena order carries no reference
+/// semantics and the pipeline restores it.
+#[test]
+fn decode_float_packed_stream_transfers_topology_under_decimal_object_ids() {
+    let mut stream = b5_closed_triangle_stream_over_edges([9, 10, 11]);
+    append_b5_record(
+        &mut stream,
+        0x5e,
+        900,
+        &[
+            0x85, 0x81, 0x18, 0x85, 0x03, 0x18, 0x85, 0x03, 0x81, 0x81, 0x2a,
+        ],
+    );
+    append_b5_record(&mut stream, 0x5d, 901, &[0x81, 0x81, 0x04]);
+    crate::families::b5::graph::parse(&stream).expect("generated B5 topology");
+
+    let result = CatiaCodec
+        .decode(
+            &mut Cursor::new(object_main_catpart(&stream)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode object-stream topology");
+
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.loops.len(), 1);
+    assert_eq!(result.ir.model.coedges.len(), 3);
+    assert_eq!(result.ir.model.edges.len(), 3);
+    assert_eq!(result.ir.model.vertices.len(), 3);
+    assert_eq!(result.ir.model.pcurves.len(), 3);
+    assert_eq!(
+        result
+            .ir
+            .model
+            .edges
+            .iter()
+            .map(|edge| edge.id.0.as_str())
+            .collect::<Vec<_>>(),
+        ["catia:b5:edge#10", "catia:b5:edge#11", "catia:b5:edge#9"]
+    );
     assert!(result.report.losses.iter().all(|loss| {
         !matches!(
             loss.code.category(),

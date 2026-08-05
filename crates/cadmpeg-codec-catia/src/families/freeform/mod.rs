@@ -201,7 +201,7 @@ pub(crate) fn try_decode_freeform_surfaces(
             &mut topology_annotations,
             graph,
             &payload_id,
-        ) && neutral_model_is_admissible(&topology_ir, &unknowns)
+        ) && neutral_model_is_admissible(&mut topology_ir, &unknowns)
     });
     if topology_transferred {
         ir = topology_ir;
