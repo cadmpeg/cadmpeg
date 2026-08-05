@@ -34,11 +34,20 @@ pub struct DecodeSidecar {
 
 impl DecodeSidecar {
     /// Binds decode metadata to exact serialized CADIR bytes.
-    pub fn bind(ir_bytes: &[u8], report: DecodeReport, mut fidelity: SourceFidelity) -> Self {
+    pub fn bind(ir_bytes: &[u8], report: DecodeReport, fidelity: SourceFidelity) -> Self {
+        Self::bind_sha256(crate::hash::sha256_hex(ir_bytes), report, fidelity)
+    }
+
+    /// Binds decode metadata to a previously computed CADIR SHA-256 digest.
+    pub fn bind_sha256(
+        ir_sha256: impl Into<String>,
+        report: DecodeReport,
+        mut fidelity: SourceFidelity,
+    ) -> Self {
         fidelity.finalize();
         Self {
             version: DECODE_SIDECAR_VERSION.into(),
-            ir_sha256: crate::hash::sha256_hex(ir_bytes),
+            ir_sha256: ir_sha256.into(),
             report,
             fidelity,
         }
@@ -361,6 +370,13 @@ mod tests {
         let sidecar = DecodeSidecar::bind(b"cad-ir", report, SourceFidelity::default());
         assert!(sidecar.matches(b"cad-ir"));
         assert!(!sidecar.matches(b"changed"));
+
+        let digest_sidecar = DecodeSidecar::bind_sha256(
+            crate::hash::sha256_hex(b"cad-ir"),
+            sidecar.report.clone(),
+            sidecar.fidelity.clone(),
+        );
+        assert_eq!(digest_sidecar, sidecar);
 
         let json = sidecar.to_canonical_json().expect("serialize sidecar");
         assert_eq!(DecodeSidecar::from_json(&json).unwrap(), sidecar);

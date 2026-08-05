@@ -316,12 +316,9 @@ impl Encoder for CadirEncoder {
             FidelityResolution::NotProvided
         };
         Ok(ExportPlan::deferred(report, fidelity, move |writer| {
-            let mut json = input
-                .ir
-                .to_canonical_json()
+            serde_json::to_writer_pretty(&mut *writer, input.ir)
                 .map_err(|error| CodecError::Malformed(error.to_string()))?;
-            json.push('\n');
-            writer.write_all(json.as_bytes())?;
+            writer.write_all(b"\n")?;
             Ok(())
         }))
     }

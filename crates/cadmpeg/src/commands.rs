@@ -2,8 +2,9 @@
 //! Command execution, artifact writing, and human-readable reports.
 
 use std::fmt;
+use std::fmt::Write as _;
 use std::fs::File;
-use std::io::{self, Write};
+use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -14,6 +15,7 @@ use cadmpeg_ir::{
     decode_sidecar_path, validate, validate_with_source_fidelity, CadIr, CodecEntry, DecodeSidecar,
     SourceFidelity,
 };
+use sha2::{Digest, Sha256};
 
 use crate::loader::{self, read_prefix, DETECTION_PREFIX_LEN};
 use crate::registry::{DetectionOutcome, Registry, TargetOptions};
@@ -646,7 +648,6 @@ fn export_ir(
     step_options: cadmpeg_codec_step::StepWriteOptions,
     reject_lossy: bool,
 ) -> Result<ExportReport> {
-    let mut bytes = Vec::new();
     if rhino_version.is_some() && format != Format::Rhino {
         bail!("--rhino-version requires Rhino output");
     }
@@ -674,23 +675,33 @@ fn export_ir(
             format.name()
         )));
     }
-    let report = plan.write_to(&mut bytes)?;
-    if let Some(path) = out {
-        write_atomic(path, &bytes)?;
+    let needs_sidecar_digest =
+        format == Format::Cadir && decode_report.is_some() && source_fidelity.is_some();
+    let report = if let Some(path) = out {
+        let (report, cadir_sha256) = write_plan_atomic(path, plan, needs_sidecar_digest)?;
         if format == Format::Cadir {
-            persist_decode_sidecar(path, &bytes, decode_report, source_fidelity)?;
+            persist_decode_sidecar(
+                path,
+                cadir_sha256.as_deref(),
+                decode_report,
+                source_fidelity,
+            )?;
         }
         eprintln!(
             "wrote {} ({} entities)",
             path.display(),
             report.census.total()
         );
+        report
     } else {
-        io::stdout().write_all(&bytes)?;
+        let mut stdout = io::stdout().lock();
+        let report = plan.write_to(&mut stdout)?;
+        stdout.flush()?;
         if format == Format::Cadir && decode_report.is_some() && source_fidelity.is_some() {
             eprintln!("note: CADIR written to stdout cannot carry its decode-fidelity sidecar");
         }
-    }
+        report
+    };
     if !report.losses.is_empty() {
         eprintln!("{} export losses:", report.format);
         for loss in &report.losses {
@@ -707,14 +718,18 @@ fn export_ir(
 
 fn persist_decode_sidecar(
     cadir_path: &Path,
-    cadir_bytes: &[u8],
+    cadir_sha256: Option<&str>,
     report: Option<&DecodeReport>,
     fidelity: Option<&SourceFidelity>,
 ) -> Result<()> {
     let path = decode_sidecar_path(cadir_path);
     match (report, fidelity) {
         (Some(report), Some(fidelity)) => {
-            let sidecar = DecodeSidecar::bind(cadir_bytes, report.clone(), fidelity.clone());
+            let cadir_sha256 = cadir_sha256.ok_or_else(|| {
+                anyhow!("missing CADIR digest while writing decode-fidelity sidecar")
+            })?;
+            let sidecar =
+                DecodeSidecar::bind_sha256(cadir_sha256, report.clone(), fidelity.clone());
             let mut bytes = sidecar.to_canonical_json()?.into_bytes();
             bytes.push(b'\n');
             write_atomic(&path, &bytes)?;
@@ -728,6 +743,69 @@ fn persist_decode_sidecar(
         _ => {}
     }
     Ok(())
+}
+
+struct TempFileWriter<'a> {
+    file: &'a mut tempfile::NamedTempFile,
+    hasher: Option<Sha256>,
+}
+
+impl TempFileWriter<'_> {
+    fn finish(self) -> Option<String> {
+        self.hasher.map(|hasher| {
+            let digest = hasher.finalize();
+            let mut encoded = String::with_capacity(digest.len() * 2);
+            for byte in digest {
+                write!(encoded, "{byte:02x}").expect("writing a digest to a String");
+            }
+            encoded
+        })
+    }
+}
+
+impl Write for TempFileWriter<'_> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        let written = self.file.write(bytes)?;
+        if let Some(hasher) = &mut self.hasher {
+            hasher.update(&bytes[..written]);
+        }
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.file.flush()
+    }
+}
+
+fn write_plan_atomic(
+    output: &Path,
+    plan: cadmpeg_ir::codec::ExportPlan<'_>,
+    with_digest: bool,
+) -> Result<(ExportReport, Option<String>)> {
+    let parent = output
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut temporary = tempfile::NamedTempFile::new_in(parent)
+        .with_context(|| format!("creating temporary output in {}", parent.display()))?;
+    let mut sink = TempFileWriter {
+        file: &mut temporary,
+        hasher: with_digest.then(Sha256::new),
+    };
+    let mut writer = BufWriter::new(&mut sink);
+    let report = plan
+        .write_to(&mut writer)
+        .with_context(|| format!("writing temporary output for {}", output.display()))?;
+    writer
+        .flush()
+        .with_context(|| format!("flushing temporary output for {}", output.display()))?;
+    drop(writer);
+    let digest = sink.finish();
+    temporary
+        .persist(output)
+        .map_err(|error| error.error)
+        .with_context(|| format!("persisting temporary output to {}", output.display()))?;
+    Ok((report, digest))
 }
 
 fn write_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
