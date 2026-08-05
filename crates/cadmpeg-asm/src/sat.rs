@@ -469,9 +469,16 @@ fn logical_word(word: &str) -> Option<Token> {
 }
 
 /// Closure enumeration words (`nubs`/`nurbs` block headers).
-const CLOSURE: &[(&str, i64)] = &[("open", 0), ("closed", 1), ("periodic", 2)];
+const CLOSURE: &[(&str, i64)] = &[
+    ("open", 0),
+    ("closed", 1),
+    ("periodic", 2),
+    ("OPEN", 0),
+    ("CLOSED", 1),
+    ("PERIODIC", 2),
+];
 /// Singularity enumeration words (surface block headers).
-const SINGULARITY: &[(&str, i64)] = &[("none", 0)];
+const SINGULARITY: &[(&str, i64)] = &[("none", 0), ("NON_SINGULAR", 0)];
 /// Approximation-cache form words (the `law_spl_sur` selector naming).
 const CACHE_FORM: &[(&str, i64)] = &[
     ("full", 0),
@@ -481,7 +488,9 @@ const CACHE_FORM: &[(&str, i64)] = &[
     ("optimal", 4),
 ];
 /// Curve extension words.
-const EXTENSION: &[(&str, i64)] = &[("UNEXTENDED", 0)];
+const EXTENSION: &[(&str, i64)] = &[("UNEXTENDED", 0), ("EXTEND_G1", 1), ("EXTEND_213_G2", -1)];
+/// Spring curve-direction words.
+const CURV_DIR: &[(&str, i64)] = &[("left", 0), ("right", 2)];
 
 /// A backtracking cursor over one record's primitive fields.
 #[derive(Clone)]
@@ -926,10 +935,235 @@ fn exact_spl_sur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
     Some(())
 }
 
+/// A sense word: `forward` is `FALSE`, `reversed` is `TRUE`.
+fn sense_word(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+    match cur.word()? {
+        "forward" => out.push(Token::False),
+        "reversed" => out.push(Token::True),
+        _ => return None,
+    }
+    Some(())
+}
+
+/// One nullable support-surface slot: the `null_surface` sentinel, a `spline`
+/// reference or inline construction with its boolean and four optional
+/// bounds, or an embedded analytic surface ([`asm.md` §6.3]).
+fn nullable_surface(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+    let word = match cur.peek()? {
+        Prim::Word(word) => word.as_str(),
+        _ => return None,
+    };
+    match word {
+        "null_surface" => {
+            cur.bump();
+            out.push(Token::Ident("null_surface".to_string()));
+            Some(())
+        }
+        "spline" => {
+            cur.bump();
+            out.push(Token::Ident("spline".to_string()));
+            sense_word(cur, out)?;
+            type_subtype_tabled(cur, out)?;
+            for _ in 0..4 {
+                cur.opt_bound(out)?;
+            }
+            Some(())
+        }
+        "plane" => {
+            cur.bump();
+            out.push(Token::Ident("plane".to_string()));
+            for slot in [Slot::P, Slot::VUnit, Slot::VLen, Slot::UvSense] {
+                take_slot(cur, slot, out)?;
+            }
+            for _ in 0..4 {
+                cur.opt_bound(out)?;
+            }
+            Some(())
+        }
+        "cone" => {
+            cur.bump();
+            out.push(Token::Ident("cone".to_string()));
+            for slot in [Slot::P, Slot::VUnit, Slot::VLen, Slot::D] {
+                take_slot(cur, slot, out)?;
+            }
+            cur.opt_bound(out)?;
+            cur.opt_bound(out)?;
+            for slot in [Slot::D, Slot::D, Slot::DLen, Slot::Sense] {
+                take_slot(cur, slot, out)?;
+            }
+            for _ in 0..4 {
+                cur.opt_bound(out)?;
+            }
+            Some(())
+        }
+        "sphere" => {
+            cur.bump();
+            out.push(Token::Ident("sphere".to_string()));
+            for slot in [Slot::P, Slot::DLen, Slot::VUnit, Slot::VUnit, Slot::UvSense] {
+                take_slot(cur, slot, out)?;
+            }
+            for _ in 0..4 {
+                cur.opt_bound(out)?;
+            }
+            Some(())
+        }
+        "torus" => {
+            cur.bump();
+            out.push(Token::Ident("torus".to_string()));
+            for slot in [
+                Slot::P,
+                Slot::VUnit,
+                Slot::DLen,
+                Slot::DLen,
+                Slot::VUnit,
+                Slot::UvSense,
+            ] {
+                take_slot(cur, slot, out)?;
+            }
+            for _ in 0..4 {
+                cur.opt_bound(out)?;
+            }
+            Some(())
+        }
+        _ => None,
+    }
+}
+
+/// One nullable BS2 parameter-curve slot: the `nullbs` sentinel or an inline
+/// 2D block without a fit-tolerance field.
+fn nullable_bs2(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+    if matches!(cur.peek(), Some(Prim::Word(word)) if word == "nullbs") {
+        cur.bump();
+        out.push(Token::Ident("nullbs".to_string()));
+        return Some(());
+    }
+    bs_curve_block(
+        cur,
+        BsKind {
+            coords: 2,
+            scaled: false,
+        },
+        out,
+    )
+}
+
+/// The shared cache-first intcurve context ([`asm.md` §6.3]): serializer
+/// stamp, the `full` approximation form with the solved curve cache and fit
+/// tolerance, two supports, two parameter curves, two optional interval
+/// endpoints, three discontinuity arrays, and the extension integer. The
+/// cacheless form selects a different payload and is not typed here.
+fn cache_first_curve_context(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+    let stamp = cur.long()?;
+    out.push(Token::Long(stamp));
+    cur.word_is("full")?;
+    out.push(Token::Enum(0));
+    bs_curve_block(
+        cur,
+        BsKind {
+            coords: 3,
+            scaled: true,
+        },
+        out,
+    )?;
+    let tolerance = cur.num()?;
+    out.push(Token::Double(tolerance * cur.k));
+    nullable_surface(cur, out)?;
+    nullable_surface(cur, out)?;
+    nullable_bs2(cur, out)?;
+    nullable_bs2(cur, out)?;
+    cur.opt_bound(out)?;
+    cur.opt_bound(out)?;
+    for _ in 0..3 {
+        cur.float_array(out)?;
+    }
+    let extension = cur.long()?;
+    out.push(Token::Long(extension));
+    Some(())
+}
+
+/// The shared revision-gated surface tail ([`asm.md` §6.3]): the
+/// approximation form, its payload, six discontinuity arrays, and one
+/// boolean. Form `full` stores the solved surface and fit tolerance; form
+/// `none` stores the U and V intervals and four closure/singularity enums.
+fn revision_surface_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+    match cur.word()? {
+        "full" => {
+            out.push(Token::Enum(0));
+            bs_surface_block(cur, out)?;
+            let tolerance = cur.num()?;
+            out.push(Token::Double(tolerance * cur.k));
+        }
+        "none" => {
+            out.push(Token::Enum(2));
+            for _ in 0..4 {
+                cur.opt_bound(out)?;
+            }
+            cur.enum_word(CLOSURE, out)?;
+            cur.enum_word(CLOSURE, out)?;
+            cur.enum_word(SINGULARITY, out)?;
+            cur.enum_word(SINGULARITY, out)?;
+        }
+        _ => return None,
+    }
+    for _ in 0..6 {
+        cur.float_array(out)?;
+    }
+    let flag = logical_word(cur.word()?)?;
+    out.push(flag);
+    Some(())
+}
+
+/// `cyl_spl_sur` revision-gated payload after the subtype name: serializer
+/// stamp, the embedded directrix intcurve with two optional parameter
+/// endpoints, the extrusion direction, the native position, and the shared
+/// revision-gated surface tail.
+fn cyl_spl_sur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+    let stamp = cur.long()?;
+    out.push(Token::Long(stamp));
+    cur.word_is("intcurve")?;
+    out.push(Token::Ident("intcurve".to_string()));
+    sense_word(cur, out)?;
+    type_subtype_tabled(cur, out)?;
+    cur.opt_bound(out)?;
+    cur.opt_bound(out)?;
+    take_slot(cur, Slot::VLen, out)?;
+    take_slot(cur, Slot::P, out)?;
+    revision_surface_tail(cur, out)
+}
+
+/// `exact_spl_sur` revision-gated payload: serializer stamp, the shared
+/// surface tail, the U and V unextended intervals as optional bounds, and
+/// the extension enum.
+fn exact_spl_sur_revision_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+    let stamp = cur.long()?;
+    out.push(Token::Long(stamp));
+    revision_surface_tail(cur, out)?;
+    for _ in 0..4 {
+        cur.opt_bound(out)?;
+    }
+    cur.enum_word(EXTENSION, out)
+}
+
 /// Type one balanced subtype scope. The scope opens with `{` and a
 /// construction name; tabled constructions get their grammar, and any other
 /// construction falls back to lexical typing of the balanced scope.
 fn type_subtype(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+    let scope_start = cur.pos;
+    let out_mark = out.len();
+    if type_subtype_tabled(cur, out).is_some() {
+        return Some(());
+    }
+    cur.pos = scope_start;
+    out.truncate(out_mark);
+    fallback_scope(cur, out)
+}
+
+/// Type one balanced subtype scope through a tabled construction grammar,
+/// with no lexical rescue. A grammar whose interior must decode — a support
+/// or directrix the shared decoders resolve — requires this form, so a
+/// record with an untypable interior falls back as a whole instead of
+/// decoding around a degraded nested construction.
+fn type_subtype_tabled(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
     if !matches!(cur.peek(), Some(Prim::Open)) {
         return None;
     }
@@ -938,17 +1172,40 @@ fn type_subtype(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
     cur.bump();
     out.push(Token::SubtypeOpen);
     let Some(name) = cur.word() else {
-        // A scope without a leading construction name is typed lexically.
         cur.pos = scope_start;
         out.truncate(out_mark);
-        return fallback_scope(cur, out);
+        return None;
     };
     out.push(Token::Ident(name.to_string()));
     let matched = match name {
         "ref" => cur.long().map(|index| out.push(Token::Long(index))),
         "exp_par_cur" | "exppc" => exp_par_cur_tail(cur, out),
         "exact_int_cur" | "exactcur" => exact_int_cur_tail(cur, out),
-        "exact_spl_sur" | "exactsur" => exact_spl_sur_tail(cur, out),
+        "exact_spl_sur" | "exactsur" => {
+            let mark = (cur.pos, out.len());
+            exact_spl_sur_tail(cur, out).or_else(|| {
+                cur.pos = mark.0;
+                out.truncate(mark.1);
+                exact_spl_sur_revision_tail(cur, out)
+            })
+        }
+        "int_int_cur" => cache_first_curve_context(cur, out),
+        "par_int_cur" => cache_first_curve_context(cur, out).and_then(|()| {
+            for _ in 0..2 {
+                let flag = logical_word(cur.word()?)?;
+                out.push(flag);
+            }
+            Some(())
+        }),
+        "blend_int_cur" => cache_first_curve_context(cur, out).and_then(|()| {
+            let flag = logical_word(cur.word()?)?;
+            out.push(flag);
+            Some(())
+        }),
+        "spring_int_cur" => {
+            cache_first_curve_context(cur, out).and_then(|()| cur.enum_word(CURV_DIR, out))
+        }
+        "cyl_spl_sur" => cyl_spl_sur_tail(cur, out),
         _ => None,
     };
     let closed = matched.and_then(|()| match cur.peek() {
@@ -962,11 +1219,9 @@ fn type_subtype(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
     if closed.is_some() {
         return Some(());
     }
-    // The grammar did not consume the scope exactly: retype the complete
-    // balanced scope lexically so the record still frames.
     cur.pos = scope_start;
     out.truncate(out_mark);
-    fallback_scope(cur, out)
+    None
 }
 
 /// Lexically type one balanced subtype scope, `{` through its matching `}`.
