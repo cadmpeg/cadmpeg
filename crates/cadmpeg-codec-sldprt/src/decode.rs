@@ -3538,6 +3538,23 @@ fn stamp_configuration_baseline(ir: &mut CadIr) {
     }
 }
 
+/// Record the sketch baselines the write path compares against.
+///
+/// Two of the three are machine-local and say so with the `_local_sha256`
+/// suffix: they cover projected neutral sketch geometry, which reaches its
+/// values through `f64::cos` and friends.
+///
+/// `sldprt_native_sketch_sha256` carries no such suffix because it is portable
+/// by construction, not merely portable today. It digests
+/// `SldprtNative::feature_input_lanes`, whose every field is a `String`, an
+/// integer, or retained source bytes, with exactly three exceptions:
+/// `FeatureInputScalar::value`, `SketchInputEntity::state_value`, and
+/// `SketchInputEntity::coordinates_m`. Each of the three is one
+/// `f64::from_le_bytes` of the payload at the byte offset the record stores
+/// beside it, with no arithmetic between the read and the field. Reading an
+/// IEEE 754 bit pattern is exact on every platform, so no libm can move this
+/// digest. Any future enrichment that computes a lane float rather than reading
+/// one makes the digest machine-local and forces the rename.
 fn stamp_sketch_baseline(ir: &mut CadIr, native: &crate::native::SldprtNative) {
     let neutral_hash = crate::resolved_features::hashes::sketch_hash(ir);
     let constraint_hash = crate::resolved_features::hashes::constraint_hash(ir);
