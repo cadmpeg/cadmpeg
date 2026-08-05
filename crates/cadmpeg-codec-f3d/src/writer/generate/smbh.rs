@@ -644,7 +644,9 @@ pub(crate) fn encode_planar_triangle_smbh(
         let (owning_edge, endpoint_index) = vertex_ownership(target, &topology, vertex)?;
         native_ident(
             &mut records,
-            if vertex.tolerance.is_some() {
+            if vertex.tolerance.is_some()
+                || topology.tolerant_vertices.contains_key(vertex.id.as_str())
+            {
                 "tvertex"
             } else {
                 "vertex"
@@ -2256,7 +2258,9 @@ fn encode_source_less_edges_vertices_points(
             .copied();
         native_ident(
             records,
-            if vertex.tolerance.is_some() {
+            if vertex.tolerance.is_some()
+                || topology.tolerant_vertices.contains_key(vertex.id.as_str())
+            {
                 "tvertex"
             } else {
                 "vertex"
@@ -2418,8 +2422,13 @@ fn native_tolerant_vertex_tail(
     topology: &NativeGenerationIndex<'_>,
     vertex: &cadmpeg_ir::topology::Vertex,
 ) -> Result<(), CodecError> {
-    let Some(tolerance) = vertex.tolerance else {
-        return Ok(());
+    let stored = topology.tolerant_vertices.get(vertex.id.as_str()).copied();
+    // The unset evaluated slot has no neutral tolerance; the native tail
+    // carries the fact and the sentinel is written back.
+    let tolerance = match vertex.tolerance {
+        Some(tolerance) => tolerance,
+        None if stored.is_some_and(|tail| tail.evaluated_unset) => -1.0,
+        None => return Ok(()),
     };
     if !tolerance.is_finite() {
         return Err(CodecError::Malformed(format!(
@@ -2434,7 +2443,6 @@ fn native_tolerant_vertex_tail(
     // generation writes 0). A negative tolerance is the
     // unevaluated sentinel, stored verbatim; a non-negative tolerance
     // converts from millimetres to centimetres.
-    let stored = topology.tolerant_vertices.get(vertex.id.as_str()).copied();
     let leading = stored
         .as_ref()
         .map_or([-1.0; 2], |tail| tail.leading_tolerances);

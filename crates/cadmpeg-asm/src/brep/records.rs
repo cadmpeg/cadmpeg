@@ -106,6 +106,11 @@ pub struct TolerantVertexTail {
     /// per-entity change counter when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trailing_field: Option<i64>,
+    /// Whether the evaluated tolerance slot holds the `-1` unset sentinel.
+    /// The sentinel is a marker rather than a length, so the neutral vertex
+    /// carries no tolerance and this record keeps the fact.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub evaluated_unset: bool,
 }
 
 /// Native tail retained from one tolerant ASM edge record: the entity

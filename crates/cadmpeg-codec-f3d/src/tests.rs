@@ -6236,6 +6236,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             record_index: 0,
             leading_tolerances: [-1.0, -1.0],
             trailing_field: Some(0),
+            evaluated_unset: false,
         }];
         native.tolerant_edge_tails = vec![cadmpeg_asm::brep::records::TolerantEdgeTail {
             id: "f3d:asm:tolerant-edge-tail#generated".into(),
@@ -6498,6 +6499,7 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
                 record_index: 0,
                 leading_tolerances: [-1.0, -1.0],
                 trailing_field: vertex_trailing,
+                evaluated_unset: false,
             }];
             native.tolerant_edge_tails = vec![cadmpeg_asm::brep::records::TolerantEdgeTail {
                 id: "f3d:asm:tolerant-edge-tail#generated".into(),
@@ -6527,6 +6529,56 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
             vertex_trailing
         );
     }
+}
+
+#[test]
+fn an_unset_tolerant_vertex_sentinel_round_trips_without_a_neutral_tolerance() {
+    // The `-1` unset evaluated slot is a marker rather than a length: the
+    // neutral vertex carries no tolerance, the native tail keeps the unset
+    // fact, and generation writes the sentinel back into a tvertex record.
+    let source = f3d_with_smbh(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated planar triangle decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let tolerant_vertex = source_less.model.vertices[0].id.clone();
+    assert_eq!(source_less.model.vertices[0].tolerance, None);
+    {
+        let mut native = f3d_native_mut(&mut source_less);
+        native.tolerant_vertex_tails = vec![cadmpeg_asm::brep::records::TolerantVertexTail {
+            id: "f3d:asm:tolerant-vertex-tail#generated".into(),
+            vertex: tolerant_vertex,
+            record_index: 0,
+            leading_tolerances: [-1.0, -1.0],
+            trailing_field: Some(0),
+            evaluated_unset: true,
+        }];
+    }
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("unset tolerant vertex encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("unset tolerant vertex round trip");
+    let vertex = round_trip
+        .ir
+        .model
+        .vertices
+        .iter()
+        .find(|vertex| {
+            f3d_native(&round_trip.ir)
+                .tolerant_vertex_tails
+                .iter()
+                .any(|tail| tail.vertex == vertex.id)
+        })
+        .expect("tolerant vertex survives");
+    assert_eq!(vertex.tolerance, None);
+    let tail = &f3d_native(&round_trip.ir).tolerant_vertex_tails[0];
+    assert!(tail.evaluated_unset);
+    assert_eq!(tail.leading_tolerances, [-1.0, -1.0]);
 }
 
 #[test]
@@ -9239,6 +9291,7 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
             record_index: 0,
             leading_tolerances: [1.0, 2.0],
             trailing_field: Some(0),
+            evaluated_unset: false,
         }];
     }
     let error = F3dCodec

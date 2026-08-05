@@ -1023,7 +1023,7 @@ pub(crate) fn validate_source_less_design_links(
             || vertex_by_id
                 .get(tail.vertex.as_str())
                 .copied()
-                .is_none_or(|vertex| vertex.tolerance.is_none())
+                .is_none_or(|vertex| vertex.tolerance.is_none() && !tail.evaluated_unset)
         {
             return Err(CodecError::Malformed(format!(
                 "F3D tolerant-vertex metadata {} requires finite fields and a tolerant vertex",

@@ -3461,9 +3461,10 @@ pub(crate) fn emit_vertices(
                         id: VertexId(id(format, i)),
                         point: PointId(id(format, pi)),
                         // The last of the three f64 tolerance slots is the
-                        // evaluated tolerance. A negative value is the
-                        // unevaluated sentinel and is retained verbatim
-                        // without unit conversion.
+                        // evaluated tolerance. A negative value is the unset
+                        // sentinel, a marker rather than a length: the
+                        // neutral vertex carries no tolerance and the native
+                        // tail keeps the unset fact.
                         tolerance: matches!(r.head.as_str(), "tvertex")
                             .then(|| {
                                 // The save-format 700 layout stores one
@@ -3474,7 +3475,7 @@ pub(crate) fn emit_vertices(
                                     5
                                 };
                                 match r.chunk(slot) {
-                                    Some(Token::Double(value)) if *value < 0.0 => Some(*value),
+                                    Some(Token::Double(value)) if *value < 0.0 => None,
                                     Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
                                     _ => None,
                                 }
@@ -3490,6 +3491,10 @@ pub(crate) fn emit_vertices(
                                 vertex: VertexId(id(format, i)),
                                 record_index: r.index as u32,
                                 leading_tolerances: [*first, *second],
+                                evaluated_unset: matches!(
+                                    r.chunk(8),
+                                    Some(Token::Double(value)) if *value < 0.0
+                                ),
                                 trailing_field: match r.chunk(9) {
                                     Some(Token::Long(value)) => Some(*value),
                                     _ => None,
