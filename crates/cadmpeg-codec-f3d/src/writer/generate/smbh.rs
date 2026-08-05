@@ -31,8 +31,8 @@ use super::preconditions::{
     validate_source_less_body_kinds, validate_source_less_wire_vertices, WireVerticesValidated,
 };
 use super::records::{native_tolerant_coedge_extension, tolerant_coedge_range};
-use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::{native_bool, normalized_face_sense_to_native};
+use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
 pub(crate) fn encode_planar_triangle_smbh(
     target: &CadIr,
@@ -644,7 +644,9 @@ pub(crate) fn encode_planar_triangle_smbh(
         let (owning_edge, endpoint_index) = vertex_ownership(target, &topology, vertex)?;
         native_ident(
             &mut records,
-            if vertex.tolerance.is_some() {
+            if vertex.tolerance.is_some()
+                || topology.tolerant_vertices.contains_key(vertex.id.as_str())
+            {
                 "tvertex"
             } else {
                 "vertex"
@@ -2256,7 +2258,9 @@ fn encode_source_less_edges_vertices_points(
             .copied();
         native_ident(
             records,
-            if vertex.tolerance.is_some() {
+            if vertex.tolerance.is_some()
+                || topology.tolerant_vertices.contains_key(vertex.id.as_str())
+            {
                 "tvertex"
             } else {
                 "vertex"
@@ -2363,8 +2367,8 @@ fn native_face_sidedness(
     records.push(native_bool(containment.is_some()));
     if let Some(containment) = containment {
         records.push(match containment {
-            crate::records::FaceContainment::In => 0x0a,
-            crate::records::FaceContainment::Out => 0x0b,
+            cadmpeg_asm::brep::records::FaceContainment::In => 0x0a,
+            cadmpeg_asm::brep::records::FaceContainment::Out => 0x0b,
         });
     }
 }
@@ -2399,7 +2403,7 @@ fn native_wire_side(
         .copied()
         .filter(|wire| wire.edges == edges && wire.free_vertex.as_ref() == free_vertex);
     let side = match (matches.next(), matches.next()) {
-        (None, _) => crate::records::WireSide::Out,
+        (None, _) => cadmpeg_asm::brep::records::WireSide::Out,
         (Some(wire), None) => wire.side,
         (Some(_), Some(_)) => {
             return Err(CodecError::NotImplemented(format!(
@@ -2408,8 +2412,8 @@ fn native_wire_side(
         }
     };
     Ok(match side {
-        crate::records::WireSide::In => 0x0a,
-        crate::records::WireSide::Out => 0x0b,
+        cadmpeg_asm::brep::records::WireSide::In => 0x0a,
+        cadmpeg_asm::brep::records::WireSide::Out => 0x0b,
     })
 }
 
@@ -2418,8 +2422,13 @@ fn native_tolerant_vertex_tail(
     topology: &NativeGenerationIndex<'_>,
     vertex: &cadmpeg_ir::topology::Vertex,
 ) -> Result<(), CodecError> {
-    let Some(tolerance) = vertex.tolerance else {
-        return Ok(());
+    let stored = topology.tolerant_vertices.get(vertex.id.as_str()).copied();
+    // The unset evaluated slot has no neutral tolerance; the native tail
+    // carries the fact and the sentinel is written back.
+    let tolerance = match vertex.tolerance {
+        Some(tolerance) => tolerance,
+        None if stored.is_some_and(|tail| tail.evaluated_unset) => -1.0,
+        None => return Ok(()),
     };
     if !tolerance.is_finite() {
         return Err(CodecError::Malformed(format!(
@@ -2434,7 +2443,6 @@ fn native_tolerant_vertex_tail(
     // generation writes 0). A negative tolerance is the
     // unevaluated sentinel, stored verbatim; a non-negative tolerance
     // converts from millimetres to centimetres.
-    let stored = topology.tolerant_vertices.get(vertex.id.as_str()).copied();
     let leading = stored
         .as_ref()
         .map_or([-1.0; 2], |tail| tail.leading_tolerances);

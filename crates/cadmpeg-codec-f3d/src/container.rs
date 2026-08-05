@@ -19,7 +19,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::hash::sha256_hex;
 
-use crate::asm_header;
+use cadmpeg_asm::asm_header;
 
 pub(crate) const MAX_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
 pub(crate) const MAX_INFLATED_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
@@ -32,6 +32,13 @@ pub mod role {
     /// An ASM BREP entry with the `.smb` extension. Its header normally omits
     /// the history partition.
     pub const BREP_SMB: &str = "brep-smb";
+    /// An ASM BREP entry in the text encoding, with the `.sat` or `.smt`
+    /// extension. It carries the same entity model as `.smb` and `.smbh` in a
+    /// line-oriented ASCII form that ends with `End-of-ASM-data`. This role
+    /// exists so that a document whose only geometry carrier is text is
+    /// reported as a carrier that is present and not read, and not as a
+    /// document with no carrier.
+    pub const BREP_TEXT: &str = "brep-text";
     /// A nested `.protein` material/appearance ZIP.
     pub const PROTEIN: &str = "protein-assets";
     /// A design/ACT/browser `BulkStream.dat`.
@@ -111,7 +118,7 @@ pub(crate) fn read_entry_bounded(
     Ok(bytes)
 }
 
-/// Classify an entry by its name using the spec's naming families ([§1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#1-container-layer), [§7](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#7-geometry-carriers)).
+/// Classify an entry by its name using the spec's naming families ([§1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#1-container-layer), [§6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#6-geometry-carriers)).
 pub fn classify(name: &str) -> &'static str {
     if name.ends_with('/') {
         return role::DIRECTORY;
@@ -127,6 +134,11 @@ pub fn classify(name: &str) -> &'static str {
         .is_some_and(|ext| ext.eq_ignore_ascii_case("smb"))
     {
         role::BREP_SMB
+    } else if std::path::Path::new(name)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("sat") || ext.eq_ignore_ascii_case("smt"))
+    {
+        role::BREP_TEXT
     } else if name.ends_with(".protein") {
         role::PROTEIN
     } else if name.ends_with(".paramesh") {
@@ -384,6 +396,21 @@ pub fn select_fallback_brep<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s BrepF
         [only] => Some(only),
         _ => None,
     }
+}
+
+/// Names of the text-encoded ASM BREP entries, in archive order.
+///
+/// These entries stay out of [`ContainerScan::breps`] because that set holds the
+/// streams whose binary ASM header decoded, and the text encoding has no such
+/// header. A caller that reports on geometry must still count them: a document
+/// whose only carrier is text has a carrier that is present and not read, which
+/// is a different finding from a document that declares no carrier.
+pub fn text_brep_names<'s>(scan: &'s ContainerScan<'_>) -> Vec<&'s str> {
+    scan.entries
+        .iter()
+        .filter(|entry| entry.role == role::BREP_TEXT)
+        .map(|entry| entry.name.as_str())
+        .collect()
 }
 
 /// Return the complete BREP set for the legacy `Design1` segment layout.

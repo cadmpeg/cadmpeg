@@ -35,7 +35,7 @@ use serde::Deserialize;
 /// format must gain a layout table (or an explicit `[[not_applicable]]`
 /// rationale inside one) before this test passes.
 const EXPECTED_FORMATS: &[&str] = &[
-    "catia", "creo", "f3d", "freecad", "iges", "nx", "rhino", "sldprt", "step",
+    "asm", "catia", "creo", "f3d", "freecad", "iges", "nx", "rhino", "sldprt", "step",
 ];
 
 // ---------------------------------------------------------------------------

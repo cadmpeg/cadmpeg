@@ -719,29 +719,42 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             (None, _) => true,
             (Some(_), kind) if kind != "EdgeFlange" => false,
             (Some(operation), _) => {
+                // The ordered reference table is in record-index order, so the
+                // check is that every role names a distinct table entry and that
+                // the entries no role claims are exactly the width owners.
                 let edge_count = operation.edge_wrapper_record_indices.len();
+                let claimed = operation
+                    .edge_wrapper_record_indices
+                    .iter()
+                    .chain(&operation.edge_group_record_indices)
+                    .chain(&operation.edge_operand_record_indices)
+                    .chain(&operation.aggregate_operand_record_indices)
+                    .chain(&operation.width_distance_owner_record_indices)
+                    .chain([
+                        &operation.aggregate_group_record_index,
+                        &operation.height_owner_record_index,
+                        &operation.angle_owner_record_index,
+                        &operation.settings_record_index,
+                    ])
+                    .copied()
+                    .collect::<Vec<_>>();
                 edge_count > 0
                     && operation.edge_group_record_indices.len() == edge_count
                     && operation.edge_operand_record_indices.len() == edge_count
                     && operation.aggregate_operand_record_indices.len() == edge_count
-                    && scope.reference_members.len() == edge_count * 4 + 4
-                    && (0..edge_count).all(|ordinal| {
-                        scope.reference_members[ordinal * 3]
-                            == operation.edge_wrapper_record_indices[ordinal]
-                            && scope.reference_members[ordinal * 3 + 1]
-                                == operation.edge_group_record_indices[ordinal]
-                            && scope.reference_members[ordinal * 3 + 2]
-                                == operation.edge_operand_record_indices[ordinal]
-                    })
-                    && scope.reference_members[edge_count * 3]
-                        == operation.height_owner_record_index
-                    && scope.reference_members[edge_count * 3 + 1]
-                        == operation.angle_owner_record_index
-                    && scope.reference_members[edge_count * 3 + 2]
-                        == operation.aggregate_group_record_index
-                    && scope.reference_members[edge_count * 3 + 3..edge_count * 4 + 3]
-                        == operation.aggregate_operand_record_indices
-                    && scope.reference_members.last() == Some(&operation.settings_record_index)
+                    && operation.width_distance_owner_record_indices.len() <= 2
+                    && claimed.len() == scope.reference_members.len()
+                    && claimed.iter().copied().collect::<HashSet<_>>().len() == claimed.len()
+                    && claimed
+                        .iter()
+                        .all(|index| scope.reference_members.contains(index))
+                    && operation
+                        .edge_group_record_indices
+                        .iter()
+                        .zip(&operation.edge_operand_record_indices)
+                        .all(|(group, operand)| *operand == group.saturating_add(3))
+                    && operation.aggregate_operand_record_indices
+                        == [operation.aggregate_group_record_index.saturating_add(3)]
                     && operation.bend_radius.is_finite()
                     && operation.bend_radius > 0.0
                     && operation.bend_radius_offset > scope.byte_offset
@@ -752,20 +765,31 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             (None, _) => true,
             (Some(_), kind) if kind != "Hem" => false,
             (Some(operation), _) => {
-                scope.reference_members
-                    == [
-                        operation.gap_owner_record_index,
-                        operation.length_owner_record_index,
-                        operation.edge_wrapper_record_index,
-                        operation.edge_group_record_index,
-                        operation.edge_operand_record_index,
-                        operation.aggregate_group_record_index,
-                        operation.aggregate_operand_record_index,
-                        operation.settings_record_index,
-                    ]
+                // The ordered reference table is in record-index order, so the
+                // check is that every role names a distinct table entry and that
+                // each group's operand is the record three after it.
+                let claimed = [
+                    operation.gap_owner_record_index,
+                    operation.length_owner_record_index,
+                    operation.edge_wrapper_record_index,
+                    operation.edge_group_record_index,
+                    operation.edge_operand_record_index,
+                    operation.aggregate_group_record_index,
+                    operation.aggregate_operand_record_index,
+                    operation.settings_record_index,
+                ];
+                claimed.iter().copied().collect::<HashSet<_>>().len() == claimed.len()
+                    && claimed.len() == scope.reference_members.len()
+                    && claimed
+                        .iter()
+                        .all(|index| scope.reference_members.contains(index))
+                    && operation.edge_operand_record_index
+                        == operation.edge_group_record_index.saturating_add(3)
+                    && operation.aggregate_operand_record_index
+                        == operation.aggregate_group_record_index.saturating_add(3)
                     && operation.bend_radius.is_finite()
                     && operation.bend_radius > 0.0
-                    && operation.bend_radius_offset == scope.byte_offset.saturating_add(156)
+                    && operation.bend_radius_offset > scope.byte_offset
                     && operation.bend_radius_offset < scope.paired_byte_offset
             }
         };
@@ -2129,6 +2153,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                     construction.face_group_record_index == group.record_index
                                 })
                     }
+                    Some(design::DesignFeatureFamily::SheetMetalEdgeFlange) => {
+                        matches!(group.role, 0x0000_0008_0000_0000 | 0x0000_0043_0000_0000)
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
                     Some(_) => false,
                     None if scope.kind == "RemoveBody" => {
                         group.role == 0x0000_0004_0000_0000
@@ -2164,7 +2193,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 .as_ref()
                                 .is_some_and(|profile| group.members == [profile.record_index])
                     }
-                    None if matches!(scope.kind.as_str(), "EdgeFlange" | "Hem") => {
+                    None if scope.kind == "Hem" => {
                         matches!(group.role, 0x0000_0008_0000_0000 | 0x0000_0043_0000_0000)
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()

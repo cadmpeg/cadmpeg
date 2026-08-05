@@ -20,6 +20,9 @@ use crate::records::{DesignParameter, DesignParameterScope, DesignSketchPlacemen
 /// scheme when parsing an identity key back into its stream and tail.
 pub(crate) const SCHEME_PREFIX: &str = "f3d:";
 
+/// Format component of every entity ID this codec emits.
+pub(crate) const ID_FORMAT: cadmpeg_asm::ids::IdFormat<'static> = cadmpeg_asm::ids::IdFormat("f3d");
+
 /// The native stream used when an identity key carries no qualifying stream —
 /// the fallback for `native_stream(id).unwrap_or(..)`.
 pub(crate) const DEFAULT_STREAM: &str = "f3d:design";

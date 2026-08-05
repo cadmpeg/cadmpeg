@@ -23,10 +23,10 @@ use super::geometry::{
 };
 use super::records::{canonical_guid, native_stream};
 use crate::native::F3dNative;
-use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::{
     finite_point, finite_vector, history_change_kind, normalized_face_sense_to_native,
 };
+use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
 #[derive(Clone, Copy)]
 pub(crate) struct PatchNatives<'a> {
@@ -295,7 +295,7 @@ pub(crate) fn validate_vertex_ownership_edits(
 
 pub(crate) fn validate_face_sidedness_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<usize, crate::records::FaceContainment>, CodecError> {
+) -> Result<BTreeMap<usize, cadmpeg_asm::brep::records::FaceContainment>, CodecError> {
     let baseline = native
         .baseline
         .map_or(&[][..], |native| native.face_sidedness.as_slice());
@@ -364,6 +364,17 @@ pub(crate) fn validate_tolerant_vertex_edits(
             "F3D tolerant-vertex regeneration requires the unchanged vertex-id set".into(),
         ));
     }
+    let baseline_tails = native
+        .baseline
+        .map_or(&[][..], |native| native.tolerant_vertex_tails.as_slice());
+    let target_tails = native
+        .target
+        .map_or(&[][..], |native| native.tolerant_vertex_tails.as_slice());
+    let tolerant_vertices: std::collections::BTreeSet<&str> = baseline_tails
+        .iter()
+        .chain(target_tails)
+        .map(|tail| tail.vertex.as_str())
+        .collect();
     for (id, before) in &baseline_vertices {
         let after = target_vertices[id];
         let mut normalized = after.clone();
@@ -373,20 +384,19 @@ pub(crate) fn validate_tolerant_vertex_edits(
                 "F3D vertex edit changes fields other than tolerance: {id}"
             )));
         }
+        // A record changes width when its tolerant identity changes: a
+        // tolerance appearing on or leaving a plain vertex. A tolerant
+        // vertex whose tail marks the evaluated slot unset carries no
+        // neutral tolerance and keeps its width.
         if after.tolerance != before.tolerance
             && (before.tolerance.is_none() || after.tolerance.is_none())
+            && !tolerant_vertices.contains(id)
         {
             return Err(CodecError::NotImplemented(format!(
                 "F3D vertex tolerance {id} cannot change record width"
             )));
         }
     }
-    let baseline_tails = native
-        .baseline
-        .map_or(&[][..], |native| native.tolerant_vertex_tails.as_slice());
-    let target_tails = native
-        .target
-        .map_or(&[][..], |native| native.tolerant_vertex_tails.as_slice());
     let baseline_by_id = baseline_tails
         .iter()
         .map(|tail| (tail.id.as_str(), tail))
@@ -410,11 +420,15 @@ pub(crate) fn validate_tolerant_vertex_edits(
                 "F3D tolerant-vertex tail edit changes structural fields: {id}"
             )));
         }
-        let tolerance = target_vertices[after.vertex.as_str()]
-            .tolerance
-            .ok_or_else(|| {
-                CodecError::Malformed(format!("tolerant vertex {id} has no tolerance"))
-            })?;
+        let tolerance = match target_vertices[after.vertex.as_str()].tolerance {
+            Some(tolerance) => tolerance,
+            None if after.evaluated_unset => -1.0,
+            None => {
+                return Err(CodecError::Malformed(format!(
+                    "tolerant vertex {id} has no tolerance"
+                )))
+            }
+        };
         if !tolerance.is_finite()
             || after
                 .leading_tolerances
@@ -428,7 +442,11 @@ pub(crate) fn validate_tolerant_vertex_edits(
         if tolerance
             != baseline_vertices[after.vertex.as_str()]
                 .tolerance
-                .unwrap_or(tolerance)
+                .unwrap_or(if before.evaluated_unset {
+                    -1.0
+                } else {
+                    tolerance
+                })
             || after.leading_tolerances != before.leading_tolerances
         {
             // A negative tolerance is the unevaluated sentinel, stored
@@ -597,7 +615,7 @@ pub(crate) fn validate_tolerant_coedge_edits(
 
 pub(crate) fn validate_wire_topology_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<usize, crate::records::WireSide>, CodecError> {
+) -> Result<BTreeMap<usize, cadmpeg_asm::brep::records::WireSide>, CodecError> {
     let baseline_wires = native
         .baseline
         .map_or(&[][..], |native| native.wire_topologies.as_slice());

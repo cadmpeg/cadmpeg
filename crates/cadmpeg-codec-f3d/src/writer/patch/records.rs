@@ -14,10 +14,10 @@ use super::edits::{
     HistoryEdits, PersistentReferenceEdit, SketchCurveEdit, SketchPointEdit, SketchRelationEdit,
 };
 use super::geometry::{patch_integer_field, required_payload_field};
-use crate::asm_header::stream_ref_width;
-use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::native_bool;
-use crate::{asm_header, sab};
+use cadmpeg_asm::asm_header::stream_ref_width;
+use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
+use cadmpeg_asm::{asm_header, sab};
 
 pub(crate) fn patch_material_assignments(
     bytes: &mut [u8],
@@ -427,7 +427,7 @@ pub(crate) fn patch_tolerant_coedge_parameters(
 
 pub(crate) fn patch_wire_topologies(
     bytes: &mut [u8],
-    edits: &BTreeMap<usize, crate::records::WireSide>,
+    edits: &BTreeMap<usize, cadmpeg_asm::brep::records::WireSide>,
 ) -> Result<(), CodecError> {
     if edits.is_empty() {
         return Ok(());
@@ -460,8 +460,8 @@ pub(crate) fn patch_wire_topologies(
             )));
         }
         bytes[offset] = match side {
-            crate::records::WireSide::In => 0x0a,
-            crate::records::WireSide::Out => 0x0b,
+            cadmpeg_asm::brep::records::WireSide::In => 0x0a,
+            cadmpeg_asm::brep::records::WireSide::Out => 0x0b,
         };
     }
     Ok(())

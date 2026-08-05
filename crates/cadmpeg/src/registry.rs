@@ -160,6 +160,15 @@ impl Registry {
                     false,
                 ),
                 descriptor(
+                    "sat",
+                    "ASM SAT/SAB stream",
+                    &["sat", "sab", "smt", "smb"],
+                    Some(Box::new(cadmpeg_codec_sat::SatCodec)),
+                    None,
+                    None,
+                    false,
+                ),
+                descriptor(
                     "cadir",
                     "CADIR JSON",
                     &["cadir", "json"],

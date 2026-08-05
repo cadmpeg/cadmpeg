@@ -2,21 +2,20 @@
 //! Decode analytic surfaces and 3D curves, select edge pcurves, reverse
 //! curve orientation, and recognize procedural carriers as analytic geometry.
 
+use super::records::TolerantCoedgeExtension;
 use crate::nurbs;
 use crate::nurbs::proc_surface::{
     DecodedProceduralSurfaceDefinition, EmbeddedRollingBall, EmbeddedScaledCompoundLoftShape,
 };
 use crate::nurbs::reader::LEN_TO_MM;
-use crate::records::TolerantCoedgeExtension;
 use crate::sab::{Record, Token};
-use cadmpeg_ir::eval;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Sense;
 use std::collections::{HashMap, HashSet};
 
-use super::Brep;
+use super::AsmBrep;
 /// Ordered typed values pulled from a carrier record's payload.
 pub(crate) struct Carrier {
     pub(crate) positions: Vec<[f64; 3]>,
@@ -76,7 +75,7 @@ pub(crate) fn is_analytic_curve(head: &str) -> bool {
 
 /// Decode an analytic surface carrier. Signed sphere and torus radii remain in
 /// the IR because they are part of the ASM carrier semantics.
-pub(crate) fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
+pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
     let c = collect_carrier(rec);
     let origin = *c.positions.first()?;
     match rec.head.as_str() {
@@ -227,10 +226,27 @@ fn deterministic_ref_direction(axis: Vector3) -> Vector3 {
     )
 }
 
-/// Maximum distance, in millimeters, between a pcurve endpoint mapped through
-/// the face surface and the edge's vertex position for the pcurve to count as
-/// that surface's parameter-space image.
-const PCURVE_ENDPOINT_TOLERANCE_MM: f64 = 0.01;
+/// The vertex record's point reference. The modern layout stores the
+/// endpoint-index integer at chunk 4 and the point at chunk 5; the
+/// save-format 700 layout stores no endpoint index and the point at chunk 4.
+/// A modern record always carries the integer, so the legacy branch is
+/// unreachable for it.
+pub(crate) fn vertex_point_ref(record: &Record) -> Option<i64> {
+    match record.chunk(4) {
+        Some(Token::Long(_)) => record.ref_at(5),
+        _ => record.ref_at(4),
+    }
+}
+
+/// The coedge record's pcurve reference: chunk 10 after the reserved integer
+/// in the modern layout, chunk 9 in the save-format 700 layout that stores
+/// no reserved integer.
+pub(crate) fn coedge_pcurve_ref(record: &Record) -> Option<i64> {
+    match record.chunk(9) {
+        Some(Token::Long(_)) => record.ref_at(10),
+        _ => record.ref_at(9),
+    }
+}
 
 pub(crate) fn is_vertex_record(record: &Record) -> bool {
     matches!(record.head.as_str(), "vertex" | "tvertex")
@@ -262,9 +278,19 @@ pub(crate) fn tolerant_coedge_extension(record: &Record) -> Option<TolerantCoedg
             if !matches!(record.chunk(16), Some(Token::SubtypeOpen)) {
                 return None;
             }
+            // Raw index of chunk 16: the payload identifiers inside the
+            // embedded scope are not chunks, and the serialized token count
+            // below is defined over the value tokens alone.
+            let open = record
+                .tokens
+                .iter()
+                .enumerate()
+                .filter(|(_, token)| !token.is_payload_ident())
+                .nth(16)
+                .map(|(index, _)| index)?;
             let mut depth = 0usize;
             let mut close = None;
-            for (index, token) in record.tokens.iter().enumerate().skip(16) {
+            for (index, token) in record.tokens.iter().enumerate().skip(open) {
                 match token {
                     Token::SubtypeOpen => depth += 1,
                     Token::SubtypeClose => {
@@ -278,17 +304,34 @@ pub(crate) fn tolerant_coedge_extension(record: &Record) -> Option<TolerantCoedg
                 }
             }
             let close = close?;
-            let parameter_range = match record.tokens.get(close + 1..) {
-                Some([Token::False, Token::False, Token::Long(0)]) => None,
-                Some(
-                    [Token::True, Token::Double(start), Token::True, Token::Double(end), Token::Long(0)],
-                ) if start.is_finite() && end.is_finite() => Some([*start, *end]),
+            // Suffix in chunk space: a record can end with payload
+            // identifiers (`null_curve` placeholders for absent curve slots),
+            // which are not fields of the extension.
+            let suffix: Vec<&Token> = record
+                .tokens
+                .get(close + 1..)?
+                .iter()
+                .filter(|token| !token.is_payload_ident())
+                .collect();
+            let parameter_range = match suffix.as_slice() {
+                [Token::False, Token::False, Token::Long(0)] => None,
+                [Token::True, Token::Double(start), Token::True, Token::Double(end), Token::Long(0)]
+                    if start.is_finite() && end.is_finite() =>
+                {
+                    Some([*start, *end])
+                }
                 _ => return None,
             };
+            let payload_token_count = record
+                .tokens
+                .get(open + 1..close)?
+                .iter()
+                .filter(|token| !token.is_payload_ident())
+                .count();
             Some(TolerantCoedgeExtension::EmbeddedCurve {
                 target,
                 curve_reversed,
-                payload_token_count: u32::try_from(close.checked_sub(17)?).ok()?,
+                payload_token_count: u32::try_from(payload_token_count).ok()?,
                 parameter_range,
             })
         }
@@ -324,20 +367,6 @@ pub(crate) fn is_known_record_head(head: &str) -> bool {
 
 pub(crate) fn is_asm_stream_delimiter(name: &str) -> bool {
     matches!(name, "Begin-of-ASM-History-Data" | "End-of-ASM-data")
-}
-
-/// The millimeter-space position of an edge-record vertex reference.
-fn vertex_position(by_index: &HashMap<i64, &Record>, vertex: i64) -> Option<Point3> {
-    let vertex_record = by_index.get(&vertex).filter(|r| is_vertex_record(r))?;
-    let point_record = by_index.get(&vertex_record.ref_at(5)?)?;
-    collect_carrier(point_record)
-        .positions
-        .first()
-        .map(|p| scale_point(*p))
-}
-
-pub(crate) fn distance(a: Point3, b: Point3) -> f64 {
-    ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
 }
 
 pub(crate) fn edge_pcurve_parameter_ranges(edge: &Record) -> Option<[[f64; 2]; 2]> {
@@ -391,90 +420,8 @@ pub(crate) fn pcurve_ranges_on_domain(
     Some(ranges)
 }
 
-/// Select the candidate 2D block that is the face surface's parameter-space
-/// image of the coedge: its endpoints, mapped through the surface, land on the
-/// owning edge's vertex positions. On a non-NURBS surface, or when the edge's
-/// vertex positions cannot be read, the first candidate passes unverified. An
-/// empty result means no candidate is the surface's image of this edge.
-pub(crate) fn select_face_pcurve(
-    candidates: Vec<nurbs::pcurve::NurbsPcurve>,
-    surface: Option<&SurfaceGeometry>,
-    exact_procedural_parameterization: bool,
-    edge: Option<&Record>,
-    by_index: &HashMap<i64, &Record>,
-) -> Option<(nurbs::pcurve::NurbsPcurve, [f64; 2])> {
-    // Procedural surfaces retain an evaluated NURBS cache, but their pcurves
-    // are expressed on the exact construction's parameterization. Evaluating
-    // those UVs on the cache can drift between knots and is not a valid
-    // candidate test. Candidate discovery orders unambiguous BS2 carriers
-    // before ambiguous 3D interpretations, so the first candidate is the
-    // authoritative exact-space carrier in this case.
-    if exact_procedural_parameterization {
-        let candidate = candidates.into_iter().next()?;
-        let range = pcurve_ranges_on_domain(&candidate, edge)?[0];
-        return Some((candidate, range));
-    }
-    let Some(SurfaceGeometry::Nurbs(surface)) = surface else {
-        let candidate = candidates.into_iter().next()?;
-        let range = pcurve_ranges_on_domain(&candidate, edge)?[0];
-        return Some((candidate, range));
-    };
-    let vertex_pair = edge.and_then(|edge| {
-        Some((
-            vertex_position(by_index, edge.ref_at(3)?)?,
-            vertex_position(by_index, edge.ref_at(5)?)?,
-        ))
-    });
-    let Some((start, end)) = vertex_pair else {
-        let candidate = candidates.into_iter().next()?;
-        let range = pcurve_ranges_on_domain(&candidate, edge)?[0];
-        return Some((candidate, range));
-    };
-    let mut best: Option<(f64, nurbs::pcurve::NurbsPcurve, [f64; 2])> = None;
-    for candidate in candidates {
-        let uv_at = |t: f64| {
-            eval::nurbs_pcurve_uv(
-                candidate.degree,
-                &candidate.knots,
-                &candidate.control_points,
-                candidate.weights.as_deref(),
-                t,
-            )
-        };
-        let Some(parameter_ranges) = pcurve_ranges_on_domain(&candidate, edge) else {
-            continue;
-        };
-        let Some((mismatch, range)) = parameter_ranges
-            .into_iter()
-            .filter_map(|[first, second]| {
-                let (uv0, uv1) = (uv_at(first)?, uv_at(second)?);
-                let (p0, p1) = (
-                    eval::nurbs_surface_point(surface, uv0.u, uv0.v)?,
-                    eval::nurbs_surface_point(surface, uv1.u, uv1.v)?,
-                );
-                // Coedge sense can reverse traversal independently of the
-                // edge carrier, so accept either endpoint assignment.
-                let forward = distance(p0, start).max(distance(p1, end));
-                let reversed = distance(p0, end).max(distance(p1, start));
-                Some((forward.min(reversed), [first, second]))
-            })
-            .min_by(|(left, _), (right, _)| left.total_cmp(right))
-        else {
-            continue;
-        };
-        if mismatch <= PCURVE_ENDPOINT_TOLERANCE_MM
-            && best
-                .as_ref()
-                .is_none_or(|(current, _, _)| mismatch < *current)
-        {
-            best = Some((mismatch, candidate, range));
-        }
-    }
-    best.map(|(_, candidate, range)| (candidate, range))
-}
-
 /// Decode an analytic curve carrier.
-pub(crate) fn decode_curve(rec: &Record) -> Option<CurveGeometry> {
+pub fn decode_curve(rec: &Record) -> Option<CurveGeometry> {
     let carrier = collect_carrier(rec);
     let base = *carrier.positions.first()?;
     match rec.head.as_str() {
@@ -519,12 +466,16 @@ pub(crate) fn sense_at(rec: &Record, i: usize) -> Sense {
 }
 
 /// The record-level sense bit of an `intcurve` or `spline` carrier: the boolean
-/// token immediately before the record's subtype scope ([spec §7.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#76-intcurve-and-spline-subtypes)). `true`
+/// token immediately before the record's subtype scope ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#66-intcurve-and-spline-subtypes)). `true`
 /// marks geometry as the reverse of its cached definition. A reversed intcurve
 /// negates the cache parameterization (`C(t) = cache(-t)`), and a reversed
 /// spline surface flips the cache normal.
 pub(crate) fn record_reversed(rec: &Record) -> bool {
-    rec.tokens
+    // Adjacency in chunk space: a freestanding payload identifier (e.g. the
+    // embedded curve's type name) can sit between value tokens without
+    // separating the sense bit from the scope it precedes.
+    let chunks: Vec<&Token> = rec.chunks().collect();
+    chunks
         .windows(2)
         .find_map(|tokens| {
             matches!(tokens[1], Token::SubtypeOpen).then(|| match tokens[0] {
@@ -533,12 +484,30 @@ pub(crate) fn record_reversed(rec: &Record) -> bool {
                 _ => false,
             })
         })
+        .or_else(|| {
+            // A plain `intcurve` companion has no subtype scope after its
+            // base header; its sense remains the fourth payload value.
+            (rec.head == "intcurve").then(|| matches!(rec.chunk(3), Some(Token::True)))
+        })
         .unwrap_or(false)
 }
 
 /// Reparameterize a cached B-spline to its record's reversed sense,
 /// `C'(t) = C(-t)`, by reversing poles and weights and negating reversed knots.
-pub(crate) fn reverse_nurbs_curve(curve: &mut NurbsCurve) {
+pub fn reverse_nurbs_curve(curve: &mut NurbsCurve) {
+    curve.control_points.reverse();
+    if let Some(weights) = curve.weights.as_mut() {
+        weights.reverse();
+    }
+    curve.knots.reverse();
+    for knot in &mut curve.knots {
+        *knot = -*knot;
+    }
+}
+
+/// Reparameterize a referenced pcurve to its opposite orientation, preserving
+/// its UV chart while negating the parameterization.
+pub(crate) fn reverse_nurbs_pcurve(curve: &mut nurbs::pcurve::NurbsPcurve) {
     curve.control_points.reverse();
     if let Some(weights) = curve.weights.as_mut() {
         weights.reverse();
@@ -592,8 +561,11 @@ pub(crate) fn double_at(rec: &Record, i: usize) -> Option<f64> {
 }
 
 pub(crate) fn pcurve_parameter_range(rec: &Record) -> Option<[f64; 2]> {
-    match &*rec.tokens {
-        [.., Token::Double(start), Token::Double(end)] => Some([*start, *end]),
+    // The final two value tokens; a record may end with payload identifiers
+    // (e.g. `null_curve` placeholders), which are not fields.
+    let mut values = rec.chunks().rev();
+    match (values.next(), values.next()) {
+        (Some(Token::Double(end)), Some(Token::Double(start))) => Some([*start, *end]),
         _ => None,
     }
 }
@@ -602,8 +574,11 @@ pub(crate) fn pcurve_inline_tail_flags(rec: &Record) -> Option<[bool; 4]> {
     if !matches!(rec.chunk(3), Some(Token::Long(0))) {
         return None;
     }
-    let end = rec.tokens.len().checked_sub(2)?;
-    let flags = rec.tokens.get(end.checked_sub(4)?..end)?;
+    // End-relative in chunk space: the four booleans precede the final two
+    // value tokens, and trailing payload identifiers are not fields.
+    let chunks: Vec<&Token> = rec.chunks().collect();
+    let end = chunks.len().checked_sub(2)?;
+    let flags = chunks.get(end.checked_sub(4)?..end)?;
     flags
         .iter()
         .map(|token| match token {
@@ -1088,7 +1063,7 @@ fn cross_vector(first: Vector3, second: Vector3) -> Vector3 {
 /// domain by floating-point noise back onto the domain boundary. Native edge
 /// ranges and cache knot vectors are stored independently and can disagree in
 /// their last few bits; a genuine domain violation is left for validation.
-pub(crate) fn clamp_edge_ranges_to_carrier_domains(out: &mut Brep) {
+pub(crate) fn clamp_edge_ranges_to_carrier_domains(out: &mut AsmBrep) {
     let domains: HashMap<&str, [f64; 2]> = out
         .curves
         .iter()
@@ -1121,7 +1096,7 @@ pub(crate) fn clamp_edge_ranges_to_carrier_domains(out: &mut Brep) {
     }
 }
 
-pub(crate) fn classify_body_kinds(out: &mut Brep) {
+pub(crate) fn classify_body_kinds(out: &mut AsmBrep) {
     let mut shell_bodies = HashMap::new();
     for region in &out.regions {
         for shell in &region.shells {

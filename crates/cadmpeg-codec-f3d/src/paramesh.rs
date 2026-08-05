@@ -2,12 +2,15 @@
 //! Decode `.paramesh` mesh-geometry containers
 //! ([spec §1.1.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#112-mesh-geometry-containers)).
 //!
-//! One container holds one mesh body's geometry: a protobuf stream registry
-//! followed by chunks, of which the `v` stream holds one f32 coordinate triple
-//! per vertex and the `t` stream holds one delta-coded u32 per triangle corner.
-//! The `r0`, `r0i`, `r1`, `r2`, `r3`, and `r4` streams are undecoded (PM-01).
+//! One container holds one mesh body's geometry: a protobuf registry followed
+//! by chunks, of which the `v` stream holds one f32 coordinate triple per
+//! vertex and the `t` stream holds one delta-coded u32 per triangle corner.
 //! Vertex coordinates are container coordinates; the mesh-body Design record
 //! stores the scale that relates them to model space.
+//!
+//! The registry declares attribute channels with value and index streams. Vertex
+//! channels store one value per vertex. Indexed channels select values for
+//! triangle corners; PM-03 leaves that order unresolved.
 
 use cadmpeg_core::le::{u16_at, u32_at, u64_at};
 use cadmpeg_core::CodecError;
@@ -16,7 +19,7 @@ use cadmpeg_core::CodecError;
 const MAGIC: [u8; 12] = [
     0x89, 0x55, 0x44, 0x50, 0x4D, 0x45, 0x53, 0x48, 0x0D, 0x0A, 0x1A, 0x0A,
 ];
-/// The only defined container version.
+/// Container version accepted by this decoder.
 const VERSION: u32 = 2;
 /// Byte offset of the u64 protobuf byte count.
 const PROTOBUF_COUNT_AT: usize = 0x30;
@@ -36,6 +39,28 @@ const RAW_STREAM_MODE: u8 = 0xfe;
 const MAX_STREAM_BYTES: u32 = 64 * 1024 * 1024;
 /// Protobuf wire type of a length-delimited field.
 const PROTOBUF_LENGTH_DELIMITED: u8 = 2;
+/// Registry field that declares one vertex-domain attribute channel.
+const REGISTRY_VERTEX_CHANNEL: u64 = 4;
+/// Registry field that declares one triangle-domain attribute channel.
+const REGISTRY_TRIANGLE_CHANNEL: u64 = 5;
+/// Channel field holding the role the attribute plays.
+const CHANNEL_ROLE: u64 = 2;
+/// Channel field holding the stream names and the element code.
+const CHANNEL_STREAMS: u64 = 5;
+/// Stream-entry field holding the element code.
+const STREAM_ELEMENT_CODE: u64 = 1;
+/// Stream-entry field holding the value-stream name.
+const STREAM_VALUES: u64 = 2;
+/// Stream-entry field holding the index-stream name.
+const STREAM_INDEX: u64 = 3;
+/// Element code of a two-component `f32` element.
+const ELEMENT_PAIR: u64 = 2;
+/// Element code of a four-component `f32` element.
+const ELEMENT_QUAD: u64 = 4;
+/// Element code of a three-component direction packed into two `f32` values.
+const ELEMENT_PACKED_DIRECTION: u64 = 5;
+/// Bytes of one [`ELEMENT_PACKED_DIRECTION`] element.
+const PACKED_DIRECTION_BYTES: u32 = 8;
 
 /// One mesh body's decoded geometry.
 pub(crate) struct MeshContainer {
@@ -46,6 +71,172 @@ pub(crate) struct MeshContainer {
     pub(crate) vertices: Vec<[f64; 3]>,
     /// Triangle corner indices into `vertices`.
     pub(crate) triangles: Vec<[u32; 3]>,
+    /// The attribute channels the registry declares, in registry order.
+    pub(crate) attributes: Vec<MeshAttribute>,
+}
+
+/// The domain over which an attribute channel's values are addressed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum MeshAttributeDomain {
+    /// One value per vertex. The registry declares no index stream, and the
+    /// value count equals the vertex count.
+    Vertex,
+    /// One value per triangle corner, deduplicated per vertex. The index
+    /// stream selects a value for each corner.
+    Corner,
+    /// One value per triangle.
+    Triangle,
+}
+
+/// One attribute channel a container's registry declares.
+pub(crate) struct MeshAttribute {
+    /// The role the registry records for the attribute.
+    pub(crate) role: u32,
+    /// The registry's element code: the count of `f32` components of one
+    /// element for [`ELEMENT_PAIR`] and [`ELEMENT_QUAD`], and a packed form
+    /// otherwise.
+    pub(crate) element_code: u32,
+    /// Which entities the values address.
+    pub(crate) domain: MeshAttributeDomain,
+    /// Bytes of one element, when the element code settles the element width.
+    pub(crate) item_size: Option<u32>,
+    /// The value stream, verbatim.
+    pub(crate) values: Vec<u8>,
+}
+
+impl MeshAttribute {
+    /// The element count, when the element width is settled.
+    pub(crate) fn count(&self) -> Option<u32> {
+        let item_size = usize::try_from(self.item_size?).ok()?;
+        self.values
+            .len()
+            .checked_div(item_size)
+            .filter(|_| self.values.len().is_multiple_of(item_size))
+            .and_then(|count| u32::try_from(count).ok())
+    }
+}
+
+/// Read one protobuf varint.
+fn take_varint(message: &[u8], at: &mut usize) -> Option<u64> {
+    let mut value = 0u64;
+    let mut shift = 0u32;
+    loop {
+        let byte = *message.get(*at)?;
+        *at += 1;
+        value |= u64::from(byte & 0x7f).checked_shl(shift)?;
+        if byte < 0x80 {
+            return Some(value);
+        }
+        shift = shift.checked_add(7).filter(|shift| *shift < 64)?;
+    }
+}
+
+/// One protobuf field value for a wire type used by the registry.
+enum ProtobufValue<'a> {
+    Varint(u64),
+    Bytes(&'a [u8]),
+}
+
+/// Read protobuf fields in stored order. The registry uses two wire types; a
+/// different type ends the walk because its length is unknown.
+fn protobuf_fields(message: &[u8]) -> Vec<(u64, ProtobufValue<'_>)> {
+    let mut fields = Vec::new();
+    let mut at = 0usize;
+    while at < message.len() {
+        let Some(key) = take_varint(message, &mut at) else {
+            break;
+        };
+        match key & 0x07 {
+            0 => {
+                let Some(value) = take_varint(message, &mut at) else {
+                    break;
+                };
+                fields.push((key >> 3, ProtobufValue::Varint(value)));
+            }
+            2 => {
+                let Some(count) =
+                    take_varint(message, &mut at).and_then(|count| usize::try_from(count).ok())
+                else {
+                    break;
+                };
+                let Some(bytes) = at.checked_add(count).and_then(|end| message.get(at..end)) else {
+                    break;
+                };
+                at += count;
+                fields.push((key >> 3, ProtobufValue::Bytes(bytes)));
+            }
+            _ => break,
+        }
+    }
+    fields
+}
+
+/// One channel's declared element code and stream names.
+struct ChannelStreams<'a> {
+    element_code: u64,
+    values: &'a str,
+    index: Option<&'a str>,
+}
+
+/// Read the stream entry of one channel.
+fn channel_streams(entry: &[u8]) -> Option<ChannelStreams<'_>> {
+    let mut element_code = None;
+    let mut values = None;
+    let mut index = None;
+    for (field, value) in protobuf_fields(entry) {
+        match (field, value) {
+            (STREAM_ELEMENT_CODE, ProtobufValue::Varint(code)) => element_code = Some(code),
+            (STREAM_VALUES, ProtobufValue::Bytes(name)) => {
+                values = std::str::from_utf8(name).ok();
+            }
+            (STREAM_INDEX, ProtobufValue::Bytes(name)) => {
+                index = std::str::from_utf8(name).ok();
+            }
+            _ => {}
+        }
+    }
+    Some(ChannelStreams {
+        element_code: element_code?,
+        values: values?,
+        index,
+    })
+}
+
+/// Read one channel entry of the registry.
+fn registry_channel(
+    entry: &[u8],
+    domain: MeshAttributeDomain,
+) -> Option<(ChannelStreams<'_>, u32, MeshAttributeDomain)> {
+    let mut role = 0u32;
+    let mut streams = None;
+    for (field, value) in protobuf_fields(entry) {
+        match (field, value) {
+            (CHANNEL_ROLE, ProtobufValue::Varint(value)) => {
+                role = u32::try_from(value).ok()?;
+            }
+            (CHANNEL_STREAMS, ProtobufValue::Bytes(nested)) => {
+                streams = channel_streams(nested);
+            }
+            _ => {}
+        }
+    }
+    let streams = streams?;
+    // A vertex-domain channel that carries an index stream addresses triangle
+    // corners; without one it stores exactly one value per vertex.
+    let domain = match (domain, streams.index) {
+        (MeshAttributeDomain::Vertex, Some(_)) => MeshAttributeDomain::Corner,
+        (domain, _) => domain,
+    };
+    Some((streams, role, domain))
+}
+
+/// The bytes of one element under an element code, when the code settles it.
+fn element_bytes(element_code: u64) -> Option<u32> {
+    match element_code {
+        ELEMENT_PAIR | ELEMENT_QUAD => u32::try_from(element_code * 4).ok(),
+        ELEMENT_PACKED_DIRECTION => Some(PACKED_DIRECTION_BYTES),
+        _ => None,
+    }
 }
 
 fn malformed(message: impl Into<String>) -> CodecError {
@@ -86,8 +277,8 @@ fn protobuf_fusion_uuid(message: &[u8]) -> Result<String, CodecError> {
     Ok(value.to_owned())
 }
 
-/// Read one `MessagePack` value, returning the string keys and integer values of
-/// a map. Only the encodings a stream-name table uses are accepted.
+/// Read one `MessagePack` value from a stream-name table. The table uses string
+/// keys and integer values.
 fn message_pack_name_table(bytes: &[u8]) -> Result<Vec<(String, u64)>, CodecError> {
     fn take_integer(bytes: &[u8], at: &mut usize) -> Result<u64, CodecError> {
         let tag = *bytes
@@ -292,8 +483,8 @@ fn inflate_stream(body: &[u8]) -> Result<MeshStream, CodecError> {
         return Err(malformed("paramesh stream carries an undefined encoding"));
     }
     // `lzma-rs` reads the properties byte and the four-byte dictionary size
-    // from the stream, which the container stores as a properties byte and a
-    // base-2 dictionary exponent instead.
+    // from the stream. The container stores a properties byte and a base-2
+    // dictionary exponent.
     let mut framed = Vec::with_capacity(5 + payload.len());
     framed.push(LZMA_PROPERTIES);
     framed.extend_from_slice(&(1u32 << LZMA_DICTIONARY_LOG).to_le_bytes());
@@ -517,11 +708,68 @@ pub(crate) fn decode_mesh_container(bytes: &[u8]) -> Result<MeshContainer, Codec
         named("t").ok_or_else(|| malformed("paramesh container has no corner stream"))?;
     require_layout(corner_stream, None, 1, true)?;
     let triangles = decode_triangles(&corner_stream.bytes, vertices.len())?;
+    let attributes = registry_attributes(message, &name_table, &streams, vertices.len())?;
     Ok(MeshContainer {
         fusion_uuid,
         vertices,
         triangles,
+        attributes,
     })
+}
+
+/// Collect registry-declared attribute channels in registry order.
+///
+/// The registry declares the channel; its value stream supplies the data. A
+/// missing value stream causes the decoder to skip the channel.
+fn registry_attributes(
+    message: &[u8],
+    name_table: &[(String, u64)],
+    streams: &[MeshStream],
+    vertices: usize,
+) -> Result<Vec<MeshAttribute>, CodecError> {
+    let named = |name: &str| {
+        name_table
+            .iter()
+            .position(|(entry, _)| entry == name)
+            .and_then(|position| streams.get(position))
+    };
+    let mut attributes = Vec::new();
+    for (field, value) in protobuf_fields(message) {
+        let domain = match field {
+            REGISTRY_VERTEX_CHANNEL => MeshAttributeDomain::Vertex,
+            REGISTRY_TRIANGLE_CHANNEL => MeshAttributeDomain::Triangle,
+            _ => continue,
+        };
+        let ProtobufValue::Bytes(entry) = value else {
+            continue;
+        };
+        let Some((streams, role, domain)) = registry_channel(entry, domain) else {
+            continue;
+        };
+        let Some(stream) = named(streams.values) else {
+            continue;
+        };
+        let mut attribute = MeshAttribute {
+            role,
+            element_code: u32::try_from(streams.element_code)
+                .map_err(|_| malformed("paramesh channel declares an out-of-range element code"))?,
+            domain,
+            item_size: element_bytes(streams.element_code),
+            values: stream.bytes.clone(),
+        };
+        // A vertex-domain channel stores one value per vertex. A conflicting
+        // element width leaves the item size unset. The mesh geometry remains
+        // available, and the report records the channel.
+        if attribute.domain == MeshAttributeDomain::Vertex
+            && attribute
+                .count()
+                .is_none_or(|count| usize::try_from(count) != Ok(vertices))
+        {
+            attribute.item_size = None;
+        }
+        attributes.push(attribute);
+    }
+    Ok(attributes)
 }
 
 #[cfg(test)]
@@ -603,6 +851,247 @@ mod tests {
 
     const GUID: &str = "8a52d9b8-99b1-4a19-8409-c7c734298305";
 
+    fn varint(mut value: u64) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        loop {
+            let byte = u8::try_from(value & 0x7f).expect("seven bits");
+            value >>= 7;
+            if value == 0 {
+                bytes.push(byte);
+                return bytes;
+            }
+            bytes.push(byte | 0x80);
+        }
+    }
+
+    fn bytes_field(field: u64, payload: &[u8]) -> Vec<u8> {
+        let mut bytes = varint(field << 3 | u64::from(PROTOBUF_LENGTH_DELIMITED));
+        bytes.extend(varint(payload.len() as u64));
+        bytes.extend_from_slice(payload);
+        bytes
+    }
+
+    fn varint_field(field: u64, value: u64) -> Vec<u8> {
+        let mut bytes = varint(field << 3);
+        bytes.extend(varint(value));
+        bytes
+    }
+
+    /// One registry channel entry: its role, element code, value-stream name,
+    /// and index-stream name.
+    fn channel_entry(
+        field: u64,
+        role: Option<u64>,
+        element_code: u64,
+        values: &str,
+        index: Option<&str>,
+    ) -> Vec<u8> {
+        let mut streams = varint_field(STREAM_ELEMENT_CODE, element_code);
+        streams.extend(bytes_field(STREAM_VALUES, values.as_bytes()));
+        if let Some(index) = index {
+            streams.extend(bytes_field(STREAM_INDEX, index.as_bytes()));
+        }
+        let mut entry = Vec::new();
+        if let Some(role) = role {
+            entry.extend(varint_field(CHANNEL_ROLE, role));
+        }
+        entry.extend(bytes_field(CHANNEL_STREAMS, &streams));
+        bytes_field(field, &entry)
+    }
+
+    /// A descriptor map for a `count`-component `f32` element stream.
+    fn float_descriptor(count: u8) -> Vec<u8> {
+        vec![0x82, 0xa1, b'D', count, 0xa1, b'T', 3]
+    }
+
+    /// A descriptor map for a delta-coded `i32` stream.
+    fn delta_descriptor() -> Vec<u8> {
+        vec![0x82, 0xa1, b'T', 1, 0xa1, b'd', 1]
+    }
+
+    /// One container holding `v`, `t`, and every extra named stream in
+    /// stream-id order, with `registry` appended to the protobuf message.
+    fn container_with_registry(
+        vertices: &[f32],
+        corners: &[i32],
+        registry: &[u8],
+        extra: &[(&str, Vec<u8>, Vec<u8>)],
+    ) -> Vec<u8> {
+        let mut protobuf = vec![0x0a, 11];
+        protobuf.extend_from_slice(b"fusion_uuid");
+        protobuf.push(0x1a);
+        protobuf.push(GUID.len() as u8);
+        protobuf.extend_from_slice(GUID.as_bytes());
+        protobuf.extend_from_slice(registry);
+
+        let mut bytes = MAGIC.to_vec();
+        bytes.extend_from_slice(&VERSION.to_le_bytes());
+        bytes.extend_from_slice(&[0; 32]);
+        bytes.extend_from_slice(&(protobuf.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&protobuf);
+
+        // The name table maps every stream name to its id; `v` and `t` take
+        // ids 2 and 3, and each extra stream follows in declaration order.
+        let mut table = vec![0x80 | u8::try_from(2 + extra.len()).expect("stream count")];
+        for (index, name) in [("v", 2u8), ("t", 3)]
+            .iter()
+            .map(|(name, id)| (*name, *id))
+            .chain(
+                extra
+                    .iter()
+                    .enumerate()
+                    .map(|(index, (name, _, _))| (*name, u8::try_from(4 + index).expect("id"))),
+            )
+            .map(|(name, id)| (id, name))
+        {
+            table.push(0xa0 | u8::try_from(name.len()).expect("short name"));
+            table.extend_from_slice(name.as_bytes());
+            table.push(index);
+        }
+        let mut name_chunk = (table.len() as u64).to_le_bytes().to_vec();
+        name_chunk.extend_from_slice(&CHUNK_NAME_TABLE.to_le_bytes());
+        name_chunk.append(&mut table);
+        bytes.extend_from_slice(&name_chunk);
+
+        bytes.extend_from_slice(&stream_chunk(
+            &float_descriptor(3),
+            &vertices
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect::<Vec<_>>(),
+        ));
+        bytes.extend_from_slice(&stream_chunk(
+            &delta_descriptor(),
+            &corners
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect::<Vec<_>>(),
+        ));
+        for (_, descriptor, payload) in extra {
+            bytes.extend_from_slice(&stream_chunk(descriptor, payload));
+        }
+        bytes
+    }
+
+    /// Three vertices and one triangle, the smallest mesh a channel can
+    /// address.
+    const TRIANGLE_VERTICES: [f32; 9] = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0];
+    const TRIANGLE_CORNERS: [i32; 3] = [1, 1, 7];
+
+    /// A channel with no index stream stores one value per vertex, so its
+    /// element width and count are settled and it transfers.
+    #[test]
+    fn vertex_domain_channel_carries_one_element_per_vertex() {
+        let uv = (0..3)
+            .flat_map(|index| [index as f32, 0.5])
+            .flat_map(f32::to_le_bytes)
+            .collect::<Vec<_>>();
+        let registry = channel_entry(REGISTRY_VERTEX_CHANNEL, Some(3), ELEMENT_PAIR, "r0", None);
+        let mesh = decode_mesh_container(&container_with_registry(
+            &TRIANGLE_VERTICES,
+            &TRIANGLE_CORNERS,
+            &registry,
+            &[("r0", float_descriptor(2), uv.clone())],
+        ))
+        .expect("mesh container");
+        let attribute = &mesh.attributes[0];
+        assert_eq!(attribute.domain, MeshAttributeDomain::Vertex);
+        assert_eq!(attribute.role, 3);
+        assert_eq!(attribute.item_size, Some(8));
+        assert_eq!(attribute.count(), Some(3));
+        assert_eq!(attribute.values, uv);
+    }
+
+    /// A channel that declares an index stream addresses triangle corners, so
+    /// its value count is independent of the vertex count.
+    #[test]
+    fn index_stream_makes_a_channel_corner_domain() {
+        let colors = (0..5)
+            .flat_map(|index| [index as f32, 0.0, 0.0, 1.0])
+            .flat_map(f32::to_le_bytes)
+            .collect::<Vec<_>>();
+        let registry = channel_entry(
+            REGISTRY_VERTEX_CHANNEL,
+            Some(4),
+            ELEMENT_QUAD,
+            "r0",
+            Some("r0i"),
+        );
+        let mesh = decode_mesh_container(&container_with_registry(
+            &TRIANGLE_VERTICES,
+            &TRIANGLE_CORNERS,
+            &registry,
+            &[
+                ("r0", float_descriptor(4), colors),
+                ("r0i", delta_descriptor(), vec![0; 8]),
+            ],
+        ))
+        .expect("mesh container");
+        let attribute = &mesh.attributes[0];
+        assert_eq!(attribute.domain, MeshAttributeDomain::Corner);
+        assert_eq!(attribute.item_size, Some(16));
+        assert_eq!(attribute.count(), Some(5));
+    }
+
+    /// A triangle-domain channel uses its registry field. An unresolved element
+    /// code leaves the element count unset.
+    #[test]
+    fn triangle_domain_channel_keeps_an_unsettled_element_width_unstated() {
+        let registry = channel_entry(REGISTRY_TRIANGLE_CHANNEL, None, 7, "r0", None);
+        let mesh = decode_mesh_container(&container_with_registry(
+            &TRIANGLE_VERTICES,
+            &TRIANGLE_CORNERS,
+            &registry,
+            &[("r0", delta_descriptor(), vec![0; 4])],
+        ))
+        .expect("mesh container");
+        let attribute = &mesh.attributes[0];
+        assert_eq!(attribute.domain, MeshAttributeDomain::Triangle);
+        assert_eq!(attribute.element_code, 7);
+        assert_eq!(attribute.item_size, None);
+        assert_eq!(attribute.count(), None);
+    }
+
+    /// A vertex-domain channel with a conflicting count leaves its item size
+    /// unset. The mesh geometry remains available, and the report records the
+    /// channel.
+    #[test]
+    fn vertex_domain_channel_leaves_a_contradicted_count_unsettled() {
+        let registry = channel_entry(REGISTRY_VERTEX_CHANNEL, Some(3), ELEMENT_PAIR, "r0", None);
+        let mesh = decode_mesh_container(&container_with_registry(
+            &TRIANGLE_VERTICES,
+            &TRIANGLE_CORNERS,
+            &registry,
+            &[("r0", float_descriptor(2), vec![0; 8 * 4])],
+        ))
+        .expect("mesh container");
+        assert_eq!(mesh.triangles.len(), 1);
+        assert_eq!(mesh.attributes[0].item_size, None);
+        assert_eq!(mesh.attributes[0].count(), None);
+    }
+
+    /// The registry declares the channel; its value stream supplies the data.
+    /// A missing value stream causes the decoder to skip the channel.
+    #[test]
+    fn a_channel_naming_an_absent_stream_is_skipped() {
+        let registry = channel_entry(
+            REGISTRY_VERTEX_CHANNEL,
+            Some(3),
+            ELEMENT_PAIR,
+            "absent",
+            None,
+        );
+        let mesh = decode_mesh_container(&container_with_registry(
+            &TRIANGLE_VERTICES,
+            &TRIANGLE_CORNERS,
+            &registry,
+            &[],
+        ))
+        .expect("mesh container");
+        assert!(mesh.attributes.is_empty());
+    }
+
     /// Two triangles over four vertices. The delta range uniquely determines
     /// implicit starting corner zero, and the terminal value is not a corner.
     #[test]
@@ -663,8 +1152,7 @@ mod tests {
         );
     }
 
-    /// A corner run that does not close into whole triangles is refused rather
-    /// than truncated.
+    /// The decoder rejects a corner run that ends before a complete triangle.
     #[test]
     fn container_refuses_a_partial_triangle() {
         let container = container(
@@ -675,7 +1163,7 @@ mod tests {
         assert!(decode_mesh_container(&container).is_err());
     }
 
-    /// A corner index naming no vertex is refused.
+    /// The decoder rejects a corner index outside the vertex stream.
     #[test]
     fn container_refuses_a_corner_index_beyond_the_vertex_stream() {
         let container = container(
@@ -686,8 +1174,8 @@ mod tests {
         assert!(decode_mesh_container(&container).is_err());
     }
 
-    /// Stream bytes are not interpreted under a component type that the
-    /// implemented decoder does not support.
+    /// The decoder rejects a vertex descriptor with an unsupported component
+    /// type.
     #[test]
     fn container_refuses_a_vertex_descriptor_with_the_wrong_component_type() {
         let mut container = container(GUID, &[0.0, 0.0, 0.0], &[0, 0]);

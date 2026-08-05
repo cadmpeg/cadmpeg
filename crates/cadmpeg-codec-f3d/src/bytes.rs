@@ -84,7 +84,7 @@ pub(crate) fn take_lp_utf8_capped(bytes: &[u8], at: &mut usize, max: usize) -> O
 }
 
 /// One reference member of a Fusion segment record
-/// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)
+/// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)
 /// "**References.**").
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Reference {

@@ -14,8 +14,8 @@ use super::native_bytes::{
     native_length_prefixed_string, native_point, native_ref, native_string, native_subident,
     native_surface_base, native_u16_string, native_vector,
 };
-use crate::nurbs::reader::LEN_TO_MM;
 use crate::writer::primitives::{finite_point, finite_vector, native_bool, unique_knot_count};
+use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
 pub(crate) fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     if !target.tolerances.linear.is_finite()
@@ -6334,11 +6334,11 @@ mod revision_surface_tail_tests {
             .expect("tail discontinuities");
         bytes.push(native_bool(false));
 
-        let mut position = 0usize;
-        let tail =
-            crate::nurbs::proc_surface::decode_revision_surface_tail(&bytes, &mut position, 8)
-                .expect("decoded parameterized tail");
-        assert_eq!(position, bytes.len());
+        let toks = cadmpeg_asm::nurbs::toks::lex_test_span(&bytes, 8);
+        let mut cur = cadmpeg_asm::nurbs::toks::Cur::at(&toks, 0);
+        let tail = cadmpeg_asm::nurbs::proc_surface::revision_surface_tail(&mut cur)
+            .expect("decoded parameterized tail");
+        assert_eq!(cur.pos(), toks.len());
         assert_eq!(tail.enumeration, 2);
         assert_eq!(tail.fit_tolerance, None);
         assert_eq!(tail.parameterization, Some(parameterization));
