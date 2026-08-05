@@ -15,7 +15,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use cadmpeg_codec_core::{ContainerEntry, ContainerSummary};
+use cadmpeg_core::{ContainerEntry, ContainerSummary};
 
 use crate::curve::{
     self, BoundPrototypePcurve, CurveExpressionRecord, CurveExpressionValue, CurveParameterRecord,

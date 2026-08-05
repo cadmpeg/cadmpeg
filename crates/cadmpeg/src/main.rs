@@ -257,22 +257,22 @@ impl DecodeArgs {
     fn options(&self) -> cadmpeg_ir::DecodeOptions {
         let limits = self.limits.limits();
         let mode = if self.strict {
-            cadmpeg_codec_core::decode::DecodeMode::Strict
+            cadmpeg_core::decode::DecodeMode::Strict
         } else {
-            cadmpeg_codec_core::decode::DecodeMode::Salvage
+            cadmpeg_core::decode::DecodeMode::Salvage
         };
         cadmpeg_ir::DecodeOptions {
             container_only: self.container_only,
-            policy: cadmpeg_codec_core::decode::DecodePolicy { mode, limits },
+            policy: cadmpeg_core::decode::DecodePolicy { mode, limits },
         }
     }
 }
 
 impl LimitProfile {
-    const fn limits(self) -> cadmpeg_codec_core::decode::ResourceLimits {
+    const fn limits(self) -> cadmpeg_core::decode::ResourceLimits {
         match self {
-            LimitProfile::Desktop => cadmpeg_codec_core::decode::ResourceLimits::desktop(),
-            LimitProfile::Service => cadmpeg_codec_core::decode::ResourceLimits::service(),
+            LimitProfile::Desktop => cadmpeg_core::decode::ResourceLimits::desktop(),
+            LimitProfile::Service => cadmpeg_core::decode::ResourceLimits::service(),
         }
     }
 }

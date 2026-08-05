@@ -11,7 +11,7 @@
 //! byte synchronization and record extents without requiring semantic decoding
 //! of each payload.
 
-use cadmpeg_codec_core::le::{f64_at as read_f64, int_at as read_i, vec3_at as read_vec3};
+use cadmpeg_core::le::{f64_at as read_f64, int_at as read_i, vec3_at as read_vec3};
 use std::sync::Arc;
 
 /// A decoded SAB token. The codec assigns typed values to the payload it

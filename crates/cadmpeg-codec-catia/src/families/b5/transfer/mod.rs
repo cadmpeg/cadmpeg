@@ -1358,6 +1358,137 @@ mod tests {
         assert_eq!(edge_pcurve_parameters(&graph, 30, 20), Some([1.0, 0.0]));
     }
 
+    /// An incomplete graph keeps the face whose loop members all carry vertex
+    /// loci and excludes the face whose members carry none, so that a carrier
+    /// without recoverable geometry cannot pull invented vertices into the
+    /// neutral model.
+    #[test]
+    fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
+        let plane = |v_offset: f64| B5Surface::Plane {
+            origin: [0.0, v_offset, 0.0],
+            direction_u: [1.0, 0.0, 0.0],
+            direction_v: [0.0, 1.0, 0.0],
+            u_range: [-1.0, 1.0],
+            v_range: [-1.0, 1.0],
+        };
+        let line_pcurve = |object_id: u32, surface: u32| B5Pcurve {
+            object_id,
+            surface,
+            degree: 1,
+            distinct_knots: vec![0.0, 1.0],
+            multiplicities: vec![2, 2],
+            control_points: vec![[0.0, 0.0], [1.0, 0.0]],
+            weights: None,
+            parameter_range: None,
+            class_21_suffix_scalar: None,
+            lifted_endpoints: None,
+        };
+        let incidence = |object_id: u32, curve: u32, parameter: f64| B5ParameterIncidence {
+            object_id,
+            curves: vec![curve],
+            parameters: vec![parameter],
+            controls: vec![0],
+        };
+        let graph = B5Graph {
+            complete: false,
+            faces: vec![
+                B5Face {
+                    object_id: 1,
+                    surface: 10,
+                    loops: vec![2],
+                    terminal_control: None,
+                },
+                B5Face {
+                    object_id: 3,
+                    surface: 11,
+                    loops: vec![4],
+                    terminal_control: None,
+                },
+            ],
+            face_records: BTreeMap::new(),
+            loops: BTreeMap::from([
+                (
+                    2,
+                    B5Loop {
+                        object_id: 2,
+                        pcurves: vec![20, 20, 20],
+                        edges: vec![30, 31, 32],
+                        metadata: test_loop_metadata(3),
+                        surface: 10,
+                    },
+                ),
+                (
+                    4,
+                    B5Loop {
+                        object_id: 4,
+                        pcurves: vec![21, 21, 21],
+                        edges: vec![33, 34, 35],
+                        metadata: test_loop_metadata(3),
+                        surface: 11,
+                    },
+                ),
+            ]),
+            pcurves: BTreeMap::from([(20, line_pcurve(20, 10)), (21, line_pcurve(21, 11))]),
+            opaque_pcurves: BTreeMap::new(),
+            implicit_pcurves: BTreeMap::new(),
+            surfaces: BTreeMap::from([(10, plane(0.0)), (11, plane(5.0))]),
+            surface_aliases: BTreeMap::new(),
+            offset_surfaces: BTreeMap::new(),
+            extrusion_surfaces: BTreeMap::new(),
+            supported_surfaces: BTreeMap::new(),
+            parameter_incidences: BTreeMap::from([
+                (40, incidence(40, 20, 0.0)),
+                (41, incidence(41, 20, 0.5)),
+                (42, incidence(42, 20, 1.0)),
+            ]),
+            edges: BTreeMap::new(),
+            vertex_incidence_links: BTreeMap::new(),
+            vertex_points: Vec::new(),
+            logical_vertex_points: vec![[0.0, 0.0, 0.0], [0.5, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            logical_vertex_refs: vec![50, 51, 52],
+            // Edges 33, 34, and 35 have no entry: their carrier resolves no
+            // endpoint locus, which is what excludes face 3.
+            edge_vertices: BTreeMap::from([(30, [0, 1]), (31, [1, 2]), (32, [2, 0])]),
+            edge_parameter_incidences: BTreeMap::from([
+                (30, [40, 41]),
+                (31, [41, 42]),
+                (32, [42, 40]),
+            ]),
+            vertex_tolerances: BTreeMap::new(),
+            profiles: BTreeMap::new(),
+        };
+        let mut ir = CadIr::empty(Units::default());
+
+        assert!(transfer(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            graph,
+            &UnknownId("catia:test-payload".to_string()),
+        ));
+        assert_eq!(
+            ir.model
+                .faces
+                .iter()
+                .map(|face| face.id.0.as_str())
+                .collect::<Vec<_>>(),
+            ["catia:b5:face#1"]
+        );
+        assert_eq!(
+            ir.model
+                .loops
+                .iter()
+                .map(|loop_| loop_.id.0.as_str())
+                .collect::<Vec<_>>(),
+            ["catia:b5:loop#2"]
+        );
+        assert_eq!(ir.model.coedges.len(), 3);
+        assert!(!ir
+            .model
+            .surfaces
+            .iter()
+            .any(|surface| surface.id.0.contains("#11")));
+    }
+
     #[test]
     fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         let mut graph = B5Graph {
@@ -2810,6 +2941,209 @@ mod tests {
             ir.model.pcurves[0].geometry,
             PcurveGeometry::SphericalGreatCircle { .. }
         ));
+    }
+
+    /// One closed spherical component of a synthetic B5 graph. `face`, `loop_`,
+    /// `pcurve`, and `surface` are persistent object ids; `edges` names the three
+    /// edge object ids and `vertices` the three vertex-point rows.
+    struct SyntheticSphericalComponent {
+        face: u32,
+        loop_: u32,
+        pcurve: u32,
+        surface: u32,
+        edges: [u32; 3],
+        vertices: [usize; 3],
+        center: [f64; 3],
+    }
+
+    /// Build a B5 graph of independent closed spherical components. Each
+    /// component contributes one face carrying one three-member loop over a
+    /// single class-`1d` great-circle pcurve, as in
+    /// [`owned_sphere_class_1d_pcurve_enters_the_transfer_plan`].
+    fn synthetic_spherical_graph(components: &[SyntheticSphericalComponent]) -> B5Graph {
+        let chart_scale = 8.0;
+        let parameter_range = [0.0, 4.0 * std::f64::consts::PI];
+        let radius = 5.0;
+        let mut graph = B5Graph {
+            complete: true,
+            faces: Vec::new(),
+            face_records: BTreeMap::new(),
+            loops: BTreeMap::new(),
+            pcurves: BTreeMap::new(),
+            opaque_pcurves: BTreeMap::new(),
+            implicit_pcurves: BTreeMap::new(),
+            surfaces: BTreeMap::new(),
+            surface_aliases: BTreeMap::new(),
+            offset_surfaces: BTreeMap::new(),
+            extrusion_surfaces: BTreeMap::new(),
+            supported_surfaces: BTreeMap::new(),
+            parameter_incidences: BTreeMap::new(),
+            edges: BTreeMap::new(),
+            vertex_incidence_links: BTreeMap::new(),
+            vertex_points: Vec::new(),
+            logical_vertex_points: Vec::new(),
+            logical_vertex_refs: Vec::new(),
+            edge_vertices: BTreeMap::new(),
+            edge_parameter_incidences: BTreeMap::new(),
+            vertex_tolerances: BTreeMap::new(),
+            profiles: BTreeMap::new(),
+        };
+        for component in components {
+            graph.faces.push(B5Face {
+                object_id: component.face,
+                surface: component.surface,
+                loops: vec![component.loop_],
+                terminal_control: None,
+            });
+            graph.loops.insert(
+                component.loop_,
+                B5Loop {
+                    object_id: component.loop_,
+                    pcurves: vec![component.pcurve; 3],
+                    edges: component.edges.to_vec(),
+                    metadata: test_loop_metadata(3),
+                    surface: component.surface,
+                },
+            );
+            graph.opaque_pcurves.insert(
+                component.pcurve,
+                B5OpaquePcurve {
+                    object_id: component.pcurve,
+                    surface: component.surface,
+                    class: 0x1d,
+                    payload: Vec::new(),
+                    sphere_great_circle: Some(B5SphereGreatCirclePcurve {
+                        chart_bounds: [parameter_range, [0.0, std::f64::consts::TAU * chart_scale]],
+                        chart_shift: 0.0,
+                        chart_scale,
+                        slope: 0.0,
+                        phase: 0.0,
+                    }),
+                },
+            );
+            graph.surfaces.insert(
+                component.surface,
+                B5Surface::Sphere {
+                    center: component.center,
+                    direction_x: [1.0, 0.0, 0.0],
+                    direction_y: [0.0, 1.0, 0.0],
+                    axis: [0.0, 0.0, 1.0],
+                    radius,
+                    azimuth_range: [0.0, std::f64::consts::TAU],
+                    latitude_range: [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
+                    construction_radius: chart_scale,
+                    chart_origin: 0.0,
+                },
+            );
+            let points = [
+                [
+                    component.center[0] + radius,
+                    component.center[1],
+                    component.center[2],
+                ],
+                [
+                    component.center[0],
+                    component.center[1] + radius,
+                    component.center[2],
+                ],
+                [
+                    component.center[0] - radius,
+                    component.center[1],
+                    component.center[2],
+                ],
+            ];
+            for (row, point) in component.vertices.into_iter().zip(points) {
+                assert_eq!(row, graph.vertex_points.len(), "contiguous vertex rows");
+                graph.vertex_points.push(point);
+            }
+            for (position, edge) in component.edges.into_iter().enumerate() {
+                graph.edge_vertices.insert(
+                    edge,
+                    [
+                        component.vertices[position],
+                        component.vertices[(position + 1) % 3],
+                    ],
+                );
+            }
+        }
+        graph
+    }
+
+    /// B5 object ids carry an unpadded decimal key, so a face pair such as
+    /// `#9`/`#10` reaches the neutral model in ascending native order while
+    /// sorting the other way. The route must still produce an admissible model:
+    /// every cross-reference is an id string, so canonical arena order is a
+    /// property the pipeline restores rather than one the emit passes owe.
+    ///
+    /// Two ownership components put several arenas out of sorted order at once,
+    /// which one face cannot do. The container-level counterpart is
+    /// `tests::decode_float_packed_stream_transfers_topology_under_decimal_object_ids`.
+    #[test]
+    fn decimal_object_id_keys_transfer_to_an_admissible_model() {
+        let graph = synthetic_spherical_graph(&[
+            SyntheticSphericalComponent {
+                face: 9,
+                loop_: 29,
+                pcurve: 39,
+                surface: 2,
+                edges: [49, 50, 51],
+                vertices: [0, 1, 2],
+                center: [0.0, 0.0, 0.0],
+            },
+            SyntheticSphericalComponent {
+                face: 10,
+                loop_: 200,
+                pcurve: 300,
+                surface: 12,
+                edges: [400, 401, 402],
+                vertices: [3, 4, 5],
+                center: [100.0, 0.0, 0.0],
+            },
+        ]);
+
+        let mut ir = CadIr::empty(Units::default());
+        assert!(transfer(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            graph,
+            &UnknownId("catia:payload:unknown#test".to_string()),
+        ));
+
+        // Native traversal order, which the arena-order check reads as unsorted.
+        assert_eq!(
+            ir.model
+                .faces
+                .iter()
+                .map(|face| face.id.0.as_str())
+                .collect::<Vec<_>>(),
+            ["catia:b5:face#9", "catia:b5:face#10"]
+        );
+        assert_eq!(ir.model.loops.len(), 2);
+        assert_eq!(ir.model.shells.len(), 2);
+        assert_eq!(ir.model.regions.len(), 2);
+        assert_eq!(ir.model.edges.len(), 6);
+        assert_eq!(ir.model.coedges.len(), 6);
+        assert_eq!(ir.model.vertices.len(), 6);
+        assert_eq!(ir.model.pcurves.len(), 2);
+        let unsorted_arenas = cadmpeg_ir::validate::validate(&ir, Vec::new())
+            .findings
+            .iter()
+            .filter(|finding| finding.check == cadmpeg_ir::report::Check::ArenaOrder)
+            .count();
+        assert!(
+            unsorted_arenas >= 6,
+            "one component cannot unsort this many arenas: {unsorted_arenas}"
+        );
+
+        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[]));
+        assert_eq!(
+            ir.model
+                .faces
+                .iter()
+                .map(|face| face.id.0.as_str())
+                .collect::<Vec<_>>(),
+            ["catia:b5:face#10", "catia:b5:face#9"]
+        );
     }
 
     #[test]

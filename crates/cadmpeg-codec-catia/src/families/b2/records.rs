@@ -4,7 +4,7 @@
 //! construction-use supports, class-`0x5e`/`0x61`/`0x62` owner and link records,
 //! parameter-space packets, and consolidated UV pcurves.
 
-use cadmpeg_codec_core::le::u16_at as u16_le;
+use cadmpeg_core::le::u16_at as u16_le;
 use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashSet};

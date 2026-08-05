@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked semantic mutations of retained persistence records.
 
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 

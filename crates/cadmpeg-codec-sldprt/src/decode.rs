@@ -15,10 +15,10 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_codec_core::be::u32_at as be_u32;
-use cadmpeg_codec_core::decode::{DecodeContext, View};
-use cadmpeg_codec_core::le::{i32_at as le_i32, u16_at as le_u16, u32_at as le_u32};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::be::u32_at as be_u32;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::le::{i32_at as le_i32, u16_at as le_u16, u32_at as le_u32};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::DecodeResult;
@@ -141,7 +141,7 @@ fn decode_result(
     if let Some(source_image) = source_image {
         source_fidelity.retain_unknown_records("sldprt", [source_image]);
     }
-    set_semantic_hash(&mut ir);
+    stamp_local_digests(&mut ir);
     Ok(DecodeResult::new(ir, report, source_fidelity))
 }
 
@@ -2540,7 +2540,7 @@ fn build_geometry_ir(
         partition.links.extend(opaque_curves);
     }
     preserve_source_image(scan, &mut annotations, &mut unknowns);
-    set_semantic_hash(&mut ir);
+    stamp_local_digests(&mut ir);
     Ok((ir, annotations, unknowns))
 }
 
@@ -3062,7 +3062,7 @@ fn build_metadata_ir(
     stamp_configuration_baseline(&mut ir);
     snapshot_active_configuration(&mut ir);
     preserve_source_image(scan, &mut annotations, &mut unknowns);
-    set_semantic_hash(&mut ir);
+    stamp_local_digests(&mut ir);
     Ok((ir, annotations, unknowns))
 }
 
@@ -3103,7 +3103,7 @@ fn project_design_history(
     crate::history::project_configuration_design_states(ir, histories, lanes, pmi_dimensions);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
-            "sldprt_neutral_feature_sha256".into(),
+            "sldprt_neutral_feature_local_sha256".into(),
             crate::history::feature_hash(&ir.model.features),
         );
         source.attributes.insert(
@@ -3115,7 +3115,7 @@ fn project_design_history(
             crate::history::native_configuration_hash(histories),
         );
         source.attributes.insert(
-            "sldprt_neutral_parameter_sha256".into(),
+            "sldprt_neutral_parameter_local_sha256".into(),
             crate::history::parameter_hash(&ir.model.parameters),
         );
         source.attributes.insert(
@@ -3155,7 +3155,7 @@ fn stamp_parameter_baseline(ir: &mut CadIr) {
     if let Some(source) = &mut ir.source {
         source
             .attributes
-            .insert("sldprt_neutral_parameter_sha256".into(), hash);
+            .insert("sldprt_neutral_parameter_local_sha256".into(), hash);
     }
 }
 
@@ -3409,7 +3409,7 @@ fn stamp_feature_baseline(ir: &mut CadIr) {
     if let Some(source) = &mut ir.source {
         source
             .attributes
-            .insert("sldprt_neutral_feature_sha256".into(), hash);
+            .insert("sldprt_neutral_feature_local_sha256".into(), hash);
     }
 }
 
@@ -3529,18 +3529,35 @@ fn stamp_configuration_baseline(ir: &mut CadIr) {
     if let Some(source) = &mut ir.source {
         source
             .attributes
-            .insert("sldprt_neutral_configuration_sha256".into(), hash);
+            .insert("sldprt_neutral_configuration_local_sha256".into(), hash);
         source.attributes.insert(
-            "sldprt_configuration_parameter_values_sha256".into(),
+            "sldprt_configuration_parameter_values_local_sha256".into(),
             parameter_value_hash,
         );
         source.attributes.insert(
-            "sldprt_configuration_feature_states_sha256".into(),
+            "sldprt_configuration_feature_states_local_sha256".into(),
             feature_state_hash,
         );
     }
 }
 
+/// Record the sketch baselines the write path compares against.
+///
+/// Two of the three are machine-local and say so with the `_local_sha256`
+/// suffix: they cover projected neutral sketch geometry, which reaches its
+/// values through `f64::cos` and friends.
+///
+/// `sldprt_native_sketch_sha256` carries no such suffix because it is portable
+/// by construction, not merely portable today. It digests
+/// `SldprtNative::feature_input_lanes`, whose every field is a `String`, an
+/// integer, or retained source bytes, with exactly three exceptions:
+/// `FeatureInputScalar::value`, `SketchInputEntity::state_value`, and
+/// `SketchInputEntity::coordinates_m`. Each of the three is one
+/// `f64::from_le_bytes` of the payload at the byte offset the record stores
+/// beside it, with no arithmetic between the read and the field. Reading an
+/// IEEE 754 bit pattern is exact on every platform, so no libm can move this
+/// digest. Any future enrichment that computes a lane float rather than reading
+/// one makes the digest machine-local and forces the rename.
 fn stamp_sketch_baseline(ir: &mut CadIr, native: &crate::native::SldprtNative) {
     let neutral_hash = crate::resolved_features::hashes::sketch_hash(ir);
     let constraint_hash = crate::resolved_features::hashes::constraint_hash(ir);
@@ -3548,32 +3565,49 @@ fn stamp_sketch_baseline(ir: &mut CadIr, native: &crate::native::SldprtNative) {
     if let Some(source) = &mut ir.source {
         source
             .attributes
-            .insert("sldprt_neutral_sketch_sha256".into(), neutral_hash);
+            .insert("sldprt_neutral_sketch_local_sha256".into(), neutral_hash);
         source
             .attributes
             .insert("sldprt_native_sketch_sha256".into(), native_hash);
         source.attributes.insert(
-            "sldprt_neutral_sketch_constraint_sha256".into(),
+            "sldprt_neutral_sketch_constraint_local_sha256".into(),
             constraint_hash,
         );
     }
 }
 
-fn set_semantic_hash(ir: &mut CadIr) {
+/// Record the document and B-rep partition baselines the write path compares
+/// against.
+///
+/// Both are machine-local content digests and carry the `_local_sha256` suffix
+/// that says so; see [`document_local_sha256`] and [`brep_local_sha256`].
+fn stamp_local_digests(ir: &mut CadIr) {
     ir.finalize();
-    let brep_hash = brep_semantic_hash(ir);
+    let brep_hash = brep_local_sha256(ir);
     if let Some(source) = &mut ir.source {
         source
             .attributes
-            .insert("brep_semantic_sha256".into(), brep_hash);
+            .insert("brep_local_sha256".into(), brep_hash);
     }
-    let hash = semantic_hash(ir);
+    let hash = document_local_sha256(ir);
     if let Some(source) = &mut ir.source {
-        source.attributes.insert("semantic_sha256".into(), hash);
+        source.attributes.insert(
+            cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
+            hash,
+        );
     }
 }
 
-pub(crate) fn brep_semantic_hash(ir: &CadIr) -> String {
+/// The machine-local content digest recorded as the SLDPRT `brep_local_sha256`
+/// attribute.
+///
+/// A bitwise digest over the decoded B-rep alone: geometry, topology, and face
+/// appearances, with names, colors, tessellations, history, and every native
+/// record excluded. [`crate::writer::retained_partition`] compares it to decide
+/// whether the retained Parasolid partition may be replayed verbatim while the
+/// rest of the document is written. It carries every limitation
+/// [`document_local_sha256`] states, and the `_local_sha256` suffix says so.
+pub(crate) fn brep_local_sha256(ir: &CadIr) -> String {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
     // Normalize with a field-by-field clone so the dropped namespaces (source
@@ -3617,9 +3651,19 @@ pub(crate) fn brep_semantic_hash(ir: &CadIr) -> String {
     cadmpeg_ir::hash::canonical_json_sha256(&normalized)
 }
 
-/// The document digest recorded as the SLDPRT `semantic_sha256` attribute.
-pub(crate) fn semantic_hash(ir: &CadIr) -> String {
-    cadmpeg_ir::hash::semantic_document_hash(ir, "sldprt", "sldprt:file:source-image#0")
+/// The machine-local content digest recorded as the SLDPRT
+/// `document_local_sha256` attribute.
+///
+/// A bitwise digest over the decoded neutral document. Its one consumer is
+/// [`crate::SldprtCodec`]'s write path, which replays the retained source bytes
+/// when the recorded digest still equals a freshly computed one and writes the
+/// document through the semantic writer otherwise. It is not portable across
+/// platforms, because the decoded content includes values derived through libm
+/// transcendentals, and it is intentionally not tolerance-aware, because tolerant
+/// equality is not transitive and cannot back a hash. The `_local_sha256` suffix
+/// states that; see [`cadmpeg_ir::hash::document_local_sha256`].
+pub(crate) fn document_local_sha256(ir: &CadIr) -> String {
+    cadmpeg_ir::hash::document_local_sha256(ir, "sldprt", "sldprt:file:source-image#0")
 }
 
 fn preserve_source_image(

@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 
 use crate::native::SldprtNative;
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
@@ -378,10 +378,18 @@ fn retained_cache_cells(
         .collect()
 }
 
+/// The retained Parasolid partition to replay, when the decoded B-rep is
+/// untouched since the decode that recorded its baseline.
+///
+/// The comparison is bitwise against the `brep_local_sha256` baseline, which is
+/// what an edit-detection question needs and all it can be; see
+/// [`crate::decode::brep_local_sha256`]. A document without the baseline — one
+/// synthesized rather than decoded, or decoded by a binary that named the
+/// attribute differently — has no partition to replay and is written out in full.
 fn retained_partition(ir: &CadIr, records: &[SourceRecord<'_>]) -> Option<(String, Vec<u8>)> {
     let source = ir.source.as_ref()?;
-    let expected = source.attributes.get("brep_semantic_sha256")?;
-    if crate::decode::brep_semantic_hash(ir) != *expected {
+    let expected = source.attributes.get("brep_local_sha256")?;
+    if crate::decode::brep_local_sha256(ir) != *expected {
         return None;
     }
     let source_image = source_image(records)?;
@@ -1077,6 +1085,37 @@ fn resolved_feature_payload(
     Ok(payload)
 }
 
+/// The record position a `sldprt:metadata:*` identifier carries: the ordinal of
+/// the section the record was read from and its byte offset inside that
+/// section's payload.
+fn metadata_source_position(id: &str) -> Option<(u64, u64)> {
+    let (section, offset) = id.rsplit_once('#')?.1.split_once(':')?;
+    Some((section.parse().ok()?, offset.parse().ok()?))
+}
+
+/// This codec's document attributes, ordered as their records appear in the
+/// source payload rather than by identifier.
+///
+/// The arena is sorted by identifier, which orders the records by attribute
+/// name. Writing that order rebuilds the payload with every record at a
+/// different byte offset, and the next decode mints identifiers from those
+/// offsets, so a rewrite that changed nothing would still rename every metadata
+/// attribute. Attributes whose identifier carries no record position keep their
+/// arena order, after the located ones.
+fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribute> {
+    let mut attributes = ir
+        .model
+        .attributes
+        .iter()
+        .filter(|attribute| attribute.id.0.starts_with("sldprt:"))
+        .collect::<Vec<_>>();
+    attributes.sort_by_key(|attribute| {
+        let position = metadata_source_position(&attribute.id.0);
+        (position.is_none(), position)
+    });
+    attributes
+}
+
 fn metadata_payloads(
     ir: &CadIr,
     length_scale: f64,
@@ -1085,10 +1124,7 @@ fn metadata_payloads(
 
     let mut objects = Vec::new();
     let mut unit_code = None;
-    for attribute in &ir.model.attributes {
-        if !attribute.id.0.starts_with("sldprt:") {
-            continue;
-        }
+    for attribute in metadata_attributes(ir) {
         if attribute.target != AttributeTarget::Document {
             return Err(CodecError::NotImplemented(
                 "SLDPRT semantic writer does not support entity attributes".into(),

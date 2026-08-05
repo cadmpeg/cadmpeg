@@ -245,7 +245,7 @@ fn inspect_reports_the_stream_kind_and_header_facts() {
     let summary = SatCodec
         .inspect(
             &mut Cursor::new(text_sphere_stream(1.0)),
-            &cadmpeg_codec_core::decode::InspectOptions::default(),
+            &cadmpeg_core::decode::InspectOptions::default(),
         )
         .unwrap();
     assert_eq!(summary.format, "sat");

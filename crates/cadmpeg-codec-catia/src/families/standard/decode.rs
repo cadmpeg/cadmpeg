@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard nested-stream decode route: B-rep topology attach and geometry.
 
-use cadmpeg_codec_core::decode::{DecodeContext, WorkBudget};
+use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
@@ -1594,7 +1594,7 @@ pub(crate) fn try_decode_standard(
         &mut bound_standard_limit_curve_count,
     )
     .and_then(|()| {
-        neutral_model_is_admissible(&topology_ir, &unknowns)
+        neutral_model_is_admissible(&mut topology_ir, &unknowns)
             .then_some(())
             .ok_or(StandardTopologyFailure::InadmissibleNeutralModel)
     });
@@ -1843,6 +1843,10 @@ pub(crate) fn try_decode_standard(
     report.coverage.insert(
         "bound_consolidated_standard_face_surface_count".to_string(),
         consolidated_curve_bindings.standard_face_surfaces,
+    );
+    report.coverage.insert(
+        "bound_consolidated_standard_face_pcurve_count".to_string(),
+        consolidated_curve_bindings.standard_face_pcurves,
     );
     Some(FamilyOutput {
         ir,

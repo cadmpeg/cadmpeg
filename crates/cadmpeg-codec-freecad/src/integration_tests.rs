@@ -29,7 +29,7 @@ fn container_pipeline_handles_stored_deflated_streaming_and_zip64_layouts() {
         let summary = FcstdCodec
             .inspect(
                 &mut Cursor::new(&bytes),
-                &cadmpeg_codec_core::decode::InspectOptions::default(),
+                &cadmpeg_core::decode::InspectOptions::default(),
             )
             .expect("FCStd inspection");
         assert_eq!(summary.format, "fcstd");

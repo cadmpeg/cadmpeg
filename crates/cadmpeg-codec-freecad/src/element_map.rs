@@ -3,8 +3,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_codec_core::cursor::bounded_len;
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::cursor::bounded_len;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 
 use crate::native::{

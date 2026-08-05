@@ -2,7 +2,7 @@
 //!
 //! Reconstructs face/edge incidence from serialized boundary domains.
 
-use cadmpeg_codec_core::decode::WorkBudget;
+use cadmpeg_core::decode::WorkBudget;
 
 use crate::families::standard::topology::{
     incidence_cycles, reconstruct_incidence, solve_boundary_orientation_constraints, EdgeRow,

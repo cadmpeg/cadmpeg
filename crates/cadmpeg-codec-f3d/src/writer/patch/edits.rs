@@ -8,7 +8,7 @@ use crate::records::{
     ActEntity, ActGuid, ActRootComponent, DesignMaterialAssignment, LostEdgeReference,
     SketchCurveGeometry,
 };
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     BlendRadiusLaw, Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,

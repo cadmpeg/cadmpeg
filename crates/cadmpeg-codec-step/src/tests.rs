@@ -7,7 +7,7 @@
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
 
-use cadmpeg_codec_core::decode::InspectOptions;
+use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry,
@@ -184,7 +184,7 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap_err();
         assert!(
-            matches!(error, cadmpeg_codec_core::CodecError::NotImplemented(message) if message == reason)
+            matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message == reason)
         );
     }
     assert_eq!(

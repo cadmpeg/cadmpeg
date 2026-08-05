@@ -15,7 +15,7 @@ rust-version.workspace = true
 schema = ["dep:schemars", "cadmpeg-ir/schema"]
 
 [dependencies]
-cadmpeg-codec-core.workspace = true
+cadmpeg-core.workspace = true
 cadmpeg-ir.workspace = true
 serde.workspace = true
 serde-value.workspace = true

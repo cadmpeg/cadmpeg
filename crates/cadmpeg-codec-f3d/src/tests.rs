@@ -15,7 +15,7 @@
 
 use std::io::{Cursor, Read, Write};
 
-use cadmpeg_codec_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
 use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 use cadmpeg_ir::report::{LossKind as LossCode, Severity};
@@ -31,7 +31,7 @@ trait TestEncode {
         &self,
         ir: &cadmpeg_ir::CadIr,
         output: &mut dyn Write,
-    ) -> Result<cadmpeg_ir::ExportReport, cadmpeg_codec_core::CodecError>;
+    ) -> Result<cadmpeg_ir::ExportReport, cadmpeg_core::CodecError>;
 }
 
 impl TestEncode for F3dCodec {
@@ -39,7 +39,7 @@ impl TestEncode for F3dCodec {
         &self,
         ir: &cadmpeg_ir::CadIr,
         output: &mut dyn Write,
-    ) -> Result<cadmpeg_ir::ExportReport, cadmpeg_codec_core::CodecError> {
+    ) -> Result<cadmpeg_ir::ExportReport, cadmpeg_core::CodecError> {
         self.plan(cadmpeg_ir::codec::EncodeInput { ir, fidelity: None })?
             .write_to(output)
     }
@@ -5904,7 +5904,7 @@ fn oversized_zip_entry_declaration_is_rejected_before_allocation() {
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .expect_err("oversized inflated entry must be rejected");
     assert!(
-        matches!(error, cadmpeg_codec_core::CodecError::ResourceLimit(_)),
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)),
         "{error:?}"
     );
 }
@@ -6080,7 +6080,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     );
     assert!(matches!(
         invalid,
-        Err(cadmpeg_codec_core::CodecError::Malformed(message))
+        Err(cadmpeg_core::CodecError::Malformed(message))
             if message.contains("configuration JSON must be an object")
     ));
 
@@ -6112,7 +6112,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         );
         assert!(matches!(
             invalid,
-            Err(cadmpeg_codec_core::CodecError::Malformed(message))
+            Err(cadmpeg_core::CodecError::Malformed(message))
                 if message.contains(expected)
         ));
     }
@@ -6194,10 +6194,7 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
     let error = F3dCodec
         .write_preserved_with_source_fidelity(&modified, &decoded.source_fidelity, &mut Vec::new())
         .unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_codec_core::CodecError::NotImplemented(_)
-    ));
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
 
 #[test]
@@ -6608,7 +6605,7 @@ fn generated_source_less_f3d_rejects_subds() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_codec_core::CodecError::NotImplemented(message)
+        cadmpeg_core::CodecError::NotImplemented(message)
             if message.contains("does not support SubD surfaces")
     ));
 }
@@ -6650,7 +6647,7 @@ fn generated_source_less_f3d_rejects_unbacked_design_parameters() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_codec_core::CodecError::Malformed(message)
+        cadmpeg_core::CodecError::Malformed(message)
             if message.contains("must equal the projection")
     ));
 }
@@ -6938,10 +6935,7 @@ fn generated_source_less_rejects_body_kind_that_conflicts_with_incidence() {
         })
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("open face cannot be emitted as a solid body");
-    assert!(matches!(
-        error,
-        cadmpeg_codec_core::CodecError::Malformed(_)
-    ));
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
 }
 
 #[test]
@@ -11704,10 +11698,7 @@ fn generated_f3d_rejects_act_binding_divergence() {
     let error = F3dCodec
         .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
         .expect_err("divergent ACT and appearance binding must fail");
-    assert!(matches!(
-        error,
-        cadmpeg_codec_core::CodecError::NotImplemented(_)
-    ));
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
 
 #[test]
@@ -11724,10 +11715,7 @@ fn generated_f3d_rejects_material_assignment_divergence() {
     let error = F3dCodec
         .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
         .expect_err("divergent assignment and appearance must fail");
-    assert!(matches!(
-        error,
-        cadmpeg_codec_core::CodecError::NotImplemented(_)
-    ));
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
 
 #[test]
@@ -11745,7 +11733,7 @@ fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
         .write_preserved_with_source_fidelity(&invalid, &decoded.source_fidelity, &mut Vec::new())
         .expect_err("out-of-range refraction must be refused");
     assert!(
-        matches!(error, cadmpeg_codec_core::CodecError::Malformed(message) if message.contains("refraction_index"))
+        matches!(error, cadmpeg_core::CodecError::Malformed(message) if message.contains("refraction_index"))
     );
 
     let mut structural = decoded.ir;
@@ -11760,7 +11748,7 @@ fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
         )
         .expect_err("new Protein property must be refused");
     assert!(
-        matches!(error, cadmpeg_codec_core::CodecError::NotImplemented(message) if message.contains("unchanged property set"))
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("unchanged property set"))
     );
 }
 
@@ -16394,7 +16382,7 @@ fn generated_source_less_sweep_refuses_missing_native_graph() {
         .expect_err("a sweep without its native graph must not be guessed");
     assert!(matches!(
         error,
-        cadmpeg_codec_core::CodecError::NotImplemented(message)
+        cadmpeg_core::CodecError::NotImplemented(message)
             if message.contains("lacks its native construction graph")
     ));
 }

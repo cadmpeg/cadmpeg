@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use crate::records::{
     ConstructionRecipeKind, PersistentReferenceKind, SketchCurveGeometry, SketchText,
 };
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::ids::CoedgeId;

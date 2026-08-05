@@ -2,7 +2,7 @@
 //! `DisplayLists` descriptor tables.
 
 use crate::container::{ContainerScan, Section};
-use cadmpeg_codec_core::le::u32_at as u32_le;
+use cadmpeg_core::le::u32_at as u32_le;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::TessellationChannel;
 use std::collections::HashMap;

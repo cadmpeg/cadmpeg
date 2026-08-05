@@ -12,8 +12,8 @@
 //! channels store one value per vertex. Indexed channels select values for
 //! triangle corners; PM-03 leaves that order unresolved.
 
-use cadmpeg_codec_core::le::{u16_at, u32_at, u64_at};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::le::{u16_at, u32_at, u64_at};
+use cadmpeg_core::CodecError;
 
 /// Container magic.
 const MAGIC: [u8; 12] = [

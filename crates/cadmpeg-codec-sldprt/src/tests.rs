@@ -6,7 +6,7 @@ use std::io::{Cursor, Write};
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
 
-use cadmpeg_codec_core::decode::InspectOptions;
+use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::LossKind;
 
 use crate::container::{self, role, MARKER};
@@ -2102,11 +2102,11 @@ fn retained_source_image_round_trips_byte_exactly() {
             .iter()
             .any(|candidate| candidate.id == coedge.radial_next));
     }
-    let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(&result.ir, &result.source_fidelity, &mut encoded)
-        .unwrap();
-    assert_eq!(encoded, source);
+    cadmpeg_ir::roundtrip::verbatim_replay_holds(
+        &SldprtCodec,
+        "retained_source_image_round_trips_byte_exactly",
+        &source,
+    );
 }
 
 #[test]
@@ -2120,13 +2120,15 @@ fn encoder_writes_source_less_ir() {
         .for_each(|edge| edge.param_range = None);
 
     let mut encoded = Vec::new();
-    SldprtCodec
+    let report = SldprtCodec
         .plan(cadmpeg_ir::codec::EncodeInput {
             ir: &ir,
             fidelity: None,
         })
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
+    // No retained source content reached the writer, so it authored every byte.
+    assert_eq!(report.write_path, cadmpeg_ir::WritePath::Synthesized);
     let scan = container::scan_bytes(&encoded);
     assert_eq!(scan.blocks.len(), 1);
     assert_eq!(scan.directory.len(), 1);
@@ -2868,10 +2870,7 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
         })
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_codec_core::CodecError::NotImplemented(_)
-    ));
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
     assert!(error
         .to_string()
         .contains("requires an owning sketch feature"));
@@ -5934,7 +5933,7 @@ fn decode_builds_valid_topology_and_plane() {
 }
 
 fn strict_options() -> DecodeOptions {
-    use cadmpeg_codec_core::decode::{DecodeMode, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeMode, DecodePolicy};
     DecodeOptions {
         container_only: false,
         policy: DecodePolicy {
@@ -5982,7 +5981,7 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
 
     let strict = SldprtCodec.decode(&mut Cursor::new(fixture), &strict_options());
     match strict {
-        Err(cadmpeg_codec_core::CodecError::Malformed(message)) => {
+        Err(cadmpeg_core::CodecError::Malformed(message)) => {
             assert!(
                 message.contains("strict mode rejects geometry_not_transferred"),
                 "unexpected message: {message}"
@@ -6287,10 +6286,7 @@ fn semantic_writer_rejects_invalid_ir_without_panicking() {
             &mut Vec::new(),
         )
         .unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_codec_core::CodecError::Malformed(_)
-    ));
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
 }
 
 #[test]
@@ -6309,10 +6305,7 @@ fn semantic_writer_rejects_unrepresented_typed_fields() {
             &mut Vec::new(),
         )
         .unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_codec_core::CodecError::NotImplemented(_)
-    ));
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
 
 #[test]
@@ -6341,7 +6334,7 @@ fn semantic_writer_rejects_subds() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_codec_core::CodecError::NotImplemented(message)
+        cadmpeg_core::CodecError::NotImplemented(message)
             if message.contains("does not support SubD surfaces")
     ));
 }
@@ -6367,7 +6360,7 @@ fn semantic_writer_rejects_unsupported_conic_curves() {
     ] {
         assert!(matches!(
             crate::writer::curve_values(&geometry, 0.001),
-            Err(cadmpeg_codec_core::CodecError::NotImplemented(_))
+            Err(cadmpeg_core::CodecError::NotImplemented(_))
         ));
     }
 }
@@ -6397,7 +6390,7 @@ fn semantic_writer_rejects_noncanonical_ellipse_radius_order() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_codec_core::CodecError::Malformed(message)
+        cadmpeg_core::CodecError::Malformed(message)
             if message.contains("ellipse major radius is smaller than its minor radius")
     ));
 }
@@ -6426,7 +6419,7 @@ fn semantic_writer_rejects_nonfinite_analytic_carriers() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_codec_core::CodecError::Malformed(message)
+        cadmpeg_core::CodecError::Malformed(message)
             if message.contains("circle center is not finite")
     ));
 }
@@ -6497,7 +6490,7 @@ fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() 
 
         assert!(matches!(
             error,
-            cadmpeg_codec_core::CodecError::NotImplemented(message)
+            cadmpeg_core::CodecError::NotImplemented(message)
                 if message.contains(&surface_id) && message.contains(expected)
         ));
     }
@@ -17878,11 +17871,11 @@ fn decode_binds_generic_extrusion_to_its_dissectable_sketch_child() {
             ..
         } if profile == &sketch.id
     ));
-    let mut encoded = Vec::new();
-    SldprtCodec
-        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
-        .unwrap();
-    assert_eq!(encoded, original);
+    cadmpeg_ir::roundtrip::verbatim_replay_holds(
+        &SldprtCodec,
+        "decode_projects_sketch_feature_dependencies",
+        &original,
+    );
 }
 
 #[test]
@@ -20251,8 +20244,8 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
         native_ref: None,
     });
     assert_ne!(
-        decoded.ir.source.as_ref().unwrap().attributes["semantic_sha256"],
-        crate::decode::semantic_hash(&decoded.ir)
+        decoded.ir.source.as_ref().unwrap().attributes["document_local_sha256"],
+        crate::decode::document_local_sha256(&decoded.ir)
     );
 
     let error = SldprtCodec
@@ -20262,10 +20255,7 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
         })
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_codec_core::CodecError::NotImplemented(_)
-    ));
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
     assert!(error
         .to_string()
         .contains("SLDPRT native sketch relation editing is not implemented"));
@@ -20808,7 +20798,7 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_codec_core::CodecError::Malformed(message)
+        cadmpeg_core::CodecError::Malformed(message)
             if message.contains("conflicting positions")
     ));
 }
@@ -21520,7 +21510,7 @@ fn native_patch_requires_point_provenance_annotation() {
         .unwrap_err();
     assert!(matches!(
         error,
-        cadmpeg_codec_core::CodecError::Malformed(message)
+        cadmpeg_core::CodecError::Malformed(message)
             if message.contains("requires provenance annotation") && message.contains(&point_id)
     ));
 }
@@ -21658,16 +21648,19 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let brep_hash = crate::decode::brep_semantic_hash(&decoded.ir);
-    let semantic_hash = crate::decode::semantic_hash(&decoded.ir);
+    let brep_hash = crate::decode::brep_local_sha256(&decoded.ir);
+    let document_hash = crate::decode::document_local_sha256(&decoded.ir);
     update_sldprt_native(&mut decoded.ir, |native| {
         native.feature_histories[0].features[0]
             .parameters
             .insert("Depth".into(), "30mm".into());
     });
     decoded.source_fidelity.annotations.exactness.clear();
-    assert_eq!(crate::decode::brep_semantic_hash(&decoded.ir), brep_hash);
-    assert_ne!(crate::decode::semantic_hash(&decoded.ir), semantic_hash);
+    assert_eq!(crate::decode::brep_local_sha256(&decoded.ir), brep_hash);
+    assert_ne!(
+        crate::decode::document_local_sha256(&decoded.ir),
+        document_hash
+    );
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -21990,8 +21983,8 @@ fn source_less_cube_reaches_encode_decode_fixpoint() {
         .unwrap()
         .ir;
 
-    let first_hash = crate::decode::semantic_hash(&first.ir);
-    let second_hash = crate::decode::semantic_hash(&second);
+    let first_hash = crate::decode::document_local_sha256(&first.ir);
+    let second_hash = crate::decode::document_local_sha256(&second);
     assert_eq!(first_hash, second_hash, "round trip is not a fixed point");
 
     // Value golden: the cube's record families and counts, asserted directly.

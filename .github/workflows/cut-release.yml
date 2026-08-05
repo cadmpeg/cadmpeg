@@ -67,6 +67,9 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
+
       - name: Set workspace version
         id: bump
         shell: bash

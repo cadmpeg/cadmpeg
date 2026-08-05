@@ -4,8 +4,8 @@
 
 use std::ops::Range;
 
-use cadmpeg_codec_core::decode::View;
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::decode::View;
+use cadmpeg_core::CodecError;
 
 use crate::mesh::MeshExpand;
 

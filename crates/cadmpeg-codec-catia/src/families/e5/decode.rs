@@ -34,7 +34,7 @@ use crate::solve::UnionFind;
 /// separate record layer, so curves remain unattached until that layer is
 /// decoded rather than being assigned speculatively.
 pub(crate) fn try_decode_e5(
-    _ctx: &cadmpeg_codec_core::decode::DecodeContext<'_>,
+    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Option<FamilyOutput> {
     let stream_range = container::e5_record_stream(&scan.data)?;
@@ -144,7 +144,7 @@ pub(crate) fn try_decode_e5(
             &mut topology_annotations,
             topology,
             &surfaces,
-        ) && neutral_model_is_admissible(&topology_ir, &unknowns)
+        ) && neutral_model_is_admissible(&mut topology_ir, &unknowns)
     });
     if topology_transferred {
         ir = topology_ir;

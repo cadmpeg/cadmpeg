@@ -209,7 +209,7 @@ pub(crate) fn sync_changed_feature_scalars(
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
     changed: &HashSet<(String, String)>,
-) -> Result<(), cadmpeg_codec_core::CodecError> {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::ParameterValue;
 
     for lane in lanes {
@@ -274,7 +274,7 @@ pub(crate) fn sync_changed_feature_scalars(
         for (scalar_index, value) in updates {
             let scalar = &mut lane.scalars[scalar_index];
             let offset = usize::try_from(scalar.offset).map_err(|_| {
-                cadmpeg_codec_core::CodecError::Malformed(
+                cadmpeg_core::CodecError::Malformed(
                     "SLDPRT scalar offset exceeds address space".into(),
                 )
             })?;
@@ -282,7 +282,7 @@ pub(crate) fn sync_changed_feature_scalars(
                 .native_payload
                 .get_mut(offset..offset + 8)
                 .ok_or_else(|| {
-                    cadmpeg_codec_core::CodecError::Malformed(format!(
+                    cadmpeg_core::CodecError::Malformed(format!(
                         "SLDPRT scalar {} lies outside its payload",
                         scalar.id
                     ))

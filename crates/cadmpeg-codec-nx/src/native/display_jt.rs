@@ -3,7 +3,7 @@
 
 use std::io::Read as _;
 
-use cadmpeg_codec_core::decode::{DecodeContext, ExpandSpec, View};
+use cadmpeg_core::decode::{DecodeContext, ExpandSpec, View};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use cadmpeg_ir::{topology::Color, SourceObjectAssociation};

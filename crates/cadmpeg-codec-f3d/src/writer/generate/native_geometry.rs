@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native record writers for surfaces, curves, and pcurves.
 
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,

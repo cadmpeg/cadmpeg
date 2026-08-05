@@ -26,14 +26,14 @@ categories = ["encoding", "parser-implementations", "graphics"]
 schema = [
   "dep:schemars",
   "cadmpeg-asm/schema",
-  "cadmpeg-codec-core/schema",
+  "cadmpeg-core/schema",
   "cadmpeg-ir/schema",
 ]
 
 [dependencies]
 cadmpeg-asm.workspace = true
 cadmpeg-container.workspace = true
-cadmpeg-codec-core.workspace = true
+cadmpeg-core.workspace = true
 cadmpeg-ir.workspace = true
 zip.workspace = true
 lzma-rs.workspace = true
@@ -46,6 +46,12 @@ serde-value.workspace = true
 schemars = { workspace = true, optional = true }
 roxmltree.workspace = true
 memchr.workspace = true
+
+[dev-dependencies]
+# Enables `cadmpeg_core::golden`, the shared snapshot harness.
+# Feature unification applies it to the test build only, so the published
+# library is unchanged.
+cadmpeg-core = { workspace = true, features = ["golden"] }
 
 [lints]
 workspace = true

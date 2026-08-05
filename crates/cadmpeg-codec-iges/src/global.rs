@@ -2,7 +2,7 @@
 //! Global delimiters, count-driven Hollerith values, units, and metadata.
 
 use crate::card::{CardScan, Section};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::CodecError;
 use std::ops::Range;
 
 #[derive(Debug, Clone, PartialEq)]

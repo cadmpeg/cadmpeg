@@ -6026,12 +6026,12 @@ fn reference_images_require_valid_assets_and_plane_placements() {
 /// Normalize the way the codecs did before the digest streamed: copy the whole
 /// document, order it, drop the recorded digest and the retained source image,
 /// and hash the serialized string.
-fn cloned_semantic_hash(ir: &CadIr, format: &str, source_image_id: &str) -> String {
+fn cloned_local_digest(ir: &CadIr, format: &str, source_image_id: &str) -> String {
     let mut normalized = ir.clone();
     normalized.finalize();
     normalized.source = ir.source.as_ref().map(|source| {
         let mut source = source.clone();
-        source.attributes.remove("semantic_sha256");
+        source.attributes.remove("document_local_sha256");
         source
     });
     let unknowns = ir
@@ -6046,14 +6046,14 @@ fn cloned_semantic_hash(ir: &CadIr, format: &str, source_image_id: &str) -> Stri
 
 /// A document with an unordered model, a recorded digest, two native
 /// namespaces, and a retained source image among the unknown records.
-fn semantic_hash_fixture() -> CadIr {
+fn local_digest_fixture() -> CadIr {
     let mut ir = unit_cube();
     ir.model.faces.reverse();
     ir.model.surfaces.reverse();
     ir.source = Some(crate::SourceMeta {
         format: "synthetic".into(),
         attributes: [
-            ("semantic_sha256".to_owned(), "stale".to_owned()),
+            ("document_local_sha256".to_owned(), "stale".to_owned()),
             ("active_brep".to_owned(), "body#0".to_owned()),
         ]
         .into_iter()
@@ -6090,40 +6090,40 @@ fn semantic_hash_fixture() -> CadIr {
 }
 
 #[test]
-fn semantic_document_hash_matches_the_cloned_normalization() {
-    let ir = semantic_hash_fixture();
+fn document_local_sha256_matches_the_cloned_normalization() {
+    let ir = local_digest_fixture();
     let source_image = "synthetic:file:source-image#0";
     assert_eq!(
-        crate::hash::semantic_document_hash(&ir, "synthetic", source_image),
-        cloned_semantic_hash(&ir, "synthetic", source_image)
+        crate::hash::document_local_sha256(&ir, "synthetic", source_image),
+        cloned_local_digest(&ir, "synthetic", source_image)
     );
     // A format the document has no namespace for still hashes the same way:
     // both paths add the empty unknown arena the codecs have always added.
     assert_eq!(
-        crate::hash::semantic_document_hash(&ir, "absent", source_image),
-        cloned_semantic_hash(&ir, "absent", source_image)
+        crate::hash::document_local_sha256(&ir, "absent", source_image),
+        cloned_local_digest(&ir, "absent", source_image)
     );
 }
 
 #[test]
-fn semantic_document_hash_ignores_the_recorded_digest_and_retained_bytes() {
+fn document_local_sha256_ignores_the_recorded_digest_and_retained_bytes() {
     let source_image = "synthetic:file:source-image#0";
-    let ir = semantic_hash_fixture();
-    let hash = crate::hash::semantic_document_hash(&ir, "synthetic", source_image);
+    let ir = local_digest_fixture();
+    let hash = crate::hash::document_local_sha256(&ir, "synthetic", source_image);
 
-    let mut recorded = semantic_hash_fixture();
+    let mut recorded = local_digest_fixture();
     recorded
         .source
         .as_mut()
         .unwrap()
         .attributes
-        .insert("semantic_sha256".into(), hash.clone());
+        .insert("document_local_sha256".into(), hash.clone());
     assert_eq!(
-        crate::hash::semantic_document_hash(&recorded, "synthetic", source_image),
+        crate::hash::document_local_sha256(&recorded, "synthetic", source_image),
         hash
     );
 
-    let mut repacked = semantic_hash_fixture();
+    let mut repacked = local_digest_fixture();
     let mut records = repacked
         .native
         .namespace("synthetic")
@@ -6150,7 +6150,7 @@ fn semantic_document_hash_ignores_the_recorded_digest_and_retained_bytes() {
         .arenas
         .insert("unknowns".into(), records);
     assert_eq!(
-        crate::hash::semantic_document_hash(&repacked, "synthetic", source_image),
+        crate::hash::document_local_sha256(&repacked, "synthetic", source_image),
         hash
     );
 }

@@ -7,10 +7,10 @@
         "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
         "active_brep_sha256": "4088d167199dc92cd34d9246ed3952ea79cc7b920cd8a63229b3ff433d98710c",
         "asset_folder": "FusionAssetName[Active]",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "product_family": "Autodesk Neutron",
         "product_version": "ASM 231.6.3.65535 OSX",
         "save_date": "Tue Mar 31 16:16:19 2026",
-        "semantic_sha256": "22cbd966e62dc4c301037ed5273f2a4f9bcf2b47b342d3f29c556a8122a74f18",
         "solved_record_len": "2537",
         "zip_entry_count": "2"
       }

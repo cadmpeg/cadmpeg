@@ -4,8 +4,8 @@
 
 use std::fmt;
 
-use cadmpeg_codec_core::decode::BoundedCount;
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::decode::BoundedCount;
+use cadmpeg_core::CodecError;
 
 /// A vector that must contain exactly a count proven against input.
 #[derive(Debug)]

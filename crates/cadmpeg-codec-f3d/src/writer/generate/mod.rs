@@ -5,7 +5,7 @@
 use std::collections::BTreeSet;
 use std::io::{Seek, SeekFrom, Write};
 
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 
 use crate::writer::primitives::{

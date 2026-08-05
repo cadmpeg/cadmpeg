@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 use std::io::{Seek, SeekFrom, Write};
 
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::report::ExportReport;
@@ -143,6 +143,11 @@ pub(crate) fn write_seekable(
             counts: validation.entity_counts,
         },
         fidelity: cadmpeg_ir::FidelityResolution::NotProvided,
+        // This writer refuses without a retained `fcstd` native graph, then
+        // rewrites `Document.xml` inside that entry set and repacks the rest. It
+        // authors part of the archive and carries the rest over, which is the
+        // patched path; it has no verbatim and no source-less branch.
+        write_path: cadmpeg_ir::WritePath::Patched,
         losses: Vec::new(),
         notes: vec![
             format!(

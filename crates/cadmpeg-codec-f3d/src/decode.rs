@@ -16,8 +16,8 @@
 //! and retained source data remains available for native replay.
 
 use crate::native::F3dNative;
-use cadmpeg_codec_core::decode::{DecodeContext, View};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -2480,9 +2480,14 @@ fn decode_result(
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", unknowns)?;
     source_fidelity.retain_unknown_records("f3d", [source_image]);
     ir.finalize();
-    let hash = semantic_hash(&ir);
+    // Stamped last, over the finalized document, so the write path can ask
+    // whether anything moved since this decode. See `document_local_sha256`.
+    let hash = document_local_sha256(&ir);
     if let Some(source) = &mut ir.source {
-        source.attributes.insert("semantic_sha256".into(), hash);
+        source.attributes.insert(
+            cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
+            hash,
+        );
     }
     Ok(DecodeResult::new(ir, report, source_fidelity))
 }
@@ -2499,9 +2504,19 @@ fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
     }
 }
 
-/// The document digest recorded as the F3D `semantic_sha256` attribute.
-pub(crate) fn semantic_hash(ir: &CadIr) -> String {
-    cadmpeg_ir::hash::semantic_document_hash(ir, "f3d", crate::ids::FILE_SOURCE_IMAGE_ID)
+/// The machine-local content digest recorded as the F3D `document_local_sha256`
+/// attribute.
+///
+/// A bitwise digest over the decoded neutral document. Its one consumer is
+/// [`crate::F3dCodec`]'s write path, which replays the retained source bytes when
+/// the recorded digest still equals a freshly computed one and patches the
+/// container otherwise. It is not portable across platforms, because the decoded
+/// content includes values derived through libm transcendentals, and it is
+/// intentionally not tolerance-aware, because tolerant equality is not
+/// transitive and cannot back a hash. The `_local_sha256` suffix states that;
+/// see [`cadmpeg_ir::hash::document_local_sha256`].
+pub(crate) fn document_local_sha256(ir: &CadIr) -> String {
+    cadmpeg_ir::hash::document_local_sha256(ir, "f3d", crate::ids::FILE_SOURCE_IMAGE_ID)
 }
 
 fn populate_annotations(

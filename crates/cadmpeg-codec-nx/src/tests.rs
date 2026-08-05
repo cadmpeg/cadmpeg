@@ -17,7 +17,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
 
-use cadmpeg_codec_core::decode::{DecodeMode, InspectOptions};
+use cadmpeg_core::decode::{DecodeMode, InspectOptions};
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
     ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -32,11 +32,10 @@ use crate::test_support::*;
 use crate::NxCodec;
 
 fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
-    let arena = cadmpeg_codec_core::decode::DecodeArena::new();
-    let policy = cadmpeg_codec_core::decode::DecodePolicy::default();
-    let (ctx, root) =
-        cadmpeg_codec_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
-            .expect("bounded test input");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+        .expect("bounded test input");
     let container = container::scan_bytes(bytes.to_vec()).expect("test SPLMSSTR container");
     parasolid::extract_streams(&ctx, root, &container).expect("test Parasolid streams")
 }
@@ -44,7 +43,7 @@ fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
 fn options_in(mode: DecodeMode, container_only: bool) -> DecodeOptions {
     DecodeOptions {
         container_only,
-        policy: cadmpeg_codec_core::decode::DecodePolicy {
+        policy: cadmpeg_core::decode::DecodePolicy {
             mode,
             ..Default::default()
         },
@@ -8345,10 +8344,10 @@ fn extraction_rejects_zlib_members_with_invalid_integrity_trailers() {
     let mut indexed = segment_stream_payload();
     *indexed.last_mut().expect("indexed zlib integrity trailer") ^= 0x01;
     let indexed = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", indexed)]);
-    let arena = cadmpeg_codec_core::decode::DecodeArena::new();
-    let policy = cadmpeg_codec_core::decode::DecodePolicy::default();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, root) =
-        cadmpeg_codec_core::decode::DecodeContext::from_root_bytes(&indexed, &arena, &policy)
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&indexed, &arena, &policy)
             .expect("bounded test input");
     let container = container::scan_bytes(indexed.clone()).expect("test SPLMSSTR container");
     assert!(parasolid::extract_streams(&ctx, root, &container).is_err());
@@ -9211,27 +9210,6 @@ mod golden {
         }
     }
 
-    fn first_byte_diff(expected: &str, actual: &str) -> String {
-        let expected = expected.as_bytes();
-        let actual = actual.as_bytes();
-        let offset = expected
-            .iter()
-            .zip(actual)
-            .position(|(expected, actual)| expected != actual)
-            .unwrap_or_else(|| expected.len().min(actual.len()));
-        let describe = |bytes: &[u8]| match bytes.get(offset) {
-            Some(byte) => format!("0x{byte:02x}"),
-            None => "<end of file>".to_string(),
-        };
-        format!(
-            "first byte difference at offset {offset}: golden {}, actual {} (lengths: {} and {})",
-            describe(expected),
-            describe(actual),
-            expected.len(),
-            actual.len()
-        )
-    }
-
     fn update_requested() -> bool {
         std::env::var_os("UPDATE_GOLDEN").is_some()
     }
@@ -9261,11 +9239,9 @@ mod golden {
                     continue;
                 }
             };
-            if expected != actual {
-                let (line, exp_line, act_line) = first_line_diff(&expected, &actual);
+            if let Err(mismatch) = cadmpeg_core::golden::snapshots_agree(&expected, &actual) {
                 failures.push(format!(
-                    "fixture `{name}`: output diverged from golden at line {line}\n    golden: {exp_line}\n    actual: {act_line}\n    {}",
-                    first_byte_diff(&expected, &actual)
+                    "fixture `{name}`: output diverged from golden {mismatch}"
                 ));
             }
         }

@@ -1,0 +1,198 @@
+{
+  "entries": [
+    {
+      "name": "Document.xml",
+      "payload_len": 61780,
+      "payload_sha256": "0b1e4d5a0ccb9a68000485270b759578993b4804da0f984d38bd3c2f97b6b196"
+    },
+    {
+      "name": "Body.Shape.Map.txt",
+      "payload_len": 1040,
+      "payload_sha256": "0c689a6a27e52654a467a3ace81a76d2a54c09723099835706f344bc7e685619"
+    },
+    {
+      "name": "Body.Shape.brp",
+      "payload_len": 13310,
+      "payload_sha256": "d4873d5a040d49d05367469854cda83999766a3421d0157e802ae5cb4aa1d274"
+    },
+    {
+      "name": "Fillet.AddSubShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "Fillet.Shape.Map.txt",
+      "payload_len": 854,
+      "payload_sha256": "875ffd8edcfec5589fb195b095d9f05fa19cfdbc37b5b5f8eee32ffa6a3cbe58"
+    },
+    {
+      "name": "Fillet.Shape.brp",
+      "payload_len": 12235,
+      "payload_sha256": "c8b6ec4c911b28e364fd9c8d9fddbb36551b4f8ebc1d47dbcc19f0a39aa41715"
+    },
+    {
+      "name": "Fillet.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "Pad.AddSubShape.Map.txt",
+      "payload_len": 630,
+      "payload_sha256": "fca25f6399c39c4ac4eccc5b496c2b0e2cee1364ec81405eddcf68c76142fbf6"
+    },
+    {
+      "name": "Pad.AddSubShape.brp",
+      "payload_len": 4963,
+      "payload_sha256": "d299e7eb34290e4a0d083420e1922e99a6a21ec8f029324fec34ba45fb8cf29e"
+    },
+    {
+      "name": "Pad.Shape.Map.txt",
+      "payload_len": 630,
+      "payload_sha256": "201c774dcf7b4edfc66b0a8ee0abc0782e5e79ffcf1994b00cae2fc588c4dac0"
+    },
+    {
+      "name": "Pad.Shape.brp",
+      "payload_len": 5186,
+      "payload_sha256": "3cbdbe4038fa82fc76b1126695c1f8d53df5d8b0a290ed2b2a266cb2ab5b797f"
+    },
+    {
+      "name": "Pad.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "PadSketch.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "PadSketch.Shape.Map.txt",
+      "payload_len": 267,
+      "payload_sha256": "3122a2e70dafbd5617afe7851c9a3864672cd03df3cc15e737748f470219b4a7"
+    },
+    {
+      "name": "PadSketch.Shape.brp",
+      "payload_len": 1655,
+      "payload_sha256": "7352462da7b203e8dabad369a759161da13cbe1ca40f7c39bb4cf04308211fc6"
+    },
+    {
+      "name": "Pocket.AddSubShape.Map.txt",
+      "payload_len": 391,
+      "payload_sha256": "eae32d3814bdeb5bbd76af86b1652d87c0a7566d99a2ea73760280a03931dc5d"
+    },
+    {
+      "name": "Pocket.AddSubShape.brp",
+      "payload_len": 3013,
+      "payload_sha256": "735f2f0cc0c60a4d119b64dae9aed9d0be4cffbceb741bb198dc62e2f33748db"
+    },
+    {
+      "name": "Pocket.Shape.Map.txt",
+      "payload_len": 738,
+      "payload_sha256": "2c50c0b64df93a260c93dcf19bbcc184b9bd16b1025f2de6cde7f959910a14a6"
+    },
+    {
+      "name": "Pocket.Shape.brp",
+      "payload_len": 8736,
+      "payload_sha256": "4d94aa0a6db4563cd39ff7ecc14d627966e04f5ce5c5abe5c886b79bb9f726cd"
+    },
+    {
+      "name": "Pocket.SuppressedShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "PocketSketch.InternalShape.brp",
+      "payload_len": 0,
+      "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "PocketSketch.Shape.Map.txt",
+      "payload_len": 181,
+      "payload_sha256": "2a7cf6bfe7f4d2578dcd644858f924b31270e09fdb88ce5cc6e3e1a98f63a028"
+    },
+    {
+      "name": "PocketSketch.Shape.brp",
+      "payload_len": 849,
+      "payload_sha256": "3aea4ace08a041bcd822244171736e9996927bdbb2910f0f75d7c99566908816"
+    },
+    {
+      "name": "StringHasher.Table.txt",
+      "payload_len": 1393,
+      "payload_sha256": "761365e6f072ffdca02ab37b3a1d3aac8c21e275104b90aaa2e2ec173b53544b"
+    }
+  ],
+  "report": {
+    "census": {
+      "basis": "ir_arenas",
+      "counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "assembly_joints": 0,
+        "assets": 0,
+        "attributes": 0,
+        "bodies": 8,
+        "coedges": 156,
+        "configurations": 0,
+        "curves": 96,
+        "drawings": 0,
+        "edges": 83,
+        "faces": 41,
+        "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
+        "features": 6,
+        "loops": 44,
+        "native.fcstd.applications": 15,
+        "native.fcstd.attachments": 14,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 8,
+        "native.fcstd.design_census": 6,
+        "native.fcstd.document": 1,
+        "native.fcstd.element_maps": 8,
+        "native.fcstd.entries": 24,
+        "native.fcstd.extensions": 10,
+        "native.fcstd.logical_ledger": 504,
+        "native.fcstd.objects": 15,
+        "native.fcstd.physical_ledger": 169,
+        "native.fcstd.properties": 243,
+        "native.fcstd.shape_payloads": 14,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 0,
+        "parameters": 8,
+        "pcurves": 28,
+        "pmi": 0,
+        "points": 57,
+        "presentation_documents": 0,
+        "presentation_layers": 0,
+        "procedural_curves": 4,
+        "procedural_surfaces": 0,
+        "product_definitions": 0,
+        "regions": 8,
+        "semantic_annotations": 0,
+        "shells": 8,
+        "sketch_constraints": 5,
+        "sketch_entities": 5,
+        "sketches": 2,
+        "spatial_sketch_constraints": 0,
+        "spatial_sketch_entities": 0,
+        "spatial_sketches": 0,
+        "spreadsheets": 0,
+        "subds": 0,
+        "surfaces": 45,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 57,
+        "view_presentations": 0
+      }
+    },
+    "fidelity": {
+      "status": "not_consumed"
+    },
+    "format": "fcstd",
+    "losses": [],
+    "notes": [
+      "semantic FCStd archive written for SchemaVersion=4 FileVersion=1",
+      "unsupported retained entries and unedited XML records were preserved"
+    ],
+    "write_path": "patched"
+  }
+}

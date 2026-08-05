@@ -7,7 +7,7 @@ use crate::nurbs::reader::{
 };
 use crate::nurbs::toks::{self, Cur};
 use crate::sab::Token;
-use cadmpeg_codec_core::le::f64_at as read_f64;
+use cadmpeg_core::le::f64_at as read_f64;
 use cadmpeg_ir::math::Point2;
 
 /// The decoded payload of a 2D `nubs` or `nurbs` pcurve block.

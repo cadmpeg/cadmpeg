@@ -92,10 +92,7 @@ fn main() {
         let mut input = Cursor::new(&opaque);
         black_box(
             codec
-                .inspect(
-                    &mut input,
-                    &cadmpeg_codec_core::decode::InspectOptions::default(),
-                )
+                .inspect(&mut input, &cadmpeg_core::decode::InspectOptions::default())
                 .expect("required invariant"),
         );
     });

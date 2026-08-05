@@ -1007,7 +1007,31 @@ For a blend record, `spine` names the center/spine curve that selects the blend 
 ## 8. Auxiliary lanes
 
 - **DisplayLists tessellation** uses a 6-descriptor table: List A strip lengths, Positions/Normals f32 metres, and Lists B/C/D. `C = sum(ListA)`, `ListC[i] = 2*ListA[i] - 2`, and `TriCount = C - 2*N`.
-- **Materials / metadata** live in SW Objects blocks: `moVisualProperties_c` contains material names and RGB `0x00BBGGRR` values; names use UTF-16LE. `moBBoxCenterData_c` contains the bounding-box center and maximum radius in metres. `moDefaultRefPlnData_c` contains datum planes through the origin.
+- **Materials / metadata** live in SW Objects blocks: `moVisualProperties_c` contains material names and RGB `0x00BBGGRR` values; names use UTF-16LE. A document metadata record starts with its ASCII class token. Offsets below are from the end of that token. Scalar fields are little-endian.
+
+| token | offset | type | field |
+| --- | --- | --- | --- |
+| `moBBoxCenterData_c` | +0 | u32 | `1` |
+| | +4 | f64[3] | bounding-box center xyz, metres |
+| | +28 | f64 | maximum radius, metres |
+| `moDefaultRefPlnData_c` | +0 | f64[3] | datum origin xyz, metres |
+| | +24 | f64[6] | datum frame, dimensionless |
+| `moTransRefPlaneData_c` | +0 | bytes | gap, see `sldprt-open-items.md` CM-07 |
+| | gap end +0 | f64[3] | plane center xyz, metres |
+| | gap end +24 | f64[2] | plane extents, metres |
+| | gap end +40 | f64[3] | auxiliary frame, dimensionless |
+| | gap end +64 | f64 | plane diagonal, metres |
+| `moPart_c` | +0 | u32 | part identifier |
+| | +4 | u32 | `0` |
+| | +8 | u32 | part version |
+| | +12 | u8 | `0` |
+| `moConfigurationMgr_c` | +66 | u32 | configuration-manager minor version |
+| | +107 | u8 | configuration state count |
+| | +117 | u64 | FILETIME timestamp |
+| | +125 | — | record end |
+| `moLengthUserUnits_c` | +0 | bytes[3] | `ff fe ff` |
+| | +3 | u8 | UTF-16 code-unit count `n` |
+| | +4 | bytes[2n] | linear-unit name, UTF-16LE |
 - **Per-face appearance** is generation-specific. A disc14 face is followed by an adjacent `00 53 flo=3` color record. A schema-33103 disc15 face stores the color-record attribute in slot 5. The color record stores RGB as three f64 BE values at body +6 and an inline `00 51` face link. An optional `ff` byte after `00 53` shifts the body by one byte.
 - **XML / UnQLite** carry OPC parts, document/feature metadata, unit metadata (`SW_UnitsLinear=0` = millimetres), and MessagePack UI data: auxiliary, not the exact B-rep.
 

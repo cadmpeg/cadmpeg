@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
-use cadmpeg_codec_core::decode::InspectOptions;
+use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::{
     decode_sidecar_path, validate, validate_with_source_fidelity, CadIr, CodecEntry, DecodeSidecar,
@@ -102,7 +102,7 @@ pub fn inspect(
     json: bool,
     report_path: Option<&Path>,
     force: bool,
-    limits: cadmpeg_codec_core::decode::ResourceLimits,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<()> {
     let prefix = read_prefix(path, DETECTION_PREFIX_LEN)?;
     let (codec, confidence) = match forced {
@@ -454,6 +454,7 @@ pub fn diff(
     if let Some((before, after)) = &result.tolerance_change {
         println!("  tolerances: {before:?} → {after:?}");
     }
+    print_source_diff(&result.source);
     for arena in &result.per_arena {
         if arena.added.is_empty() && arena.removed.is_empty() && arena.modified.is_empty() {
             continue;
@@ -481,6 +482,45 @@ pub fn diff(
         println!("  identical");
         Ok(ExitCode::SUCCESS)
     }
+}
+
+/// Print source-metadata changes, with machine-local digests in their own
+/// section.
+///
+/// The digest section is informational and does not reach the exit code: a
+/// machine-local digest is a bitwise fingerprint of tolerantly compared geometry,
+/// so the same file decoded on two platforms disagrees on it while describing one
+/// model. `cadmpeg_ir::diff` states the convention that identifies them.
+fn print_source_diff(source: &cadmpeg_ir::SourceDiff) {
+    if let Some((before, after)) = &source.format_change {
+        println!("  source format: {before} → {after}");
+    }
+    for change in &source.attributes {
+        println!(
+            "  source {}: {} → {}",
+            change.key,
+            render_attribute(change.left.as_deref()),
+            render_attribute(change.right.as_deref())
+        );
+    }
+    if source.local_digests.is_empty() {
+        return;
+    }
+    println!("  machine-local digests (informational, not a difference):");
+    for change in &source.local_digests {
+        println!(
+            "    {}: {} → {}",
+            change.key,
+            render_attribute(change.left.as_deref()),
+            render_attribute(change.right.as_deref())
+        );
+    }
+}
+
+/// Render one side of an attribute change, naming an absent key rather than
+/// printing an empty string that reads as an empty value.
+fn render_attribute(value: Option<&str>) -> String {
+    value.map_or_else(|| "<absent>".to_owned(), ToOwned::to_owned)
 }
 
 enum FidelitySummary {

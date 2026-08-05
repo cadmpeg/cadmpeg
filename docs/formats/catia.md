@@ -436,6 +436,19 @@ For a validated class-`2a` sphere chart, stored pcurve coordinates are neutral a
 
 For a co-parametric edge block, each uniquely bound analytic carrier lifts every pcurve definition site into the common edge parameterization. A NURBS carrier with signed normal offset `d` lifts a site as `S(u,v) + d·normalize(Su(u,v)×Sv(u,v))`; a degenerate tangent pair has no lift. When neither side has an analytic binding, the ordered pair of zero-offset NURBS carriers is bound only when exactly one ordered carrier pair gives equal site counts and index-aligned 3D sites agreeing within `2e-3` mm. A repeated or alternate agreeing carrier pair leaves both sides unresolved. A nonzero NURBS offset requires a previously bound side to provide the shared 3D sites. All liftable sides have equal site counts and their index-aligned 3D sites agree within `2e-3` mm. Disagreement invalidates the shared locus sequence rather than selecting one side. Its first and last sites are the shared 3D endpoint loci.
 
+A resolved edge block binds to a standard edge when its shared 3D endpoint loci match the vertex positions of exactly one pcurve-less standard edge within `2e-3` mm. Either endpoint order matches; the reverse order reverses every side pcurve over the block's parameter range. The block's two sides bind to that edge's two face carriers by locus identity: a side with a uniquely bound carrier takes the standard carrier with the same locus, and the free side takes the other. The block carries no face reference, so no other correspondence between a side and a face exists.
+
+Each side stores its jet in its own carrier's chart. The free side's carrier is not the standard face carrier, so its stored chart needs a chart relation before the jet describes the face:
+
+| free-side standard carrier | chart relation | recovery |
+| -------------------------- | -------------- | -------- |
+| plane                      | plane isometry | solved from the block's shared 3D loci |
+| any other kind             | none defined   | none |
+
+The plane isometry is the one rigid motion of the parameter plane that carries every stored definition site onto the image of its shared locus in the target plane's chart. It exists when every shared locus lies on the target plane and the stored sites are not collinear. It applies to the stored positions, and its linear part alone applies to the stored first and second derivatives.
+
+A side pcurve binds to a face's coedge only with an endpoint-lift witness: the pcurve's parameter-interval extremes, mapped through that face's carrier, reach the edge's two vertex positions in either order, within `0.01` mm widened by any stored edge, vertex, or face tolerance. A carrier with no geometry has no chart, admits no witness, and keeps the pairing. Each side takes the witness independently; a side without it is not bound.
+
 A complete consolidated edge run is the contiguous framed sequence `F:20, F:20, B:23, B:06, B:06, B:5e`, where both class-`20` records use the same A or B family. The first two records are its side pcurves, `23` is their shared parameter packet, the two `06` records are the side uses in the same order, and `5e` is the native edge node. In the five-reference `5e` layout the references identify, in order, the 3D curve support, start vertex, end vertex, start endpoint parameter, and end endpoint parameter. Curve and parameter references use compact integers. Each vertex reference independently uses a compact integer, `06 <u8>`, `0a <u16le>`, or a raw byte that is not a compact token. An intervening framed record terminates the run.
 
 More generally, an immediately adjacent B-family class-`23`, class-`24`, or class-`25` record is the edge-definition frame owned by a `B:06, B:06, B:5e` run. The relation is structural: an intervening framed record leaves the use run without an edge-definition frame. Each definition retains its width, flag, header token, class, and complete class-specific payload.

@@ -20,7 +20,7 @@ cargo add cadmpeg-codec-creo cadmpeg-ir
 ## Inspect
 
 ```rust,no_run
-use cadmpeg_codec_core::decode::InspectOptions;
+use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_codec_creo::CreoCodec;
 use cadmpeg_ir::CodecEntry;
 use std::fs::File;

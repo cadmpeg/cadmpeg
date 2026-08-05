@@ -41,7 +41,7 @@ use crate::solve::missing_edge::{
     MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
 };
 use crate::solve::UnionFind;
-use cadmpeg_codec_core::decode::WorkBudget;
+use cadmpeg_core::decode::WorkBudget;
 
 fn repeated_domain(domain: HashSet<usize>, count: usize) -> Vec<Arc<HashSet<usize>>> {
     let domain = Arc::new(domain);

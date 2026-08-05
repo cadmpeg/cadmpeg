@@ -10,7 +10,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::topology::Graph;
-use cadmpeg_codec_core::be::{f64_at as be_f64, u16_at as be_u16, u32_at as be_u32};
+use cadmpeg_core::be::{f64_at as be_f64, u16_at as be_u16, u32_at as be_u32};
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
 };

@@ -2,7 +2,7 @@
 //!
 //! Closes vertex-coordinate quotients and enumerates face endpoint configurations.
 
-use cadmpeg_codec_core::decode::WorkBudget;
+use cadmpeg_core::decode::WorkBudget;
 
 use crate::families::standard::fbb::{largest_fbb_run, parse_edge_tables, parse_vertex_table};
 use crate::families::standard::topology::{

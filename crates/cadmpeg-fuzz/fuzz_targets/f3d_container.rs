@@ -11,7 +11,7 @@ use std::io::Cursor;
 use cadmpeg_codec_f3d::F3dCodec;
 use cadmpeg_ir::codec::{Codec, CodecEntry, DecodeOptions};
 
-use cadmpeg_codec_core::decode::InspectOptions;
+use cadmpeg_core::decode::InspectOptions;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

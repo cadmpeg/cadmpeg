@@ -11,7 +11,7 @@ use crate::families::standard::topology::{incidence_cycles, EdgeRow, TrimRecord}
 use crate::families::standard::topology::{reconstruct_mesh_selection, StandardTopology};
 use crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS;
 use crate::solve::UnionFind;
-use cadmpeg_codec_core::decode::WorkBudget;
+use cadmpeg_core::decode::WorkBudget;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 

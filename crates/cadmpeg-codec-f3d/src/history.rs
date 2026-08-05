@@ -19,7 +19,7 @@ use crate::history_records::{
 use crate::records::{
     AsmHistoricalEntityKind, DesignEdgeIdentityOperand, DesignExtrudeSelectionMember,
 };
-use cadmpeg_codec_core::le::int_at;
+use cadmpeg_core::le::int_at;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";
@@ -115,7 +115,7 @@ pub(crate) fn decode(
     bytes: &[u8],
     stream: &str,
     width: usize,
-    limits: &cadmpeg_codec_core::decode::ResourceLimits,
+    limits: &cadmpeg_core::decode::ResourceLimits,
 ) -> Option<AsmHistory> {
     let preamble_offset = bytes
         .windows(PREAMBLE.len())
@@ -345,7 +345,7 @@ const HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY: u64 = 192;
 
 fn complete_table_binding_budget_exceeded(
     table_lengths: impl IntoIterator<Item = usize>,
-    limits: &cadmpeg_codec_core::decode::ResourceLimits,
+    limits: &cadmpeg_core::decode::ResourceLimits,
 ) -> bool {
     table_lengths
         .into_iter()
@@ -360,7 +360,7 @@ fn bind_complete_record_tables(
     states: &mut [AsmDeltaState],
     bytes: &[u8],
     width: usize,
-    limits: &cadmpeg_codec_core::decode::ResourceLimits,
+    limits: &cadmpeg_core::decode::ResourceLimits,
 ) -> bool {
     let Some(start) = cadmpeg_asm::asm_header::record_stream_start(bytes) else {
         return false;
@@ -6010,7 +6010,7 @@ mod tests {
 
     #[test]
     fn history_binding_budget_charges_materialized_state_tables() {
-        let mut limits = cadmpeg_codec_core::decode::ResourceLimits::desktop();
+        let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
         limits.max_materialized_bytes = 1920;
         assert!(!complete_table_binding_budget_exceeded([5, 5], &limits));
         assert!(complete_table_binding_budget_exceeded([10, 1], &limits));
@@ -6019,8 +6019,8 @@ mod tests {
             &limits,
         ));
 
-        let desktop = cadmpeg_codec_core::decode::ResourceLimits::desktop();
-        let service = cadmpeg_codec_core::decode::ResourceLimits::service();
+        let desktop = cadmpeg_core::decode::ResourceLimits::desktop();
+        let service = cadmpeg_core::decode::ResourceLimits::service();
         assert!(!complete_table_binding_budget_exceeded(
             [18_000_000],
             &desktop,

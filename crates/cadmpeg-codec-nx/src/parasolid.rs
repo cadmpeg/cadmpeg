@@ -9,9 +9,9 @@
 
 use std::collections::BTreeSet;
 
-use cadmpeg_codec_core::be;
-use cadmpeg_codec_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::be;
+use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
+use cadmpeg_core::CodecError;
 use flate2::{Decompress, FlushDecompress, Status};
 
 use crate::container::Container;

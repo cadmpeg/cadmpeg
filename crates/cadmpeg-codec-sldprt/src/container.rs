@@ -10,9 +10,9 @@
 use std::collections::BTreeMap;
 use std::io::Read;
 
-use cadmpeg_codec_core::decode::{DecodeContext, View};
-use cadmpeg_codec_core::le::u32_at as u32_le;
-use cadmpeg_codec_core::{CodecError, ContainerEntry, ContainerSummary};
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::le::u32_at as u32_le;
+use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::hash::sha256_hex;
 
 /// Marker shared by block, cache-cell, and directory frames.
@@ -318,7 +318,7 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
             compound_streams,
         };
     }
-    let version = cadmpeg_codec_core::be::u32_at(bytes, 4).unwrap_or(0);
+    let version = cadmpeg_core::be::u32_at(bytes, 4).unwrap_or(0);
 
     let mut blocks = Vec::new();
     let mut directory = Vec::new();

@@ -3,7 +3,7 @@
 
 use crate::nurbs::reader::INT_WIDTHS;
 use crate::sab::Record;
-use cadmpeg_codec_core::le::int_at as read_int;
+use cadmpeg_core::le::int_at as read_int;
 
 /// Byte offsets and names of the subtype definitions `bytes` itself owns: the
 /// `0x0f` openings at the outermost nesting level, in stream order, `ref`

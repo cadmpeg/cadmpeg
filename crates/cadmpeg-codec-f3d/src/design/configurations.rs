@@ -6,7 +6,7 @@ use crate::container::{role, ContainerScan};
 use crate::design::dimensions::json_scalar_text;
 use crate::ids::{self, neutral_configuration_id};
 use crate::records::{DesignConfiguration, DesignConfigurationKind};
-use cadmpeg_codec_core::CodecError;
+use cadmpeg_core::CodecError;
 use std::collections::HashSet;
 
 /// Decode every JSON design-configuration table and rule entry.
