@@ -540,12 +540,29 @@ pub fn decode_with_purpose(
     format: IdFormat<'_>,
     purpose: DecodePurpose,
 ) -> AsmBrep {
+    let header = asm_header::parse(bytes);
+    decode_with_header(records, bytes, header, stream, format, purpose)
+}
+
+/// Decode a framed slice whose header the caller supplies.
+///
+/// The text encoding ([`crate::sat`]) carries the same header fields in ASCII
+/// header lines rather than the binary layout, so its caller parses them and
+/// passes the result here. `bytes` remains the source byte image: unknown
+/// records retain their byte extents from it.
+pub fn decode_with_header(
+    records: &[Record],
+    bytes: &[u8],
+    header: Option<crate::asm_header::AsmHeader>,
+    stream: &str,
+    format: IdFormat<'_>,
+    purpose: DecodePurpose,
+) -> AsmBrep {
     let mut out = AsmBrep::default();
 
     // Index records by RecordTable index (== position for a framed slice).
     let by_index: HashMap<i64, &Record> = records.iter().map(|r| (r.index as i64, r)).collect();
     // Subtype-definition positions, built once for every carrier resolution.
-    let header = asm_header::parse(bytes);
     let token_table = nurbs::toks::SubtypeTable::from_records(records).with_save_format_version(
         header
             .as_ref()
@@ -554,6 +571,10 @@ pub fn decode_with_purpose(
     let save_format_major = header
         .as_ref()
         .and_then(crate::asm_header::AsmHeader::save_format_major);
+    let saved_entity_limit = header
+        .as_ref()
+        .and_then(|header| header.entity_count)
+        .and_then(|count| i64::try_from(count).ok());
     let header_scale = header.and_then(|header| header.scale).unwrap_or(1.0);
 
     let (mut carriers, inward_normal_surfaces) = decode_analytic_carriers(records);
@@ -582,7 +603,7 @@ pub fn decode_with_purpose(
         &mut out,
         records,
         &by_index,
-        bytes,
+        saved_entity_limit,
         &token_table,
         &mut carriers,
         &mut reach,

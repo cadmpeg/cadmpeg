@@ -515,7 +515,7 @@ pub(crate) fn collect_wire_topology(
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
-    bytes: &[u8],
+    saved_entity_limit: Option<i64>,
     token_table: &nurbs::toks::SubtypeTable,
     carriers: &mut Carriers,
     reach: &mut Reachable,
@@ -525,9 +525,6 @@ pub(crate) fn collect_wire_topology(
     let mut wire_edges_by_shell = HashMap::<i64, Vec<i64>>::new();
     let mut free_vertices_by_shell = HashMap::<i64, Vec<i64>>::new();
     let mut saved_free_edges = Vec::new();
-    let saved_entity_limit = crate::asm_header::parse(bytes)
-        .and_then(|header| header.entity_count)
-        .and_then(|count| i64::try_from(count).ok());
     if let Some(limit) = saved_entity_limit {
         for edge in records.iter().filter(|record| {
             let index = record.index as i64;
