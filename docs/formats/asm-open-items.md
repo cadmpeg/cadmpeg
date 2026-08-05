@@ -141,3 +141,21 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** A cache-first intcurve support can store `spline`, a subtype-table reference to a procedural spline-surface construction, and four optional bounds. The referenced construction supplies a solved NURBS cache. The intcurve pcurve uses the procedural construction's parameter chart. That chart is not necessarily the solved cache's chart. A `cl_loft_spl_sur` support can map one construction-chart isoline to a nonlinear curve in the solved cache chart. The intcurve and the cache therefore do not establish a direct pcurve-on-surface relation without a chart map.
 
 **Need.** The decoder currently attaches the construction-chart pcurve directly to the solved NURBS support. This relation is invalid when the charts differ. We must retain or derive the exact chart map before the neutral support relation can be complete. A fitted map is not sufficient because it does not preserve the stored construction semantics.
+
+## 2. Text encoding
+
+### TE-01. Migration-flag words of a `gen-attrib` record in the text encoding
+
+**Question.** Which `ENUM_VALUE` integer does each migration-flag word of a text-encoded `gen-attrib` record select?
+
+**Known.** `asm.md` §5.6 gives the binary attribute records. A binary `int64_attrib-name_attrib-gen-attrib` record stores four `ENUM_VALUE` tokens between its reference fields and its name string. The text encoding writes four words at those slots, from the set `keep`, `keep_one`, `keep_kept`, `ignore`, and `copy`. The word-to-integer map is not known. The text reader keeps these records with each word as an identifier token and does not select an integer, so a wrong integer cannot reach the attribute values.
+
+**Need.** We must know the map to give a text-encoded `gen-attrib` record the same token stream as its binary form, and to write the words from a binary record.
+
+### TE-02. History-partition marking in the text encoding
+
+**Question.** How does a text stream mark a construction-history partition?
+
+**Known.** `asm.md` §7.1 gives the header lines. The flags word keeps its binary semantics, so bit 0 is the history-partition flag. No further text-specific marking is known, and the record grammar for a text history partition is not known.
+
+**Need.** A reader must know the marking to separate the solved records from history records; without it, a history-bearing text stream would read history records as model records.

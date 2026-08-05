@@ -16,17 +16,7 @@ A reference to the specification gives the section number and the start of the p
 
 This document uses ASD-STE100 Simplified Technical English. Record names, field names, and token values are technical names. They keep their source spelling.
 
-## 1. B-rep stream text encoding
-
-### GC-29. Header-line field roles of a text-encoded B-rep stream
-
-**Question.** What are the field roles of the three header lines of a `.sat` or `.smt` B-rep stream?
-
-**Known.** `f3d.md` §1.1.3 gives the record grammar and the terminator. The first header line begins with the save format and continues with three more integers. The second line holds the producing application and version as length-prefixed strings. The third line holds two tolerance values. The binary header's field assignment (`asm.md` §1) does not transfer: the text header carries no flags word, so the history-partition bit that the `.smbh` extension mirrors has no counterpart, and how a text stream declares a history partition is unknown. The counts on the first line are not the record count: a stream whose only record is `asmheader` and a stream carrying a full solid both give a small value there.
-
-**Need.** The text encoding is a geometry carrier, so a decoder must frame it before it can read a document whose geometry is in that form. The record grammar is enough to frame the records, but not to establish whether a stream declares construction history, and history determines which records are the solved model. Writing the encoding needs the field roles as well.
-
-## 2. Container, header, and design records
+## 1. Container, header, and design records
 
 ### DR-03. ACT table trailing GUID run
 
@@ -320,7 +310,7 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 
 **Need.** The projector needs one occurrence identity per operand. Without it the feature stays a native node although its two connector frames and its alignment values are complete. Emitting a joint whose operands are empty would assert a join between unnamed bodies, so the operand identity has to come from the construction record the frame reference names, and that record's members are not resolved.
 
-## 3. External references
+## 2. External references
 
 ### XR-01. `neutronData` with a different GUID
 
@@ -354,7 +344,7 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 
 **Need.** We must know the targets to write a complete occurrence placement. A reader takes the target path, the discriminators, and the transform without them.
 
-## 4. Material assets
+## 3. Material assets
 
 ### MA-03. Distance unit-tag values
 
@@ -404,7 +394,7 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 
 **Need.** A target can have more than one colour source. We must know the order to select one neutral colour, and the entry byte runs to write a per-face assignment from a neutral model.
 
-## 5. T-splines
+## 4. T-splines
 
 ### TS-01. `0m cg` wedge partition
 
@@ -441,7 +431,7 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 
 **Need.** We must identify the coefficient grouping and coordinate scale before projecting the symmetry plane into a neutral geometric plane or writing a new symmetry block from neutral data.
 
-## 6. Mesh geometry
+## 5. Mesh geometry
 
 ### PM-01. `.paramesh` packed and per-triangle element contents
 

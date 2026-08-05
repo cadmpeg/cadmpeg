@@ -597,3 +597,40 @@ rolling-ball-third-side :=
 A circular rolling-ball construction with equal nonzero signed offsets has a constant radius equal to the offset magnitude. Two nonparallel plane supports and a nonperiodic collinear NURBS slice define an analytic cylinder when the slice direction is parallel to the planes' intersection and every slice pole lies on a line whose perpendicular distance from each plane equals the constant radius. The cylinder axis is that line, the radius is the offset magnitude, and its reference direction is the canonical direction derived from the axis.
 
 One plane support, one circular-cylinder support, and a four-quarter rational-circle slice satisfying the homogeneous degree-reduction invariant above define an analytic torus when the plane normal, cylinder axis, and slice normal are parallel; the slice center lies on the cylinder axis; the center-to-plane distance equals the constant radius; and the absolute difference between the slice radius and cylinder radius equals the constant radius. The torus center, axis, reference direction, and major radius are the slice circle's frame and radius. Its signed minor radius is the common signed offset. The analytic carrier takes precedence over the solved NURBS cache. A variable-radius construction, noncircular cross-section, nontangent support, noncollinear slice, or noncircular slice retains the solved NURBS carrier.
+
+---
+
+## 7. Text encoding (SAT/SMT)
+
+A `.sat` or `.smt` stream carries the same entity model as a binary stream in a line-oriented ASCII encoding. The two encodings are alternatives, not layers: a document stores its geometry in one of them.
+
+### 7.1 Header lines
+
+Three header lines precede the records.
+
+The first line holds the four binary header words as ASCII integers in the binary order: the save-format version, the record-count word (`0` when unwritten), the entity-count word, and the flags word. The words keep their binary semantics (§1): the entity-count word is the RecordTable index of the first referenced record, flag bit 0 marks a history partition, and flag bits 1 to 7 hold the revision. Trailing spaces after the flags word are padding.
+
+The second line holds the three product strings — product family, product version, and save date — as counted strings. A counted string in a header line is a decimal byte count, one separator byte, and that many bytes; header lines do not use the record encoding's `@` prefix.
+
+The third line holds the three kernel doubles in the binary order: `scale`, `resabs`, and `resnor`.
+
+**Unit rule.** In the text encoding, `scale` is the stream's length unit in millimetres per unit. A model-space length equals its stored value multiplied by `scale` millimetres. This differs from the binary encoding, whose lengths are centimetres and whose `scale` word is not a coordinate multiplier (§4). Dimensionless values — unit vectors, ratios, angles, knots, parameters, and pcurve coordinates — do not take the unit.
+
+### 7.2 Record grammar
+
+Each record is a record name, its fields, and the terminator field `#`. Whitespace — spaces, tabs, and newlines — separates fields, and a record continues across lines until its terminator. The record name is the `-`-joined chain the binary name tokens assemble (§2.2).
+
+Field forms:
+
+- `$N` is a reference to the record at index `N`; `$-1` is null.
+- `@N` followed by one separator byte and exactly `N` raw bytes is a string. The bytes count is exact: the payload can contain spaces and newlines.
+- `{` and `}` delimit a subtype scope. The bare words directly after `{` are the scope's identifier chain, including subtype names, `ref`, `nubs`, `nurbs`, and the `null_surface`, `null_curve`, and `nullbs` sentinels. The `{ref N}` form and the serializer version stamps are unchanged from the binary encoding.
+- A number field is one serialized value. A field at a `POSITION`, `VECTOR_3D`, or `VECTOR_2D` slot spans three or two consecutive number fields. An integral spelling does not select an integer type: a `DOUBLE` slot whose value is integral is written without a decimal point, so the slot's type comes from the record layout (§5, §6), not from the field's spelling.
+- A boolean is a word. A sense slot writes `forward` for `FALSE` and `reversed` for `TRUE`. A face sides slot writes `single` for `FALSE` and `double` for `TRUE`. A surface v-sense slot writes `forward_v` for `FALSE` and `reverse_v` for `TRUE`. A plain logical slot writes `F` for `FALSE` and `T` for `TRUE`. An optional range bound (§6.3) writes `I` for the absent bound (`FALSE`, no value follows) and `F` for the present bound (`TRUE`, one value follows). The word `F` therefore takes its meaning from the slot class.
+- An enumeration (`ENUM_VALUE`) is a word from the slot's vocabulary. Closure slots write `open` (0), `closed` (1), and `periodic` (2). Singularity slots write `none` (0). Approximation-cache form slots write the `law_spl_sur` selector names: `full` (0), `summary` (1), `none` (2), `historical` (3), and `optimal` (4). Curve extension slots write `UNEXTENDED` (0).
+
+### 7.3 Record indexing and stream end
+
+Record indices count records in file order from zero, starting at the first record after the header lines. A stream that begins with an `asmheader` record gives it index 0; a save-format 700 stream stores no `asmheader` record and gives index 0 to its first entity record. `$N` references index this table directly.
+
+The stream ends with a terminator line that identifies the serialization branch: `End-of-ASM-data` on the ASM branch and `End-of-ACIS-data` on the ACIS branch. Save-format 700 streams use the ACIS terminator and the legacy subtype spellings (§6.6); later save formats use the ASM terminator and the modern spellings.

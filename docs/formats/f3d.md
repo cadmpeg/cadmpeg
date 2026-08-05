@@ -99,9 +99,7 @@ A registry field-8 entry pairs a property key in field 1 with either a text valu
 
 ### 1.1.3 Text encoding of a B-rep stream
 
-A `Breps.BlobParts` member with the `.sat` or `.smt` extension carries the same entity model as a binary `.smb` or `.smbh` stream (§2) in a line-oriented ASCII encoding. Three header lines precede the records. The first line begins with the save format, in the same numbering the binary header's save-format field uses. The second line holds the producing application and version, and the third holds two tolerance values. Each following line is one record: a record name, then its fields, then the record terminator `#`. A field of the form `$N` is a reference to the record at index `N`, and `$-1` is a null reference. A field of the form `@N` prefixes a string of `N` bytes. Record indices count records in file order from zero, so the `asmheader` record is index 0, the same rule the binary encoding's `RecordTable` uses. The line `End-of-ASM-data` ends the stream.
-
-The two encodings are alternatives, not layers: a document's geometry is in one of them. See GC-29 for the header-line field roles.
+A `Breps.BlobParts` member with the `.sat` or `.smt` extension carries the same entity model as a binary `.smb` or `.smbh` stream (§2) in the line-oriented ASCII text encoding. The header lines, record grammar, indexing, terminator, and unit rule are in [`asm.md` §7](asm.md#7-text-encoding-satsmt). The two encodings are alternatives, not layers: a document's geometry is in one of them.
 
 ### 1.2 Stored property and configuration entries
 
