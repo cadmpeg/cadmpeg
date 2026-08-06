@@ -2165,6 +2165,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
+                    Some(design::DesignFeatureFamily::SurfaceOffset) => {
+                        group.role == 0x0000_0041_0000_0000
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
                     Some(design::DesignFeatureFamily::SurfaceRuled) => {
                         group.role == 0x0000_0008_0000_0000
                             && group.extrude_role.is_none()
@@ -4361,6 +4366,11 @@ fn validate_face_operands<'a>(
                                 }
                                 Some(design::DesignFeatureFamily::Sweep) => {
                                     group.is_some_and(|group| group.role == 0x0000_0011_0000_0000)
+                                        && operand.recipe_kind
+                                            == records::ConstructionRecipeKind::BoundedFace
+                                }
+                                Some(design::DesignFeatureFamily::SurfaceOffset) => {
+                                    group.is_some_and(|group| group.role == 0x0000_0041_0000_0000)
                                         && operand.recipe_kind
                                             == records::ConstructionRecipeKind::BoundedFace
                                 }

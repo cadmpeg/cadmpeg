@@ -1785,6 +1785,37 @@ pub struct DesignSurfaceExtendOperation {
     pub tolerance_offset: u64,
 }
 
+/// Source selection form named by a `SurfaceOffset` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum DesignSurfaceOffsetSupport {
+    /// A boundary carrier followed by edge recipes.
+    BoundaryCarrier {
+        /// Source boundary-mode enum.
+        boundary_mode: u32,
+        /// Byte offset of `boundary_mode`.
+        boundary_mode_offset: u64,
+        /// Indexed boundary-carrier record.
+        boundary_record_index: u32,
+        /// Additional indexed reference carried by the boundary tail.
+        boundary_reference_record_index: u32,
+        /// Byte offset of `boundary_reference_record_index`'s marked reference.
+        boundary_reference_offset: u64,
+        /// Ordered edge-recipe records contained by the boundary carrier.
+        edge_record_indices: Vec<u32>,
+        /// Positive modelling tolerance in source centimetres.
+        tolerance: f64,
+        /// Byte offset of `tolerance`.
+        tolerance_offset: u64,
+    },
+    /// Counted role-0x41 groups containing bounded-face recipes.
+    FaceGroups {
+        /// Ordered construction-group records named by the scope.
+        group_record_indices: Vec<u32>,
+    },
+}
+
 /// Fixed construction records named by a `SurfaceOffset` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1795,22 +1826,8 @@ pub struct DesignSurfaceOffsetOperation {
     pub distance_offset: u64,
     /// Indexed scalar record carrying `distance`.
     pub distance_record_index: u32,
-    /// Source boundary-mode enum.
-    pub boundary_mode: u32,
-    /// Byte offset of `boundary_mode`.
-    pub boundary_mode_offset: u64,
-    /// Indexed boundary-carrier record.
-    pub boundary_record_index: u32,
-    /// Additional indexed reference carried by the boundary tail.
-    pub boundary_reference_record_index: u32,
-    /// Byte offset of `boundary_reference_record_index`'s marked reference.
-    pub boundary_reference_offset: u64,
-    /// Ordered edge-recipe records contained by the boundary carrier.
-    pub edge_record_indices: Vec<u32>,
-    /// Positive modelling tolerance in source centimetres.
-    pub tolerance: f64,
-    /// Byte offset of `tolerance`.
-    pub tolerance_offset: u64,
+    /// Exact source selection form.
+    pub support: DesignSurfaceOffsetSupport,
 }
 
 /// Direction law encoded by a `SurfaceRuled` operation.

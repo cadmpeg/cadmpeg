@@ -22,9 +22,9 @@ use crate::records::{
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
     DesignFaceOperand, DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignParameter,
     DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchProfileOperand,
-    DesignTopologyRecipeEntry, DesignTopologyRecipeSide, DesignTopologyRecipeTriplet,
-    LostEdgeReference, PersistentSubentityTag, SketchCurveIdentity, SketchPoint,
-    SketchRelationOperand,
+    DesignSurfaceOffsetSupport, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
+    DesignTopologyRecipeTriplet, LostEdgeReference, PersistentSubentityTag, SketchCurveIdentity,
+    SketchPoint, SketchRelationOperand,
 };
 use cadmpeg_core::le::{f64_at, i32_at, u32_at, u64_at as read_u64};
 use cadmpeg_core::CodecError;
@@ -59,7 +59,13 @@ pub fn decode_edge_operands(
             member_indices.extend(operation.edge_record_indices.iter().copied());
         }
         if let Some(operation) = &scope.surface_offset_operation {
-            member_indices.extend(operation.edge_record_indices.iter().copied());
+            if let DesignSurfaceOffsetSupport::BoundaryCarrier {
+                edge_record_indices,
+                ..
+            } = &operation.support
+            {
+                member_indices.extend(edge_record_indices.iter().copied());
+            }
         }
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -245,6 +251,9 @@ pub fn decode_face_operands(
         let is_thread_face = scope.kind == "Thread" && group.role == 0x0000_0010_0000_0000;
         let is_draft_operand =
             design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Draft);
+        let is_surface_offset_operand = design_feature_family(&scope.kind)
+            == Some(DesignFeatureFamily::SurfaceOffset)
+            && group.role == 0x0000_0041_0000_0000;
         if !is_extrude_operand
             && !is_offset_faces_operand
             && !is_shell_operand
@@ -257,6 +266,7 @@ pub fn decode_face_operands(
             && !is_delete_face_operand
             && !is_thread_face
             && !is_draft_operand
+            && !is_surface_offset_operand
         {
             continue;
         }
@@ -603,6 +613,7 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::BoundaryFill)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Split)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Draft)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::SurfaceOffset)
             || scope.kind == "SplitFace"
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Scale)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::CircularPattern)

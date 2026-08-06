@@ -126,10 +126,10 @@ use crate::records::{
     DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignScaleOperation,
     DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
     DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
-    DesignSurfaceStitchOperation, DesignThreadConstruction, DesignTopologyRecipeSide,
-    LostEdgeReference, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
-    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand, SketchSurface,
-    DESIGN_MODULE_SKETCH,
+    DesignSurfaceOffsetSupport, DesignSurfaceStitchOperation, DesignThreadConstruction,
+    DesignTopologyRecipeSide, LostEdgeReference, PersistentSubentityTag, SketchConstraintKind,
+    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    SketchSurface, DESIGN_MODULE_SKETCH,
 };
 
 use cadmpeg_ir::attributes::AttributeTarget;
@@ -4849,14 +4849,16 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             distance: -0.4,
             distance_offset: (extend_distance_at + 40) as u64,
             distance_record_index: extend_distance_record_index,
-            boundary_mode: 1,
-            boundary_mode_offset: (extend_boundary_at + extend_boundary_tail + 2) as u64,
-            boundary_record_index: extend_boundary_record_index,
-            boundary_reference_record_index: 900,
-            boundary_reference_offset: (extend_boundary_at + extend_boundary_tail + 6) as u64,
-            edge_record_indices: extend_edge_record_indices.to_vec(),
-            tolerance: 1.0e-6,
-            tolerance_offset: (extend_boundary_at + extend_boundary_tail + 39) as u64,
+            support: DesignSurfaceOffsetSupport::BoundaryCarrier {
+                boundary_mode: 1,
+                boundary_mode_offset: (extend_boundary_at + extend_boundary_tail + 2) as u64,
+                boundary_record_index: extend_boundary_record_index,
+                boundary_reference_record_index: 900,
+                boundary_reference_offset: (extend_boundary_at + extend_boundary_tail + 6) as u64,
+                edge_record_indices: extend_edge_record_indices.to_vec(),
+                tolerance: 1.0e-6,
+                tolerance_offset: (extend_boundary_at + extend_boundary_tail + 39) as u64,
+            },
         }
     );
     extend_scope.surface_offset_operation = Some(operation);
@@ -4880,6 +4882,66 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             ..
         }] if native.ends_with(":design-record#500") && *distance == -4.0
     ));
+
+    let grouped_record_index = 600u32;
+    let grouped_member_record_index = 601u32;
+    let mut grouped = Vec::new();
+    grouped.extend_from_slice(&3u32.to_le_bytes());
+    grouped.extend_from_slice(b"282");
+    grouped.extend_from_slice(&grouped_record_index.to_le_bytes());
+    grouped.extend_from_slice(&[0; 10]);
+    grouped.extend_from_slice(&1u32.to_le_bytes());
+    grouped.push(1);
+    grouped.extend_from_slice(&grouped_member_record_index.to_le_bytes());
+    grouped.extend_from_slice(&[0; 6]);
+    grouped.extend_from_slice(&[0; 2]);
+    grouped.extend_from_slice(&1u32.to_le_bytes());
+    grouped.push(1);
+    grouped.extend_from_slice(&(grouped_record_index + 2).to_le_bytes());
+    grouped.extend_from_slice(&[0; 6]);
+    grouped.extend_from_slice(&0x0000_0041_0000_0000u64.to_le_bytes());
+    grouped.extend_from_slice(&[0; 10]);
+    grouped.extend_from_slice(&252u32.to_le_bytes());
+    grouped.extend_from_slice(&0.0001f64.to_le_bytes());
+    grouped.extend_from_slice(&252u32.to_le_bytes());
+    grouped.push(1);
+    grouped.extend_from_slice(&(grouped_record_index + 2).to_le_bytes());
+    grouped.extend_from_slice(&[0; 6]);
+    grouped.extend_from_slice(&[1, 1, 0, 1]);
+    grouped.extend_from_slice(&(grouped_record_index + 1).to_le_bytes());
+    grouped.extend_from_slice(&[0; 6]);
+    grouped.push(0);
+    grouped.push(1);
+    grouped.extend_from_slice(&extend_scope.record_index.to_le_bytes());
+    grouped.extend_from_slice(&[0; 6]);
+    grouped.extend_from_slice(&3u32.to_le_bytes());
+    grouped.extend_from_slice(b"260");
+    grouped.extend_from_slice(&grouped_record_index.to_le_bytes());
+    bytes.extend_from_slice(&grouped);
+    let mut grouped_scope = extend_scope.clone();
+    grouped_scope.reference_members = vec![
+        extend_distance_record_index,
+        grouped_record_index,
+        grouped_member_record_index,
+    ];
+    let grouped_operation = exact_surface_offset_operation(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &grouped_scope,
+    )
+    .expect("exact grouped SurfaceOffset construction");
+    assert_eq!(
+        grouped_operation,
+        DesignSurfaceOffsetOperation {
+            distance: -0.4,
+            distance_offset: (extend_distance_at + 40) as u64,
+            distance_record_index: extend_distance_record_index,
+            support: DesignSurfaceOffsetSupport::FaceGroups {
+                group_record_indices: vec![grouped_record_index],
+            },
+        }
+    );
+
     bytes[extend_boundary_at + 21..extend_boundary_at + 25]
         .copy_from_slice(&u32::MAX.to_le_bytes());
     assert_eq!(

@@ -28,7 +28,8 @@ use crate::records::{
     DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeStart, DesignFaceOperand,
     DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignFixedExtrudeDistance, DesignParameter,
     DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
-    DesignSketchPlacement, DesignSolidPrimitive, SketchCurveGeometry, SketchCurveIdentity,
+    DesignSketchPlacement, DesignSolidPrimitive, DesignSurfaceOffsetOperation,
+    DesignSurfaceOffsetSupport, SketchCurveGeometry, SketchCurveIdentity,
 };
 use cadmpeg_core::le::{u32_at, u64_at as read_u64};
 use cadmpeg_core::CodecError;
@@ -367,22 +368,17 @@ pub fn project_parameter_design_with_edge_identities(
                         parameters: BTreeMap::new(),
                         properties: native_scope_properties(scope, native_scope),
                     }),
-                Some(DesignFeatureFamily::SurfaceOffset) => {
-                    scope.surface_offset_operation.as_ref().map_or_else(
-                        || FeatureDefinition::Native {
-                            kind: scope.kind.clone(),
-                            parameters: BTreeMap::new(),
-                            properties: native_scope_properties(scope, native_scope),
-                        },
-                        |operation| FeatureDefinition::OffsetSurface {
-                            faces: cadmpeg_ir::features::FaceSelection::Native(format!(
-                                "{native_scope}:design-record#{}",
-                                operation.boundary_record_index
-                            )),
-                            distance: Some(Length(operation.distance * 10.0)),
-                        },
-                    )
-                }
+                Some(DesignFeatureFamily::SurfaceOffset) => scope
+                    .surface_offset_operation
+                    .as_ref()
+                    .and_then(|operation| {
+                        project_surface_offset(scope, operation, construction_groups, face_operands)
+                    })
+                    .unwrap_or_else(|| FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: BTreeMap::new(),
+                        properties: native_scope_properties(scope, native_scope),
+                    }),
                 Some(DesignFeatureFamily::SurfaceRuled) => project_ruled_surface(
                     scope,
                     owners,
@@ -1784,6 +1780,66 @@ const ROLE_0X9: u64 = 0x0000_0009_0000_0000;
 const ROLE_0X10: u64 = 0x0000_0010_0000_0000;
 const ROLE_0X21: u64 = 0x0000_0021_0000_0000;
 const ROLE_0X12: u64 = 0x0000_0012_0000_0000;
+const ROLE_0X41: u64 = 0x0000_0041_0000_0000;
+
+fn project_surface_offset(
+    scope: &DesignParameterScope,
+    operation: &DesignSurfaceOffsetOperation,
+    groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length};
+
+    let stream = native_stream(&scope.id)?;
+    let DesignSurfaceOffsetSupport::FaceGroups {
+        group_record_indices,
+    } = &operation.support
+    else {
+        let DesignSurfaceOffsetSupport::BoundaryCarrier {
+            boundary_record_index,
+            ..
+        } = &operation.support
+        else {
+            return None;
+        };
+        return Some(FeatureDefinition::OffsetSurface {
+            faces: FaceSelection::Native(format!("{stream}:design-record#{boundary_record_index}")),
+            distance: Some(Length(operation.distance * 10.0)),
+        });
+    };
+    let mut faces = Vec::new();
+    for group_record_index in group_record_indices {
+        let mut matching_groups = groups.iter().filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+                && group.record_index == *group_record_index
+                && group.role == ROLE_0X41
+                && !group.members.is_empty()
+        });
+        let group = matching_groups.next()?;
+        if matching_groups.next().is_some() {
+            return None;
+        }
+        let FaceSelection::Resolved {
+            faces: group_faces, ..
+        } = resolved_face_group(group, face_operands)?
+        else {
+            return None;
+        };
+        for face in group_faces {
+            if !faces.contains(&face) {
+                faces.push(face);
+            }
+        }
+    }
+    (!faces.is_empty()).then(|| FeatureDefinition::OffsetSurface {
+        faces: FaceSelection::Resolved {
+            faces,
+            native: scope.id.clone(),
+        },
+        distance: Some(Length(operation.distance * 10.0)),
+    })
+}
 
 fn project_draft(
     scope: &DesignParameterScope,

@@ -3,6 +3,9 @@
 
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded, take_reference};
 use crate::container::{role, ContainerScan};
+use crate::design::decode::operands::{
+    parse_construction_operand_group, ConstructionOperandGroupParse,
+};
 use crate::design::decode::sketch::{
     next_indexed_record_offset, valid_sketch_transform, IndexedRecordOffsets,
 };
@@ -26,7 +29,8 @@ use crate::records::{
     DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignRuledSurfaceOperation,
     DesignScaleOperation, DesignSheetMetalHeightDatum, DesignSolidPrimitive,
     DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
-    DesignSurfaceStitchOperation, DesignThreadConstruction, DesignWorkAxisConstruction,
+    DesignSurfaceOffsetSupport, DesignSurfaceStitchOperation, DesignThreadConstruction,
+    DesignWorkAxisConstruction,
 };
 use cadmpeg_core::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
 use cadmpeg_core::CodecError;
@@ -394,6 +398,9 @@ pub(crate) fn exact_surface_offset_operation(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignSurfaceOffsetOperation> {
+    if let Some(operation) = exact_surface_offset_face_groups(bytes, records, scope) {
+        return Some(operation);
+    }
     let operation = exact_surface_boundary_operation(
         bytes,
         records,
@@ -405,15 +412,114 @@ pub(crate) fn exact_surface_offset_operation(
         distance: operation.distance,
         distance_offset: operation.distance_offset,
         distance_record_index: operation.distance_record_index,
-        boundary_mode: operation.mode,
-        boundary_mode_offset: operation.mode_offset,
-        boundary_record_index: operation.boundary_record_index,
-        boundary_reference_record_index: operation.boundary_reference_record_index,
-        boundary_reference_offset: operation.boundary_reference_offset,
-        edge_record_indices: operation.edge_record_indices,
-        tolerance: operation.tolerance,
-        tolerance_offset: operation.tolerance_offset,
+        support: DesignSurfaceOffsetSupport::BoundaryCarrier {
+            boundary_mode: operation.mode,
+            boundary_mode_offset: operation.mode_offset,
+            boundary_record_index: operation.boundary_record_index,
+            boundary_reference_record_index: operation.boundary_reference_record_index,
+            boundary_reference_offset: operation.boundary_reference_offset,
+            edge_record_indices: operation.edge_record_indices,
+            tolerance: operation.tolerance,
+            tolerance_offset: operation.tolerance_offset,
+        },
     })
+}
+
+fn exact_surface_offset_face_groups(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Option<DesignSurfaceOffsetOperation> {
+    if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::SurfaceOffset) {
+        return None;
+    }
+    let [distance_record_index, support_references @ ..] = scope.reference_members.as_slice()
+    else {
+        return None;
+    };
+    if support_references.is_empty() {
+        return None;
+    }
+    let scalar = exact_fixed_scalar(bytes, records, *distance_record_index)?;
+    if scalar.owner_record_index != Some(scope.record_index) || scalar.ordinal != 0 {
+        return None;
+    }
+
+    let mut group_record_indices = Vec::new();
+    let mut covered_references = HashSet::new();
+    for (scope_reference_ordinal, record_index) in
+        scope.reference_members.iter().copied().enumerate().skip(1)
+    {
+        let group = exact_construction_operand_group(
+            bytes,
+            records,
+            scope,
+            u32::try_from(scope_reference_ordinal).ok()?,
+            record_index,
+        );
+        let Some(group) = group else {
+            continue;
+        };
+        if group.role != 0x0000_0041_0000_0000
+            || group.frame.opaque_index != 252
+            || group.members.is_empty()
+            || !covered_references.insert(group.record_index)
+        {
+            return None;
+        }
+        for member in &group.members {
+            if *member == *distance_record_index
+                || !support_references.contains(member)
+                || !covered_references.insert(*member)
+            {
+                return None;
+            }
+        }
+        group_record_indices.push(group.record_index);
+    }
+    if group_record_indices.is_empty() || covered_references.len() != support_references.len() {
+        return None;
+    }
+
+    Some(DesignSurfaceOffsetOperation {
+        distance: scalar.value,
+        distance_offset: scalar.value_offset,
+        distance_record_index: *distance_record_index,
+        support: DesignSurfaceOffsetSupport::FaceGroups {
+            group_record_indices,
+        },
+    })
+}
+
+fn exact_construction_operand_group(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    scope_reference_ordinal: u32,
+    record_index: u32,
+) -> Option<crate::records::DesignConstructionOperandGroup> {
+    let mut candidates = Vec::new();
+    for (start, _) in records.frames(record_index) {
+        let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
+        if after_tag != start + 7 {
+            continue;
+        }
+        let header = DesignRecordHeader {
+            id: String::new(),
+            record_index,
+            class_tag: class_tag.clone(),
+            byte_offset: u64::try_from(start).ok()?,
+        };
+        if let ConstructionOperandGroupParse::Complete(group) =
+            parse_construction_operand_group(bytes, scope, scope_reference_ordinal, &header)
+        {
+            candidates.push(*group);
+        }
+    }
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
 }
 
 #[derive(Clone)]
