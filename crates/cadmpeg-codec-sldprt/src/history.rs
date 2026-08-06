@@ -5184,7 +5184,7 @@ mod history_reference_tests {
     }
 
     #[test]
-    fn configuration_spatial_sketch_state_reuses_shared_geometry_across_lanes() {
+    fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
         use cadmpeg_ir::features::{
             ConfigurationFeatureState, DesignConfiguration, Feature as NeutralFeature,
             FeatureDefinition, FeatureId,
@@ -5193,6 +5193,8 @@ mod history_reference_tests {
 
         let feature_id = FeatureId("sldprt:model:feature#spatial".into());
         let sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#spatial".into());
+        let planar_state_id = FeatureId("sldprt:model:feature#planar-state".into());
+        let planar_sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#planar-state".into());
         let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
         ir.model.features.push(NeutralFeature {
             id: feature_id.clone(),
@@ -5211,9 +5213,33 @@ mod history_reference_tests {
             },
             native_ref: Some("spatial-native".into()),
         });
+        ir.model.features.push(NeutralFeature {
+            id: planar_state_id.clone(),
+            ordinal: 1,
+            name: Some("planar-state".into()),
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::SpatialSketch {
+                sketch: Some(planar_sketch_id.clone()),
+            },
+            native_ref: Some("planar-state-native".into()),
+        });
         ir.model.spatial_sketches.push(SpatialSketch {
             id: sketch_id.clone(),
             name: Some("spatial".into()),
+            configuration: None,
+            profiles: Vec::new(),
+            native_ref: Some("first-lane".into()),
+        });
+        ir.model.spatial_sketches.push(SpatialSketch {
+            id: planar_sketch_id.clone(),
+            name: Some("planar-state".into()),
             configuration: None,
             profiles: Vec::new(),
             native_ref: Some("first-lane".into()),
@@ -5231,15 +5257,29 @@ mod history_reference_tests {
                 parameter_values: BTreeMap::new(),
                 suppressed_features: Vec::new(),
                 parameter_overrides: BTreeMap::new(),
-                feature_states: BTreeMap::from([(
-                    feature_id.clone(),
-                    ConfigurationFeatureState {
-                        suppressed: false,
-                        dependencies: Vec::new(),
-                        outputs: Vec::new(),
-                        definition: FeatureDefinition::SpatialSketch { sketch: None },
-                    },
-                )]),
+                feature_states: BTreeMap::from([
+                    (
+                        feature_id.clone(),
+                        ConfigurationFeatureState {
+                            suppressed: false,
+                            dependencies: Vec::new(),
+                            outputs: Vec::new(),
+                            definition: FeatureDefinition::SpatialSketch { sketch: None },
+                        },
+                    ),
+                    (
+                        planar_state_id.clone(),
+                        ConfigurationFeatureState {
+                            suppressed: false,
+                            dependencies: Vec::new(),
+                            outputs: Vec::new(),
+                            definition: FeatureDefinition::Sketch {
+                                space: SketchSpace::Planar,
+                                sketch: None,
+                            },
+                        },
+                    ),
+                ]),
                 native_ref: None,
             });
         }
@@ -5260,6 +5300,12 @@ mod history_reference_tests {
             FeatureDefinition::SpatialSketch {
                 sketch: Some(projected),
             } if projected == &sketch_id
+        )));
+        assert!(ir.model.configurations.iter().all(|configuration| matches!(
+            &configuration.feature_states[&planar_state_id].definition,
+            FeatureDefinition::SpatialSketch {
+                sketch: Some(projected),
+            } if projected == &planar_sketch_id
         )));
     }
 
@@ -10127,17 +10173,41 @@ pub(crate) fn project_configuration_sketch_states(
             })
             .map(|sketch| &sketch.id)
             .collect::<HashSet<_>>();
+        let base_definitions = ir
+            .model
+            .features
+            .iter()
+            .map(|feature| (feature.id.clone(), feature.definition.clone()))
+            .collect::<HashMap<_, _>>();
         for feature in &mut features {
-            let FeatureDefinition::SpatialSketch { sketch } = &mut feature.definition else {
+            if let FeatureDefinition::SpatialSketch { sketch } = &mut feature.definition {
+                let expected = cadmpeg_ir::sketches::SpatialSketchId(feature.id.0.replacen(
+                    ":model:feature#",
+                    ":model:spatial-sketch#",
+                    1,
+                ));
+                if sketch.is_none() && reusable_spatial_sketches.contains(&expected) {
+                    *sketch = Some(expected);
+                }
+                continue;
+            }
+            let FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch,
+            } = &mut feature.definition
+            else {
                 continue;
             };
-            let expected = cadmpeg_ir::sketches::SpatialSketchId(feature.id.0.replacen(
-                ":model:feature#",
-                ":model:spatial-sketch#",
-                1,
-            ));
-            if sketch.is_none() && reusable_spatial_sketches.contains(&expected) {
-                *sketch = Some(expected);
+            let Some(FeatureDefinition::SpatialSketch {
+                sketch: Some(base_sketch),
+            }) = base_definitions.get(&feature.id)
+            else {
+                continue;
+            };
+            if sketch.is_none() && reusable_spatial_sketches.contains(base_sketch) {
+                feature.definition = FeatureDefinition::SpatialSketch {
+                    sketch: Some(base_sketch.clone()),
+                };
             }
         }
         let mut parameters = ir.model.parameters.clone();
