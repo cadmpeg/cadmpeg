@@ -2034,11 +2034,39 @@ pub(crate) enum StandardSurfaceProcedure {
     Revolution(Box<crate::families::b5::transfer::ResolvedRevolutionSurface>),
 }
 
-#[derive(PartialEq)]
-#[allow(clippy::large_enum_variant)]
-pub(crate) enum StandardSurfaceEvidence {
-    Geometry(SurfaceGeometry),
-    Procedural(StandardSurfaceProcedure),
+#[derive(Clone, PartialEq)]
+pub(crate) struct StandardSurfaceEvidence {
+    geometry: Option<SurfaceGeometry>,
+    procedure: Option<StandardSurfaceProcedure>,
+}
+
+impl StandardSurfaceEvidence {
+    fn from_parts(
+        geometry: Option<SurfaceGeometry>,
+        procedure: Option<StandardSurfaceProcedure>,
+    ) -> Option<Self> {
+        if geometry.is_none() && procedure.is_none() {
+            return None;
+        }
+        Some(Self {
+            geometry,
+            procedure,
+        })
+    }
+
+    fn geometry(geometry: SurfaceGeometry) -> Self {
+        Self {
+            geometry: Some(geometry),
+            procedure: None,
+        }
+    }
+
+    fn procedure(procedure: StandardSurfaceProcedure) -> Self {
+        Self {
+            geometry: None,
+            procedure: Some(procedure),
+        }
+    }
 }
 
 pub(crate) fn standard_object_evidence(
@@ -2111,14 +2139,7 @@ pub(crate) fn standard_object_evidence_from_streams(
             };
             let evidence = targeted_graph
                 .as_ref()
-                .and_then(|graph| {
-                    crate::families::b5::transfer::resolved_revolution_surface(graph, surface_id)
-                        .map(|revolution| {
-                            StandardSurfaceEvidence::Procedural(
-                                StandardSurfaceProcedure::Revolution(Box::new(revolution)),
-                            )
-                        })
-                })
+                .and_then(|graph| standard_surface_evidence(graph, surface_id))
                 .or_else(|| {
                     targeted_graph
                         .as_ref()
@@ -2133,11 +2154,11 @@ pub(crate) fn standard_object_evidence_from_streams(
                         .map(|carrier| match carrier {
                             crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
                                 geometry,
-                            ) => StandardSurfaceEvidence::Geometry(geometry),
+                            ) => StandardSurfaceEvidence::geometry(geometry),
                             crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {
                                 carrier_object_id,
                                 definition,
-                            } => StandardSurfaceEvidence::Procedural(
+                            } => StandardSurfaceEvidence::procedure(
                                 StandardSurfaceProcedure::RollingBall {
                                     carrier_object_id,
                                     definition: *definition,
@@ -2148,6 +2169,7 @@ pub(crate) fn standard_object_evidence_from_streams(
             let Some(evidence) = evidence else {
                 continue;
             };
+            merge_standard_procedure_supports(&mut support_candidates, &evidence);
             merge_standard_surface_evidence(&mut surface_candidates, object_id, evidence);
         }
         if let Some(graph) = targeted_graph.as_ref() {
@@ -2275,45 +2297,39 @@ pub(crate) fn standard_object_evidence_from_streams(
     StandardObjectEvidence {
         surface_geometries: surface_candidates
             .iter()
-            .filter_map(|(&tag, evidence)| match evidence.as_ref()? {
-                StandardSurfaceEvidence::Geometry(geometry) => Some((tag, geometry.clone())),
-                StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Revolution(
-                    revolution,
-                )) => Some((tag, revolution.geometry.clone())),
-                StandardSurfaceEvidence::Procedural(_) => None,
-            })
+            .filter_map(|(&tag, evidence)| Some((tag, evidence.as_ref()?.geometry.clone()?)))
             .collect(),
         procedural_surfaces: surface_candidates
             .into_iter()
-            .filter_map(|(tag, evidence)| match evidence? {
-                StandardSurfaceEvidence::Procedural(procedure) => {
-                    let valid = match &procedure {
-                        StandardSurfaceProcedure::Offset {
-                            support_object_id,
-                            support,
-                            ..
-                        } => {
+            .filter_map(|(tag, evidence)| {
+                let procedure = evidence?.procedure?;
+                let valid = match &procedure {
+                    StandardSurfaceProcedure::Offset {
+                        support_object_id,
+                        support,
+                        ..
+                    } => {
+                        support_candidates
+                            .get(support_object_id)
+                            .and_then(Option::as_ref)
+                            == Some(support)
+                    }
+                    StandardSurfaceProcedure::RollingBall { .. } => true,
+                    StandardSurfaceProcedure::Extrusion(extrusion) => {
+                        extrusion.supports().into_iter().all(|side| {
                             support_candidates
-                                .get(support_object_id)
+                                .get(&side.surface_object_id)
                                 .and_then(Option::as_ref)
-                                == Some(support)
-                        }
-                        StandardSurfaceProcedure::RollingBall { .. } => true,
-                        StandardSurfaceProcedure::Extrusion(extrusion) => {
-                            extrusion.supports().into_iter().all(|side| {
-                                support_candidates
-                                    .get(&side.surface_object_id)
-                                    .and_then(Option::as_ref)
-                                    == Some(&crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(
-                                    side.surface.clone(),
-                                ))
-                            })
-                        }
-                        StandardSurfaceProcedure::Revolution(_) => true,
-                    };
-                    valid.then_some((tag, procedure))
-                }
-                StandardSurfaceEvidence::Geometry(_) => None,
+                                == Some(
+                                    &crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(
+                                        side.surface.clone(),
+                                    ),
+                                )
+                        })
+                    }
+                    StandardSurfaceProcedure::Revolution(_) => true,
+                };
+                valid.then_some((tag, procedure))
             })
             .collect(),
         edge_owner_faces: edge_face_candidates
@@ -2332,41 +2348,35 @@ fn standard_surface_evidence(
     graph: &crate::families::b5::graph::B5Graph,
     surface_id: u32,
 ) -> Option<StandardSurfaceEvidence> {
-    crate::families::b5::transfer::resolved_offset_surface(graph, surface_id)
-        .map(|offset| {
-            StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Offset {
-                carrier_object_id: offset.carrier_object_id,
-                support_object_id: offset.support_object_id,
-                support: offset.support,
-                distance: offset.distance,
-                parameter_bounds: offset.parameter_bounds,
-            })
+    let geometry = crate::families::b5::transfer::resolved_surface_geometry(graph, surface_id);
+    let procedure = crate::families::b5::transfer::resolved_offset_surface(graph, surface_id)
+        .map(|offset| StandardSurfaceProcedure::Offset {
+            carrier_object_id: offset.carrier_object_id,
+            support_object_id: offset.support_object_id,
+            support: offset.support,
+            distance: offset.distance,
+            parameter_bounds: offset.parameter_bounds,
         })
         .or_else(|| {
             crate::families::b5::transfer::resolved_extrusion_surface(graph, surface_id)
                 .map(Box::new)
                 .map(StandardSurfaceProcedure::Extrusion)
-                .map(StandardSurfaceEvidence::Procedural)
         })
         .or_else(|| {
             crate::families::b5::transfer::resolved_surface_procedural_definition(graph, surface_id)
-                .map(|(carrier_object_id, definition)| {
-                    StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::RollingBall {
+                .map(
+                    |(carrier_object_id, definition)| StandardSurfaceProcedure::RollingBall {
                         carrier_object_id,
                         definition,
-                    })
-                })
+                    },
+                )
         })
         .or_else(|| {
             crate::families::b5::transfer::resolved_revolution_surface(graph, surface_id)
                 .map(Box::new)
                 .map(StandardSurfaceProcedure::Revolution)
-                .map(StandardSurfaceEvidence::Procedural)
-        })
-        .or_else(|| {
-            crate::families::b5::transfer::resolved_surface_geometry(graph, surface_id)
-                .map(StandardSurfaceEvidence::Geometry)
-        })
+        });
+    StandardSurfaceEvidence::from_parts(geometry, procedure)
 }
 
 fn merge_standard_surface_evidence(
@@ -2374,26 +2384,64 @@ fn merge_standard_surface_evidence(
     tag: u32,
     evidence: StandardSurfaceEvidence,
 ) {
+    let incoming = evidence.clone();
     candidates
         .entry(tag)
         .and_modify(|stored| {
-            if stored.as_ref().is_some_and(|stored| *stored != evidence) {
-                *stored = None;
-            }
+            let Some(stored_evidence) = stored.take() else {
+                return;
+            };
+            let (stored_geometry, stored_procedure) =
+                (stored_evidence.geometry, stored_evidence.procedure);
+            let (incoming_geometry, incoming_procedure) =
+                (incoming.geometry.clone(), incoming.procedure.clone());
+            let EvidencePart::Merged(geometry) =
+                merge_standard_evidence_part(stored_geometry, incoming_geometry)
+            else {
+                return;
+            };
+            let EvidencePart::Merged(procedure) =
+                merge_standard_evidence_part(stored_procedure, incoming_procedure)
+            else {
+                return;
+            };
+            *stored = Some(StandardSurfaceEvidence {
+                geometry,
+                procedure,
+            });
         })
         .or_insert(Some(evidence));
+}
+
+enum EvidencePart<T> {
+    Conflict,
+    Merged(Option<T>),
+}
+
+fn merge_standard_evidence_part<T: PartialEq>(
+    stored: Option<T>,
+    incoming: Option<T>,
+) -> EvidencePart<T> {
+    match (stored, incoming) {
+        (Some(stored), Some(incoming)) if stored != incoming => EvidencePart::Conflict,
+        (Some(stored), _) => EvidencePart::Merged(Some(stored)),
+        (None, incoming) => EvidencePart::Merged(incoming),
+    }
 }
 
 fn merge_standard_procedure_supports(
     candidates: &mut HashMap<u32, Option<crate::families::b5::transfer::ResolvedOffsetSupport>>,
     evidence: &StandardSurfaceEvidence,
 ) {
-    match evidence {
-        StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Offset {
+    let Some(procedure) = evidence.procedure.as_ref() else {
+        return;
+    };
+    match procedure {
+        StandardSurfaceProcedure::Offset {
             support_object_id,
             support,
             ..
-        }) => {
+        } => {
             candidates
                 .entry(*support_object_id)
                 .and_modify(|stored| {
@@ -2403,7 +2451,7 @@ fn merge_standard_procedure_supports(
                 })
                 .or_insert_with(|| Some(support.clone()));
         }
-        StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Extrusion(extrusion)) => {
+        StandardSurfaceProcedure::Extrusion(extrusion) => {
             for side in extrusion.supports() {
                 let support = crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(
                     side.surface.clone(),
@@ -2418,9 +2466,7 @@ fn merge_standard_procedure_supports(
                     .or_insert(Some(support));
             }
         }
-        StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Revolution(_)) => {}
-        StandardSurfaceEvidence::Geometry(_)
-        | StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::RollingBall { .. }) => {}
+        StandardSurfaceProcedure::RollingBall { .. } | StandardSurfaceProcedure::Revolution(_) => {}
     }
 }
 
@@ -6482,7 +6528,7 @@ mod route_tests {
         standard_plane_normal_from_circle_centers, standard_spline_line,
         standard_successor_endpoint_pairs, standard_successor_endpoint_points,
         standard_surface_evidence, unique_native_identity_points, witness_arc_end,
-        StandardEdgeSupport, StandardSurfaceEvidence, StandardSurfaceProcedure,
+        StandardEdgeSupport, StandardSurfaceProcedure,
     };
 
     use crate::families::b5::graph::{B5Graph, B5Profile, B5Surface};
@@ -6607,13 +6653,11 @@ mod route_tests {
         };
 
         let evidence = standard_surface_evidence(&graph, 10).expect("revolution evidence");
-        let StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Revolution(revolution)) =
-            evidence
+        let Some(StandardSurfaceProcedure::Revolution(revolution)) = evidence.procedure.as_ref()
         else {
             panic!("surface-of-revolution evidence must retain its construction");
         };
-        let revolution = *revolution;
-        assert!(matches!(revolution.geometry, SurfaceGeometry::Nurbs(_)));
+        assert!(matches!(evidence.geometry, Some(SurfaceGeometry::Nurbs(_))));
         assert_eq!(revolution.angular_interval, angular_range);
         assert_eq!(revolution.parameter_interval, [-1.0, 1.0]);
         assert_eq!(revolution.directrix.control_points.len(), 2);
