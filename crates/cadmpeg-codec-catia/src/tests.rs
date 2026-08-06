@@ -9655,6 +9655,52 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
 }
 
 #[test]
+fn incompatible_exact_feature_candidates_on_one_object_remain_unresolved() {
+    let records = [
+        object_graph_record(&[0x12, 0x84, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x84, 0x84], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x85, 0x85], &[0xfe]),
+    ];
+    let mut bytes = entity_backed_object_graph(&records, &[2, 3, 4]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "xy-plane",
+        "Sketch",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+
+    let candidate = native
+        .design_objects
+        .iter()
+        .find(|object| object.owner_entity_id == 4)
+        .expect("synthetic dual-candidate object");
+    assert_eq!(candidate.field_classes[0].name, "xy-plane");
+    assert_eq!(candidate.owner_entity_id, 4);
+    assert_eq!(
+        candidate
+            .owner_class
+            .as_ref()
+            .map(|class| class.name.as_str()),
+        Some("Sketch")
+    );
+    assert_eq!(
+        candidate.owner_design_object,
+        Some(native.design_objects[1].id.clone())
+    );
+
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
+
+    assert!(ir.model.features.is_empty());
+    assert!(ir.model.sketches.is_empty());
+    assert!(transfer.consumed_records().is_empty());
+    assert!(transfer.feature_ids.is_empty());
+}
+
+#[test]
 fn parameter_owner_follows_one_exact_child_design_object() {
     let mut native = crate::native::CatiaNative::decode(&standard_catpart_with_definition_value(
         &[0x00, 0x08, 0x32, 4, 0, 0, 0],

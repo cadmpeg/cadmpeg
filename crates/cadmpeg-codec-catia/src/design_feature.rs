@@ -125,11 +125,21 @@ pub(crate) fn transfer_design_features(
         .iter()
         .filter(|object| graph_scope.is_none_or(|scope| scope.contains(object.parent.as_str())))
     {
-        if let Some(candidate) = principal_plane_candidate(object, &records) {
-            transfer_principal_plane(ir, &mut transfer, candidate);
-        }
-        if let Some(owner_record) = sketch_candidate(object, &records) {
-            transfer_sketch(ir, &mut transfer, object, owner_record);
+        let plane_candidate = principal_plane_candidate(object, &records);
+        let sketch_owner = sketch_candidate(object, &records);
+        match (plane_candidate, sketch_owner) {
+            (Some(_), Some(_)) => {
+                // One object cannot safely occupy two neutral feature identities.
+                // Leave both declarations unresolved so the feature-id map cannot
+                // overwrite one transfer with the other.
+            }
+            (Some(candidate), None) => {
+                transfer_principal_plane(ir, &mut transfer, candidate);
+            }
+            (None, Some(owner_record)) => {
+                transfer_sketch(ir, &mut transfer, object, owner_record);
+            }
+            (None, None) => {}
         }
     }
 
