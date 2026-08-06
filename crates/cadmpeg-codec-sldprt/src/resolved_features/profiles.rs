@@ -602,17 +602,20 @@ pub(crate) fn project_marker_backed_sketches(
             .collect::<Vec<_>>();
         objects.sort_by_key(|(offset, _)| *offset);
         for (object_index, &(start, native_feature)) in objects.iter().enumerate() {
-            let Some((feature_index, bound_sketch)) =
+            let Some((feature_index, bound_sketch, block_definition)) =
                 features.iter().enumerate().find_map(|(index, feature)| {
                     if feature.native_ref.as_deref() != Some(native_feature.id.as_str()) {
                         return None;
                     }
-                    let cadmpeg_ir::features::FeatureDefinition::Sketch { sketch, .. } =
-                        &feature.definition
-                    else {
-                        return None;
-                    };
-                    Some((index, sketch.clone()))
+                    match &feature.definition {
+                        cadmpeg_ir::features::FeatureDefinition::Sketch { sketch, .. } => {
+                            Some((index, sketch.clone(), false))
+                        }
+                        cadmpeg_ir::features::FeatureDefinition::SketchBlockDefinition {
+                            sketch,
+                        } => Some((index, sketch.clone(), true)),
+                        _ => None,
+                    }
                 })
             else {
                 continue;
@@ -663,8 +666,15 @@ pub(crate) fn project_marker_backed_sketches(
                 start,
                 end,
             );
-            let Some((origin, normal, u_axis)) =
-                frame.or_else(|| feature_frames.get(native_feature.id.as_str()).copied())
+            let Some((origin, normal, u_axis)) = frame
+                .or_else(|| feature_frames.get(native_feature.id.as_str()).copied())
+                .or_else(|| {
+                    block_definition.then_some((
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    ))
+                })
             else {
                 continue;
             };
@@ -677,11 +687,16 @@ pub(crate) fn project_marker_backed_sketches(
                 native_feature.ordinal
             ));
             if sketches.iter().any(|sketch| sketch.id == sketch_id) {
-                features[feature_index].definition =
+                features[feature_index].definition = if block_definition {
+                    cadmpeg_ir::features::FeatureDefinition::SketchBlockDefinition {
+                        sketch: Some(sketch_id),
+                    }
+                } else {
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
                         space: cadmpeg_ir::features::SketchSpace::Planar,
                         sketch: Some(sketch_id),
-                    };
+                    }
+                };
                 continue;
             }
             if bound_sketch
@@ -1379,9 +1394,15 @@ pub(crate) fn project_marker_backed_sketches(
             }
             sketch_entities.extend(projected);
             sketches.push(sketch);
-            features[feature_index].definition = cadmpeg_ir::features::FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: Some(sketch_id),
+            features[feature_index].definition = if block_definition {
+                cadmpeg_ir::features::FeatureDefinition::SketchBlockDefinition {
+                    sketch: Some(sketch_id),
+                }
+            } else {
+                cadmpeg_ir::features::FeatureDefinition::Sketch {
+                    space: cadmpeg_ir::features::SketchSpace::Planar,
+                    sketch: Some(sketch_id),
+                }
             };
         }
     }
