@@ -1684,6 +1684,28 @@ fn unowned_pcurve_dependencies_are_retained_as_one_opaque_closure() {
 }
 
 #[test]
+fn pcurve_trimmed_carrier_is_not_promoted_to_a_3d_curve() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#69=PCURVE('',#28,#70);\n#70=DEFINITIONAL_REPRESENTATION('',(#72),#50);\n#71=LINE('',#51,#53);\n#72=TRIMMED_CURVE('',#71,(0.),(1.),.T.,.PARAMETER.);\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode pcurve trimmed carrier");
+
+    assert!(decoded.ir.model.curves.iter().all(|curve| {
+        curve.id.as_str() != "step:data:curve#71" && curve.id.as_str() != "step:data:curve#72"
+    }));
+    assert!(decoded.report.losses.iter().all(|loss| {
+        !loss
+            .message
+            .contains("TRIMMED_CURVE #72 has invalid or unresolved basis/trim selectors")
+    }));
+}
+
+#[test]
 fn a_protected_unowned_pcurve_survives_retention() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
@@ -5465,6 +5487,17 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
         .curves
         .iter()
         .any(|curve| curve.id.as_str() == "step:data:curve#9" && curve.geometry == expected_curve));
+    assert_eq!(
+        decoded
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id.as_str() == "step:data:curve#6")
+            .and_then(|curve| curve.source_object.as_ref())
+            .map(|source| source.object_id.as_str()),
+        Some("#10")
+    );
     assert!(decoded
         .ir
         .model
@@ -5472,6 +5505,17 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
         .iter()
         .any(|surface| surface.id.as_str() == "step:data:surface#13"
             && surface.geometry == expected_surface));
+    assert_eq!(
+        decoded
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id.as_str() == "step:data:surface#12")
+            .and_then(|surface| surface.source_object.as_ref())
+            .map(|source| source.object_id.as_str()),
+        Some("#14")
+    );
 }
 
 #[test]

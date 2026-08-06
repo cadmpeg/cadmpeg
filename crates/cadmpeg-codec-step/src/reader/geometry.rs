@@ -441,6 +441,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     let mut carrier_index = CarrierIndex::from_ir(ir);
     let deferred_ids = exchange
         .entities_any(&["TRIMMED_CURVE", "COMPOSITE_CURVE", "OFFSET_CURVE_3D"])
+        .filter(|(id, _)| !pcurve_geometry_records.contains(id))
         .map(|(id, _)| id)
         .collect::<Vec<_>>();
     let mut deferred_queue = VecDeque::from(deferred_ids);
@@ -675,7 +676,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             entry.insert(curve_index);
         }
     }
-    for (id, _) in exchange.entities("TRIMMED_CURVE") {
+    for (id, _) in exchange
+        .entities("TRIMMED_CURVE")
+        .filter(|(id, _)| !pcurve_geometry_records.contains(id))
+    {
         if !carrier_index.curves.contains_key(&id) {
             warnings.push(format!(
                 "TRIMMED_CURVE #{id} has invalid or unresolved basis/trim selectors"
@@ -696,7 +700,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             ));
         }
     }
-    for (id, _) in exchange.entities_any(&["TRIMMED_CURVE", "COMPOSITE_CURVE", "OFFSET_CURVE_3D"]) {
+    for (id, _) in exchange
+        .entities_any(&["TRIMMED_CURVE", "COMPOSITE_CURVE", "OFFSET_CURVE_3D"])
+        .filter(|(id, _)| !pcurve_geometry_records.contains(id))
+    {
         if let Entry::Vacant(entry) = carrier_index.curves.entry(id) {
             let curve = CurveId(format!("step:data:curve#{id}"));
             let curve_index = ir.model.curves.len();
@@ -1656,6 +1663,100 @@ pub(super) fn associate_topology_carriers(
             .get_or_insert_with(|| SourceObjectAssociation {
                 format: "step".into(),
                 object_id: format!("#{vertex_id}"),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            });
+    }
+}
+
+/// Associate the basis carrier owned by each valid replica with that replica.
+///
+/// A replica is the carrier used by topology, while its basis remains a
+/// separate IR geometry entry because the transformed geometry stores the
+/// basis inline. The basis is still a real STEP dependency and must not be
+/// reported as an unowned carrier by generic IR validation.
+pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index: &CarrierIndex) {
+    for (replica_id, record) in exchange.entities("CURVE_REPLICA") {
+        let Some(parent_id) =
+            named_parameter(record, "CURVE_REPLICA", 1).and_then(Value::reference)
+        else {
+            continue;
+        };
+        let Some(parent_index) = index.curves.get(&parent_id).copied() else {
+            continue;
+        };
+        ir.model.curves[parent_index]
+            .source_object
+            .get_or_insert_with(|| SourceObjectAssociation {
+                format: "step".into(),
+                object_id: format!("#{replica_id}"),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            });
+    }
+    for (replica_id, record) in exchange.entities("SURFACE_REPLICA") {
+        let Some(parent_id) =
+            named_parameter(record, "SURFACE_REPLICA", 1).and_then(Value::reference)
+        else {
+            continue;
+        };
+        let Some(parent_index) = index.surfaces.get(&parent_id).copied() else {
+            continue;
+        };
+        ir.model.surfaces[parent_index]
+            .source_object
+            .get_or_insert_with(|| SourceObjectAssociation {
+                format: "step".into(),
+                object_id: format!("#{replica_id}"),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            });
+    }
+}
+
+/// Associate surfaces referenced only as PCURVE supports with their STEP
+/// PCURVE records. The canonical pcurve stores its parameter-space geometry
+/// inline, so this source association preserves reachability of the separate
+/// support carrier.
+pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, index: &CarrierIndex) {
+    let owned_pcurves = ir
+        .model
+        .coedges
+        .iter()
+        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.0.as_str()))
+        .chain(ir.model.loops.iter().flat_map(|loop_| {
+            loop_
+                .vertex_uses
+                .iter()
+                .flat_map(|use_| use_.pcurves.iter().map(|pcurve| pcurve.pcurve.0.as_str()))
+        }))
+        .collect::<BTreeSet<_>>();
+    for (pcurve_id, record) in exchange.entities("PCURVE") {
+        let pcurve_identity = format!("step:data:pcurve#{pcurve_id}");
+        if !owned_pcurves.contains(pcurve_identity.as_str()) {
+            continue;
+        }
+        let Some(surface_id) = named_parameter(record, "PCURVE", 1).and_then(Value::reference)
+        else {
+            continue;
+        };
+        let Some(surface_index) = index.surfaces.get(&surface_id).copied() else {
+            continue;
+        };
+        ir.model.surfaces[surface_index]
+            .source_object
+            .get_or_insert_with(|| SourceObjectAssociation {
+                format: "step".into(),
+                object_id: format!("#{pcurve_id}"),
                 name: None,
                 color: None,
                 visible: None,

@@ -114,6 +114,8 @@ fn decode_exchange_mode(
     let topology = topology::decode(exchange, &mut ir, &carrier_index);
     let owned_carriers = geometry::topology_owned_carriers(&ir, &carrier_index);
     geometry::associate_topology_carriers(exchange, &mut ir, &carrier_index, &owned_carriers);
+    geometry::associate_replica_bases(exchange, &mut ir, &carrier_index);
+    geometry::associate_pcurve_supports(exchange, &mut ir, &carrier_index);
     geometry::associate_free_geometric_set_members(
         exchange,
         &mut ir,
