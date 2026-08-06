@@ -1000,6 +1000,17 @@ pub(crate) fn owned_relation_parameters(
             if relation.parameter_scalar_ref.is_some() {
                 continue;
             }
+            let exact_matches = relation
+                .scalar_refs
+                .iter()
+                .filter_map(|scalar| parameters_by_scalar.get(scalar.as_str()).copied())
+                .collect::<Vec<_>>();
+            if let [parameter] = exact_matches.as_slice() {
+                if claimed.insert(parameter.id.clone()) {
+                    owned.insert(relation.id.clone(), Some(parameter.id.clone()));
+                }
+                continue;
+            }
             let Some(parameter) =
                 relation_parameter_by_display_name(relation, lane, features, parameters)
             else {

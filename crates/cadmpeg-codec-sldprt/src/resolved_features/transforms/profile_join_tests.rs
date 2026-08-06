@@ -5368,6 +5368,23 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
             .as_ref(),
         Some(&parameter.id)
     );
+    let mut exact_parameter = parameter.clone();
+    exact_parameter.native_ref = Some("scalar".into());
+    let mut exact_lane = lane.clone();
+    exact_lane.scalars[0].role = FeatureInputScalarRole::Native;
+    exact_lane.relation_instances = vec![FeatureInputRelationInstance {
+        display_scalar_ref: None,
+        ..relation.clone()
+    }];
+    assert_eq!(
+        owned_relation_parameters(
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&exact_parameter),
+            std::slice::from_ref(&exact_lane),
+        )["relation"]
+            .as_ref(),
+        Some(&exact_parameter.id)
+    );
     let driving_relation = FeatureInputRelationInstance {
         id: "driving-relation".into(),
         parameter_scalar_ref: Some("existing-driver".into()),
