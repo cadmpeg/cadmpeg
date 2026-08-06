@@ -36,7 +36,9 @@ use std::sync::Arc;
 
 pub(crate) const MAX_FACE_EQUATION_CACHE_ENTRIES: usize = 4_096;
 pub(crate) const MAX_FACE_ENDPOINT_CONFIGURATION_WORK: usize = 4_096;
-pub(crate) const MAX_MESH_CONSTRAINT_OPERATIONS: usize = 100_000;
+/// Bounds one complete mesh-constraint phase, including exhaustive endpoint
+/// orientation selection. The decode session applies its own global work cap.
+pub(crate) const MAX_MESH_CONSTRAINT_OPERATIONS: usize = 1_000_000;
 pub(crate) type MeshQuotientGaugeState = (MeshQuotient, HashSet<usize>);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -4714,6 +4716,7 @@ pub(crate) struct MeshPartialEndpointConstraint<'a> {
     pub(crate) active_edges: &'a [bool],
     pub(crate) coupled_edges: &'a [bool],
     pub(crate) assignment_predecessors: Option<&'a [Option<usize>]>,
+    pub(crate) assignment_dependencies: Option<&'a [Vec<usize>]>,
     pub(crate) valid: MeshPartialEndpointSolutionFilter<'a>,
 }
 type MeshFaceEndpointConfiguration = Vec<MeshEndpointPair>;
@@ -6005,10 +6008,21 @@ impl MeshSelectionSearch<'_> {
             .then_some(measured)
     }
 
+    #[cfg(test)]
     pub(crate) fn search(&mut self, quotient: &MeshQuotient) {
         self.search_with_limit(quotient, MAX_MESH_CONSTRAINT_OPERATIONS);
     }
 
+    pub(crate) fn search_with_budget(
+        &mut self,
+        quotient: &MeshQuotient,
+        budget: &WorkBudget<'_>,
+        propagation_budget: &WorkBudget<'_>,
+    ) {
+        self.search_from_state(quotient, false, budget, propagation_budget);
+    }
+
+    #[cfg(test)]
     pub(crate) fn search_with_limit(&mut self, quotient: &MeshQuotient, limit: usize) {
         let budget = WorkBudget::new(limit);
         let propagation_budget = WorkBudget::new(limit);
@@ -6679,7 +6693,7 @@ fn resolve_standard_mesh_endpoint_candidates(
         exhausted: false,
         face_equation_cache: RefCell::default(),
     };
-    search.search(&quotient);
+    search.search_with_budget(&quotient, budget, budget);
     if search.exhausted {
         MeshEndpointResolve::Exhausted
     } else if search.ambiguous {
@@ -6699,15 +6713,23 @@ fn resolve_standard_mesh_endpoint_candidates(
 /// `pair_solution_valid` receives partial assignments during search. It must be
 /// monotone: once it rejects a selected subset, assigning more edges cannot
 /// make that subset valid. `partial_constraint_edges` identifies every edge
-/// whose assignment can affect that predicate, allowing constrained variables
-/// to be selected before unrelated incidence variables.
+/// whose assignment can affect that predicate and must be kept in the same
+/// incidence component. `preferred_assignment_edges` identifies additional
+/// variables that should be selected before unrelated incidence variables;
+/// those variables do not require a single incidence component.
 #[must_use]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "The parser receives independent native tables and search constraints; bundling them would hide their cardinality contracts."
+)]
 pub(crate) fn parse_standard_mesh_candidate_outcome<F>(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
     edge_classes: &[usize],
     partial_constraint_edges: &[bool],
+    preferred_assignment_edges: &[bool],
+    assignment_dependencies: Option<&[Vec<usize>]>,
     budget: &WorkBudget<'_>,
     pair_solution_valid: F,
 ) -> MeshCandidateSolve
@@ -6750,6 +6772,14 @@ where
         || edge_rows.len() != edge_candidates.len()
         || edge_rows.len() != edge_classes.len()
         || edge_rows.len() != partial_constraint_edges.len()
+        || edge_rows.len() != preferred_assignment_edges.len()
+        || assignment_dependencies.is_some_and(|dependencies| {
+            dependencies.len() != edge_rows.len()
+                || dependencies
+                    .iter()
+                    .flatten()
+                    .any(|edge| *edge >= edge_rows.len())
+        })
         || edge_candidates
             .iter()
             .flatten()
@@ -6807,8 +6837,9 @@ where
     };
     let constraint_edges = partial_constraint_edges
         .iter()
+        .zip(preferred_assignment_edges)
         .zip(&class_constraint.active)
-        .map(|(explicit, class)| *explicit || *class)
+        .map(|((partial, preferred), class)| *partial || *preferred || *class)
         .collect::<Vec<_>>();
     let mut assignment_predecessors = vec![None; completed_edge_candidates.len()];
     for &(left, right) in &class_constraint.ordered {
@@ -6836,6 +6867,7 @@ where
             active_edges: &constraint_edges,
             coupled_edges: partial_constraint_edges,
             assignment_predecessors: Some(&assignment_predecessors),
+            assignment_dependencies,
             valid: &constrained_pair_solution_valid,
         }),
         Some(budget),
@@ -6955,7 +6987,9 @@ where
 fn mesh_candidate_rejection_retains_the_failed_solver_stage() {
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     assert!(matches!(
-        parse_standard_mesh_candidate_outcome(&[], &[], &[], &[], &[], &budget, |_| true),
+        parse_standard_mesh_candidate_outcome(&[], &[], &[], &[], &[], &[], None, &budget, |_| {
+            true
+        },),
         MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure)
     ));
 }

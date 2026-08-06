@@ -2,9 +2,11 @@
 //!
 //! Recovers unmatched edge-row placements against serialized face coverage.
 
+#[cfg(test)]
+use crate::families::standard::fbb::parse_fbb_edge_tables;
 use crate::families::standard::fbb::{
     boundary_cycles, largest_fbb_run, parse_edge_tables, parse_edge_tables_scoped_at,
-    parse_fbb_edge_tables, parse_trim_chain, parse_vertex_table,
+    parse_trim_chain, parse_vertex_table,
 };
 use crate::families::standard::topology::{incidence_cycles, EdgeRow, TrimRecord};
 #[cfg(test)]
@@ -28,27 +30,6 @@ pub fn standard_edge_rows(bytes: &[u8]) -> Option<Vec<EdgeRow>> {
 
 pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     let (_, _, after_faces) = largest_fbb_run(bytes)?;
-    // The two-table FBB grammar overlaps the generic scoped-table grammar.
-    // Resolve it first because repeated handles within one FBB table are the
-    // serialized endpoint identities; generic rows allocate independent ports.
-    if let Some((edge_rows, scopes, _, _)) = parse_fbb_edge_tables(bytes, after_faces) {
-        let mut identity_by_handle = HashMap::new();
-        return edge_rows
-            .iter()
-            .zip(scopes)
-            .map(|(row, scope)| {
-                let mut pair = [0; 2];
-                for (port, handle) in [*row.handles.first()?, *row.handles.last()?]
-                    .into_iter()
-                    .enumerate()
-                {
-                    let next = u32::try_from(identity_by_handle.len()).ok()?;
-                    pair[port] = *identity_by_handle.entry((scope, handle)).or_insert(next);
-                }
-                Some(pair)
-            })
-            .collect();
-    }
     let (edge_rows, _, _) = parse_edge_tables_scoped_at(bytes, after_faces)?;
     edge_rows
         .iter()
@@ -57,6 +38,28 @@ pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]
             row.handles.first().zip(row.handles.last())?;
             let start = edge.checked_mul(2)?;
             Some([u32::try_from(start).ok()?, u32::try_from(start + 1).ok()?])
+        })
+        .collect()
+}
+
+#[cfg(test)]
+pub(crate) fn fbb_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+    let (_, _, after_faces) = largest_fbb_run(bytes)?;
+    let (edge_rows, scopes, _, _) = parse_fbb_edge_tables(bytes, after_faces)?;
+    let mut identity_by_handle = HashMap::new();
+    edge_rows
+        .iter()
+        .zip(scopes)
+        .map(|(row, scope)| {
+            let mut pair = [0; 2];
+            for (port, handle) in [*row.handles.first()?, *row.handles.last()?]
+                .into_iter()
+                .enumerate()
+            {
+                let next = u32::try_from(identity_by_handle.len()).ok()?;
+                pair[port] = *identity_by_handle.entry((scope, handle)).or_insert(next);
+            }
+            Some(pair)
         })
         .collect()
 }
@@ -230,14 +233,22 @@ fn standard_mesh_analysis(bytes: &[u8]) -> Option<StandardMeshAnalysis> {
     let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
     let mut solutions = Vec::new();
     for width in [1, 2, 3] {
+        // Each width is an independent grammar candidate. A malformed or
+        // ambiguous candidate must not mask a complete candidate at another
+        // width.
         let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
             continue;
         };
-        let cycles = trims
+        let Some(cycles) = trims
             .iter()
             .map(|trim| boundary_cycles(&trim.triangles))
-            .collect::<Option<Vec<_>>>()?;
-        let occurrences = mesh_edge_occurrences(&edge_rows, &cycles)?;
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        let Some(occurrences) = mesh_edge_occurrences(&edge_rows, &cycles) else {
+            continue;
+        };
         solutions.push((cycles, occurrences));
     }
     let [(cycles, occurrences)] = <[_; 1]>::try_from(solutions).ok()?;
@@ -538,7 +549,13 @@ pub(crate) fn resolve_edge_faces_from_runs(
         if faces[0] != faces[1] || occurrences.len() < 2 {
             continue;
         }
-        if occurrences.len() != 2 || !occurrences.contains(&faces[0]) {
+        // Repeated row handles can match more than one face. The occurrence
+        // set is then a domain, not a serialized face assignment; retain the
+        // duplicate slot for native ownership and endpoint closure to resolve.
+        if occurrences.len() > 2 {
+            continue;
+        }
+        if !occurrences.contains(&faces[0]) {
             return None;
         }
         faces[1] = *occurrences.iter().find(|face| **face != faces[0])?;
@@ -2415,19 +2432,24 @@ pub fn propagate_edge_port_points(
         return None;
     }
     let mut resolved = endpoint_pairs.to_vec();
+    let mut edges_by_port = HashMap::<u32, Vec<usize>>::new();
+    for (edge, ports) in edge_ports.iter().enumerate() {
+        edges_by_port.entry(ports[0]).or_default().push(edge);
+        if ports[1] != ports[0] {
+            edges_by_port.entry(ports[1]).or_default().push(edge);
+        }
+    }
     let mut port_points = HashMap::<u32, usize>::new();
 
-    for port in edge_ports.iter().flatten().copied().collect::<HashSet<_>>() {
+    for (&port, edges) in &edges_by_port {
         let mut intersection: Option<HashSet<usize>> = None;
-        for (ports, pair) in edge_ports.iter().zip(&resolved) {
-            let Some(pair) = pair else { continue };
-            if ports.contains(&port) {
-                let points = HashSet::from(*pair);
-                intersection = Some(match intersection {
-                    Some(current) => current.intersection(&points).copied().collect(),
-                    None => points,
-                });
-            }
+        for &edge in edges {
+            let Some(pair) = resolved[edge] else { continue };
+            let points = HashSet::from(pair);
+            intersection = Some(match intersection {
+                Some(current) => current.intersection(&points).copied().collect(),
+                None => points,
+            });
         }
         if let Some(points) = intersection {
             if points.len() == 1 {
@@ -2436,26 +2458,34 @@ pub fn propagate_edge_port_points(
         }
     }
 
-    loop {
-        let before = (port_points.len(), resolved.iter().flatten().count());
-        for (ports, pair) in edge_ports.iter().zip(&resolved) {
-            let Some([left, right]) = *pair else {
-                continue;
-            };
-            match (port_points.get(&ports[0]), port_points.get(&ports[1])) {
-                (Some(&point), None) if point == left => {
+    let mut queue = (0..edge_ports.len()).collect::<std::collections::VecDeque<_>>();
+    let mut queued = vec![true; edge_ports.len()];
+    while let Some(edge) = queue.pop_front() {
+        queued[edge] = false;
+        let ports = edge_ports[edge];
+        let mut inserted = Vec::new();
+        if let Some([left, right]) = resolved[edge] {
+            match (
+                port_points.get(&ports[0]).copied(),
+                port_points.get(&ports[1]).copied(),
+            ) {
+                (Some(point), None) if point == left => {
                     port_points.insert(ports[1], right);
+                    inserted.push(ports[1]);
                 }
-                (Some(&point), None) if point == right => {
+                (Some(point), None) if point == right => {
                     port_points.insert(ports[1], left);
+                    inserted.push(ports[1]);
                 }
-                (None, Some(&point)) if point == left => {
+                (None, Some(point)) if point == left => {
                     port_points.insert(ports[0], right);
+                    inserted.push(ports[0]);
                 }
-                (None, Some(&point)) if point == right => {
+                (None, Some(point)) if point == right => {
                     port_points.insert(ports[0], left);
+                    inserted.push(ports[0]);
                 }
-                (Some(&left_point), Some(&right_point))
+                (Some(left_point), Some(right_point))
                     if !same_unordered_pair([left_point, right_point], [left, right]) =>
                 {
                     return None;
@@ -2463,20 +2493,23 @@ pub fn propagate_edge_port_points(
                 _ => {}
             }
         }
-        for (ports, pair) in edge_ports.iter().zip(&mut resolved) {
-            if let (Some(&left), Some(&right)) =
-                (port_points.get(&ports[0]), port_points.get(&ports[1]))
-            {
-                if ports[0] == ports[1] || left != right {
-                    if pair.is_some_and(|pair| !same_unordered_pair(pair, [left, right])) {
-                        return None;
-                    }
-                    *pair = Some([left, right]);
+        if let (Some(&left), Some(&right)) =
+            (port_points.get(&ports[0]), port_points.get(&ports[1]))
+        {
+            if ports[0] == ports[1] || left != right {
+                if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, [left, right])) {
+                    return None;
                 }
+                resolved[edge] = Some([left, right]);
             }
         }
-        if before == (port_points.len(), resolved.iter().flatten().count()) {
-            break;
+        for port in inserted {
+            for &neighbor in edges_by_port.get(&port)? {
+                if !queued[neighbor] {
+                    queued[neighbor] = true;
+                    queue.push_back(neighbor);
+                }
+            }
         }
     }
     let (resolved_ports, resolved_candidates): (Vec<_>, Vec<_>) = edge_ports

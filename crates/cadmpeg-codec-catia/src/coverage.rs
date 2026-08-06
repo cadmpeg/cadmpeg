@@ -440,10 +440,22 @@ pub(crate) const TRANSFERRED_RELATION_PROGRAM_INPUT_PARAMETER_COUNT: CoverageKey
 pub(crate) const TRANSFERRED_SKETCH_CONSTRAINT_COUNT: CoverageKey =
     CoverageKey("transferred_sketch_constraint_count");
 pub(crate) const TRANSFERRED_SKETCH_COUNT: CoverageKey = CoverageKey("transferred_sketch_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_WIRE_BODY_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_wire_body_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_OWNED_WIRE_BODY_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_owned_wire_body_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_WIRE_EDGE_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_wire_edge_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_WIRE_LOOP_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_wire_loop_count");
 pub(crate) const TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT: CoverageKey =
     CoverageKey("transferred_zero_entity_parametric_surface_curve_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_WIRE_POINT_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_wire_point_count");
 pub(crate) const TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT: CoverageKey =
     CoverageKey("transferred_zero_entity_support_curve_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_WIRE_VERTEX_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_wire_vertex_count");
 pub(crate) const TYPED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT: CoverageKey =
     CoverageKey("typed_object_stream_class_21_pcurve_suffix_scalar_count");
 pub(crate) const TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_21_COUNT: CoverageKey =
@@ -756,8 +768,14 @@ pub(crate) const ALL: &[CoverageKey] = &[
     TRANSFERRED_RELATION_PROGRAM_INPUT_PARAMETER_COUNT,
     TRANSFERRED_SKETCH_CONSTRAINT_COUNT,
     TRANSFERRED_SKETCH_COUNT,
+    TRANSFERRED_ZERO_ENTITY_WIRE_BODY_COUNT,
+    TRANSFERRED_ZERO_ENTITY_OWNED_WIRE_BODY_COUNT,
+    TRANSFERRED_ZERO_ENTITY_WIRE_EDGE_COUNT,
+    TRANSFERRED_ZERO_ENTITY_WIRE_LOOP_COUNT,
     TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT,
+    TRANSFERRED_ZERO_ENTITY_WIRE_POINT_COUNT,
     TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT,
+    TRANSFERRED_ZERO_ENTITY_WIRE_VERTEX_COUNT,
     TYPED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT,
     TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_21_COUNT,
     TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_2A_COUNT,

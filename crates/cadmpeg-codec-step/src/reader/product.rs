@@ -9,10 +9,12 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
+use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 use cadmpeg_ir::transform::Transform;
 
 use crate::parse::{Exchange, RawRecord, Value};
 
+use super::decode_text;
 use super::geometry::GeometryResult;
 use super::topology::TopologyResult;
 
@@ -22,6 +24,7 @@ const MAX_ASSEMBLY_DEPTH: usize = 256;
 pub(super) struct ProductResult {
     pub typed_records: BTreeSet<u64>,
     pub warnings: Vec<String>,
+    pub losses: Vec<LossNote>,
 }
 
 pub(super) fn decode(
@@ -32,6 +35,7 @@ pub(super) fn decode(
 ) -> ProductResult {
     let mut typed = BTreeSet::new();
     let mut warnings = Vec::new();
+    let mut losses = Vec::new();
     let formations = exchange
         .entities_any(&[
             "PRODUCT_DEFINITION_FORMATION",
@@ -67,11 +71,27 @@ pub(super) fn decode(
         }
         let product_id = record
             .parameter(0)
-            .and_then(ValueExt::text)
+            .and_then(|value| {
+                decode_text(
+                    value,
+                    &mut losses,
+                    step_id,
+                    "product identifier",
+                    LossKind::MetadataNotTransferred,
+                )
+            })
             .unwrap_or_else(|| format!("#{step_id}"));
         let name = record
             .parameter(1)
-            .and_then(ValueExt::text)
+            .and_then(|value| {
+                decode_text(
+                    value,
+                    &mut losses,
+                    step_id,
+                    "product name",
+                    LossKind::MetadataNotTransferred,
+                )
+            })
             .filter(|name| !name.is_empty());
         let has_shape_binding = shape_bindings.contains_key(&step_id);
         let mut bodies = shape_bindings.get(&step_id).cloned().unwrap_or_default();
@@ -133,7 +153,15 @@ pub(super) fn decode(
                     child_definition: record.parameter(4)?.reference()?,
                     name: record
                         .parameter(1)
-                        .and_then(ValueExt::text)
+                        .and_then(|value| {
+                            decode_text(
+                                value,
+                                &mut losses,
+                                id,
+                                "assembly occurrence name",
+                                LossKind::MetadataNotTransferred,
+                            )
+                        })
                         .filter(|name| !name.is_empty()),
                 },
             ))
@@ -184,6 +212,7 @@ pub(super) fn decode(
     }
     let placements = occurrence_placements(exchange, geometry, &usages, &mut warnings);
     let mut usage_instances = BTreeMap::<u64, usize>::new();
+    let mut missing_placement_reports = BTreeSet::new();
     let mut child_ordinals = BTreeMap::<OccurrenceId, u32>::new();
     let mut usages_by_parent = BTreeMap::<u64, Vec<u64>>::new();
     for (&usage_id, usage) in &usages {
@@ -234,6 +263,22 @@ pub(super) fn decode(
                 break 'expansion;
             }
             let ordinal = child_ordinals.entry(parent.clone()).or_default();
+            let transform = if let Some(transform) = placements.get(&usage_id).copied() {
+                transform
+            } else {
+                if missing_placement_reports.insert(usage_id) {
+                    losses.push(LossNote {
+                        code: LossKind::AssemblyPlacementsNotTransferred,
+                        severity: Severity::Error,
+                        message: format!(
+                            "NAUO #{usage_id} has no resolved occurrence transform; \
+                             identity placement was used"
+                        ),
+                        provenance: None,
+                    });
+                }
+                Transform::identity()
+            };
             ir.model.occurrences.push(Occurrence {
                 id: id.clone(),
                 prototype: PrototypeReference::Local {
@@ -243,10 +288,7 @@ pub(super) fn decode(
                     occurrence: parent.clone(),
                 },
                 ordinal: *ordinal,
-                transform: placements
-                    .get(&usage_id)
-                    .copied()
-                    .unwrap_or_else(Transform::identity),
+                transform,
                 prototype_transform: Transform::identity(),
                 scale: [1.0; 3],
                 name: usage.name.clone(),
@@ -312,6 +354,7 @@ pub(super) fn decode(
     ProductResult {
         typed_records: typed,
         warnings,
+        losses,
     }
 }
 
@@ -710,7 +753,6 @@ impl RecordExt for RawRecord {
 trait ValueExt {
     fn reference(&self) -> Option<u64>;
     fn list(&self) -> Option<&[Value]>;
-    fn text(&self) -> Option<String>;
 }
 impl ValueExt for Value {
     fn reference(&self) -> Option<u64> {
@@ -723,13 +765,6 @@ impl ValueExt for Value {
     fn list(&self) -> Option<&[Value]> {
         if let Value::List(values) = self {
             Some(values)
-        } else {
-            None
-        }
-    }
-    fn text(&self) -> Option<String> {
-        if let Value::String(bytes) = self {
-            crate::strings::decode(bytes).ok()
         } else {
             None
         }

@@ -139,7 +139,9 @@ current scores require those matrices and representative fixtures.
 - Complete numeric parameters and formula relations transfer when their type,
   owner, evaluation state, expression, and dependency identities resolve
   exactly. Typed unset inputs transfer independently while preventing formula
-  evaluation. Each formula relation retains typed expression and output
+  evaluation; a complete formula still transfers its typed expression and
+  dependencies as an unset result when its output is unset. Each formula
+  relation retains typed expression and output
   incidences with their payload-relative byte offsets, stored identities,
   same-graph entities, and entity classes; the output also retains terminal-null
   state. Coverage distinguishes resolved, terminal-null, unresolved, classified,
@@ -211,7 +213,10 @@ current scores require those matrices and representative fixtures.
   calls, absolute values, and square roots. Typed comparisons, Boolean literals,
   negation, lazy conjunctions and disjunctions, and equal-dimension numeric or
   equal-type nonnumeric lazy ternaries transfer predicate and conditional
-  formulas. String literals, concatenation,
+  formulas. Unset-formula type checking retains unknown scalar, Boolean, and string
+  values, rejects known invalid domains and non-finite constant arithmetic, and
+  preserves runtime lazy-branch semantics.
+  String literals, concatenation,
   occurrence removal, equality, replacement, case conversion, signed-integer
   formatting, Unicode-scalar length and extraction, indexed directional
   search, and finite decimal conversion evaluate with typed results. Length
@@ -248,6 +253,15 @@ current scores require those matrices and representative fixtures.
   source-ordered chains, intervening entities, and complete `Configuration`
   records among those entities. These records do not count as transferred
   neutral configurations.
+- A separator-form owner declaration with the exact class `Sketch` transfers
+  one sketch identity and one unresolved sketch history node. The transfer
+  does not assign placement, geometry, profiles, or constraints. A `PRTSketch`
+  or `Sketch` field class alone does not establish a sketch instance.
+- A transferred typed parameter receives a feature owner only when its exact
+  entity record selects an object record whose complete design-object owner
+  chain resolves to exactly one transferred feature identity. A missing
+  object, non-reflexive cycle, or ambiguous feature identity leaves the
+  parameter at document scope.
 - Design objects consisting entirely of one exact empty principal-plane
   declaration class transfer the corresponding built-in reference-plane
   history node with the design object's first-field byte offset as its source
@@ -343,10 +357,16 @@ current scores require those matrices and representative fixtures.
   only when its unordered endpoint pair selects one candidate; edge reversal
   reverses the active parameter interval. These candidates seed empty endpoint
   domains but do not narrow independently established domains.
-- Same-incidence standard line and spline rows with one shared complete
-  bipartite endpoint relation bind equal vertex-allocation ranks to serialized
-  edge-row ranks. Line and spline rows remain separate curve families;
-  incomplete relations and cardinality mismatches remain unresolved.
+- Same-incidence standard line and spline rows retain a shared complete
+  bipartite endpoint relation until exact trim-cycle and endpoint-port
+  constraints bind the physical rows. Allocation-rank reduction applies only
+  to an otherwise equivalent edge-identity gauge; line and spline rows remain
+  separate curve families, and incomplete relations and cardinality mismatches
+  remain unresolved.
+- Repeated standard edge-row handles that match more than two face occurrences
+  retain a deferred face domain. Native edge ownership and complete endpoint-
+  closed trim assignment must select the repeated incidence before topology
+  transfer.
 - A standard binary32 cylinder, cone, sphere, or torus face carrier is refined
   to its complete consolidated binary64 frame when quantization selects exactly
   one same-family record. One exact carrier may refine repeated face carriers;
@@ -434,6 +454,19 @@ current scores require those matrices and representative fixtures.
   the candidate does not establish curve coincidence or a physical edge. Every
   in-range odd-lane typed reference retains its selected global record identity
   atomically for the loop.
+  A closed loop transfers as an independent wire body when every member has a
+  transferred model-space curve, every member has a lifted model-space endpoint
+  pair, and the oriented endpoint tape closes within the format tolerance. The
+  wire contains one edge per face-local support occurrence and one vertex at
+  each cyclic join. This transfer does not assign source physical-edge
+  identity, radial use, endpoint-incidence identity, or source body and shell
+  ownership when no complete terminal ownership root covers the transferred
+  loops; those native bindings remain unresolved.
+  When a complete terminal ownership root covers the aligned support-run roster,
+  every transferred closed loop shares one derived wire body, region, and shell
+  in the root's face-roster order. This binds the neutral container to the exact
+  source body and shell hierarchy without assigning physical-edge identity,
+  radial use, endpoint-incidence identity, or face topology.
   In the object stream, full-pcurve endpoint loci are geometric fallback
   candidates only. Conflicting candidates for one edge are discarded locally;
   they do not discard other pcurve records or override the edge's serialized

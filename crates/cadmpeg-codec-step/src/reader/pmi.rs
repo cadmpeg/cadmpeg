@@ -9,56 +9,88 @@ use cadmpeg_ir::pmi::{
     DatumReference, DimensionKind, GeometricToleranceKind, LimitsAndFits, PmiAnnotation,
     PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
 };
+use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 use cadmpeg_ir::transform::Transform;
 
 use crate::parse::{Exchange, RawRecord, Value};
 
+use super::decode_text;
 use super::geometry::GeometryResult;
 
 pub(super) struct PmiResult {
     pub typed_records: BTreeSet<u64>,
     pub warnings: Vec<String>,
+    pub losses: Vec<LossNote>,
+}
+
+struct MeasureContext<'a> {
+    length_scale: f64,
+    angle_scale: f64,
+    losses: &'a mut Vec<LossNote>,
 }
 
 pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut CadIr) -> PmiResult {
+    if !exchange.has_entity_matching(is_pmi_entity_name) {
+        return PmiResult {
+            typed_records: BTreeSet::new(),
+            warnings: Vec::new(),
+            losses: Vec::new(),
+        };
+    }
     let aspects = exchange
-        .records
-        .iter()
+        .entities_any(&["SHAPE_ASPECT", "DATUM_FEATURE", "DATUM"])
         .filter(|(_, record)| is_shape_aspect(record))
-        .map(|(&id, _)| id)
+        .map(|(id, _)| id)
         .collect::<BTreeSet<_>>();
     let mut typed = BTreeSet::new();
     let mut warnings = Vec::new();
+    let mut losses = Vec::new();
     let mut annotations = BTreeMap::<u64, usize>::new();
 
     let mut presentation_semantics = BTreeMap::<u64, Vec<u64>>::new();
-    let characteristic_values =
-        characteristic_values(exchange, geometry.length_scale, geometry.plane_angle_scale);
-    for (&id, record) in &exchange.records {
-        if record.simple_name() != Some("DATUM") {
-            continue;
-        }
+    let characteristic_values = {
+        let mut measurements = MeasureContext {
+            length_scale: geometry.length_scale,
+            angle_scale: geometry.plane_angle_scale,
+            losses: &mut losses,
+        };
+        characteristic_values(exchange, &mut measurements)
+    };
+    for (id, record) in exchange.entities("DATUM") {
         let identification = record
             .parameters()
             .iter()
             .rev()
-            .find_map(ValueExt::text)
+            .find_map(|value| {
+                decode_text(
+                    value,
+                    &mut losses,
+                    id,
+                    "datum identification",
+                    LossKind::MetadataNotTransferred,
+                )
+            })
             .unwrap_or_else(|| format!("#{id}"));
         push_annotation(
             ir,
             &mut annotations,
             id,
-            record.parameter(0).and_then(ValueExt::text),
+            record.parameter(0).and_then(|value| {
+                decode_text(
+                    value,
+                    &mut losses,
+                    id,
+                    "datum name",
+                    LossKind::MetadataNotTransferred,
+                )
+            }),
             targets([id]),
             PmiDefinition::Datum { identification },
         );
         typed.insert(id);
     }
 
-    for (&id, record) in &exchange.records {
-        if record.simple_name() != Some("DATUM_SYSTEM") {
-            continue;
-        }
+    for (id, record) in exchange.entities("DATUM_SYSTEM") {
         let constituents = record
             .parameters()
             .iter()
@@ -66,6 +98,11 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             .find_map(ValueExt::list)
             .unwrap_or_default();
         let mut datum_records = BTreeSet::new();
+        let mut measurements = MeasureContext {
+            length_scale: geometry.length_scale,
+            angle_scale: geometry.plane_angle_scale,
+            losses: &mut losses,
+        };
         let datum_references = constituents
             .iter()
             .enumerate()
@@ -77,8 +114,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                     exchange,
                     &annotations,
                     &mut datum_records,
-                    geometry.length_scale,
-                    geometry.plane_angle_scale,
+                    &mut measurements,
                 ))
             })
             .flatten()
@@ -87,7 +123,15 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             ir,
             &mut annotations,
             id,
-            record.parameter(0).and_then(ValueExt::text),
+            record.parameter(0).and_then(|value| {
+                decode_text(
+                    value,
+                    &mut losses,
+                    id,
+                    "datum system name",
+                    LossKind::MetadataNotTransferred,
+                )
+            }),
             targets(
                 record
                     .parameters()
@@ -103,17 +147,36 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         typed.extend(datum_records);
     }
 
-    for (&id, record) in &exchange.records {
+    for id in exchange.matching_entity_ids(|name| dimension_kind(Some(name)).is_some()) {
+        let Some(record) = exchange.records.get(&id) else {
+            continue;
+        };
         let Some(mut kind) = dimension_kind(record.simple_name()) else {
             continue;
         };
-        let name = record.parameters().iter().find_map(ValueExt::text);
+        let name = record.parameters().iter().find_map(|value| {
+            decode_text(
+                value,
+                &mut losses,
+                id,
+                "dimension name",
+                LossKind::MetadataNotTransferred,
+            )
+        });
         if matches!(kind, DimensionKind::Size) {
             let category = if record
                 .simple_name()
                 .is_some_and(|name| name.starts_with("DIMENSIONAL_SIZE_WITH_DATUM_FEATURE"))
             {
-                record.parameters().iter().rev().find_map(ValueExt::text)
+                record.parameters().iter().rev().find_map(|value| {
+                    decode_text(
+                        value,
+                        &mut losses,
+                        id,
+                        "dimension category",
+                        LossKind::MetadataNotTransferred,
+                    )
+                })
             } else {
                 name.clone()
             };
@@ -149,10 +212,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         typed.insert(id);
     }
 
-    for (&id, record) in &exchange.records {
-        if record.simple_name() != Some("PLUS_MINUS_TOLERANCE") {
-            continue;
-        }
+    for (id, record) in exchange.entities("PLUS_MINUS_TOLERANCE") {
         let refs = record
             .parameters()
             .iter()
@@ -175,41 +235,70 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                     LimitsAndFits {
                         form_variance: record
                             .parameter(0)
-                            .and_then(ValueExt::text)
+                            .and_then(|value| {
+                                decode_text(
+                                    value,
+                                    &mut losses,
+                                    *reference,
+                                    "limits-and-fits form variance",
+                                    LossKind::MetadataNotTransferred,
+                                )
+                            })
                             .unwrap_or_default(),
                         zone_variance: record
                             .parameter(1)
-                            .and_then(ValueExt::text)
+                            .and_then(|value| {
+                                decode_text(
+                                    value,
+                                    &mut losses,
+                                    *reference,
+                                    "limits-and-fits zone variance",
+                                    LossKind::MetadataNotTransferred,
+                                )
+                            })
                             .unwrap_or_default(),
                         grade: record
                             .parameter(2)
-                            .and_then(ValueExt::text)
+                            .and_then(|value| {
+                                decode_text(
+                                    value,
+                                    &mut losses,
+                                    *reference,
+                                    "limits-and-fits grade",
+                                    LossKind::MetadataNotTransferred,
+                                )
+                            })
                             .unwrap_or_default(),
                         source: record
                             .parameter(3)
-                            .and_then(ValueExt::text)
+                            .and_then(|value| {
+                                decode_text(
+                                    value,
+                                    &mut losses,
+                                    *reference,
+                                    "limits-and-fits source",
+                                    LossKind::MetadataNotTransferred,
+                                )
+                            })
                             .unwrap_or_default(),
                     },
                 )
             })
         });
         if let (Some(index), Some(limits)) = (dimension, limits) {
-            let lower = limits.parameters().first().and_then(|value| {
-                measure(
-                    value,
-                    exchange,
-                    geometry.length_scale,
-                    geometry.plane_angle_scale,
-                )
-            });
-            let upper = limits.parameters().get(1).and_then(|value| {
-                measure(
-                    value,
-                    exchange,
-                    geometry.length_scale,
-                    geometry.plane_angle_scale,
-                )
-            });
+            let mut measurements = MeasureContext {
+                length_scale: geometry.length_scale,
+                angle_scale: geometry.plane_angle_scale,
+                losses: &mut losses,
+            };
+            let lower = limits
+                .parameters()
+                .first()
+                .and_then(|value| measure(value, exchange, &mut measurements));
+            let upper = limits
+                .parameters()
+                .get(1)
+                .and_then(|value| measure(value, exchange, &mut measurements));
             if let PmiDefinition::Dimension {
                 lower_deviation,
                 upper_deviation,
@@ -236,7 +325,10 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         }
     }
 
-    for (&id, record) in &exchange.records {
+    for id in exchange.matching_entity_ids(|name| tolerance_kind(Some(name)).is_some()) {
+        let Some(record) = exchange.records.get(&id) else {
+            continue;
+        };
         let Some(tolerance) = record
             .partials
             .iter()
@@ -249,14 +341,15 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             .iter()
             .flat_map(references)
             .collect::<Vec<_>>();
-        let magnitude = record.parameters().iter().find_map(|value| {
-            measure(
-                value,
-                exchange,
-                geometry.length_scale,
-                geometry.plane_angle_scale,
-            )
-        });
+        let mut measurements = MeasureContext {
+            length_scale: geometry.length_scale,
+            angle_scale: geometry.plane_angle_scale,
+            losses: &mut losses,
+        };
+        let magnitude = record
+            .parameters()
+            .iter()
+            .find_map(|value| measure(value, exchange, &mut measurements));
         let Some(magnitude) = magnitude else {
             warnings.push(format!(
                 "{} #{id} has no numeric magnitude",
@@ -284,7 +377,15 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             ir,
             &mut annotations,
             id,
-            record.parameter(0).and_then(ValueExt::text),
+            record.parameter(0).and_then(|value| {
+                decode_text(
+                    value,
+                    &mut losses,
+                    id,
+                    "geometric tolerance name",
+                    LossKind::MetadataNotTransferred,
+                )
+            }),
             targets(refs.iter().copied().filter(|id| aspects.contains(id))),
             PmiDefinition::GeometricTolerance {
                 tolerance,
@@ -303,10 +404,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         }));
     }
 
-    for (&id, record) in &exchange.records {
-        if record.simple_name() != Some("DRAUGHTING_MODEL_ITEM_ASSOCIATION") {
-            continue;
-        }
+    for (id, record) in exchange.entities("DRAUGHTING_MODEL_ITEM_ASSOCIATION") {
         let Some(definition) = record.parameter(2).and_then(ValueExt::reference) else {
             continue;
         };
@@ -321,7 +419,10 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         }
     }
 
-    for (&id, record) in &exchange.records {
+    for id in exchange.matching_entity_ids(is_presentation_annotation) {
+        let Some(record) = exchange.records.get(&id) else {
+            continue;
+        };
         let Some(name) = record.simple_name() else {
             continue;
         };
@@ -329,7 +430,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             continue;
         }
         let mut text_records = BTreeSet::new();
-        let text = find_annotation_text(id, exchange, &mut text_records, 0);
+        let text = find_annotation_text(id, exchange, &mut text_records, &mut losses, 0);
         let mut placement_records = BTreeSet::new();
         let placement = record
             .parameters()
@@ -357,7 +458,15 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             ir,
             &mut annotations,
             id,
-            record.parameter(0).and_then(ValueExt::text),
+            record.parameter(0).and_then(|value| {
+                decode_text(
+                    value,
+                    &mut losses,
+                    id,
+                    "presentation annotation name",
+                    LossKind::MetadataNotTransferred,
+                )
+            }),
             Vec::new(),
             PmiDefinition::Presentation {
                 text,
@@ -369,13 +478,10 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         typed.extend(text_records);
         typed.extend(placement_records);
     }
-    for (&id, record) in &exchange.records {
-        if matches!(
-            record.simple_name(),
-            Some("DRAUGHTING_MODEL" | "ANNOTATION_PLANE" | "DRAUGHTING_CALLOUT")
-        ) {
-            typed.insert(id);
-        }
+    for (id, _) in
+        exchange.entities_any(&["DRAUGHTING_MODEL", "ANNOTATION_PLANE", "DRAUGHTING_CALLOUT"])
+    {
+        typed.insert(id);
     }
 
     let targeted_aspects = ir
@@ -393,6 +499,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
     PmiResult {
         typed_records: typed,
         warnings,
+        losses,
     }
 }
 
@@ -401,10 +508,7 @@ fn mark_characteristic_representations(
     annotations: &BTreeMap<u64, usize>,
     typed: &mut BTreeSet<u64>,
 ) {
-    for (&id, record) in &exchange.records {
-        if record.simple_name() != Some("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
-            continue;
-        }
+    for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
         let record_references = record
             .parameters()
             .iter()
@@ -454,8 +558,7 @@ fn datum_references(
     exchange: &Exchange,
     annotations: &BTreeMap<u64, usize>,
     typed: &mut BTreeSet<u64>,
-    length_scale: f64,
-    angle_scale: f64,
+    measurements: &mut MeasureContext<'_>,
 ) -> Vec<DatumReference> {
     let Some(compartment_id) = value.reference() else {
         return Vec::new();
@@ -475,7 +578,7 @@ fn datum_references(
         .and_then(ValueExt::list)
         .into_iter()
         .flatten()
-        .filter_map(|modifier| modifier_text(modifier, exchange, typed, length_scale, angle_scale))
+        .filter_map(|modifier| modifier_text(modifier, exchange, typed, measurements))
         .collect::<Vec<_>>();
     let base = compartment.parameter(4);
     if is_common_datum_list(base) {
@@ -508,7 +611,7 @@ fn datum_references(
                         .into_iter()
                         .flatten()
                         .filter_map(|modifier| {
-                            modifier_text(modifier, exchange, typed, length_scale, angle_scale)
+                            modifier_text(modifier, exchange, typed, measurements)
                         }),
                 );
                 typed.extend([element_id, datum]);
@@ -555,12 +658,11 @@ fn modifier_text(
     value: &Value,
     exchange: &Exchange,
     typed: &mut BTreeSet<u64>,
-    length_scale: f64,
-    angle_scale: f64,
+    measurements: &mut MeasureContext<'_>,
 ) -> Option<String> {
     match value {
         Value::Enumeration(value) => Some(value.to_ascii_lowercase()),
-        Value::Typed(_, value) => modifier_text(value, exchange, typed, length_scale, angle_scale),
+        Value::Typed(_, value) => modifier_text(value, exchange, typed, measurements),
         Value::Reference(id) => {
             let record = exchange.records.get(id)?;
             if record.simple_name() != Some("DATUM_REFERENCE_MODIFIER_WITH_VALUE") {
@@ -569,13 +671,7 @@ fn modifier_text(
             typed.insert(*id);
             let kind = record.parameter(0)?.enumeration()?.to_ascii_lowercase();
             let measure_id = record.parameter(1)?.reference()?;
-            let value = measure(
-                &Value::Reference(measure_id),
-                exchange,
-                length_scale,
-                angle_scale,
-            )?
-            .value;
+            let value = measure(&Value::Reference(measure_id), exchange, measurements)?.value;
             typed.insert(measure_id);
             Some(format!("{kind}:{value}"))
         }
@@ -598,6 +694,7 @@ fn find_annotation_text(
     id: u64,
     exchange: &Exchange,
     visited: &mut BTreeSet<u64>,
+    losses: &mut Vec<LossNote>,
     depth: usize,
 ) -> Option<String> {
     if depth >= 256 || !visited.insert(id) {
@@ -608,13 +705,21 @@ fn find_annotation_text(
         record.simple_name(),
         Some("TEXT_LITERAL" | "TEXT_LITERAL_WITH_ASSOCIATED_CURVES")
     ) {
-        return record.parameter(0).and_then(ValueExt::text);
+        return record.parameter(0).and_then(|value| {
+            decode_text(
+                value,
+                losses,
+                id,
+                "PMI annotation text",
+                LossKind::MetadataNotTransferred,
+            )
+        });
     }
     record
         .parameters()
         .iter()
         .flat_map(references)
-        .find_map(|reference| find_annotation_text(reference, exchange, visited, depth + 1))
+        .find_map(|reference| find_annotation_text(reference, exchange, visited, losses, depth + 1))
 }
 
 fn find_placement(
@@ -683,6 +788,24 @@ fn pmi_id(id: u64) -> PmiId {
     PmiId(format!("step:presentation:pmi#{id}"))
 }
 
+fn is_pmi_entity_name(name: &str) -> bool {
+    matches!(
+        name,
+        "SHAPE_ASPECT"
+            | "DATUM_FEATURE"
+            | "DATUM"
+            | "DATUM_SYSTEM"
+            | "PLUS_MINUS_TOLERANCE"
+            | "DRAUGHTING_MODEL_ITEM_ASSOCIATION"
+            | "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION"
+            | "DRAUGHTING_MODEL"
+            | "ANNOTATION_PLANE"
+            | "DRAUGHTING_CALLOUT"
+    ) || dimension_kind(Some(name)).is_some()
+        || tolerance_kind(Some(name)).is_some()
+        || is_presentation_annotation(name)
+}
+
 fn is_shape_aspect(record: &RawRecord) -> bool {
     matches!(
         record.simple_name(),
@@ -741,15 +864,10 @@ fn tolerance_kind(name: Option<&str>) -> Option<GeometricToleranceKind> {
 
 fn characteristic_values(
     exchange: &Exchange,
-    length_scale: f64,
-    angle_scale: f64,
+    measurements: &mut MeasureContext<'_>,
 ) -> BTreeMap<u64, Vec<PmiValue>> {
     let mut result = BTreeMap::<u64, Vec<PmiValue>>::new();
-    for record in exchange
-        .records
-        .values()
-        .filter(|record| record.simple_name() == Some("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION"))
-    {
+    for (_, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
         let Some(characteristic) = record.parameters().iter().flat_map(references).find(|id| {
             exchange
                 .records
@@ -762,7 +880,7 @@ fn characteristic_values(
             record
                 .parameters()
                 .iter()
-                .filter_map(|value| measure(value, exchange, length_scale, angle_scale)),
+                .filter_map(|value| measure(value, exchange, measurements)),
         );
     }
     result
@@ -771,26 +889,17 @@ fn characteristic_values(
 fn measure(
     value: &Value,
     exchange: &Exchange,
-    length_scale: f64,
-    angle_scale: f64,
+    measurements: &mut MeasureContext<'_>,
 ) -> Option<PmiValue> {
-    measure_inner(
-        value,
-        exchange,
-        length_scale,
-        angle_scale,
-        &mut BTreeSet::new(),
-        0,
-    )
+    measure_inner(value, exchange, &mut BTreeSet::new(), 0, measurements)
 }
 
 fn measure_inner(
     value: &Value,
     exchange: &Exchange,
-    length_scale: f64,
-    angle_scale: f64,
     active: &mut BTreeSet<u64>,
     depth: usize,
+    measurements: &mut MeasureContext<'_>,
 ) -> Option<PmiValue> {
     if depth >= super::MAX_RECORD_GRAPH_DEPTH {
         return None;
@@ -806,9 +915,9 @@ fn measure_inner(
         }),
         Value::Typed(name, value) => value.number().map(|number| PmiValue {
             value: if name.contains("LENGTH") {
-                number * length_scale
+                number * measurements.length_scale
             } else if name.contains("ANGLE") {
-                number * angle_scale
+                number * measurements.angle_scale
             } else {
                 number
             },
@@ -853,15 +962,35 @@ fn measure_inner(
                 });
             let scale = match quantity {
                 PmiQuantity::Length => unit
-                    .and_then(|unit| {
-                        super::geometry::unit_scale_mm(unit, exchange, &mut BTreeSet::new())
-                    })
-                    .unwrap_or(length_scale),
+                .and_then(|unit| {
+                    super::geometry::unit_scale_mm(unit, exchange, &mut BTreeSet::new())
+                })
+                    .unwrap_or_else(|| {
+                        measurements.losses.push(LossNote {
+                            code: LossKind::GeometryNotTransferred,
+                            severity: Severity::Error,
+                            message: format!(
+                                "PMI length measure #{id} unit scale did not resolve; the document length scale was used"
+                            ),
+                            provenance: None,
+                        });
+                        measurements.length_scale
+                    }),
                 PmiQuantity::Angle => unit
                     .and_then(|unit| {
-                        super::geometry::unit_scale_radians(unit, exchange, &mut BTreeSet::new())
-                    })
-                    .unwrap_or(angle_scale),
+                    super::geometry::unit_scale_radians(unit, exchange, &mut BTreeSet::new())
+                })
+                    .unwrap_or_else(|| {
+                        measurements.losses.push(LossNote {
+                            code: LossKind::GeometryNotTransferred,
+                            severity: Severity::Error,
+                            message: format!(
+                                "PMI angle measure #{id} unit scale did not resolve; the document plane-angle scale was used"
+                            ),
+                            provenance: None,
+                        });
+                        measurements.angle_scale
+                    }),
                 PmiQuantity::Ratio => 1.0,
             };
             let result = record
@@ -875,28 +1004,14 @@ fn measure_inner(
                             quantity,
                         })
                         .or_else(|| {
-                            measure_inner(
-                                parameter,
-                                exchange,
-                                length_scale,
-                                angle_scale,
-                                active,
-                                depth + 1,
-                            )
+                            measure_inner(parameter, exchange, active, depth + 1, measurements)
                         })
                 });
             result
         }
-        Value::List(values) => values.iter().find_map(|value| {
-            measure_inner(
-                value,
-                exchange,
-                length_scale,
-                angle_scale,
-                active,
-                depth + 1,
-            )
-        }),
+        Value::List(values) => values
+            .iter()
+            .find_map(|value| measure_inner(value, exchange, active, depth + 1, measurements)),
         _ => None,
     }
 }
@@ -967,7 +1082,6 @@ impl RecordExt for RawRecord {
 }
 
 trait ValueExt {
-    fn text(&self) -> Option<String>;
     fn number(&self) -> Option<f64>;
     fn reference(&self) -> Option<u64>;
     fn list(&self) -> Option<&[Value]>;
@@ -975,13 +1089,6 @@ trait ValueExt {
 }
 
 impl ValueExt for Value {
-    fn text(&self) -> Option<String> {
-        if let Value::String(bytes) = self {
-            crate::strings::decode(bytes).ok()
-        } else {
-            None
-        }
-    }
     fn number(&self) -> Option<f64> {
         match self {
             Value::Integer(value) => Some(*value as f64),

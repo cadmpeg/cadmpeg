@@ -438,7 +438,13 @@ pub(crate) fn fit_e5_plane_axes(
         .map(|(uv, _)| normalized_uv(*uv)[1].powi(2))
         .sum::<f64>();
     let determinant = suu * svv - suv * suv;
-    if !determinant.is_finite() || determinant == 0.0 {
+    let covariance_scale = suu.max(svv);
+    let rank_tolerance = f64::EPSILON * covariance_scale * covariance_scale;
+    if !determinant.is_finite()
+        || !covariance_scale.is_finite()
+        || covariance_scale == 0.0
+        || determinant <= rank_tolerance
+    {
         return None;
     }
     let mut u = [0.0; 3];
@@ -2572,6 +2578,22 @@ mod route_tests {
             assert!((v_axis.x - 1.0).abs() < 1e-12);
             assert!((u_axis.z - 1.0).abs() < 1e-12);
         }
+    }
+
+    #[test]
+    fn plane_axis_fit_rejects_numerically_rank_one_uv_data() {
+        let tiny = 1e-15;
+        let pairs = [
+            ([tiny, -20.0], Point3::new(-20.0, 0.0, 0.0)),
+            ([tiny, 20.0], Point3::new(20.0, 0.0, 0.0)),
+            ([-tiny, -7.5], Point3::new(-7.5, 0.0, 0.0)),
+            ([tiny, 7.5], Point3::new(7.5, 0.0, 0.0)),
+        ];
+        assert!(fit_e5_plane_axes([0.0; 3], &pairs).is_none());
+        let (_, _, residual) =
+            fit_rank_one_e5_plane_axes([0.0; 3], &pairs, Vector3::new(0.0, 1.0, 0.0))
+                .expect("rank-one frame");
+        assert!(residual < 1e-12);
     }
 
     #[test]

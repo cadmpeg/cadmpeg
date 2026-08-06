@@ -452,7 +452,7 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
                     edge_pcurve_parameters(graph, edge_id, pcurve_id).and_then(|parameters| {
                         oriented_nurbs_range(geometry.clone(), parameters, edge_start, edge_end)
                     })
-                } else if matches!(surface, B5Surface::Nurbs(_)) {
+                } else if matches!(surface, B5Surface::Nurbs(_) | B5Surface::Revolution { .. }) {
                     edge_pcurve_parameters(graph, edge_id, pcurve_id)
                         .and_then(|parameters| isocurve_endpoint_parameters(pcurve, parameters))
                         .and_then(|parameters| {
@@ -621,6 +621,51 @@ pub(crate) fn resolved_surface_geometry(
     (!matches!(geometry, SurfaceGeometry::Unknown { .. })).then_some(geometry)
 }
 
+/// Exact neutral geometry and construction of a surface-of-revolution carrier.
+#[derive(Clone, PartialEq)]
+pub(crate) struct ResolvedRevolutionSurface {
+    /// Exact NURBS cache of the revolution result.
+    pub(crate) geometry: SurfaceGeometry,
+    /// Exact profile curve used as the revolution directrix.
+    pub(crate) directrix: NurbsCurve,
+    /// Point on the revolution axis.
+    pub(crate) axis_origin: Point3,
+    /// Unit revolution-axis direction.
+    pub(crate) axis_direction: Vector3,
+    /// Angular interval in radians.
+    pub(crate) angular_interval: [f64; 2],
+    /// Native profile parameter interval.
+    pub(crate) parameter_interval: [f64; 2],
+}
+
+/// Resolve a surface-of-revolution carrier while retaining its exact
+/// procedural construction alongside the cache geometry.
+pub(crate) fn resolved_revolution_surface(
+    graph: &B5Graph,
+    surface_id: u32,
+) -> Option<ResolvedRevolutionSurface> {
+    let surface = graph.surfaces.get(&surface_id)?;
+    let payload = UnknownId("catia:payload:unknown#b5-surface".to_string());
+    let SurfacePlan {
+        geometry,
+        procedure,
+    } = surfaces::neutral_surface(surface, graph, surface_id, &payload);
+    let SurfaceProcedure::Revolution(plan) = procedure? else {
+        return None;
+    };
+    if !matches!(&geometry, SurfaceGeometry::Nurbs(_)) {
+        return None;
+    }
+    Some(ResolvedRevolutionSurface {
+        geometry,
+        directrix: plan.directrix,
+        axis_origin: plan.axis_origin,
+        axis_direction: plan.axis_direction,
+        angular_interval: plan.angular_interval,
+        parameter_interval: plan.parameter_interval,
+    })
+}
+
 #[derive(Clone, PartialEq)]
 /// One object-stream pcurve lowered with its exact resolved support carrier.
 pub(crate) struct ResolvedObjectStreamPcurve {
@@ -664,13 +709,28 @@ pub(crate) fn resolved_surface_carrier(surface: &B5Surface) -> Option<ResolvedPc
         })
 }
 
+/// Resolve a pcurve support carrier with the graph context required by exact
+/// constructed surfaces such as surface-of-revolution records.
+pub(crate) fn resolved_surface_carrier_in_graph(
+    graph: &B5Graph,
+    surface_object_id: u32,
+) -> Option<ResolvedPcurveSurface> {
+    let surface = graph.surfaces.get(&surface_object_id)?;
+    resolved_surface_carrier(surface).or_else(|| {
+        resolved_surface_geometry(graph, surface_object_id).map(ResolvedPcurveSurface::Geometry)
+    })
+}
+
 /// Lower one decoded degree-5 UV jet through its resolved native chart.
 #[must_use]
 pub(crate) fn resolved_object_stream_pcurve(
     pcurve: &crate::families::a5a8::records::A8Pcurve,
     surface: &B5Surface,
+    graph: Option<&B5Graph>,
 ) -> Option<ResolvedObjectStreamPcurve> {
-    let carrier = resolved_surface_carrier(surface)?;
+    let carrier = graph
+        .and_then(|graph| resolved_surface_carrier_in_graph(graph, pcurve.support_id))
+        .or_else(|| resolved_surface_carrier(surface))?;
     let (knots, control_points) = crate::nurbs::quintic_jet_bspline(
         pcurve.degree,
         &pcurve.knots,
@@ -1103,7 +1163,8 @@ mod tests {
     use super::vertices::transfer_vertex_tolerances;
     use super::{
         build_plan, curve_on_parameter_range, native_pcurve_parameter_range,
-        referenced_surface_ids, transfer, CurvePlan, SurfacePlan,
+        referenced_surface_ids, resolved_surface_carrier_in_graph, transfer, CurvePlan,
+        ResolvedPcurveSurface, SurfacePlan,
     };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::surface_point;
@@ -2167,6 +2228,110 @@ mod tests {
             [[-0.5, 1.0], [0.0, std::f64::consts::PI]],
         )
         .is_none());
+    }
+
+    #[test]
+    fn revolution_isocurve_keeps_its_native_trim_range() {
+        let angular_range = [0.0, std::f64::consts::TAU];
+        let graph = B5Graph {
+            complete: true,
+            faces: vec![B5Face {
+                object_id: 1,
+                surface: 10,
+                loops: vec![2],
+                terminal_control: None,
+            }],
+            face_records: BTreeMap::new(),
+            loops: BTreeMap::from([(
+                2,
+                B5Loop {
+                    object_id: 2,
+                    pcurves: vec![20],
+                    edges: vec![30],
+                    metadata: test_loop_metadata(1),
+                    surface: 10,
+                },
+            )]),
+            pcurves: BTreeMap::from([(
+                20,
+                B5Pcurve {
+                    object_id: 20,
+                    surface: 10,
+                    degree: 1,
+                    distinct_knots: angular_range.into_iter().collect(),
+                    multiplicities: vec![2, 2],
+                    control_points: vec![[0.5, angular_range[0]], [0.5, angular_range[1]]],
+                    weights: None,
+                    parameter_range: None,
+                    class_21_suffix_scalar: None,
+                    lifted_endpoints: None,
+                },
+            )]),
+            opaque_pcurves: BTreeMap::new(),
+            implicit_pcurves: BTreeMap::new(),
+            surfaces: BTreeMap::from([(
+                10,
+                B5Surface::Revolution {
+                    profile_curve: 110,
+                    axis_origin: [0.0, 0.0, 0.0],
+                    reference_x: [1.0, 0.0, 0.0],
+                    reference_y: [0.0, 1.0, 0.0],
+                    axis_direction: [0.0, 0.0, 1.0],
+                    profile_range: [-1.0, 1.0],
+                    angular_range,
+                    angular_scale: 1.0,
+                },
+            )]),
+            surface_aliases: BTreeMap::new(),
+            offset_surfaces: BTreeMap::new(),
+            extrusion_surfaces: BTreeMap::new(),
+            supported_surfaces: BTreeMap::new(),
+            parameter_incidences: BTreeMap::from([
+                (
+                    40,
+                    B5ParameterIncidence {
+                        object_id: 40,
+                        curves: vec![20],
+                        parameters: vec![angular_range[0]],
+                        controls: vec![0],
+                    },
+                ),
+                (
+                    41,
+                    B5ParameterIncidence {
+                        object_id: 41,
+                        curves: vec![20],
+                        parameters: vec![angular_range[1]],
+                        controls: vec![0],
+                    },
+                ),
+            ]),
+            edges: BTreeMap::new(),
+            vertex_incidence_links: BTreeMap::new(),
+            vertex_points: Vec::new(),
+            logical_vertex_points: vec![[2.0, 0.0, 0.5]],
+            logical_vertex_refs: vec![50],
+            edge_vertices: BTreeMap::from([(30, [0, 0])]),
+            edge_parameter_incidences: BTreeMap::from([(30, [40, 41])]),
+            vertex_tolerances: BTreeMap::new(),
+            profiles: BTreeMap::from([(
+                110,
+                B5Profile::Line {
+                    point: [2.0, 0.0, 0.0],
+                    direction: [0.0, 0.0, 1.0],
+                    parameter_range: [-1.0, 1.0],
+                },
+            )]),
+        };
+        assert!(matches!(
+            resolved_surface_carrier_in_graph(&graph, 10),
+            Some(ResolvedPcurveSurface::Geometry(SurfaceGeometry::Nurbs(_)))
+        ));
+        let plan = build_plan(&graph, &UnknownId("catia:test-payload".to_string()))
+            .expect("closed revolution graph");
+        let curve = plan.edge_curve_plan.get(&30).expect("revolution isocurve");
+        assert_eq!(curve.parameter_range, Some(angular_range));
+        assert!(matches!(curve.geometry, CurveGeometry::Nurbs(_)));
     }
 
     #[test]

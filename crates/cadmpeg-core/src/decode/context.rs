@@ -2,6 +2,7 @@
 //! Decode state, decompression limits, and session lifecycle.
 
 use std::cell::Cell;
+use std::io::SeekFrom;
 
 use crate::{CodecError, ReadSeek};
 
@@ -41,23 +42,50 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<(Self, View<'a>), CodecError> {
         let max = policy.limits.max_input_bytes;
         let cap = max.saturating_add(1);
-        let mut buffer: Vec<u8> = Vec::new();
-        let mut chunk = [0u8; 8192];
-        loop {
-            let remaining = cap.saturating_sub(buffer.len() as u64);
-            if remaining == 0 {
-                break;
-            }
-            let want = usize::try_from(remaining.min(chunk.len() as u64)).unwrap_or(chunk.len());
-            let read = reader.read(&mut chunk[..want]).map_err(CodecError::Io)?;
-            if read == 0 {
-                break;
+        let buffer = if let Ok(size) = reader
+            .seek(SeekFrom::End(0))
+            .and_then(|size| reader.rewind().map(|()| size))
+        {
+            let reserve = size.min(cap);
+            let reserve = usize::try_from(reserve)
+                .map_err(|_| root_error(ResourceFailure::AllocationFailed, max, reserve))?;
+            let mut buffer = Vec::new();
+            buffer
+                .try_reserve(reserve)
+                .map_err(|_| root_error(ResourceFailure::AllocationFailed, max, reserve as u64))?;
+            let mut chunk = vec![0u8; 256 * 1024].into_boxed_slice();
+            while (buffer.len() as u64) < cap {
+                let remaining = cap.saturating_sub(buffer.len() as u64);
+                let want =
+                    usize::try_from(remaining.min(chunk.len() as u64)).unwrap_or(chunk.len());
+                let read = reader.read(&mut chunk[..want]).map_err(CodecError::Io)?;
+                if read == 0 {
+                    break;
+                }
+                buffer.extend_from_slice(&chunk[..read]);
             }
             buffer
-                .try_reserve(read)
-                .map_err(|_| root_error(ResourceFailure::AllocationFailed, max, read as u64))?;
-            buffer.extend_from_slice(&chunk[..read]);
-        }
+        } else {
+            let mut buffer = Vec::new();
+            let mut chunk = [0u8; 8192];
+            loop {
+                let remaining = cap.saturating_sub(buffer.len() as u64);
+                if remaining == 0 {
+                    break;
+                }
+                let want =
+                    usize::try_from(remaining.min(chunk.len() as u64)).unwrap_or(chunk.len());
+                let read = reader.read(&mut chunk[..want]).map_err(CodecError::Io)?;
+                if read == 0 {
+                    break;
+                }
+                buffer
+                    .try_reserve(read)
+                    .map_err(|_| root_error(ResourceFailure::AllocationFailed, max, read as u64))?;
+                buffer.extend_from_slice(&chunk[..read]);
+            }
+            buffer
+        };
         if buffer.len() as u64 > max {
             return Err(root_error(
                 ResourceFailure::BudgetExceeded,
