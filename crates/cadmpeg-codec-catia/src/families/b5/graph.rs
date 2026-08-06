@@ -4141,60 +4141,53 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
 }
 
 fn framed_records(bytes: &[u8]) -> Vec<B5Record> {
-    let recurse: fn(&[u8]) -> Vec<B5Record> = framed_records;
     let mut records = Vec::new();
     let mut seen = HashMap::<u32, (u8, Vec<u8>)>::new();
-    for run in object_runs(bytes) {
-        for frame in run {
-            let ObjectFrame {
-                start: record_start,
-                end: record_end,
-                family,
-                class,
-                object_id,
-            } = frame;
-            if family == 0xa8 {
-                let payload = record_start + 11;
-                for mut child in recurse(&bytes[payload..record_end]) {
-                    child.offset += payload;
-                    if seen
-                        .get(&child.object_id)
-                        .is_some_and(|(seen_class, seen_payload)| {
-                            *seen_class == child.class && *seen_payload == child.payload
-                        })
-                    {
-                        continue;
-                    }
-                    seen.insert(child.object_id, (child.class, child.payload.clone()));
-                    records.push(child);
-                }
-            }
-            if !((family == 0xb5 && is_topology_class(class))
-                || (family == 0xa8 && matches!(class, 0x34 | 0x62)))
-            {
-                continue;
-            }
-            let header = if family == 0xa8 { 11 } else { 8 };
-            let payload = bytes[record_start + header..record_end].to_vec();
-            if seen
-                .get(&object_id)
-                .is_some_and(|(seen_class, seen_payload)| {
-                    *seen_class == class && *seen_payload == payload
-                })
-            {
-                continue;
-            }
-            seen.insert(object_id, (class, payload.clone()));
-            records.push(B5Record {
-                offset: record_start,
+    for ObjectFrame {
+        start,
+        end,
+        family,
+        class,
+        object_id,
+    } in object_stream_frames(bytes)
+    {
+        if !((family == 0xb5 && is_topology_class(class))
+            || (family == 0xa8 && matches!(class, 0x34 | 0x62)))
+        {
+            continue;
+        }
+        let header = if family == 0xa8 { 11 } else { 8 };
+        let Some(payload) = bytes.get(start + header..end).map(ToOwned::to_owned) else {
+            continue;
+        };
+        if seen
+            .get(&object_id)
+            .is_some_and(|(seen_class, seen_payload)| {
+                *seen_class == class && *seen_payload == payload
+            })
+        {
+            continue;
+        }
+        seen.insert(object_id, (class, payload.clone()));
+        records.push((
+            end,
+            B5Record {
+                offset: start,
                 family,
                 class,
                 object_id,
                 payload,
-            });
-        }
+            },
+        ));
     }
-    records
+    // Preserve the historical child-before-wrapper order for records nested in
+    // an A8 frame while retaining the walker's bounded admission rules.
+    records.sort_unstable_by(|(left_end, left), (right_end, right)| {
+        left_end
+            .cmp(right_end)
+            .then_with(|| right.offset.cmp(&left.offset))
+    });
+    records.into_iter().map(|(_, record)| record).collect()
 }
 
 /// Return complete byte ranges for length-closed object-stream records.
@@ -4252,37 +4245,6 @@ fn object_stream_frames(bytes: &[u8]) -> Vec<ObjectFrame> {
     let mut frames = Vec::new();
     walk(bytes, 0, true, true, &mut frames);
     frames
-}
-
-fn object_runs(bytes: &[u8]) -> Vec<Vec<ObjectFrame>> {
-    let mut runs = Vec::new();
-    let mut position = 0usize;
-    while position + 8 <= bytes.len() {
-        let Some((first_end, _, _, _)) = object_frame(bytes, position) else {
-            position += 1;
-            continue;
-        };
-        let start = position;
-        let mut at = position;
-        let mut run = Vec::new();
-        while let Some((end, family, class, object_id)) = object_frame(bytes, at) {
-            run.push(ObjectFrame {
-                start: at,
-                end,
-                family,
-                class,
-                object_id,
-            });
-            at = end;
-        }
-        if run.len() < 2 {
-            position = start + 1;
-            continue;
-        }
-        runs.push(run);
-        position = at.max(first_end);
-    }
-    runs
 }
 
 fn record_references(record: &B5Record) -> Vec<u32> {
@@ -6874,6 +6836,29 @@ mod tests {
                 .map(|frame| (frame.family, frame.class, frame.object_id))
                 .collect::<Vec<_>>(),
             vec![(0xa8, 0x34, 8), (0xb5, 0x5e, 7), (0xb5, 0x5e, 9)]
+        );
+    }
+
+    #[test]
+    fn framed_records_ignore_marker_shaped_bytes_inside_b5_payloads() {
+        let mut nested_a8 = vec![0xa8, 0x03, 0x62];
+        nested_a8.extend_from_slice(&0u32.to_le_bytes());
+        nested_a8.extend_from_slice(&7u32.to_le_bytes());
+
+        let mut bytes = vec![0xb5, 0x03, 0x5f, nested_a8.len() as u8];
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        bytes.extend_from_slice(&nested_a8);
+        bytes.extend_from_slice(&[0xb5, 0x03, 0x5e, 0x01]);
+        bytes.extend_from_slice(&9u32.to_le_bytes());
+        bytes.push(0x00);
+
+        let records = framed_records(&bytes);
+        assert_eq!(
+            records
+                .iter()
+                .map(|record| (record.family, record.class, record.object_id))
+                .collect::<Vec<_>>(),
+            vec![(0xb5, 0x5f, 8), (0xb5, 0x5e, 9)]
         );
     }
 
