@@ -2340,7 +2340,12 @@ fn project_mesh_bodies(
                 .or_default()
                 .push(id.clone());
         }
-        let channels = mesh_attribute_channels(&body.attributes, &mut unresolved);
+        let channels = mesh_attribute_channels(
+            &body.attributes,
+            body.vertices.len(),
+            &body.triangles,
+            &mut unresolved,
+        );
         ir.model
             .tessellations
             .push(cadmpeg_ir::tessellation::Tessellation {
@@ -2398,11 +2403,14 @@ fn bind_mesh_feature_definitions(
 /// Project channels with a settled element layout and count unresolved channels
 /// by domain.
 ///
-/// Vertex channels transfer as tessellation channels. Corner channels use an
-/// index stream to select values; PM-03 leaves that order unresolved, so the
-/// decoder reports them.
+/// An indexed channel stores one default value per vertex followed by values
+/// selected at the explicit corner positions in its index stream. The IR keeps
+/// the value table and expands those selections into one selector per triangle
+/// corner.
 fn mesh_attribute_channels(
     attributes: &[crate::paramesh::MeshAttribute],
+    vertices: usize,
+    triangles: &[[u32; 3]],
     unresolved: &mut std::collections::BTreeMap<crate::paramesh::MeshAttributeDomain, usize>,
 ) -> Vec<cadmpeg_ir::tessellation::TessellationChannel> {
     use crate::paramesh::MeshAttributeDomain;
@@ -2412,11 +2420,100 @@ fn mesh_attribute_channels(
         match (attribute.domain, attribute.item_size, attribute.count()) {
             (MeshAttributeDomain::Vertex, Some(item_size), Some(count)) => {
                 channels.push(cadmpeg_ir::tessellation::TessellationChannel {
+                    domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
                     item_size,
                     kind: attribute.role,
                     flags: attribute.element_code,
                     count,
                     data: attribute.values.clone(),
+                    indices: Vec::new(),
+                });
+            }
+            (MeshAttributeDomain::Corner, Some(item_size), Some(count)) => {
+                let Some(index_positions) = attribute.indices.as_deref() else {
+                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
+                    continue;
+                };
+                let Some(vertex_count) = u32::try_from(vertices).ok() else {
+                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
+                    continue;
+                };
+                if count < vertex_count {
+                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
+                    continue;
+                }
+                let Some(override_count) = count.checked_sub(vertex_count) else {
+                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
+                    continue;
+                };
+                if usize::try_from(override_count) != Ok(index_positions.len()) {
+                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
+                    continue;
+                }
+                let mut selectors = Vec::with_capacity(triangles.len().saturating_mul(3));
+                let mut valid = true;
+                for triangle in triangles {
+                    for vertex in triangle {
+                        if usize::try_from(*vertex)
+                            .ok()
+                            .is_none_or(|vertex| vertex >= vertices)
+                            || *vertex >= count
+                        {
+                            valid = false;
+                        }
+                        selectors.push(*vertex);
+                    }
+                }
+                for (ordinal, position) in index_positions.iter().enumerate() {
+                    let Some(ordinal) = u32::try_from(ordinal).ok() else {
+                        valid = false;
+                        continue;
+                    };
+                    let Some(selector) = vertex_count.checked_add(ordinal) else {
+                        valid = false;
+                        continue;
+                    };
+                    let Some(slot) = usize::try_from(*position)
+                        .ok()
+                        .and_then(|position| selectors.get_mut(position))
+                    else {
+                        valid = false;
+                        continue;
+                    };
+                    *slot = selector;
+                }
+                if !valid {
+                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
+                    continue;
+                }
+                channels.push(cadmpeg_ir::tessellation::TessellationChannel {
+                    domain: cadmpeg_ir::tessellation::TessellationChannelDomain::Corner,
+                    item_size,
+                    kind: attribute.role,
+                    flags: attribute.element_code,
+                    count,
+                    data: attribute.values.clone(),
+                    indices: selectors,
+                });
+            }
+            (MeshAttributeDomain::Triangle, Some(item_size), Some(count))
+                if usize::try_from(count) == Ok(triangles.len()) && item_size == 4 =>
+            {
+                let Some(indices) = (0..triangles.len())
+                    .map(|index| u32::try_from(index).ok())
+                    .collect::<Option<Vec<_>>>()
+                else {
+                    *unresolved.entry(MeshAttributeDomain::Triangle).or_default() += 1;
+                    continue;
+                };
+                channels.push(cadmpeg_ir::tessellation::TessellationChannel {
+                    domain: cadmpeg_ir::tessellation::TessellationChannelDomain::Triangle,
+                    item_size,
+                    kind: attribute.role,
+                    flags: attribute.element_code,
+                    count,
+                    data: attribute.values.clone(),
+                    indices,
                 });
             }
             (domain, _, _) => *unresolved.entry(domain).or_default() += 1,
@@ -2437,12 +2534,11 @@ fn report_unresolved_mesh_attributes(
         let (addressing, reason) = match domain {
             MeshAttributeDomain::Corner => (
                 "triangle corners",
-                "their values are deduplicated per vertex and selected through an index stream \
-                 whose corner order is not resolved",
+                "their indexed value table or corner selector stream has no settled layout",
             ),
             MeshAttributeDomain::Triangle => (
                 "triangles",
-                "their values are delta-coded under an element code this codec does not read",
+                "their element code or value count has no settled layout",
             ),
             MeshAttributeDomain::Vertex => (
                 "vertices",
@@ -4074,7 +4170,7 @@ mod tests {
     use super::{
         apply_appearance_base_colors, bind_mesh_feature_definitions,
         container_only_dimension_parameters, design_projection_gaps,
-        feature_definition_is_incomplete, incomplete_feature_families,
+        feature_definition_is_incomplete, incomplete_feature_families, mesh_attribute_channels,
         unresolved_dimension_companion_count, DesignProjectionGaps, MeshProjection,
     };
     use crate::native::F3dNative;
@@ -4129,6 +4225,30 @@ mod tests {
             }
         );
         assert!(!feature_definition_is_incomplete(&features[0].definition));
+    }
+
+    #[test]
+    fn indexed_mesh_channels_project_default_and_override_selectors() {
+        let attribute = crate::paramesh::MeshAttribute {
+            role: 4,
+            element_code: 4,
+            domain: crate::paramesh::MeshAttributeDomain::Corner,
+            item_size: Some(1),
+            values: vec![10, 11, 12, 13, 14],
+            indices: Some(vec![0, 2]),
+        };
+        let mut unresolved = std::collections::BTreeMap::new();
+        let channels = mesh_attribute_channels(&[attribute], 3, &[[0, 1, 2]], &mut unresolved);
+
+        assert!(unresolved.is_empty());
+        assert_eq!(channels.len(), 1);
+        assert_eq!(
+            channels[0].domain,
+            cadmpeg_ir::tessellation::TessellationChannelDomain::Corner
+        );
+        assert_eq!(channels[0].count, 5);
+        assert_eq!(channels[0].indices, [3, 1, 4]);
+        assert_eq!(channels[0].data, [10, 11, 12, 13, 14]);
     }
 
     #[test]

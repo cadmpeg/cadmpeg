@@ -44,10 +44,39 @@ pub struct Tessellation {
     pub channels: Vec<TessellationChannel>,
 }
 
+/// The mesh element addressed by one tessellation channel.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum TessellationChannelDomain {
+    /// One channel value is associated with each tessellation vertex.
+    #[default]
+    Vertex,
+    /// Each triangle corner selects one value from the channel table.
+    Corner,
+    /// Each triangle selects one value from the channel table.
+    Triangle,
+}
+
+impl TessellationChannelDomain {
+    #[allow(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "Serde skip_serializing_if requires a reference predicate."
+    )]
+    fn is_vertex(&self) -> bool {
+        matches!(self, Self::Vertex)
+    }
+}
+
 /// One descriptor from the source tessellation table.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct TessellationChannel {
+    /// The mesh element addressed by this channel. Omitted JSON fields use
+    /// [`TessellationChannelDomain::Vertex`] for compatibility with IR v5.
+    #[serde(default, skip_serializing_if = "TessellationChannelDomain::is_vertex")]
+    pub domain: TessellationChannelDomain,
     /// Byte size of one element of `data`.
     pub item_size: u32,
     /// Source channel-kind tag (e.g. UV, color); interpretation is source-defined.
@@ -60,4 +89,9 @@ pub struct TessellationChannel {
     #[serde(with = "crate::bytes")]
     #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub data: Vec<u8>,
+    /// For corner and triangle channels, one selector per addressed mesh
+    /// element. An empty vector means that a vertex channel uses its implicit
+    /// vertex-order addressing.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub indices: Vec<u32>,
 }

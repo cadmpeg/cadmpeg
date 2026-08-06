@@ -416,16 +416,6 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 
 **Need.** We must know the packing, the two channel contents, and the remaining descriptor and registry fields to write a container from a neutral model.
 
-### PM-03. Corner order of an indexed `.paramesh` attribute channel
-
-**Question.** Which triangle corner does each value of an indexed attribute channel belong to?
-
-**Known.** `f3d.md` §1.1.2 gives the channel declaration, the element codes, and the count relation: a channel that declares an index stream holds its values deduplicated per vertex, and its index stream holds exactly the element count less the vertex count values. That relation holds for the code-2, code-4, and code-5 channels of every container, so the values are grouped by vertex and one value per vertex is implicit.
-
-A code-4 channel stores authored corner colours exactly, in the sRGB scale and with alpha, and its element count equals the corner count when every corner carries a distinct colour. The stored order is a permutation of the corner order, not the corner order: where a mesh has six vertices, eight triangles, and twenty-four corners each carrying one of eight distinct colours, three consecutive stored triples equal the three corner colours of the first, second, and third triangle, and no grouping of the complete stored sequence into consecutive runs of four equals any vertex's corner colours. An index stream is monotonically increasing in steps of one and two, which is an offset array rather than an index array.
-
-**Need.** The decoder transfers a channel with one value per vertex and reports every indexed channel. We must know the per-vertex corner order the index stream offsets address to transfer an authored corner colour or texture coordinate. A mesh with one vertex whose incident corners carry a known asymmetric colour cycle, and a second mesh with the same connectivity and one differing corner, would separate the fan order from the offset semantics.
-
 ### PM-02. Mesh Design-record classes without decoded content
 
 **Question.** We must find two answers:

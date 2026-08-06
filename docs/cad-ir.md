@@ -202,6 +202,12 @@ Native records retain typed references into the neutral model. Format-neutral co
 
 Tessellations are display meshes independent of exact B-rep geometry. Appearances describe visual or physical assets. Appearance bindings assign appearances to bodies or faces. Attributes attach source-native values to supported targets.
 
+A tessellation channel stores `count` fixed-width values in `data`. A vertex
+channel uses implicit vertex-order addressing and has no `indices`. A corner
+channel has one selector for each triangle corner, and a triangle channel has
+one selector for each triangle. Every selector is less than `count`; the
+selected value is the channel element at `selector`.
+
 An unknown product record has an ID and related entity IDs. Source offset, byte length, digest, and retained source bytes belong to the matching `SourceFidelity.retained_records` entry. Source-only records may omit a product record. Retained sidecar bytes use standard RFC 4648 base64 with padding and no line breaks. Native byte strings that are product values and tessellation byte channels remain product data.
 
 ## Validation

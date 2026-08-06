@@ -21788,11 +21788,13 @@ fn semantic_writer_expands_indexed_tessellation() {
         strip_lengths: Vec::new(),
         normals: vec![Vector3::new(0.0, 0.0, 1.0); 4],
         channels: vec![TessellationChannel {
+            domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
             item_size: 1,
             kind: 7,
             flags: 2,
             count: 4,
             data: vec![10, 11, 12, 13],
+            indices: Vec::new(),
         }],
     };
     let expanded = crate::writer::sequential_tessellation(&mesh).unwrap();

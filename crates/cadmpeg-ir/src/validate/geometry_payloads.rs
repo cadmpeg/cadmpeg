@@ -150,6 +150,25 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 entity: Some(mesh.id.clone()),
             });
         }
+        let corner_count = mesh.triangles.len().checked_mul(3);
+        if mesh.channels.iter().any(|channel| {
+            let expected_indices = match channel.domain {
+                crate::tessellation::TessellationChannelDomain::Vertex => Some(0usize),
+                crate::tessellation::TessellationChannelDomain::Corner => corner_count,
+                crate::tessellation::TessellationChannelDomain::Triangle => {
+                    Some(mesh.triangles.len())
+                }
+            };
+            expected_indices != Some(channel.indices.len())
+                || channel.indices.iter().any(|index| *index >= channel.count)
+        }) {
+            findings.push(Finding {
+                check: Check::Tessellation,
+                severity: Severity::Error,
+                message: "contains invalid tessellation channel indices".into(),
+                entity: Some(mesh.id.clone()),
+            });
+        }
     }
 }
 

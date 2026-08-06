@@ -3946,11 +3946,13 @@ pub(crate) fn display_jt_tessellations(
                 let mut channels = Vec::new();
                 if color_array.is_some() {
                     channels.push(TessellationChannel {
+                        domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
                         item_size: 16,
                         kind: DISPLAY_JT_COLOR_CHANNEL,
                         flags: ((vertex_header.vertex_bindings >> 4) & 0x3) as u32,
                         count,
                         data: color_data,
+                        indices: Vec::new(),
                     });
                 }
                 for (((array, component_count), data), ordinal) in texture_arrays
@@ -3960,6 +3962,7 @@ pub(crate) fn display_jt_tessellations(
                     .zip(0_u32..)
                 {
                     channels.push(TessellationChannel {
+                        domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
                         item_size: u32::try_from(component_count.checked_mul(4)?).ok()?,
                         kind: DISPLAY_JT_TEXTURE_CHANNEL_BASE.checked_add(ordinal)?,
                         flags: u32::from(array.channel)
@@ -3968,15 +3971,18 @@ pub(crate) fn display_jt_tessellations(
                                 << 8,
                         count,
                         data,
+                        indices: Vec::new(),
                     });
                 }
                 if vertex_flag_array.is_some() {
                     channels.push(TessellationChannel {
+                        domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
                         item_size: 4,
                         kind: DISPLAY_JT_VERTEX_FLAG_CHANNEL,
                         flags: 0,
                         count,
                         data: vertex_flag_data,
+                        indices: Vec::new(),
                     });
                 }
                 (vertices, triangles, normal_vectors, channels)

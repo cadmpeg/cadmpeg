@@ -997,11 +997,13 @@ fn synchronization_ok(double: &[[f64; 3]], float: &[[f32; 3]]) -> bool {
 
 fn channel(kind: u32, item_size: u32, count: usize, data: Vec<u8>) -> TessellationChannel {
     TessellationChannel {
+        domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
         item_size,
         kind,
         flags: 0,
         count: count as u32,
         data,
+        indices: Vec::new(),
     }
 }
 

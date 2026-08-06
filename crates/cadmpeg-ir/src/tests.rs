@@ -26,7 +26,7 @@ use crate::subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
     SubdVertexTag,
 };
-use crate::tessellation::TessellationChannel;
+use crate::tessellation::{TessellationChannel, TessellationChannelDomain};
 use crate::topology::Color;
 use crate::unknown::{NativeUnknownRecord, UnknownRecord};
 use crate::validate::validate;
@@ -1401,7 +1401,15 @@ fn tessellation_counts_must_be_consistent() {
         triangles: vec![[0, 1, 2]],
         strip_lengths: vec![4],
         normals: vec![Vector3::new(0.0, 0.0, 1.0); 2],
-        channels: Vec::new(),
+        channels: vec![TessellationChannel {
+            domain: TessellationChannelDomain::Corner,
+            item_size: 1,
+            kind: 0,
+            flags: 0,
+            count: 1,
+            data: vec![0],
+            indices: vec![0, 1, 0],
+        }],
     });
     ir.model.tessellations.push(Tessellation {
         id: "synthetic:test:tessellation#invalid-strips".into(),
@@ -1441,6 +1449,9 @@ fn tessellation_counts_must_be_consistent() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid tessellation deflection")));
+    assert!(report.findings.iter().any(|finding| finding
+        .message
+        .contains("invalid tessellation channel indices")));
 }
 
 #[test]
@@ -2988,11 +2999,13 @@ fn byte_payloads_use_nonempty_base64_and_reject_invalid_text() {
     );
     assert_base64_round_trip_and_rejection(
         &TessellationChannel {
+            domain: TessellationChannelDomain::default(),
             item_size: 3,
             kind: 0,
             flags: 0,
             count: 1,
             data: vec![1, 2, 3],
+            indices: Vec::new(),
         },
         "data",
     );

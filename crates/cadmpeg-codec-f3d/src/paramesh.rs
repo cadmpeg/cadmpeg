@@ -9,8 +9,9 @@
 //! stores the scale that relates them to model space.
 //!
 //! The registry declares attribute channels with value and index streams. Vertex
-//! channels store one value per vertex. Indexed channels select values for
-//! triangle corners; PM-03 leaves that order unresolved.
+//! channels store one value per vertex. Indexed channels store one default value
+//! per vertex followed by corner overrides selected by a delta-coded position
+//! stream.
 
 use cadmpeg_core::le::{u16_at, u32_at, u64_at};
 use cadmpeg_core::CodecError;
@@ -59,6 +60,8 @@ const ELEMENT_PAIR: u64 = 2;
 const ELEMENT_QUAD: u64 = 4;
 /// Element code of a three-component direction packed into two `f32` values.
 const ELEMENT_PACKED_DIRECTION: u64 = 5;
+/// Element code of one delta-coded value per triangle.
+const ELEMENT_TRIANGLE_DELTA: u64 = 7;
 /// Bytes of one [`ELEMENT_PACKED_DIRECTION`] element.
 const PACKED_DIRECTION_BYTES: u32 = 8;
 
@@ -93,8 +96,8 @@ pub(crate) struct MeshAttribute {
     /// The role the registry records for the attribute.
     pub(crate) role: u32,
     /// The registry's element code: the count of `f32` components of one
-    /// element for [`ELEMENT_PAIR`] and [`ELEMENT_QUAD`], and a packed form
-    /// otherwise.
+    /// element for [`ELEMENT_PAIR`] and [`ELEMENT_QUAD`], and a packed or
+    /// delta-coded form otherwise.
     pub(crate) element_code: u32,
     /// Which entities the values address.
     pub(crate) domain: MeshAttributeDomain,
@@ -102,6 +105,8 @@ pub(crate) struct MeshAttribute {
     pub(crate) item_size: Option<u32>,
     /// The value stream, verbatim.
     pub(crate) values: Vec<u8>,
+    /// Explicit corner positions selected by the optional index stream.
+    pub(crate) indices: Option<Vec<u32>>,
 }
 
 impl MeshAttribute {
@@ -235,6 +240,7 @@ fn element_bytes(element_code: u64) -> Option<u32> {
     match element_code {
         ELEMENT_PAIR | ELEMENT_QUAD => u32::try_from(element_code * 4).ok(),
         ELEMENT_PACKED_DIRECTION => Some(PACKED_DIRECTION_BYTES),
+        ELEMENT_TRIANGLE_DELTA => Some(4),
         _ => None,
     }
 }
@@ -634,6 +640,93 @@ fn decode_triangles(stream: &[u8], vertices: usize) -> Result<Vec<[u32; 3]>, Cod
         .collect())
 }
 
+/// Resolve an indexed channel's delta-coded corner positions.
+///
+/// The value stream starts with one default value for every vertex. The
+/// remaining values are corner overrides in the order selected by this stream.
+/// The first position is implicit. Each value before the final one is a
+/// two's-complement difference from the previous position. The final value is
+/// the absolute terminal position and does not continue the difference run.
+fn decode_index_positions(
+    stream: &[u8],
+    value_count: u32,
+    vertices: usize,
+    corners: usize,
+) -> Result<Vec<u32>, CodecError> {
+    if !stream.len().is_multiple_of(4) {
+        return Err(malformed(
+            "paramesh channel index stream is not a whole number of values",
+        ));
+    }
+    let vertex_count = u32::try_from(vertices)
+        .map_err(|_| malformed("paramesh channel vertex count is out of range"))?;
+    let override_count = value_count
+        .checked_sub(vertex_count)
+        .ok_or_else(|| malformed("paramesh indexed channel has fewer values than vertices"))?;
+    let override_count_usize = usize::try_from(override_count)
+        .map_err(|_| malformed("paramesh channel override count is out of range"))?;
+    let expected_bytes = override_count_usize
+        .checked_mul(4)
+        .ok_or_else(|| malformed("paramesh channel index stream is too large"))?;
+    if stream.len() != expected_bytes {
+        return Err(malformed(
+            "paramesh channel index count does not match its value count",
+        ));
+    }
+    if override_count_usize == 0 {
+        return Ok(Vec::new());
+    }
+
+    let raw = stream
+        .chunks_exact(4)
+        .map(|bytes| i64::from(i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])))
+        .collect::<Vec<_>>();
+    let terminal = *raw
+        .last()
+        .ok_or_else(|| malformed("paramesh channel index stream has no terminal position"))?;
+    let mut relative_positions = Vec::with_capacity(raw.len());
+    relative_positions.push(0i64);
+    let mut relative = 0i64;
+    for delta in &raw[..raw.len() - 1] {
+        relative = relative
+            .checked_add(*delta)
+            .ok_or_else(|| malformed("paramesh channel index accumulation overflows"))?;
+        relative_positions.push(relative);
+    }
+    let relative_terminal = relative_positions
+        .last()
+        .copied()
+        .ok_or_else(|| malformed("paramesh channel index stream has no positions"))?;
+    let start = terminal
+        .checked_sub(relative_terminal)
+        .ok_or_else(|| malformed("paramesh channel index start overflows"))?;
+    let corner_count = i64::try_from(corners)
+        .map_err(|_| malformed("paramesh channel corner count is out of range"))?;
+    let mut positions = Vec::with_capacity(relative_positions.len());
+    let mut previous = None;
+    for relative in relative_positions {
+        let position = start
+            .checked_add(relative)
+            .ok_or_else(|| malformed("paramesh channel index position overflows"))?;
+        if position < 0 || position >= corner_count {
+            return Err(malformed(
+                "paramesh channel index position names no triangle corner",
+            ));
+        }
+        if previous.is_some_and(|previous| position <= previous) {
+            return Err(malformed(
+                "paramesh channel index positions are not strictly increasing",
+            ));
+        }
+        positions.push(
+            u32::try_from(position)
+                .map_err(|_| malformed("paramesh channel index position is out of range"))?,
+        );
+        previous = Some(position);
+    }
+    Ok(positions)
+}
+
 /// Decode one `.paramesh` container entry.
 pub(crate) fn decode_mesh_container(bytes: &[u8]) -> Result<MeshContainer, CodecError> {
     if bytes.get(..MAGIC.len()) != Some(&MAGIC[..]) {
@@ -708,7 +801,12 @@ pub(crate) fn decode_mesh_container(bytes: &[u8]) -> Result<MeshContainer, Codec
         named("t").ok_or_else(|| malformed("paramesh container has no corner stream"))?;
     require_layout(corner_stream, None, 1, true)?;
     let triangles = decode_triangles(&corner_stream.bytes, vertices.len())?;
-    let attributes = registry_attributes(message, &name_table, &streams, vertices.len())?;
+    let corner_count = triangles
+        .len()
+        .checked_mul(3)
+        .ok_or_else(|| malformed("paramesh triangle corner count is out of range"))?;
+    let attributes =
+        registry_attributes(message, &name_table, &streams, vertices.len(), corner_count)?;
     Ok(MeshContainer {
         fusion_uuid,
         vertices,
@@ -726,6 +824,7 @@ fn registry_attributes(
     name_table: &[(String, u64)],
     streams: &[MeshStream],
     vertices: usize,
+    corners: usize,
 ) -> Result<Vec<MeshAttribute>, CodecError> {
     let named = |name: &str| {
         name_table
@@ -749,6 +848,13 @@ fn registry_attributes(
         let Some(stream) = named(streams.values) else {
             continue;
         };
+        if streams.element_code == ELEMENT_TRIANGLE_DELTA {
+            require_layout(stream, None, 1, true)?;
+        }
+        let index_stream = streams.index.and_then(named);
+        if let Some(index_stream) = index_stream {
+            require_layout(index_stream, None, 1, true)?;
+        }
         let mut attribute = MeshAttribute {
             role,
             element_code: u32::try_from(streams.element_code)
@@ -756,7 +862,16 @@ fn registry_attributes(
             domain,
             item_size: element_bytes(streams.element_code),
             values: stream.bytes.clone(),
+            indices: None,
         };
+        if let (Some(index_stream), Some(count)) = (index_stream, attribute.count()) {
+            attribute.indices = Some(decode_index_positions(
+                &index_stream.bytes,
+                count,
+                vertices,
+                corners,
+            )?);
+        }
         // A vertex-domain channel stores one value per vertex. A conflicting
         // element width leaves the item size unset. The mesh geometry remains
         // available, and the report records the channel.
@@ -1024,7 +1139,11 @@ mod tests {
             &registry,
             &[
                 ("r0", float_descriptor(4), colors),
-                ("r0i", delta_descriptor(), vec![0; 8]),
+                (
+                    "r0i",
+                    delta_descriptor(),
+                    [1i32, 1].into_iter().flat_map(i32::to_le_bytes).collect(),
+                ),
             ],
         ))
         .expect("mesh container");
@@ -1032,12 +1151,40 @@ mod tests {
         assert_eq!(attribute.domain, MeshAttributeDomain::Corner);
         assert_eq!(attribute.item_size, Some(16));
         assert_eq!(attribute.count(), Some(5));
+        assert_eq!(attribute.indices, Some(vec![0, 1]));
     }
 
-    /// A triangle-domain channel uses its registry field. An unresolved element
-    /// code leaves the element count unset.
     #[test]
-    fn triangle_domain_channel_keeps_an_unsettled_element_width_unstated() {
+    fn indexed_positions_use_the_absolute_terminal_to_resolve_the_start() {
+        let bytes = [1i32, 1, 2, 1, 9]
+            .into_iter()
+            .flat_map(i32::to_le_bytes)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            decode_index_positions(&bytes, 8, 3, 10).expect("indexed positions"),
+            [4, 5, 6, 8, 9]
+        );
+    }
+
+    #[test]
+    fn indexed_positions_reject_duplicate_or_out_of_range_corners() {
+        let duplicate = [0i32, 0]
+            .into_iter()
+            .flat_map(i32::to_le_bytes)
+            .collect::<Vec<_>>();
+        assert!(decode_index_positions(&duplicate, 5, 3, 3).is_err());
+
+        let out_of_range = [4i32]
+            .into_iter()
+            .flat_map(i32::to_le_bytes)
+            .collect::<Vec<_>>();
+        assert!(decode_index_positions(&out_of_range, 4, 3, 3).is_err());
+    }
+
+    /// A triangle-domain code-7 channel keeps one raw four-byte value per
+    /// triangle. Its scalar interpretation is outside this native layer.
+    #[test]
+    fn triangle_domain_code7_channel_has_a_settled_raw_width() {
         let registry = channel_entry(REGISTRY_TRIANGLE_CHANNEL, None, 7, "r0", None);
         let mesh = decode_mesh_container(&container_with_registry(
             &TRIANGLE_VERTICES,
@@ -1049,8 +1196,8 @@ mod tests {
         let attribute = &mesh.attributes[0];
         assert_eq!(attribute.domain, MeshAttributeDomain::Triangle);
         assert_eq!(attribute.element_code, 7);
-        assert_eq!(attribute.item_size, None);
-        assert_eq!(attribute.count(), None);
+        assert_eq!(attribute.item_size, Some(4));
+        assert_eq!(attribute.count(), Some(1));
     }
 
     /// A vertex-domain channel with a conflicting count leaves its item size
