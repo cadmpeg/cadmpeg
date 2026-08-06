@@ -54,6 +54,16 @@ struct A8Frame {
     object_id: u32,
 }
 
+#[derive(Clone, Copy)]
+struct ObjectStreamFrame {
+    pos: usize,
+    payload: usize,
+    end: usize,
+    family: u8,
+    class: u8,
+    object_id: u32,
+}
+
 fn a8_frames(data: &[u8], class: u8) -> Vec<A8Frame> {
     let mut frames = Vec::new();
     let mut payload_end = None;
@@ -110,6 +120,86 @@ fn object_frame_start(data: &[u8], pos: usize) -> bool {
         family,
         0xa5 | 0xa6 | 0xa7 | 0xa8 | 0xa9 | 0xb2 | 0xb3 | 0xb4 | 0xb5 | 0xb6
     ) && data.get(pos + 1).copied().is_some_and(object_frame_flag)
+}
+
+fn object_stream_frame(data: &[u8], pos: usize) -> Option<ObjectStreamFrame> {
+    if !object_frame_flag(*data.get(pos + 1)?) {
+        return None;
+    }
+    let family = *data.get(pos)?;
+    let class = *data.get(pos + 2)?;
+    let (payload, length, object_id) = match family {
+        0xb5 => (
+            pos.checked_add(8)?,
+            usize::from(*data.get(pos + 3)?),
+            u32_le(data, pos + 4)?,
+        ),
+        0xa8 => (
+            pos.checked_add(11)?,
+            usize::try_from(u32_le(data, pos + 3)?).ok()?,
+            u32_le(data, pos + 7)?,
+        ),
+        _ => return None,
+    };
+    let end = payload.checked_add(length)?;
+    (end <= data.len()).then_some(ObjectStreamFrame {
+        pos,
+        payload,
+        end,
+        family,
+        class,
+        object_id,
+    })
+}
+
+fn object_stream_frames(data: &[u8]) -> Vec<ObjectStreamFrame> {
+    fn walk(
+        data: &[u8],
+        base: usize,
+        admit_a8: bool,
+        admit_b5: bool,
+        frames: &mut Vec<ObjectStreamFrame>,
+    ) {
+        let mut pos = 0usize;
+        while pos + 8 <= data.len() {
+            let Some(frame) = object_stream_frame(data, pos) else {
+                pos += 1;
+                continue;
+            };
+            match frame.family {
+                0xa8 if admit_a8 => {
+                    frames.push(ObjectStreamFrame {
+                        pos: base + frame.pos,
+                        payload: base + frame.payload,
+                        end: base + frame.end,
+                        ..frame
+                    });
+                    walk(
+                        &data[frame.payload..frame.end],
+                        base + frame.payload,
+                        false,
+                        admit_b5,
+                        frames,
+                    );
+                    pos = frame.end;
+                }
+                0xb5 if admit_b5 => {
+                    frames.push(ObjectStreamFrame {
+                        pos: base + frame.pos,
+                        payload: base + frame.payload,
+                        end: base + frame.end,
+                        ..frame
+                    });
+                    pos = frame.end;
+                }
+                _ => pos += 1,
+            }
+        }
+    }
+
+    let mut frames = Vec::new();
+    walk(data, 0, true, true, &mut frames);
+    frames
 }
 
 /// Parameter lattice decoded from an `a8 <flag> 34` surface record independently
@@ -729,37 +819,13 @@ pub fn a8_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
 /// Decode framed `a8 <flag> 20` and `b5 <flag> 20` object-stream UV jet records.
 #[must_use]
 pub fn object_stream_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
-    let mut out = Vec::new();
-    for pos in 0..data.len().saturating_sub(11) {
-        if !matches!(data.get(pos + 1), Some(0x03 | 0x13 | 0x83))
-            || data.get(pos + 2) != Some(&0x20)
-        {
-            continue;
-        }
-        let Some((payload, length, object_id)) = (match data[pos] {
-            0xa8 => u32_le(data, pos + 3)
-                .and_then(|length| usize::try_from(length).ok())
-                .zip(u32_le(data, pos + 7))
-                .map(|(length, object_id)| (pos + 11, length, object_id)),
-            0xb5 => data
-                .get(pos + 3)
-                .zip(u32_le(data, pos + 4))
-                .map(|(length, object_id)| (pos + 8, usize::from(*length), object_id)),
-            _ => None,
-        }) else {
-            continue;
-        };
-        let Some(end) = payload.checked_add(length) else {
-            continue;
-        };
-        if end > data.len() {
-            continue;
-        }
-        if let Some(value) = parse_object_stream_pcurve(data, pos, payload, end, object_id) {
-            out.push(value);
-        }
-    }
-    out
+    object_stream_frames(data)
+        .into_iter()
+        .filter(|frame| frame.class == 0x20)
+        .filter_map(|frame| {
+            parse_object_stream_pcurve(data, frame.pos, frame.payload, frame.end, frame.object_id)
+        })
+        .collect()
 }
 
 fn parse_object_stream_pcurve(

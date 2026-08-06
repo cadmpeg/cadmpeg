@@ -252,6 +252,25 @@ fn object_stream_pcurve_parser_accepts_each_object_frame_flag() {
 }
 
 #[test]
+fn object_stream_pcurve_parser_walks_nested_b5_records_inside_a8() {
+    let a8 = a8_pcurve_stream();
+    let payload = &a8[11..];
+    let mut child = vec![0xb5, 0x03, 0x20, u8::try_from(payload.len()).unwrap()];
+    child.extend_from_slice(&0x9abcu32.to_le_bytes());
+    child.extend_from_slice(payload);
+
+    let mut wrapper = a8_surface_stream();
+    wrapper.extend_from_slice(&child);
+    let payload_len = u32::try_from(wrapper.len() - 11).unwrap();
+    wrapper[3..7].copy_from_slice(&payload_len.to_le_bytes());
+
+    let [pcurve] = crate::families::a5a8::records::object_stream_pcurves(&wrapper)
+        .try_into()
+        .expect("one nested pcurve");
+    assert_eq!(pcurve.object_id, 0x9abc);
+}
+
+#[test]
 fn b5_pcurve_parser_accepts_split_24_bit_support_reference() {
     let a8 = a8_pcurve_stream();
     let mut payload = a8[11..].to_vec();
