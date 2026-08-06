@@ -18,6 +18,8 @@ use cadmpeg_ir::topology::{
 
 use crate::parse::{Exchange, RawRecord, Value};
 
+use super::index::CarrierIndex;
+
 pub(super) struct TopologyResult {
     pub typed_records: BTreeSet<u64>,
     pub warnings: Vec<String>,
@@ -53,7 +55,11 @@ pub(super) fn is_body_representation(record: &RawRecord) -> bool {
     .any(|name| has_type(record, name))
 }
 
-pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
+pub(super) fn decode(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    carrier_index: &CarrierIndex,
+) -> TopologyResult {
     let mut commit_session = CommitSession::new(ir);
     let mut result = TopologyResult {
         typed_records: BTreeSet::new(),
@@ -67,27 +73,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
     let vertices = vertex_defs(exchange);
     let edges = edge_defs(exchange);
     let oriented = oriented_defs(exchange);
-    let decoded_points = ir
-        .model
-        .points
-        .iter()
-        .map(|point| point.id.clone())
-        .collect::<BTreeSet<_>>();
-    let point_positions = ir
-        .model
-        .points
-        .iter()
-        .filter_map(|point| {
-            point
-                .id
-                .0
-                .rsplit_once('#')?
-                .1
-                .parse::<u64>()
-                .ok()
-                .map(|id| (id, point.position))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let point_positions = carrier_index;
     for (&vertex_id, vertex) in &exchange.records {
         if !has_type(vertex, "VERTEX_POINT") {
             continue;
@@ -98,7 +84,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
             ));
             continue;
         };
-        if !decoded_points.contains(&PointId(format!("step:data:point#{point_id}"))) {
+        if !carrier_index.points.contains_key(&point_id) {
             result.warnings.push(format!(
                 "VERTEX_POINT #{vertex_id} has unresolved point carrier #{point_id}"
             ));
@@ -137,7 +123,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
             exchange,
             &vertices,
             &edges,
-            &point_positions,
+            point_positions,
             &mut result.warnings,
         );
         let mut committed = 0;
@@ -183,7 +169,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
             exchange,
             &vertices,
             &edges,
-            &point_positions,
+            point_positions,
             scope_root,
             &mut result.warnings,
         );
@@ -222,26 +208,6 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
             ));
         }
     }
-    let geometry_ids = GeometryIds {
-        points: ir
-            .model
-            .points
-            .iter()
-            .map(|point| point.id.0.clone())
-            .collect(),
-        curves: ir
-            .model
-            .curves
-            .iter()
-            .map(|curve| curve.id.0.clone())
-            .collect(),
-        surfaces: ir
-            .model
-            .surfaces
-            .iter()
-            .map(|surface| surface.id.0.clone())
-            .collect(),
-    };
     let decoded_pcurves = ir
         .model
         .pcurves
@@ -292,7 +258,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
             &edges,
             &oriented,
             &decoded_pcurves,
-            &point_positions,
+            point_positions,
             scope_root,
             &mut result.warnings,
         );
@@ -356,7 +322,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         if record.simple_name() != Some("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION") {
             continue;
         }
-        let omitted = geometric_set_omissions(record, exchange, &geometry_ids);
+        let omitted = geometric_set_omissions(record, exchange, carrier_index);
         if !omitted.is_empty() {
             result.warnings.push(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} omitted unsupported or unresolved member(s): {}",
@@ -368,13 +334,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
             ));
         }
         let Some(mut built) =
-            build_geometric_set(id, record, exchange, &geometry_ids, &mut result.warnings)
+            build_geometric_set(id, record, exchange, carrier_index, &mut result.warnings)
         else {
             if mark_standalone_geometric_set(
                 id,
                 record,
                 exchange,
-                &geometry_ids,
+                carrier_index,
                 &mut result.typed_records,
             ) {
                 continue;
@@ -405,7 +371,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         ) {
             continue;
         }
-        let omitted = geometric_set_omissions(record, exchange, &geometry_ids);
+        let omitted = geometric_set_omissions(record, exchange, carrier_index);
         if !omitted.is_empty() {
             result.warnings.push(format!(
                 "{} #{id} omitted unsupported or unresolved member(s): {}",
@@ -421,7 +387,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
             id,
             record,
             exchange,
-            &geometry_ids,
+            carrier_index,
             &mut result.typed_records,
         );
     }
@@ -483,7 +449,7 @@ fn source_numeric_id(identity: &str, kind: &str) -> Option<u64> {
 fn geometric_set_omissions(
     representation: &RawRecord,
     exchange: &Exchange,
-    geometry_ids: &GeometryIds,
+    carrier_index: &CarrierIndex,
 ) -> Vec<u64> {
     let Some(set_ids) = representation.parameter(1).and_then(refs) else {
         return Vec::new();
@@ -494,15 +460,9 @@ fn geometric_set_omissions(
         .filter(|set| has_type(set, "GEOMETRIC_SET") || has_type(set, "GEOMETRIC_CURVE_SET"))
         .flat_map(|set| set.parameter(1).and_then(refs).unwrap_or_default())
         .filter(|member| {
-            !geometry_ids
-                .points
-                .contains(&format!("step:data:point#{member}"))
-                && !geometry_ids
-                    .curves
-                    .contains(&format!("step:data:curve#{member}"))
-                && !geometry_ids
-                    .surfaces
-                    .contains(&format!("step:data:surface#{member}"))
+            !carrier_index.points.contains_key(member)
+                && !carrier_index.curves.contains_key(member)
+                && !carrier_index.surfaces.contains_key(member)
         })
         .collect()
 }
@@ -555,7 +515,7 @@ fn build_wire(
     exchange: &Exchange,
     vdefs: &BTreeMap<u64, VertexDef>,
     edefs: &BTreeMap<u64, EdgeDef>,
-    point_positions: &BTreeMap<u64, Point3>,
+    point_positions: &CarrierIndex,
     warnings: &mut Vec<String>,
 ) -> BuildOutcome {
     let Some(model) = exchange.records.get(&id) else {
@@ -607,7 +567,7 @@ fn build_wire_set(
     exchange: &Exchange,
     vdefs: &BTreeMap<u64, VertexDef>,
     edefs: &BTreeMap<u64, EdgeDef>,
-    point_positions: &BTreeMap<u64, Point3>,
+    point_positions: &CarrierIndex,
     scoped: bool,
     warnings: &mut Vec<String>,
 ) -> Option<Built> {
@@ -660,7 +620,7 @@ fn build_wire_set(
     let mut built_vertices = Vec::new();
     for vertex_id in used_vertices {
         let vertex = vdefs.get(&vertex_id)?;
-        point_positions.get(&vertex.point)?;
+        point_positions.get(vertex.point)?;
         built_vertices.push(Vertex {
             id: VertexId(format!("step:data:vertex#{vertex_id}{vertex_suffix}")),
             point: PointId(format!("step:data:point#{}", vertex.point)),
@@ -710,7 +670,7 @@ fn build_shell_wire(
     exchange: &Exchange,
     vdefs: &BTreeMap<u64, VertexDef>,
     edefs: &BTreeMap<u64, EdgeDef>,
-    point_positions: &BTreeMap<u64, Point3>,
+    point_positions: &CarrierIndex,
     scope_root: bool,
     warnings: &mut Vec<String>,
 ) -> BuildOutcome {
@@ -764,7 +724,7 @@ fn build_shell_wire_set(
     exchange: &Exchange,
     vdefs: &BTreeMap<u64, VertexDef>,
     edefs: &BTreeMap<u64, EdgeDef>,
-    point_positions: &BTreeMap<u64, Point3>,
+    point_positions: &CarrierIndex,
     scoped: bool,
     scope_root: bool,
     warnings: &mut Vec<String>,
@@ -852,7 +812,7 @@ fn build_shell_wire_set(
         .into_iter()
         .map(|vertex_id| {
             let vertex = vdefs.get(&vertex_id)?;
-            point_positions.get(&vertex.point)?;
+            point_positions.get(vertex.point)?;
             Some(Vertex {
                 id: VertexId(format!("step:data:vertex#{vertex_id}{vertex_suffix}")),
                 point: PointId(format!("step:data:point#{}", vertex.point)),
@@ -905,7 +865,7 @@ fn mark_standalone_geometric_set(
     id: u64,
     representation: &RawRecord,
     exchange: &Exchange,
-    geometry_ids: &GeometryIds,
+    carrier_index: &CarrierIndex,
     typed: &mut BTreeSet<u64>,
 ) -> bool {
     let Some(set_ids) = representation.parameter(1).and_then(refs) else {
@@ -926,12 +886,9 @@ fn mark_standalone_geometric_set(
             continue;
         };
         let has_decoded_member = items.into_iter().any(|item| {
-            let point = format!("step:data:point#{item}");
-            let curve = format!("step:data:curve#{item}");
-            let surface = format!("step:data:surface#{item}");
-            geometry_ids.points.contains(&point)
-                || geometry_ids.curves.contains(&curve)
-                || geometry_ids.surfaces.contains(&surface)
+            carrier_index.points.contains_key(&item)
+                || carrier_index.curves.contains_key(&item)
+                || carrier_index.surfaces.contains_key(&item)
         });
         if has_decoded_member {
             typed.insert(set_id);
@@ -948,7 +905,7 @@ fn build_geometric_set(
     id: u64,
     representation: &RawRecord,
     exchange: &Exchange,
-    geometry_ids: &GeometryIds,
+    carrier_index: &CarrierIndex,
     warnings: &mut Vec<String>,
 ) -> Option<Built> {
     let set_ids = refs(representation.parameter(1)?)?;
@@ -976,7 +933,7 @@ fn build_geometric_set(
         typed.insert(set_id);
         for surface_step in items {
             let surface = SurfaceId(format!("step:data:surface#{surface_step}"));
-            if geometry_ids.surfaces.contains(surface.as_str()) {
+            if carrier_index.surfaces.contains_key(&surface_step) {
                 surfaces.push((surface_step, surface));
             }
         }
@@ -1031,12 +988,6 @@ fn build_geometric_set(
             visible: None,
         },
     )
-}
-
-struct GeometryIds {
-    points: BTreeSet<String>,
-    curves: BTreeSet<String>,
-    surfaces: BTreeSet<String>,
 }
 
 #[derive(Clone)]
@@ -1578,7 +1529,7 @@ fn build(
     edefs: &BTreeMap<u64, EdgeDef>,
     odefs: &BTreeMap<u64, OrientedDef>,
     decoded_pcurves: &BTreeSet<PcurveId>,
-    point_positions: &BTreeMap<u64, Point3>,
+    point_positions: &CarrierIndex,
     scope_root: bool,
     warnings: &mut Vec<String>,
 ) -> BuildOutcome {
@@ -1701,7 +1652,7 @@ fn build_one(
     edefs: &BTreeMap<u64, EdgeDef>,
     odefs: &BTreeMap<u64, OrientedDef>,
     decoded_pcurves: &BTreeSet<PcurveId>,
-    point_positions: &BTreeMap<u64, Point3>,
+    point_positions: &CarrierIndex,
     shell_steps: &[u64],
     bid: BodyId,
     rid: &RegionId,
@@ -1909,7 +1860,7 @@ fn build_one(
                     )?;
                     if !vdefs
                         .get(&vertex_step)
-                        .is_some_and(|vertex| point_positions.contains_key(&vertex.point))
+                        .is_some_and(|vertex| point_positions.contains_key(vertex.point))
                     {
                         note_failure(failure, vertex_step, "vertex point");
                         return None;
@@ -1966,7 +1917,7 @@ fn build_one(
                         || points.iter().collect::<BTreeSet<_>>().len() != points.len()
                         || points
                             .iter()
-                            .any(|point| !point_positions.contains_key(point))
+                            .any(|point| !point_positions.contains_key(*point))
                     {
                         note_failure(failure, loop_step, "poly loop point carrier");
                         return None;
@@ -2240,7 +2191,7 @@ fn build_one(
             "vertex definition",
         )?;
         require_carrier(
-            point_positions.get(&v.point),
+            point_positions.get(v.point),
             failure,
             v.point,
             "vertex point",
@@ -2254,7 +2205,7 @@ fn build_one(
     }
     for (shell_step, point_id) in poly_points {
         require_carrier(
-            point_positions.get(&point_id),
+            point_positions.get(point_id),
             failure,
             point_id,
             "poly vertex point",
@@ -2440,7 +2391,7 @@ fn implicit_face_points(
     vdefs: &BTreeMap<u64, VertexDef>,
     edefs: &BTreeMap<u64, EdgeDef>,
     odefs: &BTreeMap<u64, OrientedDef>,
-    point_positions: &BTreeMap<u64, Point3>,
+    point_positions: &CarrierIndex,
 ) -> Vec<Point3> {
     let mut points = Vec::new();
     for &bound_step in bounds {
@@ -2486,7 +2437,7 @@ fn implicit_face_points(
             let point_step = vdefs
                 .get(&vertex_or_point)
                 .map_or(vertex_or_point, |vertex| vertex.point);
-            let Some(point) = point_positions.get(&point_step).copied() else {
+            let Some(point) = point_positions.get(point_step).copied() else {
                 continue;
             };
             if !points.contains(&point) {
@@ -2503,7 +2454,7 @@ fn implicit_face_plane(
     vdefs: &BTreeMap<u64, VertexDef>,
     edefs: &BTreeMap<u64, EdgeDef>,
     odefs: &BTreeMap<u64, OrientedDef>,
-    point_positions: &BTreeMap<u64, Point3>,
+    point_positions: &CarrierIndex,
 ) -> Option<SurfaceGeometry> {
     let points = implicit_face_points(bounds, exchange, vdefs, edefs, odefs, point_positions);
     let origin = *points.first()?;

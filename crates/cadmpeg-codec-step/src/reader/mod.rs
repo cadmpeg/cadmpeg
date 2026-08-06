@@ -16,6 +16,7 @@ use crate::parse::{self, Exchange, ParseDiagnostic, Value};
 
 mod dependencies;
 mod geometry;
+mod index;
 mod pmi;
 mod presentation;
 mod product;
@@ -109,10 +110,23 @@ fn decode_exchange_mode(
 
     let geometry = geometry::decode(exchange, &mut ir);
     let dependencies = dependencies::decode(exchange);
-    let topology = topology::decode(exchange, &mut ir);
-    geometry::associate_topology_carriers(exchange, &mut ir);
-    geometry::associate_free_geometric_set_members(exchange, &mut ir);
-    geometry::associate_free_representation_members(exchange, &mut ir);
+    let carrier_index = index::CarrierIndex::from_ir(&ir);
+    let topology = topology::decode(exchange, &mut ir, &carrier_index);
+    let carrier_index = index::CarrierIndex::from_ir(&ir);
+    let owned_carriers = geometry::topology_owned_carriers(&ir, &carrier_index);
+    geometry::associate_topology_carriers(exchange, &mut ir, &carrier_index, &owned_carriers);
+    geometry::associate_free_geometric_set_members(
+        exchange,
+        &mut ir,
+        &carrier_index,
+        &owned_carriers,
+    );
+    geometry::associate_free_representation_members(
+        exchange,
+        &mut ir,
+        &carrier_index,
+        &owned_carriers,
+    );
     let product = product::decode(exchange, &geometry, &topology, &mut ir);
     let tessellation = tessellation::decode(exchange, &geometry, &topology, &mut ir);
     let pmi = pmi::decode(exchange, &geometry, &mut ir);
