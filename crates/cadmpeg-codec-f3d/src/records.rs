@@ -1221,6 +1221,9 @@ pub struct DesignComponentInsertConstruction {
     pub relation_record_index: u32,
     /// Grouped occurrence carrier named by the relation record.
     pub carrier_record_index: u32,
+    /// Eight-byte occurrence identity carried by the scope prologue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub occurrence_identity: Option<u64>,
     /// Occurrence-role GUID joining the carrier to the external-reference table.
     pub neutron_role: String,
     /// Byte offset of the occurrence-role string payload.

@@ -2645,6 +2645,26 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 }
             }
             FeatureDefinition::BaseFeature { bodies } => body_selections.push(bodies),
+            FeatureDefinition::MeshImport { tessellations } => {
+                if tessellations.is_empty() {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "mesh import has no tessellation geometry",
+                    );
+                }
+                let mut seen = HashSet::new();
+                for tessellation in tessellations {
+                    if !seen.insert(tessellation) || ids.tessellations(tessellation).is_none() {
+                        ref_error(
+                            findings,
+                            &feature.id.0,
+                            "mesh import tessellation",
+                            tessellation,
+                        );
+                    }
+                }
+            }
             FeatureDefinition::InsertBodies { bodies } => {
                 body_selections.push(bodies);
                 if let BodySelection::Resolved { bodies, .. } = bodies {

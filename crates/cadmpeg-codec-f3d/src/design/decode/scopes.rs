@@ -747,79 +747,135 @@ pub(crate) fn exact_component_insert_construction(
     if scope.kind != "Component Insert" || scope.reference_members.len() != 1 {
         return None;
     }
-    let transform_at = match (scope.frame_length, scope.paired_class_tag.as_str()) {
-        (399, "259")
-            if bytes.get(start + 11..start + 20)? == [0; 9]
-                && bytes.get(start + 20..start + 25)? == [1, 0, 0, 0, 0]
-                && bytes.get(start + 33..start + 37)? == [0; 4]
-                && bytes.get(start + 37) == Some(&1)
-                && u32_at(bytes, start + 38)? == relation_record_index
-                && bytes.get(start + 42..start + 50)? == [0, 0, 0, 0, 0, 0, 1, 0] =>
-        {
-            start + 50
-        }
-        (381, "261")
-            if bytes.get(start + 11..start + 20)? == [0; 9]
-                && bytes.get(start + 20..start + 25)? == [1, 0, 0, 0, 0]
-                && bytes.get(start + 33..start + 37)? == [0; 4]
-                && bytes.get(start + 37) == Some(&1)
-                && u32_at(bytes, start + 38)? == relation_record_index
-                && bytes.get(start + 42..start + 49)? == [0, 0, 0, 0, 0, 0, 1] =>
-        {
-            start + 49
-        }
-        (395, "258")
-            if bytes.get(start + 11..start + 21)? == [0; 10]
-                && bytes.get(start + 29..start + 33)? == [0; 4]
-                && bytes.get(start + 33) == Some(&1)
-                && u32_at(bytes, start + 34)? == relation_record_index
-                && bytes.get(start + 38..start + 46)? == [0, 0, 0, 0, 0, 0, 1, 0] =>
-        {
-            start + 46
-        }
-        _ => return None,
-    };
+    let (transform_at, occurrence_identity) =
+        match (scope.frame_length, scope.paired_class_tag.as_str()) {
+            (399, "259")
+                if bytes.get(start + 11..start + 20)? == [0; 9]
+                    && bytes.get(start + 20..start + 25)? == [1, 0, 0, 0, 0]
+                    && bytes.get(start + 33..start + 37)? == [0; 4]
+                    && bytes.get(start + 37) == Some(&1)
+                    && u32_at(bytes, start + 38)? == relation_record_index
+                    && bytes.get(start + 42..start + 50)? == [0, 0, 0, 0, 0, 0, 1, 0] =>
+            {
+                (start + 50, read_u64(bytes, start + 25)?)
+            }
+            (381, "261")
+                if bytes.get(start + 11..start + 20)? == [0; 9]
+                    && bytes.get(start + 20..start + 25)? == [1, 0, 0, 0, 0]
+                    && bytes.get(start + 33..start + 37)? == [0; 4]
+                    && bytes.get(start + 37) == Some(&1)
+                    && u32_at(bytes, start + 38)? == relation_record_index
+                    && bytes.get(start + 42..start + 49)? == [0, 0, 0, 0, 0, 0, 1] =>
+            {
+                (start + 49, read_u64(bytes, start + 25)?)
+            }
+            (395, "258")
+                if bytes.get(start + 11..start + 21)? == [0; 10]
+                    && bytes.get(start + 29..start + 33)? == [0; 4]
+                    && bytes.get(start + 33) == Some(&1)
+                    && u32_at(bytes, start + 34)? == relation_record_index
+                    && bytes.get(start + 38..start + 46)? == [0, 0, 0, 0, 0, 0, 1, 0] =>
+            {
+                (start + 46, read_u64(bytes, start + 21)?)
+            }
+            (404, _)
+                if bytes.get(start + 11..start + 20)? == [0; 9]
+                    && bytes.get(start + 20..start + 25)? == [1, 0, 0, 0, 0]
+                    && bytes.get(start + 25..start + 29)? == [0; 4]
+                    && bytes.get(start + 37..start + 41)? == [0; 4]
+                    && bytes.get(start + 41) == Some(&1)
+                    && u32_at(bytes, start + 42)? == relation_record_index
+                    && bytes.get(start + 46..start + 52)? == [0; 6]
+                    && bytes.get(start + 52..start + 54)? == [1, 0] =>
+            {
+                (start + 54, read_u64(bytes, start + 29)?)
+            }
+            _ => return None,
+        };
     let transform = rigid_transform_at(bytes, transform_at)?;
     let relation_at = records.first_at_or_after(0, relation_record_index)?;
-    if relation_at >= start
-        || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 57
-        || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
-        || bytes.get(relation_at + 21) != Some(&1)
-        || bytes.get(relation_at + 26..relation_at + 34)? != [0; 8]
-        || bytes.get(relation_at + 34) != Some(&1)
-        || bytes.get(relation_at + 39..relation_at + 46)? != [0; 7]
-        || bytes.get(relation_at + 46) != Some(&1)
-        || u32_at(bytes, relation_at + 47)? != scope.record_index
-        || bytes.get(relation_at + 51..relation_at + 57)? != [0; 6]
-    {
-        return None;
-    }
-    let carrier_record_index = u32_at(bytes, relation_at + 22)?;
-    let carrier_at = unique_indexed_record_before(records, carrier_record_index, relation_at)?;
-    let mut placements = Vec::new();
-    for at in carrier_at + 11..relation_at {
-        let Some((role, after_role)) = lp_utf16_bounded(bytes, at, 1..=256) else {
-            continue;
-        };
-        if !crate::bytes::is_guid_relaxed(&role)
-            || bytes.get(after_role..after_role + 2) != Some(&[0, 0])
+    let (carrier_record_index, placements) = if scope.frame_length == 404 {
+        if relation_at >= start
+            || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 58
+            || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
+            || bytes.get(relation_at + 21) != Some(&1)
+            || bytes.get(relation_at + 26..relation_at + 32)? != [0; 6]
+            || bytes.get(relation_at + 32..relation_at + 35)? != [1, 0, 0]
+            || bytes.get(relation_at + 35) != Some(&1)
+            || bytes.get(relation_at + 40..relation_at + 47)? != [0; 7]
+            || bytes.get(relation_at + 47) != Some(&1)
+            || u32_at(bytes, relation_at + 48)? != scope.record_index
+            || bytes.get(relation_at + 52..relation_at + 58)? != [0; 6]
         {
-            continue;
+            return None;
         }
-        let transform_at = after_role.checked_add(2)?;
-        if rigid_transform_at(bytes, transform_at) == Some(transform) {
-            placements.push((role, at + 4, transform_at));
+        let carrier_record_index = u32_at(bytes, relation_at + 22)?;
+        let mut placements = Vec::new();
+        for &carrier_at in records
+            .offsets(carrier_record_index)
+            .iter()
+            .filter(|at| **at < relation_at)
+        {
+            for at in carrier_at + 11..relation_at {
+                let Some((role, after_role)) = lp_utf16_bounded(bytes, at, 36..=36) else {
+                    continue;
+                };
+                if !crate::bytes::is_guid_relaxed(&role)
+                    || bytes.get(after_role..after_role + 12)
+                        != Some(&[0, 1, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+                {
+                    continue;
+                }
+                for transform_at in carrier_at + 11..at {
+                    if rigid_transform_at(bytes, transform_at) == Some(transform) {
+                        placements.push((role.clone(), at + 4, transform_at));
+                    }
+                }
+            }
         }
-    }
-    if scope.frame_length == 381 {
-        placements.extend(legacy_component_insert_placements(
-            bytes,
-            carrier_at,
-            relation_at,
-            carrier_record_index,
-            transform,
-        ));
-    }
+        (carrier_record_index, placements)
+    } else {
+        if relation_at >= start
+            || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 57
+            || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
+            || bytes.get(relation_at + 21) != Some(&1)
+            || bytes.get(relation_at + 26..relation_at + 34)? != [0; 8]
+            || bytes.get(relation_at + 34) != Some(&1)
+            || bytes.get(relation_at + 39..relation_at + 46)? != [0; 7]
+            || bytes.get(relation_at + 46) != Some(&1)
+            || u32_at(bytes, relation_at + 47)? != scope.record_index
+            || bytes.get(relation_at + 51..relation_at + 57)? != [0; 6]
+        {
+            return None;
+        }
+        let carrier_record_index = u32_at(bytes, relation_at + 22)?;
+        let carrier_at = unique_indexed_record_before(records, carrier_record_index, relation_at)?;
+        let mut placements = Vec::new();
+        for at in carrier_at + 11..relation_at {
+            let Some((role, after_role)) = lp_utf16_bounded(bytes, at, 1..=256) else {
+                continue;
+            };
+            if !crate::bytes::is_guid_relaxed(&role)
+                || bytes.get(after_role..after_role + 2) != Some(&[0, 0])
+            {
+                continue;
+            }
+            let transform_at = after_role.checked_add(2)?;
+            if rigid_transform_at(bytes, transform_at) == Some(transform) {
+                placements.push((role, at + 4, transform_at));
+            }
+        }
+        if scope.frame_length == 381 {
+            placements.extend(legacy_component_insert_placements(
+                bytes,
+                carrier_at,
+                relation_at,
+                carrier_record_index,
+                transform,
+            ));
+        }
+        (carrier_record_index, placements)
+    };
     let [(neutron_role, neutron_role_offset, carrier_transform_offset)] = placements.as_slice()
     else {
         return None;
@@ -827,6 +883,7 @@ pub(crate) fn exact_component_insert_construction(
     Some(DesignComponentInsertConstruction {
         relation_record_index,
         carrier_record_index,
+        occurrence_identity: Some(occurrence_identity),
         neutron_role: neutron_role.clone(),
         neutron_role_offset: u64::try_from(*neutron_role_offset).ok()?,
         transform,

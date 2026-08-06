@@ -1221,15 +1221,23 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         (395, "258") => {
                             construction.transform_offset == scope.byte_offset.saturating_add(46)
                         }
+                        (404, _) => {
+                            construction.transform_offset == scope.byte_offset.saturating_add(54)
+                        }
                         _ => false,
                     };
+                let placement_field_order = if scope.frame_length == 404 {
+                    construction.carrier_transform_offset < construction.neutron_role_offset
+                } else {
+                    construction.neutron_role_offset < construction.carrier_transform_offset
+                };
                 scope.kind == "Component Insert"
                     && scope.reference_members == [construction.relation_record_index]
                     && construction.carrier_record_index != construction.relation_record_index
                     && crate::bytes::is_guid_relaxed(&construction.neutron_role)
                     && design::decode::sketch::valid_sketch_transform(&construction.transform)
                     && frame_matches_transform
-                    && construction.neutron_role_offset < construction.carrier_transform_offset
+                    && placement_field_order
                     && relation.is_some_and(|relation| {
                         construction.carrier_transform_offset < relation.byte_offset
                     })

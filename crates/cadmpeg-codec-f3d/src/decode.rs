@@ -1362,7 +1362,7 @@ fn finish_model_decode<'a>(
     let (mut ir, mut native, unknowns) = build_geometry_ir(scan, primary_model_brep, brep);
     let (subds, subd_losses) = crate::tsm::decode(scan)?;
     ir.model.subds = subds;
-    project_mesh_bodies(scan, &mut ir, &mut report)?;
+    let mesh_projection = project_mesh_bodies(scan, &mut ir, &mut report)?;
     report.losses.extend(subd_losses);
     native.body_visibilities = body_visibilities;
     for history_brep in container::history_breps(scan) {
@@ -1482,6 +1482,11 @@ fn finish_model_decode<'a>(
                 histories: &native.asm_histories,
             },
         );
+    bind_mesh_feature_definitions(
+        &mut ir.model.features,
+        &native.design_parameter_scopes,
+        &mesh_projection,
+    );
     crate::design::feature_project::bind_form_cages(
         scan,
         &native.design_parameter_scopes,
@@ -2250,12 +2255,18 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     );
     let mut report = build_container_report(&scan, false);
     reconcile_appearance_loss(&mut report, &ir, has_appearance_assignments);
-    let mesh_bodies = project_mesh_bodies(&scan, &mut ir, &mut report)?;
+    let mesh_projection = project_mesh_bodies(&scan, &mut ir, &mut report)?;
+    bind_mesh_feature_definitions(
+        &mut ir.model.features,
+        &native.design_parameter_scopes,
+        &mesh_projection,
+    );
+    report_design_projection_gaps(&mut report, &ir, &native);
     native.store(ir.native.namespace_mut("f3d"))?;
     let annotations = populate_annotations(&ir, &scan, &native, None, &unknowns);
     let source_image = preserve_source_image(&scan);
-    if mesh_bodies > 0 {
-        apply_mesh_body_classification(&mut report, &scan, mesh_bodies);
+    if mesh_projection.count > 0 {
+        apply_mesh_body_classification(&mut report, &scan, mesh_projection.count);
     } else {
         apply_sketch_only_classification(
             &mut report,
@@ -2274,6 +2285,14 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     decode_result(ir, report, annotations, unknowns, source_image)
 }
 
+/// Projected mesh geometry and the Design records that own it.
+struct MeshProjection {
+    /// Number of joined mesh-body containers.
+    count: usize,
+    /// Tessellation identities grouped by their Design stream and feature scope record.
+    tessellations_by_scope: std::collections::HashMap<(String, u32), Vec<String>>,
+}
+
 /// Project each mesh body's container geometry into the tessellation arena.
 ///
 /// A mesh body carries no B-rep topology: its geometry is a triangle list, and
@@ -2284,7 +2303,7 @@ fn project_mesh_bodies(
     scan: &ContainerScan,
     ir: &mut CadIr,
     report: &mut DecodeReport,
-) -> Result<usize, CodecError> {
+) -> Result<MeshProjection, CodecError> {
     use crate::design::decode::mesh::MeshContainerOutcome;
 
     let mut bodies = Vec::new();
@@ -2307,14 +2326,25 @@ fn project_mesh_bodies(
             }),
         }
     }
-    let count = bodies.len();
     let mut unresolved = std::collections::BTreeMap::new();
-    ir.model
-        .tessellations
-        .extend(bodies.into_iter().map(|body| {
-            let channels = mesh_attribute_channels(&body.attributes, &mut unresolved);
-            cadmpeg_ir::tessellation::Tessellation {
-                id: body.id,
+    let mut projection = MeshProjection {
+        count: bodies.len(),
+        tessellations_by_scope: std::collections::HashMap::new(),
+    };
+    for body in bodies {
+        let id = body.id.clone();
+        for scope_record_index in body.design_scope_record_indices {
+            projection
+                .tessellations_by_scope
+                .entry((body.design_stream.clone(), scope_record_index))
+                .or_default()
+                .push(id.clone());
+        }
+        let channels = mesh_attribute_channels(&body.attributes, &mut unresolved);
+        ir.model
+            .tessellations
+            .push(cadmpeg_ir::tessellation::Tessellation {
+                id,
                 body: None,
                 faces: Vec::new(),
                 // The container stores no chordal deflection: a mesh body's
@@ -2326,10 +2356,43 @@ fn project_mesh_bodies(
                 strip_lengths: Vec::new(),
                 normals: Vec::new(),
                 channels,
-            }
-        }));
+            });
+    }
     report_unresolved_mesh_attributes(report, &unresolved);
-    Ok(count)
+    Ok(projection)
+}
+
+/// Replace the native definition of each mesh-import scope with its exact
+/// tessellation identities.
+fn bind_mesh_feature_definitions(
+    features: &mut [cadmpeg_ir::features::Feature],
+    scopes: &[crate::records::DesignParameterScope],
+    projection: &MeshProjection,
+) {
+    for feature in features {
+        if feature.source_tag.as_deref() != Some("Base Mesh Feature") {
+            continue;
+        }
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let Some(scope) = scopes.iter().find(|scope| scope.id == native_ref) else {
+            continue;
+        };
+        let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+        let Some(tessellations) = projection
+            .tessellations_by_scope
+            .get(&(stream.to_owned(), scope.record_index))
+        else {
+            continue;
+        };
+        if tessellations.is_empty() {
+            continue;
+        }
+        feature.definition = cadmpeg_ir::features::FeatureDefinition::MeshImport {
+            tessellations: tessellations.clone(),
+        };
+    }
 }
 
 /// Project channels with a settled element layout and count unresolved channels
@@ -4009,9 +4072,10 @@ fn apply_appearance_base_colors(ir: &mut CadIr) {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_appearance_base_colors, container_only_dimension_parameters, design_projection_gaps,
+        apply_appearance_base_colors, bind_mesh_feature_definitions,
+        container_only_dimension_parameters, design_projection_gaps,
         feature_definition_is_incomplete, incomplete_feature_families,
-        unresolved_dimension_companion_count, DesignProjectionGaps,
+        unresolved_dimension_companion_count, DesignProjectionGaps, MeshProjection,
     };
     use crate::native::F3dNative;
     use crate::records::{
@@ -4020,6 +4084,52 @@ mod tests {
         DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignSketchPlacement,
         LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
     };
+
+    #[test]
+    fn mesh_feature_binds_tessellation_through_mesh_body_scope_reference() {
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+
+        let scope_id = "f3d:Design/BulkStream.dat:design-parameter-scope#10";
+        let mut scope = DesignParameterScope::empty(scope_id, "Base Mesh Feature", 10);
+        // The feature's owning entity reference is distinct from its scope index.
+        scope.reference_members = vec![221];
+        let mut features = vec![Feature {
+            id: FeatureId("feature:mesh-import".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: Some("Base Mesh Feature".into()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "Base Mesh Feature".into(),
+                parameters: std::collections::BTreeMap::new(),
+                properties: std::collections::BTreeMap::new(),
+            },
+            native_ref: Some(scope_id.into()),
+        }];
+        let projection = MeshProjection {
+            count: 1,
+            tessellations_by_scope: std::collections::HashMap::from([(
+                ("f3d:Design/BulkStream.dat".into(), 10),
+                vec!["tessellation:mesh-body".into()],
+            )]),
+        };
+
+        bind_mesh_feature_definitions(&mut features, &[scope], &projection);
+
+        assert_eq!(
+            features[0].definition,
+            FeatureDefinition::MeshImport {
+                tessellations: vec!["tessellation:mesh-body".into()],
+            }
+        );
+        assert!(!feature_definition_is_incomplete(&features[0].definition));
+    }
 
     #[test]
     fn presentation_timeline_objects_are_not_incomplete_modeling_features() {

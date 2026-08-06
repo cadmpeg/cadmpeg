@@ -13,7 +13,7 @@ use crate::container::{role, ContainerScan};
 use crate::design::decode::sketch::{indexed_record_index, next_indexed_record_offset};
 use crate::ids;
 use crate::paramesh::decode_mesh_container;
-use cadmpeg_core::le::f64_at;
+use cadmpeg_core::le::{f64_at, u64_at as read_u64};
 use cadmpeg_core::CodecError;
 
 /// Row-major 4x4 f64 matrix byte length.
@@ -27,6 +27,10 @@ const MESH_BODY_SECOND_MATRIX_AT: usize =
 pub(crate) struct MeshBody {
     /// Deterministic native identifier, keyed by the mesh-body record.
     pub(crate) id: String,
+    /// Native Design stream containing the mesh-body record.
+    pub(crate) design_stream: String,
+    /// Indexed Design scope records referenced by the mesh-body record.
+    pub(crate) design_scope_record_indices: Vec<u32>,
     /// Vertex positions in model millimetres.
     pub(crate) vertices: Vec<cadmpeg_ir::math::Point3>,
     /// Triangle corner indices into `vertices`.
@@ -100,6 +104,24 @@ fn same_segment_reference(entity: u32) -> Vec<u8> {
     bytes
 }
 
+/// Read the marked indexed-record references carried by a mesh-body record.
+fn marked_record_indices(payload: &[u8]) -> Vec<u32> {
+    let mut indices = Vec::new();
+    for at in 0..payload.len().saturating_sub(10) {
+        if payload.get(at) != Some(&1) || payload.get(at + 9..at + 11) != Some(&[0, 0]) {
+            continue;
+        }
+        let Some(index) = read_u64(payload, at + 1).and_then(|value| u32::try_from(value).ok())
+        else {
+            continue;
+        };
+        if !indices.contains(&index) {
+            indices.push(index);
+        }
+    }
+    indices
+}
+
 /// A u32-count length-prefixed ASCII string as it appears in a record.
 fn lp_ascii_bytes(value: &str) -> Vec<u8> {
     let mut bytes = (value.len() as u32).to_le_bytes().to_vec();
@@ -153,9 +175,15 @@ pub(crate) fn decode_mesh_bodies(
         .entries
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
-        .map(|entry| scan.entry_bytes(&entry.name).map(indexed_records))
+        .map(|entry| {
+            scan.entry_bytes(&entry.name)
+                .map(|bytes| (ids::native_scope(&entry.name), indexed_records(bytes)))
+        })
         .collect::<Result<Vec<_>, _>>()?;
-    let records = design_streams.iter().flatten().collect::<Vec<_>>();
+    let records = design_streams
+        .iter()
+        .flat_map(|(stream, records)| records.iter().map(move |record| (stream.as_str(), record)))
+        .collect::<Vec<_>>();
     let mut outcomes = Vec::new();
     for entry in scan
         .entries
@@ -180,29 +208,35 @@ pub(crate) fn decode_mesh_bodies(
         let guid = lp_ascii_bytes(&container.fusion_uuid);
         let joined = records
             .iter()
-            .find_map(|guid_record| {
-                contains(guid_record.payload, &guid).then_some(guid_record.index)
+            .find_map(|(stream, guid_record)| {
+                contains(guid_record.payload, &guid).then_some((*stream, guid_record.index))
             })
-            .and_then(|guid_record| {
-                let reference = same_segment_reference(guid_record);
+            .and_then(|(stream, guid_record_index)| {
+                let reference = same_segment_reference(guid_record_index);
                 let entry_name = lp_utf16_bytes(base);
                 records
                     .iter()
-                    .any(|record| {
-                        contains(record.payload, &entry_name)
+                    .any(|(candidate_stream, record)| {
+                        *candidate_stream == stream
+                            && contains(record.payload, &entry_name)
                             && contains(record.payload, &reference)
                     })
-                    .then_some(reference)
+                    .then_some((stream, reference))
             })
-            .and_then(|reference| {
-                records.iter().find_map(|record| {
-                    contains(record.payload, &reference)
-                        .then(|| mesh_body_transform(record.payload))
-                        .flatten()
-                        .map(|transform| (record, transform))
+            .and_then(|(stream, reference)| {
+                records.iter().find_map(|(candidate_stream, record)| {
+                    if *candidate_stream != stream || !contains(record.payload, &reference) {
+                        return None;
+                    }
+                    Some((
+                        stream.to_owned(),
+                        marked_record_indices(record.payload),
+                        *record,
+                        mesh_body_transform(record.payload)?,
+                    ))
                 })
             });
-        let Some((body, transform)) = joined else {
+        let Some((design_stream, design_scope_record_indices, body, transform)) = joined else {
             outcomes.push(MeshContainerOutcome::Unjoined {
                 entry_name: entry.name.clone(),
             });
@@ -210,6 +244,8 @@ pub(crate) fn decode_mesh_bodies(
         };
         outcomes.push(MeshContainerOutcome::Joined(MeshBody {
             id: ids::native_mesh_body_id(&entry.name, body.offset),
+            design_stream,
+            design_scope_record_indices,
             vertices: container
                 .vertices
                 .iter()
@@ -246,6 +282,20 @@ mod tests {
         payload.push(0);
         payload.extend_from_slice(&matrix(cells));
         payload
+    }
+
+    #[test]
+    fn marked_record_indices_preserve_unique_reference_order() {
+        let mut payload = vec![0; 64];
+        payload[12] = 1;
+        payload[13..21].copy_from_slice(&217u64.to_le_bytes());
+        payload[30] = 1;
+        payload[31..39].copy_from_slice(&210u64.to_le_bytes());
+        payload[48] = 1;
+        payload[49..57].copy_from_slice(&217u64.to_le_bytes());
+        payload[57] = 9;
+
+        assert_eq!(marked_record_indices(&payload), [217, 210]);
     }
 
     #[test]

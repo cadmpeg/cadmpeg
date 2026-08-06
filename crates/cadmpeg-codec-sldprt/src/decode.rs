@@ -1031,6 +1031,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             | FeatureDefinition::Helix { .. } => false,
             FeatureDefinition::BaseFeature { bodies }
             | FeatureDefinition::InsertBodies { bodies } => incomplete_body_selection(bodies),
+            FeatureDefinition::MeshImport { .. } => false,
             FeatureDefinition::InsertComponent { occurrence } => !ir
                 .model
                 .occurrences

@@ -438,6 +438,11 @@ pub enum FeatureDefinition {
         /// Bodies copied into the parametric timeline when the session closed.
         bodies: BodySelection,
     },
+    /// Mesh geometry imported into the parametric timeline.
+    MeshImport {
+        /// Tessellation identities supplied by the mesh-body records.
+        tessellations: Vec<String>,
+    },
     /// Independent bodies introduced by a copy-and-paste operation.
     InsertBodies {
         /// Newly created body copies in source order.

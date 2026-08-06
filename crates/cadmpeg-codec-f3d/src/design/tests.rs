@@ -21343,6 +21343,77 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         assert_eq!(construction.transform, transform);
     }
 
+    let mut expanded = Vec::new();
+    header(&mut expanded, b"312", 10);
+    let expanded_carrier_transform_at = expanded.len();
+    for value in transform.into_iter().flatten() {
+        expanded.extend_from_slice(&value.to_le_bytes());
+    }
+    let expanded_role_at = expanded.len();
+    expanded.extend_from_slice(&36_u32.to_le_bytes());
+    expanded.extend(role.encode_utf16().flat_map(u16::to_le_bytes));
+    expanded.extend_from_slice(&[0, 1, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let expanded_relation_at = expanded.len();
+    header(&mut expanded, b"338", 20);
+    expanded.resize(expanded_relation_at + 58, 0);
+    expanded[expanded_relation_at + 21] = 1;
+    expanded[expanded_relation_at + 22..expanded_relation_at + 26]
+        .copy_from_slice(&10_u32.to_le_bytes());
+    expanded[expanded_relation_at + 32..expanded_relation_at + 35].copy_from_slice(&[1, 0, 0]);
+    expanded[expanded_relation_at + 35] = 1;
+    expanded[expanded_relation_at + 36..expanded_relation_at + 40]
+        .copy_from_slice(&99_u32.to_le_bytes());
+    expanded[expanded_relation_at + 47] = 1;
+    expanded[expanded_relation_at + 48..expanded_relation_at + 52]
+        .copy_from_slice(&30_u32.to_le_bytes());
+    let expanded_scope_at = expanded.len();
+    header(&mut expanded, b"335", 30);
+    expanded.resize(expanded_scope_at + 404, 0);
+    expanded[expanded_scope_at + 20] = 1;
+    let occurrence_identity = 0x0102_0304_0506_0708_u64;
+    expanded[expanded_scope_at + 29..expanded_scope_at + 37]
+        .copy_from_slice(&occurrence_identity.to_le_bytes());
+    expanded[expanded_scope_at + 41] = 1;
+    expanded[expanded_scope_at + 42..expanded_scope_at + 46].copy_from_slice(&20_u32.to_le_bytes());
+    expanded[expanded_scope_at + 52..expanded_scope_at + 54].copy_from_slice(&[1, 0]);
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = expanded_scope_at + 54 + ordinal * 8;
+        expanded[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    header(&mut expanded, b"260", 30);
+    let expanded_scope = DesignParameterScope {
+        byte_offset: expanded_scope_at as u64,
+        class_tag: "335".into(),
+        frame_length: 404,
+        reference_member_offsets: vec![(expanded_scope_at + 42) as u64],
+        paired_class_tag: "260".into(),
+        paired_byte_offset: (expanded_scope_at + 404) as u64,
+        ..scope.clone()
+    };
+    let construction = exact_component_insert_construction(
+        &expanded,
+        &IndexedRecordOffsets::build(&expanded),
+        &expanded_scope,
+    )
+    .expect("404-byte component insert construction");
+    assert_eq!(construction.relation_record_index, 20);
+    assert_eq!(construction.carrier_record_index, 10);
+    assert_eq!(construction.occurrence_identity, Some(occurrence_identity));
+    assert_eq!(construction.neutron_role, role);
+    assert_eq!(
+        construction.neutron_role_offset,
+        (expanded_role_at + 4) as u64
+    );
+    assert_eq!(construction.transform, transform);
+    assert_eq!(
+        construction.transform_offset,
+        (expanded_scope_at + 54) as u64
+    );
+    assert_eq!(
+        construction.carrier_transform_offset,
+        expanded_carrier_transform_at as u64
+    );
+
     let push_utf16 = |bytes: &mut Vec<u8>, value: &str| {
         bytes.extend_from_slice(&(value.encode_utf16().count() as u32).to_le_bytes());
         bytes.extend(value.encode_utf16().flat_map(u16::to_le_bytes));
