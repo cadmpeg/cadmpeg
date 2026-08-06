@@ -287,8 +287,16 @@ enum Command {
     #[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
     Inspect {
         /// Native CAD file to inspect. Omit it when using a byte subcommand.
-        #[arg(required = true)]
+        #[arg(required_unless_present = "input_flag")]
         input: Option<PathBuf>,
+        /// Tolerated spelling of the positional input.
+        #[arg(
+            long = "input",
+            value_name = "FILE",
+            hide = true,
+            conflicts_with = "input"
+        )]
+        input_flag: Option<PathBuf>,
         /// Write a versioned JSON summary to standard output.
         #[arg(long)]
         json: bool,
@@ -310,7 +318,16 @@ enum Command {
     /// Decode a native CAD file to canonical CADIR JSON.
     Decode {
         /// Native CAD file to decode.
-        input: PathBuf,
+        #[arg(required_unless_present = "input_flag")]
+        input: Option<PathBuf>,
+        /// Tolerated spelling of the positional input.
+        #[arg(
+            long = "input",
+            value_name = "FILE",
+            hide = true,
+            conflicts_with = "input"
+        )]
+        input_flag: Option<PathBuf>,
         /// Output file; omit to write CADIR to standard output.
         #[arg(short, long)]
         output: Option<PathBuf>,
@@ -339,7 +356,16 @@ enum Command {
     #[command(after_help = "Project fields from the written report with `cadmpeg query`.")]
     Validate {
         /// CADIR or supported native CAD file to validate.
-        input: PathBuf,
+        #[arg(required_unless_present = "input_flag")]
+        input: Option<PathBuf>,
+        /// Tolerated spelling of the positional input.
+        #[arg(
+            long = "input",
+            value_name = "FILE",
+            hide = true,
+            conflicts_with = "input"
+        )]
+        input_flag: Option<PathBuf>,
         /// Write a versioned JSON result to standard output.
         #[arg(long)]
         json: bool,
@@ -357,7 +383,16 @@ enum Command {
     /// Decode if needed, then export without CADIR validation.
     Export {
         /// CADIR or supported native CAD file to export.
-        input: PathBuf,
+        #[arg(required_unless_present = "input_flag")]
+        input: Option<PathBuf>,
+        /// Tolerated spelling of the positional input.
+        #[arg(
+            long = "input",
+            value_name = "FILE",
+            hide = true,
+            conflicts_with = "input"
+        )]
+        input_flag: Option<PathBuf>,
         /// Output format; inferred from the output extension when omitted.
         #[arg(short, long, value_enum)]
         format: Option<Format>,
@@ -413,7 +448,16 @@ enum Command {
     /// Decode if needed, validate CADIR, then export.
     Convert {
         /// CADIR or supported native CAD file to convert.
-        input: PathBuf,
+        #[arg(required_unless_present = "input_flag")]
+        input: Option<PathBuf>,
+        /// Tolerated spelling of the positional input.
+        #[arg(
+            long = "input",
+            value_name = "FILE",
+            hide = true,
+            conflicts_with = "input"
+        )]
+        input_flag: Option<PathBuf>,
         /// Output format; inferred from the output extension when omitted.
         #[arg(short, long, value_enum)]
         format: Option<Format>,
@@ -447,12 +491,23 @@ enum Command {
     },
 }
 
+/// Collapses the positional input and the tolerated `--input` spelling.
+///
+/// Clap guarantees exactly one of the pair is present: the positional is
+/// required unless the flag is given, and the two conflict.
+fn resolve_input(positional: Option<PathBuf>, flag: Option<PathBuf>) -> PathBuf {
+    positional
+        .or(flag)
+        .expect("clap requires one input spelling")
+}
+
 fn main() -> ExitCode {
     let command = Cli::parse().command;
     let registry = Registry::with_builtins();
     let result = match command {
         Command::Inspect {
             input,
+            input_flag,
             json,
             report,
             force,
@@ -462,7 +517,7 @@ fn main() -> ExitCode {
         } => match bytes {
             Some(byte_command) => inspect::run(byte_command).map(|()| ExitCode::SUCCESS),
             None => {
-                let input = input.expect("clap requires an input without a subcommand");
+                let input = resolve_input(input, input_flag);
                 commands::inspect(
                     &registry,
                     &input,
@@ -477,6 +532,7 @@ fn main() -> ExitCode {
         },
         Command::Decode {
             input,
+            input_flag,
             output,
             force,
             report,
@@ -484,7 +540,7 @@ fn main() -> ExitCode {
             decode,
         } => commands::decode(
             &registry,
-            &input,
+            &resolve_input(input, input_flag),
             output.as_deref(),
             force,
             report.as_deref(),
@@ -495,6 +551,7 @@ fn main() -> ExitCode {
         Command::Query { view } => query::run(&view).map(|()| ExitCode::SUCCESS),
         Command::Validate {
             input,
+            input_flag,
             json,
             report,
             force,
@@ -502,7 +559,7 @@ fn main() -> ExitCode {
             decode,
         } => commands::validate_cmd(
             &registry,
-            &input,
+            &resolve_input(input, input_flag),
             input_args.forced(),
             &decode,
             json,
@@ -512,6 +569,7 @@ fn main() -> ExitCode {
         .map(|()| ExitCode::SUCCESS),
         Command::Export {
             input,
+            input_flag,
             format,
             output,
             force,
@@ -524,7 +582,7 @@ fn main() -> ExitCode {
             step,
         } => commands::export(
             &registry,
-            &input,
+            &resolve_input(input, input_flag),
             format,
             output.as_deref(),
             commands::ConversionPlan {
@@ -566,6 +624,7 @@ fn main() -> ExitCode {
         ),
         Command::Convert {
             input,
+            input_flag,
             format,
             output,
             force,
@@ -579,7 +638,7 @@ fn main() -> ExitCode {
             step,
         } => commands::convert(
             &registry,
-            &input,
+            &resolve_input(input, input_flag),
             format,
             output.as_deref(),
             commands::ConversionPlan {

@@ -70,11 +70,41 @@ pub enum ByteTool {
     Diff(DiffArgs),
 }
 
+/// The file a single-input byte tool reads, under either spelling.
+///
+/// The positional form is canonical; `--input FILE` is a tolerated guessed
+/// spelling. Exactly one of the pair must be present, and giving both is a
+/// clap conflict error.
+#[derive(Debug, Args)]
+pub struct FileArg {
+    /// File to read.
+    #[arg(value_name = "FILE", required_unless_present = "input_flag")]
+    pub file: Option<PathBuf>,
+    /// Tolerated spelling of the positional file.
+    #[arg(
+        long = "input",
+        value_name = "FILE",
+        hide = true,
+        conflicts_with = "file"
+    )]
+    pub input_flag: Option<PathBuf>,
+}
+
+impl FileArg {
+    /// Returns the file under whichever spelling was given.
+    pub fn path(&self) -> &Path {
+        self.file
+            .as_deref()
+            .or(self.input_flag.as_deref())
+            .expect("clap requires one file spelling")
+    }
+}
+
 /// Arguments for `cadmpeg inspect hex`.
 #[derive(Debug, Args)]
 pub struct HexArgs {
-    /// File to dump.
-    pub file: PathBuf,
+    #[command(flatten)]
+    pub file: FileArg,
     /// First byte to print.
     #[arg(long, alias = "start", default_value = "0", value_parser = parse_offset)]
     pub offset: u64,
@@ -89,8 +119,8 @@ pub struct HexArgs {
 /// Arguments for `cadmpeg inspect read`.
 #[derive(Debug, Args)]
 pub struct ReadArgs {
-    /// File to read.
-    pub file: PathBuf,
+    #[command(flatten)]
+    pub file: FileArg,
     /// Scalar type to decode.
     #[arg(long = "type", value_enum)]
     pub ty: ScalarType,
@@ -112,7 +142,13 @@ pub struct ReadArgs {
 #[command(group(clap::ArgGroup::new("needle").args(["hex", "ascii", "utf16le"])))]
 pub struct FindArgs {
     /// File to search.
-    pub file: PathBuf,
+    #[arg(value_name = "FILE", required_unless_present = "input_flag")]
+    pub file: Option<PathBuf>,
+    /// Tolerated spelling of the positional file. Deliberately not a clap
+    /// conflict with the positional: when both appear, the positional slot
+    /// caught a misplaced search pattern, and the runner explains that.
+    #[arg(long = "input", value_name = "FILE", hide = true)]
+    pub input_flag: Option<PathBuf>,
     /// Rejected placeholder: the pattern belongs to `--hex`, `--ascii`, or
     /// `--utf16le`, because a bare word cannot say how to encode it.
     #[arg(hide = true)]
@@ -134,8 +170,8 @@ pub struct FindArgs {
 /// Arguments for `cadmpeg inspect strings`.
 #[derive(Debug, Args)]
 pub struct StringsArgs {
-    /// File to scan.
-    pub file: PathBuf,
+    #[command(flatten)]
+    pub file: FileArg,
     /// Shortest run to report, in characters.
     #[arg(
         long,
@@ -152,8 +188,8 @@ pub struct StringsArgs {
 /// Arguments for `cadmpeg inspect struct`.
 #[derive(Debug, Args)]
 pub struct StructArgs {
-    /// File to decode.
-    pub file: PathBuf,
+    #[command(flatten)]
+    pub file: FileArg,
     /// Record layout, for example `u32le:count,pad4,f64le:x,f64le:y`.
     #[arg(long)]
     pub layout: String,
@@ -168,8 +204,8 @@ pub struct StructArgs {
 /// Arguments for `cadmpeg inspect container`.
 #[derive(Debug, Args)]
 pub struct ContainerArgs {
-    /// ZIP-based file to list.
-    pub file: PathBuf,
+    #[command(flatten)]
+    pub file: FileArg,
     /// Resource-limit profile applied while reading the central directory.
     #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
     pub limits: LimitProfile,
@@ -279,7 +315,7 @@ fn hex(args: &HexArgs) -> Result<()> {
         bail!("--width must be at least 1");
     }
     let len = args.len.unwrap_or(DEFAULT_HEX_LEN);
-    let bytes = read_window(&args.file, args.offset, len)?;
+    let bytes = read_window(args.file.path(), args.offset, len)?;
     if bytes.is_empty() {
         println!("(no bytes at 0x{:x})", args.offset);
         return Ok(());
@@ -298,10 +334,11 @@ fn read(args: &ReadArgs) -> Result<()> {
         bail!("--stride 0 would read the same bytes forever");
     }
     let endian = args.endian.endian();
-    let size = file_len(&args.file)?;
+    let file_path = args.file.path();
+    let size = file_len(file_path)?;
     let name = args.ty.display_name(endian);
     let mut file =
-        File::open(&args.file).with_context(|| format!("opening {}", args.file.display()))?;
+        File::open(file_path).with_context(|| format!("opening {}", file_path.display()))?;
     for index in 0..args.count {
         let offset = index
             .checked_mul(stride)
@@ -313,7 +350,7 @@ fn read(args: &ReadArgs) -> Result<()> {
         if end > size {
             bail!(
                 "value {index} needs bytes 0x{offset:x}..0x{end:x}, past the end of {} at 0x{size:x}",
-                args.file.display()
+                file_path.display()
             );
         }
         file.seek(SeekFrom::Start(offset))?;
@@ -331,7 +368,15 @@ fn read(args: &ReadArgs) -> Result<()> {
 }
 
 fn find(args: &FindArgs) -> Result<()> {
-    if let Some(stray) = &args.misplaced_pattern {
+    // With `--input FILE`, a filled positional slot caught a search pattern,
+    // not a file: shift it into the misplaced-pattern teaching below.
+    let (file, misplaced) = match (&args.input_flag, &args.file) {
+        (Some(input), Some(stray)) => (input, Some(stray.display().to_string())),
+        (Some(input), None) => (input, args.misplaced_pattern.clone()),
+        (None, Some(file)) => (file, args.misplaced_pattern.clone()),
+        (None, None) => unreachable!("clap requires one file spelling"),
+    };
+    if let Some(stray) = &misplaced {
         bail!(
             "`{stray}` is an extra positional argument; the search pattern is named by a flag \
              because a bare word does not say how to encode it: pass `--hex {stray}` for a byte \
@@ -348,7 +393,7 @@ fn find(args: &FindArgs) -> Result<()> {
         bail!("pass one of --hex, --ascii, or --utf16le")
     };
     let pattern = pattern.map_err(|message| anyhow::anyhow!(message))?;
-    let bytes = read_whole(&args.file)?;
+    let bytes = read_whole(file)?;
     let limit = (args.max > 0).then_some(args.max);
     let hits = search::find_all(&bytes, &pattern, limit);
     let truncated = limit.is_some_and(|max| hits.len() >= max);
@@ -378,7 +423,7 @@ fn strings(args: &StringsArgs) -> Result<()> {
     if args.min == 0 {
         bail!("--min must be at least 1");
     }
-    let bytes = read_whole(&args.file)?;
+    let bytes = read_whole(args.file.path())?;
     for found in search::extract_strings(&bytes, args.min, args.encoding) {
         println!(
             "0x{:08x}  {:<8}  \"{}\"",
@@ -395,7 +440,8 @@ fn structure(args: &StructArgs) -> Result<()> {
     if args.count == 0 {
         return Ok(());
     }
-    let size = file_len(&args.file)?;
+    let file_path = args.file.path();
+    let size = file_len(file_path)?;
     let record_size = layout.size as u64;
     let span = record_size
         .checked_mul(args.count)
@@ -407,10 +453,10 @@ fn structure(args: &StructArgs) -> Result<()> {
              but {} is 0x{size:x} bytes",
             args.count,
             args.offset,
-            args.file.display()
+            file_path.display()
         );
     }
-    let bytes = read_window(&args.file, args.offset, span - args.offset)?;
+    let bytes = read_window(file_path, args.offset, span - args.offset)?;
     let name_width = layout
         .fields
         .iter()
@@ -434,13 +480,14 @@ fn structure(args: &StructArgs) -> Result<()> {
 }
 
 fn container_list(args: &ContainerArgs) -> Result<()> {
-    let bytes = read_whole(&args.file)?;
+    let file_path = args.file.path();
+    let bytes = read_whole(file_path)?;
     let entries = container::list(&bytes, args.limits.limits()).with_context(|| {
         format!(
             "cannot list {} as a ZIP container; `cadmpeg inspect {}` reads \
              the other container families through their codec",
-            args.file.display(),
-            args.file.display()
+            file_path.display(),
+            file_path.display()
         )
     })?;
     print!("{}", container::render(&entries));

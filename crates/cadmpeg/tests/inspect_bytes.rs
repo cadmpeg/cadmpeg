@@ -333,7 +333,7 @@ fn the_bytes_group_prefix_reaches_the_tool_and_its_help() {
         .assert()
         .success()
         .stdout(
-            predicate::str::contains("inspect bytes hex [OPTIONS] <FILE>")
+            predicate::str::contains("inspect bytes hex [OPTIONS] [FILE]")
                 .and(predicate::str::contains("--width <WIDTH>")),
         );
 
@@ -763,4 +763,105 @@ fn extract_is_reachable_through_the_bytes_group() {
         .unwrap();
     assert!(output.status.success());
     assert_eq!(output.stdout, b"bracketed payload");
+}
+
+#[test]
+fn input_flag_reaches_the_same_file_as_the_positional() {
+    let dir = tempdir().unwrap();
+    let bytes: Vec<u8> = (0u8..64).collect();
+    let counter = write(dir.path(), "counter.bin", &bytes);
+    let path = counter.to_str().unwrap();
+
+    // Byte-identical stdout under either spelling, per single-input tool.
+    for args in [
+        vec!["inspect", "hex", "--len", "0x10"],
+        vec!["inspect", "read", "--type", "u8", "-n", "2"],
+        vec!["inspect", "strings", "--min", "1"],
+        vec!["inspect", "struct", "--layout", "u8:a"],
+        vec!["inspect", "find", "--hex", "05"],
+    ] {
+        let positional = cadmpeg().args(&args).arg(path).output().unwrap();
+        let mut flagged = args.clone();
+        flagged.push("--input");
+        flagged.push(path);
+        let via_flag = cadmpeg().args(&flagged).output().unwrap();
+        assert!(positional.status.success(), "{args:?}");
+        assert!(via_flag.status.success(), "{args:?} --input");
+        assert_eq!(positional.stdout, via_flag.stdout, "{args:?}");
+    }
+}
+
+#[test]
+fn input_flag_and_positional_together_conflict() {
+    let dir = tempdir().unwrap();
+    let file = write(dir.path(), "some.bin", b"x");
+    let path = file.to_str().unwrap();
+    cadmpeg()
+        .args(["inspect", "hex", path, "--input", path])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn find_with_input_flag_still_teaches_a_misplaced_pattern() {
+    let dir = tempdir().unwrap();
+    let file = write(dir.path(), "some.bin", b"document here");
+    let path = file.to_str().unwrap();
+    for extra in [vec!["document"], vec![]] {
+        let mut args = vec!["inspect", "find", "--input", path];
+        args.extend(&extra);
+        let assert = cadmpeg().args(&args).assert();
+        if extra.is_empty() {
+            assert
+                .code(2)
+                .stderr(predicate::str::contains("--hex, --ascii, or --utf16le"));
+        } else {
+            assert.code(2).stderr(predicate::str::contains(
+                "`document` is an extra positional argument",
+            ));
+        }
+    }
+}
+
+#[test]
+fn inspect_input_flag_positional_and_subcommand_interplay() {
+    let dir = tempdir().unwrap();
+    let file = write(dir.path(), "plain.bin", b"not a container");
+    let path = file.to_str().unwrap();
+
+    // `inspect --input FILE` reaches the container summary (which then
+    // rejects this non-container file with its own operational error).
+    cadmpeg()
+        .args(["inspect", "--input", path])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("no codec recognized"));
+
+    // A byte subcommand still parses with no top-level input.
+    cadmpeg()
+        .args(["inspect", "hex", path, "--len", "1"])
+        .assert()
+        .success();
+
+    // Top-level `--input` cannot be combined with a byte subcommand.
+    cadmpeg()
+        .args(["inspect", "--input", path, "hex"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("cannot be used with"));
+
+    // Both spellings at once conflict.
+    cadmpeg()
+        .args(["inspect", path, "--input", path])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("cannot be used with"));
+
+    // Bare `inspect` still demands an input.
+    cadmpeg()
+        .args(["inspect"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("required arguments"));
 }

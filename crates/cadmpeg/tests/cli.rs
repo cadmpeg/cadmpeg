@@ -1626,3 +1626,44 @@ fn report_to_an_unwritable_path_is_an_operational_error() {
         .code(2);
     assert!(!report.exists());
 }
+
+#[test]
+fn input_flag_reaches_every_single_input_command() {
+    let dir = tempdir().unwrap();
+    let ir = unit_cube();
+    let model = fixture(dir.path(), "cube.cadir.json", &ir);
+    let path = model.to_str().unwrap();
+
+    // Byte-identical stdout under either input spelling.
+    for args in [
+        vec!["decode", "--input-format", "cadir"],
+        vec!["validate"],
+        vec!["export", "-f", "step"],
+        vec!["convert", "-f", "step"],
+    ] {
+        let positional = Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(&args)
+            .arg(path)
+            .output()
+            .unwrap();
+        let mut flagged = args.clone();
+        flagged.push("--input");
+        flagged.push(path);
+        let via_flag = Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(&flagged)
+            .output()
+            .unwrap();
+        assert_eq!(positional.status.code(), via_flag.status.code(), "{args:?}");
+        assert_eq!(positional.stdout, via_flag.stdout, "{args:?}");
+    }
+
+    // Both spellings at once are a clap conflict.
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["validate", path, "--input", path])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("cannot be used with"));
+}
