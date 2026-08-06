@@ -444,6 +444,29 @@ fn decode_accounts_for_every_part21_byte() {
 }
 
 #[test]
+fn unresolvable_length_unit_reports_an_error_loss() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('unresolvable length unit'),'2;1');FILE_NAME('unit','','',(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*));#2=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));#3=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2)) REPRESENTATION_CONTEXT('model','3D'));#4=CARTESIAN_POINT('',(1.,2.,3.));#5=SHAPE_REPRESENTATION('',(#4),#3);ENDSEC;END-ISO-10303-21;";
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode bare named length unit");
+    let loss = result
+        .report
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.message
+                .starts_with("the document length unit did not resolve")
+        })
+        .expect("unresolved length unit loss");
+    assert_eq!(loss.code, cadmpeg_ir::LossKind::GeometryNotTransferred);
+    assert_eq!(loss.severity, cadmpeg_ir::Severity::Error);
+    assert_eq!(
+        loss.message,
+        "the document length unit did not resolve; coordinates are unscaled and reported as millimetres"
+    );
+}
+
+#[test]
 fn consumed_unit_and_pmi_wrapper_records_are_strictly_writable() {
     for source in [
         include_bytes!("../tests/fixtures/ap242_degree_cone.p21").as_slice(),

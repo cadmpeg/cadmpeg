@@ -197,6 +197,8 @@ fn decode_exchange_mode(
             message,
             provenance: None,
         }));
+    report.losses.extend(pmi.losses);
+    report.losses.extend(validation.losses);
     let mut typed_records = geometry.typed_records;
     typed_records.extend(topology.typed_records);
     typed_records.extend(presentation.typed_records);

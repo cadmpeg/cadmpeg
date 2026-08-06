@@ -15,7 +15,7 @@ use cadmpeg_ir::ids::{
     CurveId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::SourceObjectAssociation;
 
@@ -34,11 +34,21 @@ pub(super) struct GeometryResult {
 }
 
 pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
-    let scale = length_scale(exchange).unwrap_or(1.0);
-    let angle_scale = plane_angle_scale(exchange).unwrap_or(1.0);
+    let mut losses = Vec::new();
+    let scale = length_scale(exchange).unwrap_or_else(|| {
+        losses.push(unresolved_unit_loss(
+            "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
+        ));
+        1.0
+    });
+    let angle_scale = plane_angle_scale(exchange).unwrap_or_else(|| {
+        losses.push(unresolved_unit_loss(
+            "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+        ));
+        1.0
+    });
     let mut typed = BTreeSet::new();
     let mut warnings = Vec::new();
-    let losses = Vec::new();
     let mut points = BTreeMap::new();
     let mut points2 = BTreeMap::new();
     let mut directions = BTreeMap::new();
@@ -390,7 +400,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             else {
                 continue;
             };
-            let linear_parameter_scale = line_parameter_scale(exchange, basis_step, scale);
+            let linear_parameter_scale =
+                line_parameter_scale(exchange, basis_step, scale, &mut losses);
             let (start, end) = {
                 let mut trim_context = TrimParameterContext {
                     points: &points,
@@ -1717,7 +1728,12 @@ fn parameter_scale(geometry: &CurveGeometry, angle_scale: f64, linear_parameter_
     }
 }
 
-fn line_parameter_scale(exchange: &Exchange, curve: u64, length_scale: f64) -> f64 {
+fn line_parameter_scale(
+    exchange: &Exchange,
+    curve: u64,
+    length_scale: f64,
+    losses: &mut Vec<LossNote>,
+) -> f64 {
     exchange
         .records
         .get(&curve)
@@ -1730,7 +1746,21 @@ fn line_parameter_scale(exchange: &Exchange, curve: u64, length_scale: f64) -> f
         .and_then(ValueExt::number)
         .map(|magnitude| magnitude * length_scale)
         .filter(|scale| scale.is_finite() && *scale > 0.0)
-        .unwrap_or(length_scale)
+        .unwrap_or_else(|| {
+            losses.push(unresolved_unit_loss(format!(
+                "LINE #{curve} parameter scale did not resolve; the document length scale was used"
+            )));
+            length_scale
+        })
+}
+
+fn unresolved_unit_loss(message: impl Into<String>) -> LossNote {
+    LossNote {
+        code: LossKind::GeometryNotTransferred,
+        severity: Severity::Error,
+        message: message.into(),
+        provenance: None,
+    }
 }
 
 fn orthogonal_reference(axis: Vector3, reference: Vector3) -> Option<Vector3> {
@@ -2581,6 +2611,31 @@ impl ValueExt for Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_iso_si_prefix_resolves_to_its_exact_factor() {
+        let expected = [
+            ("EXA", 1e18),
+            ("PETA", 1e15),
+            ("TERA", 1e12),
+            ("GIGA", 1e9),
+            ("MEGA", 1e6),
+            ("KILO", 1e3),
+            ("HECTO", 1e2),
+            ("DECA", 1e1),
+            ("DECI", 1e-1),
+            ("CENTI", 1e-2),
+            ("MILLI", 1e-3),
+            ("MICRO", 1e-6),
+            ("NANO", 1e-9),
+            ("PICO", 1e-12),
+            ("FEMTO", 1e-15),
+            ("ATTO", 1e-18),
+        ];
+        for (prefix, factor) in expected {
+            assert_eq!(si_prefix(prefix), Some(factor), "prefix {prefix}");
+        }
+    }
 
     #[test]
     fn pcurve_trim_select_ignores_cartesian_point_coordinates() {

@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 
 use crate::parse::{Exchange, RawRecord, Value};
 
@@ -14,6 +15,7 @@ pub(super) struct ValidationResult {
     pub typed_records: BTreeSet<u64>,
     pub notes: Vec<String>,
     pub warnings: Vec<String>,
+    pub losses: Vec<LossNote>,
 }
 
 #[derive(Clone, Copy)]
@@ -35,6 +37,7 @@ pub(super) fn decode(
             typed_records: BTreeSet::new(),
             notes: Vec::new(),
             warnings: Vec::new(),
+            losses: Vec::new(),
         };
     }
     let representations = exchange
@@ -76,6 +79,7 @@ pub(super) fn decode(
     let mut validation_representations = BTreeSet::new();
     let mut notes = Vec::new();
     let mut warnings = Vec::new();
+    let mut losses = Vec::new();
 
     for (relation_id, relation) in exchange.entities("PROPERTY_DEFINITION_REPRESENTATION") {
         let Some(property_id) = relation.parameter(0).and_then(ValueExt::reference) else {
@@ -93,7 +97,7 @@ pub(super) fn decode(
         let Some(item) = exchange.records.get(&item_id) else {
             continue;
         };
-        let expected = expected_value(item, exchange, geometry.length_scale);
+        let expected = expected_value(item, exchange, geometry.length_scale, &mut losses);
         let Some(expected) = expected else {
             warnings.push(format!(
                 "geometric validation property #{property_id} has an unsupported value"
@@ -158,10 +162,16 @@ pub(super) fn decode(
         typed_records: typed,
         notes,
         warnings,
+        losses,
     }
 }
 
-fn expected_value(record: &RawRecord, exchange: &Exchange, scale: f64) -> Option<Expected> {
+fn expected_value(
+    record: &RawRecord,
+    exchange: &Exchange,
+    scale: f64,
+    losses: &mut Vec<LossNote>,
+) -> Option<Expected> {
     if record.simple_name() == Some("CARTESIAN_POINT") {
         let values = record.parameter(1)?.list()?;
         if values.len() != 3 {
@@ -178,16 +188,22 @@ fn expected_value(record: &RawRecord, exchange: &Exchange, scale: f64) -> Option
     }
     match record.parameter(1)? {
         Value::Typed(kind, value) if kind == "AREA_MEASURE" => Some(Expected::Area(
-            value.number()? * measure_scale(record, exchange, scale, 2),
+            value.number()? * measure_scale(record, exchange, scale, 2, losses),
         )),
         Value::Typed(kind, value) if kind == "VOLUME_MEASURE" => Some(Expected::Volume(
-            value.number()? * measure_scale(record, exchange, scale, 3),
+            value.number()? * measure_scale(record, exchange, scale, 3, losses),
         )),
         _ => None,
     }
 }
 
-fn measure_scale(record: &RawRecord, exchange: &Exchange, fallback: f64, order: i32) -> f64 {
+fn measure_scale(
+    record: &RawRecord,
+    exchange: &Exchange,
+    fallback: f64,
+    order: i32,
+    losses: &mut Vec<LossNote>,
+) -> f64 {
     record
         .parameter(2)
         .and_then(ValueExt::reference)
@@ -208,7 +224,18 @@ fn measure_scale(record: &RawRecord, exchange: &Exchange, fallback: f64, order: 
                     Some(scale * base.powf(exponent))
                 })
         })
-        .unwrap_or_else(|| fallback.powi(order))
+        .unwrap_or_else(|| {
+            losses.push(LossNote {
+                code: LossKind::GeometryNotTransferred,
+                severity: Severity::Error,
+                message: format!(
+                    "geometric validation measure #{} unit scale did not resolve; the document length scale was used",
+                    record.id
+                ),
+                provenance: None,
+            });
+            fallback.powi(order)
+        })
 }
 
 fn collect_unit_records(id: u64, exchange: &Exchange, typed: &mut BTreeSet<u64>) {
