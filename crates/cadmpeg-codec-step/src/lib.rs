@@ -366,6 +366,10 @@ struct Builder<'a> {
     unstyled_colors: usize,
     unwritten_geometry_carriers: BTreeSet<String>,
     unwritten_pcurve_carriers: BTreeSet<String>,
+    missing_parent_products: BTreeSet<String>,
+    empty_regions: BTreeSet<String>,
+    empty_wire_regions: BTreeSet<String>,
+    missing_wire_shells: BTreeSet<(String, String)>,
     written_pmi: usize,
     length_unit: Option<Ref>,
     angle_unit: Option<Ref>,
@@ -506,6 +510,10 @@ impl<'a> Builder<'a> {
             unstyled_colors: 0,
             unwritten_geometry_carriers: BTreeSet::new(),
             unwritten_pcurve_carriers: BTreeSet::new(),
+            missing_parent_products: BTreeSet::new(),
+            empty_regions: BTreeSet::new(),
+            empty_wire_regions: BTreeSet::new(),
+            missing_wire_shells: BTreeSet::new(),
             written_pmi: 0,
             length_unit: None,
             angle_unit: None,
@@ -1206,6 +1214,7 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let Some(parent_product) = occurrence_products.get(&parent_occurrence.id) else {
+                self.missing_parent_products.insert(occurrence.id.0.clone());
                 continue;
             };
             let Some(child_product) = occurrence_products.get(&occurrence.id) else {
@@ -1363,11 +1372,14 @@ impl<'a> Builder<'a> {
                     self.body_step_refs
                         .entry(region.body.0.clone())
                         .or_insert(item);
+                } else {
+                    self.empty_wire_regions.insert(region.id.0.clone());
                 }
                 continue;
             }
             let closed = body_kind == BodyKind::Solid;
             let Some((outer_id, void_ids)) = region.shells.split_first() else {
+                self.empty_regions.insert(region.id.0.clone());
                 continue;
             };
             let Some(outer) = self.emit_shell(outer_id.as_str(), closed) else {
@@ -1515,11 +1527,15 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_wire_region(&mut self, region: &cadmpeg_ir::topology::Region) -> Option<Ref> {
-        let shells = region
-            .shells
-            .iter()
-            .filter_map(|shell_id| self.shells.get(shell_id.as_str()).copied().cloned())
-            .collect::<Vec<_>>();
+        let mut shells = Vec::new();
+        for shell_id in &region.shells {
+            if let Some(shell) = self.shells.get(shell_id.as_str()).copied().cloned() {
+                shells.push(shell);
+            } else {
+                self.missing_wire_shells
+                    .insert((region.id.0.clone(), shell_id.0.clone()));
+            }
+        }
         let mut connected_sets = Vec::new();
         for shell in shells {
             if !shell.free_vertices.is_empty() {
@@ -2811,6 +2827,70 @@ impl<'a> Builder<'a> {
                 format!(
                     "{} coedge pcurve carrier(s) use geometry or surface references that were not writable: {pcurves}",
                     self.unwritten_pcurve_carriers.len()
+                ),
+            );
+        }
+        if !self.missing_parent_products.is_empty() {
+            let occurrences = self
+                .missing_parent_products
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.omit(
+                LossKind::AssemblyPlacementsNotTransferred,
+                Severity::Warning,
+                format!(
+                    "{} assembly occurrence(s) were omitted because their parent has no local product definition: {occurrences}",
+                    self.missing_parent_products.len()
+                ),
+            );
+        }
+        if !self.empty_regions.is_empty() {
+            let regions = self
+                .empty_regions
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.omit(
+                LossKind::TopologyNotTransferred,
+                Severity::Error,
+                format!(
+                    "{} region(s) have no shell list and were not written to STEP: {regions}",
+                    self.empty_regions.len()
+                ),
+            );
+        }
+        if !self.empty_wire_regions.is_empty() {
+            let regions = self
+                .empty_wire_regions
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.omit(
+                LossKind::TopologyNotTransferred,
+                Severity::Warning,
+                format!(
+                    "{} wire region(s) had no writable connected edge set and were not written to STEP: {regions}",
+                    self.empty_wire_regions.len()
+                ),
+            );
+        }
+        if !self.missing_wire_shells.is_empty() {
+            let shells = self
+                .missing_wire_shells
+                .iter()
+                .map(|(region, shell)| format!("'{region}' -> '{shell}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.omit(
+                LossKind::TopologyNotTransferred,
+                Severity::Warning,
+                format!(
+                    "{} wire region/shell relation(s) referenced missing shell records: {shells}",
+                    self.missing_wire_shells.len()
                 ),
             );
         }

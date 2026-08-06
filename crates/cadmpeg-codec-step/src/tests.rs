@@ -3058,6 +3058,123 @@ fn writer_round_trips_product_body_ownership() {
 }
 
 #[test]
+fn writer_reports_occurrence_with_parent_without_local_product() {
+    let mut ir = unit_cube();
+    let product = cadmpeg_ir::ids::ProductDefinitionId("product-child".into());
+    ir.model
+        .product_definitions
+        .push(cadmpeg_ir::products::ProductDefinition {
+            id: product.clone(),
+            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+            source_name: Some("Child part".into()),
+            label: Some("Child part".into()),
+            description: None,
+            part_number: None,
+            bom_properties: std::collections::BTreeMap::default(),
+            bodies: vec![ir.model.bodies[0].id.clone()],
+            native_ref: None,
+        });
+    let parent = cadmpeg_ir::ids::OccurrenceId("external-parent".into());
+    ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
+        id: parent.clone(),
+        prototype: cadmpeg_ir::products::PrototypeReference::Unresolved,
+        parent: cadmpeg_ir::products::OccurrenceParent::Root,
+        ordinal: 0,
+        transform: cadmpeg_ir::transform::Transform::identity(),
+        prototype_transform: cadmpeg_ir::transform::Transform::identity(),
+        scale: [1.0; 3],
+        name: None,
+        linked_subelements: Vec::new(),
+        visible: None,
+        element_component: None,
+        claim_child: None,
+        copy_on_change: None,
+        copy_on_change_source: None,
+        copy_on_change_group: None,
+        copy_on_change_touched: None,
+        link_transform: None,
+        native_ref: None,
+    });
+    ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
+        id: cadmpeg_ir::ids::OccurrenceId("local-child".into()),
+        prototype: cadmpeg_ir::products::PrototypeReference::Local {
+            definition: product,
+        },
+        parent: cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence: parent },
+        ordinal: 1,
+        transform: cadmpeg_ir::transform::Transform::identity(),
+        prototype_transform: cadmpeg_ir::transform::Transform::identity(),
+        scale: [1.0; 3],
+        name: None,
+        linked_subelements: Vec::new(),
+        visible: None,
+        element_component: None,
+        claim_child: None,
+        copy_on_change: None,
+        copy_on_change_source: None,
+        copy_on_change_group: None,
+        copy_on_change_touched: None,
+        link_transform: None,
+        native_ref: None,
+    });
+
+    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("report mode writes the product graph");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::AssemblyPlacementsNotTransferred
+            && loss.message.contains("local-child")
+            && loss
+                .message
+                .contains("parent has no local product definition")
+    }));
+}
+
+#[test]
+fn writer_reports_region_without_shells() {
+    let mut ir = unit_cube();
+    ir.model.regions[0].shells.clear();
+
+    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("report mode writes the remaining geometry");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::TopologyNotTransferred
+            && loss.message.contains("region(s) have no shell list")
+    }));
+}
+
+#[test]
+fn writer_reports_wire_region_without_connected_edges() {
+    let mut ir = unit_cube();
+    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
+    ir.model.shells[0].faces.clear();
+    ir.model.shells[0].wire_edges = vec![cadmpeg_ir::ids::EdgeId("missing-edge".into())];
+
+    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("report mode writes the remaining geometry");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::TopologyNotTransferred
+            && loss
+                .message
+                .contains("wire region(s) had no writable connected edge set")
+    }));
+}
+
+#[test]
+fn writer_reports_wire_region_with_missing_shell_record() {
+    let mut ir = unit_cube();
+    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
+    ir.model.regions[0].shells = vec![cadmpeg_ir::ids::ShellId("missing-shell".into())];
+
+    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("report mode writes the remaining geometry");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::TopologyNotTransferred
+            && loss.message.contains("missing shell records")
+            && loss.message.contains("missing-shell")
+    }));
+}
+
+#[test]
 fn writer_round_trips_edge_based_wire_bodies() {
     let mut ir = unit_cube();
     let edge = ir.model.edges[0].clone();
