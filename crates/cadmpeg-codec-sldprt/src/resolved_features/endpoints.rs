@@ -43,6 +43,7 @@ const CURVE_ENDPOINT_INDEX_DECODERS: &[CurveEndpointDecoder] = &[
     extended_compact_indexed_curve_endpoint_indices,
     legacy_compact_104_profile_line_endpoint_indices,
     compact_legacy_curve_endpoint_indices,
+    compact_legacy_code_one_line_endpoint_indices,
     compact_legacy_short_role_two_curve_endpoint_indices,
     compact_legacy_short_role_one_curve_endpoint_indices,
     alternate_current_indexed_curve_endpoint_indices,
@@ -3825,14 +3826,15 @@ pub(super) fn extended_compact_indexed_curve_endpoint_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<[u32; 2]> {
-    if !matches!(
-        compact_indexed_curve_record_end(payload, offset),
-        Some(
-            CompactIndexedCurveRecordEnd::Marker84
-                | CompactIndexedCurveRecordEnd::Marker96
-                | CompactIndexedCurveRecordEnd::Continuation120
-        )
-    ) {
+    let record_end = compact_indexed_curve_record_end(payload, offset)?;
+    let accepted_record = matches!(
+        record_end,
+        CompactIndexedCurveRecordEnd::Marker84
+            | CompactIndexedCurveRecordEnd::Marker96
+            | CompactIndexedCurveRecordEnd::Continuation120
+    ) || record_end == CompactIndexedCurveRecordEnd::Marker104
+        && marker_native_code(payload, offset) == Some(1);
+    if !accepted_record {
         return None;
     }
     compact_indexed_curve_endpoint_indices_for_prefixes(

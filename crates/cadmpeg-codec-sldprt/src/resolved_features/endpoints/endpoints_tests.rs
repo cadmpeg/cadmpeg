@@ -16,7 +16,8 @@ use super::{
     alternate_current_indexed_curve_endpoint_indices,
     alternate_current_selected_axis_endpoint_indices, auxiliary_profile_record,
     compact_curve_endpoint_indices, compact_indexed_curve_endpoint_indices,
-    compact_legacy_curve_endpoint_indices, compact_legacy_selected_axis_endpoint_indices,
+    compact_legacy_code_one_line_endpoint_indices, compact_legacy_curve_endpoint_indices,
+    compact_legacy_selected_axis_endpoint_indices,
     compact_legacy_short_role_one_curve_endpoint_indices,
     compact_legacy_short_role_two_curve_endpoint_indices, coordinate_circle_radius,
     coordinate_roster_arc_center, coordinate_roster_curve_endpoint_markers,
@@ -50,6 +51,68 @@ use crate::records::{
 };
 use cadmpeg_ir::math::Point2;
 use std::collections::HashMap;
+
+#[test]
+fn shared_endpoint_resolution_uses_compact_legacy_code_one_line_records() {
+    let mut payload = vec![0; 68 + LEGACY_SKETCH_MARKER.len()];
+    payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&1u32.to_le_bytes());
+    payload[17..23].copy_from_slice(&[0x00, 0x00, 0x04, 0x00, 0x02, 0x00]);
+    payload[23..25].copy_from_slice(&1u16.to_le_bytes());
+    payload[25..27].copy_from_slice(&1u16.to_le_bytes());
+    payload[31] = 0x04;
+    payload[42..44].copy_from_slice(&0u16.to_le_bytes());
+    payload[44..46].copy_from_slice(&1u16.to_le_bytes());
+    payload[46..50].copy_from_slice(&1u32.to_le_bytes());
+    payload[50..58].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[68..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+    let point = |id: &str, offset: u64, object_index: u32, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset,
+        object_index: Some(object_index),
+        local_id: None,
+        kind: SketchInputKind::Point,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let curve = SketchInputEntity {
+        id: "line".into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset: 0,
+        object_index: Some(3),
+        local_id: None,
+        kind: SketchInputKind::LineOrCircle,
+        state_value: Some(1.0),
+        coordinates_m: None,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let first = point("first", 100, 1, Some([0.0, 0.0]));
+    let second = point("second", 200, 2, Some([1.0, 0.0]));
+    let markers = [&curve, &first, &second];
+
+    assert_eq!(
+        compact_legacy_code_one_line_endpoint_indices(&payload, 0),
+        Some([1, 2])
+    );
+    assert_eq!(
+        roster_curve_endpoint_markers(&payload, &curve, &markers)
+            .into_iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["first", "second"]
+    );
+}
+
 #[test]
 fn compact_legacy_generation_carries_points_curves_and_selected_axes() {
     let mut payload = vec![0; 280 + LEGACY_SKETCH_MARKER.len()];
@@ -3484,6 +3547,43 @@ fn extended_compact_indexed_curves_own_their_endpoint_trailers() {
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
         payload
     };
+    let mut extended_code_one_104 = extended(valid_compact_104.clone());
+    extended_code_one_104[17..21].copy_from_slice(&1u32.to_le_bytes());
+    assert_eq!(
+        super::extended_compact_indexed_curve_endpoint_indices(&extended_code_one_104, 0),
+        Some([5, 9])
+    );
+    let entity = |id: &str, offset, object_index, coordinates_m, kind| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("profile".into()),
+        ordinal: 0,
+        offset,
+        object_index,
+        local_id: None,
+        kind,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let curve = entity("curve", 0, None, None, SketchInputKind::LineOrCircle);
+    let start = entity(
+        "start",
+        1,
+        Some(5),
+        Some([0.0, 0.0]),
+        SketchInputKind::Point,
+    );
+    let end = entity("end", 2, Some(9), Some([1.0, 0.0]), SketchInputKind::Point);
+    let markers = [&curve, &start, &end];
+    assert_eq!(
+        roster_curve_endpoint_markers(&extended_code_one_104, &curve, &markers)
+            .into_iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["start", "end"]
+    );
     let normalized_payload = extended(valid_compact_96);
     assert_eq!(
         super::extended_compact_indexed_curve_endpoint_indices(&normalized_payload, 0),
