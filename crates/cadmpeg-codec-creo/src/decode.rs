@@ -28461,7 +28461,12 @@ fn transfer_cross_section_planes(
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
     let scan = container::scan_bytes(root.window());
 
-    let (mut ir, annotations, unknowns, coverage) = if ctx.container_only() {
+    let BuiltIr {
+        mut ir,
+        annotations,
+        unknowns,
+        coverage,
+    } = if ctx.container_only() {
         build_container_ir(&scan)?
     } else {
         build_ir(&scan)?
@@ -28530,12 +28535,12 @@ fn preserve_passthrough_sections(
 
 /// Decoded IR together with its annotations, preserved unknown records, and
 /// decode-coverage counts.
-type BuiltIr = (
-    CadIr,
-    cadmpeg_ir::Annotations,
-    Vec<UnknownRecord>,
-    BTreeMap<String, usize>,
-);
+struct BuiltIr {
+    ir: CadIr,
+    annotations: cadmpeg_ir::Annotations,
+    unknowns: Vec<UnknownRecord>,
+    coverage: BTreeMap<String, usize>,
+}
 
 fn build_container_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
@@ -28544,7 +28549,12 @@ fn build_container_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     ir.source = Some(meta);
     let unknowns = preserve_passthrough_sections(scan, &mut annotations);
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
-    Ok((ir, annotations.build(), unknowns, coverage))
+    Ok(BuiltIr {
+        ir,
+        annotations: annotations.build(),
+        unknowns,
+        coverage,
+    })
 }
 
 fn face_selection_has_unresolved_operands(selection: &FaceSelection) -> bool {
@@ -31663,7 +31673,12 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         "transferred_native_axis_helix_feature_count".to_string(),
         native_axis_helix_feature_count,
     );
-    Ok((ir, annotations.build(), unknowns, coverage))
+    Ok(BuiltIr {
+        ir,
+        annotations: annotations.build(),
+        unknowns,
+        coverage,
+    })
 }
 
 #[derive(Default)]
