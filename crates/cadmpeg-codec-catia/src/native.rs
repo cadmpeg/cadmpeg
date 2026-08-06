@@ -23,7 +23,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 268;
+pub const CATIA_NATIVE_VERSION: u32 = 269;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -147,6 +147,9 @@ pub(crate) const CATIA_REFERENCE_SIGNATURE_FRAME_VERSION: u32 = 267;
 /// Native schema version retaining cohort-level descriptor schema incidences.
 #[cfg(test)]
 pub(crate) const CATIA_REFERENCE_SIGNATURE_SCHEMA_VERSION: u32 = 268;
+/// Native schema version assigning canonical identities to graph-derived arenas.
+#[cfg(test)]
+pub(crate) const CATIA_DERIVED_NATIVE_ID_VERSION: u32 = 269;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -3642,6 +3645,18 @@ fn reference_signature(
     }
 }
 
+fn object_graph_derived_id(graph: &str, kind: &str, local_key: &str) -> Option<String> {
+    let (namespace, graph_key) = graph.split_once('#')?;
+    let mut components = namespace.split(':');
+    let format = components.next()?;
+    let scope = components.next()?;
+    components.next()?;
+    components
+        .next()
+        .is_none()
+        .then(|| format!("{format}:{scope}:{kind}#{graph_key}:{local_key}"))
+}
+
 fn derive_reference_signature_cohorts(
     entity_records: &[CatiaEntityRecord],
 ) -> Vec<CatiaReferenceSignatureCohort> {
@@ -3665,12 +3680,16 @@ fn derive_reference_signature_cohorts(
             .entry(entity.object_graph.clone())
             .and_modify(|ordinal| *ordinal += 1)
             .or_insert(0);
+        let Some(id) = object_graph_derived_id(
+            &entity.object_graph,
+            "reference-signature-cohort",
+            &format!("{:08}", *ordinal),
+        ) else {
+            continue;
+        };
         let index = cohorts.len();
         cohorts.push(CatiaReferenceSignatureCohort {
-            id: format!(
-                "{}:reference-signature-cohort#{:08}",
-                entity.object_graph, *ordinal
-            ),
+            id,
             parent: entity.object_graph.clone(),
             ordinal: *ordinal,
             first_reference: signature.production.first_reference,
@@ -3904,7 +3923,7 @@ fn derive_configuration_row_chains(
                 })
                 .collect();
             Some(CatiaConfigurationRowChain {
-                id: format!("{graph}:configuration-row-chain#{root}"),
+                id: object_graph_derived_id(graph, "configuration-row-chain", &root.to_string())?,
                 object_graph: graph.to_string(),
                 links,
             })
@@ -10268,7 +10287,7 @@ impl CatiaNative {
         }
         let expected_reference_signature_cohorts =
             derive_reference_signature_cohorts(&entity_records);
-        if namespace.version < CATIA_REFERENCE_SIGNATURE_SCHEMA_VERSION {
+        if namespace.version < CATIA_DERIVED_NATIVE_ID_VERSION {
             reference_signature_cohorts = expected_reference_signature_cohorts;
         } else if reference_signature_cohorts != expected_reference_signature_cohorts {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
@@ -10419,7 +10438,7 @@ impl CatiaNative {
             &entity_classes_by_graph_identity,
             &terminal_nulls_by_graph,
         );
-        if namespace.version < CATIA_CONFIGURATION_ROW_LINK_INCIDENCE_VERSION {
+        if namespace.version < CATIA_DERIVED_NATIVE_ID_VERSION {
             configuration_row_chains = expected_configuration_row_chains;
         } else if configuration_row_chains != expected_configuration_row_chains {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(

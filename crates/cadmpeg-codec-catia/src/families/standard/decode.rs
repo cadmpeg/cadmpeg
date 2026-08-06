@@ -1395,7 +1395,8 @@ pub(crate) fn try_decode_standard(
             StandardSurfaceProcedure::Offset {
                 parameter_bounds, ..
             } => Some(parameter_record_bounds(*parameter_bounds)),
-            StandardSurfaceProcedure::RollingBall { .. } => None,
+            StandardSurfaceProcedure::RollingBall { .. }
+            | StandardSurfaceProcedure::Revolution(_) => None,
         };
         let (source, carrier, definition, exactness) = match procedure {
             StandardSurfaceProcedure::RollingBall {
@@ -1509,6 +1510,37 @@ pub(crate) fn try_decode_standard(
                     carrier,
                     definition,
                     Exactness::ByteExact,
+                )
+            }
+            StandardSurfaceProcedure::Revolution(revolution) => {
+                let directrix_id = CurveId(format!("catia:standard:revolution-profile#{tag}"));
+                annotate(
+                    &mut annotations,
+                    &directrix_id,
+                    "object_stream_b5_03_2d",
+                    0,
+                    "profile_curve",
+                    Exactness::Derived,
+                );
+                annotations.derived(&directrix_id, "geometry");
+                ir.model.curves.push(Curve {
+                    id: directrix_id.clone(),
+                    geometry: CurveGeometry::Nurbs(revolution.directrix.clone()),
+                    source_object: None,
+                });
+                (
+                    "object_stream_b5_03_2d",
+                    tag,
+                    ProceduralSurfaceDefinition::Revolution {
+                        directrix: directrix_id,
+                        axis_origin: revolution.axis_origin,
+                        axis_direction: revolution.axis_direction,
+                        angular_interval: revolution.angular_interval,
+                        parameter_interval: Some(revolution.parameter_interval),
+                        transposed: false,
+                        revision_form: None,
+                    },
+                    Exactness::Derived,
                 )
             }
         };
@@ -1999,13 +2031,42 @@ pub(crate) enum StandardSurfaceProcedure {
         parameter_bounds: [[f64; 2]; 2],
     },
     Extrusion(Box<crate::families::b5::transfer::ResolvedExtrusionSurface>),
+    Revolution(Box<crate::families::b5::transfer::ResolvedRevolutionSurface>),
 }
 
-#[derive(PartialEq)]
-#[allow(clippy::large_enum_variant)]
-pub(crate) enum StandardSurfaceEvidence {
-    Geometry(SurfaceGeometry),
-    Procedural(StandardSurfaceProcedure),
+#[derive(Clone, PartialEq)]
+pub(crate) struct StandardSurfaceEvidence {
+    geometry: Option<SurfaceGeometry>,
+    procedure: Option<StandardSurfaceProcedure>,
+}
+
+impl StandardSurfaceEvidence {
+    fn from_parts(
+        geometry: Option<SurfaceGeometry>,
+        procedure: Option<StandardSurfaceProcedure>,
+    ) -> Option<Self> {
+        if geometry.is_none() && procedure.is_none() {
+            return None;
+        }
+        Some(Self {
+            geometry,
+            procedure,
+        })
+    }
+
+    fn geometry(geometry: SurfaceGeometry) -> Self {
+        Self {
+            geometry: Some(geometry),
+            procedure: None,
+        }
+    }
+
+    fn procedure(procedure: StandardSurfaceProcedure) -> Self {
+        Self {
+            geometry: None,
+            procedure: Some(procedure),
+        }
+    }
 }
 
 pub(crate) fn standard_object_evidence(
@@ -2071,34 +2132,52 @@ pub(crate) fn standard_object_evidence_from_streams(
             .collect::<HashSet<_>>();
         let targeted_surfaces =
             crate::families::b5::graph::targeted_surfaces(&stream, &requested_surfaces);
+        let targeted_graph = crate::families::b5::graph::targeted_geometry_graph(&stream);
         for &(object_id, surface_id) in &surface_bindings {
             let Some(surface) = targeted_surfaces.get(&surface_id) else {
                 continue;
             };
-            let Some(carrier) = crate::families::b5::transfer::resolved_surface_carrier(surface)
-            else {
+            let evidence = targeted_graph
+                .as_ref()
+                .and_then(|graph| standard_surface_evidence(graph, surface_id))
+                .or_else(|| {
+                    targeted_graph
+                        .as_ref()
+                        .and_then(|graph| {
+                            crate::families::b5::transfer::resolved_surface_carrier_in_graph(
+                                graph, surface_id,
+                            )
+                        })
+                        .or_else(|| {
+                            crate::families::b5::transfer::resolved_surface_carrier(surface)
+                        })
+                        .map(|carrier| match carrier {
+                            crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+                                geometry,
+                            ) => StandardSurfaceEvidence::geometry(geometry),
+                            crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {
+                                carrier_object_id,
+                                definition,
+                            } => StandardSurfaceEvidence::procedure(
+                                StandardSurfaceProcedure::RollingBall {
+                                    carrier_object_id,
+                                    definition: *definition,
+                                },
+                            ),
+                        })
+                });
+            let Some(evidence) = evidence else {
                 continue;
             };
-            let evidence = match carrier {
-                crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) => {
-                    StandardSurfaceEvidence::Geometry(geometry)
-                }
-                crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {
-                    carrier_object_id,
-                    definition,
-                } => StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::RollingBall {
-                    carrier_object_id,
-                    definition: *definition,
-                }),
-            };
+            merge_standard_procedure_supports(&mut support_candidates, &evidence);
             merge_standard_surface_evidence(&mut surface_candidates, object_id, evidence);
         }
-        if let Some(graph) = crate::families::b5::graph::targeted_geometry_graph(&stream) {
+        if let Some(graph) = targeted_graph.as_ref() {
             for &(object_id, surface_id) in &surface_bindings {
                 if surface_candidates.contains_key(&object_id) {
                     continue;
                 }
-                let Some(evidence) = standard_surface_evidence(&graph, surface_id) else {
+                let Some(evidence) = standard_surface_evidence(graph, surface_id) else {
                     continue;
                 };
                 merge_standard_procedure_supports(&mut support_candidates, &evidence);
@@ -2147,6 +2226,7 @@ pub(crate) fn standard_object_evidence_from_streams(
                 crate::families::b5::transfer::resolved_object_stream_pcurve(
                     pcurve,
                     targeted_surfaces.get(&pcurve.support_id)?,
+                    targeted_graph.as_ref(),
                 )
             });
             let [Some(first), Some(second)] = sides else {
@@ -2217,41 +2297,39 @@ pub(crate) fn standard_object_evidence_from_streams(
     StandardObjectEvidence {
         surface_geometries: surface_candidates
             .iter()
-            .filter_map(|(&tag, evidence)| match evidence.as_ref()? {
-                StandardSurfaceEvidence::Geometry(geometry) => Some((tag, geometry.clone())),
-                StandardSurfaceEvidence::Procedural(_) => None,
-            })
+            .filter_map(|(&tag, evidence)| Some((tag, evidence.as_ref()?.geometry.clone()?)))
             .collect(),
         procedural_surfaces: surface_candidates
             .into_iter()
-            .filter_map(|(tag, evidence)| match evidence? {
-                StandardSurfaceEvidence::Procedural(procedure) => {
-                    let valid = match &procedure {
-                        StandardSurfaceProcedure::Offset {
-                            support_object_id,
-                            support,
-                            ..
-                        } => {
+            .filter_map(|(tag, evidence)| {
+                let procedure = evidence?.procedure?;
+                let valid = match &procedure {
+                    StandardSurfaceProcedure::Offset {
+                        support_object_id,
+                        support,
+                        ..
+                    } => {
+                        support_candidates
+                            .get(support_object_id)
+                            .and_then(Option::as_ref)
+                            == Some(support)
+                    }
+                    StandardSurfaceProcedure::RollingBall { .. } => true,
+                    StandardSurfaceProcedure::Extrusion(extrusion) => {
+                        extrusion.supports().into_iter().all(|side| {
                             support_candidates
-                                .get(support_object_id)
+                                .get(&side.surface_object_id)
                                 .and_then(Option::as_ref)
-                                == Some(support)
-                        }
-                        StandardSurfaceProcedure::RollingBall { .. } => true,
-                        StandardSurfaceProcedure::Extrusion(extrusion) => {
-                            extrusion.supports().into_iter().all(|side| {
-                                support_candidates
-                                    .get(&side.surface_object_id)
-                                    .and_then(Option::as_ref)
-                                    == Some(&crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(
+                                == Some(
+                                    &crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(
                                         side.surface.clone(),
-                                    ))
-                            })
-                        }
-                    };
-                    valid.then_some((tag, procedure))
-                }
-                StandardSurfaceEvidence::Geometry(_) => None,
+                                    ),
+                                )
+                        })
+                    }
+                    StandardSurfaceProcedure::Revolution(_) => true,
+                };
+                valid.then_some((tag, procedure))
             })
             .collect(),
         edge_owner_faces: edge_face_candidates
@@ -2270,35 +2348,35 @@ fn standard_surface_evidence(
     graph: &crate::families::b5::graph::B5Graph,
     surface_id: u32,
 ) -> Option<StandardSurfaceEvidence> {
-    crate::families::b5::transfer::resolved_offset_surface(graph, surface_id)
-        .map(|offset| {
-            StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Offset {
-                carrier_object_id: offset.carrier_object_id,
-                support_object_id: offset.support_object_id,
-                support: offset.support,
-                distance: offset.distance,
-                parameter_bounds: offset.parameter_bounds,
-            })
+    let geometry = crate::families::b5::transfer::resolved_surface_geometry(graph, surface_id);
+    let procedure = crate::families::b5::transfer::resolved_offset_surface(graph, surface_id)
+        .map(|offset| StandardSurfaceProcedure::Offset {
+            carrier_object_id: offset.carrier_object_id,
+            support_object_id: offset.support_object_id,
+            support: offset.support,
+            distance: offset.distance,
+            parameter_bounds: offset.parameter_bounds,
         })
         .or_else(|| {
             crate::families::b5::transfer::resolved_extrusion_surface(graph, surface_id)
                 .map(Box::new)
                 .map(StandardSurfaceProcedure::Extrusion)
-                .map(StandardSurfaceEvidence::Procedural)
         })
         .or_else(|| {
             crate::families::b5::transfer::resolved_surface_procedural_definition(graph, surface_id)
-                .map(|(carrier_object_id, definition)| {
-                    StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::RollingBall {
+                .map(
+                    |(carrier_object_id, definition)| StandardSurfaceProcedure::RollingBall {
                         carrier_object_id,
                         definition,
-                    })
-                })
+                    },
+                )
         })
         .or_else(|| {
-            crate::families::b5::transfer::resolved_surface_geometry(graph, surface_id)
-                .map(StandardSurfaceEvidence::Geometry)
-        })
+            crate::families::b5::transfer::resolved_revolution_surface(graph, surface_id)
+                .map(Box::new)
+                .map(StandardSurfaceProcedure::Revolution)
+        });
+    StandardSurfaceEvidence::from_parts(geometry, procedure)
 }
 
 fn merge_standard_surface_evidence(
@@ -2306,26 +2384,64 @@ fn merge_standard_surface_evidence(
     tag: u32,
     evidence: StandardSurfaceEvidence,
 ) {
+    let incoming = evidence.clone();
     candidates
         .entry(tag)
         .and_modify(|stored| {
-            if stored.as_ref().is_some_and(|stored| *stored != evidence) {
-                *stored = None;
-            }
+            let Some(stored_evidence) = stored.take() else {
+                return;
+            };
+            let (stored_geometry, stored_procedure) =
+                (stored_evidence.geometry, stored_evidence.procedure);
+            let (incoming_geometry, incoming_procedure) =
+                (incoming.geometry.clone(), incoming.procedure.clone());
+            let EvidencePart::Merged(geometry) =
+                merge_standard_evidence_part(stored_geometry, incoming_geometry)
+            else {
+                return;
+            };
+            let EvidencePart::Merged(procedure) =
+                merge_standard_evidence_part(stored_procedure, incoming_procedure)
+            else {
+                return;
+            };
+            *stored = Some(StandardSurfaceEvidence {
+                geometry,
+                procedure,
+            });
         })
         .or_insert(Some(evidence));
+}
+
+enum EvidencePart<T> {
+    Conflict,
+    Merged(Option<T>),
+}
+
+fn merge_standard_evidence_part<T: PartialEq>(
+    stored: Option<T>,
+    incoming: Option<T>,
+) -> EvidencePart<T> {
+    match (stored, incoming) {
+        (Some(stored), Some(incoming)) if stored != incoming => EvidencePart::Conflict,
+        (Some(stored), _) => EvidencePart::Merged(Some(stored)),
+        (None, incoming) => EvidencePart::Merged(incoming),
+    }
 }
 
 fn merge_standard_procedure_supports(
     candidates: &mut HashMap<u32, Option<crate::families::b5::transfer::ResolvedOffsetSupport>>,
     evidence: &StandardSurfaceEvidence,
 ) {
-    match evidence {
-        StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Offset {
+    let Some(procedure) = evidence.procedure.as_ref() else {
+        return;
+    };
+    match procedure {
+        StandardSurfaceProcedure::Offset {
             support_object_id,
             support,
             ..
-        }) => {
+        } => {
             candidates
                 .entry(*support_object_id)
                 .and_modify(|stored| {
@@ -2335,7 +2451,7 @@ fn merge_standard_procedure_supports(
                 })
                 .or_insert_with(|| Some(support.clone()));
         }
-        StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Extrusion(extrusion)) => {
+        StandardSurfaceProcedure::Extrusion(extrusion) => {
             for side in extrusion.supports() {
                 let support = crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(
                     side.surface.clone(),
@@ -2350,8 +2466,7 @@ fn merge_standard_procedure_supports(
                     .or_insert(Some(support));
             }
         }
-        StandardSurfaceEvidence::Geometry(_)
-        | StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::RollingBall { .. }) => {}
+        StandardSurfaceProcedure::RollingBall { .. } | StandardSurfaceProcedure::Revolution(_) => {}
     }
 }
 
@@ -3592,17 +3707,44 @@ fn attach_standard_topology(
         (topology, point_assignment)
     } else if let Some(bound) = constrained_endpoint_options.as_ref().and_then(|options| {
         let branch_groups = standard_curve_branch_groups(&supports, options);
+        let initial_assignment = options
+            .iter()
+            .map(|candidates| {
+                if candidates.len() == 1 {
+                    Some(candidates[0])
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        let solver_options = standard_curve_branch_candidates_after_partial_assignment(
+            &supports,
+            options,
+            &branch_groups,
+            &initial_assignment,
+        )?;
+        let mut branch_preferred_edges = vec![false; options.len()];
+        for edge in branch_groups
+            .iter()
+            .flat_map(|group| group.edges.iter().copied())
+        {
+            branch_preferred_edges[edge] = true;
+        }
+        let branch_assignment_dependencies =
+            standard_curve_branch_assignment_dependencies(&supports, &branch_groups);
         let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
             brep,
             &edge_faces,
-            options,
+            &solver_options,
             &edge_classes,
             &circle_constraint_edges,
+            &branch_preferred_edges,
+            Some(&branch_assignment_dependencies),
             work_budget,
             |pairs| {
                 standard_curve_branch_assignment_is_ranked(
                     &supports,
-                    options,
+                    &solver_options,
                     &branch_groups,
                     pairs,
                 ) && standard_circle_pair_solution_is_simple(
@@ -3611,7 +3753,7 @@ fn attach_standard_topology(
                     &surface_indices,
                     brep,
                     &supports,
-                    options,
+                    &solver_options,
                     pairs,
                 )
             },
@@ -3629,14 +3771,16 @@ fn attach_standard_topology(
                 mesh_quotient::parse_standard_mesh_candidate_outcome(
                     brep,
                     &edge_faces,
-                    options,
+                    &solver_options,
                     &edge_classes,
                     &unconstrained,
+                    &branch_preferred_edges,
+                    Some(&branch_assignment_dependencies),
                     work_budget,
                     |pairs| {
                         standard_curve_branch_assignment_is_ranked(
                             &supports,
-                            options,
+                            &solver_options,
                             &branch_groups,
                             pairs,
                         )
@@ -4191,10 +4335,12 @@ pub(crate) fn resolve_standard_endpoint_pairs(
         if pairs.len() < edges.len() {
             continue;
         }
-        if pairs.len() == edges.len() {
-            for (edge, pair) in edges.into_iter().zip(pairs) {
-                resolved[edge] = vec![pair];
-            }
+        // A multi-row relation is not ordered by the support-table ordinal.
+        // Keep every valid pair on every physical row until the trim quotient
+        // binds the row; lexicographic row assignment can break a serialized
+        // boundary even when the resulting analytic edge set is equivalent.
+        if pairs.len() == edges.len() && edges.len() == 1 {
+            resolved[edges[0]] = vec![pairs[0]];
         } else {
             for edge in edges {
                 resolved[edge].clone_from(&pairs);
@@ -4224,6 +4370,46 @@ pub(crate) fn resolve_standard_endpoint_pairs(
             .collect();
     }
     Some(resolved)
+}
+
+fn bipartite_relation_sides<I>(relation: I) -> Option<[Vec<usize>; 2]>
+where
+    I: IntoIterator<Item = [usize; 2]>,
+{
+    let mut adjacency = HashMap::<usize, Vec<usize>>::new();
+    for [left, right] in relation {
+        if left == right {
+            return None;
+        }
+        adjacency.entry(left).or_default().push(right);
+        adjacency.entry(right).or_default().push(left);
+    }
+    let root = *adjacency.keys().min()?;
+    let mut colors = HashMap::from([(root, false)]);
+    let mut stack = vec![root];
+    while let Some(vertex) = stack.pop() {
+        let color = colors[&vertex];
+        for &neighbor in &adjacency[&vertex] {
+            match colors.get(&neighbor) {
+                Some(stored) if *stored == color => return None,
+                Some(_) => {}
+                None => {
+                    colors.insert(neighbor, !color);
+                    stack.push(neighbor);
+                }
+            }
+        }
+    }
+    if colors.len() != adjacency.len() {
+        return None;
+    }
+    let mut sides = [Vec::new(), Vec::new()];
+    for (vertex, color) in colors {
+        sides[usize::from(color)].push(vertex);
+    }
+    sides[0].sort_unstable();
+    sides[1].sort_unstable();
+    Some(sides)
 }
 
 /// Bind curve branches when their surviving endpoint relation and serialized
@@ -4430,46 +4616,9 @@ pub(crate) fn bind_ordered_standard_curve_branches(
             .copied()
             .filter(|pair| !fixed_relations.contains(pair))
             .collect::<Vec<_>>();
-        let mut adjacency = HashMap::<usize, Vec<usize>>::new();
-        for &[left, right] in &relation {
-            if left == right {
-                adjacency.clear();
-                break;
-            }
-            adjacency.entry(left).or_default().push(right);
-            adjacency.entry(right).or_default().push(left);
-        }
-        if adjacency.is_empty() {
-            continue;
-        }
-        let Some(&root) = adjacency.keys().min() else {
+        let Some(sides) = bipartite_relation_sides(relation.iter().copied()) else {
             continue;
         };
-        let mut colors = HashMap::from([(root, false)]);
-        let mut stack = vec![root];
-        let mut valid = true;
-        while let Some(vertex) = stack.pop() {
-            let color = colors[&vertex];
-            for &neighbor in &adjacency[&vertex] {
-                match colors.get(&neighbor) {
-                    Some(stored) if *stored == color => valid = false,
-                    Some(_) => {}
-                    None => {
-                        colors.insert(neighbor, !color);
-                        stack.push(neighbor);
-                    }
-                }
-            }
-        }
-        if !valid || colors.len() != adjacency.len() {
-            continue;
-        }
-        let mut sides = [Vec::new(), Vec::new()];
-        for (vertex, color) in colors {
-            sides[usize::from(color)].push(vertex);
-        }
-        sides[0].sort_unstable();
-        sides[1].sort_unstable();
         let ranked_side = match [
             sides[0].len() == branch_count,
             sides[1].len() == branch_count,
@@ -4589,7 +4738,7 @@ pub(crate) fn bind_ordered_standard_curve_branches(
             .map(|(anchor, _)| *anchor)
             .collect::<Vec<_>>();
         if anchors.len() != branch_count
-            || anchors.windows(2).any(|pair| pair[0] >= pair[1])
+            || anchors.windows(2).any(|pair| pair[0] == pair[1])
             || anchored
                 .iter()
                 .any(|(_, opposite)| opposite != &anchored[0].1)
@@ -4669,11 +4818,39 @@ fn standard_curve_branch_groups(
                     && std::mem::discriminant(&supports[*edge].geometry)
                         == std::mem::discriminant(&supports[first].geometry)
                     && candidate_faces == faces
-                    && normalized[*edge] == normalized[first]
+                    && normalized[*edge].len() >= 2
             })
             .collect::<Vec<_>>();
         if group.len() < 2 {
             continue;
+        }
+        let identical_domains = group
+            .iter()
+            .all(|edge| normalized[*edge] == normalized[first]);
+        if !identical_domains {
+            let relation = group
+                .iter()
+                .flat_map(|edge| normalized[*edge].iter().copied())
+                .collect::<HashSet<_>>();
+            let Some(sides) = bipartite_relation_sides(relation.iter().copied()) else {
+                continue;
+            };
+            if !sides.iter().any(|side| side.len() == group.len()) {
+                continue;
+            }
+            let complete = sides[0]
+                .iter()
+                .flat_map(|left| {
+                    sides[1].iter().map(move |right| {
+                        let mut pair = [*left, *right];
+                        pair.sort_unstable();
+                        pair
+                    })
+                })
+                .collect::<HashSet<_>>();
+            if relation != complete {
+                continue;
+            }
         }
         for &edge in &group {
             checked[edge] = true;
@@ -4686,25 +4863,57 @@ fn standard_curve_branch_groups(
     groups
 }
 
-fn standard_curve_branch_assignment_is_ranked(
+fn standard_curve_branch_assignment_dependencies(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    groups: &[StandardCurveBranchGroup],
+) -> Vec<Vec<usize>> {
+    let mut grouped = vec![false; supports.len()];
+    for edge in groups.iter().flat_map(|group| group.edges.iter().copied()) {
+        if let Some(grouped_edge) = grouped.get_mut(edge) {
+            *grouped_edge = true;
+        }
+    }
+    let mut dependencies = vec![Vec::new(); supports.len()];
+    for group in groups {
+        let external = supports
+            .iter()
+            .enumerate()
+            .filter(|(edge, support)| {
+                !grouped[*edge] && support.faces.iter().any(|face| group.faces.contains(face))
+            })
+            .map(|(edge, _)| edge)
+            .collect::<Vec<_>>();
+        for &edge in &group.edges {
+            dependencies[edge].extend(external.iter().copied());
+        }
+    }
+    for edge_dependencies in &mut dependencies {
+        edge_dependencies.sort_unstable();
+        edge_dependencies.dedup();
+    }
+    dependencies
+}
+
+fn standard_curve_branch_candidates_after_partial_assignment(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     candidates: &[Vec<[usize; 2]>],
     groups: &[StandardCurveBranchGroup],
     assignment: &[Option<[usize; 2]>],
-) -> bool {
+) -> Option<Vec<Vec<[usize; 2]>>> {
     if supports.len() != candidates.len() || candidates.len() != assignment.len() {
-        return false;
+        return None;
     }
+    let mut constrained = candidates.to_vec();
     for StandardCurveBranchGroup {
         edges: group,
         faces,
     } in groups
     {
-        let mut constrained = candidates.to_vec();
+        let mut group_constrained = candidates.to_vec();
         for (edge, pair) in assignment.iter().copied().enumerate() {
             if !group.contains(&edge) {
                 if let Some(pair) = pair {
-                    constrained[edge] = vec![pair];
+                    group_constrained[edge] = vec![pair];
                 }
             }
         }
@@ -4737,20 +4946,35 @@ fn standard_curve_branch_assignment_is_ranked(
             continue;
         }
         for &edge in group {
-            constrained[edge].retain(|pair| pair.iter().all(|point| left.contains(point)));
+            group_constrained[edge].retain(|pair| pair.iter().all(|point| left.contains(point)));
         }
-        bind_ordered_standard_curve_branches(supports, &mut constrained);
+        bind_ordered_standard_curve_branches(supports, &mut group_constrained);
         if group.iter().copied().any(|edge| {
             assignment[edge].is_some_and(|assigned| {
-                !constrained[edge]
+                !group_constrained[edge]
                     .iter()
                     .any(|candidate| missing_edge::same_unordered_pair(*candidate, assigned))
             })
         }) {
-            return false;
+            return None;
+        }
+        for &edge in group {
+            constrained[edge].clone_from(&group_constrained[edge]);
         }
     }
-    true
+    Some(constrained)
+}
+
+fn standard_curve_branch_assignment_is_ranked(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    candidates: &[Vec<[usize; 2]>],
+    groups: &[StandardCurveBranchGroup],
+    assignment: &[Option<[usize; 2]>],
+) -> bool {
+    standard_curve_branch_candidates_after_partial_assignment(
+        supports, candidates, groups, assignment,
+    )
+    .is_some()
 }
 
 pub(crate) fn standard_circle_endpoint_candidates(
@@ -6404,14 +6628,19 @@ mod route_tests {
         point_on_standard_face, point_on_surface, resolve_standard_endpoint_pairs,
         resolve_standard_limit_curve_binding, retry_rejected_mesh_solution,
         standard_circle_endpoint_candidates, standard_circle_param_range,
-        standard_curve_branch_assignment_is_ranked, standard_curve_branch_groups,
+        standard_curve_branch_assignment_is_ranked,
+        standard_curve_branch_candidates_after_partial_assignment, standard_curve_branch_groups,
         standard_limit_curve_bindings, standard_native_support_endpoint_pair,
         standard_object_evidence_from_streams, standard_pcurve_geometry,
         standard_plane_normal_from_adjacent_circle_carriers,
         standard_plane_normal_from_circle_centers, standard_spline_line,
         standard_successor_endpoint_pairs, standard_successor_endpoint_points,
-        unique_native_identity_points, witness_arc_end, StandardEdgeSupport,
+        standard_surface_evidence, unique_native_identity_points, witness_arc_end,
+        StandardEdgeSupport, StandardSurfaceProcedure,
     };
+
+    use crate::families::b5::graph::{B5Graph, B5Profile, B5Surface};
+    use crate::tests::{append_b5_record, b5_closed_triangle_stream, le_f64};
 
     use crate::families::standard::records::{
         StandardCurveGeometry, StandardCurveSupport, StandardFaceBounds,
@@ -6482,6 +6711,124 @@ mod route_tests {
             evidence.surface_geometries.get(&10),
             Some(SurfaceGeometry::Plane { origin, .. }) if *origin == Point3::new(0.0, 0.0, 0.0)
         ));
+    }
+
+    #[test]
+    fn targeted_surface_evidence_retains_revolution_construction() {
+        let angular_range = [0.0, std::f64::consts::PI];
+        let graph = B5Graph {
+            complete: true,
+            faces: Vec::new(),
+            face_records: BTreeMap::new(),
+            loops: BTreeMap::new(),
+            pcurves: BTreeMap::new(),
+            opaque_pcurves: BTreeMap::new(),
+            implicit_pcurves: BTreeMap::new(),
+            surfaces: BTreeMap::from([(
+                10,
+                B5Surface::Revolution {
+                    profile_curve: 11,
+                    axis_origin: [0.0, 0.0, 0.0],
+                    reference_x: [1.0, 0.0, 0.0],
+                    reference_y: [0.0, 1.0, 0.0],
+                    axis_direction: [0.0, 0.0, 1.0],
+                    profile_range: [-1.0, 1.0],
+                    angular_range,
+                    angular_scale: 1.0,
+                },
+            )]),
+            surface_aliases: BTreeMap::new(),
+            offset_surfaces: BTreeMap::new(),
+            extrusion_surfaces: BTreeMap::new(),
+            supported_surfaces: BTreeMap::new(),
+            parameter_incidences: BTreeMap::new(),
+            edges: BTreeMap::new(),
+            vertex_incidence_links: BTreeMap::new(),
+            vertex_points: Vec::new(),
+            logical_vertex_points: Vec::new(),
+            logical_vertex_refs: Vec::new(),
+            edge_vertices: BTreeMap::new(),
+            edge_parameter_incidences: BTreeMap::new(),
+            vertex_tolerances: BTreeMap::new(),
+            profiles: BTreeMap::from([(
+                11,
+                B5Profile::Line {
+                    point: [2.0, 0.0, 0.0],
+                    direction: [0.0, 0.0, 1.0],
+                    parameter_range: [-1.0, 1.0],
+                },
+            )]),
+        };
+
+        let evidence = standard_surface_evidence(&graph, 10).expect("revolution evidence");
+        let Some(StandardSurfaceProcedure::Revolution(revolution)) = evidence.procedure.as_ref()
+        else {
+            panic!("surface-of-revolution evidence must retain its construction");
+        };
+        assert!(matches!(evidence.geometry, Some(SurfaceGeometry::Nurbs(_))));
+        assert_eq!(revolution.angular_interval, angular_range);
+        assert_eq!(revolution.parameter_interval, [-1.0, 1.0]);
+        assert_eq!(revolution.directrix.control_points.len(), 2);
+    }
+
+    #[test]
+    fn object_evidence_exports_revolution_cache_and_construction() {
+        let mut stream = b5_closed_triangle_stream();
+        let mut profile = vec![0; 73];
+        profile[0] = 0x80;
+        for (offset, value) in [
+            (1usize, 2.0f64),
+            (9, 0.0),
+            (17, 0.0),
+            (25, 0.0),
+            (33, 0.0),
+            (41, 1.0),
+        ] {
+            profile[offset..offset + 8].copy_from_slice(&le_f64(value));
+        }
+        profile[49..57].copy_from_slice(&le_f64(1.0));
+        profile[57..65].copy_from_slice(&le_f64(-1.0));
+        profile[65..73].copy_from_slice(&le_f64(1.0));
+        append_b5_record(&mut stream, 0x0e, 110, &profile);
+
+        let mut revolution = vec![0; 176];
+        revolution[0] = 0x81;
+        revolution[1] = 0x38;
+        revolution[2..5].copy_from_slice(&[110, 0, 0]);
+        revolution[29..37].copy_from_slice(&le_f64(1.0));
+        revolution[61..69].copy_from_slice(&le_f64(1.0));
+        revolution[93..101].copy_from_slice(&le_f64(1.0));
+        for (offset, value) in [
+            (101usize, 0.0f64),
+            (109, std::f64::consts::PI),
+            (117, -1.0),
+            (125, 1.0),
+            (135, 1.0),
+            (143, 1.0),
+            (151, 1.0),
+            (159, 0.0),
+            (168, std::f64::consts::PI),
+        ] {
+            revolution[offset..offset + 8].copy_from_slice(&le_f64(value));
+        }
+        revolution[133..135].copy_from_slice(&[0x05, 0x05]);
+        revolution[167] = 0x01;
+        append_b5_record(&mut stream, 0x2d, 120, &revolution);
+
+        let evidence =
+            standard_object_evidence_from_streams([stream], &HashSet::from([120]), &HashSet::new());
+        assert!(matches!(
+            evidence.surface_geometries.get(&120),
+            Some(SurfaceGeometry::Nurbs(_))
+        ));
+        let Some(StandardSurfaceProcedure::Revolution(revolution)) =
+            evidence.procedural_surfaces.get(&120)
+        else {
+            panic!("object evidence must retain revolution construction");
+        };
+        assert_eq!(revolution.angular_interval, [0.0, std::f64::consts::PI]);
+        assert_eq!(revolution.parameter_interval, [-1.0, 1.0]);
+        assert_eq!(revolution.directrix.control_points.len(), 2);
     }
 
     #[test]
@@ -7500,7 +7847,7 @@ mod route_tests {
     }
 
     #[test]
-    fn standard_parallel_line_rows_bind_by_serialized_branch_rank() {
+    fn standard_parallel_line_rows_retain_mesh_resolvable_domains() {
         let mut ir = CadIr::empty(Units::default());
         for (index, position) in [
             Point3::new(-2.0, 0.0, 0.0),
@@ -7555,7 +7902,7 @@ mod route_tests {
         )
         .expect("endpoint option pass");
 
-        assert_eq!(choices, [vec![[0, 2]], vec![[1, 3]]]);
+        assert_eq!(choices, [vec![[0, 2], [1, 3]], vec![[0, 2], [1, 3]]]);
     }
 
     #[test]
@@ -7588,6 +7935,21 @@ mod route_tests {
         bind_ordered_standard_curve_branches(&supports, &mut candidates);
 
         assert_eq!(candidates, [vec![[2, 8]], vec![[3, 9]]]);
+    }
+
+    #[test]
+    fn standard_spline_rows_bind_the_unordered_prebound_side_by_opposite_rank() {
+        let supports = [10, 11].map(|tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: [3, 7],
+            geometry: StandardCurveGeometry::Bspline,
+        });
+        let mut candidates = [vec![[9, 20], [9, 21]], vec![[8, 20], [8, 21]]];
+
+        bind_ordered_standard_curve_branches(&supports, &mut candidates);
+
+        assert_eq!(candidates, [vec![[9, 20]], vec![[8, 21]]]);
     }
 
     #[test]
@@ -7772,6 +8134,87 @@ mod route_tests {
             &groups,
             &partial,
         ));
+    }
+
+    #[test]
+    fn standard_spline_branch_rank_uses_complete_relation_after_mesh_frontier_pruning() {
+        let fixed = |tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 0.0),
+                radius: 1.0,
+            },
+        };
+        let spline = |tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Bspline,
+        };
+        let supports = [fixed(0), fixed(1), spline(2), spline(3)];
+        let candidates = [
+            vec![[0, 1]],
+            vec![[2, 3]],
+            vec![[0, 2], [1, 2], [2, 4]],
+            vec![[0, 3], [1, 3], [3, 4]],
+        ];
+        let groups = standard_curve_branch_groups(&supports, &candidates);
+        let ranked = [Some([0, 1]), Some([2, 3]), Some([0, 2]), Some([1, 3])];
+        let crossed = [Some([0, 1]), Some([2, 3]), Some([1, 2]), Some([0, 3])];
+
+        assert_eq!(groups.len(), 1);
+        assert!(standard_curve_branch_assignment_is_ranked(
+            &supports,
+            &candidates,
+            &groups,
+            &ranked
+        ));
+        assert!(!standard_curve_branch_assignment_is_ranked(
+            &supports,
+            &candidates,
+            &groups,
+            &crossed
+        ));
+    }
+
+    #[test]
+    fn standard_spline_branch_candidates_narrow_after_fixed_frontiers() {
+        let fixed = |tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 0.0),
+                radius: 1.0,
+            },
+        };
+        let spline = |tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Bspline,
+        };
+        let supports = [fixed(0), fixed(1), spline(2), spline(3)];
+        let candidates = [
+            vec![[0, 1]],
+            vec![[2, 3]],
+            vec![[0, 2], [1, 2], [2, 4]],
+            vec![[0, 3], [1, 3], [3, 4]],
+        ];
+        let groups = standard_curve_branch_groups(&supports, &candidates);
+        let assignment = [Some([0, 1]), Some([2, 3]), None, None];
+        let narrowed = standard_curve_branch_candidates_after_partial_assignment(
+            &supports,
+            &candidates,
+            &groups,
+            &assignment,
+        )
+        .expect("fixed frontiers establish a valid branch relation");
+
+        assert_eq!(narrowed[2], vec![[0, 2]]);
+        assert_eq!(narrowed[3], vec![[1, 3]]);
     }
 
     #[test]
