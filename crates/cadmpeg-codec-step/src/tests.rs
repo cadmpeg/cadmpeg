@@ -1279,6 +1279,12 @@ fn base_edges_without_curve_carriers_remain_topological_edges() {
         .edges
         .iter()
         .all(|edge| edge.curve.is_none()));
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed
+            && loss
+                .message
+                .contains("edge #19 has no decoded surface or curve carrier")
+    }));
     let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -2060,6 +2066,95 @@ fn seam_edge_preserves_its_explicit_pcurve_reference() {
             .iter()
             .any(|use_| use_.pcurve.as_str() == "step:data:pcurve#56")
     }));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+fn ambiguous_seam_source() -> String {
+    String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#57=SURFACE_CURVE('',#16,(#56),.PCURVE_S1.);",
+            "#57=SEAM_CURVE('',#16,(#56,#69),.PCURVE_S1.);",
+        )
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#69=PCURVE('',#28,#70);\n#70=DEFINITIONAL_REPRESENTATION('',(#71),#50);\n#71=LINE('',#51,#53);\nENDSEC;\nEND-ISO-10303-21;",
+        )
+}
+
+#[test]
+fn ambiguous_seam_pcurve_candidates_are_reported_not_guessed() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(ambiguous_seam_source()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode ambiguous seam pcurves");
+
+    assert!(decoded
+        .ir
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| coedge.pcurves.is_empty()));
+    let losses: Vec<_> = decoded
+        .report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed)
+        .collect();
+    assert_eq!(
+        losses.len(),
+        1,
+        "unexpected losses: {:#?}",
+        decoded.report.losses
+    );
+    assert_eq!(losses[0].severity, cadmpeg_ir::Severity::Warning);
+    assert_eq!(
+        losses[0].message,
+        "curve #57 associates 2 pcurves with surface #28; no UV-continuity rule selects one, so the coedge has no pcurve"
+    );
+}
+
+#[test]
+fn an_unambiguous_pcurve_still_binds() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("../tests/fixtures/ap214_sheet.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode unambiguous pcurve");
+
+    assert!(decoded.ir.model.coedges.iter().any(|coedge| {
+        coedge
+            .pcurves
+            .iter()
+            .any(|use_| use_.pcurve.as_str() == "step:data:pcurve#56")
+    }));
+}
+
+#[test]
+fn ambiguous_pcurves_do_not_reject_the_body() {
+    use cadmpeg_ir::topology::BodyKind;
+
+    let source = ambiguous_seam_source()
+        .replace("#30=OPEN_SHELL('',(#29));", "#30=CLOSED_SHELL('',(#29));")
+        .replace(
+            "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+            "#31=MANIFOLD_SOLID_BREP('',#30);",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode solid with ambiguous seam pcurves");
+
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(decoded.ir.model.bodies[0].kind, BodyKind::Solid);
+    assert!(decoded
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed));
     let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

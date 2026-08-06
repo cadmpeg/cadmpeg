@@ -278,6 +278,7 @@ pub(super) fn decode(
             point_positions,
             scope_root,
             &mut result.warnings,
+            &mut result.losses,
         );
         let failure_message = outcome.failure.as_ref().map(BuildFailure::message);
         let mut body_ids = Vec::new();
@@ -1590,6 +1591,7 @@ fn build(
     point_positions: &CarrierIndex,
     scope_root: bool,
     warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) -> BuildOutcome {
     let Some(shell_steps) = root_shell_steps(root, exchange) else {
         return BuildOutcome {
@@ -1625,6 +1627,7 @@ fn build(
             scope_root,
             scope_root,
             warnings,
+            losses,
             &mut failure,
         );
         let failed = usize::from(built.is_none());
@@ -1685,6 +1688,7 @@ fn build(
             scoped || scope_root,
             scope_root,
             warnings,
+            losses,
             &mut failure,
         ) {
             built.push(value);
@@ -1720,6 +1724,7 @@ fn build_one(
     scope_edges: bool,
     scope_root: bool,
     warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
     failure: &mut Option<BuildFailure>,
 ) -> Option<Built> {
     let solid = has_type(root, "MANIFOLD_SOLID_BREP")
@@ -1758,7 +1763,6 @@ fn build_one(
     let mut radial = BTreeMap::<EdgeId, Vec<usize>>::new();
     let mut poly_edges = BTreeMap::<(u64, EdgeId), (u64, u64)>::new();
     let mut poly_points = BTreeSet::<(u64, u64)>::new();
-    let mut pcurve_use_counts = BTreeMap::<(u64, u64), usize>::new();
     let mut implicit_surface_ids = BTreeSet::new();
     for &shell_reference in shell_steps {
         let (shell_step, shell_forward) = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
@@ -2107,31 +2111,45 @@ fn build_one(
                     });
                     let associated = explicit_pcurve.into_iter().collect::<Vec<_>>();
                     let associated = if associated.is_empty() {
-                        surface_step
-                            .and_then(|surface_step| {
-                                edge.curve.map(|curve| {
-                                    associated_pcurves(
-                                        curve,
-                                        surface_step,
-                                        exchange,
-                                        decoded_pcurves,
-                                    )
-                                })
-                            })
-                            .unwrap_or_default()
+                        match (surface_step, edge.curve) {
+                            (Some(surface_step), Some(curve)) => {
+                                associated_pcurves(curve, surface_step, exchange, decoded_pcurves)
+                            }
+                            _ => {
+                                losses.push(LossNote {
+                                    code: LossKind::ReferenceGraphNotClosed,
+                                    severity: Severity::Warning,
+                                    message: format!(
+                                        "edge #{} has no decoded surface or curve carrier, so its coedge has no pcurve",
+                                        o.edge
+                                    ),
+                                    provenance: None,
+                                });
+                                Vec::new()
+                            }
+                        }
                     } else {
                         associated
                     };
-                    let pcurves = if associated.len() <= 1 {
-                        associated
-                    } else {
-                        let curve = require_carrier(edge.curve, failure, o.edge, "edge geometry")?;
-                        let surface_step =
-                            require_carrier(surface_step, failure, face_step, "face surface")?;
-                        let use_count = pcurve_use_counts.entry((curve, surface_step)).or_default();
-                        let selected = associated[*use_count % associated.len()].clone();
-                        *use_count += 1;
-                        vec![selected]
+                    let pcurves = match associated.len() {
+                        0 | 1 => associated,
+                        n => {
+                            let message = match (edge.curve, surface_step) {
+                                (Some(curve), Some(surface)) => format!(
+                                    "curve #{curve} associates {n} pcurves with surface #{surface}; no UV-continuity rule selects one, so the coedge has no pcurve"
+                                ),
+                                _ => format!(
+                                    "coedge use #{use_step} has {n} pcurve candidates but its source surface or curve carrier is unresolved; no UV-continuity rule selects one, so the coedge has no pcurve"
+                                ),
+                            };
+                            losses.push(LossNote {
+                                code: LossKind::ReferenceGraphNotClosed,
+                                severity: Severity::Warning,
+                                message,
+                                provenance: None,
+                            });
+                            Vec::new()
+                        }
                     };
                     let cid = CoedgeId(format!(
                         "step:data:coedge#{use_step}-face-{face_step}{face_suffix}"
