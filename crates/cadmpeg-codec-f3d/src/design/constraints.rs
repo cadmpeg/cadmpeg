@@ -266,7 +266,7 @@ pub(crate) fn exact_rectangular_pattern(
                 native_stream(&parameter.id) == Some(scope)
                     && parameter.owner_record_index == Some(direction.count_parameter)
             });
-            let span_parameter = parameters.iter().find(|parameter| {
+            let spacing_parameter = parameters.iter().find(|parameter| {
                 native_stream(&parameter.id) == Some(scope)
                     && parameter.owner_record_index == Some(direction.distance_parameter)
             });
@@ -276,24 +276,20 @@ pub(crate) fn exact_rectangular_pattern(
             {
                 return None;
             }
-            let span = cadmpeg_ir::features::Length(direction.evaluated_distance * 10.0);
-            if !span.0.is_finite()
-                || span_parameter.is_some_and(|parameter| {
-                    design_length(parameter).is_none_or(|value| !scalar_close(value.0, span.0))
+            let spacing = cadmpeg_ir::features::Length(direction.evaluated_distance * 10.0);
+            if !spacing.0.is_finite()
+                || spacing.0 < 0.0
+                || spacing_parameter.is_some_and(|parameter| {
+                    design_length(parameter).is_none_or(|value| !scalar_close(value.0, spacing.0))
                 })
             {
                 return None;
             }
-            let spacing = cadmpeg_ir::features::Length(if count > 1 {
-                span.0 / f64::from(count - 1)
-            } else {
-                0.0
-            });
             Some(SketchPatternDirection {
                 direction: [direction.direction[0], direction.direction[1]],
                 spacing,
                 count,
-                span_parameter: span_parameter.map(neutral_parameter_id),
+                spacing_parameter: spacing_parameter.map(neutral_parameter_id),
                 count_parameter: count_parameter.map(neutral_parameter_id),
             })
         })
@@ -892,7 +888,7 @@ mod tests {
     }
 
     #[test]
-    fn rectangular_pattern_derives_spacing_from_internal_span_scalars() {
+    fn rectangular_pattern_uses_adjacent_spacing_scalars() {
         let entity = |id: &str, u| cadmpeg_ir::sketches::SketchEntity {
             id: SketchEntityId(id.into()),
             sketch: SketchId("generated:sketch#0".into()),
@@ -933,7 +929,7 @@ mod tests {
                         distance_parameter: 21,
                         evaluated_count: 3,
                         direction: [1.0, 0.0, 0.0],
-                        evaluated_distance: 3.0,
+                        evaluated_distance: 1.5,
                     },
                     crate::records::SketchPatternDirection {
                         count_parameter: 22,
@@ -958,7 +954,7 @@ mod tests {
         };
         assert_eq!(directions[0].spacing.0, 15.0);
         assert_eq!(directions[1].spacing.0, 0.0);
-        assert_eq!(directions[0].span_parameter, None);
+        assert_eq!(directions[0].spacing_parameter, None);
         assert_eq!(directions[0].count_parameter, None);
         assert_eq!(
             instances

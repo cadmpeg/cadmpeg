@@ -712,13 +712,13 @@ pub struct SketchPatternDirection {
     pub spacing: Length,
     /// Number of instances along this axis, including the seed instance.
     pub count: u32,
-    /// Driving total-span parameter, when the source exposes it as a neutral parameter.
+    /// Driving adjacent-spacing parameter, when the source exposes it as a neutral parameter.
     #[serde(
         default,
-        alias = "spacing_parameter",
+        alias = "span_parameter",
         skip_serializing_if = "Option::is_none"
     )]
-    pub span_parameter: Option<ParameterId>,
+    pub spacing_parameter: Option<ParameterId>,
     /// Driving instance-count parameter, when the source exposes it as a neutral parameter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub count_parameter: Option<ParameterId>,

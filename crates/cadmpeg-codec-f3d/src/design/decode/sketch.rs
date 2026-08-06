@@ -1334,7 +1334,7 @@ pub fn decode_sketch_relations(
 /// instance count directly after it. Rectangular patterns store, per direction,
 /// the evaluated u32 count, the count-parameter reference, a three-component
 /// f64 unit direction six zero bytes after that reference, the evaluated f64
-/// seed-to-final-instance span, and the distance-parameter reference. Text-frame
+/// adjacent-instance spacing, and the distance-parameter reference. Text-frame
 /// relations repeat the sketch-text member as an auxiliary reference.
 pub(crate) fn decode_pattern_definition(
     payload: &[u8],
@@ -3172,8 +3172,8 @@ fn parse_relation_class_members(
             let mut complete = true;
             for _ in 0..2 {
                 // The evaluated instance count precedes the count-parameter
-                // reference; the unit direction and the seed-to-final-instance
-                // span follow it, and the distance parameter closes the clause.
+                // reference; the unit direction and the adjacent-instance
+                // spacing follow it, and the distance parameter closes the clause.
                 *cursor += 4;
                 complete &= take!()?;
                 *cursor += 32;
