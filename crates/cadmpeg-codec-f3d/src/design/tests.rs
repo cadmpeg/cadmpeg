@@ -8632,6 +8632,22 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             heal: false,
         }
     );
+    surface_scope.frame_length = 251 + reference_bytes;
+    surface_scope.kind_offset = surface_scope.byte_offset + 139 + reference_bytes;
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&surface_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        features[0].definition,
+        FeatureDefinition::DeleteFace { heal: false, .. }
+    ));
     surface_scope.frame_length = 236 + reference_bytes;
     surface_scope.kind_offset = surface_scope.byte_offset + 139 + reference_bytes;
     let (features, _) = project_parameter_design(
