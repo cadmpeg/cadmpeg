@@ -751,9 +751,13 @@ fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecE
         0,
     )
     .ok_or_else(|| CodecError::Malformed(format!("invalid raw sketch-text record {}", text.id)))?;
-    let header_matches = text.raw_bytes.get(0..4) == Some(&3u32.to_le_bytes())
-        && text.raw_bytes.get(4..7) == Some(text.class_tag.as_bytes())
-        && text.raw_bytes.get(7..15) == Some(&u64::from(text.record_index).to_le_bytes());
+    let common_header_matches = text.raw_bytes.get(0..4) == Some(&3u32.to_le_bytes())
+        && text.raw_bytes.get(4..7) == Some(text.class_tag.as_bytes());
+    let legacy_index_matches =
+        text.raw_bytes.get(7..15) == Some(&u64::from(text.record_index).to_le_bytes());
+    let indexed_index_matches = text.raw_bytes.get(7..11) == Some(&text.record_index.to_le_bytes())
+        && text.raw_bytes.get(11..20) == Some(&[0; 9]);
+    let header_matches = common_header_matches && (legacy_index_matches || indexed_index_matches);
     let fields_match = decoded.owner_reference == text.owner_reference
         && decoded.entity_genesis == text.entity_genesis
         && decoded.persistent_id == text.persistent_id

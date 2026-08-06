@@ -4172,14 +4172,16 @@ pub struct SketchText {
     /// variant, so the colour stays on the native record.
     pub color: Color,
     /// Text anchor point in the sketch frame in millimetres. The `txt_tag`
-    /// identity form stores it directly; the `textex_tag` form stores it as the
-    /// last column of its placement transform. Path text stores neither.
+    /// identity form stores it directly; the legacy `textex_tag` form stores
+    /// it as the last column of its placement transform. Indexed Design
+    /// `textex_tag` records carry no neutral anchor. Path text stores neither.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub anchor: Option<Point2>,
     /// Rotation of the text about its anchor in radians. The `txt_tag` identity
-    /// form stores the angle directly after the property block. Frame text in the
-    /// `textex_tag` form derives it from the placement transform's 2×2 basis;
-    /// path text stores none.
+    /// form stores the angle directly after the property block. The legacy
+    /// frame form of `textex_tag` derives it from the placement transform's
+    /// 2×2 basis. Indexed Design `textex_tag` records carry no neutral
+    /// rotation; path text stores none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rotation: Option<f64>,
     /// Parameter record driving the height, absent when the record omits the
