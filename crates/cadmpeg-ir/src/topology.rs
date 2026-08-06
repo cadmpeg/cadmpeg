@@ -256,8 +256,8 @@ pub struct Edge {
     /// Conic parameters are angles from the reference direction; line
     /// parameters are signed distances along the unit direction in the
     /// document's length unit.
-    /// A carrier-less degenerate or tolerant edge has no canonical domain and
-    /// therefore leaves this range unset.
+    /// A carrier-less degenerate or tolerant edge has no canonical domain;
+    /// finite native endpoint values may still be retained without ordering.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub param_range: Option<[f64; 2]>,
     /// Optional geometric tolerance in the document's length unit.
