@@ -11644,6 +11644,15 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     let [cohort] = native.reference_signature_cohorts.as_slice() else {
         panic!("one reference-signature cohort");
     };
+    let graph_key = cohort
+        .parent
+        .split_once('#')
+        .expect("object graph identity")
+        .1;
+    assert_eq!(
+        cohort.id,
+        format!("catia:outer:reference-signature-cohort#{graph_key}:00000000")
+    );
     assert_eq!(cohort.ordinal, 0);
     assert_eq!(cohort.first_reference, 3);
     assert_eq!(cohort.second_reference, 4);
@@ -13314,6 +13323,15 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
     assert_eq!(native.configuration_row_chains.len(), 1);
     let chain = &native.configuration_row_chains[0];
     assert_eq!(chain.object_graph, native.entity_records[1].object_graph);
+    let graph_key = chain
+        .object_graph
+        .split_once('#')
+        .expect("object graph identity")
+        .1;
+    assert_eq!(
+        chain.id,
+        format!("catia:outer:configuration-row-chain#{graph_key}:6")
+    );
     assert_eq!(chain.links.len(), 1);
     assert_eq!(chain.links[0].row, row.class_reference);
     assert_eq!(
