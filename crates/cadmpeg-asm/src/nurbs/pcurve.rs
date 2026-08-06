@@ -1404,6 +1404,74 @@ mod width_tests {
     }
 
     #[test]
+    fn intersection_selector_keeps_pcurve_for_cacheless_surface_support() {
+        for int_width in [4usize, 8] {
+            let mut support = vec![0x0f];
+            push_ident(&mut support, "helix_spl_line");
+            push_int(&mut support, 0x04, 23_100, int_width);
+            for value in [-0.5, 0.5, -2.0, 3.0, 0.0, std::f64::consts::TAU] {
+                push_f64(&mut support, value);
+            }
+            push_position(&mut support, [1.0, 2.0, 3.0]);
+            push_vector(&mut support, [2.0, 0.0, 0.0]);
+            push_vector(&mut support, [0.0, 2.0, 0.0]);
+            push_vector(&mut support, [0.0, 0.0, 4.0]);
+            push_f64(&mut support, 0.25);
+            push_vector(&mut support, [0.0, 0.0, 1.0]);
+            for sentinel in ["null_surface", "null_surface", "nullbs", "nullbs"] {
+                push_ident(&mut support, sentinel);
+            }
+            push_vector(&mut support, [5.0, 6.0, 7.0]);
+            support.push(0x10);
+
+            let mut record = vec![0x0f];
+            push_ident(&mut record, "int_int_cur");
+            push_int(&mut record, 0x04, 22_507, int_width);
+            push_int(&mut record, 0x15, 0, int_width);
+            record.extend_from_slice(&curve_block(int_width));
+            push_f64(&mut record, 1.0e-6);
+            push_ident(&mut record, "spline");
+            record.push(0x0b);
+            record.extend_from_slice(&[0x0f]);
+            push_ident(&mut record, "ref");
+            push_int(&mut record, 0x04, 0, int_width);
+            record.push(0x10);
+            record.extend_from_slice(&[0x0b; 4]);
+            push_ident(&mut record, "null_surface");
+            record.extend_from_slice(&pcurve_block(int_width));
+            push_ident(&mut record, "nullbs");
+            record.extend_from_slice(&[0x0b, 0x0b]);
+            for _ in 0..4 {
+                push_int(&mut record, 0x04, 0, int_width);
+            }
+            record.push(0x10);
+
+            let mut active = support;
+            active.extend_from_slice(&record);
+            let toks = lex_test_span(&record, int_width);
+            let table = test_table(&active, int_width);
+            let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(&toks, &table)
+                .unwrap_or_else(|| panic!("cacheless support intersection at width {int_width}"));
+            let context = decoded
+                .embedded_intersection
+                .as_ref()
+                .map(|(context, _)| context)
+                .expect("typed intersection context");
+            assert_eq!(context.support_present, [true, false]);
+            assert!(context.surfaces[0].is_none());
+            assert!(context.pcurves[0].is_some());
+            assert!(
+                crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 1, &table)
+                    .is_some()
+            );
+            assert!(
+                crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 2, &table)
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
     fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
         use cadmpeg_ir::geometry::SurfaceCurveFamily;
 
