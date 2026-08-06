@@ -1261,10 +1261,12 @@ fn object_stream_pcurve_candidate(
 
 fn a8_class21_pcurves(bytes: &[u8]) -> Vec<B5Pcurve> {
     let mut pcurves = Vec::new();
-    for offset in 0..bytes.len().saturating_sub(11) {
+    for range in framed_ranges(bytes) {
+        let offset = range.start;
         let Some((end, 0xa8, 0x21, object_id)) = object_frame(bytes, offset) else {
             continue;
         };
+        debug_assert_eq!(end, range.end);
         if let Some(pcurve) = parse_a8_class21_pcurve(object_id, &bytes[offset + 11..end]) {
             pcurves.push(pcurve);
         }
@@ -6753,6 +6755,58 @@ mod tests {
 
     #[test]
     fn a8_class21_jet_decodes_a_piecewise_quintic_pcurve() {
+        let mut payload = a8_class21_test_payload();
+
+        let pcurve = parse_a8_class21_pcurve(7, &payload).expect("complete class-21 jet");
+        assert_eq!(pcurve.object_id, 7);
+        assert_eq!(pcurve.surface, 3);
+        assert_eq!(pcurve.distinct_knots, [10.0, 20.0]);
+        assert_eq!(pcurve.multiplicities, [6, 6]);
+        assert_eq!(pcurve.control_points.len(), 6);
+        assert_eq!(pcurve.parameter_range, Some([10.0, 20.0]));
+        assert_eq!(pcurve.class_21_suffix_scalar, Some(10.0));
+
+        payload[6] = 0x0d;
+        assert_eq!(parse_a8_class21_pcurve(7, &payload), None);
+    }
+
+    #[test]
+    fn a8_class21_scan_ignores_marker_shaped_nested_payload() {
+        let child_payload = a8_class21_test_payload();
+        let mut nested = vec![0xa8, 0x03, 0x21];
+        nested.extend_from_slice(
+            &u32::try_from(child_payload.len())
+                .expect("small nested A8 payload")
+                .to_le_bytes(),
+        );
+        nested.extend_from_slice(&7u32.to_le_bytes());
+        nested.extend_from_slice(&child_payload);
+
+        let mut wrapper = vec![0xa8, 0x03, 0x34];
+        wrapper.extend_from_slice(
+            &u32::try_from(nested.len())
+                .expect("small wrapper A8 payload")
+                .to_le_bytes(),
+        );
+        wrapper.extend_from_slice(&8u32.to_le_bytes());
+        wrapper.extend_from_slice(&nested);
+
+        let mut peer = vec![0xa8, 0x03, 0x21];
+        peer.extend_from_slice(
+            &u32::try_from(child_payload.len())
+                .expect("small peer A8 payload")
+                .to_le_bytes(),
+        );
+        peer.extend_from_slice(&9u32.to_le_bytes());
+        peer.extend_from_slice(&child_payload);
+        wrapper.extend_from_slice(&peer);
+
+        let pcurves = a8_class21_pcurves(&wrapper);
+        assert_eq!(pcurves.len(), 1);
+        assert_eq!(pcurves[0].object_id, 9);
+    }
+
+    fn a8_class21_test_payload() -> Vec<u8> {
         let mut payload = vec![0x81, 0x83, 0x01, 0x15, 0x01, 0x01, 0x09, 0x01];
         for value in [10.0f64, 20.0] {
             payload.extend_from_slice(&value.to_le_bytes());
@@ -6768,18 +6822,7 @@ mod tests {
             payload.extend_from_slice(&value.to_le_bytes());
         }
         payload.extend_from_slice(&[0x00, 0x07]);
-
-        let pcurve = parse_a8_class21_pcurve(7, &payload).expect("complete class-21 jet");
-        assert_eq!(pcurve.object_id, 7);
-        assert_eq!(pcurve.surface, 3);
-        assert_eq!(pcurve.distinct_knots, [10.0, 20.0]);
-        assert_eq!(pcurve.multiplicities, [6, 6]);
-        assert_eq!(pcurve.control_points.len(), 6);
-        assert_eq!(pcurve.parameter_range, Some([10.0, 20.0]));
-        assert_eq!(pcurve.class_21_suffix_scalar, Some(10.0));
-
-        payload[6] = 0x0d;
-        assert_eq!(parse_a8_class21_pcurve(7, &payload), None);
+        payload
     }
 
     #[test]
