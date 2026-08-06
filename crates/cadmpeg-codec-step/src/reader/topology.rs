@@ -73,6 +73,30 @@ pub(super) fn decode(
         edges_by_source: BTreeMap::new(),
         vertices_by_source: BTreeMap::new(),
     };
+    for record in exchange.records.values() {
+        let Some(name) = most_specific(record, &["ORIENTED_OPEN_SHELL", "ORIENTED_CLOSED_SHELL"])
+        else {
+            continue;
+        };
+        if record.partials.len() != 1 || matches!(record.parameter(1), Some(Value::Derived)) {
+            continue;
+        }
+        result.losses.push(LossNote {
+            code: LossKind::NoncanonicalSourceSyntax,
+            severity: Severity::Warning,
+            message: format!(
+                "{name} #{} omits the derived `cfs_faces` slot required by ISO 10303-21; \
+                 read the shell element from positional slot 1",
+                record.id
+            ),
+            provenance: Some(cadmpeg_ir::LossProvenance {
+                format: "step".into(),
+                stream: String::new(),
+                offset: record.span.start as u64,
+                tag: Some("oriented_shell".into()),
+            }),
+        });
+    }
     let vertices = vertex_defs(exchange);
     let edges = edge_defs(exchange);
     let oriented = oriented_defs(exchange);
@@ -2611,8 +2635,25 @@ fn shell_def_cached(
             "ORIENTED_OPEN_SHELL" | "ORIENTED_CLOSED_SHELL" => {
                 let shell_type =
                     most_specific(record, &["ORIENTED_OPEN_SHELL", "ORIENTED_CLOSED_SHELL"])?;
-                let element = named_reference(record, shell_type, 1, 0)?;
-                let orientation = named_logical(record, shell_type, 2, 0)?;
+                let (element, orientation) = if record.partials.len() == 1 {
+                    match record.parameter(1) {
+                        Some(Value::Derived) => (
+                            record.parameter(2).and_then(ValueExt::reference),
+                            record.parameter(3).and_then(ValueExt::logical),
+                        ),
+                        Some(Value::Reference(_)) => (
+                            record.parameter(1).and_then(ValueExt::reference),
+                            record.parameter(2).and_then(ValueExt::logical),
+                        ),
+                        _ => (None, None),
+                    }
+                } else {
+                    (
+                        named_reference(record, shell_type, 1, 0),
+                        named_logical(record, shell_type, 2, 0),
+                    )
+                };
+                let (element, orientation) = element.zip(orientation)?;
                 let mut definition = shell_def_cached(element, exchange, active, cache)?;
                 definition.forward = definition.forward == orientation;
                 definition.typed.insert(reference);

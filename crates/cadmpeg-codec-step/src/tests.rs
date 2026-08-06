@@ -1322,8 +1322,8 @@ fn sheet_root_salvages_independent_shells() {
             "#31=SHELL_BASED_SURFACE_MODEL('',(#33,#34));",
         )
         .replace(
-            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);",
-            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);\n#34=ORIENTED_OPEN_SHELL('',#99,.T.);\n#99=UNSUPPORTED_SHELL('',());",
+            "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);",
+            "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);\n#34=ORIENTED_OPEN_SHELL('',*,#99,.T.);\n#99=UNSUPPORTED_SHELL('',());",
         );
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -1358,8 +1358,8 @@ fn shared_source_face_gets_one_owner_scoped_face_per_shell() {
             "#31=SHELL_BASED_SURFACE_MODEL('',(#33,#34));",
         )
         .replace(
-            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);",
-            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);\n#34=OPEN_SHELL('',(#29));",
+            "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);",
+            "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);\n#34=OPEN_SHELL('',(#29));",
         );
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -1400,8 +1400,8 @@ fn brep_with_voids_scopes_edges_and_vertices_per_shell_after_shared_shell_use() 
         .expect("fixture is UTF-8")
         .replace("#30=OPEN_SHELL('',(#29));", "#30=CLOSED_SHELL('',(#29));")
         .replace(
-            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);",
-            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);\n#34=CLOSED_SHELL('',(#29));\n#70=BREP_WITH_VOIDS('',#30,(#34));",
+            "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);",
+            "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);\n#34=CLOSED_SHELL('',(#29));\n#70=BREP_WITH_VOIDS('',#30,(#34));",
         );
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -1421,6 +1421,74 @@ fn brep_with_voids_scopes_edges_and_vertices_per_shell_after_shared_shell_use() 
 }
 
 #[test]
+fn oriented_shell_reads_the_derived_cfs_faces_slot() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(oriented_closed_shell_source(true)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode specification-form oriented closed shell");
+
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(decoded.ir.model.faces.len(), 1);
+    assert!(decoded
+        .ir
+        .model
+        .bodies
+        .iter()
+        .any(|body| body.kind == cadmpeg_ir::topology::BodyKind::Solid));
+    assert!(!decoded
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.code == cadmpeg_ir::LossKind::NoncanonicalSourceSyntax));
+}
+
+#[test]
+fn oriented_shell_without_the_derived_slot_is_read_and_reported() {
+    let source = oriented_closed_shell_source(false);
+    let record_offset = source
+        .find("#33=ORIENTED_CLOSED_SHELL")
+        .expect("oriented shell record");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode noncanonical oriented closed shell");
+
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(decoded.ir.model.faces.len(), 1);
+    let losses = decoded
+        .report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::LossKind::NoncanonicalSourceSyntax)
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("ORIENTED_CLOSED_SHELL #33"));
+    assert_eq!(
+        losses[0]
+            .provenance
+            .as_ref()
+            .expect("oriented shell provenance")
+            .offset,
+        record_offset as u64
+    );
+}
+
+#[test]
+fn strict_decode_rejects_an_oriented_shell_missing_its_derived_slot() {
+    let mut options = DecodeOptions::default();
+    options.policy.mode = DecodeMode::Strict;
+    let error = StepCodec::default()
+        .decode(
+            &mut Cursor::new(oriented_closed_shell_source(false)),
+            &options,
+        )
+        .expect_err("strict mode rejects a noncanonical oriented shell");
+
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
 fn shell_wire_edge_applies_edge_and_occurrence_sense() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
@@ -1429,7 +1497,7 @@ fn shell_wire_edge_applies_edge_and_occurrence_sense() {
             "#31=SHELL_BASED_WIREFRAME_MODEL('',(#33));",
         )
         .replace(
-            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);",
+            "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);",
             "#33=WIRE_SHELL('',(#25));",
         )
         .replace(
@@ -1798,7 +1866,7 @@ fn failed_void_shell_does_not_commit_the_outer_brep() {
             "#31=BREP_WITH_VOIDS('',#30,(#34));",
         )
         .replace(
-            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);",
+            "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);",
             "#33=OPEN_SHELL('',(#29));\n#34=OPEN_SHELL('',(#99));\n#99=UNSUPPORTED_FACE('',());",
         );
     let decoded = StepCodec::default()
@@ -1983,8 +2051,8 @@ fn complex_oriented_open_shell_preserves_shell_sense() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
         .replace(
-            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);",
-            "#33=(OPEN_SHELL('',(#29)) ORIENTED_OPEN_SHELL('',#30,.F.));",
+            "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);",
+            "#33=(OPEN_SHELL('',(#29)) ORIENTED_OPEN_SHELL('',*,#30,.F.));",
         );
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -2029,7 +2097,7 @@ fn shell_based_wireframe_model_owns_wire_shell_edges() {
             "#31=SHELL_BASED_WIREFRAME_MODEL('',(#33));",
         )
         .replace(
-            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);",
+            "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);",
             "#33=WIRE_SHELL('',(#25));",
         );
     let decoded = StepCodec::default()
@@ -2054,7 +2122,7 @@ fn shell_based_wireframe_model_retains_vertex_shells() {
             "#31=SHELL_BASED_WIREFRAME_MODEL('',(#33));",
         )
         .replace(
-            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);",
+            "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);",
             "#33=VERTEX_SHELL('',#34);\n#34=VERTEX_LOOP('',#6);",
         );
     let decoded = StepCodec::default()
@@ -2079,7 +2147,7 @@ fn connected_edge_sub_set_is_accepted_as_a_wire_boundary() {
             "#31=EDGE_BASED_WIREFRAME_MODEL('',(#33));",
         )
         .replace(
-            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);",
+            "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);",
             "#33=CONNECTED_EDGE_SUB_SET('',(#19,#20,#21),#34);\n#34=CONNECTED_EDGE_SET('',(#19,#20,#21));",
         );
     let decoded = StepCodec::default()
@@ -2113,7 +2181,7 @@ fn connected_edge_sub_set_keeps_topology_when_parent_is_invalid() {
             "#31=EDGE_BASED_WIREFRAME_MODEL('',(#33));",
         )
         .replace(
-            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);",
+            "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);",
             "#33=CONNECTED_EDGE_SUB_SET('',(#19,#20,#21),#34);\n#34=UNSUPPORTED_SET('',());",
         );
     let decoded = StepCodec::default()
@@ -2149,7 +2217,7 @@ fn connected_face_sub_set_validates_and_uses_its_own_members() {
             "#30=CONNECTED_FACE_SET('',(#29));",
         )
         .replace(
-            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);",
+            "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);",
             "#34=CONNECTED_FACE_SUB_SET('',(#29),#30);",
         );
     let decoded = StepCodec::default()
@@ -2178,7 +2246,7 @@ fn connected_edge_set_resolves_direct_oriented_and_seam_members() {
             "#31=EDGE_BASED_WIREFRAME_MODEL('',(#70));",
         )
         .replace(
-            "#33=ORIENTED_OPEN_SHELL('',#30,.F.);",
+            "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);",
             "#70=CONNECTED_EDGE_SET('',(#71,#72,#73));\n#71=ORIENTED_EDGE('',*,*,#19,.F.);\n#72=SEAM_EDGE('',*,*,#20,.T.,#56);\n#73=ORIENTED_EDGE('',*,*,#21,.T.);",
         );
     let decoded = StepCodec::default()
@@ -2209,7 +2277,7 @@ fn shared_edge_wire_model_marks_every_representation_typed() {
             "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
             "#31=EDGE_BASED_WIREFRAME_MODEL('',(#70));\n#70=CONNECTED_EDGE_SET('',(#19,#20,#21));\n#71=MANIFOLD_SURFACE_SHAPE_REPRESENTATION('',(#31),#2);",
         )
-        .replace("#33=ORIENTED_OPEN_SHELL('',#30,.F.);", "#33=OPEN_SHELL('',(#29));");
+        .replace("#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);", "#33=OPEN_SHELL('',(#29));");
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode shared wire model representations");
@@ -3045,6 +3113,22 @@ fn decode_inline(records: &str) -> cadmpeg_ir::codec::DecodeResult {
     StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode inline STEP")
+}
+
+fn oriented_closed_shell_source(derived_slot: bool) -> String {
+    let oriented_shell = if derived_slot {
+        "#33=ORIENTED_CLOSED_SHELL('',*,#30,.F.);"
+    } else {
+        "#33=ORIENTED_CLOSED_SHELL('',#30,.F.);"
+    };
+    String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace("#30=OPEN_SHELL('',(#29));", "#30=CLOSED_SHELL('',(#29));")
+        .replace("#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);", oriented_shell)
+        .replace(
+            "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+            "#31=BREP_WITH_VOIDS('',#33,());",
+        )
 }
 
 #[test]
