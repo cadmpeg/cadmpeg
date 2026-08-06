@@ -734,9 +734,10 @@ fn export_ir(
         );
         report
     } else {
-        let mut stdout = io::stdout().lock();
-        let report = plan.write_to(&mut stdout)?;
-        stdout.flush()?;
+        let stdout = io::stdout().lock();
+        let mut writer = BufWriter::with_capacity(64 * 1024, stdout);
+        let report = plan.write_to(&mut writer)?;
+        writer.flush()?;
         if format == Format::Cadir && decode_report.is_some() && source_fidelity.is_some() {
             eprintln!("note: CADIR written to stdout cannot carry its decode-fidelity sidecar");
         }
