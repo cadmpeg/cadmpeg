@@ -8,7 +8,8 @@ use super::compact_reference_planes::{
     CompactReferencePlaneIndex,
 };
 use super::curves::{
-    closed_marker_profiles, compact_bounded_curve_tangent, compact_legacy_rectangle_line_endpoints,
+    closed_marker_profiles, closed_marker_profiles_allowing_shared_endpoints,
+    compact_bounded_curve_tangent, compact_legacy_rectangle_line_endpoints,
     compact_line_chain_addresses, compact_line_region_addresses,
     complete_ordered_compact_line_profile, current_compact_rectangle_line_endpoints,
     current_wide_rectangle_line_endpoints, indexed_rectangle_from_line_cycle,
@@ -1685,6 +1686,7 @@ fn assemble_sketch_block_profile(
             .sketch_entities
             .iter()
             .filter(|entity| entity.sketch == source_sketch.id)
+            .cloned()
             .collect::<Vec<_>>();
         let entity_ids = source_entities
             .iter()
@@ -1724,7 +1726,12 @@ fn assemble_sketch_block_profile(
                 )?,
             });
         }
-        for profile in &source_sketch.profiles {
+        let source_profiles = if source_sketch.profiles.is_empty() {
+            closed_marker_profiles_allowing_shared_endpoints(&source_entities)
+        } else {
+            source_sketch.profiles.clone()
+        };
+        for profile in &source_profiles {
             let mut assembled_profile = Vec::with_capacity(profile.len());
             for use_ in profile {
                 assembled_profile.push(SketchEntityUse {

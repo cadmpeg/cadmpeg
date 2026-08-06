@@ -429,9 +429,6 @@ pub(crate) fn profile_owns_intervening_sketch_blocks<'a>(
                     .and_then(|source| source.parse::<u32>().ok())
                     .filter(|source| *source != 0)
                 else {
-                    if explicit_children.is_none() {
-                        return false;
-                    }
                     continue;
                 };
                 referenced_definitions.insert(definition);
@@ -442,7 +439,10 @@ pub(crate) fn profile_owns_intervening_sketch_blocks<'a>(
     if let Some(Some(children)) = explicit_children.as_ref() {
         return &definitions == children;
     }
-    instance_count == 1 && definitions.len() == 1 && referenced_definitions == definitions
+    if definitions.len() != 1 || instance_count == 0 {
+        return false;
+    }
+    referenced_definitions.is_empty() || referenced_definitions == definitions
 }
 
 pub(crate) fn is_dissected_profile_feature(feature: &crate::records::Feature) -> bool {
