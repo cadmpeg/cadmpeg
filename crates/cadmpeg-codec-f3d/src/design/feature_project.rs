@@ -2499,14 +2499,13 @@ pub(crate) fn project_hem(
         return None;
     }
 
-    let edges = resolved_edge_group(
+    let edges = crate::design::edge_resolve::resolved_hem_edge_group(
         edge_group,
         groups,
         edge_operands,
         edge_identity_operands,
         scope.previous_history_state_id,
         &neutral_feature_id(scope),
-        None,
     );
 
     Some(FeatureDefinition::SheetMetalHem {

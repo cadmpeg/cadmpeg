@@ -678,6 +678,8 @@ On a body, `generic_tag_attrib_def` supplies a one-through-eight-byte ASCII desi
 
 An executed edge-treatment group with one selection operand resolves a connected source-edge chain from its exact ASM transition. A result face is a treatment face when its sole surface carrier is absent from the preceding topology. Its support faces are result faces adjacent across its boundary whose sole surface carrier maps to exactly one preceding face. Every preceding edge shared by a pair of those support faces and deleted by the transition belongs to the selected chain. The chain is the nonempty increasing stable-slot-order union across all treatment faces. When the operand also has recipe-derived changed or deleted boundary edges, every chain edge must occur in that recipe-derived set.
 
+An executed `Hem` group has one selectorless empty reference context for the selected edge and one or more nonempty reference contexts for its support faces. The union of those nonempty contexts contains the support-face boundary edges changed by the transition. The selected source edge is the unique changed boundary edge absent from that union. A sole candidate is a historical edge selection in the group's preceding state; no sole candidate leaves the native selection unresolved.
+
 The deleted-triplet proof is independent of contextual reference-edge intersections. A unique deleted-triplet slot resolves when selected reference sets are empty or disjoint. Any other exact deleted-edge proof must name the same slot.
 
 #### Constant-radius edge chains
