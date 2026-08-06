@@ -1110,7 +1110,7 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<FreeformSurface> 
     };
     // The structured tail is the false-positive gate for this unlength-framed family.
     if at + 4 > end
-        || !matches!(data.get(at..at + 4), Some([0x05, a, 0x05, b]) if (*a - 1) % 4 == 0 && (*b - 1) % 4 == 0)
+        || !matches!(data.get(at..at + 4), Some([0x05, a, 0x05, b]) if *a % 4 == 1 && *b % 4 == 1)
     {
         return None;
     }

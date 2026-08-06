@@ -424,6 +424,19 @@ fn a5_surface_parser_reads_rational_weight_program() {
 }
 
 #[test]
+fn a5_surface_parser_rejects_zero_tail_codes_without_underflow() {
+    for index in [1, 3] {
+        let mut malformed = a5_surface_stream();
+        let tail = malformed
+            .windows(4)
+            .position(|window| window == [0x05, 0x01, 0x05, 0x01])
+            .expect("surface tail");
+        malformed[tail + index] = 0;
+        assert!(crate::families::a5a8::records::a5_surfaces(&malformed).is_empty());
+    }
+}
+
+#[test]
 fn a5_weight_program_reads_independent_palindromic_rows() {
     let mut bytes = Vec::new();
     for seed in [[1.0, 0.8], [0.9, 0.65]] {
