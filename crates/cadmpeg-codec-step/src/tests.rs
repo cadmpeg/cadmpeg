@@ -5412,6 +5412,69 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
 }
 
 #[test]
+fn forward_replica_dependencies_resolve_to_nested_transforms() {
+    let decoded = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(1.,0.,0.));
+#3=DIRECTION('',(0.,1.,0.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=VECTOR('',#2,1.);
+#6=LINE('',#1,#5);
+#7=CARTESIAN_POINT('',(10.,20.,30.));
+#8=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#7,2.,#4);
+#9=CURVE_REPLICA('',#10,#8);
+#10=CURVE_REPLICA('',#6,#8);
+#11=AXIS2_PLACEMENT_3D('',#1,#4,#2);
+#12=PLANE('',#11);
+#13=SURFACE_REPLICA('',#14,#8);
+#14=SURFACE_REPLICA('',#12,#8);",
+    );
+    let transform = Transform {
+        rows: [
+            [2.0, 0.0, 0.0, 10.0],
+            [0.0, 2.0, 0.0, 20.0],
+            [0.0, 0.0, 2.0, 30.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    };
+    let base_curve = CurveGeometry::Line {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        direction: Vector3::new(1.0, 0.0, 0.0),
+    };
+    let expected_curve = CurveGeometry::Transformed {
+        basis: Box::new(CurveGeometry::Transformed {
+            basis: Box::new(base_curve),
+            transform,
+        }),
+        transform,
+    };
+    let expected_surface = SurfaceGeometry::Transformed {
+        basis: Box::new(SurfaceGeometry::Transformed {
+            basis: Box::new(SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            }),
+            transform,
+        }),
+        transform,
+    };
+    assert!(decoded
+        .ir
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.id.as_str() == "step:data:curve#9" && curve.geometry == expected_curve));
+    assert!(decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| surface.id.as_str() == "step:data:surface#13"
+            && surface.geometry == expected_surface));
+}
+
+#[test]
 fn nurbs_curve_non_rational_uses_with_knots() {
     let n = NurbsCurve {
         degree: 2,
