@@ -567,7 +567,7 @@ pub(crate) fn project_compact_surface_selections(
             }
             continue;
         }
-        let [selection] = feature_selections else {
+        let Some(selection) = surface_selection_consensus(feature_selections) else {
             continue;
         };
         if let FeatureDefinition::DatumOffsetPlane {
@@ -822,6 +822,32 @@ pub(crate) fn project_compact_surface_selections(
             u_axis,
         });
     }
+}
+
+fn surface_selection_consensus<'a>(
+    selections: &[&'a FeatureInputSurfaceSelection],
+) -> Option<&'a FeatureInputSurfaceSelection> {
+    let first = selections.first().copied()?;
+    selections
+        .iter()
+        .all(|selection| same_surface_selection_semantics(first, selection))
+        .then_some(first)
+}
+
+fn same_surface_selection_semantics(
+    left: &FeatureInputSurfaceSelection,
+    right: &FeatureInputSurfaceSelection,
+) -> bool {
+    left.producer_feature_refs == right.producer_feature_refs
+        && left.terminal_feature_ref == right.terminal_feature_ref
+        && compact_surface_selection_value(&left.components)
+            == compact_surface_selection_value(&right.components)
+        && left.components.len() == right.components.len()
+        && left
+            .components
+            .iter()
+            .zip(&right.components)
+            .all(|(left, right)| left.type_signature[4..8] == right.type_signature[4..8])
 }
 
 /// Resolve an attached thread face when its persistent cylinder reference
