@@ -4343,6 +4343,46 @@ pub(crate) fn resolve_standard_endpoint_pairs(
     Some(resolved)
 }
 
+fn bipartite_relation_sides<I>(relation: I) -> Option<[Vec<usize>; 2]>
+where
+    I: IntoIterator<Item = [usize; 2]>,
+{
+    let mut adjacency = HashMap::<usize, Vec<usize>>::new();
+    for [left, right] in relation {
+        if left == right {
+            return None;
+        }
+        adjacency.entry(left).or_default().push(right);
+        adjacency.entry(right).or_default().push(left);
+    }
+    let root = *adjacency.keys().min()?;
+    let mut colors = HashMap::from([(root, false)]);
+    let mut stack = vec![root];
+    while let Some(vertex) = stack.pop() {
+        let color = colors[&vertex];
+        for &neighbor in &adjacency[&vertex] {
+            match colors.get(&neighbor) {
+                Some(stored) if *stored == color => return None,
+                Some(_) => {}
+                None => {
+                    colors.insert(neighbor, !color);
+                    stack.push(neighbor);
+                }
+            }
+        }
+    }
+    if colors.len() != adjacency.len() {
+        return None;
+    }
+    let mut sides = [Vec::new(), Vec::new()];
+    for (vertex, color) in colors {
+        sides[usize::from(color)].push(vertex);
+    }
+    sides[0].sort_unstable();
+    sides[1].sort_unstable();
+    Some(sides)
+}
+
 /// Bind curve branches when their surviving endpoint relation and serialized
 /// cardinality establish corresponding allocation ranks.
 pub(crate) fn bind_ordered_standard_curve_branches(
@@ -4547,46 +4587,9 @@ pub(crate) fn bind_ordered_standard_curve_branches(
             .copied()
             .filter(|pair| !fixed_relations.contains(pair))
             .collect::<Vec<_>>();
-        let mut adjacency = HashMap::<usize, Vec<usize>>::new();
-        for &[left, right] in &relation {
-            if left == right {
-                adjacency.clear();
-                break;
-            }
-            adjacency.entry(left).or_default().push(right);
-            adjacency.entry(right).or_default().push(left);
-        }
-        if adjacency.is_empty() {
-            continue;
-        }
-        let Some(&root) = adjacency.keys().min() else {
+        let Some(sides) = bipartite_relation_sides(relation.iter().copied()) else {
             continue;
         };
-        let mut colors = HashMap::from([(root, false)]);
-        let mut stack = vec![root];
-        let mut valid = true;
-        while let Some(vertex) = stack.pop() {
-            let color = colors[&vertex];
-            for &neighbor in &adjacency[&vertex] {
-                match colors.get(&neighbor) {
-                    Some(stored) if *stored == color => valid = false,
-                    Some(_) => {}
-                    None => {
-                        colors.insert(neighbor, !color);
-                        stack.push(neighbor);
-                    }
-                }
-            }
-        }
-        if !valid || colors.len() != adjacency.len() {
-            continue;
-        }
-        let mut sides = [Vec::new(), Vec::new()];
-        for (vertex, color) in colors {
-            sides[usize::from(color)].push(vertex);
-        }
-        sides[0].sort_unstable();
-        sides[1].sort_unstable();
         let ranked_side = match [
             sides[0].len() == branch_count,
             sides[1].len() == branch_count,
@@ -4786,11 +4789,39 @@ fn standard_curve_branch_groups(
                     && std::mem::discriminant(&supports[*edge].geometry)
                         == std::mem::discriminant(&supports[first].geometry)
                     && candidate_faces == faces
-                    && normalized[*edge] == normalized[first]
+                    && normalized[*edge].len() >= 2
             })
             .collect::<Vec<_>>();
         if group.len() < 2 {
             continue;
+        }
+        let identical_domains = group
+            .iter()
+            .all(|edge| normalized[*edge] == normalized[first]);
+        if !identical_domains {
+            let relation = group
+                .iter()
+                .flat_map(|edge| normalized[*edge].iter().copied())
+                .collect::<HashSet<_>>();
+            let Some(sides) = bipartite_relation_sides(relation.iter().copied()) else {
+                continue;
+            };
+            if !sides.iter().any(|side| side.len() == group.len()) {
+                continue;
+            }
+            let complete = sides[0]
+                .iter()
+                .flat_map(|left| {
+                    sides[1].iter().map(move |right| {
+                        let mut pair = [*left, *right];
+                        pair.sort_unstable();
+                        pair
+                    })
+                })
+                .collect::<HashSet<_>>();
+            if relation != complete {
+                continue;
+            }
         }
         for &edge in &group {
             checked[edge] = true;
@@ -8010,6 +8041,49 @@ mod route_tests {
             &candidates,
             &groups,
             &partial,
+        ));
+    }
+
+    #[test]
+    fn standard_spline_branch_rank_uses_complete_relation_after_mesh_frontier_pruning() {
+        let fixed = |tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 0.0),
+                radius: 1.0,
+            },
+        };
+        let spline = |tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Bspline,
+        };
+        let supports = [fixed(0), fixed(1), spline(2), spline(3)];
+        let candidates = [
+            vec![[0, 1]],
+            vec![[2, 3]],
+            vec![[0, 2], [1, 2], [2, 4]],
+            vec![[0, 3], [1, 3], [3, 4]],
+        ];
+        let groups = standard_curve_branch_groups(&supports, &candidates);
+        let ranked = [Some([0, 1]), Some([2, 3]), Some([0, 2]), Some([1, 3])];
+        let crossed = [Some([0, 1]), Some([2, 3]), Some([1, 2]), Some([0, 3])];
+
+        assert_eq!(groups.len(), 1);
+        assert!(standard_curve_branch_assignment_is_ranked(
+            &supports,
+            &candidates,
+            &groups,
+            &ranked
+        ));
+        assert!(!standard_curve_branch_assignment_is_ranked(
+            &supports,
+            &candidates,
+            &groups,
+            &crossed
         ));
     }
 
