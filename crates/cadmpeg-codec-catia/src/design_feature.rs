@@ -12,6 +12,7 @@ use crate::object_graph::{PayloadField, PayloadSubtype};
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct DesignFeatureTransfer {
+    pub(crate) feature_ids: HashMap<String, FeatureId>,
     pub(crate) principal_plane_records: HashSet<String>,
     pub(crate) sketch_owner_records: HashSet<String>,
 }
@@ -22,6 +23,44 @@ impl DesignFeatureTransfer {
             .union(&self.sketch_owner_records)
             .cloned()
             .collect()
+    }
+
+    /// Bind parameters to a transferred feature only through their exact
+    /// entity-record and object-record ownership chain.
+    pub(crate) fn assign_parameter_owners(&self, ir: &mut CadIr, native: &CatiaNative) {
+        let entities = native
+            .entity_records
+            .iter()
+            .map(|entity| (entity.id.as_str(), entity))
+            .collect::<HashMap<_, _>>();
+        let object_records = native
+            .object_graphs
+            .iter()
+            .flat_map(|graph| &graph.records)
+            .map(|record| (record.id.as_str(), record))
+            .collect::<HashMap<_, _>>();
+
+        for parameter in &mut ir.model.parameters {
+            if parameter.owner.is_some() {
+                continue;
+            }
+            let Some(native_ref) = parameter.native_ref.as_deref() else {
+                continue;
+            };
+            let Some(entity) = entities.get(native_ref) else {
+                continue;
+            };
+            let Some(object_record) = object_records.get(entity.object_record.as_str()) else {
+                continue;
+            };
+            let Some(design_object) = object_record.design_object.as_deref() else {
+                continue;
+            };
+            let Some(feature_id) = self.feature_ids.get(design_object) else {
+                continue;
+            };
+            parameter.owner = Some(feature_id.clone());
+        }
     }
 }
 
@@ -63,7 +102,7 @@ fn transfer_principal_plane(
     let object = candidate.object;
     let feature_id = FeatureId(format!("{}:feature", object.id));
     ir.model.features.push(Feature {
-        id: feature_id,
+        id: feature_id.clone(),
         ordinal: object.first_field_byte_offset,
         name: None,
         suppressed: None,
@@ -79,6 +118,7 @@ fn transfer_principal_plane(
         },
         native_ref: Some(object.id.clone()),
     });
+    transfer.feature_ids.insert(object.id.clone(), feature_id);
     transfer.principal_plane_records.extend(
         candidate
             .declarations
@@ -94,6 +134,7 @@ fn transfer_sketch(
     owner_record: &CatiaObjectRecord,
 ) {
     let sketch_id = SketchId(format!("{}:sketch", object.id));
+    let feature_id = FeatureId(format!("{}:feature", object.id));
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
         name: None,
@@ -103,7 +144,7 @@ fn transfer_sketch(
         native_ref: Some(object.id.clone()),
     });
     ir.model.features.push(Feature {
-        id: FeatureId(format!("{}:feature", object.id)),
+        id: feature_id.clone(),
         ordinal: object.first_field_byte_offset,
         name: None,
         suppressed: None,
@@ -120,6 +161,7 @@ fn transfer_sketch(
         },
         native_ref: Some(object.id.clone()),
     });
+    transfer.feature_ids.insert(object.id.clone(), feature_id);
     transfer
         .sketch_owner_records
         .insert(owner_record.id.clone());

@@ -9598,6 +9598,36 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
     let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
 
+    let parameter_entity = native
+        .entity_records
+        .iter()
+        .find(|entity| {
+            native
+                .object_graphs
+                .iter()
+                .flat_map(|graph| graph.records.iter())
+                .find(|record| record.id == entity.object_record)
+                .and_then(|record| record.design_object.as_deref())
+                == Some(native.design_objects[0].id.as_str())
+        })
+        .expect("synthetic feature-owned parameter entity");
+    ir.model
+        .parameters
+        .push(cadmpeg_ir::features::DesignParameter {
+            id: cadmpeg_ir::features::ParameterId("synthetic:parameter".to_string()),
+            owner: None,
+            ordinal: 0,
+            name: "Value".to_string(),
+            expression: String::new(),
+            display: None,
+            value: None,
+            dependencies: Vec::new(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: Some(parameter_entity.id.clone()),
+        });
+    transfer.assign_parameter_owners(&mut ir, &native);
+
     assert_eq!(ir.model.sketches.len(), 1);
     assert!(matches!(
         ir.model.features[0].definition,
@@ -9610,6 +9640,13 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     assert_eq!(
         ir.model.sketches[0].placement,
         cadmpeg_ir::sketches::SketchPlacement::Unresolved
+    );
+    assert_eq!(
+        ir.model.parameters[0].owner,
+        Some(cadmpeg_ir::features::FeatureId(format!(
+            "{}:feature",
+            native.design_objects[0].id
+        )))
     );
     assert_eq!(
         transfer.sketch_owner_records,

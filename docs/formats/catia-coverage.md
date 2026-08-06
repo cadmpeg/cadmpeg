@@ -252,6 +252,10 @@ current scores require those matrices and representative fixtures.
   one sketch identity and one unresolved sketch history node. The transfer
   does not assign placement, geometry, profiles, or constraints. A `PRTSketch`
   or `Sketch` field class alone does not establish a sketch instance.
+- A transferred typed parameter receives a feature owner only when its exact
+  entity record selects an object record whose design-object owner is one of
+  the transferred feature identities. Parameters without that complete chain
+  remain document-level parameters.
 - Design objects consisting entirely of one exact empty principal-plane
   declaration class transfer the corresponding built-in reference-plane
   history node with the design object's first-field byte offset as its source
