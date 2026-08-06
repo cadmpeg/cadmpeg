@@ -576,7 +576,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             entry.insert(curve_index);
         }
     }
-    for (id, record) in exchange.entities_any(&["SURFACE_CURVE", "SEAM_CURVE"]) {
+    for (id, record) in
+        exchange.entities_any(&["SURFACE_CURVE", "SEAM_CURVE", "INTERSECTION_CURVE"])
+    {
         let Some(basis) = surface_curve_basis(record) else {
             warnings.push(format!(
                 "{} #{id} has no decoded 3D curve",
@@ -1303,6 +1305,7 @@ fn surface_curve_basis(record: &RawRecord) -> Option<u64> {
     record
         .partial("SURFACE_CURVE")
         .or_else(|| record.partial("SEAM_CURVE"))
+        .or_else(|| record.partial("INTERSECTION_CURVE"))
         .and_then(|partial| partial.parameters.iter().find_map(Value::reference))
 }
 
@@ -2505,11 +2508,12 @@ fn references(value: &Value) -> Option<Vec<u64>> {
 
 fn curve_carrier_record(id: u64, exchange: &Exchange) -> Option<u64> {
     let record = exchange.records.get(&id)?;
-    if record
-        .partials
-        .iter()
-        .any(|partial| matches!(partial.name.as_str(), "SURFACE_CURVE" | "SEAM_CURVE"))
-    {
+    if record.partials.iter().any(|partial| {
+        matches!(
+            partial.name.as_str(),
+            "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
+        )
+    }) {
         surface_curve_basis(record)
     } else {
         Some(id)

@@ -1179,10 +1179,12 @@ fn edge_curve_id_reported(
     let carrier = curve_carrier_step(curve_step, exchange);
     if carrier.is_none()
         && curve.is_some_and(|record| {
-            record
-                .partials
-                .iter()
-                .any(|partial| matches!(partial.name.as_str(), "SURFACE_CURVE" | "SEAM_CURVE"))
+            record.partials.iter().any(|partial| {
+                matches!(
+                    partial.name.as_str(),
+                    "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
+                )
+            })
         })
     {
         warnings.push(format!(
@@ -1319,6 +1321,7 @@ fn surface_curve_basis(record: &RawRecord) -> Option<u64> {
     record
         .partial("SURFACE_CURVE")
         .or_else(|| record.partial("SEAM_CURVE"))
+        .or_else(|| record.partial("INTERSECTION_CURVE"))
         .and_then(|partial| partial.parameters.iter().find_map(ValueExt::reference))
 }
 
@@ -1329,6 +1332,7 @@ fn surface_curve_pcurves(record: &RawRecord) -> Option<Vec<u64>> {
     record
         .partial("SURFACE_CURVE")
         .or_else(|| record.partial("SEAM_CURVE"))
+        .or_else(|| record.partial("INTERSECTION_CURVE"))
         .and_then(|partial| partial.parameters.iter().find_map(refs))
 }
 
@@ -2537,11 +2541,12 @@ fn implicit_face_plane(
 
 fn curve_carrier_step(curve_step: u64, exchange: &Exchange) -> Option<u64> {
     let curve = exchange.records.get(&curve_step)?;
-    if curve
-        .partials
-        .iter()
-        .any(|partial| matches!(partial.name.as_str(), "SURFACE_CURVE" | "SEAM_CURVE"))
-    {
+    if curve.partials.iter().any(|partial| {
+        matches!(
+            partial.name.as_str(),
+            "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
+        )
+    }) {
         surface_curve_basis(curve)
     } else {
         Some(curve_step)
@@ -2557,11 +2562,12 @@ fn associated_pcurves(
     let Some(curve) = exchange.records.get(&curve_step) else {
         return Vec::new();
     };
-    if !curve
-        .partials
-        .iter()
-        .any(|partial| matches!(partial.name.as_str(), "SURFACE_CURVE" | "SEAM_CURVE"))
-    {
+    if !curve.partials.iter().any(|partial| {
+        matches!(
+            partial.name.as_str(),
+            "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
+        )
+    }) {
         return Vec::new();
     }
     let Some(pcurves) = surface_curve_pcurves(curve) else {

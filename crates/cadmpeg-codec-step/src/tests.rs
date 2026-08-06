@@ -2065,6 +2065,40 @@ fn seam_edge_preserves_its_explicit_pcurve_reference() {
 }
 
 #[test]
+fn intersection_curve_binds_its_basis_curve_and_pcurves() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#57=SURFACE_CURVE('',#16,(#56),.PCURVE_S1.);",
+            "#57=INTERSECTION_CURVE('',#16,(#56),.PCURVE_S1.);",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode intersection curve");
+
+    let edge = decoded
+        .ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.id.as_str() == "step:data:edge#19")
+        .expect("intersection-curve edge");
+    assert_eq!(
+        edge.curve.as_ref().map(CurveId::as_str),
+        Some("step:data:curve#16")
+    );
+    assert!(decoded.ir.model.coedges.iter().any(|coedge| {
+        coedge
+            .pcurves
+            .iter()
+            .any(|use_| use_.pcurve.as_str() == "step:data:pcurve#56")
+    }));
+    assert!(decoded.report.losses.iter().all(|loss| !loss
+        .message
+        .contains("surface-curve #57 has no resolvable basis")));
+}
+
+#[test]
 fn surface_curve_without_a_basis_keeps_a_curve_less_edge_and_reports_loss() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
