@@ -12469,6 +12469,53 @@ fn branched_line_graph_projects_each_bounded_face() {
 }
 
 #[test]
+fn branched_line_graph_with_a_shared_corner_projects_bounded_faces() {
+    let sketch = SketchId("f3d:model:sketch#shared-corner-profile".into());
+    let line = |id: &str, start: (f64, f64), end: (f64, f64)| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line {
+            start: Point2::new(start.0, start.1),
+            end: Point2::new(end.0, end.1),
+        },
+    };
+    let entities = vec![
+        line("outer-bottom", (0.0, 0.0), (31.0, 0.0)),
+        line("outer-right", (31.0, 0.0), (31.0, 47.0)),
+        line("outer-top", (31.0, 47.0), (0.0, 47.0)),
+        line("outer-left", (0.0, 47.0), (0.0, 0.0)),
+        line("inner-top", (0.0, 47.0), (9.0, 47.0)),
+        line("inner-right", (9.0, 47.0), (9.0, 41.0)),
+        line("inner-bottom", (9.0, 41.0), (0.0, 41.0)),
+        line("inner-left", (0.0, 41.0), (0.0, 47.0)),
+    ];
+
+    let profiles = closed_sketch_profiles(&sketch, &entities, 1.0e-6);
+    assert_eq!(
+        profiles
+            .iter()
+            .flat_map(|profile| profile
+                .iter()
+                .map(|entity_use| (entity_use.entity.0.as_str(), entity_use.reversed)))
+            .collect::<Vec<_>>(),
+        [
+            ("outer-left", false),
+            ("outer-bottom", false),
+            ("outer-right", false),
+            ("outer-top", false),
+            ("inner-top", false),
+            ("inner-right", false),
+            ("inner-bottom", false),
+            ("inner-left", false),
+        ]
+    );
+}
+
+#[test]
 fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     let placement = DesignSketchPlacement {
         member_run_head: false,

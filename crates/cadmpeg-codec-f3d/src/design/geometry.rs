@@ -2663,13 +2663,26 @@ pub(crate) fn closed_sketch_profiles(
                 .iter()
                 .all(|edge| matches!(edges[*edge].0.geometry, SketchGeometry::Line { .. }))
             {
-                profiles.extend(branched_line_profiles(
+                let branched_profiles = branched_line_profiles(
                     &component,
                     &edges,
                     &edge_nodes,
                     &adjacency,
                     linear_tolerance,
-                ));
+                );
+                if branched_profiles.is_empty() {
+                    if let Some(profile) = tangent_nested_line_profile(
+                        &component,
+                        &edges,
+                        &edge_nodes,
+                        &adjacency,
+                        linear_tolerance,
+                    ) {
+                        profiles.push(profile);
+                    }
+                } else {
+                    profiles.extend(branched_profiles);
+                }
             }
             for edge in component {
                 visited[edge] = true;
@@ -2816,6 +2829,216 @@ fn branched_line_profiles(
             .all(|node| adjacency[node].contains(edge))
     }));
     profiles
+}
+
+/// Resolve a tangent nested pair that has one shared corner.
+///
+/// The ordinary half-edge walk needs a strict angular order at every node.
+/// Two profile boundaries that touch at a corner have coincident outgoing
+/// rays, so that walk can consume both boundaries as one zero-area exterior
+/// traversal. A neutral profile can still represent the saved face when the
+/// graph proves one source-oriented outer cycle and one contained
+/// oppositely-oriented inner cycle. The two cycles are then one connected
+/// boundary with a tangent notch. Other tangent branch shapes remain
+/// unresolved rather than choosing a profile by geometry alone.
+fn tangent_nested_line_profile(
+    component: &[usize],
+    edges: &[(&cadmpeg_ir::sketches::SketchEntity, [Point2; 2])],
+    edge_nodes: &[[usize; 2]],
+    adjacency: &HashMap<usize, Vec<usize>>,
+    tolerance: f64,
+) -> Option<Vec<cadmpeg_ir::sketches::SketchEntityUse>> {
+    use cadmpeg_ir::sketches::SketchEntityUse;
+
+    let nodes = component
+        .iter()
+        .flat_map(|edge| edge_nodes[*edge])
+        .collect::<HashSet<_>>();
+    let junctions = nodes
+        .iter()
+        .copied()
+        .filter(|node| adjacency[node].len() > 2)
+        .collect::<Vec<_>>();
+    if junctions.len() != 1
+        || nodes
+            .iter()
+            .any(|node| !matches!(adjacency[node].len(), 2 | 4))
+    {
+        return None;
+    }
+    let junction = junctions[0];
+    if adjacency[&junction].len() != 4 {
+        return None;
+    }
+    let directions = adjacency[&junction]
+        .iter()
+        .map(|edge| {
+            let [start, end] = edges[*edge].1;
+            let (from, to) = if edge_nodes[*edge][0] == junction {
+                (start, end)
+            } else {
+                (end, start)
+            };
+            let (du, dv) = (to.u - from.u, to.v - from.v);
+            let length = du.hypot(dv);
+            (length.is_finite() && length > tolerance).then_some((du / length, dv / length))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let same_ray = |left: (f64, f64), right: (f64, f64)| {
+        let dot = left.0 * right.0 + left.1 * right.1;
+        let cross = left.0 * right.1 - left.1 * right.0;
+        dot > 1.0 - 1.0e-10 && cross.abs() <= 1.0e-10
+    };
+    if directions.iter().enumerate().any(|(index, direction)| {
+        directions
+            .iter()
+            .enumerate()
+            .filter(|(other, _)| *other != index)
+            .filter(|(_, other)| same_ray(*direction, **other))
+            .count()
+            != 1
+    }) {
+        return None;
+    }
+
+    let mut cycles = Vec::new();
+    for first_edge in component
+        .iter()
+        .copied()
+        .filter(|edge| edge_nodes[*edge][0] == junction)
+    {
+        let mut used = HashSet::new();
+        let mut current = junction;
+        let mut cycle = Vec::new();
+        loop {
+            let mut candidates = component
+                .iter()
+                .copied()
+                .filter(|edge| !used.contains(edge) && edge_nodes[*edge][0] == current);
+            let edge = if cycle.is_empty() {
+                if edge_nodes[first_edge][0] != current {
+                    return None;
+                }
+                first_edge
+            } else {
+                let edge = candidates.next()?;
+                if candidates.next().is_some() {
+                    cycle.clear();
+                    break;
+                }
+                edge
+            };
+            if !used.insert(edge) {
+                cycle.clear();
+                break;
+            }
+            cycle.push(edge);
+            current = edge_nodes[edge][1];
+            if current == junction {
+                break;
+            }
+        }
+        if !cycle.is_empty()
+            && cycle.len() >= 3
+            && cycle.iter().all(|edge| component.contains(edge))
+            && !cycles
+                .iter()
+                .any(|candidate: &Vec<usize>| candidate == &cycle)
+        {
+            cycles.push(cycle);
+        }
+    }
+    if cycles.len() != 2
+        || cycles[0].iter().any(|edge| cycles[1].contains(edge))
+        || cycles.iter().flatten().count() != component.len()
+    {
+        return None;
+    }
+
+    let cycle_points = |cycle: &[usize]| {
+        cycle
+            .iter()
+            .map(|edge| edges[*edge].1[0])
+            .collect::<Vec<_>>()
+    };
+    let points = cycles
+        .iter()
+        .map(|cycle| cycle_points(cycle))
+        .collect::<Vec<_>>();
+    let areas = points
+        .iter()
+        .map(|points| signed_polygon_area(points))
+        .collect::<Vec<_>>();
+    if areas
+        .iter()
+        .any(|area| !area.is_finite() || area.abs() <= tolerance * tolerance)
+        || areas[0].signum() == areas[1].signum()
+    {
+        return None;
+    }
+
+    let probe = |cycle: &[usize]| {
+        cycle.iter().find_map(|edge| {
+            let [start, end] = edges[*edge].1;
+            if edge_nodes[*edge].contains(&junction) {
+                return None;
+            }
+            Some(Point2::new(
+                (start.u + end.u) * 0.5,
+                (start.v + end.v) * 0.5,
+            ))
+        })
+    };
+    let contains = |outer: usize, inner: usize| {
+        probe(&cycles[inner]).is_some_and(|point| point_in_polygon(point, &points[outer]))
+    };
+    let outer = if areas[0].abs() > areas[1].abs() && contains(0, 1) {
+        0
+    } else if areas[1].abs() > areas[0].abs() && contains(1, 0) {
+        1
+    } else {
+        return None;
+    };
+    let inner = 1 - outer;
+
+    let oriented_cycle = |index: usize, positive: bool| {
+        let reverse = (areas[index] > 0.0) != positive;
+        if reverse {
+            cycles[index]
+                .iter()
+                .rev()
+                .map(|edge| SketchEntityUse {
+                    entity: edges[*edge].0.id.clone(),
+                    reversed: true,
+                })
+                .collect::<Vec<_>>()
+        } else {
+            cycles[index]
+                .iter()
+                .map(|edge| SketchEntityUse {
+                    entity: edges[*edge].0.id.clone(),
+                    reversed: false,
+                })
+                .collect::<Vec<_>>()
+        }
+    };
+    let mut profile = oriented_cycle(outer, true);
+    profile.extend(oriented_cycle(inner, false));
+    let profile_points = profile
+        .iter()
+        .filter_map(|use_| {
+            let entity = edges.iter().find(|(entity, _)| entity.id == use_.entity)?.0;
+            match entity.geometry {
+                cadmpeg_ir::sketches::SketchGeometry::Line { start, end } => {
+                    Some(if use_.reversed { end } else { start })
+                }
+                _ => None,
+            }
+        })
+        .collect::<Vec<_>>();
+    (profile_points.len() == profile.len()
+        && signed_polygon_area(&profile_points) > 2.0 * tolerance * tolerance)
+        .then_some(profile)
 }
 
 pub(crate) fn sketch_entity_endpoints(
