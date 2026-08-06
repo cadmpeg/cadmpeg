@@ -1963,6 +1963,11 @@ fn build_one(
                         bound_step,
                         "bound orientation",
                     )?;
+                    let bound_forward = if face_info.reverse_bound_orientation {
+                        !bound_forward
+                    } else {
+                        bound_forward
+                    };
                     let mut points = require_carrier(
                         named_refs(lr, "POLY_LOOP", 1),
                         failure,
@@ -2061,6 +2066,11 @@ fn build_one(
                     bound_step,
                     "bound orientation",
                 )?;
+                let bound_forward = if face_info.reverse_bound_orientation {
+                    !bound_forward
+                } else {
+                    bound_forward
+                };
                 let mut uses = require_carrier(
                     named_refs(lr, "EDGE_LOOP", 1),
                     failure,
@@ -2688,6 +2698,7 @@ struct FaceInfo {
     bounds: Vec<u64>,
     surface: Option<u64>,
     same_sense: bool,
+    reverse_bound_orientation: bool,
     typed: BTreeSet<u64>,
 }
 
@@ -2722,7 +2733,7 @@ fn face_attributes(
             let mut base = face_attributes(exchange.records.get(&face_element)?, exchange, active)?;
             let orientation = oriented_face_orientation(record)?;
             if !orientation {
-                base.bounds.reverse();
+                base.reverse_bound_orientation = !base.reverse_bound_orientation;
             }
             base.same_sense = base.same_sense == orientation;
             base.typed.insert(face_element);
@@ -2738,6 +2749,7 @@ fn face_attributes(
                 bounds,
                 surface: parent_info.surface,
                 same_sense: parent_info.same_sense,
+                reverse_bound_orientation: parent_info.reverse_bound_orientation,
                 typed: parent_info.typed,
             })
         }
@@ -2747,6 +2759,7 @@ fn face_attributes(
                 bounds,
                 surface: None,
                 same_sense: true,
+                reverse_bound_orientation: false,
                 typed: BTreeSet::new(),
             })
         }
@@ -2759,6 +2772,7 @@ fn face_attributes(
                 bounds,
                 surface: Some(surface),
                 same_sense,
+                reverse_bound_orientation: false,
                 typed: BTreeSet::new(),
             })
         }
