@@ -30,6 +30,7 @@ cadmpeg-codec-creo.workspace = true
 cadmpeg-codec-nx.workspace = true
 cadmpeg-codec-rhino.workspace = true
 cadmpeg-codec-iges.workspace = true
+cadmpeg-codec-build123d.workspace = true
 cadmpeg-codec-step.workspace = true
 cadmpeg-codec-sat.workspace = true
 clap.workspace = true

@@ -96,6 +96,9 @@ enum Format {
     /// Rhino `.3dm`.
     #[value(alias = "3dm")]
     Rhino,
+    /// `build123d` Python program.
+    #[value(alias = "py")]
+    Build123d,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -134,6 +137,7 @@ impl Format {
             "f3d" => Some(Self::F3d),
             "sldprt" => Some(Self::Sldprt),
             "3dm" => Some(Self::Rhino),
+            "py" => Some(Self::Build123d),
             _ => None,
         }
     }
@@ -141,7 +145,7 @@ impl Format {
     fn is_geometry_export(self) -> bool {
         matches!(
             self,
-            Self::Step | Self::Fcstd | Self::F3d | Self::Sldprt | Self::Rhino
+            Self::Step | Self::Fcstd | Self::F3d | Self::Sldprt | Self::Rhino | Self::Build123d
         )
     }
 
@@ -159,6 +163,7 @@ impl Format {
             Self::F3d => "f3d",
             Self::Sldprt => "sldprt",
             Self::Rhino => "rhino",
+            Self::Build123d => "build123d",
         }
     }
 }

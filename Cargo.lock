@@ -138,6 +138,7 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
+ "cadmpeg-codec-build123d",
  "cadmpeg-codec-catia",
  "cadmpeg-codec-creo",
  "cadmpeg-codec-f3d",
@@ -173,6 +174,14 @@ dependencies = [
  "schemars",
  "serde",
  "serde-value",
+]
+
+[[package]]
+name = "cadmpeg-codec-build123d"
+version = "0.4.0"
+dependencies = [
+ "cadmpeg-core",
+ "cadmpeg-ir",
 ]
 
 [[package]]

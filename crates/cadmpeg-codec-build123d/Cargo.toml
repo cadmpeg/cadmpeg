@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg-codec-build123d"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+description = "Write cadmpeg IR as a build123d Python program."
+readme = "README.md"
+documentation = "https://docs.rs/cadmpeg-codec-build123d"
+keywords = ["cad", "build123d", "python", "brep", "codegen"]
+categories = ["encoding", "graphics"]
+
+[dependencies]
+cadmpeg-core.workspace = true
+cadmpeg-ir = { workspace = true }
+
+[dev-dependencies]
+cadmpeg-ir = { workspace = true }
+
+[lints]
+workspace = true

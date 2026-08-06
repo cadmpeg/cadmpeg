@@ -169,6 +169,15 @@ impl Registry {
                     false,
                 ),
                 descriptor(
+                    "build123d",
+                    "build123d Python",
+                    &["py"],
+                    None,
+                    Some(build123d),
+                    None,
+                    false,
+                ),
+                descriptor(
                     "cadir",
                     "CADIR JSON",
                     &["cadir", "json"],
@@ -305,6 +314,11 @@ fn neutral_f3d(options: TargetOptions) -> Result<Box<dyn Encoder>, CodecError> {
 fn neutral_sldprt(options: TargetOptions) -> Result<Box<dyn Encoder>, CodecError> {
     require_neutral(options, "sldprt")?;
     Ok(Box::new(cadmpeg_codec_sldprt::SldprtCodec))
+}
+
+fn build123d(options: TargetOptions) -> Result<Box<dyn Encoder>, CodecError> {
+    require_neutral(options, "build123d")?;
+    Ok(Box::new(cadmpeg_codec_build123d::Build123dEncoder))
 }
 
 fn neutral_cadir(options: TargetOptions) -> Result<Box<dyn Encoder>, CodecError> {

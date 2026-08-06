@@ -9,13 +9,13 @@ native CAD ── detect + inspect ──> container summary
      │
      └── detect + decode ──> CadIr ── validate ──> validation report
                                 │
-                                └── encode ──> .cadir.json | .step/.stp | .f3d | .sldprt | .3dm | .FCStd
+                                └── encode ──> .cadir.json | .step/.stp | .f3d | .sldprt | .3dm | .FCStd | .py
 ```
 
 - `inspect` detects a codec and reports container structure without decoding geometry.
 - `decode` runs the selected codec and serializes `CadIr`, normally as `.cadir.json`.
 - `validate` reads or decodes an input and checks IR invariants.
-- `export` reads or decodes an input and writes CADIR, STEP, SLDPRT, F3D, Rhino, or FreeCAD without validation.
+- `export` reads or decodes an input and writes CADIR, STEP, SLDPRT, F3D, Rhino, FreeCAD, or a build123d Python program without validation.
 - `convert` loads or decodes, validates, then exports. `--allow-invalid` continues export after validation errors.
 - `diff` reads or decodes two inputs and compares units, tolerances, the neutral model, native namespaces, source metadata, source annotations, and retained records. ID-bearing records match by globally unique IDs. Vector position is not entity identity. A source attribute whose key ends in `_local_sha256` holds a machine-local content digest, which no two platforms reproduce; `diff` reports a difference in one under a separate informational section and keeps status 0.
 
@@ -60,6 +60,7 @@ Every encoder returns an `ExportReport` with its format id, entity census, loss 
 | `cadmpeg-codec-creo`    | Creo `.prt` section decode with partial placed geometry and conditional connected bodies (general analytic intersections and pcurves). |
 | `cadmpeg-codec-iges`    | Read-only IGES 5.3 Fixed ASCII for the mechanical/document envelope.                                                                   |
 | `cadmpeg-codec-step`    | STEP Part 21 AP203, AP214, and AP242 read and write with export loss notes.                                                            |
+| `cadmpeg-codec-build123d` | Write-only target emitting a build123d Python program that rebuilds the solved B-rep.                                              |
 | `cadmpeg-fuzz`          | Nightly `cargo-fuzz` targets outside the default workspace.                                                                            |
 
 ## Codec interface
