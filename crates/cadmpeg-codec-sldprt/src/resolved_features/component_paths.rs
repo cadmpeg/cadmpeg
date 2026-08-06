@@ -360,7 +360,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
     }
 }
 
-pub(super) fn is_profile_feature_object(feature: &crate::records::Feature) -> bool {
+pub(crate) fn is_profile_feature_object(feature: &crate::records::Feature) -> bool {
     native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
         == NativeClassKind::ProfileFeature
         || (feature.input_class.is_none()
@@ -372,7 +372,7 @@ pub(super) fn is_profile_feature_object(feature: &crate::records::Feature) -> bo
                 .is_some_and(|source| source != 0))
 }
 
-pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
+pub(crate) fn profile_owns_intervening_sketch_blocks<'a>(
     profile: &crate::records::Feature,
     objects: impl IntoIterator<Item = &'a crate::records::Feature>,
 ) -> bool {

@@ -10172,6 +10172,13 @@ pub(crate) fn project_configuration_sketch_states(
             histories,
             scoped_lanes,
         );
+        crate::resolved_features::profiles::project_sketch_block_profiles(
+            &mut features,
+            &mut ir.model.sketches,
+            &mut ir.model.sketch_entities,
+            histories,
+            scoped_lanes,
+        );
         bind_unique_sketch_feature(&mut features, &ir.model.sketches, histories);
         crate::resolved_features::component_paths::project_dissected_sketches(
             &mut features,

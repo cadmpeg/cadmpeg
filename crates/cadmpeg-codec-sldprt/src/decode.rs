@@ -2092,6 +2092,13 @@ fn build_geometry_ir(
         &histories,
         &sketch_lanes,
     );
+    crate::resolved_features::profiles::project_sketch_block_profiles(
+        &mut ir.model.features,
+        &mut sketches,
+        &mut sketch_entities,
+        &histories,
+        &sketch_lanes,
+    );
     crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches, &histories);
     crate::resolved_features::component_paths::project_dissected_sketches(
         &mut ir.model.features,
@@ -2907,6 +2914,13 @@ fn build_metadata_ir(
     let mut sketch_lanes = lanes.clone();
     sketch_lanes.extend(supplemental_config_lanes.clone());
     crate::resolved_features::profiles::project_marker_backed_sketches(
+        &mut ir.model.features,
+        &mut ir.model.sketches,
+        &mut ir.model.sketch_entities,
+        &histories,
+        &sketch_lanes,
+    );
+    crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
