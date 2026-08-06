@@ -25,72 +25,98 @@ use crate::families::FamilyOutput;
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct WireTransferCounts {
     bodies: usize,
+    owned_bodies: usize,
     loops: usize,
     edges: usize,
     vertices: usize,
     points: usize,
 }
 
+const ZERO_ENTITY_WIRE_TOLERANCE: f64 = 2e-3;
+
 fn finite_point(point: Point3) -> bool {
     [point.x, point.y, point.z].into_iter().all(f64::is_finite)
 }
 
+fn closed_wire_loop_members<'a>(
+    run: &'a crate::families::zero_entity::records::ZeroEntitySupportRun,
+    loop_record: &'a crate::families::zero_entity::records::ZeroEntityLoop,
+    support_curve_ids: &'a HashMap<u32, CurveId>,
+) -> Option<
+    Vec<(
+        &'a crate::families::zero_entity::records::ZeroEntitySupportOccurrence,
+        CurveId,
+        [Point3; 2],
+    )>,
+> {
+    let member_count = loop_record.support_record_ordinals.len();
+    if member_count == 0
+        || loop_record.forward_senses.len() != member_count
+        || loop_record.oriented_model_endpoints.len() != member_count
+    {
+        return None;
+    }
+    let supports_by_ordinal = run
+        .supports
+        .iter()
+        .map(|support| (support.record_ordinal, support))
+        .collect::<HashMap<_, _>>();
+    let members = loop_record
+        .support_record_ordinals
+        .iter()
+        .zip(&loop_record.oriented_model_endpoints)
+        .map(|(record_ordinal, endpoints)| {
+            let support = *supports_by_ordinal.get(record_ordinal)?;
+            let curve = support_curve_ids.get(record_ordinal)?.clone();
+            support.model_endpoints?;
+            Some((support, curve, *endpoints))
+        })
+        .collect::<Option<Vec<_>>>();
+    let members = members?;
+    if members
+        .iter()
+        .any(|(_, _, [start, end])| !finite_point(*start) || !finite_point(*end))
+    {
+        return None;
+    }
+    members
+        .iter()
+        .enumerate()
+        .all(|(index, (_, _, [_, end]))| {
+            let next_start = members[(index + 1) % member_count].2[0];
+            end.distance(next_start) <= ZERO_ENTITY_WIRE_TOLERANCE
+        })
+        .then_some(members)
+}
+
 /// Transfer closed face-local boundary wires without assigning unresolved
-/// source physical-edge or body identities.
+/// source physical-edge or face identities. A complete ownership root groups
+/// the wires under its one source shell and body.
 fn transfer_closed_wire_loops(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     support_runs: &[crate::families::zero_entity::records::ZeroEntitySupportRun],
     support_curve_ids: &HashMap<u32, CurveId>,
+    ownership_root: Option<&crate::families::zero_entity::records::ZeroEntityOwnershipRoot>,
 ) -> WireTransferCounts {
-    const CLOSURE_TOLERANCE: f64 = 2e-3;
     let mut counts = WireTransferCounts::default();
+    let root_owns_support_runs = ownership_root.is_some_and(|root| {
+        root.face_slots.len() == support_runs.len()
+            && support_runs.iter().all(|run| run.face.is_some())
+    });
+    let mut owned_edge_ids = Vec::new();
 
     for run in support_runs {
         let Some(face) = run.face.as_ref() else {
             continue;
         };
-        let supports_by_ordinal = run
-            .supports
-            .iter()
-            .map(|support| (support.record_ordinal, support))
-            .collect::<HashMap<_, _>>();
 
         for loop_record in &face.loops {
-            let member_count = loop_record.support_record_ordinals.len();
-            if member_count == 0
-                || loop_record.forward_senses.len() != member_count
-                || loop_record.oriented_model_endpoints.len() != member_count
-            {
-                continue;
-            }
-
-            let members = loop_record
-                .support_record_ordinals
-                .iter()
-                .zip(&loop_record.oriented_model_endpoints)
-                .map(|(record_ordinal, endpoints)| {
-                    let support = supports_by_ordinal.get(record_ordinal)?;
-                    let curve = support_curve_ids.get(record_ordinal)?.clone();
-                    support.model_endpoints?;
-                    Some((support, curve, *endpoints))
-                })
-                .collect::<Option<Vec<_>>>();
-            let Some(members) = members else {
+            let Some(members) = closed_wire_loop_members(run, loop_record, support_curve_ids)
+            else {
                 continue;
             };
-            if members
-                .iter()
-                .any(|(_, _, [start, end])| !finite_point(*start) || !finite_point(*end))
-            {
-                continue;
-            }
-            if !members.iter().enumerate().all(|(index, (_, _, [_, end]))| {
-                let next_start = members[(index + 1) % member_count].2[0];
-                end.distance(next_start) <= CLOSURE_TOLERANCE
-            }) {
-                continue;
-            }
+            let member_count = members.len();
 
             let identity = format!(
                 "{}-{}-{}",
@@ -99,30 +125,32 @@ fn transfer_closed_wire_loops(
             let body_id = BodyId(format!("catia:zero-entity:wire-body#{identity}"));
             let region_id = RegionId(format!("catia:zero-entity:wire-region#{identity}"));
             let shell_id = ShellId(format!("catia:zero-entity:wire-shell#{identity}"));
-            annotate(
-                annotations,
-                &body_id,
-                "zero_entity_a9_03",
-                loop_record.pos as u64,
-                "standalone_wire_owner",
-                Exactness::Inferred,
-            );
-            annotate(
-                annotations,
-                &region_id,
-                "zero_entity_a9_03",
-                loop_record.pos as u64,
-                "standalone_wire_region",
-                Exactness::Inferred,
-            );
-            annotate(
-                annotations,
-                &shell_id,
-                "zero_entity_a9_03",
-                loop_record.pos as u64,
-                "standalone_wire_shell",
-                Exactness::Inferred,
-            );
+            if !root_owns_support_runs {
+                annotate(
+                    annotations,
+                    &body_id,
+                    "zero_entity_a9_03",
+                    loop_record.pos as u64,
+                    "standalone_wire_owner",
+                    Exactness::Inferred,
+                );
+                annotate(
+                    annotations,
+                    &region_id,
+                    "zero_entity_a9_03",
+                    loop_record.pos as u64,
+                    "standalone_wire_region",
+                    Exactness::Inferred,
+                );
+                annotate(
+                    annotations,
+                    &shell_id,
+                    "zero_entity_a9_03",
+                    loop_record.pos as u64,
+                    "standalone_wire_shell",
+                    Exactness::Inferred,
+                );
+            }
 
             let mut vertex_ids = Vec::with_capacity(member_count);
             for (index, (_, _, [start, _])) in members.iter().enumerate() {
@@ -156,7 +184,7 @@ fn transfer_closed_wire_loops(
                 ir.model.vertices.push(Vertex {
                     id: vertex_id.clone(),
                     point: point_id,
-                    tolerance: Some(CLOSURE_TOLERANCE),
+                    tolerance: Some(ZERO_ENTITY_WIRE_TOLERANCE),
                 });
                 vertex_ids.push(vertex_id);
                 counts.points += 1;
@@ -184,36 +212,97 @@ fn transfer_closed_wire_loops(
                     start: vertex_ids[index].clone(),
                     end: vertex_ids[(index + 1) % member_count].clone(),
                     param_range: None,
-                    tolerance: Some(CLOSURE_TOLERANCE),
+                    tolerance: Some(ZERO_ENTITY_WIRE_TOLERANCE),
                 });
                 edge_ids.push(edge_id);
                 counts.edges += 1;
             }
 
-            ir.model.bodies.push(Body {
-                id: body_id.clone(),
-                kind: BodyKind::Wire,
-                regions: vec![region_id.clone()],
-                transform: None,
-                name: None,
-                color: None,
-                visible: None,
-            });
-            ir.model.regions.push(Region {
-                id: region_id.clone(),
-                body: body_id,
-                shells: vec![shell_id.clone()],
-            });
-            ir.model.shells.push(Shell {
-                id: shell_id,
-                region: region_id,
-                faces: Vec::new(),
-                wire_edges: edge_ids,
-                free_vertices: Vec::new(),
-            });
-            counts.bodies += 1;
+            if root_owns_support_runs {
+                owned_edge_ids.extend(edge_ids);
+            } else {
+                ir.model.bodies.push(Body {
+                    id: body_id.clone(),
+                    kind: BodyKind::Wire,
+                    regions: vec![region_id.clone()],
+                    transform: None,
+                    name: None,
+                    color: None,
+                    visible: None,
+                });
+                ir.model.regions.push(Region {
+                    id: region_id.clone(),
+                    body: body_id,
+                    shells: vec![shell_id.clone()],
+                });
+                ir.model.shells.push(Shell {
+                    id: shell_id,
+                    region: region_id,
+                    faces: Vec::new(),
+                    wire_edges: edge_ids,
+                    free_vertices: Vec::new(),
+                });
+                counts.bodies += 1;
+            }
             counts.loops += 1;
         }
+    }
+
+    if root_owns_support_runs && counts.loops != 0 {
+        let Some(root) = ownership_root else {
+            return counts;
+        };
+        let identity = root.body_record_ordinal;
+        let body_id = BodyId(format!("catia:zero-entity:owned-wire-body#{identity}"));
+        let region_id = RegionId(format!("catia:zero-entity:owned-wire-region#{identity}"));
+        let shell_id = ShellId(format!("catia:zero-entity:owned-wire-shell#{identity}"));
+        annotate(
+            annotations,
+            &body_id,
+            "zero_entity_a9_03",
+            root.body_pos as u64,
+            "owned_wire_body",
+            Exactness::Derived,
+        );
+        annotate(
+            annotations,
+            &region_id,
+            "zero_entity_a9_03",
+            root.shell_pos as u64,
+            "owned_wire_region",
+            Exactness::Derived,
+        );
+        annotate(
+            annotations,
+            &shell_id,
+            "zero_entity_a9_03",
+            root.shell_pos as u64,
+            "owned_wire_shell",
+            Exactness::Derived,
+        );
+        ir.model.bodies.push(Body {
+            id: body_id.clone(),
+            kind: BodyKind::Wire,
+            regions: vec![region_id.clone()],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        ir.model.regions.push(Region {
+            id: region_id.clone(),
+            body: body_id,
+            shells: vec![shell_id.clone()],
+        });
+        ir.model.shells.push(Shell {
+            id: shell_id,
+            region: region_id,
+            faces: Vec::new(),
+            wire_edges: owned_edge_ids,
+            free_vertices: Vec::new(),
+        });
+        counts.bodies += 1;
+        counts.owned_bodies += 1;
     }
 
     counts
@@ -379,8 +468,13 @@ pub(crate) fn try_decode_zero_entity(
         }
     }
 
-    let wire_counts =
-        transfer_closed_wire_loops(&mut ir, &mut annotations, &support_runs, &support_curve_ids);
+    let wire_counts = transfer_closed_wire_loops(
+        &mut ir,
+        &mut annotations,
+        &support_runs,
+        &support_curve_ids,
+        ownership_root.as_ref(),
+    );
 
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
     let coverage = BTreeMap::from([
@@ -397,6 +491,12 @@ pub(crate) fn try_decode_zero_entity(
                 .0
                 .to_string(),
             wire_counts.bodies,
+        ),
+        (
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_OWNED_WIRE_BODY_COUNT
+                .0
+                .to_string(),
+            wire_counts.owned_bodies,
         ),
         (
             crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_LOOP_COUNT
@@ -429,6 +529,8 @@ pub(crate) fn try_decode_zero_entity(
         } else {
             "Zero-entity loop members bind their face-local support occurrences, but support-to-oriented-use, oriented-use-to-incidence, physical endpoint, and body/shell bindings remain unresolved; no neutral topology was transferred."
         }
+    } else if wire_counts.owned_bodies != 0 {
+        "Complete zero-entity face-local loops with exact model carriers and closed endpoint tapes were emitted under one derived wire container bound to the complete source shell and body roster; support-to-oriented-use, oriented-use-to-incidence, physical edge identity, and face topology remain unresolved."
     } else {
         "Complete zero-entity face-local loops with exact model carriers and closed endpoint tapes were emitted as independent wire bodies; support-to-oriented-use, oriented-use-to-incidence, physical edge identity, and source body/shell bindings remain unresolved."
     };
@@ -480,7 +582,7 @@ mod tests {
     }
 
     #[test]
-    fn closed_face_local_loop_transfers_as_independent_wire() {
+    fn closed_face_local_loop_uses_ownership_root_with_untransferred_sibling() {
         let first = Point3::new(0.0, 0.0, 0.0);
         let corner = Point3::new(1.0, 0.0, 0.0);
         let mut ir = CadIr::empty(Units::default());
@@ -507,19 +609,34 @@ mod tests {
                     tag: [0x5f, 0x0c],
                     allocations: vec![9, 8],
                     loop_terminals: vec![1],
-                    loops: vec![crate::families::zero_entity::records::ZeroEntityLoop {
-                        pos: 20,
-                        record_ordinal: 3,
-                        tag: [0x62, 0x14],
-                        member_ids: vec![7, 6],
-                        typed_references: vec![1, 2],
-                        support_record_ordinals: vec![4, 5],
-                        terminal_id: 8,
-                        gap: 1,
-                        loop_class: 0x41,
-                        forward_senses: vec![true, true],
-                        oriented_model_endpoints: vec![[first, corner], [corner, first]],
-                    }],
+                    loops: vec![
+                        crate::families::zero_entity::records::ZeroEntityLoop {
+                            pos: 20,
+                            record_ordinal: 3,
+                            tag: [0x62, 0x14],
+                            member_ids: vec![7, 6],
+                            typed_references: vec![1, 2],
+                            support_record_ordinals: vec![4, 5],
+                            terminal_id: 8,
+                            gap: 1,
+                            loop_class: 0x41,
+                            forward_senses: vec![true, true],
+                            oriented_model_endpoints: vec![[first, corner], [corner, first]],
+                        },
+                        crate::families::zero_entity::records::ZeroEntityLoop {
+                            pos: 25,
+                            record_ordinal: 6,
+                            tag: [0x62, 0x14],
+                            member_ids: vec![10],
+                            typed_references: vec![3],
+                            support_record_ordinals: vec![99],
+                            terminal_id: 9,
+                            gap: 1,
+                            loop_class: 0x50,
+                            forward_senses: vec![true],
+                            oriented_model_endpoints: vec![[first, corner]],
+                        },
+                    ],
                     terminal_control: 0x05,
                 }),
                 supports: vec![
@@ -532,6 +649,15 @@ mod tests {
             (4, CurveId("catia:test:curve#0".to_string())),
             (5, CurveId("catia:test:curve#1".to_string())),
         ]);
+        let ownership_root = crate::families::zero_entity::records::ZeroEntityOwnershipRoot {
+            face_roster_pos: 50,
+            face_roster_record_ordinal: 6,
+            face_slots: vec![1],
+            shell_pos: 60,
+            shell_record_ordinal: 7,
+            body_pos: 70,
+            body_record_ordinal: 8,
+        };
         let mut annotations = AnnotationBuilder::new();
 
         let counts = transfer_closed_wire_loops(
@@ -539,13 +665,19 @@ mod tests {
             &mut annotations,
             &support_runs,
             &support_curve_ids,
+            Some(&ownership_root),
         );
 
         assert_eq!(counts.bodies, 1);
+        assert_eq!(counts.owned_bodies, 1);
         assert_eq!(counts.loops, 1);
         assert_eq!(counts.edges, 2);
         assert_eq!(counts.vertices, 2);
         assert_eq!(counts.points, 2);
+        assert_eq!(
+            ir.model.bodies[0].id,
+            BodyId("catia:zero-entity:owned-wire-body#8".to_string())
+        );
         assert!(matches!(ir.model.bodies[0].kind, BodyKind::Wire));
         assert_eq!(ir.model.shells[0].wire_edges.len(), 2);
         assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[]));
@@ -586,8 +718,13 @@ mod tests {
         let mut ir = CadIr::empty(Units::default());
         let mut annotations = AnnotationBuilder::new();
 
-        let counts =
-            transfer_closed_wire_loops(&mut ir, &mut annotations, &support_runs, &HashMap::new());
+        let counts = transfer_closed_wire_loops(
+            &mut ir,
+            &mut annotations,
+            &support_runs,
+            &HashMap::new(),
+            None,
+        );
 
         assert_eq!(counts, WireTransferCounts::default());
         assert!(ir.model.bodies.is_empty());

@@ -460,7 +460,13 @@ current scores require those matrices and representative fixtures.
   wire contains one edge per face-local support occurrence and one vertex at
   each cyclic join. This transfer does not assign source physical-edge
   identity, radial use, endpoint-incidence identity, or source body and shell
-  ownership; those native bindings remain unresolved.
+  ownership when no complete terminal ownership root covers the transferred
+  loops; those native bindings remain unresolved.
+  When a complete terminal ownership root covers the aligned support-run roster,
+  every transferred closed loop shares one derived wire body, region, and shell
+  in the root's face-roster order. This binds the neutral container to the exact
+  source body and shell hierarchy without assigning physical-edge identity,
+  radial use, endpoint-incidence identity, or face topology.
   In the object stream, full-pcurve endpoint loci are geometric fallback
   candidates only. Conflicting candidates for one edge are discarded locally;
   they do not discard other pcurve records or override the edge's serialized

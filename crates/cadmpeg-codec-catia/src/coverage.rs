@@ -442,6 +442,8 @@ pub(crate) const TRANSFERRED_SKETCH_CONSTRAINT_COUNT: CoverageKey =
 pub(crate) const TRANSFERRED_SKETCH_COUNT: CoverageKey = CoverageKey("transferred_sketch_count");
 pub(crate) const TRANSFERRED_ZERO_ENTITY_WIRE_BODY_COUNT: CoverageKey =
     CoverageKey("transferred_zero_entity_wire_body_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_OWNED_WIRE_BODY_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_owned_wire_body_count");
 pub(crate) const TRANSFERRED_ZERO_ENTITY_WIRE_EDGE_COUNT: CoverageKey =
     CoverageKey("transferred_zero_entity_wire_edge_count");
 pub(crate) const TRANSFERRED_ZERO_ENTITY_WIRE_LOOP_COUNT: CoverageKey =
@@ -767,6 +769,7 @@ pub(crate) const ALL: &[CoverageKey] = &[
     TRANSFERRED_SKETCH_CONSTRAINT_COUNT,
     TRANSFERRED_SKETCH_COUNT,
     TRANSFERRED_ZERO_ENTITY_WIRE_BODY_COUNT,
+    TRANSFERRED_ZERO_ENTITY_OWNED_WIRE_BODY_COUNT,
     TRANSFERRED_ZERO_ENTITY_WIRE_EDGE_COUNT,
     TRANSFERRED_ZERO_ENTITY_WIRE_LOOP_COUNT,
     TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT,
