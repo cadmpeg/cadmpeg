@@ -370,6 +370,9 @@ struct Builder<'a> {
     empty_regions: BTreeSet<String>,
     empty_wire_regions: BTreeSet<String>,
     missing_wire_shells: BTreeSet<(String, String)>,
+    hidden_bodies_without_items: BTreeSet<String>,
+    dangling_appearance_bindings: BTreeSet<(String, String)>,
+    colorless_appearance_bindings: BTreeSet<(String, String)>,
     written_pmi: usize,
     length_unit: Option<Ref>,
     angle_unit: Option<Ref>,
@@ -514,6 +517,9 @@ impl<'a> Builder<'a> {
             empty_regions: BTreeSet::new(),
             empty_wire_regions: BTreeSet::new(),
             missing_wire_shells: BTreeSet::new(),
+            hidden_bodies_without_items: BTreeSet::new(),
+            dangling_appearance_bindings: BTreeSet::new(),
+            colorless_appearance_bindings: BTreeSet::new(),
             written_pmi: 0,
             length_unit: None,
             angle_unit: None,
@@ -637,11 +643,17 @@ impl<'a> Builder<'a> {
             .collect();
         let mut body_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
         let mut face_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
+        let mut dangling_appearance_bindings = BTreeSet::new();
+        let mut colorless_appearance_bindings = BTreeSet::new();
         for binding in &ir.model.appearance_bindings {
             let Some(appearance) = appearances.get(binding.appearance.as_str()).copied() else {
+                dangling_appearance_bindings
+                    .insert((binding.id.clone(), binding.appearance.0.clone()));
                 continue;
             };
             let Some(color) = appearance.base_color else {
+                colorless_appearance_bindings
+                    .insert((binding.id.clone(), binding.appearance.0.clone()));
                 continue;
             };
             let spec = ColorSpec {
@@ -665,6 +677,10 @@ impl<'a> Builder<'a> {
                 | AppearanceTarget::Source { .. } => {}
             }
         }
+        self.dangling_appearance_bindings
+            .extend(dangling_appearance_bindings);
+        self.colorless_appearance_bindings
+            .extend(colorless_appearance_bindings);
         for body in &ir.model.bodies {
             if let Some(color) = body.color {
                 body_colors.entry(body.id.as_str()).or_insert(ColorSpec {
@@ -1513,14 +1529,20 @@ impl<'a> Builder<'a> {
             }
             return;
         }
-        let hidden = self
-            .ir
-            .model
-            .bodies
-            .iter()
-            .filter(|body| body.visible == Some(false))
-            .filter_map(|body| self.body_step_refs.get(body.id.as_str()).copied())
-            .collect::<Vec<_>>();
+        let mut hidden = Vec::new();
+        let mut hidden_without_items = Vec::new();
+        for body in &self.ir.model.bodies {
+            if body.visible != Some(false) {
+                continue;
+            }
+            if let Some(reference) = self.body_step_refs.get(body.id.as_str()).copied() {
+                hidden.push(reference);
+            } else {
+                hidden_without_items.push(body.id.0.clone());
+            }
+        }
+        self.hidden_bodies_without_items
+            .extend(hidden_without_items);
         if !hidden.is_empty() {
             self.emitter.emit("INVISIBILITY", &refs(&hidden));
         }
@@ -2891,6 +2913,54 @@ impl<'a> Builder<'a> {
                 format!(
                     "{} wire region/shell relation(s) referenced missing shell records: {shells}",
                     self.missing_wire_shells.len()
+                ),
+            );
+        }
+        if !self.hidden_bodies_without_items.is_empty() {
+            let bodies = self
+                .hidden_bodies_without_items
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.omit(
+                LossKind::HiddenBodyOmitted,
+                Severity::Warning,
+                format!(
+                    "{} hidden body/bodies had no emitted STEP item and were omitted from INVISIBILITY: {bodies}",
+                    self.hidden_bodies_without_items.len()
+                ),
+            );
+        }
+        if !self.dangling_appearance_bindings.is_empty() {
+            let bindings = self
+                .dangling_appearance_bindings
+                .iter()
+                .map(|(binding, appearance)| format!("'{binding}' -> '{appearance}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.omit(
+                LossKind::MaterialNotTransferred,
+                Severity::Warning,
+                format!(
+                    "{} appearance binding(s) reference missing appearance assets and were not written: {bindings}",
+                    self.dangling_appearance_bindings.len()
+                ),
+            );
+        }
+        if !self.colorless_appearance_bindings.is_empty() {
+            let bindings = self
+                .colorless_appearance_bindings
+                .iter()
+                .map(|(binding, appearance)| format!("'{binding}' -> '{appearance}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.omit(
+                LossKind::MaterialNotTransferred,
+                Severity::Warning,
+                format!(
+                    "{} appearance binding(s) reference appearances without a base color and were not written: {bindings}",
+                    self.colorless_appearance_bindings.len()
                 ),
             );
         }

@@ -3175,6 +3175,85 @@ fn writer_reports_wire_region_with_missing_shell_record() {
 }
 
 #[test]
+fn writer_reports_hidden_body_without_step_item() {
+    let mut ir = unit_cube();
+    let body = ir.model.bodies[0].id.clone();
+    ir.model.bodies[0].visible = Some(false);
+    ir.model.regions.clear();
+
+    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("report mode writes the remaining geometry");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::HiddenBodyOmitted && loss.message.contains(body.as_str())
+    }));
+}
+
+#[test]
+fn writer_reports_dangling_appearance_binding() {
+    use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::ids::AppearanceId;
+
+    let mut ir = unit_cube();
+    let binding = "test:appearance-binding#dangling";
+    let appearance = AppearanceId("test:appearance#missing".into());
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: binding.into(),
+        target: AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
+        appearance: appearance.clone(),
+        source_entity_id: None,
+        object_type: None,
+        channels: std::collections::BTreeMap::default(),
+    });
+
+    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("report mode writes the representable geometry");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::MaterialNotTransferred
+            && loss.message.contains(binding)
+            && loss.message.contains(appearance.as_str())
+    }));
+}
+
+#[test]
+fn writer_reports_appearance_without_base_color() {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::ids::AppearanceId;
+
+    let mut ir = unit_cube();
+    let appearance = AppearanceId("test:appearance#colorless".into());
+    let binding = "test:appearance-binding#colorless";
+    ir.model.appearances.push(Appearance {
+        id: appearance.clone(),
+        name: None,
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: None,
+        properties: std::collections::BTreeMap::default(),
+        textures: Vec::new(),
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: binding.into(),
+        target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
+        appearance: appearance.clone(),
+        source_entity_id: None,
+        object_type: None,
+        channels: std::collections::BTreeMap::default(),
+    });
+
+    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("report mode writes the representable geometry");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::MaterialNotTransferred
+            && loss.message.contains(binding)
+            && loss.message.contains(appearance.as_str())
+    }));
+}
+
+#[test]
 fn writer_round_trips_edge_based_wire_bodies() {
     let mut ir = unit_cube();
     let edge = ir.model.edges[0].clone();
