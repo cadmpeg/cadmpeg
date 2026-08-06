@@ -4154,6 +4154,13 @@ fn wide_indexed_curve_record_ends_at(payload: &[u8], offset: usize, prefix: &[u8
     if prefix == LEGACY_SKETCH_MARKER && payload.get(offset + 80..offset + 128) == Some(&[0; 48]) {
         return true;
     }
+    if prefix == LEGACY_EXTENDED_SKETCH_MARKER
+        && payload.get(offset + 80..offset + 128) == Some(&[0; 48])
+        && payload.get(offset + 128..offset + 130) == Some(&[0x0a, 0x00])
+        && class_declaration_at(payload, offset.saturating_add(130))
+    {
+        return true;
+    }
     let selector = payload
         .get(offset + 80..offset + 84)
         .and_then(|bytes| bytes.try_into().ok())
