@@ -19588,7 +19588,7 @@ fn sketch_text_record(
 /// Build the indexed Design form of a `textex_tag` record. Its header carries
 /// a u32 record index and a nine-byte zero entity lane, and its class tail ends
 /// after the fixed frame suffix and owning-sketch reference.
-fn indexed_sketch_text_record() -> Vec<u8> {
+fn indexed_sketch_text_record(text_type: u32) -> Vec<u8> {
     let mut bytes = Vec::new();
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
         bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
@@ -19629,7 +19629,7 @@ fn indexed_sketch_text_record() -> Vec<u8> {
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.push(0);
     bytes.extend_from_slice(&400i32.to_le_bytes());
-    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&text_type.to_le_bytes());
     bytes.extend_from_slice(&1u32.to_le_bytes());
     bytes.extend_from_slice(&256u32.to_le_bytes());
     bytes.extend_from_slice(&0u32.to_le_bytes());
@@ -19643,32 +19643,34 @@ fn indexed_sketch_text_record() -> Vec<u8> {
 }
 
 #[test]
-fn indexed_textex_tag_sketch_text_record_decodes_its_complete_prefix() {
-    let bytes = indexed_sketch_text_record();
-    let text = decode_sketch_text_at(&bytes, 3).expect("indexed sketch text record");
-    assert_eq!(text.record_index, 304);
-    assert_eq!(text.owner_reference, 227);
-    assert_eq!(text.entity_genesis, Some(0));
-    assert_eq!(text.persistent_id, Some(117));
-    assert_eq!(text.text, "B6 Probe 47");
-    assert_eq!(text.font_family, "Arial");
-    assert_eq!(text.font_weight, 400);
-    assert_eq!(text.height, 6.0);
-    assert_eq!(text.width_factor, Some(1.0));
-    assert_eq!(
-        text.color,
-        cadmpeg_ir::topology::Color {
-            r: 0.0,
-            g: 0.0,
-            b: 0.0,
-            a: 1.0,
-        }
-    );
-    assert_eq!(text.anchor, None);
-    assert_eq!(text.rotation, None);
-    assert_eq!(text.first_reference, Some(319));
-    assert_eq!(text.second_reference, Some(322));
-    assert_eq!(text.raw_bytes, bytes);
+fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
+    for text_type in [0, 1] {
+        let bytes = indexed_sketch_text_record(text_type);
+        let text = decode_sketch_text_at(&bytes, 3).expect("indexed sketch text record");
+        assert_eq!(text.record_index, 304);
+        assert_eq!(text.owner_reference, 227);
+        assert_eq!(text.entity_genesis, Some(0));
+        assert_eq!(text.persistent_id, Some(117));
+        assert_eq!(text.text, "B6 Probe 47");
+        assert_eq!(text.font_family, "Arial");
+        assert_eq!(text.font_weight, 400);
+        assert_eq!(text.height, 6.0);
+        assert_eq!(text.width_factor, Some(1.0));
+        assert_eq!(
+            text.color,
+            cadmpeg_ir::topology::Color {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            }
+        );
+        assert_eq!(text.anchor, None);
+        assert_eq!(text.rotation, None);
+        assert_eq!(text.first_reference, Some(319));
+        assert_eq!(text.second_reference, Some(322));
+        assert_eq!(text.raw_bytes, bytes);
+    }
 }
 
 /// Decode one sketch-text record at `class_version`, the version its Design

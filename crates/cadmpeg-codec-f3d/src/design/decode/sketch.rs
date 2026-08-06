@@ -2082,9 +2082,11 @@ fn decode_txt_tag_sketch_text_tail(
 
 /// Read the indexed `textex_tag` tail. The member and alignment fields match
 /// the common text body. The indexed class then writes a fixed 35-byte suffix:
-/// five u32 values, a two-byte zero run, two f32 values, and a five-byte zero
-/// run before the owning-sketch reference. The suffix carries no neutral
-/// anchor or rotation; the source record is retained in full.
+/// a text-type u32, three fixed u32 values, a zero u32, a two-byte zero run,
+/// two positive f32 scales, and a five-byte zero run before the owning-sketch
+/// reference. The text-type values are the same frame (`0`) and path (`1`)
+/// discriminators used by the legacy class tail. The indexed suffix carries no
+/// neutral anchor or rotation; the source record is retained in full.
 fn decode_indexed_sketch_text_tail(
     payload: &[u8],
     mut cursor: usize,
@@ -2105,7 +2107,7 @@ fn decode_indexed_sketch_text_tail(
     let font_weight = u32_at(payload, cursor.checked_add(5)?)? as i32;
     matches!(font_weight, 400 | 500 | 750).then_some(())?;
     cursor = cursor.checked_add(9)?;
-    if u32_at(payload, cursor)? != 0
+    if !matches!(u32_at(payload, cursor)?, 0 | 1)
         || u32_at(payload, cursor.checked_add(4)?)? != 1
         || u32_at(payload, cursor.checked_add(8)?)? != 256
         || u32_at(payload, cursor.checked_add(12)?)? != 0
