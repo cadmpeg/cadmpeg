@@ -33,8 +33,8 @@ use super::endpoints::{
     legacy_marker104_arc_center, legacy_profile_radial_circle, legacy_undetailed_profile_line,
     legacy_unlocated_geometry_handle, marker_is_selected_construction_line,
     marker_profile_curve_role, minor_arc_geometry, output_curve_endpoint_markers,
-    packed_compact_legacy_curve_endpoint_indices, unique_arc_center_marker,
-    wide_coordinate_roster_full_circle,
+    packed_compact_legacy_curve_endpoint_indices, relation_reference_curve_record,
+    unique_arc_center_marker, wide_coordinate_roster_full_circle,
 };
 use super::holes::{feature_input_sketch_frame, sketch_feature_frames};
 use super::markers::{inline_arc_coordinates, marker_is_geometry_locus};
@@ -642,6 +642,11 @@ pub(crate) fn project_marker_backed_sketches(
                     ) && usize::try_from(marker.offset).ok().is_none_or(|offset| {
                         !legacy_unlocated_geometry_handle(&lane.native_payload, offset)
                             && !auxiliary_profile_record(&lane.native_payload, offset)
+                            && !relation_reference_curve_record(
+                                &lane.native_payload,
+                                marker,
+                                &object_markers,
+                            )
                     })
                 })
                 .collect::<Vec<_>>();

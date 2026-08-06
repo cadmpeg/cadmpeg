@@ -44,8 +44,8 @@ use super::{
     legacy_state_five_curve_endpoint_indices, legacy_terminal_profile_endpoint_offset,
     legacy_undetailed_profile_line, legacy_unlocated_geometry_handle,
     marker_is_selected_construction_line, packed_legacy_curve_endpoint_indices,
-    roster_curve_endpoint_markers, unique_arc_center_marker, wide_direct_line_endpoint_markers,
-    wide_indexed_curve_endpoint_indices,
+    relation_reference_curve_record, roster_curve_endpoint_markers, unique_arc_center_marker,
+    wide_direct_line_endpoint_markers, wide_indexed_curve_endpoint_indices,
 };
 use crate::records::{
     FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind,
@@ -537,6 +537,65 @@ fn unrecognized_role_two_records_are_auxiliary() {
     payload[84..84 + LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
     assert!(marker_is_selected_construction_line(&payload, 0));
     assert!(!auxiliary_profile_record(&payload, 0));
+}
+
+#[test]
+fn compact_curve_with_relation_endpoint_is_a_display_carrier() {
+    let mut payload = vec![0; 84 + SKETCH_MARKER.len()];
+    payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+    payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+    payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+    payload[29..31].copy_from_slice(&1u16.to_le_bytes());
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..60].copy_from_slice(&[2, 0, 4, 0]);
+    payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[84..].copy_from_slice(SKETCH_MARKER);
+
+    let marker = |id: &str, object_index, kind, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset: 0,
+        object_index,
+        local_id: None,
+        kind,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let curve = marker("curve", Some(1), SketchInputKind::LineOrCircle, None);
+    let relation = marker(
+        "relation",
+        Some(3),
+        SketchInputKind::Relation(SketchRelationKind::Distance),
+        None,
+    );
+    let point = marker("point", Some(5), SketchInputKind::Point, Some([1.0, 0.0]));
+    let markers = [&curve, &relation, &point];
+
+    assert!(relation_reference_curve_record(&payload, &curve, &markers));
+
+    let first_point = marker(
+        "first-point",
+        Some(3),
+        SketchInputKind::Point,
+        Some([0.0, 0.0]),
+    );
+    let second_point = marker(
+        "second-point",
+        Some(5),
+        SketchInputKind::Point,
+        Some([1.0, 0.0]),
+    );
+    let markers = [&curve, &first_point, &second_point];
+    assert!(!relation_reference_curve_record(&payload, &curve, &markers));
 }
 
 #[test]

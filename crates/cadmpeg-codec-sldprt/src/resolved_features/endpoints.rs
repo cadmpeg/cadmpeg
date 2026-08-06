@@ -4524,6 +4524,46 @@ pub(super) fn auxiliary_profile_record(payload: &[u8], offset: usize) -> bool {
         && compact_legacy_radial_circle_index(payload, offset).is_none()
 }
 
+/// A compact indexed curve whose endpoint namespace contains a relation
+/// marker is a relation display carrier, not an independent sketch curve.
+/// Profile curves use the same feature-local namespace, but both endpoint
+/// identifiers must resolve to distinct coordinate-bearing point markers.
+pub(super) fn relation_reference_curve_record(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&SketchInputEntity],
+) -> bool {
+    if !matches!(
+        curve.kind,
+        SketchInputKind::LineOrCircle | SketchInputKind::Arc
+    ) {
+        return false;
+    }
+    let Some(offset) = usize::try_from(curve.offset).ok() else {
+        return false;
+    };
+    let Some([first_id, second_id]) = compact_indexed_curve_endpoint_indices(payload, offset)
+    else {
+        return false;
+    };
+    if first_id == second_id {
+        return false;
+    }
+    let resolve = |object_index| {
+        let mut candidates = markers
+            .iter()
+            .copied()
+            .filter(|marker| marker.object_index == Some(object_index));
+        let marker = candidates.next()?;
+        candidates.next().is_none().then_some(marker)
+    };
+    let (Some(first), Some(second)) = (resolve(first_id), resolve(second_id)) else {
+        return false;
+    };
+    matches!(first.kind, SketchInputKind::Relation(_))
+        || matches!(second.kind, SketchInputKind::Relation(_))
+}
+
 fn legacy_compact_selected_axis_body(payload: &[u8], offset: usize) -> bool {
     payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) == Some(LEGACY_SKETCH_MARKER)
         && payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
