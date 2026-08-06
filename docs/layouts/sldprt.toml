@@ -1319,6 +1319,310 @@ offset = 39
 size = 9
 note = "The state value begins at +48; bytes +39 through +47 are reserved."
 
+[[record]]
+name = "extended_geometry_locus_138_point"
+kind = "byte"
+section = "2"
+anchor = "The extended prefix defines a 138-byte geometry-locus point"
+size = 138
+endianness = "little"
+note = "The finite pair is a point coordinate; the two identity words are distinct record identities."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "The extended prefix defines a 138-byte geometry-locus point"
+
+[[record.field]]
+name = "header"
+offset = 5
+type = "bytes[8]"
+source = "spec"
+anchor = "header `ff ff ff ff ff ff ff ff` at marker +5"
+
+[[record.field]]
+name = "sentinel"
+offset = 13
+type = "f32"
+source = "spec"
+anchor = "the little-endian f32 `-1.0`"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "native value u32 `2`"
+
+[[record.field]]
+name = "geometry_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "locus `05 00 01 00`"
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role u16 `1`"
+
+[[record.field]]
+name = "state_at_29"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "marker +29 u16 zero"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "selector `00 00 80 bf 00 00 04 00` at marker +31"
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+
+[[record.field]]
+name = "coordinate_tag"
+offset = 56
+type = "bytes[2]"
+source = "spec"
+anchor = "`1e 00` at marker +56"
+
+[[record.field]]
+name = "coordinate_first"
+offset = 58
+type = "f64"
+source = "spec"
+anchor = "finite planar coordinates at marker +58 and +66"
+
+[[record.field]]
+name = "coordinate_second"
+offset = 66
+type = "f64"
+source = "spec"
+anchor = "finite planar coordinates at marker +58 and +66"
+
+[[record.field]]
+name = "state_at_74"
+offset = 74
+type = "u16"
+source = "spec"
+anchor = "Marker +74 stores u16 state `0` followed by u16 link count `1`"
+
+[[record.field]]
+name = "link_count"
+offset = 76
+type = "u16"
+source = "spec"
+anchor = "u16 link count `1`"
+
+[[record.field]]
+name = "zero_link_cell"
+offset = 78
+type = "bytes[4]"
+source = "spec"
+anchor = "marker +78 through +81 are zero"
+
+[[record.field]]
+name = "link_sentinel"
+offset = 82
+type = "i32"
+source = "spec"
+anchor = "marker +82 stores i32 `-1`"
+
+[[record.field]]
+name = "zero_trailer"
+offset = 86
+type = "bytes[38]"
+source = "spec"
+anchor = "marker +86 through +123 are zero"
+
+[[record.field]]
+name = "identity_first"
+offset = 124
+type = "u32"
+source = "spec"
+anchor = "marker +124 and +128 store distinct nonzero, non-null u32 identities"
+
+[[record.field]]
+name = "identity_second"
+offset = 128
+type = "u32"
+source = "spec"
+anchor = "marker +124 and +128 store distinct nonzero, non-null u32 identities"
+
+[[record.field]]
+name = "identity_terminator"
+offset = 132
+type = "bytes[6]"
+source = "spec"
+anchor = "marker +132 stores `00 00 01 00 00 00`"
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "The geometry locus begins at +23; bytes +21 through +22 are reserved."
+
+[[record.gap]]
+offset = 39
+size = 9
+note = "The state value begins at +48; bytes +39 through +47 are reserved."
+
+[[record]]
+name = "extended_geometry_locus_96_construction_line"
+kind = "byte"
+section = "2"
+anchor = "The extended prefix defines a 96-byte geometry-locus selected construction line"
+size = 96
+endianness = "little"
+note = "The endpoint fields are direct feature-local object identifiers."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "The extended prefix defines a 96-byte geometry-locus selected construction line"
+
+[[record.field]]
+name = "header"
+offset = 5
+type = "bytes[8]"
+source = "spec"
+anchor = "header `ff ff ff ff 04 00 ff ff` at marker +5"
+
+[[record.field]]
+name = "sentinel"
+offset = 13
+type = "f32"
+source = "spec"
+anchor = "the little-endian f32 `-1.0`"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "native value u32 `0`"
+
+[[record.field]]
+name = "geometry_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "locus `05 00 01 00`"
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role u16 `2`"
+
+[[record.field]]
+name = "state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "marker +29 u16 zero"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "selector `00 00 80 bf 00 00 0c 00` at marker +31"
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+
+[[record.field]]
+name = "endpoint_first"
+offset = 56
+type = "u16"
+source = "spec"
+anchor = "distinct nonzero u16 endpoint object identifiers are at marker +56 and +58"
+
+[[record.field]]
+name = "endpoint_second"
+offset = 58
+type = "u16"
+source = "spec"
+anchor = "distinct nonzero u16 endpoint object identifiers are at marker +56 and +58"
+
+[[record.field]]
+name = "zero_endpoint_prefix"
+offset = 60
+type = "bytes[4]"
+source = "spec"
+anchor = "marker +60 through +63 are zero"
+
+[[record.field]]
+name = "signed_selector"
+offset = 64
+type = "f64"
+source = "spec"
+anchor = "marker +64 stores f64 `-1`"
+
+[[record.field]]
+name = "zero_selector_trailer"
+offset = 72
+type = "bytes[8]"
+source = "spec"
+anchor = "marker +72 through +79 are zero"
+
+[[record.field]]
+name = "tail_tag"
+offset = 80
+type = "bytes[4]"
+source = "spec"
+anchor = "marker +80 stores `00 00 04 00`"
+
+[[record.field]]
+name = "zero_tail_prefix"
+offset = 84
+type = "bytes[4]"
+source = "spec"
+anchor = "marker +84 through +87 are zero"
+
+[[record.field]]
+name = "identity_first"
+offset = 88
+type = "u32"
+source = "spec"
+anchor = "nonzero, non-null u32 identities occupy marker +88 and +92"
+
+[[record.field]]
+name = "identity_second"
+offset = 92
+type = "u32"
+source = "spec"
+anchor = "nonzero, non-null u32 identities occupy marker +88 and +92"
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "The geometry locus begins at +23; bytes +21 through +22 are reserved."
+
+[[record.gap]]
+offset = 39
+size = 9
+note = "The state value begins at +48; bytes +39 through +47 are reserved."
+
 # --- Not tabulated ---------------------------------------------------------
 
 [[not_applicable]]

@@ -4,6 +4,7 @@ use super::curves::slot_curve_and_center_indices;
 use super::endpoints::{
     compact_curve_endpoint_indices, compact_indexed_curve_endpoint_indices,
     current_compact_104_profile_line, current_direct_92_profile_line_endpoint_indices,
+    extended_geometry_locus_construction_line_endpoint_indices,
     extended_identity_inline_line_record, extended_tagged_indexed_curve_endpoint_indices,
     extended_terminal_profile_line, extended_wide_horizontal_relation_endpoint_indices,
     legacy_compact_profile_line, legacy_referenced_wide_arc_endpoint_indices,
@@ -436,6 +437,7 @@ pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchI
                         || indexed_profile_vertex(payload, offset)
                         || current_geometry_locus_profile_vertex(payload, offset)
                         || terminal_wide_geometry_locus_profile_vertex(payload, offset)
+                        || extended_geometry_locus_single_link_point(payload, offset)
                         || geometry_locus_profile_vertex(payload, offset)
                         || compact_linked_profile_vertex(payload, offset)
                         || linked_profile_vertex(payload, offset))
@@ -530,6 +532,7 @@ pub(super) fn sketch_marker_at(payload: &[u8], offset: usize) -> bool {
     shared_geometry_body
         || compact_legacy_marker_body(payload, offset)
         || packed_legacy_marker_body(payload, offset)
+        || extended_geometry_locus_construction_line_endpoint_indices(payload, offset).is_some()
         || alternate_current_curve_body(payload, offset)
 }
 
@@ -1867,6 +1870,39 @@ fn geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
         && payload.get(offset + 132..offset + 138) == Some(&[0x00, 0x00, 0x01, 0x00, 0x00, 0x00])
         && sketch_marker_prefix_at(payload, offset.saturating_add(138));
     compact || compact_local_identity || compact_identity_pair || identity_bearing
+}
+
+fn extended_geometry_locus_single_link_point(payload: &[u8], offset: usize) -> bool {
+    let identity = |relative| {
+        payload
+            .get(offset + relative..offset + relative + 4)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+            .is_some_and(|identity| identity != 0 && identity != u32::MAX)
+    };
+    payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        && payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
+        && payload.get(offset + 13..offset + 17) == Some(&[0x00, 0x00, 0x80, 0xbf])
+        && marker_native_code(payload, offset) == Some(2)
+        && marker_is_geometry_locus(payload, offset)
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 29..offset + 31) == Some(&[0; 2])
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(offset + 39..offset + 48) == Some(&[0; 9])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && payload.get(offset + 56..offset + 58) == Some(&[0x1e, 0x00])
+        && finite_coordinate_pair(payload, offset.saturating_add(58)).is_some()
+        && payload.get(offset + 74..offset + 78) == Some(&[0x00, 0x00, 0x01, 0x00])
+        && payload.get(offset + 78..offset + 82) == Some(&[0; 4])
+        && payload.get(offset + 82..offset + 86) == Some(&(-1i32).to_le_bytes())
+        && payload.get(offset + 86..offset + 124) == Some(&[0; 38])
+        && identity(124)
+        && identity(128)
+        && payload.get(offset + 124..offset + 128) != payload.get(offset + 128..offset + 132)
+        && payload.get(offset + 132..offset + 138) == Some(&[0x00, 0x00, 0x01, 0x00, 0x00, 0x00])
+        && sketch_marker_prefix_at(payload, offset.saturating_add(138))
 }
 
 type LinkedProfilePoint = ([f64; 2], [(u16, u16); 2]);

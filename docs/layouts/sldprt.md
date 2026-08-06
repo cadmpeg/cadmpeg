@@ -447,6 +447,72 @@ Unstated regions:
 - `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `extended_geometry_locus_138_point`
+
+Spec §2 · layout: byte offsets · size: 138 B
+
+The finite pair is a point coordinate; the two identity words are distinct record identities.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | The extended prefix defines a 138-byte geometry-locus point |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | header `ff ff ff ff ff ff ff ff` at marker +5 |
+| 13 | 4 | `sentinel` | `f32` | little | spec | the little-endian f32 `-1.0` |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value u32 `2` |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | locus `05 00 01 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` |
+| 29 | 2 | `state_at_29` | `u16` | little | spec | marker +29 u16 zero |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | `1e 00` at marker +56 |
+| 58 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates at marker +58 and +66 |
+| 66 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates at marker +58 and +66 |
+| 74 | 2 | `state_at_74` | `u16` | little | spec | Marker +74 stores u16 state `0` followed by u16 link count `1` |
+| 76 | 2 | `link_count` | `u16` | little | spec | u16 link count `1` |
+| 78 | 4 | `zero_link_cell` | `bytes[4]` | little | spec | marker +78 through +81 are zero |
+| 82 | 4 | `link_sentinel` | `i32` | little | spec | marker +82 stores i32 `-1` |
+| 86 | 38 | `zero_trailer` | `bytes[38]` | little | spec | marker +86 through +123 are zero |
+| 124 | 4 | `identity_first` | `u32` | little | spec | marker +124 and +128 store distinct nonzero, non-null u32 identities |
+| 128 | 4 | `identity_second` | `u32` | little | spec | marker +124 and +128 store distinct nonzero, non-null u32 identities |
+| 132 | 6 | `identity_terminator` | `bytes[6]` | little | spec | marker +132 stores `00 00 01 00 00 00` |
+
+Unstated regions:
+
+- `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
+## `extended_geometry_locus_96_construction_line`
+
+Spec §2 · layout: byte offsets · size: 96 B
+
+The endpoint fields are direct feature-local object identifiers.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | The extended prefix defines a 96-byte geometry-locus selected construction line |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | header `ff ff ff ff 04 00 ff ff` at marker +5 |
+| 13 | 4 | `sentinel` | `f32` | little | spec | the little-endian f32 `-1.0` |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value u32 `0` |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | locus `05 00 01 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `2` |
+| 29 | 2 | `state` | `u16` | little | spec | marker +29 u16 zero |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector `00 00 80 bf 00 00 0c 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | distinct nonzero u16 endpoint object identifiers are at marker +56 and +58 |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | distinct nonzero u16 endpoint object identifiers are at marker +56 and +58 |
+| 60 | 4 | `zero_endpoint_prefix` | `bytes[4]` | little | spec | marker +60 through +63 are zero |
+| 64 | 8 | `signed_selector` | `f64` | little | spec | marker +64 stores f64 `-1` |
+| 72 | 8 | `zero_selector_trailer` | `bytes[8]` | little | spec | marker +72 through +79 are zero |
+| 80 | 4 | `tail_tag` | `bytes[4]` | little | spec | marker +80 stores `00 00 04 00` |
+| 84 | 4 | `zero_tail_prefix` | `bytes[4]` | little | spec | marker +84 through +87 are zero |
+| 88 | 4 | `identity_first` | `u32` | little | spec | nonzero, non-null u32 identities occupy marker +88 and +92 |
+| 92 | 4 | `identity_second` | `u32` | little | spec | nonzero, non-null u32 identities occupy marker +88 and +92 |
+
+Unstated regions:
+
+- `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
 ## Not tabulated
 
 | Area | Spec | Reason |
