@@ -15,9 +15,10 @@ use super::super::{
 use super::{
     alternate_current_indexed_curve_endpoint_indices,
     alternate_current_selected_axis_endpoint_indices, auxiliary_profile_record,
-    compact_curve_endpoint_indices, compact_indexed_curve_endpoint_indices,
-    compact_indexed_curve_raw_endpoint_indices, compact_legacy_code_one_line_endpoint_indices,
-    compact_legacy_curve_endpoint_indices, compact_legacy_selected_axis_endpoint_indices,
+    compact_complete_marker_roster_pair, compact_curve_endpoint_indices,
+    compact_indexed_curve_endpoint_indices, compact_indexed_curve_raw_endpoint_indices,
+    compact_legacy_code_one_line_endpoint_indices, compact_legacy_curve_endpoint_indices,
+    compact_legacy_selected_axis_endpoint_indices,
     compact_legacy_short_role_one_curve_endpoint_indices,
     compact_legacy_short_role_two_curve_endpoint_indices, coordinate_circle_radius,
     coordinate_roster_arc_center, coordinate_roster_curve_endpoint_markers,
@@ -603,6 +604,99 @@ fn compact_curve_with_relation_endpoint_is_a_display_carrier() {
     );
     let markers = [&curve, &first_point, &second_point];
     assert!(!relation_reference_curve_record(&payload, &curve, &markers));
+}
+
+#[test]
+fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
+    let mut payload = vec![0; 84 + SKETCH_MARKER.len()];
+    payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+    payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+    payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+    payload[29..31].copy_from_slice(&1u16.to_le_bytes());
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..60].copy_from_slice(&[2, 0, 3, 0]);
+    payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[84..].copy_from_slice(SKETCH_MARKER);
+
+    let marker = |id: &str, offset, object_index, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset,
+        object_index,
+        local_id: None,
+        kind: SketchInputKind::Point,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let curve = SketchInputEntity {
+        kind: SketchInputKind::LineOrCircle,
+        coordinates_m: None,
+        ..marker("curve", 0, Some(1), None)
+    };
+    let first = marker("first", 100, Some(99), Some([0.0, 0.0]));
+    let second = marker("second", 200, Some(100), Some([1.0, 0.0]));
+    let markers = [&curve, &first, &second];
+
+    for prefix in [SKETCH_MARKER, LEGACY_EXTENDED_SKETCH_MARKER] {
+        payload[..prefix.len()].copy_from_slice(prefix);
+        payload[84..84 + prefix.len()].copy_from_slice(prefix);
+        let pair = compact_complete_marker_roster_pair(&payload, &curve, &markers, true)
+            .expect("complete marker roster endpoints");
+        assert_eq!(
+            [pair[0].id.as_str(), pair[1].id.as_str()],
+            ["first", "second"]
+        );
+    }
+
+    let mut terminal = payload[..84].to_vec();
+    terminal[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+    let pair = compact_complete_marker_roster_pair(&terminal, &curve, &markers, true)
+        .expect("terminal complete marker roster endpoints");
+    assert_eq!(
+        [pair[0].id.as_str(), pair[1].id.as_str()],
+        ["first", "second"]
+    );
+    assert_eq!(
+        roster_curve_endpoint_markers(&terminal, &curve, &markers)
+            .into_iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        ["first", "second"]
+    );
+
+    assert_eq!(
+        roster_curve_endpoint_markers(&payload, &curve, &markers)
+            .into_iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        ["first", "second"]
+    );
+
+    let relation = SketchInputEntity {
+        id: "relation".into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset: 200,
+        object_index: Some(100),
+        local_id: None,
+        kind: SketchInputKind::Relation(SketchRelationKind::Distance),
+        state_value: Some(1.0),
+        coordinates_m: None,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let markers = [&curve, &first, &relation];
+    assert!(relation_reference_curve_record(&payload, &curve, &markers));
 }
 
 #[test]

@@ -454,6 +454,10 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
             if terminal.len() == 2 {
                 return terminal;
             }
+            let endpoints = compact_complete_marker_roster_endpoints(payload, curve, markers);
+            if endpoints.len() == 2 {
+                return endpoints;
+            }
         }
         return indexed;
     }
@@ -464,6 +468,10 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
     let terminal = extended_terminal_84_construction_line_endpoint_markers(payload, curve, markers);
     if terminal.len() == 2 {
         return terminal;
+    }
+    let endpoints = compact_complete_marker_roster_endpoints(payload, curve, markers);
+    if endpoints.len() == 2 {
+        return endpoints;
     }
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
@@ -493,7 +501,9 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
                 .then_some(endpoint)
             })
             .collect::<Option<Vec<_>>>();
-        return endpoints.unwrap_or_default();
+        if let Some(endpoints) = endpoints {
+            return endpoints;
+        }
     }
     let endpoint_offsets = if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
         == Some(LEGACY_SKETCH_MARKER)
@@ -1091,6 +1101,92 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
                     == Some(CompactIndexedCurveRecordEnd::Marker84))
             .then(|| resolve(false, false))
             .flatten()
+        })
+        .unwrap_or_default()
+}
+
+fn compact_complete_marker_roster_pair<'a>(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+    one_based: bool,
+) -> Option<[&'a SketchInputEntity; 2]> {
+    let offset = usize::try_from(curve.offset).ok()?;
+    if !matches!(
+        curve.kind,
+        SketchInputKind::LineOrCircle | SketchInputKind::Arc
+    ) || !matches!(
+        payload.get(offset..offset + SKETCH_MARKER.len()),
+        Some(prefix) if prefix == SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER
+    ) || !matches!(marker_native_code(payload, offset), Some(0..=2))
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || !(compact_indexed_curve_record_end(payload, offset)
+            == Some(CompactIndexedCurveRecordEnd::Marker84)
+            || compact_terminal_84_record(payload, offset))
+    {
+        return None;
+    }
+    let raw_at = |relative| -> Option<u16> {
+        Some(u16::from_le_bytes(
+            payload
+                .get(offset + relative..offset + relative + 2)?
+                .try_into()
+                .ok()?,
+        ))
+    };
+    let raw = [raw_at(56)?, raw_at(58)?];
+    if raw[0] == raw[1] {
+        return None;
+    }
+    let mut owned = markers
+        .iter()
+        .copied()
+        .filter(|marker| marker.feature_ref == curve.feature_ref)
+        .collect::<Vec<_>>();
+    owned.sort_unstable_by_key(|marker| marker.offset);
+    let index = |raw: u16| {
+        let index = usize::from(raw);
+        if one_based {
+            index.checked_sub(1)
+        } else {
+            Some(index)
+        }
+    };
+    Some([*owned.get(index(raw[0])?)?, *owned.get(index(raw[1])?)?])
+}
+
+fn compact_terminal_84_record(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
+        && payload.get(offset + 72..offset + 84) == Some(&[0; 12])
+}
+
+fn compact_complete_marker_roster_endpoints<'a>(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+) -> Vec<&'a SketchInputEntity> {
+    [true, false]
+        .into_iter()
+        .find_map(|one_based| {
+            let [first, second] =
+                compact_complete_marker_roster_pair(payload, curve, markers, one_based)?;
+            if [first, second].iter().all(|marker| {
+                marker.coordinates_m.is_some()
+                    && matches!(
+                        marker.kind,
+                        SketchInputKind::Point
+                            | SketchInputKind::ConstrainedPoint
+                            | SketchInputKind::LineOrCircle
+                            | SketchInputKind::Arc
+                    )
+            }) {
+                Some(vec![first, second])
+            } else {
+                None
+            }
         })
         .unwrap_or_default()
 }
@@ -4637,47 +4733,55 @@ pub(super) fn relation_reference_curve_record(
     let Some(offset) = usize::try_from(curve.offset).ok() else {
         return false;
     };
-    let Some([first_id, second_id]) = compact_indexed_curve_endpoint_indices(payload, offset)
-    else {
-        return false;
-    };
-    if first_id == second_id {
-        return false;
+    if let Some([first_id, second_id]) = compact_indexed_curve_endpoint_indices(payload, offset) {
+        if first_id != second_id {
+            let resolve = |object_index| {
+                let candidates = markers
+                    .iter()
+                    .copied()
+                    .filter(|marker| marker.object_index == Some(object_index))
+                    .collect::<Vec<_>>();
+                let relations = candidates
+                    .iter()
+                    .copied()
+                    .filter(|marker| matches!(marker.kind, SketchInputKind::Relation(_)))
+                    .collect::<Vec<_>>();
+                if relations.len() == 1 {
+                    return relations.into_iter().next();
+                }
+                let points = candidates
+                    .iter()
+                    .copied()
+                    .filter(|marker| {
+                        matches!(
+                            marker.kind,
+                            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                if points.len() == 1 {
+                    return points.into_iter().next();
+                }
+                (candidates.len() == 1).then(|| candidates[0])
+            };
+            if let (Some(first), Some(second)) = (resolve(first_id), resolve(second_id)) {
+                if matches!(first.kind, SketchInputKind::Relation(_))
+                    || matches!(second.kind, SketchInputKind::Relation(_))
+                {
+                    return true;
+                }
+            }
+        }
     }
-    let resolve = |object_index| {
-        let candidates = markers
-            .iter()
-            .copied()
-            .filter(|marker| marker.object_index == Some(object_index))
-            .collect::<Vec<_>>();
-        let relations = candidates
-            .iter()
-            .copied()
-            .filter(|marker| matches!(marker.kind, SketchInputKind::Relation(_)))
-            .collect::<Vec<_>>();
-        if relations.len() == 1 {
-            return relations.into_iter().next();
-        }
-        let points = candidates
-            .iter()
-            .copied()
-            .filter(|marker| {
-                matches!(
-                    marker.kind,
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                )
-            })
-            .collect::<Vec<_>>();
-        if points.len() == 1 {
-            return points.into_iter().next();
-        }
-        (candidates.len() == 1).then(|| candidates[0])
-    };
-    let (Some(first), Some(second)) = (resolve(first_id), resolve(second_id)) else {
-        return false;
-    };
-    matches!(first.kind, SketchInputKind::Relation(_))
-        || matches!(second.kind, SketchInputKind::Relation(_))
+    [false, true].into_iter().any(|one_based| {
+        let Some([first, second]) =
+            compact_complete_marker_roster_pair(payload, curve, markers, one_based)
+        else {
+            return false;
+        };
+        matches!(first.kind, SketchInputKind::Relation(_))
+            || matches!(second.kind, SketchInputKind::Relation(_))
+    })
 }
 
 fn legacy_compact_selected_axis_body(payload: &[u8], offset: usize) -> bool {
