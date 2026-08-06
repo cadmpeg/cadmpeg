@@ -56,25 +56,6 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 **Need.** A hem has no neutral operation without the form selector and the direction. **Blocked in part on a specimen:** the closed, rope, and double forms are not available to read.
 
-### DR-10. `SpirePrimitive` and `CoilPrimitive` values
-
-**Question.** What do these values mean?
-
-- `SpirePrimitive` section-placement values other than `4`
-- the discriminator block of the ten-reference `CoilPrimitive` form
-
-**Known.** `f3d.md` §3.1 "`SpirePrimitive` selects the Coil" gives the `SpirePrimitive` fields. `f3d.md` §3.1 "`CoilPrimitive` is the compact" gives the compact `CoilPrimitive` fields. In the compact form, offset 20 value `1` is new body, offset 26 is u32 `4`, offset 30 uses the four extent values, offset 92 uses `1 = inside`, `2 = on center`, and `3 = outside`, and offset 107 uses `1 = circle`, `2 = square`, `3 = external triangle`, and `4 = internal triangle`.
-
-**Need.** The ten-reference `CoilPrimitive` form needs its operation, extent, section, section-placement, and fixed-prologue values. The `SpirePrimitive` placement value set beyond `4` also remains open.
-
-### DR-11. Eighth `CoilPrimitive` reference
-
-**Question.** Which entity does the member identity of the eighth ordered `CoilPrimitive` reference select? What is the layout of the larger ten-reference `CoilPrimitive` form?
-
-**Known.** `f3d.md` §3.1 "`CoilPrimitive` is the compact" gives all eight references of the 427-byte form. The eighth is a counted selection group with one persistently identified member. It is not a compact parameter: the scope owns exactly five parameters, and the five parameter references name all of them. A larger `CoilPrimitive` form has a 573-byte frame and ten ordered references with no known layout.
-
-**Need.** We must know the selected entity to keep the complete feature input set. The eighth ordered reference is the tool body in the compact form only; in the ten-reference form the tool body is the tenth and the eighth is a parameter.
-
 ### DR-12. Placement `refType` values
 
 **Question.** What construction does each `refType` value of the placement class select?

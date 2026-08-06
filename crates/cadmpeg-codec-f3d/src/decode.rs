@@ -2866,6 +2866,7 @@ fn extend_related_design_records(
         scan,
         &native.design_entity_headers,
         &native.design_types,
+        &native.design_parameters,
         &native.design_parameter_owners,
         &native.design_component_occurrences,
     )?;

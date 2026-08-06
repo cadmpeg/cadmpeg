@@ -20,8 +20,8 @@ use crate::records::{
     DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeDistance,
     DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletGroup,
     DesignFixedFilletParameters, DesignHemOperation, DesignMirrorConstruction, DesignMoveOperation,
-    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
-    DesignRectangularPatternConstruction, DesignRectangularPatternInstances,
+    DesignParameter, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
+    DesignRecordHeader, DesignRectangularPatternConstruction, DesignRectangularPatternInstances,
     DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignRuledSurfaceOperation,
     DesignScaleOperation, DesignSheetMetalHeightDatum, DesignSolidPrimitive,
     DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
@@ -37,6 +37,7 @@ pub fn decode_parameter_scopes(
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
     types: &[crate::records::DesignType],
+    parameters: &[DesignParameter],
     parameter_owners: &[crate::records::DesignParameterOwner],
     component_occurrences: &[DesignComponentOccurrence],
 ) -> Result<Vec<DesignParameterScope>, CodecError> {
@@ -57,6 +58,7 @@ pub fn decode_parameter_scopes(
                 continue;
             };
             scope.id = ids::native_design_parameter_scope_id(&entry.name, scope.byte_offset);
+            bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
             if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sketch) {
                 let start = usize::try_from(scope.byte_offset).ok();
                 let end = usize::try_from(scope.paired_byte_offset).ok();
@@ -3886,20 +3888,20 @@ pub(crate) fn parse_parameter_scope(
         coil_clockwise,
         coil_clockwise_offset,
     ) = if family == Some(DesignFeatureFamily::Coil) {
-        exact_coil_discriminators(bytes, start, kind).map_or(
+        exact_coil_discriminators(bytes, start, paired_at, kind, reference_members).map_or(
             (None, None, None, None, None, None, None, None, None, None),
             |fields| {
                 (
                     Some(fields.operation),
                     Some(fields.operation_offset),
-                    Some(fields.extent),
-                    Some(fields.extent_offset),
+                    fields.extent,
+                    fields.extent_offset,
                     Some(fields.section),
-                    Some(fields.section_offset),
+                    fields.section_offset,
                     Some(fields.section_placement),
-                    Some(fields.section_placement_offset),
+                    fields.section_placement_offset,
                     Some(fields.clockwise),
-                    Some(fields.clockwise_offset),
+                    fields.clockwise_offset,
                 )
             },
         )
@@ -3995,17 +3997,28 @@ pub(crate) fn parse_parameter_scope(
 struct CoilDiscriminators {
     operation: DesignExtrudeOperation,
     operation_offset: u64,
-    extent: DesignCoilExtent,
-    extent_offset: u64,
+    extent: Option<DesignCoilExtent>,
+    extent_offset: Option<u64>,
     section: DesignCoilSection,
-    section_offset: u64,
+    section_offset: Option<u64>,
     section_placement: DesignCoilSectionPlacement,
-    section_placement_offset: u64,
+    section_placement_offset: Option<u64>,
     clockwise: bool,
-    clockwise_offset: u64,
+    clockwise_offset: Option<u64>,
 }
 
-fn exact_coil_discriminators(bytes: &[u8], start: usize, kind: &str) -> Option<CoilDiscriminators> {
+fn exact_coil_discriminators(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    kind: &str,
+    reference_members: &[u32],
+) -> Option<CoilDiscriminators> {
+    if let Some(fields) =
+        exact_long_coil_discriminators(bytes, start, paired_at, kind, reference_members)
+    {
+        return Some(fields);
+    }
     let operation_offset = start.checked_add(20)?;
     let operation = match (kind, u32_at(bytes, operation_offset)?) {
         ("SpirePrimitive", 1) => DesignExtrudeOperation::Join,
@@ -4075,15 +4088,120 @@ fn exact_coil_discriminators(bytes: &[u8], start: usize, kind: &str) -> Option<C
     Some(CoilDiscriminators {
         operation,
         operation_offset: operation_offset as u64,
-        extent,
-        extent_offset: extent_offset as u64,
+        extent: Some(extent),
+        extent_offset: Some(extent_offset as u64),
         section,
-        section_offset: section_offset as u64,
+        section_offset: Some(section_offset as u64),
         section_placement,
-        section_placement_offset: section_placement_offset as u64,
+        section_placement_offset: Some(section_placement_offset as u64),
         clockwise,
-        clockwise_offset: clockwise_offset as u64,
+        clockwise_offset: Some(clockwise_offset as u64),
     })
+}
+
+fn exact_long_coil_discriminators(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    kind: &str,
+    reference_members: &[u32],
+) -> Option<CoilDiscriminators> {
+    if kind != "CoilPrimitive" || reference_members.len() != 10 {
+        return None;
+    }
+    let frame_length = paired_at.checked_sub(start)?;
+    if !matches!(frame_length, 450 | 578)
+        || bytes.get(start.checked_add(11)?..start.checked_add(22)?)? != [0; 11]
+        || u32_at(bytes, start.checked_add(26)?)? != 1
+        || marked_record_reference(bytes, start.checked_add(30)?)? != *reference_members.get(4)?
+        || marked_record_reference(bytes, start.checked_add(41)?)? != *reference_members.get(8)?
+    {
+        return None;
+    }
+    let operation_value = u32_at(bytes, start.checked_add(22)?)?;
+    let operation = match (frame_length, operation_value) {
+        (450, 1) => DesignExtrudeOperation::Join,
+        (450, 2) => DesignExtrudeOperation::Cut,
+        (450, 3) => DesignExtrudeOperation::Intersect,
+        (578, 2) if exact_long_coil_matrix(bytes, start) => DesignExtrudeOperation::NewBody,
+        _ => return None,
+    };
+    Some(CoilDiscriminators {
+        operation,
+        operation_offset: u64::try_from(start.checked_add(22)?).ok()?,
+        // The long form has no extent selector. Its exact owned parameter set
+        // supplies the mode after the scope is parsed.
+        extent: None,
+        extent_offset: None,
+        // The long form fixes these settings in its dialect envelope.
+        section: DesignCoilSection::Circular,
+        section_offset: None,
+        section_placement: DesignCoilSectionPlacement::Inside,
+        section_placement_offset: None,
+        clockwise: false,
+        clockwise_offset: None,
+    })
+}
+
+fn exact_long_coil_matrix(bytes: &[u8], start: usize) -> bool {
+    let Some(values) = f64s_at(bytes, start.saturating_add(77), 16) else {
+        return false;
+    };
+    values.iter().all(|value| value.is_finite())
+        && values[12..15].iter().all(|value| *value == 0.0)
+        && values[15] == 1.0
+}
+
+fn bind_coil_extent_from_parameters(
+    scope: &mut DesignParameterScope,
+    parameters: &[DesignParameter],
+    parameter_owners: &[crate::records::DesignParameterOwner],
+) {
+    if scope.kind != "CoilPrimitive" || scope.coil_extent.is_some() {
+        return;
+    }
+    let Some(stream) = native_stream(&scope.id) else {
+        return;
+    };
+    let mut owned_kinds = parameter_owners
+        .iter()
+        .filter(|owner| {
+            native_stream(&owner.id) == Some(stream)
+                && owner.scope_record_index == scope.record_index
+        })
+        .filter_map(|owner| {
+            parameters
+                .iter()
+                .find(|parameter| {
+                    native_stream(&parameter.id) == Some(stream)
+                        && parameter.record_index == owner.parameter_record_index
+                })
+                .map(|parameter| (owner.local_ordinal, parameter.source_kind.as_str()))
+        })
+        .collect::<Vec<_>>();
+    owned_kinds.sort_unstable_by_key(|(ordinal, _)| *ordinal);
+    let owned_kinds = owned_kinds
+        .into_iter()
+        .map(|(_, source_kind)| source_kind)
+        .collect::<Vec<_>>();
+    let extent = match owned_kinds.as_slice() {
+        ["Diameter", "SectionSize", "TaperAngle", "Revolutions", "Height"]
+        | ["Diameter", "SectionSize", "TaperAngle", "Height", "Revolutions"] => {
+            Some(DesignCoilExtent::RevolutionsHeight)
+        }
+        ["Diameter", "SectionSize", "TaperAngle", "Revolutions", "Pitch"]
+        | ["Diameter", "SectionSize", "TaperAngle", "Pitch", "Revolutions"] => {
+            Some(DesignCoilExtent::RevolutionsPitch)
+        }
+        ["Diameter", "SectionSize", "TaperAngle", "Height", "Pitch"]
+        | ["Diameter", "SectionSize", "TaperAngle", "Pitch", "Height"] => {
+            Some(DesignCoilExtent::HeightPitch)
+        }
+        ["Diameter", "SectionSize", "Revolutions", "Pitch"]
+        | ["Diameter", "SectionSize", "Pitch", "Revolutions"] => Some(DesignCoilExtent::Spiral),
+        _ => None,
+    };
+    scope.coil_extent = extent;
 }
 
 fn exact_extrude_prologue(

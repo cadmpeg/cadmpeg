@@ -2031,7 +2031,15 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer,
                     ) => group.extrude_role.is_none() && group.extrude_face_role.is_none(),
                     Some(design::DesignFeatureFamily::Coil) => {
-                        group.role == 0x0000_0008_0000_0000
+                        group.role
+                            == if scope.kind == "CoilPrimitive"
+                                && scope.reference_members.len() == 10
+                                && scope.coil_operation_offset == scope.byte_offset.checked_add(22)
+                            {
+                                0x0000_0004_0000_0000
+                            } else {
+                                0x0000_0008_0000_0000
+                            }
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }

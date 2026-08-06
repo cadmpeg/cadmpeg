@@ -1480,25 +1480,28 @@ pub struct DesignParameterScope {
     /// Coil driving-dimension mode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_extent: Option<DesignCoilExtent>,
-    /// Byte offset of the Coil mode enum.
+    /// Byte offset of the Coil mode enum, when the form stores one.
+    ///
+    /// A form that derives its mode from its owned parameter source kinds has
+    /// no fixed selector and leaves this offset absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_extent_offset: Option<u64>,
     /// Generated Coil section family.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_section: Option<DesignCoilSection>,
-    /// Byte offset of the Coil section enum.
+    /// Byte offset of the Coil section enum, when the form stores one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_section_offset: Option<u64>,
     /// Radial placement of the generated Coil section.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_section_placement: Option<DesignCoilSectionPlacement>,
-    /// Byte offset of the Coil section-placement enum.
+    /// Byte offset of the Coil section-placement enum, when the form stores one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_section_placement_offset: Option<u64>,
     /// Whether Coil angular travel is clockwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_clockwise: Option<bool>,
-    /// Byte offset of the Coil direction enum.
+    /// Byte offset of the Coil direction enum, when the form stores one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_clockwise_offset: Option<u64>,
     /// One-based ordinal among scopes of the same feature family.

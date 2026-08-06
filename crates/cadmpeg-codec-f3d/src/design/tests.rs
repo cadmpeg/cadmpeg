@@ -6735,6 +6735,81 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
 }
 
 #[test]
+fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
+    let scope = |frame_length: usize, operation: u32| {
+        let reference_members: [u32; 10] =
+            [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010];
+        let kind = "CoilPrimitive";
+        let kind_length = 4 + kind.encode_utf16().count() * 2;
+        let kind_at = frame_length - 78 - kind_length;
+        let reference_count_at = kind_at - 4 - 4 - reference_members.len() * 11;
+        let mut bytes = vec![0; reference_count_at];
+        bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+        bytes[4..7].copy_from_slice(b"345");
+        bytes[7..11].copy_from_slice(&331u32.to_le_bytes());
+        bytes[22..26].copy_from_slice(&operation.to_le_bytes());
+        bytes[26..30].copy_from_slice(&1u32.to_le_bytes());
+        for (offset, target) in [(30usize, 1005u32), (41, 1009)] {
+            bytes[offset] = 1;
+            bytes[offset + 1..offset + 5].copy_from_slice(&target.to_le_bytes());
+        }
+        if frame_length == 578 {
+            let matrix: [f64; 16] = [
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ];
+            for (ordinal, value) in matrix.into_iter().enumerate() {
+                bytes[77 + ordinal * 8..85 + ordinal * 8].copy_from_slice(&value.to_le_bytes());
+            }
+        }
+        bytes.extend_from_slice(&(reference_members.len() as u32).to_le_bytes());
+        for reference in reference_members {
+            bytes.push(1);
+            bytes.extend_from_slice(&reference.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+        }
+        bytes.extend_from_slice(&310u32.to_le_bytes());
+        lp_utf16(&mut bytes, kind);
+        let mut tail = [0; 78];
+        tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+        tail[31..35].copy_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&tail);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"259");
+        bytes.extend_from_slice(&331u32.to_le_bytes());
+        assert_eq!(bytes.len(), frame_length + 11);
+        let header = DesignRecordHeader {
+            id: "generated:scope-header#0".into(),
+            record_index: 331,
+            class_tag: "345".into(),
+            byte_offset: 0,
+        };
+        parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+            .expect("long Coil scope")
+    };
+
+    let boolean = scope(450, 1);
+    assert_eq!(boolean.coil_operation, Some(DesignExtrudeOperation::Join));
+    assert_eq!(boolean.coil_operation_offset, Some(22));
+    assert_eq!(boolean.coil_extent, None);
+    assert_eq!(boolean.coil_section, Some(DesignCoilSection::Circular));
+    assert_eq!(boolean.coil_section_offset, None);
+    assert_eq!(
+        boolean.coil_section_placement,
+        Some(DesignCoilSectionPlacement::Inside)
+    );
+    assert_eq!(boolean.coil_section_placement_offset, None);
+    assert_eq!(boolean.coil_clockwise, Some(false));
+    assert_eq!(boolean.coil_clockwise_offset, None);
+
+    let new_body = scope(578, 2);
+    assert_eq!(
+        new_body.coil_operation,
+        Some(DesignExtrudeOperation::NewBody)
+    );
+    assert_eq!(new_body.coil_operation_offset, Some(22));
+}
+
+#[test]
 fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());

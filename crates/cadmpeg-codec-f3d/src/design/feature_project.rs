@@ -5335,17 +5335,31 @@ fn project_coil(
         DesignCoilSectionPlacement::Center => CoilSectionPlacement::Center,
         DesignCoilSectionPlacement::Outside => CoilSectionPlacement::Outside,
     };
+    let operation = scope.coil_operation?;
     let stream = native_stream(&scope.id)?;
-    let mut body_groups = construction_groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream)
-            && group.scope_record_index == scope.record_index
-            && group.role == 0x0000_0008_0000_0000
-    });
-    let first_body_group = body_groups.next();
-    if body_groups.next().is_some() {
-        return None;
-    }
-    let result = match (scope.coil_operation?, first_body_group) {
+    let first_body_group = if operation == DesignExtrudeOperation::NewBody {
+        // The long Coil form carries one role-4 construction group for its
+        // generated body even when the result is a new body. It is not a
+        // Boolean target and must not suppress the typed result.
+        None
+    } else {
+        let expected_role = if scope.coil_operation_offset == scope.byte_offset.checked_add(22) {
+            0x0000_0004_0000_0000
+        } else {
+            0x0000_0008_0000_0000
+        };
+        let mut body_groups = construction_groups.iter().filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+                && group.role == expected_role
+        });
+        let first_body_group = body_groups.next();
+        if body_groups.next().is_some() {
+            return None;
+        }
+        first_body_group
+    };
+    let result = match (operation, first_body_group) {
         (DesignExtrudeOperation::NewBody, None) => CoilResult::NewBody,
         (operation, Some(group)) => CoilResult::Boolean {
             operation: match operation {

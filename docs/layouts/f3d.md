@@ -7,8 +7,9 @@
 Source of truth: [`docs/formats/f3d.md`](../../docs/formats/f3d.md).
 Table source: `docs/layouts/f3d.toml`.
 
-Covers the two fixed Design-segment headers and the sheet-metal `EdgeFlange`
-fixed operation section (§3.1). ASM stream records are tabulated in
+Covers the fixed Design-segment headers, the ten-reference `CoilPrimitive`
+prologue and matrix block, and the sheet-metal `EdgeFlange` fixed operation
+section (§3.1). ASM stream records are tabulated in
 `docs/layouts/asm.toml`. Container and manifest layers are text grammars and
 are listed under "Not tabulated".
 
@@ -43,6 +44,31 @@ The stated field list tiles the stated 58-byte total exactly. The timestamp is a
 | 36 | 6 | `zero_run_6` | `bytes[6]` | little | spec | six zero bytes |
 | 42 | 8 | `timestamp_micros` | `u64` | little | spec | a nonzero u64 Unix-epoch timestamp in microseconds |
 | 50 | 8 | `zero_run_8` | `bytes[8]` | little | spec | and eight zero bytes |
+
+## `coil_long_scope_fixed_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 52 B
+
+Offsets are relative to the primary indexed scope header. The two marked references repeat ordered-reference ordinals four and eight; their target records are dynamic indexed records.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its eleven-byte indexed header |
+| 11 | 11 | `zero_run_11` | `bytes[11]` | little | spec | Both forms store eleven zero bytes at offsets 11 through 21 |
+| 22 | 4 | `operation` | `u32` | little | spec | a u32 at offset 22 |
+| 26 | 4 | `structural_constant` | `u32` | little | spec | u32 `1` at offset 26 |
+| 30 | 11 | `fifth_reference` | `bytes[11]` | little | spec | Marked references at offsets 30 and 41 repeat the fifth and ninth ordered scope references. |
+| 41 | 11 | `ninth_reference` | `bytes[11]` | little | spec | Marked references at offsets 30 and 41 repeat the fifth and ninth ordered scope references. |
+
+## `coil_long_scope_matrix`
+
+Spec §3.1 · layout: byte offsets · size: 128 B
+
+The block begins at primary indexed scope offset 77. Its final row is `(0, 0, 0, 1)`; the containing 578-byte form carries it only in the new-body envelope.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 128 | `matrix` | `f64[16]` | little | spec | stores a finite 16-value f64 matrix at offset 77 |
 
 ## `edge_flange_fixed_operation_section`
 
