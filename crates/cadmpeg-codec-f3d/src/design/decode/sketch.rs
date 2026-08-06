@@ -1802,6 +1802,8 @@ struct SketchTextTail {
     font_weight: i32,
     anchor: Option<Point2>,
     rotation: Option<f64>,
+    horizontal_alignment: Option<u32>,
+    vertical_alignment: Option<u32>,
     owner_reference: u32,
 }
 
@@ -1984,7 +1986,7 @@ fn decode_sketch_text_tail(
 ) -> Option<SketchTextTail> {
     let first_reference = read_text_reference(payload, &mut cursor, first_slot)?;
     // Horizontal alignment enum and three flag bytes.
-    u32_at(payload, cursor)?;
+    let horizontal_alignment = Some(u32_at(payload, cursor)?);
     cursor = cursor.checked_add(7)?;
     let text_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
     if text_count == 0 || text_count > 1_048_576 {
@@ -1994,7 +1996,7 @@ fn decode_sketch_text_tail(
     cursor = after_text;
     let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
     // Vertical alignment enum, one flag byte, and the font weight.
-    u32_at(payload, cursor)?;
+    let vertical_alignment = Some(u32_at(payload, cursor)?);
     let font_weight = u32_at(payload, cursor.checked_add(5)?)? as i32;
     matches!(font_weight, 400 | 500 | 750).then_some(())?;
     cursor = cursor.checked_add(9)?;
@@ -2021,6 +2023,8 @@ fn decode_sketch_text_tail(
         font_weight,
         anchor: placement.map(|(anchor, _)| anchor),
         rotation: placement.map(|(_, rotation)| rotation),
+        horizontal_alignment,
+        vertical_alignment,
         owner_reference: reference_index(&owner)?,
     })
 }
@@ -2028,10 +2032,10 @@ fn decode_sketch_text_tail(
 /// Read the `txt_tag` form's members from the height to the end of the record.
 /// Two bytes separate the height from the anchor coordinates, which this form
 /// stores directly rather than in a placement transform. The form writes no
-/// parameter-reference slot: an eleven-byte run carries the alignment fields,
-/// ten bytes below [`TXT_TAG_ANCHOR_MEMBER_VERSION`], and the text string is
-/// followed by a counted reference run, fifteen bytes, and the trailing run and
-/// owning-sketch reference that close both forms.
+/// parameter-reference slot: an eleven-byte unclassified member run, ten bytes
+/// below [`TXT_TAG_ANCHOR_MEMBER_VERSION`], follows the anchor. The text string
+/// is followed by a counted reference run, fifteen bytes, and the trailing run
+/// and owning-sketch reference that close both forms.
 fn decode_txt_tag_sketch_text_tail(
     payload: &[u8],
     mut cursor: usize,
@@ -2076,6 +2080,8 @@ fn decode_txt_tag_sketch_text_tail(
         font_weight,
         anchor: Some(anchor),
         rotation: Some(rotation),
+        horizontal_alignment: None,
+        vertical_alignment: None,
         owner_reference: reference_index(&owner)?,
     })
 }
@@ -2094,7 +2100,7 @@ fn decode_indexed_sketch_text_tail(
     second_slot: TextReferenceSlot,
 ) -> Option<SketchTextTail> {
     let first_reference = read_text_reference(payload, &mut cursor, first_slot)?;
-    u32_at(payload, cursor)?;
+    let horizontal_alignment = Some(u32_at(payload, cursor)?);
     cursor = cursor.checked_add(7)?;
     let text_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
     if text_count == 0 || text_count > 1_048_576 {
@@ -2103,7 +2109,7 @@ fn decode_indexed_sketch_text_tail(
     let (text, after_text) = utf16le_at(payload, cursor + 4, text_count)?;
     cursor = after_text;
     let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
-    u32_at(payload, cursor)?;
+    let vertical_alignment = Some(u32_at(payload, cursor)?);
     let font_weight = u32_at(payload, cursor.checked_add(5)?)? as i32;
     matches!(font_weight, 400 | 500 | 750).then_some(())?;
     cursor = cursor.checked_add(9)?;
@@ -2140,6 +2146,8 @@ fn decode_indexed_sketch_text_tail(
         font_weight,
         anchor: None,
         rotation: None,
+        horizontal_alignment,
+        vertical_alignment,
         owner_reference: reference_index(&owner)?,
     })
 }
@@ -2192,6 +2200,8 @@ fn assemble_sketch_text(
         color: head.color,
         anchor: tail.anchor,
         rotation: tail.rotation,
+        horizontal_alignment: tail.horizontal_alignment,
+        vertical_alignment: tail.vertical_alignment,
         first_reference: tail.first_reference,
         second_reference: tail.second_reference,
         raw_bytes: payload.to_vec(),

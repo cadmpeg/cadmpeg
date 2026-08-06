@@ -19656,6 +19656,8 @@ fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
         assert_eq!(text.font_weight, 400);
         assert_eq!(text.height, 6.0);
         assert_eq!(text.width_factor, Some(1.0));
+        assert_eq!(text.horizontal_alignment, Some(3));
+        assert_eq!(text.vertical_alignment, Some(3));
         assert_eq!(
             text.color,
             cadmpeg_ir::topology::Color {
@@ -19716,6 +19718,8 @@ fn sketch_text_record_decodes_typed_content_and_metrics() {
     // factor is the field before it.
     assert_eq!(text.height, 10.0);
     assert_eq!(text.width_factor, Some(0.8));
+    assert_eq!(text.horizontal_alignment, Some(3));
+    assert_eq!(text.vertical_alignment, Some(3));
     // The four f32 after the width factor are red, green, blue, and alpha in
     // that order.
     assert_eq!(
@@ -19950,6 +19954,8 @@ fn txt_tag_sketch_text_record_decodes_its_anchor_and_metrics() {
     // The form stores no width factor, and the anchor is the field pair the
     // other form omits.
     assert_eq!(text.width_factor, None);
+    assert_eq!(text.horizontal_alignment, None);
+    assert_eq!(text.vertical_alignment, None);
     assert_eq!(text.anchor, Some(cadmpeg_ir::math::Point2::new(2.5, -15.0)));
     // The colour closes the twenty-nine-byte run in the same component order
     // as the other form.

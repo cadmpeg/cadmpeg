@@ -4204,6 +4204,14 @@ pub struct SketchText {
     /// rotation; path text stores none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rotation: Option<f64>,
+    /// Horizontal alignment enum carried by the `textex_tag` class. The
+    /// `txt_tag` class stores no alignment enum.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub horizontal_alignment: Option<u32>,
+    /// Vertical alignment enum carried by the `textex_tag` class. The
+    /// `txt_tag` class stores no alignment enum.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vertical_alignment: Option<u32>,
     /// Parameter record driving the height, absent when the record omits the
     /// member or writes it null.
     #[serde(default, skip_serializing_if = "Option::is_none")]

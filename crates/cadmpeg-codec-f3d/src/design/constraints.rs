@@ -1184,6 +1184,8 @@ mod tests {
                 width_factor: Some(0.8),
                 anchor: None,
                 rotation: None,
+                horizontal_alignment: None,
+                vertical_alignment: None,
             },
         };
         let mut glyph = [[0.0; 4]; 4];

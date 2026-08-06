@@ -529,6 +529,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 width_factor,
                 anchor,
                 rotation,
+                ..
             } => {
                 if text.is_empty()
                     || font_family.is_empty()
