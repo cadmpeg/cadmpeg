@@ -639,7 +639,7 @@ pub(super) fn extended_compact_endpoint_markers<'a>(
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
         || !matches!(marker_native_code(payload, offset), Some(0..=2))
-        || !matches!(
+        || (!matches!(
             (
                 marker_profile_curve_role(payload, offset),
                 payload.get(offset + 31..offset + 39)
@@ -651,7 +651,7 @@ pub(super) fn extended_compact_endpoint_markers<'a>(
                 Some(2),
                 Some([0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00])
             )
-        )
+        ) && extended_compact_84_profile_roster_endpoint_indices(payload, offset).is_none())
         || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
         || !(matches!(
             compact_indexed_curve_record_end(payload, offset),
@@ -3880,6 +3880,42 @@ pub(super) fn extended_compact_indexed_curve_endpoint_indices(
         offset,
         &[LEGACY_EXTENDED_SKETCH_MARKER],
     )
+    .or_else(|| extended_compact_84_profile_roster_endpoint_indices(payload, offset))
+}
+
+fn extended_compact_84_profile_roster_endpoint_indices(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[u32; 2]> {
+    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        || marker_native_code(payload, offset) != Some(2)
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
+        || payload.get(offset + 31..offset + 35) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || payload.get(offset + 35..offset + 39) != Some(&[0x00, 0x00, 0x0c, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 60..offset + 64) != Some(&[0; 4])
+        || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
+        || !matches!(
+            payload.get(offset + 72..offset + 76),
+            Some([0x00, 0x00, 0..=2, 0])
+        )
+        || !payload
+            .get(offset + 76..offset + 80)
+            .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
+        || !payload
+            .get(offset + 80..offset + 84)
+            .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
+        || payload.get(offset + 76..offset + 80) == payload.get(offset + 80..offset + 84)
+        || !offset
+            .checked_add(84)
+            .is_some_and(|next| sketch_marker_prefix_at(payload, next))
+    {
+        return None;
+    }
+    one_based_u16_endpoint_pair(payload, offset, 56)
 }
 
 fn compact_indexed_curve_endpoint_indices_for_prefixes(

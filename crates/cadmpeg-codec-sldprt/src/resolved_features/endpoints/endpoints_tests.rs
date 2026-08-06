@@ -2379,6 +2379,75 @@ fn extended_compact_profile_line_uses_complete_feature_roster_fallback() {
 }
 
 #[test]
+fn extended_compact_84_profile_roster_uses_one_based_point_objects() {
+    let mut payload = vec![0; 84 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+    payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+    payload[23..31].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00]);
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..58].copy_from_slice(&2u16.to_le_bytes());
+    payload[58..60].copy_from_slice(&1u16.to_le_bytes());
+    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[72..76].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
+    payload[76..80].copy_from_slice(&10u32.to_le_bytes());
+    payload[80..84].copy_from_slice(&6u32.to_le_bytes());
+    payload[84..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+
+    let entity = |id: &str, offset, kind, object_index, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset,
+        object_index,
+        local_id: None,
+        kind,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let curve = entity("curve", 0, SketchInputKind::LineOrCircle, Some(5), None);
+    let relation = entity(
+        "relation",
+        10,
+        SketchInputKind::Relation(SketchRelationKind::Distance),
+        Some(1),
+        None,
+    );
+    let first = entity(
+        "first",
+        20,
+        SketchInputKind::Point,
+        Some(2),
+        Some([1.0, 2.0]),
+    );
+    let second = entity(
+        "second",
+        30,
+        SketchInputKind::Point,
+        Some(3),
+        Some([3.0, 4.0]),
+    );
+    let markers = [&curve, &relation, &first, &second];
+
+    assert_eq!(
+        super::extended_compact_indexed_curve_endpoint_indices(&payload, 0),
+        Some([3, 2])
+    );
+    assert_eq!(
+        roster_curve_endpoint_markers(&payload, &curve, &markers)
+            .into_iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        ["second", "first"]
+    );
+}
+
+#[test]
 fn extended_compact_96_selected_axis_uses_one_based_object_indices() {
     let mut payload = vec![0; 96 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
     payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
