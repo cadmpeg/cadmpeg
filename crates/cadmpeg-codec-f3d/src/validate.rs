@@ -768,9 +768,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 // The ordered reference table is in record-index order, so the
                 // check is that every role names a distinct table entry and that
                 // each group's operand is the record three after it.
-                let claimed = [
-                    operation.gap_owner_record_index,
-                    operation.length_owner_record_index,
+                let mut claimed = vec![
                     operation.edge_wrapper_record_index,
                     operation.edge_group_record_index,
                     operation.edge_operand_record_index,
@@ -778,6 +776,25 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     operation.aggregate_operand_record_index,
                     operation.settings_record_index,
                 ];
+                match &operation.parameter_owners {
+                    crate::records::DesignHemParameterOwners::GapLength {
+                        gap_owner_record_index,
+                        length_owner_record_index,
+                    } => claimed.extend([*gap_owner_record_index, *length_owner_record_index]),
+                    crate::records::DesignHemParameterOwners::RadiusAngle {
+                        radius_owner_record_index,
+                        angle_owner_record_index,
+                    } => claimed.extend([*radius_owner_record_index, *angle_owner_record_index]),
+                    crate::records::DesignHemParameterOwners::GapLengthRadius {
+                        gap_owner_record_index,
+                        length_owner_record_index,
+                        radius_owner_record_index,
+                    } => claimed.extend([
+                        *gap_owner_record_index,
+                        *length_owner_record_index,
+                        *radius_owner_record_index,
+                    ]),
+                }
                 claimed.iter().copied().collect::<HashSet<_>>().len() == claimed.len()
                     && claimed.len() == scope.reference_members.len()
                     && claimed

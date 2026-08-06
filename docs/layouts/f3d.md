@@ -92,6 +92,63 @@ Unstated regions:
 
 - `60..71` (11 B): The spec places the radius 15 bytes after the unsettled u32, so eleven bytes between them are unaccounted for.
 
+## `hem_gap_length_fixed_operation_section`
+
+Spec §3.1 · layout: byte offsets · size: 79 B
+
+Offsets are relative to the section base `85 + S`, where `S` is the header shift. The aggregate and role-`0x08` group references follow this fixed section at offsets 108 and 135.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 4 | 4 | `edge_count` | `u32` | little | spec | the u32 edge count `1` at offset |
+| 8 | 11 | `edge_wrapper_reference` | `bytes[11]` | little | spec | the marked edge-wrapper reference at |
+| 19 | 11 | `settings_reference` | `bytes[11]` | little | spec | the marked settings reference at |
+| 42 | 11 | `gap_owner_reference` | `bytes[11]` | little | spec | the marked gap-owner |
+| 53 | 11 | `length_owner_reference` | `bytes[11]` | little | spec | length-owner references at |
+| 71 | 8 | `inside_bend_radius` | `f64` | little | spec | a positive f64 rule-derived inside bend radius in centimetres at |
+
+Unstated regions:
+
+- `0..4` (4 B): The fixed section begins with a retained u32 outside the typed owner and radius fields.
+- `30..42` (12 B): The fixed section retains the direction, reversal, and reference-side fields between the settings and owner references.
+- `64..71` (7 B): The fixed section has seven bytes between the length-owner reference and the rule-derived radius.
+
+## `hem_rolled_fixed_operation_section`
+
+Spec §3.1 · layout: byte offsets · size: 79 B
+
+Offsets are relative to the section base `85 + S`. The angle owner precedes the radius owner in the fixed section; source kinds assign their semantic roles.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 41 | 11 | `angle_owner_reference` | `bytes[11]` | little | spec | the first owner is the angle input |
+| 54 | 11 | `radius_owner_reference` | `bytes[11]` | little | spec | the second is the radius input |
+| 71 | 8 | `inside_bend_radius` | `f64` | little | spec | its rule-derived inside bend radius remains at |
+
+Unstated regions:
+
+- `0..41` (41 B): The fixed section begins with the retained fields and common envelope before the angle-owner reference.
+- `52..54` (2 B): The rolled owner references are separated by two bytes in the fixed section.
+- `65..71` (6 B): The fixed section has six bytes between the radius-owner reference and the rule-derived radius.
+
+## `hem_teardrop_fixed_operation_section`
+
+Spec §3.1 · layout: byte offsets · size: 89 B
+
+Offsets are relative to the section base `85 + S`; the aggregate and role-`0x08` group references lie at offsets 118 and 145 after the third owner slot.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 42 | 11 | `gap_owner_reference` | `bytes[11]` | little | spec | marked gap-owner |
+| 53 | 11 | `length_owner_reference` | `bytes[11]` | little | spec | length-owner |
+| 64 | 11 | `radius_owner_reference` | `bytes[11]` | little | spec | radius-owner references |
+| 81 | 8 | `inside_bend_radius` | `f64` | little | spec | its rule-derived inside bend radius starts |
+
+Unstated regions:
+
+- `0..42` (42 B): The fixed section begins with the retained fields and common envelope before the gap-owner reference.
+- `75..81` (6 B): The fixed section has six bytes between the radius-owner reference and the rule-derived radius.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

@@ -2125,7 +2125,38 @@ impl DesignEdgeFlangeOperation {
     }
 }
 
-/// Fixed construction carried by a sheet-metal `Hem` scope.
+/// Parameter-owner layout carried by a sheet-metal `Hem` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DesignHemParameterOwners {
+    /// Flat and open forms own a gap and a length.
+    GapLength {
+        /// Gap parameter-owner record.
+        gap_owner_record_index: u32,
+        /// Length parameter-owner record.
+        length_owner_record_index: u32,
+    },
+    /// Rolled form owns a radius and an angle.
+    RadiusAngle {
+        /// Radius parameter-owner record.
+        radius_owner_record_index: u32,
+        /// Angle parameter-owner record.
+        angle_owner_record_index: u32,
+    },
+    /// Teardrop form owns a gap, a length, and a radius.
+    GapLengthRadius {
+        /// Gap parameter-owner record.
+        gap_owner_record_index: u32,
+        /// Length parameter-owner record.
+        length_owner_record_index: u32,
+        /// Radius parameter-owner record.
+        radius_owner_record_index: u32,
+    },
+}
+
+/// Fixed operation section and parameter-owner layout carried by a sheet-metal
+/// `Hem` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignHemOperation {
@@ -2139,10 +2170,8 @@ pub struct DesignHemOperation {
     pub aggregate_group_record_index: u32,
     /// Recipe-backed role-`0x43` operand record.
     pub aggregate_operand_record_index: u32,
-    /// Gap parameter-owner record.
-    pub gap_owner_record_index: u32,
-    /// Length parameter-owner record.
-    pub length_owner_record_index: u32,
+    /// Parameter-owner layout selected by the owned source kinds.
+    pub parameter_owners: DesignHemParameterOwners,
     /// Indexed operation-settings record.
     pub settings_record_index: u32,
     /// Positive rule-derived inside bend radius in centimetres.

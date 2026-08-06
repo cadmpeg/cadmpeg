@@ -50,11 +50,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 The parameter set separates a rolled hem, which owns `HemRadius` and `HemAngle`, and a teardrop hem, which owns three parameters, from the two-owner forms. It does not separate a flat hem from an open one: both own `HemGap` and `HemLength`. A flat hem's `HemGap` holds a small value its form does not use, which is a value difference and not a selector.
 
-The four retained fields each hold one value across the flat, open, rolled, and teardrop forms and across both authored direction states, so none of them carries the form or the direction. The retained u32 at offset `121 + S` is not the bend position either: it holds `4` in hems whose authored bend position is adjacent, which `EdgeFlange` shows is code `3`.
+The four retained fields each hold one value across the flat, open, rolled, and teardrop forms and across both authored direction states, so none of them carries the form or the direction. The retained u32 at offset `121 + S` is not the bend position either: it holds `4` in hems whose authored bend position is adjacent, which `EdgeFlange` shows is code `3`. The gap-and-length, radius-and-angle, and gap-length-radius owner layouts have distinct fixed-section lengths and rule-radius offsets.
 
-A rolled frame places its two owner references 13 bytes apart rather than 11, and a teardrop frame adds a third owner reference and moves the group references by ten bytes. Neither form's inside bend radius is at the two-owner offset. The decoder reads the two-owner forms and refuses the other two.
+A rolled frame places its two owner references 13 bytes apart rather than 11, and a teardrop frame adds a third owner reference and moves the group references by ten bytes. Neither form uses the gap-and-length owner layout. The parameter source kinds identify the rolled and teardrop input sets, but the fixed fields do not identify flat versus open or either direction state.
 
-**Need.** A hem has no neutral operation without the form selector and the direction. **Blocked in part on a specimen:** the closed, rope, and double forms are not available to read.
+**Need.** A hem has no neutral operation without the form selector and the direction carrier. The fixed owner layouts settle the rolled and teardrop input sets, but the flat/open distinction and direction remain unresolved.
 
 ### DR-12. Placement `refType` values
 
