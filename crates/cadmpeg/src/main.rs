@@ -146,6 +146,12 @@ impl Format {
         )
     }
 
+    /// Whether this output format is a binary container, which is unsafe to
+    /// stream to a terminal or a JSON-expecting pipe by accident.
+    fn is_binary_container(self) -> bool {
+        matches!(self, Self::Fcstd | Self::F3d | Self::Sldprt | Self::Rhino)
+    }
+
     fn from_path(path: Option<&std::path::Path>) -> Option<Self> {
         path.and_then(std::path::Path::extension)
             .and_then(|extension| extension.to_str())
@@ -221,7 +227,7 @@ impl InputFormat {
 #[derive(Debug, Clone, Args)]
 struct InputArgs {
     /// Bypass content detection and read the input as this format.
-    #[arg(long, value_enum)]
+    #[arg(long, visible_alias = "from", value_enum)]
     input_format: Option<InputFormat>,
 }
 
@@ -400,8 +406,11 @@ enum Command {
         /// the machine-readable report from --report.
         #[arg(long, hide = true)]
         json: bool,
+        /// Stream a binary output format to standard output anyway.
+        #[arg(long, hide = true)]
+        binary_stdout: bool,
         /// Output format; inferred from the output extension when omitted.
-        #[arg(short, long, value_enum)]
+        #[arg(short, long, visible_alias = "to", value_enum)]
         format: Option<Format>,
         /// Output file; omit to write the artifact to standard output.
         #[arg(short, long)]
@@ -469,8 +478,11 @@ enum Command {
         /// the machine-readable report from --report.
         #[arg(long, hide = true)]
         json: bool,
+        /// Stream a binary output format to standard output anyway.
+        #[arg(long, hide = true)]
+        binary_stdout: bool,
         /// Output format; inferred from the output extension when omitted.
-        #[arg(short, long, value_enum)]
+        #[arg(short, long, visible_alias = "to", value_enum)]
         format: Option<Format>,
         /// Output file; omit to write the artifact to standard output.
         #[arg(short, long)]
@@ -602,6 +614,7 @@ fn main() -> ExitCode {
             input,
             input_flag,
             json,
+            binary_stdout,
             format,
             output,
             force,
@@ -624,6 +637,7 @@ fn main() -> ExitCode {
                     commands::ConversionPlan {
                         force,
                         report,
+                        binary_stdout,
                         validation: commands::ValidationMode::Skipped,
                         allow_empty,
                         reject_lossy,
@@ -664,6 +678,7 @@ fn main() -> ExitCode {
             input,
             input_flag,
             json,
+            binary_stdout,
             format,
             output,
             force,
@@ -687,6 +702,7 @@ fn main() -> ExitCode {
                     commands::ConversionPlan {
                         force,
                         report,
+                        binary_stdout,
                         validation: commands::ValidationMode::Required { allow_invalid },
                         allow_empty,
                         reject_lossy,
