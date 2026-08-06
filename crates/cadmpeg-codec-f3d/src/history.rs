@@ -1815,6 +1815,14 @@ fn unique_history_state(
     matches.next().is_none().then_some(state)
 }
 
+fn unique_history_state_in(history: &AsmHistory, state_id: i64) -> bool {
+    let mut states = history
+        .states
+        .iter()
+        .filter(|state| state.state_id == state_id);
+    states.next().is_some() && states.next().is_none()
+}
+
 /// Return the effective input state for a scope. Some Design scope envelopes
 /// omit the preceding state identity even though the current ASM delta state
 /// carries the direct transition predecessor.
@@ -1824,11 +1832,8 @@ pub(crate) fn effective_scope_previous_history_state_id(
 ) -> Option<i64> {
     scope.previous_history_state_id.or_else(|| {
         let state_id = scope.history_state_id?;
-        unique_history_state(histories, state_id)?
-            .1
-            .transition
-            .as_ref()?
-            .previous_state_id
+        let (history, state) = unique_history_state(histories, state_id)?;
+        linked_previous_state_id(history, state)
     })
 }
 
@@ -1862,12 +1867,7 @@ fn history_state_pair(
         .filter(|state| state.state_id == state_id);
     let state = states.next()?;
     if states.next().is_some()
-        || (require_direct
-            && state
-                .transition
-                .as_ref()
-                .and_then(|transition| transition.previous_state_id)
-                != Some(previous_state_id))
+        || (require_direct && linked_previous_state_id(history, state) != Some(previous_state_id))
     {
         return None;
     }
@@ -1918,26 +1918,30 @@ pub(crate) fn bind_scope_histories(
     let candidates = scopes
         .iter()
         .filter_map(|scope| {
-            let (Some(state_id), Some(previous_state_id)) =
-                (scope.history_state_id, scope.previous_history_state_id)
-            else {
-                return None;
-            };
-            let direct = histories
-                .iter()
-                .filter(|history| {
-                    history_state_pair(history, state_id, previous_state_id, true).is_some()
-                })
-                .collect::<Vec<_>>();
-            let candidates = if direct.is_empty() {
-                histories
+            let state_id = scope.history_state_id?;
+            let candidates = if let Some(previous_state_id) = scope.previous_history_state_id {
+                let direct = histories
                     .iter()
                     .filter(|history| {
-                        history_state_pair(history, state_id, previous_state_id, false).is_some()
+                        history_state_pair(history, state_id, previous_state_id, true).is_some()
                     })
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>();
+                if direct.is_empty() {
+                    histories
+                        .iter()
+                        .filter(|history| {
+                            history_state_pair(history, state_id, previous_state_id, false)
+                                .is_some()
+                        })
+                        .collect::<Vec<_>>()
+                } else {
+                    direct
+                }
             } else {
-                direct
+                histories
+                    .iter()
+                    .filter(|history| unique_history_state_in(history, state_id))
+                    .collect::<Vec<_>>()
             };
             (!candidates.is_empty()).then_some((scope, candidates))
         })
@@ -1979,17 +1983,15 @@ pub(crate) fn bind_scope_histories(
             resolved.insert(scope.id.clone(), history_id.to_owned());
         }
     }
-    let mut groups = HashMap::<(&str, i64, i64), Vec<usize>>::new();
+    let mut groups = HashMap::<(&str, i64, Option<i64>), Vec<usize>>::new();
     for (index, (scope, _)) in candidates.iter().enumerate() {
-        let (Some(stream), Some(state_id), Some(previous_state_id)) = (
-            crate::ids::native_stream(&scope.id),
-            scope.history_state_id,
-            scope.previous_history_state_id,
-        ) else {
+        let (Some(stream), Some(state_id)) =
+            (crate::ids::native_stream(&scope.id), scope.history_state_id)
+        else {
             continue;
         };
         groups
-            .entry((stream, state_id, previous_state_id))
+            .entry((stream, state_id, scope.previous_history_state_id))
             .or_default()
             .push(index);
     }
@@ -2055,18 +2057,43 @@ fn history_state_reaches(
         if !visited.insert(current.state_id) {
             return false;
         }
-        let Some(previous) = current
-            .transition
-            .as_ref()
-            .and_then(|transition| transition.previous_state_id)
-            .and_then(|state_id| states.get(&state_id))
-            .and_then(|state| *state)
-        else {
+        let Some(previous_state_id) = linked_previous_state_id(history, current) else {
+            return false;
+        };
+        let Some(previous) = states.get(&previous_state_id).and_then(|state| *state) else {
             return false;
         };
         current = previous;
     }
     true
+}
+
+/// Return the state ID reached by a delta state's `next` link.
+///
+/// The derived transition carries the same predecessor after complete
+/// historical topology projection. Before that projection, the raw chain is
+/// still sufficient to bind Design feature state identities. Reject a
+/// disagreement instead of allowing either representation to hide a corrupt
+/// history graph.
+fn linked_previous_state_id(history: &AsmHistory, state: &AsmDeltaState) -> Option<i64> {
+    let linked = state.next_ref.and_then(|node_index| {
+        let mut states = history
+            .states
+            .iter()
+            .filter(|candidate| candidate.node_index == node_index);
+        let previous = states.next()?;
+        states.next().is_none().then_some(previous.state_id)
+    });
+    let derived = state
+        .transition
+        .as_ref()
+        .and_then(|transition| transition.previous_state_id);
+    match (derived, linked) {
+        (Some(derived), Some(linked)) if derived != linked => None,
+        (Some(derived), _) => Some(derived),
+        (None, Some(linked)) => Some(linked),
+        (None, None) => None,
+    }
 }
 
 fn history_state_index(history: &AsmHistory) -> HashMap<i64, Option<&AsmDeltaState>> {
@@ -6265,6 +6292,73 @@ mod tests {
         let (resolved, _, _) = unique_history_state_pair(&histories, 23, 11)
             .expect("direct transition takes precedence over a reachable pair");
         assert_eq!(resolved.id, "direct");
+    }
+
+    #[test]
+    fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
+        let state = |state_id, node_index, previous_ref, next_ref| AsmDeltaState {
+            id: format!("history:state-{state_id}"),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref,
+            next_ref,
+            node_index,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            entity_versions: Vec::new(),
+            record_table_complete: false,
+            topology: None,
+            transition: None,
+        };
+        let history = AsmHistory {
+            id: "history".into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
+            states: vec![
+                state(10, 0, None, Some(2)),
+                state(6, 2, Some(0), Some(3)),
+                state(4, 3, Some(2), Some(1)),
+                state(2, 1, Some(3), None),
+            ],
+        };
+        let histories = [history];
+        let (resolved, current, previous) =
+            unique_history_state_pair(&histories, 10, 6).expect("raw direct state pair");
+        assert_eq!(resolved.id, "history");
+        assert_eq!(current.state_id, 10);
+        assert_eq!(previous.state_id, 6);
+        let (_, current, previous) =
+            unique_history_state_pair(&histories, 10, 4).expect("raw reachable state pair");
+        assert_eq!(current.state_id, 10);
+        assert_eq!(previous.state_id, 4);
+
+        let mut root =
+            crate::records::DesignParameterScope::empty("f3d:native:scope#1", "BaseFlange", 1);
+        root.history_state_id = Some(4);
+        let mut successor =
+            crate::records::DesignParameterScope::empty("f3d:native:scope#2", "EdgeFlange", 2);
+        successor.history_state_id = Some(10);
+        successor.previous_history_state_id = Some(6);
+        let bindings = bind_scope_histories(&[root, successor], &[], &histories);
+        assert_eq!(bindings.len(), 2);
+        assert_eq!(bindings["f3d:native:scope#1"], "history");
+        assert_eq!(bindings["f3d:native:scope#2"], "history");
+
+        let mut inconsistent = histories[0].clone();
+        inconsistent.states[0].transition = Some(AsmHistoricalTransition {
+            previous_state_id: Some(4),
+            records: Default::default(),
+            topology: Default::default(),
+        });
+        assert!(unique_history_state_pair(&[inconsistent], 10, 6).is_none());
     }
 
     use crate::history_records::{
