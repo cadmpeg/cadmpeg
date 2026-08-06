@@ -1350,6 +1350,12 @@ fn base_edges_without_curve_carriers_remain_topological_edges() {
                 .message
                 .contains("edge #19 has no decoded surface or curve carrier")
     }));
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::DecodeDiagnostic
+            && loss
+                .message
+                .contains("STEP edge #19 has no 3D curve carrier")
+    }));
     let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -3796,7 +3802,7 @@ fn catia_cartesian_trim_points_resolve_on_nurbs_curve() {
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
 #2=CARTESIAN_POINT('',(1.,1.,0.));
 #3=CARTESIAN_POINT('',(2.,0.,0.));
-#4=B_SPLINE_CURVE_WITH_KNOTS('',2,(#1,#2,#3),.UNSPECIFIED.,.F.,.U.,(3,3),(0.,2.),.UNSPECIFIED.);
+#4=B_SPLINE_CURVE_WITH_KNOTS('',2,(#1,#2,#3),.UNSPECIFIED.,.U.,.U.,(3,3),(0.,2.),.UNSPECIFIED.);
 #5=TRIMMED_CURVE('',#4,(#1),(#3),.T.,.CARTESIAN.);
 #6=COMPOSITE_CURVE_SEGMENT(.DISCONTINUOUS.,.T.,#5);
 #7=COMPOSITE_CURVE('',(#6),.U.);
@@ -3807,6 +3813,11 @@ fn catia_cartesian_trim_points_resolve_on_nurbs_curve() {
 
     assert_eq!(result.ir.model.curves.len(), 3);
     assert_eq!(result.ir.model.procedural_curves.len(), 1);
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::DecodeDiagnostic
+            && loss.message.contains("UNKNOWN periodicity")
+            && loss.message.contains("#4")
+    }));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -4218,6 +4229,23 @@ fn placement_reference_is_projected_and_angular_trims_use_context_units() {
 }
 
 #[test]
+fn parallel_axis_reference_direction_is_reported_and_inferred() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(0.,0.,1.));
+#3=DIRECTION('',(0.,0.,2.));
+#4=AXIS2_PLACEMENT_3D('',#1,#2,#3);
+#5=CIRCLE('',#4,2.);
+#6=GEOMETRIC_CURVE_SET('',(#5));
+#7=SHAPE_REPRESENTATION('',(#6),$);",
+    );
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::CarrierAxisInferred
+            && loss.message.contains("AXIS2_PLACEMENT_3D #4")
+    }));
+}
+
+#[test]
 fn line_numeric_trim_uses_vector_magnitude_and_length_unit() {
     let result = decode_inline(
         "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
@@ -4478,6 +4506,37 @@ fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
         face.loops[0].as_str(),
         format!("step:data:loop#{outer_loop}-face-{face_step}")
     );
+}
+
+#[test]
+fn duplicate_face_outer_bounds_are_reported_without_reclassification() {
+    use cadmpeg_ir::ids::LoopId;
+    use cadmpeg_ir::topology::Loop;
+
+    let mut ir = unit_cube();
+    let face = ir.model.faces[0].id.clone();
+    let duplicate = LoopId("synthetic:test:loop#duplicate-outer".into());
+    ir.model.loops.push(Loop {
+        id: duplicate.clone(),
+        face: face.clone(),
+        boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
+        coedges: Vec::new(),
+        vertex_uses: vec![cadmpeg_ir::topology::VertexUse {
+            vertex: ir.model.vertices[0].id.clone(),
+            after: None,
+            pcurves: Vec::new(),
+        }],
+    });
+    ir.model.faces[0].loops.push(duplicate);
+
+    let output = export(&ir);
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode duplicate outer bounds");
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::TopologyGaugeSubstituted
+            && loss.message.contains("FACE_OUTER_BOUND")
+    }));
 }
 
 #[test]

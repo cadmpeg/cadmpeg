@@ -190,9 +190,24 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 .map(|origin| {
                     let axis = optional_direction(record.parameter(2), &directions)
                         .unwrap_or(Vector3::new(0.0, 0.0, 1.0));
-                    let reference = optional_direction(record.parameter(3), &directions)
-                        .and_then(|reference| orthogonal_reference(axis, reference))
-                        .unwrap_or_else(|| derive_reference_direction(axis));
+                    let reference = match optional_direction(record.parameter(3), &directions) {
+                        Some(reference) => {
+                            if let Some(reference) = orthogonal_reference(axis, reference) {
+                                reference
+                            } else {
+                                losses.push(LossNote {
+                                    code: LossKind::CarrierAxisInferred,
+                                    severity: Severity::Warning,
+                                    message: format!(
+                                        "AXIS2_PLACEMENT_3D #{id} has a reference direction parallel to its axis; inferred an orthogonal reference"
+                                    ),
+                                    provenance: None,
+                                });
+                                derive_reference_direction(axis)
+                            }
+                        }
+                        None => derive_reference_direction(axis),
+                    };
                     (origin, axis, reference)
                 });
             if let Some(placement) = placement {
@@ -252,6 +267,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                     &vectors2,
                     &placements2,
                     angle_scale,
+                    &mut warnings,
                     &mut BTreeSet::new(),
                     0,
                 )
@@ -324,7 +340,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 ),
             Some("POLYLINE") => polyline(record, &points).map(CurveGeometry::Nurbs),
             Some("B_SPLINE_CURVE_WITH_KNOTS") => {
-                nurbs_curve(record, &points).map(CurveGeometry::Nurbs)
+                nurbs_curve(record, &points, &mut warnings).map(CurveGeometry::Nurbs)
             }
             _ => continue,
         };
@@ -349,7 +365,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         {
             continue;
         }
-        if let Some(nurbs) = nurbs_curve(record, &points) {
+        if let Some(nurbs) = nurbs_curve(record, &points, &mut warnings) {
             ir.model.curves.push(Curve {
                 id: CurveId(format!("step:data:curve#{id}")),
                 geometry: CurveGeometry::Nurbs(nurbs),
@@ -724,7 +740,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                     },
                 ),
             Some("B_SPLINE_SURFACE_WITH_KNOTS") => {
-                nurbs_surface(record, &points).map(SurfaceGeometry::Nurbs)
+                nurbs_surface(record, &points, &mut warnings).map(SurfaceGeometry::Nurbs)
             }
             _ => continue,
         };
@@ -748,7 +764,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         {
             continue;
         }
-        if let Some(nurbs) = nurbs_surface(record, &points) {
+        if let Some(nurbs) = nurbs_surface(record, &points, &mut warnings) {
             ir.model.surfaces.push(Surface {
                 id: SurfaceId(format!("step:data:surface#{id}")),
                 geometry: SurfaceGeometry::Nurbs(nurbs),
@@ -1929,6 +1945,23 @@ fn logical_value(value: &Value) -> Option<StepLogical> {
     }
 }
 
+fn periodic_value(
+    value: Option<&Value>,
+    field: &str,
+    record_id: u64,
+    warnings: &mut Vec<String>,
+) -> Option<bool> {
+    match logical_value(value?)? {
+        StepLogical::Known(value) => Some(value),
+        StepLogical::Unknown => {
+            warnings.push(format!(
+                "{field} #{record_id} has UNKNOWN periodicity; decoded as non-periodic"
+            ));
+            Some(false)
+        }
+    }
+}
+
 fn record_values(record: &RawRecord) -> impl Iterator<Item = &Value> {
     record
         .partials
@@ -1993,7 +2026,11 @@ fn nonnegative(value: Option<&Value>) -> Option<f64> {
         .filter(|value| value.is_finite() && *value >= 0.0)
 }
 
-fn nurbs_curve(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<NurbsCurve> {
+fn nurbs_curve(
+    record: &RawRecord,
+    points: &BTreeMap<u64, Point3>,
+    warnings: &mut Vec<String>,
+) -> Option<NurbsCurve> {
     let complex = record.partials.len() > 1;
     let base = if complex {
         record.partial("B_SPLINE_CURVE")?
@@ -2009,9 +2046,12 @@ fn nurbs_curve(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<Nur
     if usize::try_from(degree).ok()? >= control_points.len() {
         return None;
     }
-    let periodic = logical_value(base.parameters.get(offset + 3)?)?
-        .into_option()
-        .unwrap_or(false);
+    let periodic = periodic_value(
+        base.parameters.get(offset + 3),
+        "B_SPLINE_CURVE_WITH_KNOTS",
+        record.id,
+        warnings,
+    )?;
     let knot_leaf = record.partial("B_SPLINE_CURVE_WITH_KNOTS")?;
     let tail = knot_leaf.parameters.len().checked_sub(3)?;
     let expected_knots = control_points.len().checked_add(degree as usize + 1)?;
@@ -2040,7 +2080,11 @@ fn nurbs_curve(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<Nur
     })
 }
 
-fn nurbs_pcurve(record: &RawRecord, points: &BTreeMap<u64, Point2>) -> Option<PcurveGeometry> {
+fn nurbs_pcurve(
+    record: &RawRecord,
+    points: &BTreeMap<u64, Point2>,
+    warnings: &mut Vec<String>,
+) -> Option<PcurveGeometry> {
     let complex = record.partials.len() > 1;
     let base = if complex {
         record.partial("B_SPLINE_CURVE")?
@@ -2056,9 +2100,12 @@ fn nurbs_pcurve(record: &RawRecord, points: &BTreeMap<u64, Point2>) -> Option<Pc
     if usize::try_from(degree).ok()? >= control_points.len() {
         return None;
     }
-    let periodic = logical_value(base.parameters.get(offset + 3)?)?
-        .into_option()
-        .unwrap_or(false);
+    let periodic = periodic_value(
+        base.parameters.get(offset + 3),
+        "B_SPLINE_CURVE_WITH_KNOTS pcurve",
+        record.id,
+        warnings,
+    )?;
     let knot_leaf = record.partial("B_SPLINE_CURVE_WITH_KNOTS")?;
     let tail = knot_leaf.parameters.len().checked_sub(3)?;
     let expected_knots = control_points.len().checked_add(degree as usize + 1)?;
@@ -2098,6 +2145,7 @@ fn decode_pcurve_geometry(
     vectors: &BTreeMap<u64, Point2>,
     placements: &BTreeMap<u64, (Point2, Point2, Point2)>,
     angle_scale: f64,
+    warnings: &mut Vec<String>,
     active: &mut BTreeSet<u64>,
     depth: usize,
 ) -> Option<(PcurveGeometry, BTreeSet<u64>)> {
@@ -2107,7 +2155,7 @@ fn decode_pcurve_geometry(
     let record = exchange.records.get(&id)?;
     let mut records = BTreeSet::from([id]);
     let geometry = if record.partial("B_SPLINE_CURVE_WITH_KNOTS").is_some() {
-        nurbs_pcurve(record, points)?
+        nurbs_pcurve(record, points, warnings)?
     } else {
         match record.simple_name() {
             Some("LINE") => {
@@ -2184,6 +2232,7 @@ fn decode_pcurve_geometry(
                     vectors,
                     placements,
                     angle_scale,
+                    warnings,
                     active,
                     depth + 1,
                 )?;
@@ -2217,6 +2266,7 @@ fn decode_pcurve_geometry(
                     vectors,
                     placements,
                     angle_scale,
+                    warnings,
                     active,
                     depth + 1,
                 )?;
@@ -2388,7 +2438,11 @@ fn polyline(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<NurbsC
     })
 }
 
-fn nurbs_surface(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<NurbsSurface> {
+fn nurbs_surface(
+    record: &RawRecord,
+    points: &BTreeMap<u64, Point3>,
+    warnings: &mut Vec<String>,
+) -> Option<NurbsSurface> {
     let complex = record.partials.len() > 1;
     let base = if complex {
         record.partial("B_SPLINE_SURFACE")?
@@ -2417,12 +2471,18 @@ fn nurbs_surface(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<N
         .flat_map(|row| row.list().expect("row shape was validated"))
         .map(|value| value.reference().and_then(|id| points.get(&id).copied()))
         .collect::<Option<Vec<_>>>()?;
-    let u_periodic = logical_value(base.parameters.get(offset + 4)?)?
-        .into_option()
-        .unwrap_or(false);
-    let v_periodic = logical_value(base.parameters.get(offset + 5)?)?
-        .into_option()
-        .unwrap_or(false);
+    let u_periodic = periodic_value(
+        base.parameters.get(offset + 4),
+        "B_SPLINE_SURFACE_WITH_KNOTS U direction",
+        record.id,
+        warnings,
+    )?;
+    let v_periodic = periodic_value(
+        base.parameters.get(offset + 5),
+        "B_SPLINE_SURFACE_WITH_KNOTS V direction",
+        record.id,
+        warnings,
+    )?;
     let knot_leaf = record.partial("B_SPLINE_SURFACE_WITH_KNOTS")?;
     let tail = knot_leaf.parameters.len().checked_sub(5)?;
     let expected_u = usize::try_from(u_count)

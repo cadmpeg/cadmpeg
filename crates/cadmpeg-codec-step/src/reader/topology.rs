@@ -1175,7 +1175,12 @@ fn edge_curve_id_reported(
     exchange: &Exchange,
     warnings: &mut Vec<String>,
 ) -> Option<CurveId> {
-    let curve_step = edge.curve?;
+    let Some(curve_step) = edge.curve else {
+        warnings.push(format!(
+            "STEP edge #{edge_id} has no 3D curve carrier; edge committed without a curve"
+        ));
+        return None;
+    };
     let curve = exchange.records.get(&curve_step);
     let carrier = curve_carrier_step(curve_step, exchange);
     if carrier.is_none()
@@ -2214,6 +2219,17 @@ fn build_one(
                 });
                 loop_ids.push((has_type(br, "FACE_OUTER_BOUND"), lid));
                 typed.extend([bound_step, loop_step]);
+            }
+            let outer_count = loop_ids.iter().filter(|(outer, _)| *outer).count();
+            if outer_count > 1 {
+                losses.push(LossNote {
+                    code: LossKind::TopologyGaugeSubstituted,
+                    severity: Severity::Warning,
+                    message: format!(
+                        "face #{face_step} has {outer_count} FACE_OUTER_BOUND loops; retaining all explicit outer roles"
+                    ),
+                    provenance: None,
+                });
             }
             loop_ids.sort_by_key(|(outer, _)| !outer);
             let loop_ids = loop_ids.into_iter().map(|(_, id)| id).collect();
