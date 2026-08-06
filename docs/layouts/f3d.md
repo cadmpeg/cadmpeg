@@ -7,9 +7,9 @@
 Source of truth: [`docs/formats/f3d.md`](../../docs/formats/f3d.md).
 Table source: `docs/layouts/f3d.toml`.
 
-Covers the fixed Design-segment headers, the ten-reference `CoilPrimitive`
-prologue and matrix block, and the sheet-metal `EdgeFlange` fixed operation
-section (§3.1). ASM stream records are tabulated in
+Covers the fixed Design-segment headers, the named solid-primitive prologue,
+the ten-reference `CoilPrimitive` prologue and matrix block, and the
+sheet-metal `EdgeFlange` fixed operation section (§3.1). ASM stream records are tabulated in
 `docs/layouts/asm.toml`. Container and manifest layers are text grammars and
 are listed under "Not tabulated".
 
@@ -44,6 +44,20 @@ The stated field list tiles the stated 58-byte total exactly. The timestamp is a
 | 36 | 6 | `zero_run_6` | `bytes[6]` | little | spec | six zero bytes |
 | 42 | 8 | `timestamp_micros` | `u64` | little | spec | a nonzero u64 Unix-epoch timestamp in microseconds |
 | 50 | 8 | `zero_run_8` | `bytes[8]` | little | spec | and eight zero bytes |
+
+## `named_solid_primitive_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 26 B
+
+Offsets are relative to the primary indexed scope header. The ordered parameter-owner references and the paired header follow this fixed prologue.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | Bytes 11 through 19 are zero |
+| 20 | 4 | `operation` | `u32` | little | spec | the result-operation u32 is at primary-header offset 20 |
+| 24 | 1 | `zero_flag` | `u8` | little | spec | byte 24 is zero |
+| 25 | 1 | `form_marker` | `u8` | little | spec | byte 25 is `0x01` |
 
 ## `coil_long_scope_fixed_prologue`
 

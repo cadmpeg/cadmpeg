@@ -103,7 +103,7 @@ pub fn project_parameter_design_with_edge_identities(
 ) {
     use cadmpeg_ir::features::{
         Angle, DesignParameter as NeutralParameter, DimensionDisplay, Feature, FeatureDefinition,
-        Length, ParameterId, ParameterValue, PatternForm, PatternKind,
+        Length, ParameterId, ParameterValue, PatternForm, PatternKind, PrimitiveSolid,
     };
     use std::collections::BTreeMap;
 
@@ -638,6 +638,41 @@ pub fn project_parameter_design_with_edge_identities(
                             }
                         };
                         match primitive {
+                            DesignSolidPrimitive::Box {
+                                length,
+                                width,
+                                height,
+                                offset_x,
+                                offset_y,
+                                operation: result,
+                                ..
+                            } => {
+                                let mut placement = cadmpeg_ir::transform::Transform::identity();
+                                placement.rows[0][3] = *offset_x * 10.0;
+                                placement.rows[1][3] = *offset_y * 10.0;
+                                FeatureDefinition::Block {
+                                    dimensions: Some([
+                                        Length(*length * 10.0),
+                                        Length(*width * 10.0),
+                                        Length(*height * 10.0),
+                                    ]),
+                                    placement: Some(placement),
+                                    op: operation(*result),
+                                }
+                            }
+                            DesignSolidPrimitive::Cylinder {
+                                height,
+                                diameter,
+                                operation: result,
+                                ..
+                            } => FeatureDefinition::Primitive {
+                                solid: PrimitiveSolid::Cylinder {
+                                    radius: Length(*diameter * 5.0),
+                                    height: Length(*height * 10.0),
+                                    angle: Angle(std::f64::consts::TAU),
+                                },
+                                op: operation(*result),
+                            },
                             DesignSolidPrimitive::Sphere {
                                 transform,
                                 diameter,

@@ -812,11 +812,67 @@ pub enum DesignCoilSectionPlacement {
     Outside,
 }
 
-/// Exact fixed-form construction data of a solid primitive scope.
+/// Exact construction data of a solid primitive scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "primitive")]
 pub enum DesignSolidPrimitive {
+    /// Axis-aligned box defined by five owned dimensions and offsets.
+    Box {
+        /// Length along the source x-axis in source centimetres.
+        length: f64,
+        /// Referenced length owner.
+        length_record_index: u32,
+        /// Byte offset of the evaluated length.
+        length_offset: u64,
+        /// Width along the source y-axis in source centimetres.
+        width: f64,
+        /// Referenced width owner.
+        width_record_index: u32,
+        /// Byte offset of the evaluated width.
+        width_offset: u64,
+        /// Height along the source z-axis in source centimetres.
+        height: f64,
+        /// Referenced height owner.
+        height_record_index: u32,
+        /// Byte offset of the evaluated height.
+        height_offset: u64,
+        /// Translation along the source x-axis in source centimetres.
+        offset_x: f64,
+        /// Referenced x-offset owner.
+        offset_x_record_index: u32,
+        /// Byte offset of the evaluated x offset.
+        offset_x_offset: u64,
+        /// Translation along the source y-axis in source centimetres.
+        offset_y: f64,
+        /// Referenced y-offset owner.
+        offset_y_record_index: u32,
+        /// Byte offset of the evaluated y offset.
+        offset_y_offset: u64,
+        /// Result Boolean operation.
+        operation: DesignExtrudeOperation,
+        /// Byte offset of the operation enum.
+        operation_offset: u64,
+    },
+    /// Circular cylinder defined by height and diameter owners.
+    Cylinder {
+        /// Axial height in source centimetres.
+        height: f64,
+        /// Referenced height owner.
+        height_record_index: u32,
+        /// Byte offset of the evaluated height.
+        height_offset: u64,
+        /// Circular diameter in source centimetres.
+        diameter: f64,
+        /// Referenced diameter owner.
+        diameter_record_index: u32,
+        /// Byte offset of the evaluated diameter.
+        diameter_offset: u64,
+        /// Result Boolean operation.
+        operation: DesignExtrudeOperation,
+        /// Byte offset of the operation enum.
+        operation_offset: u64,
+    },
     /// Sphere defined by a placement frame and diameter.
     Sphere {
         /// Row-major local-to-model placement frame.

@@ -123,7 +123,8 @@ pub fn decode_parameter_scopes(
                 scope.work_point_reference_type = Some(frame.reference_type);
                 scope.work_point_input_record_indices = frame.input_record_indices;
             }
-            scope.solid_primitive = exact_solid_primitive(bytes, &records, &scope);
+            scope.solid_primitive =
+                exact_solid_primitive(bytes, &records, &scope, parameter_owners);
             scope.direct_face_operation = exact_direct_face_operation(bytes, &records, &scope);
             scope.move_operation = exact_move_operation(bytes, &records, &scope);
             scope.scale_operation = exact_scale_operation(bytes, &scope);
@@ -2227,17 +2228,30 @@ pub(crate) fn exact_solid_primitive(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignSolidPrimitive> {
-    if !matches!(scope.kind.as_str(), "SpherePrimitive" | "TorusPrimitive") {
-        return None;
-    }
     let start = usize::try_from(scope.byte_offset).ok()?;
-    let operation_offset = start.checked_add(25)?;
-    let operation = match u32_at(bytes, operation_offset)? {
-        1 => DesignExtrudeOperation::Join,
-        2 => DesignExtrudeOperation::Cut,
-        3 => DesignExtrudeOperation::Intersect,
-        4 => DesignExtrudeOperation::NewBody,
+    let (operation, operation_offset) = match scope.kind.as_str() {
+        "SpherePrimitive" | "TorusPrimitive" => {
+            let operation_offset = start.checked_add(25)?;
+            (
+                primitive_operation(bytes, operation_offset)?,
+                operation_offset,
+            )
+        }
+        "BoxPrimitive" | "CylinderPrimitive" => {
+            if bytes.get(start + 11..start + 20)? != [0; 9]
+                || bytes.get(start + 24) != Some(&0)
+                || bytes.get(start + 25) != Some(&1)
+            {
+                return None;
+            }
+            let operation_offset = start.checked_add(20)?;
+            (
+                primitive_operation(bytes, operation_offset)?,
+                operation_offset,
+            )
+        }
         _ => return None,
     };
     let matrix = |relative_offset: usize| {
@@ -2302,8 +2316,100 @@ pub(crate) fn exact_solid_primitive(
                 operation_offset: operation_offset as u64,
             })
         }
+        "BoxPrimitive" => {
+            if scope.frame_length < 78 || scope.reference_members.len() < 5 {
+                return None;
+            }
+            let owners = exact_owned_primitive_parameters(scope, parameter_owners, 5)?;
+            let [length, width, height, offset_x, offset_y] = owners.as_slice() else {
+                return None;
+            };
+            (length.evaluated_value > 0.0
+                && width.evaluated_value > 0.0
+                && height.evaluated_value > 0.0)
+                .then_some(DesignSolidPrimitive::Box {
+                    length: length.evaluated_value,
+                    length_record_index: length.record_index,
+                    length_offset: length.evaluated_value_offset,
+                    width: width.evaluated_value,
+                    width_record_index: width.record_index,
+                    width_offset: width.evaluated_value_offset,
+                    height: height.evaluated_value,
+                    height_record_index: height.record_index,
+                    height_offset: height.evaluated_value_offset,
+                    offset_x: offset_x.evaluated_value,
+                    offset_x_record_index: offset_x.record_index,
+                    offset_x_offset: offset_x.evaluated_value_offset,
+                    offset_y: offset_y.evaluated_value,
+                    offset_y_record_index: offset_y.record_index,
+                    offset_y_offset: offset_y.evaluated_value_offset,
+                    operation,
+                    operation_offset: operation_offset as u64,
+                })
+        }
+        "CylinderPrimitive" => {
+            if scope.frame_length < 78 || scope.reference_members.len() < 2 {
+                return None;
+            }
+            let owners = exact_owned_primitive_parameters(scope, parameter_owners, 2)?;
+            let [height, diameter] = owners.as_slice() else {
+                return None;
+            };
+            (height.evaluated_value > 0.0 && diameter.evaluated_value > 0.0).then_some(
+                DesignSolidPrimitive::Cylinder {
+                    height: height.evaluated_value,
+                    height_record_index: height.record_index,
+                    height_offset: height.evaluated_value_offset,
+                    diameter: diameter.evaluated_value,
+                    diameter_record_index: diameter.record_index,
+                    diameter_offset: diameter.evaluated_value_offset,
+                    operation,
+                    operation_offset: operation_offset as u64,
+                },
+            )
+        }
         _ => None,
     }
+}
+
+fn primitive_operation(bytes: &[u8], offset: usize) -> Option<DesignExtrudeOperation> {
+    match u32_at(bytes, offset)? {
+        1 => Some(DesignExtrudeOperation::Join),
+        2 => Some(DesignExtrudeOperation::Cut),
+        3 => Some(DesignExtrudeOperation::Intersect),
+        4 => Some(DesignExtrudeOperation::NewBody),
+        _ => None,
+    }
+}
+
+fn exact_owned_primitive_parameters<'a>(
+    scope: &DesignParameterScope,
+    parameter_owners: &'a [DesignParameterOwner],
+    count: usize,
+) -> Option<Vec<&'a DesignParameterOwner>> {
+    let stream = native_stream(&scope.id)?;
+    let mut owners = parameter_owners
+        .iter()
+        .filter(|owner| {
+            owner.scope_record_index == scope.record_index
+                && native_stream(&owner.id) == Some(stream)
+                && scope.reference_members.contains(&owner.record_index)
+                && owner.evaluated_value.is_finite()
+        })
+        .collect::<Vec<_>>();
+    owners.sort_by_key(|owner| owner.local_ordinal);
+    if owners.len() != count
+        || owners
+            .windows(2)
+            .any(|pair| pair[0].local_ordinal == pair[1].local_ordinal)
+        || owners
+            .iter()
+            .enumerate()
+            .any(|(ordinal, owner)| owner.local_ordinal != ordinal as u32)
+    {
+        return None;
+    }
+    Some(owners)
 }
 
 fn exact_primitive_diameter(

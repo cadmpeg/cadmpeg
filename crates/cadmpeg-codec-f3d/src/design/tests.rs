@@ -4213,7 +4213,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     sphere_scope.kind = "SpherePrimitive".into();
     sphere_scope.frame_length = 462;
     assert!(matches!(
-        exact_solid_primitive(&bytes, &IndexedRecordOffsets::build(&bytes), &sphere_scope),
+        exact_solid_primitive(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &sphere_scope,
+            &[],
+        ),
         Some(DesignSolidPrimitive::Sphere {
             diameter: 8.0,
             diameter_record_index: 70,
@@ -4256,7 +4261,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     torus_scope.kind = "TorusPrimitive".into();
     torus_scope.frame_length = 486;
     assert!(matches!(
-        exact_solid_primitive(&bytes, &IndexedRecordOffsets::build(&bytes), &torus_scope),
+        exact_solid_primitive(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &torus_scope,
+            &[],
+        ),
         Some(DesignSolidPrimitive::Torus {
             major_diameter: 15.0,
             minor_diameter: 4.0,
@@ -6144,6 +6154,78 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     );
     assert_eq!(companion.payload_byte_offset, 58);
     assert_eq!(companion.payload_byte_length, 12);
+}
+
+#[test]
+fn named_solid_primitives_bind_ordered_parameter_owners() {
+    fn owner(
+        scope_record_index: u32,
+        record_index: u32,
+        local_ordinal: u32,
+        value: f64,
+    ) -> DesignParameterOwner {
+        DesignParameterOwner {
+            id: format!("f3d:Design/BulkStream.dat:owner#{record_index}"),
+            byte_offset: u64::from(record_index),
+            class_tag: "272".into(),
+            record_index,
+            scope_record_index,
+            local_ordinal,
+            evaluated_value: value,
+            evaluated_value_offset: u64::from(record_index) + 100,
+            parameter_record_index: record_index + 1,
+            owned_ordinal: local_ordinal,
+            variant: None,
+            companion_record_index: record_index + 2,
+        }
+    }
+
+    let mut bytes = vec![0; 100];
+    bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
+    bytes[24] = 0;
+    bytes[25] = 1;
+    let mut box_scope =
+        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#12", "BoxPrimitive", 12);
+    box_scope.frame_length = bytes.len() as u64;
+    box_scope.reference_members = vec![20, 21, 22, 23, 24];
+    let box_owners = vec![
+        owner(12, 20, 0, 3.0),
+        owner(12, 21, 1, 4.0),
+        owner(12, 22, 2, 2.0),
+        owner(12, 23, 3, 0.5),
+        owner(12, 24, 4, -0.25),
+    ];
+    let records = IndexedRecordOffsets::build(&bytes);
+    assert!(matches!(
+        exact_solid_primitive(&bytes, &records, &box_scope, &box_owners),
+        Some(DesignSolidPrimitive::Box {
+            length: 3.0,
+            width: 4.0,
+            height: 2.0,
+            offset_x: 0.5,
+            offset_y: -0.25,
+            operation: DesignExtrudeOperation::Join,
+            operation_offset: 20,
+            ..
+        })
+    ));
+
+    bytes[20..24].copy_from_slice(&4u32.to_le_bytes());
+    let mut cylinder_scope = box_scope;
+    cylinder_scope.kind = "CylinderPrimitive".into();
+    cylinder_scope.record_index = 13;
+    cylinder_scope.reference_members = vec![30, 31];
+    let cylinder_owners = vec![owner(13, 30, 0, 0.7), owner(13, 31, 1, 3.0)];
+    assert!(matches!(
+        exact_solid_primitive(&bytes, &records, &cylinder_scope, &cylinder_owners,),
+        Some(DesignSolidPrimitive::Cylinder {
+            height: 0.7,
+            diameter: 3.0,
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: 20,
+            ..
+        })
+    ));
 }
 
 #[test]
