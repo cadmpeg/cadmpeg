@@ -455,7 +455,10 @@ fn decode_accounts_for_every_part21_byte() {
     assert_eq!(count("bytes_named_opaque"), 0);
     assert_eq!(count("bytes_unclassified"), 0);
     assert_eq!(
-        count("bytes_structural") + count("bytes_typed") + count("bytes_named_opaque"),
+        count("bytes_structural")
+            + count("bytes_typed")
+            + count("bytes_named_opaque")
+            + count("bytes_unclassified"),
         bytes.len()
     );
 }
@@ -589,7 +592,10 @@ fn every_repository_step_fixture_has_complete_byte_accounting() {
         let count = |key: &str| attributes[key].parse::<usize>().unwrap();
         assert_eq!(count("bytes_unclassified"), 0, "{name}");
         assert_eq!(
-            count("bytes_structural") + count("bytes_typed") + count("bytes_named_opaque"),
+            count("bytes_structural")
+                + count("bytes_typed")
+                + count("bytes_named_opaque")
+                + count("bytes_unclassified"),
             bytes.len(),
             "{name}"
         );
