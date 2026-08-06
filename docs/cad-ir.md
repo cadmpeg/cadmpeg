@@ -122,7 +122,7 @@ Analytic surfaces carry the frame needed to interpret parameters: plane `u_axis`
 | torus                  | `u` is major azimuth and `v` is minor azimuth, both in `[0, 2π]`                                     |
 | NURBS curve or surface | parameters are the stored knot-domain coordinates                                                    |
 
-`Edge.param_range` uses the canonical parameterization of its curve. Full circles are anchored to `[0, 2π]`. Periodic ranges may cross a seam by using an end value greater than the start value in the unwrapped domain. Pcurve coordinates use the corresponding surface conventions.
+`Edge.param_range` uses the canonical parameterization of its curve when a 3D carrier exists. A carrier-less degenerate or tolerant edge has no canonical 3D domain; its optional range retains finite native endpoint doubles without imposing carrier-domain ordering. Full circles are anchored to `[0, 2π]`. Periodic ranges may cross a seam by using an end value greater than the start value in the unwrapped domain. Pcurve coordinates use the corresponding surface conventions.
 
 Decoders convert kernel conventions at decode:
 

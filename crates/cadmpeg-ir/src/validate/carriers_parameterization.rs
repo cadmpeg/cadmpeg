@@ -779,7 +779,13 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
         let Some([start, end]) = edge.param_range else {
             continue;
         };
-        let mut valid = start.is_finite() && end.is_finite() && start <= end;
+        let mut valid = start.is_finite() && end.is_finite();
+        // A null carrier has no canonical parameter domain. Keep checking
+        // that retained native endpoint values are finite, but do not impose
+        // an ordering that belongs to a carrier-backed parameterization.
+        if edge.curve.is_some() {
+            valid &= start <= end;
+        }
         if let Some(curve) = edge.curve.as_ref().and_then(|id| curves.get(id.0.as_str())) {
             let tau = std::f64::consts::TAU;
             match curve {

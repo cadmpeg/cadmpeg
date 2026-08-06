@@ -654,3 +654,52 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
         Some(vec![[0.55, 0.60], [0.0, 1.0]])
     );
 }
+
+#[test]
+fn carrierless_edge_retains_raw_parameter_range_without_a_domain() {
+    let edge = Record {
+        index: 1,
+        name: "edge".into(),
+        head: "edge".into(),
+        tokens: vec![
+            Token::Ref(-1),
+            Token::Long(-1),
+            Token::Ref(-1),
+            Token::Ref(2),
+            Token::Double(1.0),
+            Token::Ref(3),
+            Token::Double(0.0),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::False,
+        ]
+        .into(),
+        offset: 0,
+        len: 0,
+    };
+    let records = [edge];
+    let by_index = records
+        .iter()
+        .map(|record| (record.index as i64, record))
+        .collect::<HashMap<_, _>>();
+    let mut brep = AsmBrep::default();
+    let reach = Reachable {
+        edges: HashSet::from([1]),
+        vertices: HashSet::from([2, 3]),
+        ..Reachable::default()
+    };
+
+    emit_edges(
+        &mut brep,
+        &records,
+        &by_index,
+        &reach,
+        &HashSet::new(),
+        &HashSet::new(),
+        FORMAT,
+    );
+
+    assert_eq!(brep.edges.len(), 1);
+    assert_eq!(brep.edges[0].curve, None);
+    assert_eq!(brep.edges[0].param_range, Some([1.0, 0.0]));
+}

@@ -2887,6 +2887,25 @@ fn periodic_curve_parameter_domain_is_checked() {
 }
 
 #[test]
+fn carrierless_edge_range_requires_finite_values_but_not_ordering() {
+    let mut ir = unit_cube();
+    ir.model.edges[0].curve = None;
+    ir.model.edges[0].param_range = Some([1.0, 0.0]);
+    let report = validate(&ir, Vec::new());
+    assert!(!report.findings.iter().any(|finding| {
+        finding.check == Check::ParameterDomain
+            && finding.entity.as_deref() == Some(ir.model.edges[0].id.0.as_str())
+    }));
+
+    ir.model.edges[0].param_range = Some([f64::NAN, 0.0]);
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::ParameterDomain
+            && finding.entity.as_deref() == Some(ir.model.edges[0].id.0.as_str())
+    }));
+}
+
+#[test]
 fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
     let nurbs = crate::geometry::NurbsCurve {
         degree: 1,
