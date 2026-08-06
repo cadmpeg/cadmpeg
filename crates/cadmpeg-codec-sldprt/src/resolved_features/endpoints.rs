@@ -627,6 +627,25 @@ pub(super) fn extended_wide_construction_line_roster_indices(
     (indices[0] != indices[1]).then_some(indices)
 }
 
+fn extended_geometry_locus_terminal_curve(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        && payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
+        && payload.get(offset + 13..offset + 17) == Some(&[0x00, 0x00, 0x80, 0xbf])
+        && matches!(marker_native_code(payload, offset), Some(0..=2))
+        && marker_is_geometry_locus(payload, offset)
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && matches!(payload.get(offset + 29..offset + 31), Some([0 | 1, 0]))
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(offset + 39..offset + 48) == Some(&[0; 9])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
+        && payload.get(offset + 72..offset + 102) == Some(&[0; 30])
+        && !sketch_marker_prefix_at(payload, offset.saturating_add(102))
+}
+
 pub(super) fn extended_compact_endpoint_markers<'a>(
     payload: &[u8],
     curve: &SketchInputEntity,
@@ -637,7 +656,8 @@ pub(super) fn extended_compact_endpoint_markers<'a>(
     };
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
-        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || (payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+            && !extended_geometry_locus_terminal_curve(payload, offset))
         || !matches!(marker_native_code(payload, offset), Some(0..=2))
         || (!matches!(
             (
@@ -2094,6 +2114,19 @@ pub(super) fn current_long_full_circle_radial_index(
     .then_some(radial_index)
 }
 
+fn extended_dimensioned_roster_full_circle_tail(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset + 72..offset + 80) == Some(&[0x1d, 0x81, 0xff, 0xfe, 0xff, 0x02, 0x4d, 0x00])
+        && matches!(
+            payload.get(offset + 80..offset + 82),
+            Some([0x34 | 0x35, 0x00])
+        )
+        && finite_coordinate_pair(payload, offset + 82).is_some()
+        && payload.get(offset + 98..offset + 106) == Some(&[0; 8])
+        && payload.get(offset + 106..offset + 110) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 110..offset + 114) == Some(&[0x1f, 0x81, 0xff, 0xfe])
+        && payload.get(offset + 114..offset + 116) == Some(&[0xff, 0x06])
+}
+
 pub(super) fn equal_index_coordinate_roster_full_circle(
     payload: &[u8],
     circle: &SketchInputEntity,
@@ -2118,6 +2151,27 @@ pub(super) fn equal_index_coordinate_roster_full_circle(
         && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
         && payload.get(offset + 31..offset + 39)
             == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    let dimensioned_terminal = extended_layout
+        && (class_declaration_at(payload, offset + 72)
+            || extended_dimensioned_roster_full_circle_tail(payload, offset));
+    let indexed_terminal = matches!(
+        payload
+            .get(offset + 72..offset + 76)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(i32::from_le_bytes),
+        Some(-1 | 1)
+    ) && payload.get(offset + 78..offset + 94)
+        == Some(&[
+            0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+            0xff, 0xff,
+        ])
+        && payload.get(offset + 94..offset + 96) == Some(&[0; 2])
+        && matches!(
+            compact_indexed_curve_record_end(payload, offset),
+            Some(
+                CompactIndexedCurveRecordEnd::Marker104 | CompactIndexedCurveRecordEnd::Terminal102
+            )
+        );
     if circle.kind != SketchInputKind::Arc
         || !(extended_layout || legacy_layout || current_profile_layout)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
@@ -2127,25 +2181,7 @@ pub(super) fn equal_index_coordinate_roster_full_circle(
         || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
         || payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
         || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
-        || !matches!(
-            payload
-                .get(offset + 72..offset + 76)
-                .and_then(|bytes| bytes.try_into().ok())
-                .map(i32::from_le_bytes),
-            Some(-1 | 1)
-        )
-        || payload.get(offset + 78..offset + 94)
-            != Some(&[
-                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
-                0xff, 0xff,
-            ])
-        || payload.get(offset + 94..offset + 96) != Some(&[0; 2])
-        || !matches!(
-            compact_indexed_curve_record_end(payload, offset),
-            Some(
-                CompactIndexedCurveRecordEnd::Marker104 | CompactIndexedCurveRecordEnd::Terminal102
-            )
-        )
+        || !(dimensioned_terminal || indexed_terminal)
     {
         return None;
     }
