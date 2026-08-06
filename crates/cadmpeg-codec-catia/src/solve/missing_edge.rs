@@ -2,9 +2,11 @@
 //!
 //! Recovers unmatched edge-row placements against serialized face coverage.
 
+#[cfg(test)]
+use crate::families::standard::fbb::parse_fbb_edge_tables;
 use crate::families::standard::fbb::{
     boundary_cycles, largest_fbb_run, parse_edge_tables, parse_edge_tables_scoped_at,
-    parse_fbb_edge_tables, parse_trim_chain, parse_vertex_table,
+    parse_trim_chain, parse_vertex_table,
 };
 use crate::families::standard::topology::{incidence_cycles, EdgeRow, TrimRecord};
 #[cfg(test)]
@@ -28,27 +30,6 @@ pub fn standard_edge_rows(bytes: &[u8]) -> Option<Vec<EdgeRow>> {
 
 pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     let (_, _, after_faces) = largest_fbb_run(bytes)?;
-    // The two-table FBB grammar overlaps the generic scoped-table grammar.
-    // Resolve it first because repeated handles within one FBB table are the
-    // serialized endpoint identities; generic rows allocate independent ports.
-    if let Some((edge_rows, scopes, _, _)) = parse_fbb_edge_tables(bytes, after_faces) {
-        let mut identity_by_handle = HashMap::new();
-        return edge_rows
-            .iter()
-            .zip(scopes)
-            .map(|(row, scope)| {
-                let mut pair = [0; 2];
-                for (port, handle) in [*row.handles.first()?, *row.handles.last()?]
-                    .into_iter()
-                    .enumerate()
-                {
-                    let next = u32::try_from(identity_by_handle.len()).ok()?;
-                    pair[port] = *identity_by_handle.entry((scope, handle)).or_insert(next);
-                }
-                Some(pair)
-            })
-            .collect();
-    }
     let (edge_rows, _, _) = parse_edge_tables_scoped_at(bytes, after_faces)?;
     edge_rows
         .iter()
@@ -57,6 +38,28 @@ pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]
             row.handles.first().zip(row.handles.last())?;
             let start = edge.checked_mul(2)?;
             Some([u32::try_from(start).ok()?, u32::try_from(start + 1).ok()?])
+        })
+        .collect()
+}
+
+#[cfg(test)]
+pub(crate) fn fbb_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+    let (_, _, after_faces) = largest_fbb_run(bytes)?;
+    let (edge_rows, scopes, _, _) = parse_fbb_edge_tables(bytes, after_faces)?;
+    let mut identity_by_handle = HashMap::new();
+    edge_rows
+        .iter()
+        .zip(scopes)
+        .map(|(row, scope)| {
+            let mut pair = [0; 2];
+            for (port, handle) in [*row.handles.first()?, *row.handles.last()?]
+                .into_iter()
+                .enumerate()
+            {
+                let next = u32::try_from(identity_by_handle.len()).ok()?;
+                pair[port] = *identity_by_handle.entry((scope, handle)).or_insert(next);
+            }
+            Some(pair)
         })
         .collect()
 }

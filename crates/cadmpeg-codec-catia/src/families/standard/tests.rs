@@ -6689,8 +6689,8 @@ mod record_decoders {
         assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 8);
         assert_eq!(topology.logical_vertex_count(), 8);
         assert_eq!(topology.vertex_points().len(), 4);
-        let table_ports = crate::solve::missing_edge::standard_edge_port_identities(&bytes)
-            .expect("scoped FBB ports");
+        let table_ports =
+            crate::solve::missing_edge::fbb_edge_port_identities(&bytes).expect("scoped FBB ports");
         assert_eq!(table_ports[0][1], table_ports[1][0]);
         assert_eq!(table_ports[1][1], table_ports[2][0]);
         assert_eq!(table_ports[2][1], table_ports[3][0]);
