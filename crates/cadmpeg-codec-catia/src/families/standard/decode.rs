@@ -4709,7 +4709,7 @@ pub(crate) fn bind_ordered_standard_curve_branches(
             .map(|(anchor, _)| *anchor)
             .collect::<Vec<_>>();
         if anchors.len() != branch_count
-            || anchors.windows(2).any(|pair| pair[0] >= pair[1])
+            || anchors.windows(2).any(|pair| pair[0] == pair[1])
             || anchored
                 .iter()
                 .any(|(_, opposite)| opposite != &anchored[0].1)
@@ -7858,6 +7858,21 @@ mod route_tests {
         bind_ordered_standard_curve_branches(&supports, &mut candidates);
 
         assert_eq!(candidates, [vec![[2, 8]], vec![[3, 9]]]);
+    }
+
+    #[test]
+    fn standard_spline_rows_bind_the_unordered_prebound_side_by_opposite_rank() {
+        let supports = [10, 11].map(|tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: [3, 7],
+            geometry: StandardCurveGeometry::Bspline,
+        });
+        let mut candidates = [vec![[9, 20], [9, 21]], vec![[8, 20], [8, 21]]];
+
+        bind_ordered_standard_curve_branches(&supports, &mut candidates);
+
+        assert_eq!(candidates, [vec![[9, 20]], vec![[8, 21]]]);
     }
 
     #[test]
