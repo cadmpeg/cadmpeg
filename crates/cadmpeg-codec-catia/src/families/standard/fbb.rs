@@ -673,7 +673,7 @@ pub(crate) struct TrimRecordLayout {
     pub(crate) handle_offset: usize,
     handle_count: usize,
     pub(crate) stored_count: usize,
-    legacy_42: bool,
+    packed_two_strip_lengths: bool,
     pub(crate) end: usize,
 }
 
@@ -696,6 +696,7 @@ pub(crate) fn parse_trim_record_layout(
     } else {
         0
     };
+    let b_start = position;
     let b = if mask & 2 != 0 {
         parse_count(bytes, &mut position)?
     } else {
@@ -738,13 +739,18 @@ pub(crate) fn parse_trim_record_layout(
         None
     };
 
-    let legacy_42 = kind == 0x42 && b == 2 && width == 2;
+    // A two-strip packet stores K0 and K1 as two raw bytes before the H lane.
+    // The bytes are not a handle.  At width two they happen to occupy one
+    // handle-sized slot; at width three they do not, so sizing the lane as
+    // `(N + 1) * width` would consume one byte from the next packet.
+    let packed_two_strip_lengths =
+        kind == 0x42 && b == 2 && bytes.get(b_start).is_some_and(|encoded| *encoded == 2);
     let primitive_count = b.checked_add(c)?;
-    if !legacy_42 && primitive_count > bytes.len().saturating_sub(position) {
+    if !packed_two_strip_lengths && primitive_count > bytes.len().saturating_sub(position) {
         return None;
     }
     let mut lengths = Vec::with_capacity(primitive_count);
-    if !legacy_42 {
+    if !packed_two_strip_lengths {
         for _ in 0..primitive_count {
             lengths.push(parse_count(bytes, &mut position)?);
         }
@@ -752,9 +758,13 @@ pub(crate) fn parse_trim_record_layout(
             return None;
         }
     }
-    let stored_count = handle_count + usize::from(legacy_42);
+    let stored_count = handle_count;
     let handle_offset = position;
-    let byte_count = stored_count.checked_mul(width)?;
+    let byte_count = if packed_two_strip_lengths {
+        2usize.checked_add(handle_count.checked_mul(width)?)?
+    } else {
+        stored_count.checked_mul(width)?
+    };
     let end = handle_offset.checked_add(byte_count)?;
     bytes.get(handle_offset..end)?;
     Some(TrimRecordLayout {
@@ -766,7 +776,7 @@ pub(crate) fn parse_trim_record_layout(
         handle_offset,
         handle_count,
         stored_count,
-        legacy_42,
+        packed_two_strip_lengths,
         end,
     })
 }
@@ -774,6 +784,15 @@ pub(crate) fn parse_trim_record_layout(
 pub(crate) fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Option<TrimRecord> {
     let layout = parse_trim_record_layout(bytes, start, width)?;
     let mut position = layout.handle_offset;
+    let mut lengths = layout.lengths;
+    if layout.packed_two_strip_lengths {
+        let packed = bytes.get(position..position + 2)?;
+        position += 2;
+        lengths = vec![usize::from(packed[0]), usize::from(packed[1])];
+        if lengths.iter().sum::<usize>() != layout.handle_count {
+            return None;
+        }
+    }
     let mut handles = Vec::with_capacity(layout.stored_count);
     for _ in 0..layout.stored_count {
         let handle = match width {
@@ -791,15 +810,6 @@ pub(crate) fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Opt
         };
         handles.push(handle);
         position += width;
-    }
-    let mut lengths = layout.lengths;
-    if layout.legacy_42 {
-        let packed = *handles.first()?;
-        lengths = vec![(packed >> 8) as usize, (packed & 0xff) as usize];
-        handles.remove(0);
-        if lengths.iter().sum::<usize>() != layout.handle_count {
-            return None;
-        }
     }
 
     let triangles = packet_triangles(

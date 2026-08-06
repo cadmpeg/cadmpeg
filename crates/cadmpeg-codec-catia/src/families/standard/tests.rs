@@ -6939,6 +6939,53 @@ mod record_decoders {
     }
 
     #[test]
+    fn standard_two_strip_packet_uses_raw_lengths_at_three_byte_width() {
+        let mut bytes = vec![0x01, 0x42, 0x02, 0xff, 6, 0, 0, 0, 3, 3];
+        let handles = [
+            0x01_0203u32,
+            0x02_0304,
+            0x03_0405,
+            0x04_0506,
+            0x05_0607,
+            0x06_0708,
+        ];
+        for handle in handles {
+            let encoded = handle.to_be_bytes();
+            bytes.extend_from_slice(&encoded[1..]);
+        }
+
+        let layout = crate::families::standard::fbb::parse_trim_record_layout(&bytes, 0, 3)
+            .expect("three-byte packet layout");
+        assert_eq!(layout.handle_offset, 8);
+        assert_eq!(layout.stored_count, handles.len());
+        assert_eq!(layout.end, bytes.len());
+
+        let record = crate::families::standard::fbb::parse_trim_record(&bytes, 0, 3)
+            .expect("three-byte packet");
+        assert_eq!(record.handles, handles);
+        assert_eq!(record.strip_lengths, [3, 3]);
+        assert!(record.fan_lengths.is_empty());
+    }
+
+    #[test]
+    fn standard_two_strip_packet_treats_ff_length_as_raw_u8_at_three_byte_width() {
+        let handle_count = 256u32;
+        let mut bytes = vec![0x01, 0x42, 0x02, 0xff];
+        bytes.extend_from_slice(&handle_count.to_le_bytes());
+        bytes.extend_from_slice(&[0xff, 0x01]);
+        for handle in 0..handle_count {
+            let encoded = handle.to_be_bytes();
+            bytes.extend_from_slice(&encoded[1..]);
+        }
+
+        let record = crate::families::standard::fbb::parse_trim_record(&bytes, 0, 3)
+            .expect("raw 0xff strip length");
+        assert_eq!(record.handles.len(), handle_count as usize);
+        assert_eq!(record.strip_lengths, [255, 1]);
+        assert!(record.fan_lengths.is_empty());
+    }
+
+    #[test]
     fn standard_curve_support_table_recovers_leading_spline_and_widened_faces() {
         let mut bytes = vec![0x60, 1, 2, 3, 0, 0, 0, 0xff];
         bytes.extend_from_slice(&260u32.to_le_bytes());
