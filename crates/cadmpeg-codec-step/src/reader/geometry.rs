@@ -371,7 +371,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             continue;
         };
         if let Some(parameters) = entity_parameters(record, "TRIMMED_CURVE") {
-            let Some((basis_step, sense)) = trimmed_curve_attributes(parameters) else {
+            let Some((basis_step, sense, master_representation)) =
+                trimmed_curve_attributes(parameters)
+            else {
                 continue;
             };
             if !carrier_index.curves.contains_key(&basis_step) {
@@ -389,26 +391,26 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 continue;
             };
             let linear_parameter_scale = line_parameter_scale(exchange, basis_step, scale);
-            let start = parameters.get(2).and_then(|value| {
-                trim_parameter(
-                    value,
-                    &points,
-                    &geometry,
+            let (start, end) = {
+                let mut trim_context = TrimParameterContext {
+                    points: &points,
+                    geometry: &geometry,
                     angle_scale,
                     linear_parameter_scale,
-                    ir.tolerances.linear,
+                    tolerance: ir.tolerances.linear,
+                    master_representation,
+                    record_id: id,
+                    warnings: &mut warnings,
+                };
+                (
+                    parameters
+                        .get(2)
+                        .and_then(|value| trim_parameter(value, &mut trim_context)),
+                    parameters
+                        .get(3)
+                        .and_then(|value| trim_parameter(value, &mut trim_context)),
                 )
-            });
-            let end = parameters.get(3).and_then(|value| {
-                trim_parameter(
-                    value,
-                    &points,
-                    &geometry,
-                    angle_scale,
-                    linear_parameter_scale,
-                    ir.tolerances.linear,
-                )
-            });
+            };
             let Some((start, end)) = start.zip(end) else {
                 continue;
             };
@@ -1253,10 +1255,34 @@ fn edge_curve_geometry_reference(record: &RawRecord) -> Option<u64> {
         .and_then(|partial| partial.parameters.iter().find_map(Value::reference))
 }
 
-fn trimmed_curve_attributes(parameters: &[Value]) -> Option<(u64, bool)> {
+#[derive(Clone, Copy)]
+enum TrimMasterRepresentation {
+    Parameter,
+    Cartesian,
+    Unspecified,
+}
+
+struct TrimParameterContext<'a> {
+    points: &'a BTreeMap<u64, Point3>,
+    geometry: &'a CurveGeometry,
+    angle_scale: f64,
+    linear_parameter_scale: f64,
+    tolerance: f64,
+    master_representation: TrimMasterRepresentation,
+    record_id: u64,
+    warnings: &'a mut Vec<String>,
+}
+
+fn trimmed_curve_attributes(parameters: &[Value]) -> Option<(u64, bool, TrimMasterRepresentation)> {
     let basis = parameters.get(1).and_then(Value::reference)?;
     let sense = parameters.get(4).and_then(Value::logical)?;
-    Some((basis, sense))
+    let master_representation = match parameters.get(5).and_then(Value::enumeration)? {
+        "PARAMETER" => TrimMasterRepresentation::Parameter,
+        "CARTESIAN" => TrimMasterRepresentation::Cartesian,
+        "UNSPECIFIED" => TrimMasterRepresentation::Unspecified,
+        _ => return None,
+    };
+    Some((basis, sense, master_representation))
 }
 
 fn surface_curve_basis(record: &RawRecord) -> Option<u64> {
@@ -1580,43 +1606,101 @@ fn measure_number(value: &Value) -> Option<f64> {
     }
 }
 
-fn trim_parameter(
-    value: &Value,
-    points: &BTreeMap<u64, Point3>,
-    geometry: &CurveGeometry,
-    angle_scale: f64,
-    linear_parameter_scale: f64,
-    tolerance: f64,
-) -> Option<f64> {
-    match value {
-        Value::Integer(value) => {
-            Some(parameter_scale(geometry, angle_scale, linear_parameter_scale) * *value as f64)
-        }
-        Value::Real(value) => {
-            Some(parameter_scale(geometry, angle_scale, linear_parameter_scale) * *value)
-        }
-        Value::Typed(_, value) => trim_parameter(
-            value,
-            points,
-            geometry,
-            angle_scale,
-            linear_parameter_scale,
-            tolerance,
+fn trim_parameter(value: &Value, context: &mut TrimParameterContext<'_>) -> Option<f64> {
+    let (parameter, cartesian) = match value {
+        Value::List(values) => (
+            values.iter().find(|value| is_parameter_trim_value(value)),
+            values
+                .iter()
+                .find(|value| matches!(value, Value::Reference(_))),
         ),
-        Value::Reference(id) => points
-            .get(id)
-            .and_then(|point| curve_parameter_at_point(geometry, *point, tolerance)),
-        Value::List(values) => values.iter().find_map(|value| {
-            trim_parameter(
-                value,
-                points,
-                geometry,
-                angle_scale,
-                linear_parameter_scale,
-                tolerance,
-            )
-        }),
+        value if is_parameter_trim_value(value) => (Some(value), None),
+        Value::Reference(_) => (None, Some(value)),
+        _ => (None, None),
+    };
+    select_trim_parameter(parameter, cartesian, context)
+}
+
+fn is_parameter_trim_value(value: &Value) -> bool {
+    match value {
+        Value::Integer(_) | Value::Real(_) => true,
+        Value::Typed(name, _) => name == "PARAMETER_VALUE",
+        _ => false,
+    }
+}
+
+fn trim_parameter_value(value: &Value, context: &TrimParameterContext<'_>) -> Option<f64> {
+    match value {
+        Value::Integer(value) => Some(
+            parameter_scale(
+                context.geometry,
+                context.angle_scale,
+                context.linear_parameter_scale,
+            ) * *value as f64,
+        ),
+        Value::Real(value) => Some(
+            parameter_scale(
+                context.geometry,
+                context.angle_scale,
+                context.linear_parameter_scale,
+            ) * *value,
+        ),
+        Value::Typed(name, value) if name == "PARAMETER_VALUE" => {
+            trim_parameter_value(value, context)
+        }
         _ => None,
+    }
+}
+
+fn trim_cartesian_parameter(value: &Value, context: &TrimParameterContext<'_>) -> Option<f64> {
+    let Value::Reference(id) = value else {
+        return None;
+    };
+    context
+        .points
+        .get(id)
+        .and_then(|point| curve_parameter_at_point(context.geometry, *point, context.tolerance))
+}
+
+fn select_trim_parameter(
+    parameter: Option<&Value>,
+    cartesian: Option<&Value>,
+    context: &mut TrimParameterContext<'_>,
+) -> Option<f64> {
+    match context.master_representation {
+        TrimMasterRepresentation::Parameter => {
+            if let Some(value) = parameter {
+                trim_parameter_value(value, context)
+            } else {
+                if cartesian.is_some() {
+                    context.warnings.push(format!(
+                        "TRIMMED_CURVE #{} fell back to a Cartesian trim selector because master_representation is .PARAMETER.",
+                        context.record_id
+                    ));
+                }
+                cartesian.and_then(|value| trim_cartesian_parameter(value, context))
+            }
+        }
+        TrimMasterRepresentation::Cartesian => {
+            if let Some(value) = cartesian {
+                trim_cartesian_parameter(value, context)
+            } else {
+                if parameter.is_some() {
+                    context.warnings.push(format!(
+                        "TRIMMED_CURVE #{} fell back to a parameter trim selector because master_representation is .CARTESIAN.",
+                        context.record_id
+                    ));
+                }
+                parameter.and_then(|value| trim_parameter_value(value, context))
+            }
+        }
+        TrimMasterRepresentation::Unspecified => {
+            if let Some(value) = parameter {
+                trim_parameter_value(value, context)
+            } else {
+                cartesian.and_then(|value| trim_cartesian_parameter(value, context))
+            }
+        }
     }
 }
 
