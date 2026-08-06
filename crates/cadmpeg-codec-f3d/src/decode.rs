@@ -302,13 +302,23 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Draft {
             faces,
             neutral_plane,
+            parting_tool,
+            pull_direction,
+            pull_plane,
             angle,
             ..
         } => {
             angle.is_none()
-                || [faces, neutral_plane]
-                    .into_iter()
-                    .any(|selection| !face_selection_is_resolved(selection))
+                || !face_selection_is_resolved(faces)
+                || match parting_tool {
+                    Some(parting_tool) => {
+                        !face_selection_is_resolved(parting_tool)
+                            || pull_direction.is_none()
+                            || pull_direction.is_some_and(|direction| direction.unit().is_none())
+                            || pull_plane.is_none()
+                    }
+                    None => !face_selection_is_resolved(neutral_plane),
+                }
         }
         FeatureDefinition::Sketch { space, sketch } => {
             *space == SketchSpace::Unresolved || sketch.is_none()
@@ -336,6 +346,17 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 form,
                 cadmpeg_ir::features::SheetMetalHemForm::GapLength { .. }
             )
+        }
+        FeatureDefinition::SplitFace { targets, tool } => {
+            !face_selection_is_resolved(targets)
+                || match tool {
+                    cadmpeg_ir::features::SplitFaceTool::Plane { .. } => false,
+                    cadmpeg_ir::features::SplitFaceTool::Path(path) => matches!(
+                        path,
+                        cadmpeg_ir::features::PathRef::Native(_)
+                            | cadmpeg_ir::features::PathRef::Unresolved(_)
+                    ),
+                }
         }
         _ => false,
     }

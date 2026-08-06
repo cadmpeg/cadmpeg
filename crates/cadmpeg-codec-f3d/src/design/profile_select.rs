@@ -260,14 +260,14 @@ pub(crate) fn bind_split_face_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
 ) {
-    use cadmpeg_ir::features::{FeatureDefinition, PathRef};
+    use cadmpeg_ir::features::{FeatureDefinition, PathRef, SplitFaceTool};
     use cadmpeg_ir::sketches::SketchGeometry;
 
     for feature in features {
         let FeatureDefinition::SplitFace { tool, .. } = &mut feature.definition else {
             continue;
         };
-        let PathRef::Native(group_id) = tool else {
+        let SplitFaceTool::Path(PathRef::Native(group_id)) = tool else {
             continue;
         };
         let mut matching_groups = resolution.groups.iter().filter(|group| {
@@ -362,10 +362,10 @@ pub(crate) fn bind_split_face_sketch_selections(
         }
         if complete {
             if let Some(sketch) = selected_sketch {
-                *tool = PathRef::SketchCurves {
+                *tool = SplitFaceTool::Path(PathRef::SketchCurves {
                     sketch,
                     curves: selected_curves,
-                };
+                });
             }
         }
     }

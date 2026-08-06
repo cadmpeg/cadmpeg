@@ -17219,7 +17219,9 @@ fn schema_feature_definition(
         return IrFeatureDefinition::Draft {
             faces: FaceSelection::Unresolved,
             neutral_plane: FaceSelection::Unresolved,
+            parting_tool: None,
             pull_direction: None,
+            pull_plane: None,
             angle: None,
             outward: None,
         };
@@ -31191,6 +31193,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                 pull_direction,
                 angle,
                 outward,
+                ..
             } => {
                 draft_feature_count += 1;
                 let unresolved_faces = matches!(

@@ -4171,13 +4171,24 @@ fn validate_face_operands<'a>(
                         && (if operand.recipe_nodes.is_empty() {
                             operand.recipe_node_offsets.is_empty()
                         } else {
+                            let first_node_index = operand
+                                .recipe_node_offsets
+                                .first()
+                                .and_then(|offset| {
+                                    offset.checked_sub(operand.recipe_program_offset)
+                                })
+                                .and_then(|byte_offset| usize::try_from(byte_offset / 4).ok());
                             operand
                                 .recipe_nodes
                                 .iter()
                                 .flat_map(|node| node.program.iter().copied())
-                                .eq(operand.recipe_program.iter().copied().skip(3))
+                                .eq(operand
+                                    .recipe_program
+                                    .iter()
+                                    .copied()
+                                    .skip(first_node_index.unwrap_or(usize::MAX)))
                                 && operand.recipe_node_offsets.first()
-                                    == Some(&operand.recipe_program_offset.saturating_add(12))
+                                    == expected_node_offsets.first()
                         })
                 }
                 None => false,

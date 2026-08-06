@@ -5264,7 +5264,9 @@ fn feature_operation_geometry_is_validated() {
         FeatureDefinition::Draft {
             faces: FaceSelection::Unresolved,
             neutral_plane: FaceSelection::Unresolved,
+            parting_tool: None,
             pull_direction: Some(Vector3::new(0.0, 0.0, 1.0)),
+            pull_plane: None,
             angle: Some(crate::features::Angle(std::f64::consts::FRAC_PI_2)),
             outward: Some(false),
         },

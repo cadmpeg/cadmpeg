@@ -280,7 +280,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     use cadmpeg_ir::features::{
         BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent,
         FaceSelection, FeatureDefinition, FeatureSourceContent, PathRef, ProfileRef, RadiusSpec,
-        RevolveExtent, Termination,
+        RevolveExtent, SplitFaceTool, Termination,
     };
     use cadmpeg_ir::sketches::{SketchGeometry, SpatialSketchGeometry};
 
@@ -1409,12 +1409,19 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,
+                parting_tool,
+                pull_plane,
                 pull_direction,
                 angle,
                 outward,
             } => {
-                incomplete_face_selection(faces)
-                    || incomplete_face_selection(neutral_plane)
+                parting_tool.is_some()
+                    || pull_plane.is_some()
+                    || incomplete_face_selection(faces)
+                    || parting_tool.as_ref().map_or_else(
+                        || incomplete_face_selection(neutral_plane),
+                        incomplete_face_selection,
+                    )
                     || pull_direction.is_none()
                     || angle.is_none()
                     || outward.is_none()
@@ -1447,7 +1454,11 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 incomplete_body_selection(targets) || incomplete_face_selection(tools)
             }
             FeatureDefinition::SplitFace { targets, tool } => {
-                incomplete_face_selection(targets) || incomplete_path(tool)
+                incomplete_face_selection(targets)
+                    || match tool {
+                        SplitFaceTool::Path(path) => incomplete_path(path),
+                        SplitFaceTool::Plane { .. } => false,
+                    }
             }
             FeatureDefinition::SewBodies {
                 bodies,
@@ -4883,7 +4894,9 @@ mod design_loss_tests {
             FeatureDefinition::Draft {
                 faces: face.clone(),
                 neutral_plane: face.clone(),
+                parting_tool: None,
                 pull_direction: None,
+                pull_plane: None,
                 angle: None,
                 outward: None,
             },

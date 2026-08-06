@@ -1206,8 +1206,18 @@ pub enum FeatureDefinition {
         faces: FaceSelection,
         /// Neutral plane that remains fixed during the operation.
         neutral_plane: FaceSelection,
+        /// Parting-tool faces used by a parting-line draft.
+        ///
+        /// A parting-line draft has this field set and leaves `neutral_plane`
+        /// unresolved. A neutral-plane draft leaves this field absent and
+        /// resolves `neutral_plane` instead.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parting_tool: Option<FaceSelection>,
         /// Pull direction used to measure the draft angle.
         pull_direction: Option<Vector3>,
+        /// Datum-plane feature supplying the parting-line pull direction.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pull_plane: Option<FeatureId>,
         /// Signed draft angle.
         angle: Option<Angle>,
         /// Whether material is added away from the pull direction.
@@ -1265,8 +1275,8 @@ pub enum FeatureDefinition {
     SplitFace {
         /// Faces partitioned by the operation.
         targets: FaceSelection,
-        /// Sketch curves projected onto the target faces.
-        tool: PathRef,
+        /// Geometry or datum plane that partitions the target faces.
+        tool: SplitFaceTool,
     },
     /// Deletes bodies directly or retains only the selected bodies.
     DeleteBody {
@@ -3375,6 +3385,20 @@ pub enum PathRef {
         edges: Vec<HistoricalEdgeId>,
         /// Full-fidelity source path selection.
         native: String,
+    },
+}
+
+/// Geometry used to partition faces in a `SplitFace` operation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum SplitFaceTool {
+    /// Sketch or model-space path projected onto the target faces.
+    Path(PathRef),
+    /// Datum-plane feature extended through the target faces.
+    Plane {
+        /// Earlier datum-plane feature supplying the splitting plane.
+        plane: FeatureId,
     },
 }
 

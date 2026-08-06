@@ -3847,7 +3847,9 @@ fn encoder_writes_source_less_native_features() {
         FeatureDefinition::Draft {
             faces: FaceSelection::Native("face-b".into()),
             neutral_plane: FaceSelection::Native("face-c".into()),
+            parting_tool: None,
             pull_direction: Some(Vector3::new(0.0, 0.0, 1.0)),
+            pull_plane: None,
             angle: Some(Angle(0.2)),
             outward: Some(false),
         },
@@ -12640,7 +12642,9 @@ fn semantic_writer_round_trips_typed_draft() {
         FeatureDefinition::Draft {
             faces: FaceSelection::Native(faces),
             neutral_plane: FaceSelection::Native(neutral_plane),
+            parting_tool: None,
             pull_direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
+            pull_plane: None,
             angle: Some(Angle(value)),
             outward: Some(false),
         } if faces == "face:1,face:2"
@@ -12654,6 +12658,7 @@ fn semantic_writer_round_trips_typed_draft() {
         pull_direction,
         angle,
         outward,
+        ..
     } = &mut decoded.ir.model.features[0].definition
     else {
         panic!("typed draft");
@@ -12713,7 +12718,9 @@ fn semantic_writer_round_trips_draft_without_angle_or_outward() {
         FeatureDefinition::Draft {
             faces: FaceSelection::Native(faces),
             neutral_plane: FaceSelection::Native(neutral_plane),
+            parting_tool: None,
             pull_direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
+            pull_plane: None,
             angle: None,
             outward: None,
         } if faces == "face:1,face:2" && neutral_plane == "face:3"

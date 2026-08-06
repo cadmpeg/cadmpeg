@@ -3097,7 +3097,7 @@ pub(crate) fn parse_face_operand(
         .filter(|(_, values)| *values == [-1, -1, 2])
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
-    if !recipe_node_indices.is_empty() && recipe_node_indices.first() != Some(&3) {
+    if recipe_node_indices.first().is_some_and(|index| *index < 3) {
         return None;
     }
     if program_kind == FaceRecipeProgramKind::Terminal && !recipe_node_indices.is_empty() {

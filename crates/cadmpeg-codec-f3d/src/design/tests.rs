@@ -8936,7 +8936,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         &features[0].definition,
         FeatureDefinition::SplitFace {
             targets: cadmpeg_ir::features::FaceSelection::Native(targets),
-            tool: cadmpeg_ir::features::PathRef::Native(tool),
+            tool: cadmpeg_ir::features::SplitFaceTool::Path(
+                cadmpeg_ir::features::PathRef::Native(tool),
+            ),
         } if targets.ends_with("#400") && tool.ends_with("#100")
     ));
 
@@ -11230,6 +11232,34 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(operand.recipe_nodes[0].program, [-1, -1, 2, 7]);
     assert_eq!(operand.next_record_index, 104);
     assert_eq!(operand.next_byte_offset, face_next_at);
+
+    let mut prelude_bytes = face_bytes.clone();
+    let prelude_words = [4i32, 5, 6, 7];
+    let prelude_bytes_at = prelude_words
+        .iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect::<Vec<_>>();
+    prelude_bytes.splice(
+        face_program_at + 12..face_program_at + 12,
+        prelude_bytes_at.iter().copied(),
+    );
+    let prelude = parse_face_operand(
+        &prelude_bytes,
+        &face_scope,
+        0,
+        None,
+        None,
+        &record,
+        std::slice::from_ref(&face_recipe),
+    )
+    .expect("face recipe operand with counted prelude");
+    assert_eq!(prelude.recipe_program[0..7], [0, 0, 4, 4, 5, 6, 7]);
+    assert_eq!(
+        prelude.recipe_node_offsets[0],
+        prelude.recipe_program_offset + 28
+    );
+    assert_eq!(prelude.recipe_nodes[0].program, [-1, -1, 2, 7]);
+
     let enclosing_limit = header(&mut face_bytes, *b"306", 105);
     let bounded = parse_face_operand(
         &face_bytes,

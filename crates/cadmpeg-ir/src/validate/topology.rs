@@ -11,7 +11,7 @@ use super::*;
 use crate::features::{
     BodySelection, ChamferSpec, DatumPlaneReference, ExtrudeStart, FaceMotion, FaceSelection,
     FeatureSourceContent, FlexMode, HoleKind, Length, PatternKind, PatternSeed,
-    PatternStageCombination, PrimitiveSolid, RadiusSpec,
+    PatternStageCombination, PrimitiveSolid, RadiusSpec, SplitFaceTool,
 };
 use crate::math::Point3;
 
@@ -3277,12 +3277,27 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,
+                parting_tool,
+                pull_plane,
                 pull_direction,
                 angle,
                 ..
             } => {
                 face_selections.push(faces);
-                face_selections.push(neutral_plane);
+                if let Some(parting_tool) = parting_tool {
+                    face_selections.push(parting_tool);
+                } else {
+                    face_selections.push(neutral_plane);
+                }
+                if let Some(pull_plane) = pull_plane {
+                    check_plane_feature_reference(
+                        findings,
+                        feature,
+                        pull_plane,
+                        &feature_records,
+                        "draft pull plane",
+                    );
+                }
                 if pull_direction.is_some_and(|value| !valid_feature_direction(value))
                     || angle.is_some_and(|value| !valid_draft_angle(value))
                 {
@@ -3307,7 +3322,16 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             }
             FeatureDefinition::SplitFace { targets, tool } => {
                 face_selections.push(targets);
-                paths.push(tool);
+                match tool {
+                    SplitFaceTool::Path(path) => paths.push(path),
+                    SplitFaceTool::Plane { plane } => check_plane_feature_reference(
+                        findings,
+                        feature,
+                        plane,
+                        &feature_records,
+                        "split-face tool plane",
+                    ),
+                }
             }
             FeatureDefinition::DeleteFace { faces, .. } => {
                 face_selections.push(faces);
@@ -5352,6 +5376,52 @@ fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> boo
 
 fn feature_geometry_error(findings: &mut Vec<Finding>, feature: &Feature, message: &str) {
     geometry_error(findings, &feature.id.0, message);
+}
+
+fn check_plane_feature_reference(
+    findings: &mut Vec<Finding>,
+    feature: &Feature,
+    reference: &crate::features::FeatureId,
+    feature_records: &HashMap<&str, &Feature>,
+    reference_kind: &str,
+) {
+    match feature_records.get(reference.as_str()) {
+        None => ref_error(findings, &feature.id.0, reference_kind, reference.as_str()),
+        Some(record)
+            if !matches!(
+                &record.definition,
+                crate::features::FeatureDefinition::DatumPrincipalPlane { .. }
+                    | crate::features::FeatureDefinition::DatumPlane { .. }
+                    | crate::features::FeatureDefinition::DatumPlaneUnresolved
+                    | crate::features::FeatureDefinition::DatumOffsetPlane { .. }
+            ) =>
+        {
+            feature_geometry_error(
+                findings,
+                feature,
+                "feature reference does not name a datum plane",
+            );
+        }
+        Some(record) if record.ordinal >= feature.ordinal => findings.push(Finding {
+            check: Check::ReferentialIntegrity,
+            severity: Severity::Error,
+            message: format!(
+                "{reference_kind} `{}` does not precede its consuming feature",
+                reference.0
+            ),
+            entity: Some(feature.id.0.clone()),
+        }),
+        Some(_) if !feature.dependencies.contains(reference) => findings.push(Finding {
+            check: Check::ReferentialIntegrity,
+            severity: Severity::Error,
+            message: format!(
+                "feature omits {reference_kind} dependency `{}`",
+                reference.0
+            ),
+            entity: Some(feature.id.0.clone()),
+        }),
+        Some(_) => {}
+    }
 }
 
 fn geometry_error(findings: &mut Vec<Finding>, entity: &str, message: &str) {
