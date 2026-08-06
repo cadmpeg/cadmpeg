@@ -134,6 +134,19 @@ fn resolved_face_operand(operand: &DesignFaceOperand) -> Option<Vec<cadmpeg_ir::
     if !operand.alternate_selector_candidate_faces.is_empty() {
         return Some(candidates.to_vec());
     }
+    if operand.recipe_kind == crate::records::ConstructionRecipeKind::Face {
+        let mut referenced = Vec::new();
+        for reference in &operand.recipe_references {
+            for face in &reference.candidate_faces {
+                if !referenced.contains(face) {
+                    referenced.push(face.clone());
+                }
+            }
+        }
+        if !referenced.is_empty() {
+            return Some(referenced);
+        }
+    }
     if !operand.unreferenced_candidate_faces.is_empty()
         && complete_counted_face_recipe(operand).is_some()
     {

@@ -11470,6 +11470,22 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         operand.unreferenced_candidate_faces,
         [FaceId("f3d:brep:entity#51".into())]
     );
+    let mut direct_face = operand.clone();
+    direct_face.recipe_kind = ConstructionRecipeKind::Face;
+    direct_face.recipe_references = vec![DesignRecipeReference {
+        selector: 1,
+        selector_offset: 1_201,
+        token: "3".into(),
+        token_offset: 1_202,
+        design_reference: 303,
+        design_reference_offset: 1_203,
+        candidate_faces: vec![FaceId("f3d:brep:entity#50".into())],
+        candidate_edges: Vec::new(),
+        alternate_selector_faces: Vec::new(),
+        alternate_selector_edges: Vec::new(),
+    }];
+    direct_face.alternate_selector_candidate_faces.clear();
+    direct_face.resolved_face_slots.clear();
     let group = DesignConstructionOperandGroup {
         id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
         scope_record_index: face_scope.record_index,
@@ -11504,6 +11520,11 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         paired_class_tag: "259".into(),
         paired_byte_offset: 980,
     };
+    assert!(matches!(
+        resolved_face_group(&group, std::slice::from_ref(&direct_face)),
+        Some(FaceSelection::Resolved { faces, native })
+            if faces == [FaceId("f3d:brep:entity#50".into())] && native == group.id
+    ));
     assert!(matches!(
         resolved_face_group(&group, std::slice::from_ref(&operand)),
         Some(FaceSelection::Resolved { faces, native })
