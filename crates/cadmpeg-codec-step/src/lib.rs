@@ -364,7 +364,7 @@ struct Builder<'a> {
     tessellation_step_refs: HashMap<String, Ref>,
     written_appearance_bindings: BTreeSet<String>,
     unstyled_colors: usize,
-    unsupported_standalone_geometry: usize,
+    unwritten_geometry_carriers: BTreeSet<String>,
     written_pmi: usize,
     length_unit: Option<Ref>,
     angle_unit: Option<Ref>,
@@ -503,7 +503,7 @@ impl<'a> Builder<'a> {
             tessellation_step_refs: HashMap::new(),
             written_appearance_bindings: BTreeSet::new(),
             unstyled_colors: 0,
-            unsupported_standalone_geometry: 0,
+            unwritten_geometry_carriers: BTreeSet::new(),
             written_pmi: 0,
             length_unit: None,
             angle_unit: None,
@@ -1568,7 +1568,7 @@ impl<'a> Builder<'a> {
                 members.push(reference);
                 has_surfaces = true;
             } else {
-                self.unsupported_standalone_geometry += 1;
+                self.unwritten_geometry_carriers.insert(surface_id);
             }
         }
         let curve_ids = self
@@ -1580,14 +1580,10 @@ impl<'a> Builder<'a> {
             .map(|curve| curve.id.0.clone())
             .collect::<Vec<_>>();
         for curve_id in curve_ids {
-            if self
-                .curves
-                .get(curve_id.as_str())
-                .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. }))
-            {
-                self.unsupported_standalone_geometry += 1;
-            } else if let Some(reference) = self.emit_curve(&curve_id) {
+            if let Some(reference) = self.emit_curve(&curve_id) {
                 members.push(reference);
+            } else {
+                self.unwritten_geometry_carriers.insert(curve_id);
             }
         }
         let point_ids = self
@@ -2102,7 +2098,7 @@ impl<'a> Builder<'a> {
             } else if !geometry::surface_is_supported(&surf.geometry) {
                 return None;
             } else {
-                geometry::surface(&mut self.emitter, &surf.geometry)
+                geometry::surface(&mut self.emitter, &surf.geometry)?
             };
             Some(r)
         })();
@@ -2262,7 +2258,7 @@ impl<'a> Builder<'a> {
             } else if !geometry::curve_is_supported(&geometry) {
                 return None;
             } else {
-                geometry::curve(&mut self.emitter, &geometry)
+                geometry::curve(&mut self.emitter, &geometry)?
             };
             Some(r)
         })();
@@ -2782,13 +2778,19 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        if self.unsupported_standalone_geometry > 0 {
+        if !self.unwritten_geometry_carriers.is_empty() {
+            let carriers = self
+                .unwritten_geometry_carriers
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 LossKind::GeometryNotTransferred,
                 Severity::Warning,
                 format!(
-                    "{} standalone unknown geometry carrier(s) were not written",
-                    self.unsupported_standalone_geometry
+                    "{} geometry carrier(s) were not written: {carriers}",
+                    self.unwritten_geometry_carriers.len()
                 ),
             );
         }

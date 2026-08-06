@@ -4236,14 +4236,14 @@ fn presentation_reader_normalizes_invalid_layer_and_common_datum_inputs() {
 /// Emit a single surface carrier in isolation and return the DATA lines joined.
 fn emit_surface_only(g: &SurfaceGeometry) -> String {
     let mut e = crate::writer::Emitter::new();
-    crate::geometry::surface(&mut e, g);
+    crate::geometry::surface(&mut e, g).expect("surface geometry is writable");
     e.into_lines().join("\n")
 }
 
 /// Emit a single curve carrier in isolation and return the DATA lines joined.
 fn emit_curve_only(g: &CurveGeometry) -> String {
     let mut e = crate::writer::Emitter::new();
-    crate::geometry::curve(&mut e, g);
+    crate::geometry::curve(&mut e, g).expect("curve geometry is writable");
     e.into_lines().join("\n")
 }
 
@@ -4879,6 +4879,105 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
         loss.code.category() == cadmpeg_ir::LossCategory::Geometry
             && loss.message.contains("STEP-unsupported transform")
     }));
+}
+
+#[test]
+fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
+    let mut ir = CadIr::empty(Units::default());
+    let surface_id = SurfaceId("step:test:surface#unsupported".into());
+    let construction_id =
+        cadmpeg_ir::ids::ProceduralSurfaceId("step:test:construction:surface#unsupported".into());
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: construction_id.clone(),
+        },
+        source_object: None,
+    });
+    ir.model
+        .procedural_surfaces
+        .push(cadmpeg_ir::geometry::ProceduralSurface {
+            id: construction_id,
+            surface: surface_id.clone(),
+            definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Compound {
+                parameters: Vec::new(),
+                components: Vec::new(),
+            },
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        });
+
+    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("report mode must not panic on an unwritable procedural surface");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::GeometryNotTransferred
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains(surface_id.as_str())
+    }));
+}
+
+#[test]
+fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
+    let mut ir = CadIr::empty(Units::default());
+    let curve_id = CurveId("step:test:curve#unsupported".into());
+    let construction_id = ProceduralCurveId("step:test:construction:curve#unsupported".into());
+    ir.model.curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Procedural {
+            construction: construction_id.clone(),
+        },
+        source_object: None,
+    });
+    ir.model
+        .procedural_curves
+        .push(cadmpeg_ir::geometry::ProceduralCurve {
+            id: construction_id,
+            curve: curve_id.clone(),
+            definition: cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact,
+            cache_fit_tolerance: None,
+        });
+
+    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("report mode must not panic on an unwritable procedural curve");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::GeometryNotTransferred
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains(curve_id.as_str())
+    }));
+}
+
+#[test]
+fn strict_export_rejects_an_unwritable_procedural_carrier() {
+    let mut ir = CadIr::empty(Units::default());
+    let curve_id = CurveId("step:test:curve#strict-unsupported".into());
+    let construction_id =
+        ProceduralCurveId("step:test:construction:curve#strict-unsupported".into());
+    ir.model.curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Procedural {
+            construction: construction_id.clone(),
+        },
+        source_object: None,
+    });
+    ir.model
+        .procedural_curves
+        .push(cadmpeg_ir::geometry::ProceduralCurve {
+            id: construction_id,
+            curve: curve_id,
+            definition: cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact,
+            cache_fit_tolerance: None,
+        });
+
+    let options = StepWriteOptions {
+        unsupported: StepUnsupportedPolicy::Reject,
+        ..StepWriteOptions::default()
+    };
+    let mut output = Vec::new();
+    assert!(matches!(
+        write_step(&ir, &mut output, &options),
+        Err(StepError::Unsupported(message)) if message.contains("geometry carrier")
+    ));
+    assert!(output.is_empty());
 }
 
 #[test]
