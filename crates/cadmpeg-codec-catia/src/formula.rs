@@ -2052,6 +2052,9 @@ fn typed_parameter_evaluation(
         return None;
     }
     let value = f64::from_bits(*bits);
+    if !value.is_finite() {
+        return None;
+    }
     let value = match source_type {
         "LENGTH" => ParameterValue::Length(Length(value)),
         "ANGLE" => ParameterValue::Angle(Angle(value)),
@@ -2117,6 +2120,42 @@ mod parser_tests {
         assert!(!formula_parameter_candidates_agree(
             &unset_candidate("LENGTH"),
             &unset_candidate("Real")
+        ));
+    }
+
+    #[test]
+    fn typed_numeric_evaluations_require_finite_values() {
+        for source_type in ["LENGTH", "ANGLE", "Real", "R", "Integer", "I"] {
+            for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+                let evaluation = crate::native::CatiaEntityEvaluation::Scalar {
+                    bits: value.to_bits(),
+                };
+                assert!(
+                    typed_parameter_evaluation(source_type, &evaluation).is_none(),
+                    "{source_type} accepted non-finite value {value:?}"
+                );
+            }
+        }
+
+        assert!(matches!(
+            typed_parameter_evaluation(
+                "LENGTH",
+                &crate::native::CatiaEntityEvaluation::Scalar {
+                    bits: 12.5_f64.to_bits(),
+                }
+            ),
+            Some(TypedParameterEvaluation::Value(ParameterValue::Length(
+                Length(12.5)
+            )))
+        ));
+        assert!(matches!(
+            typed_parameter_evaluation(
+                "Integer",
+                &crate::native::CatiaEntityEvaluation::Scalar {
+                    bits: (-7.0_f64).to_bits(),
+                }
+            ),
+            Some(TypedParameterEvaluation::Value(ParameterValue::Integer(-7)))
         ));
     }
 
