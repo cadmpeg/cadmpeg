@@ -2439,10 +2439,20 @@ fn parse_extrude_identity_member(
     {
         return None;
     }
-    let next_at = if u32_at(bytes, tail_slot_offset + 1) == Some(0)
-        && after_context_id.checked_add(9)? == start.checked_add(190)?
+    let fixed_end = start.checked_add(190)?;
+    let (next_record_index, next_byte_offset) = if u32_at(bytes, tail_slot_offset + 1) == Some(0)
+        && after_context_id.checked_add(9)? == fixed_end
     {
-        start.checked_add(190)?
+        if fixed_end == bytes.len() {
+            (0, u64::try_from(fixed_end).ok()?)
+        } else {
+            let (_, after_next_tag) =
+                lp_ascii_filtered(bytes, fixed_end, 0..=2000, u8::is_ascii_graphic)?;
+            (
+                u32_at(bytes, after_next_tag)?,
+                u64::try_from(fixed_end).ok()?,
+            )
+        }
     } else if bytes.get(tail_slot_offset + 1..tail_slot_offset + 4)? == [0; 3] {
         let mut cursor = tail_slot_offset.checked_add(4)?;
         let (next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
@@ -2452,11 +2462,10 @@ fn parse_extrude_identity_member(
         if u32_at(bytes, after_next_tag)? != next_record_index {
             return None;
         }
-        next_at
+        (next_record_index, u64::try_from(next_at).ok()?)
     } else {
         return None;
     };
-    let (_, after_next_tag) = lp_ascii_filtered(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
     Some(ParsedExtrudeIdentityMember {
         local_id,
         local_id_offset: u64::try_from(start + 21).ok()?,
@@ -2466,8 +2475,8 @@ fn parse_extrude_identity_member(
         context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
         tail_slot_present,
         tail_slot_offset: u64::try_from(tail_slot_offset).ok()?,
-        next_record_index: u32_at(bytes, after_next_tag)?,
-        next_byte_offset: u64::try_from(next_at).ok()?,
+        next_record_index,
+        next_byte_offset,
     })
 }
 

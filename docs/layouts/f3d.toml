@@ -233,6 +233,84 @@ size = 51
 note = "The compact-form tail is retained with the native record; no semantic field is assigned."
 
 [[record]]
+name = "extrude_selection_member_fixed_frame"
+kind = "byte"
+section = "3.1"
+anchor = "A selection member has the same terminal form."
+size = 190
+note = "Offsets are relative to the member's indexed header. The UUID payloads occupy 36 UTF-16 code units each; the following indexed header is absent only at the stream-end boundary."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its eleven-byte header"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes"
+
+[[record.field]]
+name = "local_identity"
+offset = 21
+type = "u64"
+source = "spec"
+anchor = "a local persistent identity"
+
+[[record.field]]
+name = "asset_uuid_length"
+offset = 29
+type = "u32"
+source = "spec"
+anchor = "the LP-UTF16 asset UUID"
+
+[[record.field]]
+name = "asset_uuid_utf16"
+offset = 33
+type = "bytes[72]"
+source = "spec"
+anchor = "the LP-UTF16 asset UUID"
+
+[[record.field]]
+name = "context_uuid_length"
+offset = 105
+type = "u32"
+source = "spec"
+anchor = "an LP-UTF16 context UUID"
+
+[[record.field]]
+name = "context_uuid_utf16"
+offset = 109
+type = "bytes[72]"
+source = "spec"
+anchor = "an LP-UTF16 context UUID"
+
+[[record.field]]
+name = "tail_kind"
+offset = 181
+type = "u32"
+source = "spec"
+anchor = "`u32 2`"
+
+[[record.field]]
+name = "tail_slot_marker"
+offset = 185
+type = "u8"
+source = "spec"
+anchor = "an optional-slot marker"
+
+[[record.field]]
+name = "tail_slot_value"
+offset = 186
+type = "u32"
+source = "spec"
+anchor = "followed by u32 zero"
+
+[[record]]
 name = "coil_long_scope_fixed_prologue"
 kind = "byte"
 section = "3.1"

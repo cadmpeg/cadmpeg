@@ -82,6 +82,25 @@ Unstated regions:
 
 - `49..100` (51 B): The compact-form tail is retained with the native record; no semantic field is assigned.
 
+## `extrude_selection_member_fixed_frame`
+
+Spec §3.1 · layout: byte offsets · size: 190 B
+
+Offsets are relative to the member's indexed header. The UUID payloads occupy 36 UTF-16 code units each; the following indexed header is absent only at the stream-end boundary.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its eleven-byte header |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | ten zero bytes |
+| 21 | 8 | `local_identity` | `u64` | little | spec | a local persistent identity |
+| 29 | 4 | `asset_uuid_length` | `u32` | little | spec | the LP-UTF16 asset UUID |
+| 33 | 72 | `asset_uuid_utf16` | `bytes[72]` | little | spec | the LP-UTF16 asset UUID |
+| 105 | 4 | `context_uuid_length` | `u32` | little | spec | an LP-UTF16 context UUID |
+| 109 | 72 | `context_uuid_utf16` | `bytes[72]` | little | spec | an LP-UTF16 context UUID |
+| 181 | 4 | `tail_kind` | `u32` | little | spec | `u32 2` |
+| 185 | 1 | `tail_slot_marker` | `u8` | little | spec | an optional-slot marker |
+| 186 | 4 | `tail_slot_value` | `u32` | little | spec | followed by u32 zero |
+
 ## `coil_long_scope_fixed_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 52 B

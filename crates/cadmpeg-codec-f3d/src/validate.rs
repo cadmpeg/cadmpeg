@@ -3181,7 +3181,13 @@ fn validate_construction_operand_identities<'a>(
                             == identity.following_byte_offset.saturating_add(185)
                             && persistent.next_byte_offset
                                 == persistent.tail_slot_offset.saturating_add(15)))
-                    && persistent.next_record_index != 0
+                    && (persistent.next_record_index != 0
+                        || (persistent.next_byte_offset
+                            == identity.following_byte_offset.saturating_add(190)
+                            && !records_by_index.values().any(|header| {
+                                design_stream(&header.id) == native_stream
+                                    && header.byte_offset == persistent.next_byte_offset
+                            })))
                     && records_by_index
                         .get(&(native_stream, persistent.next_record_index))
                         // The header arena indexes records named by Design entity
@@ -3733,6 +3739,12 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .unwrap_or_default()
                     == member.historical_state_ids.as_slice()
         };
+        let terminal_next = member.next_record_index == 0
+            && member.next_byte_offset == member.byte_offset.saturating_add(190)
+            && !records_by_index.values().any(|header| {
+                design_stream(&header.id) == native_stream
+                    && header.byte_offset == member.next_byte_offset
+            });
         let valid = member.class_tag.len() == 3
             && member.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && group.is_some_and(|group| {
@@ -3758,7 +3770,7 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .eq(expected_identity_ids)
             && history_matches
             && member.next_byte_offset == member.byte_offset.saturating_add(190)
-            && member.next_record_index != 0
+            && (member.next_record_index != 0 || terminal_next)
             && member_slots.insert((
                 native_stream,
                 member.group_record_index,

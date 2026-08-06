@@ -10076,6 +10076,12 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     assert!(member_with_slot.tail_slot_present);
     assert_eq!(member_with_slot.tail_slot_offset, 185);
 
+    let terminal_member =
+        parse_extrude_selection_member(&member_bytes[..190], &group, 0, &member_record)
+            .expect("terminal fixed Extrude selection member");
+    assert_eq!(terminal_member.next_byte_offset, 190);
+    assert_eq!(terminal_member.next_record_index, 0);
+
     let mut edge_identity_bytes = Vec::new();
     header(&mut edge_identity_bytes, *b"278", 5887);
     edge_identity_bytes.extend_from_slice(&[0; 12]);
