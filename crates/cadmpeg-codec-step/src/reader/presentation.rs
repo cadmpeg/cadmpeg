@@ -10,15 +10,18 @@ use cadmpeg_ir::ids::{
     ProductDefinitionId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
+use cadmpeg_ir::report::{LossKind, LossNote};
 use cadmpeg_ir::topology::Color;
 
 use crate::parse::{Exchange, RawRecord, Value};
 
+use super::decode_text;
 use super::topology::TopologyResult;
 
 pub(super) struct PresentationResult {
     pub typed_records: BTreeSet<u64>,
     pub warnings: Vec<String>,
+    pub losses: Vec<LossNote>,
 }
 
 pub(super) fn decode(
@@ -28,6 +31,7 @@ pub(super) fn decode(
 ) -> PresentationResult {
     let mut typed = BTreeSet::new();
     let mut warnings = Vec::new();
+    let mut losses = Vec::new();
     let face_indices = ir
         .model
         .faces
@@ -127,7 +131,15 @@ pub(super) fn decode(
         if layer.simple_name() != Some("PRESENTATION_LAYER_ASSIGNMENT") {
             continue;
         }
-        let Some(name) = layer.parameter(0).and_then(ValueExt::text) else {
+        let Some(name) = layer.parameter(0).and_then(|value| {
+            decode_text(
+                value,
+                &mut losses,
+                layer_id,
+                "presentation layer name",
+                LossKind::MetadataNotTransferred,
+            )
+        }) else {
             warnings.push(format!(
                 "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
             ));
@@ -141,7 +153,15 @@ pub(super) fn decode(
         }
         let description = layer
             .parameter(1)
-            .and_then(ValueExt::text)
+            .and_then(|value| {
+                decode_text(
+                    value,
+                    &mut losses,
+                    layer_id,
+                    "presentation layer description",
+                    LossKind::MetadataNotTransferred,
+                )
+            })
             .filter(|value| !value.is_empty());
         let items = layer
             .parameter(2)
@@ -219,6 +239,7 @@ pub(super) fn decode(
                     domain,
                     &mut active,
                     &mut color_cache,
+                    &mut losses,
                     0,
                 )
             })
@@ -305,6 +326,7 @@ pub(super) fn decode(
     PresentationResult {
         typed_records: typed,
         warnings,
+        losses,
     }
 }
 
@@ -601,6 +623,7 @@ fn find_color(
     domain: StyleDomain,
     active: &mut BTreeSet<u64>,
     cache: &mut BTreeMap<u64, CachedColor>,
+    losses: &mut Vec<LossNote>,
     depth: usize,
 ) -> Option<(u64, Color, Option<String>)> {
     if depth >= 256 {
@@ -627,7 +650,15 @@ fn find_color(
         record_domain.is_some_and(|candidate| domain != StyleDomain::Any && candidate != domain);
     let result = if incompatible {
         for reference in record.parameters().iter().flat_map(references) {
-            let _ = find_color(reference, exchange, domain, active, cache, depth + 1);
+            let _ = find_color(
+                reference,
+                exchange,
+                domain,
+                active,
+                cache,
+                losses,
+                depth + 1,
+            );
         }
         None
     } else {
@@ -650,11 +681,25 @@ fn find_color(
                         b: b as f32,
                         a: 1.0,
                     },
-                    record.parameter(0).and_then(ValueExt::text),
+                    record.parameter(0).and_then(|value| {
+                        decode_text(
+                            value,
+                            losses,
+                            id,
+                            "colour name",
+                            LossKind::AttributesNotTransferred,
+                        )
+                    }),
                 ))
             }
             "DRAUGHTING_PRE_DEFINED_COLOUR" => {
-                let name = record.parameter(0)?.text()?;
+                let name = decode_text(
+                    record.parameter(0)?,
+                    losses,
+                    id,
+                    "predefined colour name",
+                    LossKind::AttributesNotTransferred,
+                )?;
                 predefined(&name).map(|color| (id, color, Some(name)))
             }
             _ => record
@@ -662,7 +707,15 @@ fn find_color(
                 .iter()
                 .flat_map(references)
                 .find_map(|reference| {
-                    find_color(reference, exchange, domain, active, cache, depth + 1)
+                    find_color(
+                        reference,
+                        exchange,
+                        domain,
+                        active,
+                        cache,
+                        losses,
+                        depth + 1,
+                    )
                 }),
         }
     };
@@ -761,7 +814,6 @@ impl RecordExt for RawRecord {
 trait ValueExt {
     fn reference(&self) -> Option<u64>;
     fn number(&self) -> Option<f64>;
-    fn text(&self) -> Option<String>;
     fn list(&self) -> Option<&[Value]>;
 }
 impl ValueExt for Value {
@@ -777,13 +829,6 @@ impl ValueExt for Value {
             Value::Real(value) => Some(*value),
             Value::Integer(value) => Some(*value as f64),
             _ => None,
-        }
-    }
-    fn text(&self) -> Option<String> {
-        if let Value::String(bytes) = self {
-            crate::strings::decode(bytes).ok()
-        } else {
-            None
         }
     }
     fn list(&self) -> Option<&[Value]> {
@@ -817,6 +862,7 @@ ENDSEC;END-ISO-10303-21;",
             StyleDomain::Surface,
             &mut BTreeSet::new(),
             &mut BTreeMap::new(),
+            &mut Vec::new(),
             0,
         )
         .expect("surface color");

@@ -108,23 +108,27 @@ fn decode_exchange_mode(
         );
     }
 
-    let geometry = geometry::decode(exchange, &mut ir);
+    let mut geometry = geometry::decode(exchange, &mut ir);
     let dependencies = dependencies::decode(exchange);
     let carrier_index = index::CarrierIndex::from_ir(&ir);
     let topology = topology::decode(exchange, &mut ir, &carrier_index);
     let owned_carriers = geometry::topology_owned_carriers(&ir, &carrier_index);
     geometry::associate_topology_carriers(exchange, &mut ir, &carrier_index, &owned_carriers);
+    geometry::associate_replica_bases(exchange, &mut ir, &carrier_index);
+    geometry::associate_pcurve_supports(exchange, &mut ir, &carrier_index);
     geometry::associate_free_geometric_set_members(
         exchange,
         &mut ir,
         &carrier_index,
         &owned_carriers,
+        &mut geometry.losses,
     );
     geometry::associate_free_representation_members(
         exchange,
         &mut ir,
         &carrier_index,
         &owned_carriers,
+        &mut geometry.losses,
     );
     let product = product::decode(exchange, &geometry, &topology, &mut ir);
     let tessellation = tessellation::decode(exchange, &geometry, &topology, &mut ir);
@@ -133,6 +137,9 @@ fn decode_exchange_mode(
     let validation = validation::decode(exchange, &geometry, &mut ir);
     report.notes.extend(dependencies.notes);
     report.notes.extend(validation.notes);
+    report.losses.extend(dependencies.losses);
+    report.losses.extend(presentation.losses);
+    report.losses.extend(product.losses);
     report.geometry_transferred = !ir.model.points.is_empty()
         || !ir.model.curves.is_empty()
         || !ir.model.surfaces.is_empty()
@@ -179,6 +186,8 @@ fn decode_exchange_mode(
             provenance: None,
         }));
     report.losses.extend(tessellation.losses);
+    report.losses.extend(topology.losses);
+    report.losses.extend(geometry.losses);
     report
         .losses
         .extend(pmi.warnings.into_iter().map(|message| LossNote {
@@ -195,6 +204,8 @@ fn decode_exchange_mode(
             message,
             provenance: None,
         }));
+    report.losses.extend(pmi.losses);
+    report.losses.extend(validation.losses);
     let mut typed_records = geometry.typed_records;
     typed_records.extend(topology.typed_records);
     typed_records.extend(presentation.typed_records);
@@ -237,6 +248,7 @@ fn decode_exchange_mode(
             .filter(|record| !typed_records.contains(&record.id))
             .map(|record| (record.id, opaque_record_id(record).0))
             .collect::<BTreeMap<_, _>>();
+        let typed_targets = typed_record_targets(&ir, &typed_records);
         let mut opaque = Vec::with_capacity(exchange.records.len());
         for record in exchange.records.values() {
             if typed_records.contains(&record.id) {
@@ -265,7 +277,13 @@ fn decode_exchange_mode(
                 data: Some(bytes),
                 links: links
                     .into_iter()
-                    .filter_map(|id| opaque_ids.get(&id).cloned())
+                    .flat_map(|id| {
+                        opaque_ids
+                            .get(&id)
+                            .cloned()
+                            .into_iter()
+                            .chain(typed_targets.get(&id).into_iter().flatten().cloned())
+                    })
                     .collect(),
             });
         }
@@ -284,7 +302,7 @@ fn decode_exchange_mode(
             *counts.entry(kind).or_default() += 1;
         }
     }
-    let accounting = byte_accounting(input.len(), exchange, &typed_records);
+    let accounting = byte_accounting(input, exchange, &typed_records);
     if let Some(source) = &mut ir.source {
         source
             .attributes
@@ -299,6 +317,17 @@ fn decode_exchange_mode(
             "bytes_unclassified".into(),
             accounting.unclassified.to_string(),
         );
+    }
+    if accounting.unclassified > 0 {
+        report.losses.push(LossNote {
+            code: LossKind::DecodeDiagnostic,
+            severity: Severity::Error,
+            message: format!(
+                "STEP byte accounting left {} byte(s) unclassified",
+                accounting.unclassified
+            ),
+            provenance: None,
+        });
     }
     report.notes.push(format!(
         "byte accounting: {} structural, {} typed, {} named opaque, {} unclassified",
@@ -420,34 +449,75 @@ fn retain_unowned_pcurves(
         .collect::<BTreeSet<_>>();
     let protected = record_closure(&protected_roots, exchange);
     let removed_closure = record_closure(&unowned, exchange);
-    let removed = unowned.len();
+    let deleted_pcurves = ir
+        .model
+        .pcurves
+        .iter()
+        .filter(|pcurve| !retains_carrier(&pcurve.id.0, &removed_closure, &protected))
+        .count();
+    let deleted_points = ir
+        .model
+        .points
+        .iter()
+        .filter(|point| !retains_carrier(&point.id.0, &removed_closure, &protected))
+        .count();
+    let deleted_curves = ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| !retains_carrier(&curve.id.0, &removed_closure, &protected))
+        .count();
+    let deleted_surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| !retains_carrier(&surface.id.0, &removed_closure, &protected))
+        .count();
+    let deleted_procedural_curves = ir
+        .model
+        .procedural_curves
+        .iter()
+        .filter(|curve| !retains_carrier(&curve.id.0, &removed_closure, &protected))
+        .count();
+    let deleted_procedural_surfaces = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .filter(|surface| !retains_carrier(&surface.id.0, &removed_closure, &protected))
+        .count();
     ir.model
         .pcurves
-        .retain(|pcurve| owned.contains(&pcurve.id.0));
-    ir.model.points.retain(|point| {
-        step_id_from_ir(&point.id.0)
-            .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
-    });
-    ir.model.curves.retain(|curve| {
-        step_id_from_ir(&curve.id.0)
-            .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
-    });
-    ir.model.surfaces.retain(|surface| {
-        step_id_from_ir(&surface.id.0)
-            .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
-    });
-    ir.model.procedural_curves.retain(|curve| {
-        step_id_from_ir(&curve.id.0)
-            .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
-    });
-    ir.model.procedural_surfaces.retain(|surface| {
-        step_id_from_ir(&surface.id.0)
-            .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
-    });
+        .retain(|pcurve| retains_carrier(&pcurve.id.0, &removed_closure, &protected));
+    ir.model
+        .points
+        .retain(|point| retains_carrier(&point.id.0, &removed_closure, &protected));
+    ir.model
+        .curves
+        .retain(|curve| retains_carrier(&curve.id.0, &removed_closure, &protected));
+    ir.model
+        .surfaces
+        .retain(|surface| retains_carrier(&surface.id.0, &removed_closure, &protected));
+    ir.model
+        .procedural_curves
+        .retain(|curve| retains_carrier(&curve.id.0, &removed_closure, &protected));
+    ir.model
+        .procedural_surfaces
+        .retain(|surface| retains_carrier(&surface.id.0, &removed_closure, &protected));
     typed_records.retain(|id| !removed_closure.contains(id) || protected.contains(id));
+    let protected_pcurves = unowned.iter().filter(|id| protected.contains(id)).count();
+    let opaque_pcurves = unowned.len() - protected_pcurves;
     warnings.push(format!(
-        "retained {removed} unowned pcurve carrier(s) as opaque source records"
+        "unowned STEP carrier retention: opaque_pcurves={opaque_pcurves}, protected_pcurves={protected_pcurves}, deleted pcurves={deleted_pcurves}, points={deleted_points}, curves={deleted_curves}, surfaces={deleted_surfaces}, procedural_curves={deleted_procedural_curves}, procedural_surfaces={deleted_procedural_surfaces}"
     ));
+}
+
+fn retains_carrier(
+    identity: &str,
+    removed_closure: &BTreeSet<u64>,
+    protected: &BTreeSet<u64>,
+) -> bool {
+    step_id_from_ir(identity)
+        .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
 }
 
 fn step_id_from_ir(identity: &str) -> Option<u64> {
@@ -485,6 +555,36 @@ fn opaque_record_id(record: &parse::RawRecord) -> UnknownId {
     UnknownId(format!("step:data:{kind}#{}", record.id))
 }
 
+fn typed_record_targets(
+    ir: &CadIr,
+    typed_records: &BTreeSet<u64>,
+) -> BTreeMap<u64, BTreeSet<String>> {
+    cadmpeg_ir::index::ModelIndex::new(ir)
+        .identities()
+        .filter_map(|identity| {
+            let record_id = source_record_id(identity)?;
+            typed_records
+                .contains(&record_id)
+                .then(|| (record_id, identity.to_owned()))
+        })
+        .fold(BTreeMap::new(), |mut targets, (record_id, identity)| {
+            targets.entry(record_id).or_default().insert(identity);
+            targets
+        })
+}
+
+fn source_record_id(identity: &str) -> Option<u64> {
+    identity.rsplit_once('#')?.1.split('-').next()?.parse().ok()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ByteClass {
+    Unclassified,
+    Structural,
+    Typed,
+    Opaque,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct ByteAccounting {
     structural: usize,
@@ -494,20 +594,80 @@ struct ByteAccounting {
 }
 
 fn byte_accounting(
-    input_len: usize,
+    input: &[u8],
     exchange: &Exchange,
     typed_records: &BTreeSet<u64>,
 ) -> ByteAccounting {
-    let mut counts = ByteAccounting::default();
+    let mut classes = vec![ByteClass::Unclassified; input.len()];
     for record in exchange.records.values() {
-        if typed_records.contains(&record.id) {
-            counts.typed += record.span.len();
+        let class = if typed_records.contains(&record.id) {
+            ByteClass::Typed
         } else {
-            counts.opaque += record.span.len();
+            ByteClass::Opaque
+        };
+        claim_range(&mut classes, &record.span, class);
+    }
+    if let Some(signature) = &exchange.signature {
+        claim_range(&mut classes, signature, ByteClass::Structural);
+    }
+    let tokens = match crate::lex::lex(input) {
+        Ok(tokens) => tokens,
+        Err(error) => crate::lex::lex(&input[..error.offset]).unwrap_or_default(),
+    };
+    for token in &tokens {
+        claim_range(&mut classes, &token.span, ByteClass::Structural);
+    }
+    let mut cursor = 0;
+    for token in &tokens {
+        claim_trivia(input, cursor..token.span.start, &mut classes);
+        cursor = token.span.end;
+    }
+    claim_trivia(input, cursor..input.len(), &mut classes);
+
+    classes
+        .into_iter()
+        .fold(ByteAccounting::default(), |mut counts, class| {
+            match class {
+                ByteClass::Unclassified => counts.unclassified += 1,
+                ByteClass::Structural => counts.structural += 1,
+                ByteClass::Typed => counts.typed += 1,
+                ByteClass::Opaque => counts.opaque += 1,
+            }
+            counts
+        })
+}
+
+fn claim_range(classes: &mut [ByteClass], range: &std::ops::Range<usize>, class: ByteClass) {
+    let end = range.end.min(classes.len());
+    for claimed in &mut classes[range.start.min(end)..end] {
+        if *claimed == ByteClass::Unclassified {
+            *claimed = class;
         }
     }
-    counts.structural = input_len.saturating_sub(counts.typed + counts.opaque);
-    counts
+}
+
+fn claim_trivia(input: &[u8], range: std::ops::Range<usize>, classes: &mut [ByteClass]) {
+    let end = range.end.min(input.len());
+    let mut at = range.start.min(end);
+    while at < end {
+        if classes[at] != ByteClass::Unclassified {
+            at += 1;
+        } else if input[at].is_ascii_whitespace() {
+            classes[at] = ByteClass::Structural;
+            at += 1;
+        } else if input[at..end].starts_with(b"/*") {
+            let Some(relative_end) = input[at + 2..end]
+                .windows(2)
+                .position(|window| window == b"*/")
+            else {
+                return;
+            };
+            claim_range(classes, &(at..at + relative_end + 4), ByteClass::Structural);
+            at += relative_end + 4;
+        } else {
+            return;
+        }
+    }
 }
 
 fn schema_name(exchange: &Exchange) -> String {
@@ -523,6 +683,32 @@ fn schema_name(exchange: &Exchange) -> String {
             .for_each(|value| collect_strings(value, &mut names));
     }
     names.join(",")
+}
+
+pub(super) fn decode_text(
+    value: &Value,
+    losses: &mut Vec<LossNote>,
+    record_id: u64,
+    field: &str,
+    code: LossKind,
+) -> Option<String> {
+    let Value::String(bytes) = value else {
+        return None;
+    };
+    match crate::strings::decode(bytes) {
+        Ok(text) => Some(text),
+        Err(error) => {
+            losses.push(LossNote {
+                code,
+                severity: Severity::Warning,
+                message: format!(
+                    "STEP record #{record_id} has an invalid {field} string escape: {error}"
+                ),
+                provenance: None,
+            });
+            None
+        }
+    }
 }
 
 fn collect_strings(value: &Value, output: &mut Vec<String>) {
@@ -546,5 +732,40 @@ fn collect_references(value: &Value, output: &mut BTreeSet<u64>) {
             .for_each(|value| collect_references(value, output)),
         Value::Typed(_, value) => collect_references(value, output),
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn byte_accounting_reports_an_unrecognized_suffix() {
+        let input = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
+        let (exchange, _) = crate::parse::parse(input).expect("parse accounting fixture");
+        let mut extended = input.to_vec();
+        extended.push(0x01);
+
+        let accounting = byte_accounting(&extended, &exchange, &BTreeSet::new());
+
+        assert_eq!(accounting.unclassified, 1);
+        assert_eq!(
+            accounting.structural + accounting.typed + accounting.opaque + accounting.unclassified,
+            extended.len()
+        );
+
+        let result = decode_exchange_mode(
+            &extended,
+            cadmpeg_ir::codec::DecodeOptions::default(),
+            &exchange,
+            &[],
+            true,
+        )
+        .0;
+        assert!(result.report.losses.iter().any(|loss| {
+            loss.code == LossKind::DecodeDiagnostic
+                && loss.severity == Severity::Error
+                && loss.message.contains("1 byte(s) unclassified")
+        }));
     }
 }

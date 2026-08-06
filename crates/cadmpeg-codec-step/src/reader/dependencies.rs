@@ -3,14 +3,20 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_ir::report::{LossKind, LossNote};
+
 use crate::parse::{Exchange, RawRecord, Value};
+
+use super::decode_text;
 
 pub(super) struct DependencyResult {
     pub typed_records: BTreeSet<u64>,
     pub notes: Vec<String>,
+    pub losses: Vec<LossNote>,
 }
 
 pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
+    let mut losses = Vec::new();
     let documents = exchange
         .records
         .iter()
@@ -21,11 +27,27 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
                 (
                     record
                         .parameter(0)
-                        .and_then(ValueExt::text)
+                        .and_then(|value| {
+                            decode_text(
+                                value,
+                                &mut losses,
+                                id,
+                                "document identifier",
+                                LossKind::MetadataNotTransferred,
+                            )
+                        })
                         .unwrap_or_default(),
                     record
                         .parameter(1)
-                        .and_then(ValueExt::text)
+                        .and_then(|value| {
+                            decode_text(
+                                value,
+                                &mut losses,
+                                id,
+                                "document name",
+                                LossKind::MetadataNotTransferred,
+                            )
+                        })
                         .unwrap_or_default(),
                     record.parameter(3).and_then(ValueExt::reference),
                 ),
@@ -36,7 +58,14 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
         .records
         .iter()
         .filter(|(_, record)| record.simple_name() == Some("EXTERNAL_SOURCE"))
-        .map(|(&id, record)| (id, record.parameter(0).and_then(ValueExt::source_text)))
+        .map(|(&id, record)| {
+            (
+                id,
+                record
+                    .parameter(0)
+                    .and_then(|value| source_text(value, &mut losses, id, "external source")),
+            )
+        })
         .filter_map(|(id, source)| source.map(|source| (id, source)))
         .collect::<BTreeMap<_, _>>();
     let mut typed = BTreeSet::new();
@@ -55,7 +84,15 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
             };
             let source = record
                 .parameter(1)
-                .and_then(ValueExt::text)
+                .and_then(|value| {
+                    decode_text(
+                        value,
+                        &mut losses,
+                        id,
+                        "document reference source",
+                        LossKind::MetadataNotTransferred,
+                    )
+                })
                 .unwrap_or_default();
             notes.insert(document_note(identifier, name, &source));
             typed.extend([id, document_id]);
@@ -70,7 +107,7 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
             };
             let item = record
                 .parameter(0)
-                .and_then(ValueExt::source_text)
+                .and_then(|value| source_text(value, &mut losses, id, "external item"))
                 .unwrap_or_default();
             notes.insert(format!("external source {source} item {item}"));
             typed.extend([id, source_id]);
@@ -80,6 +117,26 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
     DependencyResult {
         typed_records: typed,
         notes: notes.into_iter().collect(),
+        losses,
+    }
+}
+
+fn source_text(
+    value: &Value,
+    losses: &mut Vec<LossNote>,
+    record_id: u64,
+    field: &str,
+) -> Option<String> {
+    match value {
+        Value::String(_) => decode_text(
+            value,
+            losses,
+            record_id,
+            field,
+            LossKind::MetadataNotTransferred,
+        ),
+        Value::Typed(_, value) => source_text(value, losses, record_id, field),
+        _ => None,
     }
 }
 
@@ -114,8 +171,6 @@ impl RecordExt for RawRecord {
 
 trait ValueExt {
     fn reference(&self) -> Option<u64>;
-    fn text(&self) -> Option<String>;
-    fn source_text(&self) -> Option<String>;
 }
 
 impl ValueExt for Value {
@@ -124,22 +179,6 @@ impl ValueExt for Value {
             Some(*id)
         } else {
             None
-        }
-    }
-
-    fn text(&self) -> Option<String> {
-        if let Value::String(bytes) = self {
-            crate::strings::decode(bytes).ok()
-        } else {
-            None
-        }
-    }
-
-    fn source_text(&self) -> Option<String> {
-        match self {
-            Value::String(_) => self.text(),
-            Value::Typed(_, value) => value.source_text(),
-            _ => None,
         }
     }
 }
