@@ -248,6 +248,7 @@ struct DesignProjectionGaps {
     native_decals: usize,
     unprojected_feature_scopes: usize,
     unprojected_parameters: usize,
+    unresolved_parameter_owners: usize,
     untyped_parameter_units: usize,
     unresolved_expression_dependencies: usize,
     unprojected_history_dependencies: usize,
@@ -302,13 +303,23 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Draft {
             faces,
             neutral_plane,
+            parting_tool,
+            pull_direction,
+            pull_plane,
             angle,
             ..
         } => {
             angle.is_none()
-                || [faces, neutral_plane]
-                    .into_iter()
-                    .any(|selection| !face_selection_is_resolved(selection))
+                || !face_selection_is_resolved(faces)
+                || match parting_tool {
+                    Some(parting_tool) => {
+                        !face_selection_is_resolved(parting_tool)
+                            || pull_direction.is_none()
+                            || pull_direction.is_some_and(|direction| direction.unit().is_none())
+                            || pull_plane.is_none()
+                    }
+                    None => !face_selection_is_resolved(neutral_plane),
+                }
         }
         FeatureDefinition::Sketch { space, sketch } => {
             *space == SketchSpace::Unresolved || sketch.is_none()
@@ -318,6 +329,59 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::SketchBlockInstance { block, .. } => block.is_none(),
         FeatureDefinition::Pattern { seeds, pattern } => {
             seeds.is_empty() || matches!(pattern, PatternKind::Unresolved { .. })
+        }
+        FeatureDefinition::SheetMetalEdgeFlange { height, .. } => matches!(
+            height,
+            cadmpeg_ir::features::SheetMetalFlangeHeight::ToObject {
+                target: cadmpeg_ir::features::SheetMetalFlangeHeightTarget::Native(_),
+                ..
+            }
+        ),
+        FeatureDefinition::SheetMetalHem {
+            form, direction, ..
+        } => {
+            matches!(
+                direction,
+                cadmpeg_ir::features::SheetMetalHemDirection::Unresolved
+            ) || matches!(
+                form,
+                cadmpeg_ir::features::SheetMetalHemForm::GapLength { .. }
+            )
+        }
+        FeatureDefinition::SplitFace { targets, tool } => {
+            !face_selection_is_resolved(targets)
+                || match tool {
+                    cadmpeg_ir::features::SplitFaceTool::Plane { .. } => false,
+                    cadmpeg_ir::features::SplitFaceTool::Path(path) => matches!(
+                        path,
+                        cadmpeg_ir::features::PathRef::Native(_)
+                            | cadmpeg_ir::features::PathRef::Unresolved(_)
+                    ),
+                }
+        }
+        FeatureDefinition::FullRoundFillet { groups } => {
+            groups.is_empty()
+                || groups.iter().any(|group| {
+                    !face_selection_is_resolved(&group.center_faces)
+                        || matches!(
+                            group.side_one_faces,
+                            cadmpeg_ir::features::FullRoundSideSelection::Unresolved
+                        )
+                        || matches!(
+                            group.side_two_faces,
+                            cadmpeg_ir::features::FullRoundSideSelection::Unresolved
+                        )
+                        || matches!(
+                            group.side_one_faces,
+                            cadmpeg_ir::features::FullRoundSideSelection::Explicit(ref selection)
+                                if !face_selection_is_resolved(selection)
+                        )
+                        || matches!(
+                            group.side_two_faces,
+                            cadmpeg_ir::features::FullRoundSideSelection::Explicit(ref selection)
+                                if !face_selection_is_resolved(selection)
+                        )
+                })
         }
         _ => false,
     }
@@ -597,6 +661,26 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             .iter()
             .filter(|parameter| !projected_parameter_refs.contains(parameter.id.as_str()))
             .count(),
+        unresolved_parameter_owners: native
+            .design_parameters
+            .iter()
+            .filter(|parameter| {
+                let Some(owner_record_index) = parameter.owner_record_index else {
+                    return false;
+                };
+                let Some(stream) = crate::ids::native_stream(&parameter.id) else {
+                    return true;
+                };
+                !native.design_parameter_owners.iter().any(|owner| {
+                    crate::ids::native_stream(&owner.id) == Some(stream)
+                        && owner.record_index == owner_record_index
+                        && native.design_parameter_scopes.iter().any(|scope| {
+                            crate::ids::native_stream(&scope.id) == Some(stream)
+                                && scope.record_index == owner.scope_record_index
+                        })
+                })
+            })
+            .count(),
         untyped_parameter_units: crate::design::feature_project::untyped_parameter_unit_count(
             &native.design_parameters,
         ),
@@ -829,6 +913,18 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                     edge_selection(&group.edges);
                 }
             }
+            FeatureDefinition::FullRoundFillet { groups } => {
+                for group in groups {
+                    face_selection(&group.center_faces);
+                    for side in [&group.side_one_faces, &group.side_two_faces] {
+                        if let cadmpeg_ir::features::FullRoundSideSelection::Explicit(selection) =
+                            side
+                        {
+                            face_selection(selection);
+                        }
+                    }
+                }
+            }
             FeatureDefinition::Chamfer { groups, .. } => {
                 for group in groups {
                     edge_selection(&group.edges);
@@ -888,6 +984,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 }
                 face_selection(removed_faces);
             }
+            FeatureDefinition::SheetMetalHem { edges, .. } => edge_selection(edges),
             FeatureDefinition::MoveFace { faces, .. } => face_selection(faces),
             _ => {}
         }
@@ -996,6 +1093,13 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         format!(
             "{} decoded Design parameter(s) have no neutral parameter.",
             gaps.unprojected_parameters
+        ),
+    );
+    push(
+        gaps.unresolved_parameter_owners,
+        format!(
+            "{} decoded Design parameter owner binding(s) have no recognized feature scope.",
+            gaps.unresolved_parameter_owners
         ),
     );
     push(
@@ -1286,7 +1390,7 @@ fn finish_model_decode<'a>(
     let (mut ir, mut native, unknowns) = build_geometry_ir(scan, primary_model_brep, brep);
     let (subds, subd_losses) = crate::tsm::decode(scan)?;
     ir.model.subds = subds;
-    project_mesh_bodies(scan, &mut ir, &mut report)?;
+    let mesh_projection = project_mesh_bodies(scan, &mut ir, &mut report)?;
     report.losses.extend(subd_losses);
     native.body_visibilities = body_visibilities;
     for history_brep in container::history_breps(scan) {
@@ -1400,11 +1504,17 @@ fn finish_model_decode<'a>(
                 entity_selection_operands: &native.design_entity_selection_operands,
                 curve_identities: &native.sketch_curve_identities,
                 face_operands: &native.design_face_operands,
+                body_recipe_operands: &native.design_body_recipe_operands,
                 placements: &native.design_sketch_placements,
                 body_bindings: &native.design_body_bindings,
                 histories: &native.asm_histories,
             },
         );
+    bind_mesh_feature_definitions(
+        &mut ir.model.features,
+        &native.design_parameter_scopes,
+        &mesh_projection,
+    );
     crate::design::feature_project::bind_form_cages(
         scan,
         &native.design_parameter_scopes,
@@ -1664,6 +1774,13 @@ fn finish_model_decode<'a>(
     );
     ir.model.product_definitions.extend(components);
     ir.model.occurrences.extend(occurrences);
+    let unresolved_component_inserts =
+        crate::design::components::project_unresolved_component_insert_occurrences(
+            &mut ir.model.features,
+            &native.design_parameter_scopes,
+            ir.model.occurrences.len(),
+        );
+    ir.model.occurrences.extend(unresolved_component_inserts);
     ir.model.assembly_joints = crate::design::assembly::project_assembly_joints(
         &native.design_parameter_scopes,
         &native.design_component_occurrences,
@@ -1921,6 +2038,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 entity_selection_operands: &native.design_entity_selection_operands,
                 curve_identities: &native.sketch_curve_identities,
                 face_operands: &native.design_face_operands,
+                body_recipe_operands: &native.design_body_recipe_operands,
                 placements: &native.design_sketch_placements,
                 body_bindings: &native.design_body_bindings,
                 histories: &native.asm_histories,
@@ -2166,18 +2284,31 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     );
     ir.model.product_definitions.extend(components);
     ir.model.occurrences.extend(occurrences);
+    let unresolved_component_inserts =
+        crate::design::components::project_unresolved_component_insert_occurrences(
+            &mut ir.model.features,
+            &native.design_parameter_scopes,
+            ir.model.occurrences.len(),
+        );
+    ir.model.occurrences.extend(unresolved_component_inserts);
     ir.model.assembly_joints = crate::design::assembly::project_assembly_joints(
         &native.design_parameter_scopes,
         &native.design_component_occurrences,
     );
     let mut report = build_container_report(&scan, false);
     reconcile_appearance_loss(&mut report, &ir, has_appearance_assignments);
-    let mesh_bodies = project_mesh_bodies(&scan, &mut ir, &mut report)?;
+    let mesh_projection = project_mesh_bodies(&scan, &mut ir, &mut report)?;
+    bind_mesh_feature_definitions(
+        &mut ir.model.features,
+        &native.design_parameter_scopes,
+        &mesh_projection,
+    );
+    report_design_projection_gaps(&mut report, &ir, &native);
     native.store(ir.native.namespace_mut("f3d"))?;
     let annotations = populate_annotations(&ir, &scan, &native, None, &unknowns);
     let source_image = preserve_source_image(&scan);
-    if mesh_bodies > 0 {
-        apply_mesh_body_classification(&mut report, &scan, mesh_bodies);
+    if mesh_projection.count > 0 {
+        apply_mesh_body_classification(&mut report, &scan, mesh_projection.count);
     } else {
         apply_sketch_only_classification(
             &mut report,
@@ -2196,6 +2327,14 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     decode_result(ir, report, annotations, unknowns, source_image)
 }
 
+/// Projected mesh geometry and the Design records that own it.
+struct MeshProjection {
+    /// Number of joined mesh-body containers.
+    count: usize,
+    /// Tessellation identities grouped by their Design stream and feature scope record.
+    tessellations_by_scope: std::collections::HashMap<(String, u32), Vec<String>>,
+}
+
 /// Project each mesh body's container geometry into the tessellation arena.
 ///
 /// A mesh body carries no B-rep topology: its geometry is a triangle list, and
@@ -2206,7 +2345,7 @@ fn project_mesh_bodies(
     scan: &ContainerScan,
     ir: &mut CadIr,
     report: &mut DecodeReport,
-) -> Result<usize, CodecError> {
+) -> Result<MeshProjection, CodecError> {
     use crate::design::decode::mesh::MeshContainerOutcome;
 
     let mut bodies = Vec::new();
@@ -2229,14 +2368,30 @@ fn project_mesh_bodies(
             }),
         }
     }
-    let count = bodies.len();
     let mut unresolved = std::collections::BTreeMap::new();
-    ir.model
-        .tessellations
-        .extend(bodies.into_iter().map(|body| {
-            let channels = mesh_attribute_channels(&body.attributes, &mut unresolved);
-            cadmpeg_ir::tessellation::Tessellation {
-                id: body.id,
+    let mut projection = MeshProjection {
+        count: bodies.len(),
+        tessellations_by_scope: std::collections::HashMap::new(),
+    };
+    for body in bodies {
+        let id = body.id.clone();
+        for scope_record_index in body.design_scope_record_indices {
+            projection
+                .tessellations_by_scope
+                .entry((body.design_stream.clone(), scope_record_index))
+                .or_default()
+                .push(id.clone());
+        }
+        let channels = mesh_attribute_channels(
+            &body.attributes,
+            body.vertices.len(),
+            &body.triangles,
+            &mut unresolved,
+        );
+        ir.model
+            .tessellations
+            .push(cadmpeg_ir::tessellation::Tessellation {
+                id,
                 body: None,
                 faces: Vec::new(),
                 // The container stores no chordal deflection: a mesh body's
@@ -2248,20 +2403,56 @@ fn project_mesh_bodies(
                 strip_lengths: Vec::new(),
                 normals: Vec::new(),
                 channels,
-            }
-        }));
+            });
+    }
     report_unresolved_mesh_attributes(report, &unresolved);
-    Ok(count)
+    Ok(projection)
+}
+
+/// Replace the native definition of each mesh-import scope with its exact
+/// tessellation identities.
+fn bind_mesh_feature_definitions(
+    features: &mut [cadmpeg_ir::features::Feature],
+    scopes: &[crate::records::DesignParameterScope],
+    projection: &MeshProjection,
+) {
+    for feature in features {
+        if feature.source_tag.as_deref() != Some("Base Mesh Feature") {
+            continue;
+        }
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let Some(scope) = scopes.iter().find(|scope| scope.id == native_ref) else {
+            continue;
+        };
+        let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+        let Some(tessellations) = projection
+            .tessellations_by_scope
+            .get(&(stream.to_owned(), scope.record_index))
+        else {
+            continue;
+        };
+        if tessellations.is_empty() {
+            continue;
+        }
+        feature.definition = cadmpeg_ir::features::FeatureDefinition::MeshImport {
+            tessellations: tessellations.clone(),
+        };
+    }
 }
 
 /// Project channels with a settled element layout and count unresolved channels
 /// by domain.
 ///
-/// Vertex channels transfer as tessellation channels. Corner channels use an
-/// index stream to select values; PM-03 leaves that order unresolved, so the
-/// decoder reports them.
+/// An indexed channel stores one default value per vertex followed by values
+/// selected at the explicit corner positions in its index stream. The IR keeps
+/// the value table and expands those selections into one selector per triangle
+/// corner.
 fn mesh_attribute_channels(
     attributes: &[crate::paramesh::MeshAttribute],
+    vertices: usize,
+    triangles: &[[u32; 3]],
     unresolved: &mut std::collections::BTreeMap<crate::paramesh::MeshAttributeDomain, usize>,
 ) -> Vec<cadmpeg_ir::tessellation::TessellationChannel> {
     use crate::paramesh::MeshAttributeDomain;
@@ -2271,11 +2462,100 @@ fn mesh_attribute_channels(
         match (attribute.domain, attribute.item_size, attribute.count()) {
             (MeshAttributeDomain::Vertex, Some(item_size), Some(count)) => {
                 channels.push(cadmpeg_ir::tessellation::TessellationChannel {
+                    domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
                     item_size,
                     kind: attribute.role,
                     flags: attribute.element_code,
                     count,
                     data: attribute.values.clone(),
+                    indices: Vec::new(),
+                });
+            }
+            (MeshAttributeDomain::Corner, Some(item_size), Some(count)) => {
+                let Some(index_positions) = attribute.indices.as_deref() else {
+                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
+                    continue;
+                };
+                let Some(vertex_count) = u32::try_from(vertices).ok() else {
+                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
+                    continue;
+                };
+                if count < vertex_count {
+                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
+                    continue;
+                }
+                let Some(override_count) = count.checked_sub(vertex_count) else {
+                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
+                    continue;
+                };
+                if usize::try_from(override_count) != Ok(index_positions.len()) {
+                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
+                    continue;
+                }
+                let mut selectors = Vec::with_capacity(triangles.len().saturating_mul(3));
+                let mut valid = true;
+                for triangle in triangles {
+                    for vertex in triangle {
+                        if usize::try_from(*vertex)
+                            .ok()
+                            .is_none_or(|vertex| vertex >= vertices)
+                            || *vertex >= count
+                        {
+                            valid = false;
+                        }
+                        selectors.push(*vertex);
+                    }
+                }
+                for (ordinal, position) in index_positions.iter().enumerate() {
+                    let Some(ordinal) = u32::try_from(ordinal).ok() else {
+                        valid = false;
+                        continue;
+                    };
+                    let Some(selector) = vertex_count.checked_add(ordinal) else {
+                        valid = false;
+                        continue;
+                    };
+                    let Some(slot) = usize::try_from(*position)
+                        .ok()
+                        .and_then(|position| selectors.get_mut(position))
+                    else {
+                        valid = false;
+                        continue;
+                    };
+                    *slot = selector;
+                }
+                if !valid {
+                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
+                    continue;
+                }
+                channels.push(cadmpeg_ir::tessellation::TessellationChannel {
+                    domain: cadmpeg_ir::tessellation::TessellationChannelDomain::Corner,
+                    item_size,
+                    kind: attribute.role,
+                    flags: attribute.element_code,
+                    count,
+                    data: attribute.values.clone(),
+                    indices: selectors,
+                });
+            }
+            (MeshAttributeDomain::Triangle, Some(item_size), Some(count))
+                if usize::try_from(count) == Ok(triangles.len()) && item_size == 4 =>
+            {
+                let Some(indices) = (0..triangles.len())
+                    .map(|index| u32::try_from(index).ok())
+                    .collect::<Option<Vec<_>>>()
+                else {
+                    *unresolved.entry(MeshAttributeDomain::Triangle).or_default() += 1;
+                    continue;
+                };
+                channels.push(cadmpeg_ir::tessellation::TessellationChannel {
+                    domain: cadmpeg_ir::tessellation::TessellationChannelDomain::Triangle,
+                    item_size,
+                    kind: attribute.role,
+                    flags: attribute.element_code,
+                    count,
+                    data: attribute.values.clone(),
+                    indices,
                 });
             }
             (domain, _, _) => *unresolved.entry(domain).or_default() += 1,
@@ -2296,12 +2576,11 @@ fn report_unresolved_mesh_attributes(
         let (addressing, reason) = match domain {
             MeshAttributeDomain::Corner => (
                 "triangle corners",
-                "their values are deduplicated per vertex and selected through an index stream \
-                 whose corner order is not resolved",
+                "their indexed value table or corner selector stream has no settled layout",
             ),
             MeshAttributeDomain::Triangle => (
                 "triangles",
-                "their values are delta-coded under an element code this codec does not read",
+                "their element code or value count has no settled layout",
             ),
             MeshAttributeDomain::Vertex => (
                 "vertices",
@@ -2866,6 +3145,7 @@ fn extend_related_design_records(
         scan,
         &native.design_entity_headers,
         &native.design_types,
+        &native.design_parameters,
         &native.design_parameter_owners,
         &native.design_component_occurrences,
     )?;
@@ -3930,9 +4210,10 @@ fn apply_appearance_base_colors(ir: &mut CadIr) {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_appearance_base_colors, container_only_dimension_parameters, design_projection_gaps,
-        feature_definition_is_incomplete, incomplete_feature_families,
-        unresolved_dimension_companion_count, DesignProjectionGaps,
+        apply_appearance_base_colors, bind_mesh_feature_definitions,
+        container_only_dimension_parameters, design_projection_gaps,
+        feature_definition_is_incomplete, incomplete_feature_families, mesh_attribute_channels,
+        unresolved_dimension_companion_count, DesignProjectionGaps, MeshProjection,
     };
     use crate::native::F3dNative;
     use crate::records::{
@@ -3941,6 +4222,76 @@ mod tests {
         DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignSketchPlacement,
         LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
     };
+
+    #[test]
+    fn mesh_feature_binds_tessellation_through_mesh_body_scope_reference() {
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+
+        let scope_id = "f3d:Design/BulkStream.dat:design-parameter-scope#10";
+        let mut scope = DesignParameterScope::empty(scope_id, "Base Mesh Feature", 10);
+        // The feature's owning entity reference is distinct from its scope index.
+        scope.reference_members = vec![221];
+        let mut features = vec![Feature {
+            id: FeatureId("feature:mesh-import".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: Some("Base Mesh Feature".into()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "Base Mesh Feature".into(),
+                parameters: std::collections::BTreeMap::new(),
+                properties: std::collections::BTreeMap::new(),
+            },
+            native_ref: Some(scope_id.into()),
+        }];
+        let projection = MeshProjection {
+            count: 1,
+            tessellations_by_scope: std::collections::HashMap::from([(
+                ("f3d:Design/BulkStream.dat".into(), 10),
+                vec!["tessellation:mesh-body".into()],
+            )]),
+        };
+
+        bind_mesh_feature_definitions(&mut features, &[scope], &projection);
+
+        assert_eq!(
+            features[0].definition,
+            FeatureDefinition::MeshImport {
+                tessellations: vec!["tessellation:mesh-body".into()],
+            }
+        );
+        assert!(!feature_definition_is_incomplete(&features[0].definition));
+    }
+
+    #[test]
+    fn indexed_mesh_channels_project_default_and_override_selectors() {
+        let attribute = crate::paramesh::MeshAttribute {
+            role: 4,
+            element_code: 4,
+            domain: crate::paramesh::MeshAttributeDomain::Corner,
+            item_size: Some(1),
+            values: vec![10, 11, 12, 13, 14],
+            indices: Some(vec![0, 2]),
+        };
+        let mut unresolved = std::collections::BTreeMap::new();
+        let channels = mesh_attribute_channels(&[attribute], 3, &[[0, 1, 2]], &mut unresolved);
+
+        assert!(unresolved.is_empty());
+        assert_eq!(channels.len(), 1);
+        assert_eq!(
+            channels[0].domain,
+            cadmpeg_ir::tessellation::TessellationChannelDomain::Corner
+        );
+        assert_eq!(channels[0].count, 5);
+        assert_eq!(channels[0].indices, [3, 1, 4]);
+        assert_eq!(channels[0].data, [10, 11, 12, 13, 14]);
+    }
 
     #[test]
     fn presentation_timeline_objects_are_not_incomplete_modeling_features() {
@@ -3953,6 +4304,48 @@ mod tests {
         assert!(!feature_definition_is_incomplete(&native("Canvas")));
         assert!(!feature_definition_is_incomplete(&native("Decal")));
         assert!(feature_definition_is_incomplete(&native("Fillet")));
+    }
+
+    #[test]
+    fn full_round_fillet_with_automatic_sides_is_complete() {
+        use cadmpeg_ir::features::{
+            FaceSelection, Feature, FeatureDefinition, FeatureId, FullRoundFilletGroup,
+            FullRoundSideSelection,
+        };
+
+        let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+        ir.model.features.push(Feature {
+            id: FeatureId("feature:full-round".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: Some("Fillet".into()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::FullRoundFillet {
+                groups: vec![FullRoundFilletGroup {
+                    center_faces: FaceSelection::Resolved {
+                        faces: vec!["face:center".into()],
+                        native: "native:center-group".into(),
+                    },
+                    side_one_faces: FullRoundSideSelection::Automatic,
+                    side_two_faces: FullRoundSideSelection::Automatic,
+                }],
+            },
+            native_ref: None,
+        });
+
+        assert!(!feature_definition_is_incomplete(
+            &ir.model.features[0].definition
+        ));
+        assert_eq!(
+            design_projection_gaps(&ir, &F3dNative::default()).incomplete_features,
+            0
+        );
     }
 
     #[test]
@@ -4362,6 +4755,7 @@ mod tests {
                 native_decals: 0,
                 unprojected_feature_scopes: 1,
                 unprojected_parameters: 1,
+                unresolved_parameter_owners: 1,
                 untyped_parameter_units: 1,
                 unresolved_expression_dependencies: 0,
                 unprojected_history_dependencies: 0,

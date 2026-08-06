@@ -2347,7 +2347,9 @@ mod tests {
             FeatureDefinition::Draft {
                 faces: first.clone(),
                 neutral_plane: second.clone(),
+                parting_tool: None,
                 pull_direction: Some(Vector3::new(0.0, 0.0, 1.0)),
+                pull_plane: None,
                 angle: Some(Angle(0.1)),
                 outward: Some(false),
             },

@@ -34,50 +34,15 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the operation to build a neutral dimension from more than one recipe record.
 
-### DR-09. Sheet-metal `EdgeFlange` to-object height extent
+### DR-09A. Sheet-metal `Hem` fixed-section semantics
 
-**Question.** What is the layout of an `EdgeFlange` frame whose height extent terminates at a selected object rather than at a distance?
+**Question.** What independent native settings do the four retained fixed-section fields and the indexed settings record carry?
 
-**Known.** `f3d.md` §3.1 "A single-edge `EdgeFlange` scope has" gives the distance-extent layout, the header shift, the bend-position values, the height-datum values, and the edge-width mode. A to-object frame adds three ordered references and inserts a marked reference pair into the fixed operation section between the height-owner reference and the result-record run. Its frame length does not satisfy the distance-extent length relation for any result-record count, so the to-object form is a separate layout and the decoder refuses it. The height-datum discriminator still carries the outer-faces value in a to-object frame, where the height datum has no effect.
+**Known.** `f3d.md` §3.1 "A `Hem` scope names one parameter" gives the owner layouts, the header shift, the parameter source kinds, and the four retained fields. The owner layout separates rolled and teardrop inputs from the gap-and-length inputs. The executed transition separates the gap-and-length forms through its two coaxial bend carriers and supplies the signed direction from the preceding source plane; the settled invariants are in `f3d.md`.
 
-**Need.** A to-object height extent has no neutral extent without the inserted pair's roles. The decoder retains the scope as a native record, so the item blocks the extent semantics of that form only.
+The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` are not the form, direction, or bend-position selectors. The gap-and-length, radius-and-angle, and gap-length-radius frames have distinct fixed-section lengths and rule-radius offsets.
 
-### DR-09A. Sheet-metal `Hem` form selector and direction
-
-**Question.** Which field selects the hem form, which field carries the hem direction, and what is the layout of the rolled and teardrop frames?
-
-**Known.** `f3d.md` §3.1 "A `Hem` scope names one parameter" gives the two-owner layout, the header shift, the parameter source kinds of each form, and the four retained fields.
-
-The parameter set separates a rolled hem, which owns `HemRadius` and `HemAngle`, and a teardrop hem, which owns three parameters, from the two-owner forms. It does not separate a flat hem from an open one: both own `HemGap` and `HemLength`. A flat hem's `HemGap` holds a small value its form does not use, which is a value difference and not a selector.
-
-The four retained fields each hold one value across the flat, open, rolled, and teardrop forms and across both authored direction states, so none of them carries the form or the direction. The retained u32 at offset `121 + S` is not the bend position either: it holds `4` in hems whose authored bend position is adjacent, which `EdgeFlange` shows is code `3`.
-
-A rolled frame places its two owner references 13 bytes apart rather than 11, and a teardrop frame adds a third owner reference and moves the group references by ten bytes. Neither form's inside bend radius is at the two-owner offset. The decoder reads the two-owner forms and refuses the other two.
-
-**Need.** A hem has no neutral operation without the form selector and the direction. **Blocked in part on a specimen:** the closed, rope, and double forms are not available to read.
-
-### DR-10. `SpirePrimitive` and `CoilPrimitive` values
-
-**Question.** What do these values mean?
-
-- `SpirePrimitive` section-placement values other than `4`
-- `CoilPrimitive` operation values other than `1`
-- `CoilPrimitive` extent values other than `1`
-- `CoilPrimitive` section values other than `1`
-- `CoilPrimitive` section-placement values other than `3`
-- the fixed u32 value at primary-header offset 26 in each record
-
-**Known.** `f3d.md` §3.1 "`SpirePrimitive` selects the Coil" gives the `SpirePrimitive` fields. `f3d.md` §3.1 "`CoilPrimitive` is the compact" gives the `CoilPrimitive` fields. Each field has one known value. The two records use different numbers for the same meaning, so a value from one record does not transfer to the other. The ten-reference `CoilPrimitive` form's member layout is settled and its section placement precedes its section shape in the stream, which is the opposite of the order the compact form's offsets assume.
-
-**Need.** We must know the value sets to build these two features in a neutral model. **Blocked on specimens:** every discriminator carries one value in the records available. Settling it needs one coil per creation type, one per boolean operation, and a grid of section shape against section placement, one coil per file. The compact form is absent, so whether it is the same class as the ten-reference form is also open.
-
-### DR-11. Eighth `CoilPrimitive` reference
-
-**Question.** Which entity does the member identity of the eighth ordered `CoilPrimitive` reference select? What is the layout of the larger ten-reference `CoilPrimitive` form?
-
-**Known.** `f3d.md` §3.1 "`CoilPrimitive` is the compact" gives all eight references of the 427-byte form. The eighth is a counted selection group with one persistently identified member. It is not a compact parameter: the scope owns exactly five parameters, and the five parameter references name all of them. A larger `CoilPrimitive` form has a 573-byte frame and ten ordered references with no known layout.
-
-**Need.** We must know the selected entity to keep the complete feature input set. The eighth ordered reference is the tool body in the compact form only; in the ten-reference form the tool body is the tenth and the eighth is a parameter.
+**Need.** A source-preserving writer needs the independent settings carried by those fields and the indexed settings record.
 
 ### DR-12. Placement `refType` values
 
@@ -91,7 +56,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 **Question.** What construction does each `refType` value of the point-data class select?
 
-**Known.** `f3d.md` §3.1 "A direct `WorkPoint` scope" gives the member order, the version gates, and the input count each `refType` implies. The stored `point3d` is the solved position for every value, so a reader needs no join to place the point.
+**Known.** `f3d.md` §3.1 "A direct `WorkPoint` scope" gives the member order, the version gates, and the counted input-reference run. The stored `point3d` is the solved position for every value, so a reader needs no join to place the point. The decoder retains the `refType`, the serialized input count, and every input reference without assigning a rule-specific meaning.
 
 **Need.** A writer must emit the `refType` that matches the inputs it writes, and a neutral model that edits an input must know which rule re-solves the point.
 
@@ -103,7 +68,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 `PatchFlip` does not hold the boundary side. It carries the value `2` in every record, including in patches that differ only in the authored boundary side. `PatchScale` is `-1.0` in every record, so no mapping from it to a neutral value is decidable in either direction. `IsSeedSel` is set on exactly one boundary component of a patch.
 
-**Need.** A neutral patch needs the boundary side to place its generated surface, and the neutral operation carries one continuity, so a patch imposing more than one condition needs a per-boundary neutral carrier before its continuity transfers completely. A tangency or curvature weight authored away from its default separates `PatchScale` from a constant.
+**Need.** A neutral patch still needs the boundary side to place its generated surface. A tangency or curvature weight authored away from its default separates `PatchScale` from a constant.
 
 ### DR-15. Recipe fields for ambiguous edge operands
 
@@ -139,7 +104,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 **Question.** Which field determines the extent form when an extent discriminator and the stored termination reference disagree?
 
-**Known.** `f3d.md` §3.1 "The extent form is carried by" gives the two per-side discriminators, their enum, and the parameter and reference set each value implies. Every implication holds in both directions, so no record separates the discriminator from the reference: the two never disagree. Extent value `3` does not occur, so neither its termination-entity search nor the tool-body extension mode of value `4` is exercised.
+**Known.** `f3d.md` §3.1 "The extent form is carried by" gives the two per-side discriminators, their enum, and the parameter and reference set each value implies. Every implication holds in both directions, so no record separates the discriminator from the reference: the two never disagree. Extent value `2` uses either the role-`0x0000001100000000` face-termination form or the role-`0x0000000500000000` target-shape form. Extent value `3` does not occur, so neither its termination-entity search nor the tool-body extension mode of value `4` is exercised.
 
 **Need.** A writer needs to know which field a reader follows before it can emit a record where the two differ, and whether value `3` may be written without a termination reference. A design authored with a to-object termination whose side is then switched to `to next` without clearing the object settles it.
 
@@ -147,11 +112,11 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 **Question.** What do the construction-group scalar fields hold? What does the variant byte control? What do the group-role values outside the defined feature-specific sets mean? What does the boolean of the compact flag record a trailing reference names select?
 
-**Known.** `f3d.md` §3.1 "Every `Extrude`, `Extrusion`, `Fillet`," gives the member order and the value limits. The group holds a nonzero u32 `ordinal`, a nonnegative finite f64 `scalar`, and a second copy of `ordinal` that one container generation omits. The value of `variant` is zero or one. The same paragraph defines the Extrude roles `0x08`, `0x41`, and `0x11` only. Roles `0x81` and `0x100` name no defined operand family, and `0x100` does not fit in one byte. `scalar` is not equal to a compact-parameter value in the same feature scope, with or without unit scaling. `ordinal` is below 256, has one value for all groups of one feature scope, and does not decrease with the record index. A `variant` value of one occurs only on a scope that has no history state. The two optional references that follow the member run, and the count that opens the identity run, have no reader. The compact flag record occurs on `SplitFace` and `SurfaceDeleteFace` groups; the decoder retains its boolean, and the scope kind, not that boolean, selects the operation, so the boolean carries no read meaning.
+**Known.** `f3d.md` §3.1 "Every `Extrude`, `Extrusion`, `Fillet`," gives the member order and the value limits. The group holds a nonzero u32 `ordinal`, a nonnegative finite f64 `scalar`, and a second copy of `ordinal` that one container generation omits. The value of `variant` is zero or one. The same paragraph defines the Extrude roles `0x05`, `0x08`, `0x41`, and `0x11` and defines Fillet role `0x04` as the full-round center-face form. In an Extrude one-sided to-entity extent, role `0x05` is a target-shape group whose members are whole-body recipe operands. In the Fillet full-round form the group has one compact persistent-identity member, one trailing compact flag whose boolean is `true`, and `variant = 0`; the member's bounded-face operand supplies the center face and the flag requests automatic side-face inference. Roles `0x81` and `0x100` name no defined operand family, and `0x100` does not fit in one byte. `scalar` is not equal to a compact-parameter value in the same feature scope, with or without unit scaling. `ordinal` is below 256, has one value for all groups of one feature scope, and does not decrease with the record index. The two optional references that follow the member run, and the count that opens the identity run, have no reader. The compact flag record has the automatic-side meaning in the Fillet full-round form; its meaning in other group families remains unsettled.
 
 **Note.** The u32 word before `role` is zero in every record, so a reader that takes `role` as a u64 starting at that word and a reader that takes it as a u32 starting after it name the same value. The decoder takes the u64. Nothing separates the two readings.
 
-**Need.** We must know the field meanings to write a construction group from a neutral model. The role value `0x0000000500000000` in an Extrude scope is one case of an undefined role.
+**Need.** We must know the scalar, variant, optional-reference, and compact-flag meanings for the remaining construction-group forms before writing them from a neutral model.
 
 ### DR-19A. Entity-tracking path discriminators
 
@@ -185,19 +150,15 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 **Need.** This item is the case in which the agreement rule has no input. The neutral model then has no body selection.
 
-### DR-23. `Draft` pull direction and outward convention
+### DR-23. `Draft` outward convention
 
-**Question.** How do the signed angle, the neutral-plane orientation, the explicit pull direction, and the outward-material convention of a `Draft` scope relate to each other? Which references of a parting-line draft name its pull direction and its parting tool?
+**Question.** Which stored carrier fixes the outward-material convention of a `Draft` scope?
 
-**Known.** `f3d.md` §3.1 "A `Draft` scope has" gives the field roles and both group forms. The first scalar is the nonzero signed draft angle in radians and the second reserves the opposite-side angle at zero.
+**Known.** `f3d.md` §3.1 "A `Draft` scope has" gives the field roles and both group forms. The first scalar is a finite signed draft angle in radians, including zero, and the second reserves the opposite-side angle at zero. A neutral-plane draft has one role-`0x0000002100000000` face-recipe group. A parting-line draft has two such groups: one single-member entity-selection group names the WorkPlane at primary identity plus one, and the other carries the parting-tool face recipes. The WorkPlane's third matrix column supplies the pull direction and its feature is the pull-plane dependency.
 
-A neutral-plane draft and a parting-line draft authored to the same result show the angle sign and the pull direction are independent stored fields whose combination fixes the geometry: a draft authored at `+7` degrees with the default pull direction and one authored at `-7` degrees with the pull direction reversed carry the two angle signs and produce the same result. Neither the pull direction nor the outward flag is therefore derivable from the angle sign alone.
+The signed angle and the WorkPlane pull direction are independent fields. The outward-material convention has no identified carrier, so the neutral model leaves `outward` unset.
 
-A parting-line draft carries two role-`0x0000002100000000` groups where a neutral-plane draft carries one. Which of the two names the parting tool and which names the pull direction is not established, and the outward-material convention has no identified carrier.
-
-**Need.** The neutral model leaves the pull direction and the outward flag empty, and a parting-line draft keeps its native form because its second group has no assigned role. A design holding a neutral-plane draft whose pull direction alone is reversed separates the pull-direction carrier from the parting tool.
-
-**Note.** The three neutral-plane specimens authored for this item contain no `Draft` scope, so only the parting-line pair is readable.
+**Need.** Identify the stored carrier for the outward-material convention without deriving it from the angle sign or pull direction.
 
 ### DR-24. Class-365 whole-body operand fields
 
@@ -224,7 +185,7 @@ A parting-line draft carries two role-`0x0000002100000000` groups where a neutra
 - the five bytes between a `txt_tag` record's rotation and its colour components, the two bytes between its height and its anchor coordinates, and the eleven bytes between those coordinates and its text string, ten of them below class version 4
 - the targets of the reference run a `txt_tag` record writes after its text string, the three bytes and eight unclassified bytes around its font weight, and the pairs of its leading block
 
-**Known.** `f3d.md` §3.1 "Sketch text occupies two record classes" gives the two class GUIDs and the identity keys. `f3d.md` §3.1 "In a `textex_tag` record the property block" and `f3d.md` §3.1 "In a `txt_tag` record the twenty-nine bytes" give each class's members up to the text string, including the anchor-point coordinates of the `txt_tag` class. `f3d.md` §3.1 "A `textex_tag` record writes two optional" and `f3d.md` §3.1 "A `textex_tag` record's class tail opens" give the remaining members and the placement transform. A `txt_tag` record's f64 directly after the property block is its stored rotation in radians about the anchor; zero is explicit. The `textex_tag` form derives frame-text rotation and anchor from its transform. The colour components come from the run ahead of the font family. The decoder reads both forms. A `txt_tag` record stores no width factor.
+**Known.** `f3d.md` §3.1 "Sketch text occupies two record classes" gives the two class GUIDs and the identity keys. `f3d.md` §3.1 "In a `textex_tag` record the property block" and `f3d.md` §3.1 "In a `txt_tag` record the twenty-nine bytes" give each legacy class's members up to the text string, including the anchor-point coordinates of the `txt_tag` class. `f3d.md` §3.1 "A `textex_tag` record writes two optional" and `f3d.md` §3.1 "A `textex_tag` record's class tail opens" give the remaining members and the placement transform. The indexed Design form is also specified there: its fixed header lane, ordinary property block, metrics, fixed suffix, and absence of a neutral anchor or rotation are settled. A `txt_tag` record's f64 directly after the property block is its stored rotation in radians about the anchor; zero is explicit. The legacy `textex_tag` form derives frame-text rotation and anchor from its transform. The colour components come from the run ahead of the font family. Horizontal alignment values `1`, `2`, and `3` mean left, right, and center. Vertical alignment values `1`, `2`, and `3` mean top, bottom, and middle. The decoder reads both legacy forms and the indexed Design form. A `txt_tag` record stores no width factor or alignment enums.
 
 The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 0`, and `u8 0`. It is the same in every record of both classes. Its field boundaries are thus fixed, but no field in it changes, so no field in it has a meaning we can read. Of the three bytes after the horizontal-alignment enum, only the first is ever set. The single byte after the vertical-alignment enum is set when that byte is set, and clear when it is clear. The two are one flag written twice, or one flag and an echo of it. The alignment enums change independently of each other, so neither flag byte continues an alignment value. `f3d.md` §3.1 "Sketch text occupies two record classes" gives the leading block that both classes carry.
 
@@ -431,6 +392,14 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 
 **Need.** We must identify the coefficient grouping and coordinate scale before projecting the symmetry plane into a neutral geometric plane or writing a new symmetry block from neutral data.
 
+### TS-05. Compact Form cage-list tail
+
+**Question.** What do bytes 49 through 99 of the compact one-cage cage-list record hold?
+
+**Known.** `f3d.md` §1.1.1 "A compact one-cage cage-list record is 100 bytes" gives the indexed header, the ten zero bytes, the owning Form scope record index, the one-cage count, the sole cage-object record index, the two zero bytes, and the `0x00fc` member flags. The remaining 51 bytes are retained with the native record and have no assigned semantic field.
+
+**Need.** A writer must know the compact-form tail before it can emit this record from a neutral Form feature. The decoder can bind the sole cage from the settled prefix and retain the tail for source fidelity.
+
 ## 5. Mesh geometry
 
 ### PM-01. `.paramesh` packed and per-triangle element contents
@@ -446,16 +415,6 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 **Known.** `f3d.md` §1.1.2 gives the container framing, both stream encodings, the descriptor value types, the registry channel entries, and the element codes. Every container declares one code-5 channel. Where the mesh is a cube, every f32 in that channel is `-1`, `0`, or `1`, which is the component set of the six face normals of a cube. A code-7 channel carries one zero per triangle while authored per-triangle colours instead add a code-4 channel, so a code-7 value is not that colour selector. Boolean descriptor `U = true` occurs on the code-5 channel and on no other.
 
 **Need.** We must know the packing, the two channel contents, and the remaining descriptor and registry fields to write a container from a neutral model.
-
-### PM-03. Corner order of an indexed `.paramesh` attribute channel
-
-**Question.** Which triangle corner does each value of an indexed attribute channel belong to?
-
-**Known.** `f3d.md` §1.1.2 gives the channel declaration, the element codes, and the count relation: a channel that declares an index stream holds its values deduplicated per vertex, and its index stream holds exactly the element count less the vertex count values. That relation holds for the code-2, code-4, and code-5 channels of every container, so the values are grouped by vertex and one value per vertex is implicit.
-
-A code-4 channel stores authored corner colours exactly, in the sRGB scale and with alpha, and its element count equals the corner count when every corner carries a distinct colour. The stored order is a permutation of the corner order, not the corner order: where a mesh has six vertices, eight triangles, and twenty-four corners each carrying one of eight distinct colours, three consecutive stored triples equal the three corner colours of the first, second, and third triangle, and no grouping of the complete stored sequence into consecutive runs of four equals any vertex's corner colours. An index stream is monotonically increasing in steps of one and two, which is an offset array rather than an index array.
-
-**Need.** The decoder transfers a channel with one value per vertex and reports every indexed channel. We must know the per-vertex corner order the index stream offsets address to transfer an authored corner colour or texture coordinate. A mesh with one vertex whose incident corners carry a known asymmetric colour cycle, and a second mesh with the same connectivity and one differing corner, would separate the fan order from the offset semantics.
 
 ### PM-02. Mesh Design-record classes without decoded content
 

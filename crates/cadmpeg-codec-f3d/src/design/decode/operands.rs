@@ -22,9 +22,9 @@ use crate::records::{
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
     DesignFaceOperand, DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignParameter,
     DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchProfileOperand,
-    DesignTopologyRecipeEntry, DesignTopologyRecipeSide, DesignTopologyRecipeTriplet,
-    LostEdgeReference, PersistentSubentityTag, SketchCurveIdentity, SketchPoint,
-    SketchRelationOperand,
+    DesignSurfaceOffsetSupport, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
+    DesignTopologyRecipeTriplet, LostEdgeReference, PersistentSubentityTag, SketchCurveIdentity,
+    SketchPoint, SketchRelationOperand,
 };
 use cadmpeg_core::le::{f64_at, i32_at, u32_at, u64_at as read_u64};
 use cadmpeg_core::CodecError;
@@ -59,7 +59,13 @@ pub fn decode_edge_operands(
             member_indices.extend(operation.edge_record_indices.iter().copied());
         }
         if let Some(operation) = &scope.surface_offset_operation {
-            member_indices.extend(operation.edge_record_indices.iter().copied());
+            if let DesignSurfaceOffsetSupport::BoundaryCarrier {
+                edge_record_indices,
+                ..
+            } = &operation.support
+            {
+                member_indices.extend(edge_record_indices.iter().copied());
+            }
         }
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -245,6 +251,9 @@ pub fn decode_face_operands(
         let is_thread_face = scope.kind == "Thread" && group.role == 0x0000_0010_0000_0000;
         let is_draft_operand =
             design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Draft);
+        let is_surface_offset_operand = design_feature_family(&scope.kind)
+            == Some(DesignFeatureFamily::SurfaceOffset)
+            && group.role == 0x0000_0041_0000_0000;
         if !is_extrude_operand
             && !is_offset_faces_operand
             && !is_shell_operand
@@ -257,6 +266,7 @@ pub fn decode_face_operands(
             && !is_delete_face_operand
             && !is_thread_face
             && !is_draft_operand
+            && !is_surface_offset_operand
         {
             continue;
         }
@@ -603,6 +613,7 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::BoundaryFill)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Split)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Draft)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::SurfaceOffset)
             || scope.kind == "SplitFace"
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Scale)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::CircularPattern)
@@ -2439,10 +2450,20 @@ fn parse_extrude_identity_member(
     {
         return None;
     }
-    let next_at = if u32_at(bytes, tail_slot_offset + 1) == Some(0)
-        && after_context_id.checked_add(9)? == start.checked_add(190)?
+    let fixed_end = start.checked_add(190)?;
+    let (next_record_index, next_byte_offset) = if u32_at(bytes, tail_slot_offset + 1) == Some(0)
+        && after_context_id.checked_add(9)? == fixed_end
     {
-        start.checked_add(190)?
+        if fixed_end == bytes.len() {
+            (0, u64::try_from(fixed_end).ok()?)
+        } else {
+            let (_, after_next_tag) =
+                lp_ascii_filtered(bytes, fixed_end, 0..=2000, u8::is_ascii_graphic)?;
+            (
+                u32_at(bytes, after_next_tag)?,
+                u64::try_from(fixed_end).ok()?,
+            )
+        }
     } else if bytes.get(tail_slot_offset + 1..tail_slot_offset + 4)? == [0; 3] {
         let mut cursor = tail_slot_offset.checked_add(4)?;
         let (next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
@@ -2452,11 +2473,10 @@ fn parse_extrude_identity_member(
         if u32_at(bytes, after_next_tag)? != next_record_index {
             return None;
         }
-        next_at
+        (next_record_index, u64::try_from(next_at).ok()?)
     } else {
         return None;
     };
-    let (_, after_next_tag) = lp_ascii_filtered(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
     Some(ParsedExtrudeIdentityMember {
         local_id,
         local_id_offset: u64::try_from(start + 21).ok()?,
@@ -2466,8 +2486,8 @@ fn parse_extrude_identity_member(
         context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
         tail_slot_present,
         tail_slot_offset: u64::try_from(tail_slot_offset).ok()?,
-        next_record_index: u32_at(bytes, after_next_tag)?,
-        next_byte_offset: u64::try_from(next_at).ok()?,
+        next_record_index,
+        next_byte_offset,
     })
 }
 
@@ -3097,7 +3117,7 @@ pub(crate) fn parse_face_operand(
         .filter(|(_, values)| *values == [-1, -1, 2])
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
-    if !recipe_node_indices.is_empty() && recipe_node_indices.first() != Some(&3) {
+    if recipe_node_indices.first().is_some_and(|index| *index < 3) {
         return None;
     }
     if program_kind == FaceRecipeProgramKind::Terminal && !recipe_node_indices.is_empty() {

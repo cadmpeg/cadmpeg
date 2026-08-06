@@ -6,8 +6,9 @@ format = "f3d"
 spec = "docs/formats/f3d.md"
 endianness = "little"
 note = """
-Covers the two fixed Design-segment headers and the sheet-metal `EdgeFlange`
-fixed operation section (§3.1). ASM stream records are tabulated in
+Covers the fixed Design-segment headers, the named solid-primitive prologue,
+the ten-reference `CoilPrimitive` prologue and matrix block, and the
+sheet-metal `EdgeFlange` fixed operation section (§3.1). ASM stream records are tabulated in
 `docs/layouts/asm.toml`. Container and manifest layers are text grammars and
 are listed under "Not tabulated".
 """
@@ -105,6 +106,275 @@ type = "bytes[8]"
 source = "spec"
 anchor = "and eight zero bytes"
 
+[[record]]
+name = "named_solid_primitive_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "`BoxPrimitive` and `CylinderPrimitive` scopes use the named parameter-scope prologue."
+size = 26
+note = "Offsets are relative to the primary indexed scope header. The ordered parameter-owner references and the paired header follow this fixed prologue."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "Bytes 11 through 19 are zero"
+
+[[record.field]]
+name = "operation"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "the result-operation u32 is at primary-header offset 20"
+
+[[record.field]]
+name = "zero_flag"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "byte 24 is zero"
+
+[[record.field]]
+name = "form_marker"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "byte 25 is `0x01`"
+
+[[record]]
+name = "form_compact_one_cage_list"
+kind = "byte"
+section = "1.1.1"
+anchor = "A compact one-cage cage-list record is 100 bytes from its indexed header to its same-index paired header."
+size = 100
+note = "Offsets are relative to the primary indexed header. The class tags are dynamic; the frame length and fixed fields select the compact one-cage form."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "indexed header"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Ten zero bytes follow the indexed header"
+
+[[record.field]]
+name = "owner_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "`u8 1`, the owning Form scope's u64 record index"
+
+[[record.field]]
+name = "owner_scope_record_index"
+offset = 22
+type = "u64"
+source = "spec"
+anchor = "owning Form scope's u64 record index"
+
+[[record.field]]
+name = "zero_run_2"
+offset = 30
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero bytes"
+
+[[record.field]]
+name = "cage_count"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "a u32 cage count of one"
+
+[[record.field]]
+name = "member_marker"
+offset = 36
+type = "u8"
+source = "spec"
+anchor = "The sole member is `u8 1`"
+
+[[record.field]]
+name = "cage_object_record_index"
+offset = 37
+type = "u64"
+source = "spec"
+anchor = "a u64 cage-object record index"
+
+[[record.field]]
+name = "member_zero"
+offset = 45
+type = "u16"
+source = "spec"
+anchor = "`u16 0`"
+
+[[record.field]]
+name = "member_flags"
+offset = 47
+type = "u16"
+source = "spec"
+anchor = "`u16 0x00fc`"
+
+[[record.gap]]
+offset = 49
+size = 51
+note = "The compact-form tail is retained with the native record; no semantic field is assigned."
+
+[[record]]
+name = "extrude_selection_member_fixed_frame"
+kind = "byte"
+section = "3.1"
+anchor = "A selection member has the same terminal form."
+size = 190
+note = "Offsets are relative to the member's indexed header. The UUID payloads occupy 36 UTF-16 code units each; the following indexed header is absent only at the stream-end boundary."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its eleven-byte header"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes"
+
+[[record.field]]
+name = "local_identity"
+offset = 21
+type = "u64"
+source = "spec"
+anchor = "a local persistent identity"
+
+[[record.field]]
+name = "asset_uuid_length"
+offset = 29
+type = "u32"
+source = "spec"
+anchor = "the LP-UTF16 asset UUID"
+
+[[record.field]]
+name = "asset_uuid_utf16"
+offset = 33
+type = "bytes[72]"
+source = "spec"
+anchor = "the LP-UTF16 asset UUID"
+
+[[record.field]]
+name = "context_uuid_length"
+offset = 105
+type = "u32"
+source = "spec"
+anchor = "an LP-UTF16 context UUID"
+
+[[record.field]]
+name = "context_uuid_utf16"
+offset = 109
+type = "bytes[72]"
+source = "spec"
+anchor = "an LP-UTF16 context UUID"
+
+[[record.field]]
+name = "tail_kind"
+offset = 181
+type = "u32"
+source = "spec"
+anchor = "`u32 2`"
+
+[[record.field]]
+name = "tail_slot_marker"
+offset = 185
+type = "u8"
+source = "spec"
+anchor = "an optional-slot marker"
+
+[[record.field]]
+name = "tail_slot_value"
+offset = 186
+type = "u32"
+source = "spec"
+anchor = "followed by u32 zero"
+
+[[record]]
+name = "coil_long_scope_fixed_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "The ten-reference `CoilPrimitive` form has either a 450-byte or a 578-byte scope frame."
+size = 52
+note = "Offsets are relative to the primary indexed scope header. The two marked references repeat ordered-reference ordinals four and eight; their target records are dynamic indexed records."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its eleven-byte indexed header"
+
+[[record.field]]
+name = "zero_run_11"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "Both forms store eleven zero bytes at offsets 11 through 21"
+
+[[record.field]]
+name = "operation"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "a u32 at offset 22"
+
+[[record.field]]
+name = "structural_constant"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at offset 26"
+
+[[record.field]]
+name = "fifth_reference"
+offset = 30
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references at offsets 30 and 41 repeat the fifth and ninth ordered scope references."
+
+[[record.field]]
+name = "ninth_reference"
+offset = 41
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references at offsets 30 and 41 repeat the fifth and ninth ordered scope references."
+
+[[record]]
+name = "coil_long_scope_matrix"
+kind = "byte"
+section = "3.1"
+anchor = "The 578-byte form maps offset 22 value `2` to new body and stores a finite 16-value f64 matrix at offset 77"
+size = 128
+note = "The block begins at primary indexed scope offset 77. Its final row is `(0, 0, 0, 1)`; the containing 578-byte form carries it only in the new-body envelope."
+
+[[record.field]]
+name = "matrix"
+offset = 0
+type = "f64[16]"
+source = "spec"
+anchor = "stores a finite 16-value f64 matrix at offset 77"
+
 # --- Not tabulated ---------------------------------------------------------
 
 [[not_applicable]]
@@ -189,3 +459,243 @@ type = "f64"
 source = "spec"
 anchor = "the positive f64 inside bend radius in centimetres starts 15 bytes after that u32"
 
+[[record]]
+name = "edge_flange_to_object_fixed_operation_section"
+kind = "byte"
+section = "3.1"
+anchor = "The to-object fixed operation section uses the same common fields"
+size = 181
+note = "Offsets are relative to the section base `85 + S`. This single-edge form closes at the marked role-`0x08` group reference; the paired header follows at `576 + S`."
+
+[[record.gap]]
+offset = 0
+size = 94
+note = "The common operation fields through the single result-record count occupy offsets 0 through 93."
+
+[[record.field]]
+name = "target_group_reference"
+offset = 94
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked target-group reference starts at"
+
+[[record.field]]
+name = "target_reference_count"
+offset = 105
+type = "u32"
+source = "spec"
+anchor = "The u32 at `105 + S` is `2`"
+
+[[record.field]]
+name = "inserted_reference_one"
+offset = 109
+type = "bytes[11]"
+source = "spec"
+anchor = "marked first inserted reference starts at"
+
+[[record.field]]
+name = "inserted_reference_count"
+offset = 120
+type = "u32"
+source = "spec"
+anchor = "the u32 at `120 + S` is `1`"
+
+[[record.field]]
+name = "inserted_reference_two"
+offset = 124
+type = "bytes[11]"
+source = "spec"
+anchor = "marked second inserted reference starts at"
+
+[[record.gap]]
+offset = 135
+size = 4
+note = "Four zero bytes precede the structural u32 value `1` at offset 139."
+
+[[record.field]]
+name = "aggregate_reference_count"
+offset = 139
+type = "u32"
+source = "spec"
+anchor = "the u32 at `139 + S` is `1`"
+
+[[record.field]]
+name = "aggregate_group_reference"
+offset = 143
+type = "bytes[11]"
+source = "spec"
+anchor = "marked aggregate-group reference starts at"
+
+[[record.gap]]
+offset = 154
+size = 12
+note = "Twelve zero bytes precede the structural u32 value `1` at offset 166."
+
+[[record.field]]
+name = "edge_reference_count"
+offset = 166
+type = "u32"
+source = "spec"
+anchor = "the u32 at `166 + S` is `1`"
+
+[[record.field]]
+name = "edge_group_reference"
+offset = 170
+type = "bytes[11]"
+source = "spec"
+anchor = "marked role-`0x08` group reference starts at"
+
+[[record]]
+name = "hem_gap_length_fixed_operation_section"
+kind = "byte"
+section = "3.1"
+anchor = "The gap-and-length frame is"
+size = 79
+note = "Offsets are relative to the section base `85 + S`, where `S` is the header shift. The aggregate and role-`0x08` group references follow this fixed section at offsets 108 and 135."
+
+[[record.gap]]
+offset = 0
+size = 4
+note = "The fixed section begins with a retained u32 outside the typed owner and radius fields."
+
+[[record.field]]
+name = "edge_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "the u32 edge count `1` at offset"
+
+[[record.field]]
+name = "edge_wrapper_reference"
+offset = 8
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked edge-wrapper reference at"
+
+[[record.field]]
+name = "settings_reference"
+offset = 19
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked settings reference at"
+
+[[record.gap]]
+offset = 30
+size = 12
+note = "The fixed section retains the direction, reversal, and reference-side fields between the settings and owner references."
+
+[[record.field]]
+name = "gap_owner_reference"
+offset = 42
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked gap-owner"
+
+[[record.field]]
+name = "length_owner_reference"
+offset = 53
+type = "bytes[11]"
+source = "spec"
+anchor = "length-owner references at"
+
+[[record.gap]]
+offset = 64
+size = 7
+note = "The fixed section has seven bytes between the length-owner reference and the rule-derived radius."
+
+[[record.field]]
+name = "inside_bend_radius"
+offset = 71
+type = "f64"
+source = "spec"
+anchor = "a positive f64 rule-derived inside bend radius in centimetres at"
+
+[[record]]
+name = "hem_rolled_fixed_operation_section"
+kind = "byte"
+section = "3.1"
+anchor = "A rolled frame has the same"
+size = 79
+note = "Offsets are relative to the section base `85 + S`. The angle owner precedes the radius owner in the fixed section; source kinds assign their semantic roles."
+
+[[record.gap]]
+offset = 0
+size = 41
+note = "The fixed section begins with the retained fields and common envelope before the angle-owner reference."
+
+[[record.field]]
+name = "angle_owner_reference"
+offset = 41
+type = "bytes[11]"
+source = "spec"
+anchor = "the first owner is the angle input"
+
+[[record.gap]]
+offset = 52
+size = 2
+note = "The rolled owner references are separated by two bytes in the fixed section."
+
+[[record.field]]
+name = "radius_owner_reference"
+offset = 54
+type = "bytes[11]"
+source = "spec"
+anchor = "the second is the radius input"
+
+[[record.gap]]
+offset = 65
+size = 6
+note = "The fixed section has six bytes between the radius-owner reference and the rule-derived radius."
+
+[[record.field]]
+name = "inside_bend_radius"
+offset = 71
+type = "f64"
+source = "spec"
+anchor = "its rule-derived inside bend radius remains at"
+
+[[record]]
+name = "hem_teardrop_fixed_operation_section"
+kind = "byte"
+section = "3.1"
+anchor = "A teardrop frame is"
+size = 89
+note = "Offsets are relative to the section base `85 + S`; the aggregate and role-`0x08` group references lie at offsets 118 and 145 after the third owner slot."
+
+[[record.gap]]
+offset = 0
+size = 42
+note = "The fixed section begins with the retained fields and common envelope before the gap-owner reference."
+
+[[record.field]]
+name = "gap_owner_reference"
+offset = 42
+type = "bytes[11]"
+source = "spec"
+anchor = "marked gap-owner"
+
+[[record.field]]
+name = "length_owner_reference"
+offset = 53
+type = "bytes[11]"
+source = "spec"
+anchor = "length-owner"
+
+[[record.field]]
+name = "radius_owner_reference"
+offset = 64
+type = "bytes[11]"
+source = "spec"
+anchor = "radius-owner references"
+
+[[record.gap]]
+offset = 75
+size = 6
+note = "The fixed section has six bytes between the radius-owner reference and the rule-derived radius."
+
+[[record.field]]
+name = "inside_bend_radius"
+offset = 81
+type = "f64"
+source = "spec"
+anchor = "its rule-derived inside bend radius starts"

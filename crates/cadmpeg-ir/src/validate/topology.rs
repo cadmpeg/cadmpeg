@@ -11,7 +11,7 @@ use super::*;
 use crate::features::{
     BodySelection, ChamferSpec, DatumPlaneReference, ExtrudeStart, FaceMotion, FaceSelection,
     FeatureSourceContent, FlexMode, HoleKind, Length, PatternKind, PatternSeed,
-    PatternStageCombination, PrimitiveSolid, RadiusSpec,
+    PatternStageCombination, PrimitiveSolid, RadiusSpec, SplitFaceTool,
 };
 use crate::math::Point3;
 
@@ -1853,7 +1853,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
         if let Definition::RectangularPattern { directions, .. } = &constraint.definition {
             for parameter in directions.iter().flat_map(|direction| {
                 [
-                    direction.span_parameter.as_ref(),
+                    direction.spacing_parameter.as_ref(),
                     direction.count_parameter.as_ref(),
                 ]
                 .into_iter()
@@ -2583,6 +2583,42 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     feature_geometry_error(findings, feature, "face blend radius is invalid");
                 }
             }
+            FeatureDefinition::FullRoundFillet { groups } => {
+                let valid = !groups.is_empty()
+                    && groups.iter().all(|group| {
+                        face_selections.push(&group.center_faces);
+                        let side_one = match &group.side_one_faces {
+                            crate::features::FullRoundSideSelection::Explicit(selection) => {
+                                face_selections.push(selection);
+                                Some(selection)
+                            }
+                            crate::features::FullRoundSideSelection::Automatic
+                            | crate::features::FullRoundSideSelection::Unresolved => None,
+                        };
+                        let side_two = match &group.side_two_faces {
+                            crate::features::FullRoundSideSelection::Explicit(selection) => {
+                                face_selections.push(selection);
+                                Some(selection)
+                            }
+                            crate::features::FullRoundSideSelection::Automatic
+                            | crate::features::FullRoundSideSelection::Unresolved => None,
+                        };
+                        !side_one.is_some_and(|selection| {
+                            face_selections_overlap(&group.center_faces, selection)
+                        }) && !side_two.is_some_and(|selection| {
+                            face_selections_overlap(&group.center_faces, selection)
+                        }) && !side_one
+                            .zip(side_two)
+                            .is_some_and(|(first, second)| face_selections_overlap(first, second))
+                    });
+                if !valid {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "full-round fillet face sets are invalid",
+                    );
+                }
+            }
             FeatureDefinition::SewBodies {
                 bodies,
                 gap_tolerance,
@@ -2609,6 +2645,26 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 }
             }
             FeatureDefinition::BaseFeature { bodies } => body_selections.push(bodies),
+            FeatureDefinition::MeshImport { tessellations } => {
+                if tessellations.is_empty() {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "mesh import has no tessellation geometry",
+                    );
+                }
+                let mut seen = HashSet::new();
+                for tessellation in tessellations {
+                    if !seen.insert(tessellation) || ids.tessellations(tessellation).is_none() {
+                        ref_error(
+                            findings,
+                            &feature.id.0,
+                            "mesh import tessellation",
+                            tessellation,
+                        );
+                    }
+                }
+            }
             FeatureDefinition::InsertBodies { bodies } => {
                 body_selections.push(bodies);
                 if let BodySelection::Resolved { bodies, .. } = bodies {
@@ -2860,7 +2916,20 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 ..
             } => {
                 edge_selections.push(edges);
-                if !positive_feature_length(*height) {
+                let height_valid = match height {
+                    crate::features::SheetMetalFlangeHeight::Distance(height) => {
+                        positive_feature_length(*height)
+                    }
+                    crate::features::SheetMetalFlangeHeight::ToObject { target, offset } => {
+                        offset.0.is_finite()
+                            && !matches!(
+                                target,
+                                crate::features::SheetMetalFlangeHeightTarget::Native(native)
+                                    if native.is_empty()
+                            )
+                    }
+                };
+                if !height_valid {
                     feature_geometry_error(
                         findings,
                         feature,
@@ -2894,6 +2963,48 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         feature,
                         "sheet-metal edge-flange width is invalid",
                     );
+                }
+            }
+            FeatureDefinition::SheetMetalHem {
+                edges,
+                form,
+                bend_radius,
+                ..
+            } => {
+                edge_selections.push(edges);
+                if !positive_feature_length(*bend_radius) {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "sheet-metal hem bend radius is invalid",
+                    );
+                }
+                let gap_is_valid = |gap: crate::features::Length| gap.0.is_finite() && gap.0 >= 0.0;
+                let form_is_valid = match form {
+                    crate::features::SheetMetalHemForm::Flat { length } => {
+                        positive_feature_length(*length)
+                    }
+                    crate::features::SheetMetalHemForm::Open { gap, length } => {
+                        gap_is_valid(*gap) && positive_feature_length(*length)
+                    }
+                    crate::features::SheetMetalHemForm::GapLength { gap, length } => {
+                        gap_is_valid(*gap) && positive_feature_length(*length)
+                    }
+                    crate::features::SheetMetalHemForm::Rolled { radius, angle } => {
+                        positive_feature_length(*radius) && angle.0.is_finite()
+                    }
+                    crate::features::SheetMetalHemForm::Teardrop {
+                        gap,
+                        length,
+                        radius,
+                    } => {
+                        gap_is_valid(*gap)
+                            && positive_feature_length(*length)
+                            && positive_feature_length(*radius)
+                    }
+                };
+                if !form_is_valid {
+                    feature_geometry_error(findings, feature, "sheet-metal hem form is invalid");
                 }
             }
             FeatureDefinition::Revolve { construction, .. } => {
@@ -3228,12 +3339,27 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,
+                parting_tool,
+                pull_plane,
                 pull_direction,
                 angle,
                 ..
             } => {
                 face_selections.push(faces);
-                face_selections.push(neutral_plane);
+                if let Some(parting_tool) = parting_tool {
+                    face_selections.push(parting_tool);
+                } else {
+                    face_selections.push(neutral_plane);
+                }
+                if let Some(pull_plane) = pull_plane {
+                    check_plane_feature_reference(
+                        findings,
+                        feature,
+                        pull_plane,
+                        &feature_records,
+                        "draft pull plane",
+                    );
+                }
                 if pull_direction.is_some_and(|value| !valid_feature_direction(value))
                     || angle.is_some_and(|value| !valid_draft_angle(value))
                 {
@@ -3258,7 +3384,16 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             }
             FeatureDefinition::SplitFace { targets, tool } => {
                 face_selections.push(targets);
-                paths.push(tool);
+                match tool {
+                    SplitFaceTool::Path(path) => paths.push(path),
+                    SplitFaceTool::Plane { plane } => check_plane_feature_reference(
+                        findings,
+                        feature,
+                        plane,
+                        &feature_records,
+                        "split-face tool plane",
+                    ),
+                }
             }
             FeatureDefinition::DeleteFace { faces, .. } => {
                 face_selections.push(faces);
@@ -5303,6 +5438,52 @@ fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> boo
 
 fn feature_geometry_error(findings: &mut Vec<Finding>, feature: &Feature, message: &str) {
     geometry_error(findings, &feature.id.0, message);
+}
+
+fn check_plane_feature_reference(
+    findings: &mut Vec<Finding>,
+    feature: &Feature,
+    reference: &crate::features::FeatureId,
+    feature_records: &HashMap<&str, &Feature>,
+    reference_kind: &str,
+) {
+    match feature_records.get(reference.as_str()) {
+        None => ref_error(findings, &feature.id.0, reference_kind, reference.as_str()),
+        Some(record)
+            if !matches!(
+                &record.definition,
+                crate::features::FeatureDefinition::DatumPrincipalPlane { .. }
+                    | crate::features::FeatureDefinition::DatumPlane { .. }
+                    | crate::features::FeatureDefinition::DatumPlaneUnresolved
+                    | crate::features::FeatureDefinition::DatumOffsetPlane { .. }
+            ) =>
+        {
+            feature_geometry_error(
+                findings,
+                feature,
+                "feature reference does not name a datum plane",
+            );
+        }
+        Some(record) if record.ordinal >= feature.ordinal => findings.push(Finding {
+            check: Check::ReferentialIntegrity,
+            severity: Severity::Error,
+            message: format!(
+                "{reference_kind} `{}` does not precede its consuming feature",
+                reference.0
+            ),
+            entity: Some(feature.id.0.clone()),
+        }),
+        Some(_) if !feature.dependencies.contains(reference) => findings.push(Finding {
+            check: Check::ReferentialIntegrity,
+            severity: Severity::Error,
+            message: format!(
+                "feature omits {reference_kind} dependency `{}`",
+                reference.0
+            ),
+            entity: Some(feature.id.0.clone()),
+        }),
+        Some(_) => {}
+    }
 }
 
 fn geometry_error(findings: &mut Vec<Finding>, entity: &str, message: &str) {

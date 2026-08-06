@@ -226,6 +226,7 @@ fn parse(name: &str, bytes: &[u8]) -> Result<ParsedCage, CodecError> {
     let mut derived_grips = Vec::new();
     let mut selected_edges = BTreeSet::new();
     let mut selected_vertices = BTreeSet::new();
+    let mut selected_grips = BTreeSet::new();
     let mut editor_declarations = BTreeSet::new();
     let mut symmetry_blocks = Vec::new();
     let mut current_symmetry: Option<SymmetryBlock> = None;
@@ -380,19 +381,19 @@ fn parse(name: &str, bytes: &[u8]) -> Result<ParsedCage, CodecError> {
                     grip_points.push(Some(point));
                 }
             },
-            Some(selection @ ("100edges" | "100verts")) => {
-                if !editor_declarations.insert(selection) {
+            Some(selection @ ("100edges" | "100verts" | "50000grip")) => {
+                if selection != "50000grip" && !editor_declarations.insert(selection) {
                     return Err(malformed(name, format!("duplicate {selection} record")));
                 }
                 let values = fields
                     .map(|value| parse_usize(name, Some(value), selection))
                     .collect::<Result<BTreeSet<_>, _>>()?;
-                let target = if selection == "100edges" {
-                    &mut selected_edges
-                } else {
-                    &mut selected_vertices
-                };
-                *target = values;
+                match selection {
+                    "100edges" => selected_edges = values,
+                    "100verts" => selected_vertices = values,
+                    "50000grip" => selected_grips.extend(values),
+                    _ => unreachable!("selection is exhaustive"),
+                }
             }
             Some("105sym") => {
                 if parse_i64(name, fields.next(), "symmetry flags")? != 0 {
@@ -490,6 +491,11 @@ fn parse(name: &str, bytes: &[u8]) -> Result<ParsedCage, CodecError> {
                 name,
                 "selected vertex is out of range or deleted",
             ));
+        }
+    }
+    for grip in &selected_grips {
+        if !grip_points.get(*grip).is_some_and(Option::is_some) {
+            return Err(malformed(name, "selected grip is out of range or deleted"));
         }
     }
     for block in &symmetry_blocks {
@@ -780,7 +786,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              0m odd-grip-map\n0m gvp 0\n0m gvp 1\n0m gvp 2\n0m gvp 3\n\
              0m cg 0 1 1 -1 -1\n\
              0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n\
-             100edges 0 2\n100verts 1\n\
+             100edges 0 2\n100verts 1\n50000grip 0\n50000grip 1\n\
              105sym 0\n105plane 0 2 0 1 0 1 0 0 0 0 1 0\n\
              105a fr 0 0\n105a er 0 0 1 2\n105a e 2 1\n\
              105a vr 0 1\n105a v 1 0\n\

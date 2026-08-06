@@ -56,6 +56,11 @@ pub struct EmbeddedTwoSidedOffset {
 pub struct EmbeddedIntersection {
     /// Two ordered embedded support surfaces.
     pub surfaces: [Option<SurfaceGeometry>; 2],
+    /// Whether each native support slot contains a valid non-null support.
+    ///
+    /// A procedural support can be valid without a standalone
+    /// `SurfaceGeometry` cache, so this is distinct from `surfaces`.
+    pub support_present: [bool; 2],
     /// Two ordered embedded NURBS parameter curves.
     pub pcurves: [Option<NurbsPcurve>; 2],
     /// Shared native parameter interval.
@@ -427,7 +432,16 @@ fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<Nurb
         return selected_optional_pcurve(&context.surfaces, &context.pcurves, slot);
     }
     if let Some((context, _)) = decoded.embedded_intersection.as_ref() {
-        return selected_optional_pcurve(&context.surfaces, &context.pcurves, slot);
+        // An intersection support may be a procedural surface with no
+        // standalone SurfaceGeometry carrier. The native pcurve slot remains
+        // a complete parameter-space carrier when its paired native support
+        // slot is present. Edge-domain validation runs after this function.
+        context
+            .support_present
+            .get(slot)
+            .copied()
+            .filter(|present| *present)?;
+        return context.pcurves.get(slot)?.clone();
     }
     if let Some(context) = decoded.embedded_three_surface_intersection.as_ref() {
         return context.pcurves.get(slot).cloned();
@@ -782,9 +796,11 @@ fn embedded_law_curve(toks: &[Token]) -> Option<EmbeddedLawCurve> {
     let additional = (0..count)
         .map(|_| law_formula(&mut cur))
         .collect::<Option<Vec<_>>>()?;
+    let support_present = [surfaces[0].is_some(), surfaces[1].is_some()];
     Some(EmbeddedLawCurve {
         context: EmbeddedIntersection {
             surfaces,
+            support_present,
             pcurves,
             parameter_range,
             discontinuities,
@@ -1288,6 +1304,7 @@ fn embedded_surface_offset(
         return Some(EmbeddedSurfaceOffset {
             context: EmbeddedIntersection {
                 surfaces: context.surfaces,
+                support_present: context.support_present,
                 pcurves: context.pcurves,
                 parameter_range: context.parameter_range,
                 discontinuities: context.discontinuities,
@@ -1320,6 +1337,7 @@ fn embedded_surface_offset(
     Some(EmbeddedSurfaceOffset {
         context: EmbeddedIntersection {
             surfaces: surfaces.map(Some),
+            support_present: [true, true],
             pcurves: pcurves.map(Some),
             parameter_range,
             discontinuities,
@@ -1445,6 +1463,7 @@ fn embedded_silhouette(toks: &[Token]) -> Option<EmbeddedSilhouette> {
     Some(EmbeddedSilhouette {
         context: EmbeddedIntersection {
             surfaces: surfaces.map(Some),
+            support_present: [true, true],
             pcurves: pcurves.map(Some),
             parameter_range,
             discontinuities,
@@ -1678,6 +1697,7 @@ fn agree(left: f64, right: f64, scale: f64) -> bool {
 struct CacheFirstCurveContext {
     form: cadmpeg_ir::geometry::CacheFirstCurveForm,
     surfaces: [Option<SurfaceGeometry>; 2],
+    support_present: [bool; 2],
     pcurves: [Option<NurbsPcurve>; 2],
     parameter_range: [f64; 2],
     discontinuities: [Vec<f64>; 3],
@@ -1713,8 +1733,10 @@ fn cache_first_curve_context(
         _ => return None,
     };
     let first_surface_start = cur.pos();
+    let first_support_present = support_slot_present(cur, table);
     let (first_surface, first_bounds) = optional_embedded_surface_with_bounds(cur, table)?;
     let second_surface_start = cur.pos();
+    let second_support_present = support_slot_present(cur, table);
     let (second_surface, second_bounds) = optional_embedded_surface_with_bounds(cur, table)?;
     let mut pcurves = [
         nullable_embedded_pcurve(cur)?,
@@ -1757,6 +1779,7 @@ fn cache_first_curve_context(
             extension,
         },
         surfaces: [first_surface, second_surface],
+        support_present: [first_support_present, second_support_present],
         pcurves,
         parameter_range,
         discontinuities,
@@ -1784,6 +1807,7 @@ fn context_first_surface_curve(
         family,
         EmbeddedIntersection {
             surfaces: surfaces.map(Some),
+            support_present: [true, true],
             pcurves: pcurves.map(Some),
             parameter_range,
             discontinuities,
@@ -1813,6 +1837,7 @@ fn cache_first_surface_curve(
         family,
         EmbeddedIntersection {
             surfaces: context.surfaces,
+            support_present: context.support_present,
             pcurves: context.pcurves,
             parameter_range: context.parameter_range,
             discontinuities: context.discontinuities,
@@ -2080,6 +2105,7 @@ fn context_first_intersection(
     Some((
         EmbeddedIntersection {
             surfaces: surfaces.map(Some),
+            support_present: [true, true],
             pcurves: pcurves.map(Some),
             parameter_range,
             discontinuities,
@@ -2101,10 +2127,13 @@ fn cache_first_intersection(
     cur.set_pos(cache_end);
     cur.take_f64()?;
     let first_surface_start = cur.pos();
+    let first_support_present = support_slot_present(&cur, table);
     let first_surface = optional_embedded_surface_resolving_ref(&mut cur, table)?;
     let second_surface_start = cur.pos();
+    let second_support_present = support_slot_present(&cur, table);
     let second_surface = optional_embedded_surface_resolving_ref(&mut cur, table)?;
     let surfaces = [first_surface, second_surface];
+    let support_present = [first_support_present, second_support_present];
     let mut pcurves = [
         nullable_embedded_pcurve(&mut cur)?,
         nullable_embedded_pcurve(&mut cur)?,
@@ -2129,6 +2158,7 @@ fn cache_first_intersection(
     Some((
         EmbeddedIntersection {
             surfaces,
+            support_present,
             pcurves,
             parameter_range,
             discontinuities,
@@ -2234,6 +2264,58 @@ fn optional_pcurve(cur: &mut Cur<'_>) -> Option<Nullable<NurbsPcurve>> {
     let (pcurve, end) = pcurve_block_with_end(cur.toks(), start)?;
     cur.set_pos(end);
     Some(Nullable::Value(pcurve))
+}
+
+/// Whether the next cache-first support slot contains a valid non-null
+/// surface construction.
+///
+/// The neutral `SurfaceGeometry` field cannot represent a cacheless
+/// procedural surface without assigning it a document-level construction ID.
+/// Keep that distinction separate: a typed support reference still proves that
+/// its paired native pcurve slot is eligible, while `null_surface` does not.
+fn support_slot_present(cur: &Cur<'_>, table: &SubtypeTable) -> bool {
+    let mut probe = *cur;
+    if probe.take_ident() == Some("null_surface") {
+        return false;
+    }
+
+    let mut parsed = *cur;
+    if let Some((Some(_), _)) = optional_embedded_surface_with_bounds(&mut parsed, table) {
+        return true;
+    }
+
+    let mut probe = *cur;
+    if probe.take_ident() != Some("spline") {
+        return false;
+    }
+    if matches!(probe.peek(), Some(Token::True | Token::False)) && probe.take_bool().is_none() {
+        return false;
+    }
+    let Some(Token::SubtypeOpen) = probe.peek() else {
+        return false;
+    };
+    let start = probe.pos();
+    let Some(scope) = crate::nurbs::toks::subtype_span(probe.toks(), start) else {
+        return false;
+    };
+    let Some(Token::Ident(name)) = probe.toks().get(start + 1) else {
+        return false;
+    };
+    if name == "ref" {
+        let Some(Token::Long(index)) = probe.toks().get(start + 2) else {
+            return false;
+        };
+        let Ok(index) = usize::try_from(*index) else {
+            return false;
+        };
+        return table.span(index).is_some_and(|target| {
+            crate::nurbs::core::owned_surface_cache_resolving_refs(target, table).is_some()
+                || crate::nurbs::proc_surface::procedural_surface_resolving_refs(target, table)
+                    .is_some()
+        });
+    }
+    crate::nurbs::core::owned_surface_cache_resolving_refs(scope, table).is_some()
+        || crate::nurbs::proc_surface::procedural_surface_resolving_refs(scope, table).is_some()
 }
 
 /// Writable scalar locations in a retained `off_int_cur` construction.

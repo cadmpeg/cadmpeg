@@ -3944,11 +3944,13 @@ mod tests {
         .into_iter()
         .map(
             |(kind, item_size, data)| cadmpeg_ir::tessellation::TessellationChannel {
+                domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
                 item_size,
                 kind,
                 flags: 0,
                 count: 3,
                 data,
+                indices: Vec::new(),
             },
         )
         .collect::<Vec<_>>();
@@ -4009,11 +4011,13 @@ mod tests {
                 strip_lengths: Vec::new(),
                 normals: Vec::new(),
                 channels: vec![cadmpeg_ir::tessellation::TessellationChannel {
+                    domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
                     kind: CHANNEL_UV,
                     item_size: 8,
                     flags: 0,
                     count: 3,
                     data: uv_data.clone(),
+                    indices: Vec::new(),
                 }],
             });
 

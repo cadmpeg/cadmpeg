@@ -1334,7 +1334,7 @@ pub fn decode_sketch_relations(
 /// instance count directly after it. Rectangular patterns store, per direction,
 /// the evaluated u32 count, the count-parameter reference, a three-component
 /// f64 unit direction six zero bytes after that reference, the evaluated f64
-/// seed-to-final-instance span, and the distance-parameter reference. Text-frame
+/// adjacent-instance spacing, and the distance-parameter reference. Text-frame
 /// relations repeat the sketch-text member as an auxiliary reference.
 pub(crate) fn decode_pattern_definition(
     payload: &[u8],
@@ -1802,6 +1802,8 @@ struct SketchTextTail {
     font_weight: i32,
     anchor: Option<Point2>,
     rotation: Option<f64>,
+    horizontal_alignment: Option<u32>,
+    vertical_alignment: Option<u32>,
     owner_reference: u32,
 }
 
@@ -1921,6 +1923,58 @@ fn decode_sketch_text_head(payload: &[u8], class_version: u32) -> Option<SketchT
     })
 }
 
+/// Read the indexed Design form of a `textex_tag` record. It has no leading
+/// relation block or record-name string: the indexed header is followed by a
+/// nine-byte zero entity lane and the ordinary property block. Its one-byte
+/// width prefix is zero, unlike the legacy class form's one-byte prefix of
+/// one; the f64 width factor and the remaining metrics have the same roles.
+fn decode_indexed_sketch_text_head(payload: &[u8]) -> Option<SketchTextHead> {
+    let (_, after_tag) = lp_ascii_filtered(payload, 0, 3..=3, u8::is_ascii_digit)?;
+    if after_tag != 7
+        || u32_at(payload, after_tag).is_none()
+        || payload.get(11..20)?.iter().any(|byte| *byte != 0)
+    {
+        return None;
+    }
+    let mut cursor = 20;
+    let properties = read_property_block(payload, &mut cursor)?;
+    let property = |key: &str| {
+        properties
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| *value)
+    };
+    let persistent_id = property("textex_tag")?;
+    (payload.get(cursor)? == &0).then_some(())?;
+    cursor += 1;
+    let width_factor = f64_at(payload, cursor)?;
+    cursor = cursor.checked_add(8)?;
+    (width_factor.is_finite() && width_factor >= 0.0).then_some(())?;
+    let color = read_sketch_text_color(payload, &mut cursor)?;
+    let font_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    if font_count == 0 || font_count > 1_024 {
+        return None;
+    }
+    let (font_family, after_font) = utf16le_at(payload, cursor + 4, font_count)?;
+    cursor = after_font;
+    (payload.get(cursor)? == &0).then_some(())?;
+    cursor += 1;
+    let height = f64_at(payload, cursor)? * 10.0;
+    cursor = cursor.checked_add(8)?;
+    (height.is_finite() && height > 0.0).then_some(())?;
+    Some(SketchTextHead {
+        identity: SketchTextIdentity::TextexTag,
+        entity_genesis: property("EntityGenesis"),
+        persistent_id: Some(persistent_id),
+        base_id: property("txt_tag_base"),
+        font_family,
+        height,
+        width_factor: Some(width_factor),
+        color,
+        cursor,
+    })
+}
+
 /// Read the alignment fields, text content, and class tail under one pair of
 /// slot forms, requiring the walk to end exactly on the owning-sketch
 /// reference.
@@ -1932,7 +1986,7 @@ fn decode_sketch_text_tail(
 ) -> Option<SketchTextTail> {
     let first_reference = read_text_reference(payload, &mut cursor, first_slot)?;
     // Horizontal alignment enum and three flag bytes.
-    u32_at(payload, cursor)?;
+    let horizontal_alignment = Some(u32_at(payload, cursor)?);
     cursor = cursor.checked_add(7)?;
     let text_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
     if text_count == 0 || text_count > 1_048_576 {
@@ -1942,7 +1996,7 @@ fn decode_sketch_text_tail(
     cursor = after_text;
     let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
     // Vertical alignment enum, one flag byte, and the font weight.
-    u32_at(payload, cursor)?;
+    let vertical_alignment = Some(u32_at(payload, cursor)?);
     let font_weight = u32_at(payload, cursor.checked_add(5)?)? as i32;
     matches!(font_weight, 400 | 500 | 750).then_some(())?;
     cursor = cursor.checked_add(9)?;
@@ -1969,6 +2023,8 @@ fn decode_sketch_text_tail(
         font_weight,
         anchor: placement.map(|(anchor, _)| anchor),
         rotation: placement.map(|(_, rotation)| rotation),
+        horizontal_alignment,
+        vertical_alignment,
         owner_reference: reference_index(&owner)?,
     })
 }
@@ -1976,10 +2032,10 @@ fn decode_sketch_text_tail(
 /// Read the `txt_tag` form's members from the height to the end of the record.
 /// Two bytes separate the height from the anchor coordinates, which this form
 /// stores directly rather than in a placement transform. The form writes no
-/// parameter-reference slot: an eleven-byte run carries the alignment fields,
-/// ten bytes below [`TXT_TAG_ANCHOR_MEMBER_VERSION`], and the text string is
-/// followed by a counted reference run, fifteen bytes, and the trailing run and
-/// owning-sketch reference that close both forms.
+/// parameter-reference slot: an eleven-byte unclassified member run, ten bytes
+/// below [`TXT_TAG_ANCHOR_MEMBER_VERSION`], follows the anchor. The text string
+/// is followed by a counted reference run, fifteen bytes, and the trailing run
+/// and owning-sketch reference that close both forms.
 fn decode_txt_tag_sketch_text_tail(
     payload: &[u8],
     mut cursor: usize,
@@ -2024,43 +2080,109 @@ fn decode_txt_tag_sketch_text_tail(
         font_weight,
         anchor: Some(anchor),
         rotation: Some(rotation),
+        horizontal_alignment: None,
+        vertical_alignment: None,
         owner_reference: reference_index(&owner)?,
     })
 }
 
-pub(crate) fn decode_sketch_text_record(
+/// Read the indexed `textex_tag` tail. The member and alignment fields match
+/// the common text body. The indexed class then writes a fixed 35-byte suffix:
+/// a text-type u32, three fixed u32 values, a zero u32, a two-byte zero run,
+/// two positive f32 scales, and a five-byte zero run before the owning-sketch
+/// reference. The text-type values are the same frame (`0`) and path (`1`)
+/// discriminators used by the legacy class tail. The indexed suffix carries no
+/// neutral anchor or rotation; the source record is retained in full.
+fn decode_indexed_sketch_text_tail(
+    payload: &[u8],
+    mut cursor: usize,
+    first_slot: TextReferenceSlot,
+    second_slot: TextReferenceSlot,
+) -> Option<SketchTextTail> {
+    let first_reference = read_text_reference(payload, &mut cursor, first_slot)?;
+    let horizontal_alignment = Some(u32_at(payload, cursor)?);
+    cursor = cursor.checked_add(7)?;
+    let text_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    if text_count == 0 || text_count > 1_048_576 {
+        return None;
+    }
+    let (text, after_text) = utf16le_at(payload, cursor + 4, text_count)?;
+    cursor = after_text;
+    let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
+    let vertical_alignment = Some(u32_at(payload, cursor)?);
+    let font_weight = u32_at(payload, cursor.checked_add(5)?)? as i32;
+    matches!(font_weight, 400 | 500 | 750).then_some(())?;
+    cursor = cursor.checked_add(9)?;
+    if !matches!(u32_at(payload, cursor)?, 0 | 1)
+        || u32_at(payload, cursor.checked_add(4)?)? != 1
+        || u32_at(payload, cursor.checked_add(8)?)? != 256
+        || u32_at(payload, cursor.checked_add(12)?)? != 0
+        || u32_at(payload, cursor.checked_add(16)?)? != 0
+        || payload
+            .get(cursor.checked_add(20)?..cursor.checked_add(22)?)?
+            .iter()
+            .any(|byte| *byte != 0)
+    {
+        return None;
+    }
+    let mut scale_cursor = cursor.checked_add(22)?;
+    let scale_u = take_f32(payload, &mut scale_cursor)?;
+    let scale_v = take_f32(payload, &mut scale_cursor)?;
+    if !scale_u.is_finite() || !scale_v.is_finite() || scale_u <= 0.0 || scale_v <= 0.0 {
+        return None;
+    }
+    (payload
+        .get(scale_cursor..cursor.checked_add(35)?)?
+        .iter()
+        .all(|byte| *byte == 0))
+    .then_some(())?;
+    cursor = cursor.checked_add(35)?;
+    let owner = take_reference(payload, &mut cursor)?;
+    (cursor == payload.len()).then_some(())?;
+    Some(SketchTextTail {
+        first_reference: reference_index(&first_reference),
+        second_reference: reference_index(&second_reference),
+        text,
+        font_weight,
+        anchor: None,
+        rotation: None,
+        horizontal_alignment,
+        vertical_alignment,
+        owner_reference: reference_index(&owner)?,
+    })
+}
+
+fn decode_indexed_sketch_text_record_tail(payload: &[u8], cursor: usize) -> Option<SketchTextTail> {
+    let mut closed = None;
+    for first_slot in TEXT_REFERENCE_SLOTS {
+        for second_slot in TEXT_REFERENCE_SLOTS {
+            let Some(tail) =
+                decode_indexed_sketch_text_tail(payload, cursor, first_slot, second_slot)
+            else {
+                continue;
+            };
+            if closed.replace(tail).is_some() {
+                return None;
+            }
+        }
+    }
+    closed
+}
+
+// Keep source identity, raw bytes, and the independently parsed head and tail
+// explicit at this native-record assembly boundary.
+#[allow(clippy::too_many_arguments)]
+fn assemble_sketch_text(
     payload: &[u8],
     stream: &str,
     class_tag: String,
     class_version: u32,
     record_index: u32,
     byte_offset: usize,
-) -> Option<SketchText> {
-    let head = decode_sketch_text_head(payload, class_version)?;
-    let tail = match head.identity {
-        SketchTextIdentity::TextexTag => {
-            let mut closed = None;
-            for first_slot in TEXT_REFERENCE_SLOTS {
-                for second_slot in TEXT_REFERENCE_SLOTS {
-                    let Some(tail) =
-                        decode_sketch_text_tail(payload, head.cursor, first_slot, second_slot)
-                    else {
-                        continue;
-                    };
-                    // Two slot forms both ending on the owning-sketch reference
-                    // leave the parameter references undetermined.
-                    if closed.replace(tail).is_some() {
-                        return None;
-                    }
-                }
-            }
-            closed?
-        }
-        SketchTextIdentity::TxtTag { rotation } => {
-            decode_txt_tag_sketch_text_tail(payload, head.cursor, class_version, rotation)?
-        }
-    };
-    Some(SketchText {
+    head: SketchTextHead,
+    tail: SketchTextTail,
+) -> SketchText {
+    SketchText {
         id: ids::native_sketch_text_id(stream, byte_offset),
         record_index,
         owner_reference: tail.owner_reference,
@@ -2078,10 +2200,77 @@ pub(crate) fn decode_sketch_text_record(
         color: head.color,
         anchor: tail.anchor,
         rotation: tail.rotation,
+        horizontal_alignment: tail.horizontal_alignment,
+        vertical_alignment: tail.vertical_alignment,
         first_reference: tail.first_reference,
         second_reference: tail.second_reference,
         raw_bytes: payload.to_vec(),
-    })
+    }
+}
+
+pub(crate) fn decode_sketch_text_record(
+    payload: &[u8],
+    stream: &str,
+    class_tag: String,
+    class_version: u32,
+    record_index: u32,
+    byte_offset: usize,
+) -> Option<SketchText> {
+    if let Some(head) = decode_sketch_text_head(payload, class_version) {
+        let tail = match head.identity {
+            SketchTextIdentity::TextexTag => {
+                let mut closed = None;
+                let mut ambiguous = false;
+                'forms: for first_slot in TEXT_REFERENCE_SLOTS {
+                    for second_slot in TEXT_REFERENCE_SLOTS {
+                        let Some(tail) =
+                            decode_sketch_text_tail(payload, head.cursor, first_slot, second_slot)
+                        else {
+                            continue;
+                        };
+                        // Two slot forms both ending on the owning-sketch reference
+                        // leave the parameter references undetermined.
+                        if closed.replace(tail).is_some() {
+                            ambiguous = true;
+                            break 'forms;
+                        }
+                    }
+                }
+                if ambiguous {
+                    None
+                } else {
+                    closed
+                }
+            }
+            SketchTextIdentity::TxtTag { rotation } => {
+                decode_txt_tag_sketch_text_tail(payload, head.cursor, class_version, rotation)
+            }
+        };
+        if let Some(tail) = tail {
+            return Some(assemble_sketch_text(
+                payload,
+                stream,
+                class_tag,
+                class_version,
+                record_index,
+                byte_offset,
+                head,
+                tail,
+            ));
+        }
+    }
+    let head = decode_indexed_sketch_text_head(payload)?;
+    let tail = decode_indexed_sketch_text_record_tail(payload, head.cursor)?;
+    Some(assemble_sketch_text(
+        payload,
+        stream,
+        class_tag,
+        class_version,
+        record_index,
+        byte_offset,
+        head,
+        tail,
+    ))
 }
 
 fn decode_sketch_point(payload: &[u8]) -> Option<(u64, u32, f64, f64, usize, Option<u64>)> {
@@ -2898,20 +3087,34 @@ fn decode_line_components(values: &[f64], stored_normal: Vector3) -> Option<Sket
     let dot = direction.x * stored_normal.x
         + direction.y * stored_normal.y
         + direction.z * stored_normal.z;
-    let normal = Vector3::new(
+    let projected_normal = Vector3::new(
         stored_normal.x - dot * direction.x,
         stored_normal.y - dot * direction.y,
         stored_normal.z - dot * direction.z,
     );
-    let normal_length = normal.norm();
-    if !normal_length.is_finite() || normal_length <= 1.0e-12 {
-        return None;
-    }
-    let normal = Vector3::new(
-        normal.x / normal_length,
-        normal.y / normal_length,
-        normal.z / normal_length,
-    );
+    let projected_length = projected_normal.norm();
+    let normal = if projected_length.is_finite() && projected_length > 1.0e-12 {
+        projected_normal.scale(1.0 / projected_length)
+    } else {
+        // Spatial line carriers can store a unit auxiliary vector parallel to
+        // the line. The neutral spatial-line geometry has no plane normal;
+        // retain the bounded carrier and choose a stable perpendicular basis
+        // vector so the native geometry record still satisfies its typed
+        // invariant.
+        let basis = [
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ]
+        .into_iter()
+        .min_by(|left, right| {
+            direction
+                .dot(*left)
+                .abs()
+                .total_cmp(&direction.dot(*right).abs())
+        })?;
+        direction.cross(basis).unit()?
+    };
     let start = Point3::new(values[0] * 10.0, values[1] * 10.0, values[2] * 10.0);
     Some(SketchCurveGeometry::Line {
         start,
@@ -3172,8 +3375,8 @@ fn parse_relation_class_members(
             let mut complete = true;
             for _ in 0..2 {
                 // The evaluated instance count precedes the count-parameter
-                // reference; the unit direction and the seed-to-final-instance
-                // span follow it, and the distance parameter closes the clause.
+                // reference; the unit direction and the adjacent-instance
+                // spacing follow it, and the distance parameter closes the clause.
                 *cursor += 4;
                 complete &= take!()?;
                 *cursor += 32;

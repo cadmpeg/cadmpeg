@@ -2877,7 +2877,9 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
         cadmpeg_ir::features::FeatureDefinition::Draft {
             faces: cadmpeg_ir::features::FaceSelection::Native(faces),
             neutral_plane: cadmpeg_ir::features::FaceSelection::Native(plane),
+            parting_tool: None,
             pull_direction,
+            pull_plane: None,
             angle: Some(cadmpeg_ir::features::Angle(angle)),
             outward: Some(true),
         } if faces.ends_with(":Base")

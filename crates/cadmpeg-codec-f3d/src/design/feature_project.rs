@@ -13,8 +13,8 @@ use crate::design::edge_resolve::{
     feature_input_topology_id, project_fixed_fillet, resolved_edge_group,
 };
 use crate::design::face_resolve::{
-    design_angle, resolved_face_group, resolved_historical_face_group, resolved_profile_face_group,
-    valid_chamfer_spec,
+    design_angle, resolved_body_recipe_shape, resolved_face_group, resolved_historical_face_group,
+    resolved_profile_face_group, valid_chamfer_spec,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{
@@ -22,13 +22,15 @@ use crate::ids::{
     neutral_spatial_sketch_id,
 };
 use crate::records::{
-    ConstructionRecipeKind, DesignBodyBinding, DesignCoilExtent, DesignCoilSection,
-    DesignCoilSectionPlacement, DesignConstructionOperandGroup, DesignDirectFaceOperation,
-    DesignEdgeIdentityOperand, DesignEdgeOperand, DesignExtrudeExtent, DesignExtrudeFaceRole,
-    DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeStart, DesignFaceOperand,
-    DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignFixedExtrudeDistance, DesignParameter,
-    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
-    DesignSketchPlacement, DesignSolidPrimitive, SketchCurveGeometry, SketchCurveIdentity,
+    ConstructionRecipeKind, DesignBodyBinding, DesignBodyRecipeOperand, DesignCoilExtent,
+    DesignCoilSection, DesignCoilSectionPlacement, DesignConstructionOperandGroup,
+    DesignDirectFaceOperation, DesignEdgeIdentityOperand, DesignEdgeOperand, DesignExtrudeExtent,
+    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeStart,
+    DesignFaceOperand, DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignFixedExtrudeDistance,
+    DesignParameter, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+    DesignPathFeatureConstruction, DesignSketchPlacement, DesignSolidPrimitive,
+    DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport, SketchCurveGeometry,
+    SketchCurveIdentity,
 };
 use cadmpeg_core::le::{u32_at, u64_at as read_u64};
 use cadmpeg_core::CodecError;
@@ -37,8 +39,9 @@ use std::collections::{HashMap, HashSet};
 
 /// Design record slices projected together into the neutral construction
 /// history: the parameter, owner, and scope tables plus the construction
-/// operand, fillet-radius, edge, edge-identity, and face operand records and
-/// the sketch placements and body bindings each feature scope resolves against.
+/// operand, fillet-radius, edge, edge-identity, face, and whole-body recipe
+/// operand records and the sketch placements and body bindings each feature
+/// scope resolves against.
 pub struct ProjectInputs<'a> {
     pub(crate) native: &'a [DesignParameter],
     pub(crate) owners: &'a [DesignParameterOwner],
@@ -50,6 +53,7 @@ pub struct ProjectInputs<'a> {
     pub(crate) entity_selection_operands: &'a [crate::records::DesignEntitySelectionOperand],
     pub(crate) curve_identities: &'a [SketchCurveIdentity],
     pub(crate) face_operands: &'a [DesignFaceOperand],
+    pub(crate) body_recipe_operands: &'a [DesignBodyRecipeOperand],
     pub(crate) placements: &'a [DesignSketchPlacement],
     pub(crate) body_bindings: &'a [DesignBodyBinding],
     pub(crate) histories: &'a [crate::history_records::AsmHistory],
@@ -88,6 +92,7 @@ pub fn project_parameter_design(
         entity_selection_operands: &[],
         curve_identities: &[],
         face_operands,
+        body_recipe_operands: &[],
         placements,
         body_bindings: &[],
         histories: &[],
@@ -103,7 +108,7 @@ pub fn project_parameter_design_with_edge_identities(
 ) {
     use cadmpeg_ir::features::{
         Angle, DesignParameter as NeutralParameter, DimensionDisplay, Feature, FeatureDefinition,
-        Length, ParameterId, ParameterValue, PatternForm, PatternKind,
+        Length, ParameterId, ParameterValue, PatternForm, PatternKind, PrimitiveSolid,
     };
     use std::collections::BTreeMap;
 
@@ -117,6 +122,7 @@ pub fn project_parameter_design_with_edge_identities(
         entity_selection_operands,
         curve_identities,
         face_operands,
+        body_recipe_operands,
         placements,
         body_bindings,
         histories,
@@ -212,6 +218,7 @@ pub fn project_parameter_design_with_edge_identities(
                     construction_groups,
                     face_operands,
                     placements,
+                    body_recipe_operands,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
                     kind: scope.kind.clone(),
@@ -262,15 +269,19 @@ pub fn project_parameter_design_with_edge_identities(
                         parameters: BTreeMap::new(),
                         properties: native_scope_properties(scope, native_scope),
                     }),
-                Some(DesignFeatureFamily::Draft) => {
-                    project_draft(scope, construction_groups, face_operands).unwrap_or_else(|| {
-                        FeatureDefinition::Native {
-                            kind: scope.kind.clone(),
-                            parameters: BTreeMap::new(),
-                            properties: native_scope_properties(scope, native_scope),
-                        }
-                    })
-                }
+                Some(DesignFeatureFamily::Draft) => project_draft(
+                    scope,
+                    scopes,
+                    construction_groups,
+                    entity_selection_operands,
+                    face_operands,
+                    histories,
+                )
+                .unwrap_or_else(|| FeatureDefinition::Native {
+                    kind: scope.kind.clone(),
+                    parameters: BTreeMap::new(),
+                    properties: native_scope_properties(scope, native_scope),
+                }),
                 Some(DesignFeatureFamily::Revolve) => project_fixed_revolve_with_entities(
                     scope,
                     construction_groups,
@@ -363,22 +374,17 @@ pub fn project_parameter_design_with_edge_identities(
                         parameters: BTreeMap::new(),
                         properties: native_scope_properties(scope, native_scope),
                     }),
-                Some(DesignFeatureFamily::SurfaceOffset) => {
-                    scope.surface_offset_operation.as_ref().map_or_else(
-                        || FeatureDefinition::Native {
-                            kind: scope.kind.clone(),
-                            parameters: BTreeMap::new(),
-                            properties: native_scope_properties(scope, native_scope),
-                        },
-                        |operation| FeatureDefinition::OffsetSurface {
-                            faces: cadmpeg_ir::features::FaceSelection::Native(format!(
-                                "{native_scope}:design-record#{}",
-                                operation.boundary_record_index
-                            )),
-                            distance: Some(Length(operation.distance * 10.0)),
-                        },
-                    )
-                }
+                Some(DesignFeatureFamily::SurfaceOffset) => scope
+                    .surface_offset_operation
+                    .as_ref()
+                    .and_then(|operation| {
+                        project_surface_offset(scope, operation, construction_groups, face_operands)
+                    })
+                    .unwrap_or_else(|| FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: BTreeMap::new(),
+                        properties: native_scope_properties(scope, native_scope),
+                    }),
                 Some(DesignFeatureFamily::SurfaceRuled) => project_ruled_surface(
                     scope,
                     owners,
@@ -601,24 +607,31 @@ pub fn project_parameter_design_with_edge_identities(
                             }
                         },
                     ),
-                Some(DesignFeatureFamily::SheetMetalEdgeFlange) => project_edge_flange(
-                    scope,
-                    owners,
-                    native,
-                    construction_groups,
-                    edge_operands,
-                    edge_identity_operands,
-                )
-                .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.clone(),
-                    parameters: parameters
-                        .iter()
-                        .map(|(_, parameter)| {
-                            (parameter.name.clone(), parameter.expression.clone())
-                        })
-                        .collect(),
-                    properties: native_scope_properties(scope, native_scope),
-                }),
+                Some(DesignFeatureFamily::SheetMetalEdgeFlange) => {
+                    project_edge_flange(scope, inputs).unwrap_or_else(|| {
+                        FeatureDefinition::Native {
+                            kind: scope.kind.clone(),
+                            parameters: parameters
+                                .iter()
+                                .map(|(_, parameter)| {
+                                    (parameter.name.clone(), parameter.expression.clone())
+                                })
+                                .collect(),
+                            properties: native_scope_properties(scope, native_scope),
+                        }
+                    })
+                }
+                Some(DesignFeatureFamily::SheetMetalHem) => project_hem(scope, inputs)
+                    .unwrap_or_else(|| FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: parameters
+                            .iter()
+                            .map(|(_, parameter)| {
+                                (parameter.name.clone(), parameter.expression.clone())
+                            })
+                            .collect(),
+                        properties: native_scope_properties(scope, native_scope),
+                    }),
                 None => {
                     if let Some(primitive) = scope.solid_primitive.as_ref() {
                         let operation = |operation| match operation {
@@ -632,6 +645,41 @@ pub fn project_parameter_design_with_edge_identities(
                             }
                         };
                         match primitive {
+                            DesignSolidPrimitive::Box {
+                                length,
+                                width,
+                                height,
+                                offset_x,
+                                offset_y,
+                                operation: result,
+                                ..
+                            } => {
+                                let mut placement = cadmpeg_ir::transform::Transform::identity();
+                                placement.rows[0][3] = *offset_x * 10.0;
+                                placement.rows[1][3] = *offset_y * 10.0;
+                                FeatureDefinition::Block {
+                                    dimensions: Some([
+                                        Length(*length * 10.0),
+                                        Length(*width * 10.0),
+                                        Length(*height * 10.0),
+                                    ]),
+                                    placement: Some(placement),
+                                    op: operation(*result),
+                                }
+                            }
+                            DesignSolidPrimitive::Cylinder {
+                                height,
+                                diameter,
+                                operation: result,
+                                ..
+                            } => FeatureDefinition::Primitive {
+                                solid: PrimitiveSolid::Cylinder {
+                                    radius: Length(*diameter * 5.0),
+                                    height: Length(*height * 10.0),
+                                    angle: Angle(std::f64::consts::TAU),
+                                },
+                                op: operation(*result),
+                            },
                             DesignSolidPrimitive::Sphere {
                                 transform,
                                 diameter,
@@ -810,12 +858,18 @@ pub fn project_parameter_design_with_edge_identities(
                             }
                         })
                     } else if scope.kind == "SplitFace" {
-                        project_split_face(scope, construction_groups).unwrap_or_else(|| {
-                            FeatureDefinition::Native {
-                                kind: scope.kind.clone(),
-                                parameters: BTreeMap::new(),
-                                properties: native_scope_properties(scope, native_scope),
-                            }
+                        project_split_face(
+                            scope,
+                            scopes,
+                            construction_groups,
+                            entity_selection_operands,
+                            face_operands,
+                            histories,
+                        )
+                        .unwrap_or_else(|| FeatureDefinition::Native {
+                            kind: scope.kind.clone(),
+                            parameters: BTreeMap::new(),
+                            properties: native_scope_properties(scope, native_scope),
                         })
                     } else if matches!(scope.kind.as_str(), "DeleteFace" | "SurfaceDeleteFace") {
                         project_delete_face(scope, construction_groups, face_operands)
@@ -974,30 +1028,53 @@ pub fn project_parameter_design_with_edge_identities(
             }
         }
     }
+    for feature in &mut features {
+        let dependency = match &feature.definition {
+            FeatureDefinition::Draft {
+                pull_plane: Some(plane),
+                ..
+            }
+            | FeatureDefinition::SplitFace {
+                tool: cadmpeg_ir::features::SplitFaceTool::Plane { plane },
+                ..
+            } => Some(plane),
+            _ => None,
+        };
+        if let Some(dependency) = dependency {
+            if dependency != &feature.id && !feature.dependencies.contains(dependency) {
+                feature.dependencies.push(dependency.clone());
+            }
+        }
+    }
     features.sort_by_key(|feature| feature.id.clone());
     assign_feature_ordinals(&mut features);
 
+    let unresolved_owner_parameter_ids = native
+        .iter()
+        .filter_map(|parameter| {
+            let owner_record_index = parameter.owner_record_index?;
+            let stream = native_stream(&parameter.id).unwrap_or(ids::DEFAULT_STREAM);
+            let owner_is_bound = owners_by_index
+                .get(&(stream, owner_record_index))
+                .is_some_and(|owner| scope_ids.contains_key(&(stream, owner.scope_record_index)));
+            (!owner_is_bound).then(|| neutral_parameter_id(parameter))
+        })
+        .collect::<HashSet<_>>();
     let mut parameters = native
         .iter()
-        .filter(|parameter| {
-            parameter.owner_record_index.is_none_or(|owner| {
-                owners_by_index
-                    .get(&(
-                        native_stream(&parameter.id).unwrap_or(ids::DEFAULT_STREAM),
-                        owner,
-                    ))
-                    .is_some_and(|owner| {
-                        scope_ids.contains_key(&(
-                            native_stream(&owner.id).unwrap_or(ids::DEFAULT_STREAM),
-                            owner.scope_record_index,
-                        ))
-                    })
-            })
-        })
         .map(|parameter| {
             let mut properties = BTreeMap::new();
             if parameter.kind != DesignParameterKind::User {
                 properties.insert("source_kind".into(), parameter.source_kind.clone());
+            }
+            if unresolved_owner_parameter_ids.contains(&neutral_parameter_id(parameter)) {
+                properties.insert(
+                    "owner_record_index".into(),
+                    parameter
+                        .owner_record_index
+                        .expect("unresolved owner id has an owner record")
+                        .to_string(),
+                );
             }
             let value = match parameter.unit.as_deref() {
                 Some(unit) if design_length_unit(unit) => Some(ParameterValue::Length(Length(
@@ -1112,6 +1189,9 @@ pub fn project_parameter_design_with_edge_identities(
     for parameter in &mut parameters {
         let scope = parameter_scopes[&parameter.id];
         let consumer_owner = parameter.owner.clone();
+        if unresolved_owner_parameter_ids.contains(&parameter.id) {
+            continue;
+        }
         let mut seen = HashSet::new();
         parameter.dependencies = expression_identifiers(&parameter.expression)
             .filter_map(|identifier| {
@@ -1249,6 +1329,19 @@ fn project_fillet_arm(
     native_scope: &str,
 ) -> cadmpeg_ir::features::FeatureDefinition {
     use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FilletGroup, RadiusSpec};
+
+    if parameters.is_empty() {
+        if let Some(definition) = project_full_round_fillet(
+            scope,
+            inputs.construction_groups,
+            inputs.face_operands,
+            inputs.owners,
+            inputs.fillet_radius_groups,
+            inputs.histories,
+        ) {
+            return definition;
+        }
+    }
 
     let &ProjectInputs {
         native,
@@ -1457,6 +1550,77 @@ fn project_fillet_arm(
     }
 }
 
+/// Project Fusion's role-`0x4` full-round face construction.
+///
+/// This form has no radius parameter. Its one compact member identifies the
+/// center face; the trailing true flag requests automatic inference of both
+/// side-face sets. A role-`0x4` group with any other shape remains available to
+/// the regular feature projectors.
+fn project_full_round_fillet(
+    scope: &DesignParameterScope,
+    construction_groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
+    owners: &[DesignParameterOwner],
+    fillet_radius_groups: &[DesignFilletRadiusGroup],
+    histories: &[crate::history_records::AsmHistory],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    let stream = native_stream(&scope.id)?;
+    if owners.iter().any(|owner| {
+        native_stream(&owner.id) == Some(stream) && owner.scope_record_index == scope.record_index
+    }) || fillet_radius_groups.iter().any(|assignment| {
+        native_stream(&assignment.id) == Some(stream)
+            && assignment.scope_record_index == scope.record_index
+    }) {
+        return None;
+    }
+    let mut groups = construction_groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
+    });
+    let group = groups.next()?;
+    if groups.next().is_some()
+        || group.role != ROLE_0X4
+        || group.members.len() != 1
+        || group.frame.trailing_record_indices.len() != 1
+        || group.frame.trailing_flags.len() != 1
+        || group.frame.trailing_record_indices[0] != group.frame.trailing_flags[0].record_index
+        || !group.frame.trailing_flags[0].value
+        || group.frame.variant
+    {
+        return None;
+    }
+    let [member] = group.members.as_slice() else {
+        return None;
+    };
+    let mut operands = face_operands.iter().filter(|operand| {
+        native_stream(&operand.id) == Some(stream)
+            && operand.scope_record_index == scope.record_index
+            && operand.group_record_index == Some(group.record_index)
+            && operand.group_member_ordinal == Some(0)
+            && operand.record_index == *member
+    });
+    let operand = operands.next()?;
+    if operands.next().is_some() {
+        return None;
+    }
+    if operand.recipe_kind != ConstructionRecipeKind::BoundedFace {
+        return None;
+    }
+    if operand.resolved_face_slots.is_empty() {
+        return None;
+    }
+    let center_faces = project_face_selection(scope, group, face_operands, histories);
+    if matches!(center_faces, cadmpeg_ir::features::FaceSelection::Native(_)) {
+        return None;
+    }
+    Some(cadmpeg_ir::features::FeatureDefinition::FullRoundFillet {
+        groups: vec![cadmpeg_ir::features::FullRoundFilletGroup {
+            center_faces,
+            side_one_faces: cadmpeg_ir::features::FullRoundSideSelection::Automatic,
+            side_two_faces: cadmpeg_ir::features::FullRoundSideSelection::Automatic,
+        }],
+    })
+}
+
 fn design_body_selection<T>(
     scope: &DesignParameterScope,
     entity_suffixes: &[T],
@@ -1621,57 +1785,248 @@ pub fn bind_sketch_feature_geometry(
     }
 }
 
-/// Construction-operand-group role integers used to select a single scoped
-/// group. Fusion serializes these as opaque tags; their semantics are
-/// unresolved (see `docs/formats/f3d-open-items.md`), so the names are neutral.
+/// Construction-operand-group role integers used to select a scoped group.
+/// Fusion serializes these as opaque tags; each role is interpreted only in
+/// the feature family that owns the group.
 const ROLE_0X4: u64 = 0x0000_0004_0000_0000;
 const ROLE_0X5: u64 = 0x0000_0005_0000_0000;
 const ROLE_0X9: u64 = 0x0000_0009_0000_0000;
 const ROLE_0X10: u64 = 0x0000_0010_0000_0000;
+const ROLE_0X21: u64 = 0x0000_0021_0000_0000;
 const ROLE_0X12: u64 = 0x0000_0012_0000_0000;
+const ROLE_0X41: u64 = 0x0000_0041_0000_0000;
+
+fn project_surface_offset(
+    scope: &DesignParameterScope,
+    operation: &DesignSurfaceOffsetOperation,
+    groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length};
+
+    let stream = native_stream(&scope.id)?;
+    let DesignSurfaceOffsetSupport::FaceGroups {
+        group_record_indices,
+    } = &operation.support
+    else {
+        let DesignSurfaceOffsetSupport::BoundaryCarrier {
+            boundary_record_index,
+            ..
+        } = &operation.support
+        else {
+            return None;
+        };
+        return Some(FeatureDefinition::OffsetSurface {
+            faces: FaceSelection::Native(format!("{stream}:design-record#{boundary_record_index}")),
+            distance: Some(Length(operation.distance * 10.0)),
+        });
+    };
+    let mut faces = Vec::new();
+    for group_record_index in group_record_indices {
+        let mut matching_groups = groups.iter().filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+                && group.record_index == *group_record_index
+                && group.role == ROLE_0X41
+                && !group.members.is_empty()
+        });
+        let group = matching_groups.next()?;
+        if matching_groups.next().is_some() {
+            return None;
+        }
+        let FaceSelection::Resolved {
+            faces: group_faces, ..
+        } = resolved_face_group(group, face_operands)?
+        else {
+            return None;
+        };
+        for face in group_faces {
+            if !faces.contains(&face) {
+                faces.push(face);
+            }
+        }
+    }
+    (!faces.is_empty()).then(|| FeatureDefinition::OffsetSurface {
+        faces: FaceSelection::Resolved {
+            faces,
+            native: scope.id.clone(),
+        },
+        distance: Some(Length(operation.distance * 10.0)),
+    })
+}
 
 fn project_draft(
     scope: &DesignParameterScope,
+    scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
+    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
     face_operands: &[DesignFaceOperand],
+    histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{Angle, FeatureDefinition};
 
     let construction = scope.draft_operation.as_ref()?;
-    // Reference-table positions vary by group, so select groups by role. More
-    // than one neutral-plane group describes a parting-line draft with a pull
-    // direction and a parting tool. This operation keeps that scope native.
     let faces = single_operand_group(groups, scope, ROLE_0X10)?;
-    let neutral_plane = single_operand_group(groups, scope, 0x0000_0021_0000_0000)?;
+    let role_groups = groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == native_stream(&scope.id)
+                && group.scope_record_index == scope.record_index
+                && group.role == ROLE_0X21
+                && !group.members.is_empty()
+        })
+        .collect::<Vec<_>>();
     let member_of_scope = |group: &DesignConstructionOperandGroup| {
         group
             .members
             .iter()
             .all(|member| scope.reference_members.contains(member))
     };
-    if !scope.reference_members.contains(&faces.record_index)
-        || !scope
-            .reference_members
-            .contains(&neutral_plane.record_index)
-        || !member_of_scope(faces)
-        || !member_of_scope(neutral_plane)
-    {
+    if !scope.reference_members.contains(&faces.record_index) || !member_of_scope(faces) {
         return None;
     }
-    // The decoded angle remains available when face recipes fail. Such a draft
-    // keeps its native face selections, and the decode report marks its
-    // definition incomplete.
-    let selection = |group: &DesignConstructionOperandGroup| {
-        resolved_historical_face_group(scope, group, face_operands)
-            .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone()))
+    match role_groups.as_slice() {
+        [neutral_plane] if member_of_scope(neutral_plane) => {
+            // A neutral-plane group is a face-recipe group. An entity-selection
+            // member belongs to the parting-line form and must not be silently
+            // projected as a face selection.
+            if group_has_entity_selection(scope, neutral_plane, entity_selection_operands) {
+                return None;
+            }
+            Some(FeatureDefinition::Draft {
+                faces: project_face_selection(scope, faces, face_operands, histories),
+                neutral_plane: project_face_selection(
+                    scope,
+                    neutral_plane,
+                    face_operands,
+                    histories,
+                ),
+                parting_tool: None,
+                pull_direction: None,
+                pull_plane: None,
+                angle: Some(Angle(construction.angle)),
+                outward: None,
+            })
+        }
+        [first, second] if member_of_scope(first) && member_of_scope(second) => {
+            let first_plane = selected_work_plane(scope, first, entity_selection_operands, scopes);
+            let second_plane =
+                selected_work_plane(scope, second, entity_selection_operands, scopes);
+            let (parting_tool, pull_plane) = match (first_plane, second_plane) {
+                (Some(plane), None)
+                    if !group_has_entity_selection(scope, second, entity_selection_operands) =>
+                {
+                    (second, plane)
+                }
+                (None, Some(plane))
+                    if !group_has_entity_selection(scope, first, entity_selection_operands) =>
+                {
+                    (first, plane)
+                }
+                _ => return None,
+            };
+            let transform = pull_plane.work_plane_transform?;
+            let pull_direction =
+                Vector3::new(transform[0][2], transform[1][2], transform[2][2]).unit()?;
+            Some(FeatureDefinition::Draft {
+                faces: project_face_selection(scope, faces, face_operands, histories),
+                neutral_plane: cadmpeg_ir::features::FaceSelection::Unresolved,
+                parting_tool: Some(project_face_selection(
+                    scope,
+                    parting_tool,
+                    face_operands,
+                    histories,
+                )),
+                pull_direction: Some(pull_direction),
+                pull_plane: Some(neutral_feature_id(pull_plane)),
+                angle: Some(Angle(construction.angle)),
+                outward: None,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn project_face_selection(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    face_operands: &[DesignFaceOperand],
+    histories: &[crate::history_records::AsmHistory],
+) -> cadmpeg_ir::features::FaceSelection {
+    let historical = crate::history::effective_scope_previous_history_state_id(scope, histories)
+        .and_then(|previous_state_id| {
+            if scope.previous_history_state_id == Some(previous_state_id) {
+                return resolved_historical_face_group(scope, group, face_operands);
+            }
+            let mut effective_scope = scope.clone();
+            effective_scope.previous_history_state_id = Some(previous_state_id);
+            resolved_historical_face_group(&effective_scope, group, face_operands)
+        });
+    historical
+        .or_else(|| resolved_face_group(group, face_operands))
+        .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone()))
+}
+
+fn group_has_entity_selection(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+) -> bool {
+    let Some(stream) = native_stream(&scope.id) else {
+        return false;
     };
-    Some(FeatureDefinition::Draft {
-        faces: selection(faces),
-        neutral_plane: selection(neutral_plane),
-        pull_direction: None,
-        angle: Some(Angle(construction.angle)),
-        outward: None,
-    })
+    group
+        .members
+        .iter()
+        .enumerate()
+        .any(|(ordinal, record_index)| {
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                return false;
+            };
+            entity_selection_operands.iter().any(|operand| {
+                native_stream(&operand.id) == Some(stream)
+                    && operand.scope_record_index == scope.record_index
+                    && operand.group_record_index == group.record_index
+                    && operand.group_member_ordinal == ordinal
+                    && operand.record_index == *record_index
+            })
+        })
+}
+
+fn selected_work_plane<'a>(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    scopes: &'a [DesignParameterScope],
+) -> Option<&'a DesignParameterScope> {
+    let stream = native_stream(&scope.id)?;
+    let [member] = group.members.as_slice() else {
+        return None;
+    };
+    let selections = entity_selection_operands
+        .iter()
+        .filter(|operand| {
+            native_stream(&operand.id) == Some(stream)
+                && operand.scope_record_index == scope.record_index
+                && operand.group_record_index == group.record_index
+                && operand.group_member_ordinal == 0
+                && operand.record_index == *member
+        })
+        .collect::<Vec<_>>();
+    let [selection] = selections.as_slice() else {
+        return None;
+    };
+    let target_record_index = u32::try_from(selection.primary_identity)
+        .ok()?
+        .checked_add(1)?;
+    let mut target_scopes = scopes.iter().filter(|candidate| {
+        native_stream(&candidate.id) == Some(stream)
+            && candidate.record_index == target_record_index
+            && candidate.kind == "WorkPlane"
+            && candidate.work_plane_transform.is_some()
+    });
+    let target = target_scopes.next()?;
+    target_scopes.next().is_none().then_some(target)
 }
 
 /// Return the unique non-empty construction operand group in `scope` carrying
@@ -1881,22 +2236,32 @@ fn project_base_flange(
 /// Project a sheet-metal `EdgeFlange` scope onto its neutral operation.
 ///
 /// The typed operation supplies the bend position, height datum, and inside
-/// radius. Owner parameters supply the height, angle, and width. The projector
-/// keeps the native scope when an owner lacks a parameter.
+/// radius. Owner parameters supply the height, angle, and width. A to-object
+/// height resolves its target entity to a known neutral construction feature;
+/// otherwise the source selection remains explicit in the neutral height law.
 pub(crate) fn project_edge_flange(
     scope: &DesignParameterScope,
-    owners: &[crate::records::DesignParameterOwner],
-    parameters: &[DesignParameter],
-    groups: &[DesignConstructionOperandGroup],
-    edge_operands: &[DesignEdgeOperand],
-    edge_identity_operands: &[DesignEdgeIdentityOperand],
+    inputs: &ProjectInputs<'_>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use crate::records::{DesignBendPosition, DesignEdgeWidthMode, DesignSheetMetalHeightDatum};
+    use crate::records::{
+        DesignBendPosition, DesignEdgeFlangeHeightExtent, DesignEdgeWidthMode,
+        DesignSheetMetalHeightDatum,
+    };
     use cadmpeg_ir::features::{
-        FeatureDefinition, Length, SheetMetalBendPosition, SheetMetalFlangeWidth,
-        SheetMetalHeightDatum,
+        FeatureDefinition, Length, SheetMetalBendPosition, SheetMetalFlangeHeight,
+        SheetMetalFlangeHeightTarget, SheetMetalFlangeWidth, SheetMetalHeightDatum,
     };
 
+    let ProjectInputs {
+        native: parameters,
+        owners,
+        scopes,
+        construction_groups: groups,
+        edge_operands,
+        edge_identity_operands,
+        entity_selection_operands,
+        ..
+    } = inputs;
     let operation = scope.edge_flange_operation.as_ref()?;
     let stream = native_stream(&scope.id)?;
     let parameter = |owner_record_index, source_kind: &str| {
@@ -1916,10 +2281,64 @@ pub(crate) fn project_edge_flange(
         })
     };
 
-    let height = design_length(parameter(
-        operation.height_owner_record_index,
-        "FlangeHeight",
-    )?)?;
+    let height = match &operation.height_extent {
+        DesignEdgeFlangeHeightExtent::Distance => SheetMetalFlangeHeight::Distance(design_length(
+            parameter(operation.height_owner_record_index, "FlangeHeight")?,
+        )?),
+        DesignEdgeFlangeHeightExtent::ToObject {
+            target_group_record_index,
+            target_operand_record_index,
+            offset_owner_record_index,
+            ..
+        } => {
+            let target_group = groups
+                .iter()
+                .filter(|group| {
+                    native_stream(&group.id) == Some(stream)
+                        && group.scope_record_index == scope.record_index
+                        && group.record_index == *target_group_record_index
+                        && group.role == 0x0000_0021_0000_0000
+                        && group.members == [*target_operand_record_index]
+                })
+                .collect::<Vec<_>>();
+            let [target_group] = target_group.as_slice() else {
+                return None;
+            };
+            let target_selections = entity_selection_operands
+                .iter()
+                .filter(|operand| {
+                    native_stream(&operand.id) == Some(stream)
+                        && operand.scope_record_index == scope.record_index
+                        && operand.group_record_index == target_group.record_index
+                        && operand.group_member_ordinal == 0
+                        && operand.record_index == *target_operand_record_index
+                })
+                .collect::<Vec<_>>();
+            let [target_selection] = target_selections.as_slice() else {
+                return None;
+            };
+            let target_record_index = u32::try_from(target_selection.primary_identity)
+                .ok()?
+                .checked_add(1)?;
+            let target_scopes = scopes
+                .iter()
+                .filter(|candidate| {
+                    native_stream(&candidate.id) == Some(stream)
+                        && candidate.record_index == target_record_index
+                        && matches!(candidate.kind.as_str(), "WorkPlane" | "WorkPoint")
+                })
+                .collect::<Vec<_>>();
+            let target = match target_scopes.as_slice() {
+                [target_scope] => {
+                    SheetMetalFlangeHeightTarget::Feature(neutral_feature_id(target_scope))
+                }
+                [] => SheetMetalFlangeHeightTarget::Native(target_selection.id.clone()),
+                _ => return None,
+            };
+            let offset = design_length(parameter(*offset_owner_record_index, "ToObjectOffset")?)?;
+            SheetMetalFlangeHeight::ToObject { target, offset }
+        }
+    };
     let angle = design_angle(parameter(
         operation.angle_owner_record_index,
         "FlangeAngle",
@@ -1986,6 +2405,156 @@ pub(crate) fn project_edge_flange(
         height_datum,
         bend_position,
         width,
+        bend_radius: Length(operation.bend_radius * 10.0),
+    })
+}
+
+/// Project a sheet-metal `Hem` scope onto its neutral operation.
+///
+/// The owner layout distinguishes the rolled and teardrop forms from the
+/// shared gap-and-length layout. Fold direction is recovered from the signed
+/// placement of the inserted bend carriers against the preceding source face;
+/// an incomplete transition keeps it unresolved.
+pub(crate) fn project_hem(
+    scope: &DesignParameterScope,
+    inputs: &ProjectInputs<'_>,
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use crate::records::DesignHemParameterOwners;
+    use cadmpeg_ir::features::{
+        FeatureDefinition, Length, SheetMetalHemDirection, SheetMetalHemForm,
+    };
+
+    let ProjectInputs {
+        native: parameters,
+        owners,
+        construction_groups: groups,
+        edge_operands,
+        edge_identity_operands,
+        histories,
+        ..
+    } = inputs;
+    let operation = scope.hem_operation.as_ref()?;
+    let stream = native_stream(&scope.id)?;
+    let parameter = |owner_record_index: u32, source_kind: &str| {
+        let mut matching_owners = owners.iter().filter(|owner| {
+            native_stream(&owner.id) == Some(stream)
+                && owner.scope_record_index == scope.record_index
+                && owner.record_index == owner_record_index
+        });
+        let owner = matching_owners.next()?;
+        if matching_owners.next().is_some() {
+            return None;
+        }
+        let mut matching_parameters = parameters.iter().filter(|parameter| {
+            native_stream(&parameter.id) == Some(stream)
+                && parameter.record_index == owner.parameter_record_index
+                && parameter.source_kind == source_kind
+        });
+        let parameter = matching_parameters.next()?;
+        matching_parameters.next().is_none().then_some(parameter)
+    };
+
+    let form = match &operation.parameter_owners {
+        DesignHemParameterOwners::GapLength {
+            gap_owner_record_index,
+            length_owner_record_index,
+        } => SheetMetalHemForm::GapLength {
+            gap: design_length(parameter(*gap_owner_record_index, "HemGap")?)?,
+            length: design_length(parameter(*length_owner_record_index, "HemLength")?)?,
+        },
+        DesignHemParameterOwners::RadiusAngle {
+            radius_owner_record_index,
+            angle_owner_record_index,
+        } => SheetMetalHemForm::Rolled {
+            radius: design_length(parameter(*radius_owner_record_index, "HemRadius")?)?,
+            angle: design_angle(parameter(*angle_owner_record_index, "HemAngle")?)?,
+        },
+        DesignHemParameterOwners::GapLengthRadius {
+            gap_owner_record_index,
+            length_owner_record_index,
+            radius_owner_record_index,
+        } => SheetMetalHemForm::Teardrop {
+            gap: design_length(parameter(*gap_owner_record_index, "HemGap")?)?,
+            length: design_length(parameter(*length_owner_record_index, "HemLength")?)?,
+            radius: design_length(parameter(*radius_owner_record_index, "HemRadius")?)?,
+        },
+    };
+
+    let mut edge_groups = groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream)
+            && group.scope_record_index == scope.record_index
+            && group.record_index == operation.edge_group_record_index
+    });
+    let edge_group = edge_groups.next()?;
+    let edge_has_extra = edge_groups.next().is_some();
+    let edge_role_ok = edge_group.role == 0x0000_0008_0000_0000;
+    let edge_members_ok = edge_group.members == [operation.edge_operand_record_index];
+    if edge_has_extra || !edge_role_ok || !edge_members_ok {
+        return None;
+    }
+
+    let mut aggregate_groups = groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream)
+            && group.scope_record_index == scope.record_index
+            && group.record_index == operation.aggregate_group_record_index
+    });
+    let aggregate_group = aggregate_groups.next()?;
+    let aggregate_has_extra = aggregate_groups.next().is_some();
+    let aggregate_role_ok = aggregate_group.role == 0x0000_0043_0000_0000;
+    let aggregate_members_ok =
+        aggregate_group.members == [operation.aggregate_operand_record_index];
+    if aggregate_has_extra || !aggregate_role_ok || !aggregate_members_ok {
+        return None;
+    }
+
+    let edges = crate::design::edge_resolve::resolved_hem_edge_group(
+        edge_group,
+        groups,
+        edge_operands,
+        edge_identity_operands,
+        crate::history::effective_scope_previous_history_state_id(scope, histories),
+        &neutral_feature_id(scope),
+    );
+
+    let edge_slot = edge_operands
+        .iter()
+        .filter(|operand| {
+            native_stream(&operand.id) == native_stream(&edge_group.id)
+                && operand.scope_record_index == edge_group.scope_record_index
+                && operand.record_index == operation.edge_operand_record_index
+        })
+        .collect::<Vec<_>>();
+    let edge_slot = match edge_slot.as_slice() {
+        [operand] => crate::design::edge_resolve::resolved_hem_edge_slot(
+            operand,
+            crate::history::effective_scope_previous_history_state_id(scope, histories),
+        ),
+        _ => None,
+    };
+    let semantics = edge_slot
+        .map(|edge_slot| crate::history::hem_geometry_semantics(scope, edge_slot, histories));
+    let form = match (
+        form,
+        semantics.and_then(|semantics| semantics.gap_length_form),
+    ) {
+        (
+            SheetMetalHemForm::GapLength { gap: _, length },
+            Some(crate::history::HemGapLengthForm::Flat),
+        ) => SheetMetalHemForm::Flat { length },
+        (
+            SheetMetalHemForm::GapLength { gap, length },
+            Some(crate::history::HemGapLengthForm::Open),
+        ) => SheetMetalHemForm::Open { gap, length },
+        (form, _) => form,
+    };
+    let direction = semantics
+        .and_then(|semantics| semantics.direction)
+        .unwrap_or(SheetMetalHemDirection::Unresolved);
+
+    Some(FeatureDefinition::SheetMetalHem {
+        edges,
+        form,
+        direction,
         bend_radius: Length(operation.bend_radius * 10.0),
     })
 }
@@ -2313,6 +2882,30 @@ pub(crate) fn bind_form_cages(
                 form_cage_objects(bytes, &records, *record_index, scope.record_index)
             })
             .collect::<Vec<_>>();
+        let legacy_cage = scope.reference_members.iter().find_map(|record_index| {
+            legacy_form_cage_count(bytes, &records, *record_index, scope.record_index)
+        });
+        if scopes
+            .iter()
+            .filter(|candidate| candidate.kind == "Form")
+            .count()
+            == 1
+            && cages.len() == 1
+            && legacy_cage == Some(1)
+        {
+            let feature_id = neutral_feature_id(scope);
+            if let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) {
+                if matches!(
+                    &feature.definition,
+                    cadmpeg_ir::features::FeatureDefinition::Native { .. }
+                ) {
+                    feature.definition = cadmpeg_ir::features::FeatureDefinition::Form {
+                        cages: vec![cages[0].id.clone()],
+                    };
+                }
+            }
+            continue;
+        }
         let [cage_objects] = cage_lists.as_slice() else {
             continue;
         };
@@ -2356,6 +2949,44 @@ pub(crate) fn bind_form_cages(
         }
     }
     Ok(())
+}
+
+/// Read the one-cage envelope used by the compact Form record generation.
+///
+/// This generation has no serializer-name record. Its 100-byte cage-list
+/// frame still identifies the Form scope and the sole cage object, so a
+/// document with exactly one Form and one T-spline entry has a unique neutral
+/// binding.
+fn legacy_form_cage_count(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    record_index: u32,
+    scope_record_index: u32,
+) -> Option<usize> {
+    for (start, paired) in records.frames(record_index) {
+        if paired.checked_sub(start)? != 100
+            || bytes.get(start + 11..start + 21)? != [0; 10]
+            || bytes.get(start + 21) != Some(&1)
+            || read_u64(bytes, start + 22)? != u64::from(scope_record_index)
+            || bytes.get(start + 30..start + 32)? != [0; 2]
+        {
+            continue;
+        }
+        let count = usize::try_from(u32_at(bytes, start + 32)?).ok()?;
+        if count != 1 {
+            continue;
+        }
+        let member = start + 36;
+        if bytes.get(member) != Some(&1) || bytes.get(member + 9..member + 13)? != [0, 0, 0xfc, 0] {
+            continue;
+        }
+        let object = u32::try_from(read_u64(bytes, member + 1)?).ok()?;
+        if records.offsets(object).is_empty() {
+            continue;
+        }
+        return Some(count);
+    }
+    None
 }
 
 fn form_cage_objects(
@@ -2616,6 +3247,80 @@ mod form_tests {
             )
             .get(&8304),
             Some(&Some(entry_name.into()))
+        );
+    }
+
+    #[test]
+    fn reads_compact_form_one_cage_envelope() {
+        let mut list = indexed_frame(b"355", 205, 100);
+        list[21] = 1;
+        list[22..30].copy_from_slice(&201u64.to_le_bytes());
+        list[32..36].copy_from_slice(&1u32.to_le_bytes());
+        list[36] = 1;
+        list[37..45].copy_from_slice(&971u64.to_le_bytes());
+        list[47..49].copy_from_slice(&[0xfc, 0]);
+        let paired = indexed_frame(b"262", 205, 15);
+        let object = indexed_frame(b"325", 971, 15);
+        let bytes = [list, paired, object].concat();
+        assert_eq!(
+            super::legacy_form_cage_count(
+                &bytes,
+                &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
+                205,
+                201,
+            ),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn retains_parameter_when_owner_frame_has_no_scope_binding() {
+        let parameter = crate::records::DesignParameter {
+            id: "f3d:Design/BulkStream.dat:design-parameter#7".into(),
+            byte_offset: 0,
+            class_tag: "301".into(),
+            record_index: 7,
+            family_discriminator: None,
+            family_discriminator_offset: None,
+            source_ordinal: 0,
+            owner_record_index: Some(8),
+            expression: "12.5 mm".into(),
+            expression_offset: 0,
+            source_kind: "AlongDistance".into(),
+            source_kind_offset: 0,
+            kind: crate::records::DesignParameterKind::Feature,
+            unit: Some("mm".into()),
+            unit_offset: Some(0),
+            name: "distance".into(),
+            name_offset: 0,
+            evaluated_value: 1.25,
+            evaluated_value_offset: 0,
+        };
+        let scope = crate::records::DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#9",
+            "Unsupported",
+            9,
+        );
+
+        let (_, parameters) =
+            super::project_parameter_design(&[parameter], &[], &[scope], &[], &[], &[], &[], &[]);
+
+        let [parameter] = parameters.as_slice() else {
+            panic!("expected one retained parameter");
+        };
+        assert_eq!(parameter.owner, None);
+        assert_eq!(
+            parameter
+                .properties
+                .get("owner_record_index")
+                .map(String::as_str),
+            Some("8")
+        );
+        assert_eq!(
+            parameter.value,
+            Some(cadmpeg_ir::features::ParameterValue::Length(
+                cadmpeg_ir::features::Length(12.5)
+            ))
         );
     }
 }
@@ -4180,30 +4885,45 @@ fn project_fixed_pipe(
     })
 }
 
-/// Map the boundary-settings continuity of a `SurfacePatch` scope onto one
-/// neutral continuity.
-///
-/// A `SurfacePatch` carries one continuity value. The projector returns it when
-/// every boundary carries the same value; mixed boundaries produce `None`.
-pub(crate) fn surface_patch_continuity(
-    scope: &DesignParameterScope,
+fn surface_patch_boundary_continuity(
+    continuity: crate::records::DesignPatchContinuity,
 ) -> Option<cadmpeg_ir::features::SurfaceContinuity> {
     use cadmpeg_ir::features::SurfaceContinuity;
 
-    let boundaries = scope.surface_patch_boundaries.as_slice();
-    let (first, rest) = boundaries.split_first()?;
-    if rest
-        .iter()
-        .any(|other| other.continuity != first.continuity)
-    {
-        return None;
-    }
-    match first.continuity {
+    match continuity {
         crate::records::DesignPatchContinuity::Connected => Some(SurfaceContinuity::Contact),
         crate::records::DesignPatchContinuity::Tangent => Some(SurfaceContinuity::Tangent),
         crate::records::DesignPatchContinuity::Curvature => Some(SurfaceContinuity::Curvature),
         crate::records::DesignPatchContinuity::Unknown(_) => None,
     }
+}
+
+/// Map every known boundary-settings continuity in source order.
+///
+/// A missing or unknown component condition makes the complete per-boundary
+/// vector unavailable. The caller can still retain the native scope.
+pub(crate) fn surface_patch_boundary_continuities(
+    scope: &DesignParameterScope,
+) -> Vec<cadmpeg_ir::features::SurfaceContinuity> {
+    scope
+        .surface_patch_boundaries
+        .iter()
+        .map(|boundary| surface_patch_boundary_continuity(boundary.continuity))
+        .collect::<Option<Vec<_>>>()
+        .unwrap_or_default()
+}
+
+/// Map the boundary-settings continuity of a `SurfacePatch` scope onto one
+/// neutral continuity when every boundary uses the same condition.
+pub(crate) fn surface_patch_continuity(
+    scope: &DesignParameterScope,
+) -> Option<cadmpeg_ir::features::SurfaceContinuity> {
+    let boundaries = surface_patch_boundary_continuities(scope);
+    let (first, rest) = boundaries.split_first()?;
+    if rest.iter().any(|other| other != first) {
+        return None;
+    }
+    Some(*first)
 }
 
 pub(crate) fn project_surface_patch(
@@ -4257,6 +4977,7 @@ pub(crate) fn project_surface_patch(
             )),
             support_faces: FaceSelection::Faces(Vec::new()),
             continuity: surface_patch_continuity(scope),
+            boundary_continuities: Vec::new(),
             merge_result: None,
         });
     }
@@ -4274,19 +4995,48 @@ pub(crate) fn project_surface_patch(
         }
         (boundary_count, ROLE_0X4)
     };
-    if groups.len() != boundary_count {
+    if groups.len() != boundary_count || scope.surface_patch_boundaries.len() != boundary_count {
         return None;
     }
-    for (ordinal, boundary) in groups.iter().enumerate() {
-        let reference_ordinal = ordinal * 3;
-        if boundary.scope_reference_ordinal != u32::try_from(reference_ordinal).ok()?
-            || boundary.record_index != scope.reference_members[reference_ordinal]
+    let mut occupied = vec![false; scope.reference_members.len()];
+    for boundary in &groups {
+        let group_ordinal = usize::try_from(boundary.scope_reference_ordinal).ok()?;
+        let member_ordinal = group_ordinal.checked_add(1)?;
+        let settings_ordinal = group_ordinal.checked_add(2)?;
+        if settings_ordinal >= scope.reference_members.len()
+            || boundary.record_index != scope.reference_members[group_ordinal]
             || boundary.role != boundary_role
             || boundary.members.as_slice()
-                != &scope.reference_members[reference_ordinal + 1..reference_ordinal + 2]
+                != &scope.reference_members[member_ordinal..=member_ordinal]
+            || occupied[group_ordinal]
+            || occupied[member_ordinal]
+            || occupied[settings_ordinal]
         {
             return None;
         }
+        let settings = scope.surface_patch_boundaries.iter().find(|settings| {
+            usize::try_from(settings.scope_reference_ordinal).ok() == Some(settings_ordinal)
+        })?;
+        if settings.record_index != scope.reference_members[settings_ordinal]
+            || settings.model_reference != boundary.record_index
+        {
+            return None;
+        }
+        occupied[group_ordinal] = true;
+        occupied[member_ordinal] = true;
+        occupied[settings_ordinal] = true;
+    }
+    let unoccupied = occupied
+        .iter()
+        .enumerate()
+        .filter_map(|(ordinal, occupied)| (!occupied).then_some(ordinal))
+        .collect::<Vec<_>>();
+    let endpoint_unoccupied = unoccupied.as_slice() == [0]
+        || unoccupied.as_slice() == [scope.reference_members.len().saturating_sub(1)];
+    if (scope.reference_members.len() == 3 && !unoccupied.is_empty())
+        || (scope.reference_members.len() != 3 && !endpoint_unoccupied)
+    {
+        return None;
     }
     let boundary = if let [boundary] = groups.as_slice() {
         resolved_loft_path(
@@ -4303,6 +5053,7 @@ pub(crate) fn project_surface_patch(
         boundary: SurfaceBoundary::Path(boundary),
         support_faces: FaceSelection::Faces(Vec::new()),
         continuity: surface_patch_continuity(scope),
+        boundary_continuities: surface_patch_boundary_continuities(scope),
         merge_result: None,
     })
 }
@@ -4524,17 +5275,33 @@ pub(crate) fn project_split(
 
 fn project_split_face(
     scope: &DesignParameterScope,
+    scopes: &[DesignParameterScope],
     construction_groups: &[DesignConstructionOperandGroup],
+    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    face_operands: &[DesignFaceOperand],
+    histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, PathRef};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, PathRef, SplitFaceTool};
 
     let reference_count = scope.reference_members.len();
     if scope.kind != "SplitFace"
         || reference_count < 4
-        || scope.frame_length
-            != 290_u64.checked_add(
-                11_u64.checked_mul(u64::try_from(reference_count.checked_sub(1)?).ok()?)?,
-            )?
+        || !matches!(
+            scope.frame_length,
+            frame_length
+                if frame_length
+                    == 290_u64.checked_add(
+                        11_u64.checked_mul(
+                            u64::try_from(reference_count.checked_sub(1)?).ok()?,
+                        )?,
+                    )?
+                        || frame_length
+                            == 291_u64.checked_add(
+                                11_u64.checked_mul(
+                                    u64::try_from(reference_count.checked_sub(1)?).ok()?,
+                                )?,
+                            )?
+        )
     {
         return None;
     }
@@ -4553,7 +5320,7 @@ fn project_split_face(
     let target_ordinal = tool.members.len().checked_add(1)?;
     if tool.scope_reference_ordinal != 0
         || tool.record_index != scope.reference_members[0]
-        || tool.role != 0x0000_0021_0000_0000
+        || tool.role != ROLE_0X21
         || tool.members.is_empty()
         || tool.members.as_slice() != &scope.reference_members[1..target_ordinal]
         || usize::try_from(targets.scope_reference_ordinal).ok()? != target_ordinal
@@ -4564,9 +5331,20 @@ fn project_split_face(
     {
         return None;
     }
+    let target_selection = project_face_selection(scope, targets, face_operands, histories);
+    let tool = selected_work_plane(scope, tool, entity_selection_operands, scopes).map_or_else(
+        || SplitFaceTool::Path(PathRef::Native(tool.id.clone())),
+        |plane| SplitFaceTool::Plane {
+            plane: neutral_feature_id(plane),
+        },
+    );
     Some(FeatureDefinition::SplitFace {
-        targets: FaceSelection::Native(targets.id.clone()),
-        tool: PathRef::Native(tool.id.clone()),
+        targets: if matches!(target_selection, FaceSelection::Native(_)) {
+            FaceSelection::Native(targets.id.clone())
+        } else {
+            target_selection
+        },
+        tool,
     })
 }
 
@@ -4586,7 +5364,7 @@ fn project_delete_face(
         .checked_sub(reference_bytes)?;
     let heal = match (scope.kind.as_str(), (base_frame_length, base_kind_offset)) {
         ("DeleteFace", (236, 139) | (241, 143)) => true,
-        ("SurfaceDeleteFace", (250, 140)) => false,
+        ("SurfaceDeleteFace", (250, 140) | (251, 139)) => false,
         _ => return None,
     };
     if reference_count < 2 {
@@ -4621,6 +5399,7 @@ pub(crate) fn project_extrude(
     construction_groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
     placements: &[DesignSketchPlacement],
+    body_recipe_operands: &[DesignBodyRecipeOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         Angle, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
@@ -4819,6 +5598,15 @@ pub(crate) fn project_extrude(
         .filter(|group| group.extrude_face_role == Some(DesignExtrudeFaceRole::Termination))
         .copied()
         .collect::<Vec<_>>();
+    let target_shape_groups = scope_groups
+        .iter()
+        .filter(|group| {
+            group.role == 0x0000_0005_0000_0000
+                && group.extrude_role.is_none()
+                && group.extrude_face_role.is_none()
+        })
+        .copied()
+        .collect::<Vec<_>>();
     if start_groups.len() + termination_groups.len() != face_groups.len() {
         return None;
     }
@@ -4913,19 +5701,30 @@ pub(crate) fn project_extrude(
             (ExtentShape::Symmetric(Termination::ThroughAll), false)
         }
         (DesignExtrudeExtent::OneSidedToFace, None, None) => {
-            let offset = side_one_offset?;
-            let [termination] = termination_groups.as_slice() else {
-                return None;
-            };
-            (
-                ExtentShape::OneSided(Termination::ToFace {
-                    face: resolved_historical_face_group(scope, termination, face_operands)
-                        .or_else(|| resolved_face_group(termination, face_operands))
-                        .unwrap_or_else(|| FaceSelection::Native(termination.id.clone())),
-                    offset: (offset.0 != 0.0).then_some(offset),
-                }),
-                prologue.direction_reversed(),
-            )
+            match (
+                termination_groups.as_slice(),
+                target_shape_groups.as_slice(),
+            ) {
+                ([termination], []) => {
+                    let offset = side_one_offset?;
+                    (
+                        ExtentShape::OneSided(Termination::ToFace {
+                            face: resolved_historical_face_group(scope, termination, face_operands)
+                                .or_else(|| resolved_face_group(termination, face_operands))
+                                .unwrap_or_else(|| FaceSelection::Native(termination.id.clone())),
+                            offset: (offset.0 != 0.0).then_some(offset),
+                        }),
+                        prologue.direction_reversed(),
+                    )
+                }
+                ([], [target]) if effective_side_one_offset.is_none() => (
+                    ExtentShape::OneSided(Termination::ToShape {
+                        target: resolved_body_recipe_shape(target, body_recipe_operands)?,
+                    }),
+                    prologue.direction_reversed(),
+                ),
+                _ => return None,
+            }
         }
         (DesignExtrudeExtent::OneSidedThroughNext, None, None)
             if termination_groups.is_empty() && effective_side_one_offset.is_none() =>
@@ -5333,18 +6132,33 @@ fn project_coil(
     let section_placement = match scope.coil_section_placement? {
         DesignCoilSectionPlacement::Inside => CoilSectionPlacement::Inside,
         DesignCoilSectionPlacement::Center => CoilSectionPlacement::Center,
+        DesignCoilSectionPlacement::Outside => CoilSectionPlacement::Outside,
     };
+    let operation = scope.coil_operation?;
     let stream = native_stream(&scope.id)?;
-    let mut body_groups = construction_groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream)
-            && group.scope_record_index == scope.record_index
-            && group.role == 0x0000_0008_0000_0000
-    });
-    let first_body_group = body_groups.next();
-    if body_groups.next().is_some() {
-        return None;
-    }
-    let result = match (scope.coil_operation?, first_body_group) {
+    let first_body_group = if operation == DesignExtrudeOperation::NewBody {
+        // The long Coil form carries one role-4 construction group for its
+        // generated body even when the result is a new body. It is not a
+        // Boolean target and must not suppress the typed result.
+        None
+    } else {
+        let expected_role = if scope.coil_operation_offset == scope.byte_offset.checked_add(22) {
+            0x0000_0004_0000_0000
+        } else {
+            0x0000_0008_0000_0000
+        };
+        let mut body_groups = construction_groups.iter().filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+                && group.role == expected_role
+        });
+        let first_body_group = body_groups.next();
+        if body_groups.next().is_some() {
+            return None;
+        }
+        first_body_group
+    };
+    let result = match (operation, first_body_group) {
         (DesignExtrudeOperation::NewBody, None) => CoilResult::NewBody,
         (operation, Some(group)) => CoilResult::Boolean {
             operation: match operation {

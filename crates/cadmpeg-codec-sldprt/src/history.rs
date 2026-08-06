@@ -8667,6 +8667,7 @@ fn project_filled_surface(feature: &Feature) -> Option<FeatureDefinition> {
         )),
         support_faces: FaceSelection::Native(feature.properties.get("SupportFaces")?.clone()),
         continuity: Some(continuity),
+        boundary_continuities: Vec::new(),
         merge_result: Some(
             feature
                 .properties
@@ -8748,7 +8749,9 @@ fn project_draft(feature: &Feature) -> Option<FeatureDefinition> {
             .get("NeutralPlane")
             .cloned()
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
+        parting_tool: None,
         pull_direction: Some(pull_direction),
+        pull_plane: None,
         angle: feature
             .parameters
             .get("Angle")
@@ -14259,6 +14262,7 @@ pub fn sync_neutral_features(
                 boundary,
                 support_faces,
                 continuity,
+                boundary_continuities,
                 merge_result,
             } => {
                 let cadmpeg_ir::features::SurfaceBoundary::Edges(boundary) = boundary else {
@@ -14285,6 +14289,12 @@ pub fn sync_neutral_features(
                         feature.id
                     ))
                 })?;
+                if !boundary_continuities.is_empty() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has per-boundary filled-surface continuity",
+                        feature.id
+                    )));
+                }
                 let merge_result = merge_result.ok_or_else(|| {
                     CodecError::NotImplemented(format!(
                         "SLDPRT feature {} has unresolved filled-surface merge state",
@@ -14318,6 +14328,8 @@ pub fn sync_neutral_features(
             FeatureDefinition::Draft {
                 faces: face_selection,
                 neutral_plane: plane_selection,
+                parting_tool,
+                pull_plane,
                 pull_direction,
                 angle,
                 outward,
@@ -14331,6 +14343,8 @@ pub fn sync_neutral_features(
                 if existing
                     .as_deref()
                     .is_some_and(|record| !feature_family(record, "Draft"))
+                    || parting_tool.is_some()
+                    || pull_plane.is_some()
                     || !operands_supported(face_selection, faces.as_ref())
                     || !operands_supported(plane_selection, neutral_plane.as_ref())
                     || existing.is_none()

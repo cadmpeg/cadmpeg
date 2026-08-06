@@ -40,6 +40,36 @@ string_id!(
     "Identifies a geometric sketch constraint."
 );
 
+/// Horizontal placement of sketch text about its text anchor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "native_value", rename_all = "snake_case")]
+pub enum SketchTextHorizontalAlignment {
+    /// Align the text's left edge with its anchor.
+    Left,
+    /// Center the text about its anchor.
+    Center,
+    /// Align the text's right edge with its anchor.
+    Right,
+    /// Source alignment ordinal without an assigned neutral meaning.
+    Native(u32),
+}
+
+/// Vertical placement of sketch text about its text anchor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "native_value", rename_all = "snake_case")]
+pub enum SketchTextVerticalAlignment {
+    /// Align the text's top with its anchor.
+    Top,
+    /// Center the text about its anchor.
+    Middle,
+    /// Align the text's bottom with its anchor.
+    Bottom,
+    /// Source alignment ordinal without an assigned neutral meaning.
+    Native(u32),
+}
+
 /// Canonical reference axis in neutral sketch coordinates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -275,6 +305,14 @@ pub enum SketchGeometry {
         /// absent when the source stores no placement.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         rotation: Option<Angle>,
+        /// Horizontal placement about the text anchor, when the source class
+        /// carries an alignment enum.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        horizontal_alignment: Option<SketchTextHorizontalAlignment>,
+        /// Vertical placement about the text anchor, when the source class
+        /// carries an alignment enum.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        vertical_alignment: Option<SketchTextVerticalAlignment>,
     },
     /// Source-native geometry not yet reduced to a neutral family.
     Native {
@@ -712,13 +750,13 @@ pub struct SketchPatternDirection {
     pub spacing: Length,
     /// Number of instances along this axis, including the seed instance.
     pub count: u32,
-    /// Driving total-span parameter, when the source exposes it as a neutral parameter.
+    /// Driving adjacent-spacing parameter, when the source exposes it as a neutral parameter.
     #[serde(
         default,
-        alias = "spacing_parameter",
+        alias = "span_parameter",
         skip_serializing_if = "Option::is_none"
     )]
-    pub span_parameter: Option<ParameterId>,
+    pub spacing_parameter: Option<ParameterId>,
     /// Driving instance-count parameter, when the source exposes it as a neutral parameter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub count_parameter: Option<ParameterId>,

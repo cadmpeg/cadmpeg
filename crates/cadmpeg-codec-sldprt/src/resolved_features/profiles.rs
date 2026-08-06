@@ -1936,6 +1936,8 @@ fn transform_sketch_block_geometry(
             width_factor,
             anchor,
             rotation: text_rotation,
+            horizontal_alignment,
+            vertical_alignment,
         } => SketchGeometry::Text {
             text: text.clone(),
             font_family: font_family.clone(),
@@ -1947,6 +1949,8 @@ fn transform_sketch_block_geometry(
                 None => None,
             },
             rotation: text_rotation.map(angle),
+            horizontal_alignment: *horizontal_alignment,
+            vertical_alignment: *vertical_alignment,
         },
         SketchGeometry::Native { .. } => return None,
     })

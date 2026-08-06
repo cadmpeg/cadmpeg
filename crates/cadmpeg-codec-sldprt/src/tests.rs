@@ -3847,7 +3847,9 @@ fn encoder_writes_source_less_native_features() {
         FeatureDefinition::Draft {
             faces: FaceSelection::Native("face-b".into()),
             neutral_plane: FaceSelection::Native("face-c".into()),
+            parting_tool: None,
             pull_direction: Some(Vector3::new(0.0, 0.0, 1.0)),
+            pull_plane: None,
             angle: Some(Angle(0.2)),
             outward: Some(false),
         },
@@ -12640,7 +12642,9 @@ fn semantic_writer_round_trips_typed_draft() {
         FeatureDefinition::Draft {
             faces: FaceSelection::Native(faces),
             neutral_plane: FaceSelection::Native(neutral_plane),
+            parting_tool: None,
             pull_direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
+            pull_plane: None,
             angle: Some(Angle(value)),
             outward: Some(false),
         } if faces == "face:1,face:2"
@@ -12654,6 +12658,7 @@ fn semantic_writer_round_trips_typed_draft() {
         pull_direction,
         angle,
         outward,
+        ..
     } = &mut decoded.ir.model.features[0].definition
     else {
         panic!("typed draft");
@@ -12713,7 +12718,9 @@ fn semantic_writer_round_trips_draft_without_angle_or_outward() {
         FeatureDefinition::Draft {
             faces: FaceSelection::Native(faces),
             neutral_plane: FaceSelection::Native(neutral_plane),
+            parting_tool: None,
             pull_direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
+            pull_plane: None,
             angle: None,
             outward: None,
         } if faces == "face:1,face:2" && neutral_plane == "face:3"
@@ -14801,8 +14808,10 @@ fn semantic_writer_round_trips_filled_surface() {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Resolved { edges, native: edge_native }),
             support_faces: FaceSelection::Resolved { faces, native: face_native },
             continuity: Some(SurfaceContinuity::Tangent),
+            boundary_continuities,
             merge_result: Some(false),
-        } if edges == std::slice::from_ref(&edge_id) && edge_native == &edge
+        } if boundary_continuities.is_empty()
+            && edges == std::slice::from_ref(&edge_id) && edge_native == &edge
             && faces == std::slice::from_ref(&face_id) && face_native == &face
     ));
 
@@ -14810,6 +14819,7 @@ fn semantic_writer_round_trips_filled_surface() {
         boundary,
         support_faces,
         continuity,
+        boundary_continuities,
         merge_result,
     } = &mut decoded.ir.model.features[0].definition
     else {
@@ -14819,6 +14829,7 @@ fn semantic_writer_round_trips_filled_surface() {
         cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Edges(vec![edge_id.clone()]));
     *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
     *continuity = Some(SurfaceContinuity::Curvature);
+    boundary_continuities.clear();
     *merge_result = Some(true);
 
     let mut encoded = Vec::new();
@@ -21778,11 +21789,13 @@ fn semantic_writer_expands_indexed_tessellation() {
         strip_lengths: Vec::new(),
         normals: vec![Vector3::new(0.0, 0.0, 1.0); 4],
         channels: vec![TessellationChannel {
+            domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
             item_size: 1,
             kind: 7,
             flags: 2,
             count: 4,
             data: vec![10, 11, 12, 13],
+            indices: Vec::new(),
         }],
     };
     let expanded = crate::writer::sequential_tessellation(&mesh).unwrap();

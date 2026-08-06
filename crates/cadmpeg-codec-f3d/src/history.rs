@@ -11,15 +11,16 @@
 
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
-    AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalEntityDelta,
-    AsmHistoricalOptionalCarrierBinding, AsmHistoricalPlane, AsmHistoricalPoint,
-    AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
+    AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCylinder, AsmHistoricalEdge,
+    AsmHistoricalEntityDelta, AsmHistoricalOptionalCarrierBinding, AsmHistoricalPlane,
+    AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
     AsmHistoricalTransition, AsmHistory, AsmHistoryRecord,
 };
 use crate::records::{
     AsmHistoricalEntityKind, DesignEdgeIdentityOperand, DesignExtrudeSelectionMember,
 };
 use cadmpeg_core::le::int_at;
+use cadmpeg_ir::math::Vector3;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";
@@ -1732,21 +1733,24 @@ pub(crate) fn project_feature_input_topologies(
             if matching_scopes.next().is_some() {
                 return None;
             }
-            let previous_state_id = scope.previous_history_state_id.or_else(|| {
-                let stream = crate::ids::native_stream(&scope.id);
-                let operands = edge_operands
-                    .iter()
-                    .filter(|operand| {
-                        operand.scope_record_index == scope.record_index
-                            && crate::ids::native_stream(&operand.id) == stream
-                    })
-                    .collect::<Vec<_>>();
-                let state = operands.first()?.recipe_state_id?;
-                operands
-                    .iter()
-                    .all(|operand| operand.recipe_state_id == Some(state))
-                    .then_some(state)
-            })?;
+            let previous_state_id = scope
+                .previous_history_state_id
+                .or_else(|| {
+                    let stream = crate::ids::native_stream(&scope.id);
+                    let operands = edge_operands
+                        .iter()
+                        .filter(|operand| {
+                            operand.scope_record_index == scope.record_index
+                                && crate::ids::native_stream(&operand.id) == stream
+                        })
+                        .collect::<Vec<_>>();
+                    let state = operands.first()?.recipe_state_id?;
+                    operands
+                        .iter()
+                        .all(|operand| operand.recipe_state_id == Some(state))
+                        .then_some(state)
+                })
+                .or_else(|| effective_scope_previous_history_state_id(scope, histories))?;
             let state = scope
                 .history_state_id
                 .and_then(|state_id| {
@@ -1812,6 +1816,28 @@ fn unique_history_state(
     matches.next().is_none().then_some(state)
 }
 
+fn unique_history_state_in(history: &AsmHistory, state_id: i64) -> bool {
+    let mut states = history
+        .states
+        .iter()
+        .filter(|state| state.state_id == state_id);
+    states.next().is_some() && states.next().is_none()
+}
+
+/// Return the effective input state for a scope. Some Design scope envelopes
+/// omit the preceding state identity even though the current ASM delta state
+/// carries the direct transition predecessor.
+pub(crate) fn effective_scope_previous_history_state_id(
+    scope: &crate::records::DesignParameterScope,
+    histories: &[AsmHistory],
+) -> Option<i64> {
+    scope.previous_history_state_id.or_else(|| {
+        let state_id = scope.history_state_id?;
+        let (history, state) = unique_history_state(histories, state_id)?;
+        linked_previous_state_id(history, state)
+    })
+}
+
 pub(crate) fn unique_history_state_pair(
     histories: &[AsmHistory],
     state_id: i64,
@@ -1830,6 +1856,220 @@ pub(crate) fn unique_history_state_pair(
     matches.next().is_none().then_some(pair)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HemGapLengthForm {
+    Flat,
+    Open,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HemGeometrySemantics {
+    pub direction: Option<cadmpeg_ir::features::SheetMetalHemDirection>,
+    pub gap_length_form: Option<HemGapLengthForm>,
+}
+
+/// Resolve Hem semantics from the bend carriers in the owning history
+/// transition. The source operation's fixed fields do not carry these
+/// meanings; the selected edge and the inserted coaxial cylinders do.
+pub(crate) fn hem_geometry_semantics(
+    scope: &crate::records::DesignParameterScope,
+    edge_slot: i64,
+    histories: &[AsmHistory],
+) -> HemGeometrySemantics {
+    let unresolved = HemGeometrySemantics {
+        direction: None,
+        gap_length_form: None,
+    };
+    let (Some(state_id), Some(previous_state_id)) = (
+        scope.history_state_id,
+        effective_scope_previous_history_state_id(scope, histories),
+    ) else {
+        return unresolved;
+    };
+    let Some((_, state, previous)) =
+        unique_history_state_pair(histories, state_id, previous_state_id)
+    else {
+        return unresolved;
+    };
+    let (Some(previous_topology), Some(transition)) =
+        (previous.topology.as_ref(), state.transition.as_ref())
+    else {
+        return unresolved;
+    };
+    let Some(cylinders) = hem_inserted_cylinders(state, previous_topology, transition, edge_slot)
+    else {
+        return unresolved;
+    };
+    HemGeometrySemantics {
+        direction: hem_direction_from_transition(
+            edge_slot,
+            &cylinders,
+            previous_topology,
+            transition,
+        ),
+        gap_length_form: hem_gap_length_form(&cylinders),
+    }
+}
+
+fn hem_inserted_cylinders<'a>(
+    state: &'a AsmDeltaState,
+    previous: &AsmHistoricalTopology,
+    transition: &AsmHistoricalTransition,
+    edge_slot: i64,
+) -> Option<Vec<&'a AsmHistoricalCylinder>> {
+    let topology = state.topology.as_ref()?;
+    let inserted_surfaces = &transition.topology.surfaces.inserted;
+    let cylinders = topology
+        .surface_cylinders
+        .iter()
+        .filter(|cylinder| inserted_surfaces.contains(&cylinder.surface))
+        .collect::<Vec<_>>();
+    if cylinders.is_empty() {
+        return Some(Vec::new());
+    }
+    let edge_direction = historical_edge_axis(edge_slot, previous).map(|(_, direction)| direction);
+    Some(
+        cylinders
+            .into_iter()
+            .filter(|cylinder| {
+                edge_direction.is_none_or(|direction| parallel_directions(direction, cylinder.axis))
+            })
+            .collect(),
+    )
+}
+
+fn hem_gap_length_form(cylinders: &[&AsmHistoricalCylinder]) -> Option<HemGapLengthForm> {
+    let [first, second] = cylinders else {
+        return None;
+    };
+    if !same_axis_line((first.origin, first.axis), (second.origin, second.axis)) {
+        return None;
+    }
+    let [inner, outer] = if first.radius <= second.radius {
+        [first.radius, second.radius]
+    } else {
+        [second.radius, first.radius]
+    };
+    if !inner.is_finite() || !outer.is_finite() || inner < 0.0 || outer <= inner {
+        return None;
+    }
+    let thickness = outer - inner;
+    let tolerance = 1.0e-7 * (1.0 + outer.abs() + inner.abs());
+    if (2.0 * inner - thickness).abs() <= tolerance {
+        Some(HemGapLengthForm::Open)
+    } else if 2.0 * inner < thickness - tolerance {
+        Some(HemGapLengthForm::Flat)
+    } else {
+        None
+    }
+}
+
+fn hem_direction_from_transition(
+    edge_slot: i64,
+    cylinders: &[&AsmHistoricalCylinder],
+    previous: &AsmHistoricalTopology,
+    transition: &AsmHistoricalTransition,
+) -> Option<cadmpeg_ir::features::SheetMetalHemDirection> {
+    if cylinders.is_empty() {
+        return None;
+    }
+    let incident_faces = historical_edge_context(edge_slot, previous)
+        .incident_loops
+        .into_iter()
+        .map(|context| context.face_slot)
+        .collect::<BTreeSet<_>>();
+    let mut candidates = Vec::new();
+    for face in incident_faces {
+        if transition.topology.faces.deleted.contains(&face) {
+            continue;
+        }
+        let mut bindings = previous
+            .face_surfaces
+            .iter()
+            .filter(|binding| binding.entity == face);
+        let Some(binding) = bindings.next() else {
+            continue;
+        };
+        if bindings.next().is_some() {
+            continue;
+        }
+        let mut planes = previous
+            .surface_planes
+            .iter()
+            .filter(|plane| plane.surface == binding.carrier);
+        let Some(plane) = planes.next() else {
+            continue;
+        };
+        if planes.next().is_some() {
+            continue;
+        }
+        let Some(normal) = unit_vector(plane.normal) else {
+            continue;
+        };
+        let offsets = cylinders
+            .iter()
+            .map(|cylinder| {
+                let offset = Vector3::new(
+                    cylinder.origin.x - plane.origin.x,
+                    cylinder.origin.y - plane.origin.y,
+                    cylinder.origin.z - plane.origin.z,
+                );
+                normal.x * offset.x + normal.y * offset.y + normal.z * offset.z
+            })
+            .collect::<Vec<_>>();
+        let Some(first) = offsets.first().copied() else {
+            continue;
+        };
+        if !first.is_finite() {
+            continue;
+        }
+        let sign_tolerance = 1.0e-7
+            * (1.0
+                + plane.origin.x.abs()
+                + plane.origin.y.abs()
+                + plane.origin.z.abs()
+                + cylinders.iter().fold(0.0_f64, |scale, cylinder| {
+                    scale
+                        .max(cylinder.origin.x.abs())
+                        .max(cylinder.origin.y.abs())
+                        .max(cylinder.origin.z.abs())
+                }));
+        if first.abs() <= sign_tolerance
+            || offsets.iter().any(|offset| {
+                !offset.is_finite()
+                    || offset.abs() <= sign_tolerance
+                    || offset.is_sign_positive() != first.is_sign_positive()
+            })
+        {
+            continue;
+        }
+        candidates.push(first.is_sign_positive());
+    }
+    let [positive] = candidates.as_slice() else {
+        return None;
+    };
+    Some(if *positive {
+        cadmpeg_ir::features::SheetMetalHemDirection::Forward
+    } else {
+        cadmpeg_ir::features::SheetMetalHemDirection::Reverse
+    })
+}
+
+fn unit_vector(vector: cadmpeg_ir::math::Vector3) -> Option<cadmpeg_ir::math::Vector3> {
+    let length = (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).sqrt();
+    (length.is_finite() && length > 0.0).then(|| {
+        cadmpeg_ir::math::Vector3::new(vector.x / length, vector.y / length, vector.z / length)
+    })
+}
+
+fn parallel_directions(left: cadmpeg_ir::math::Vector3, right: cadmpeg_ir::math::Vector3) -> bool {
+    let (Some(left), Some(right)) = (unit_vector(left), unit_vector(right)) else {
+        return false;
+    };
+    let dot = left.x * right.x + left.y * right.y + left.z * right.z;
+    dot.is_finite() && (dot.abs() - 1.0).abs() <= 1.0e-7
+}
+
 fn history_state_pair(
     history: &AsmHistory,
     state_id: i64,
@@ -1842,12 +2082,7 @@ fn history_state_pair(
         .filter(|state| state.state_id == state_id);
     let state = states.next()?;
     if states.next().is_some()
-        || (require_direct
-            && state
-                .transition
-                .as_ref()
-                .and_then(|transition| transition.previous_state_id)
-                != Some(previous_state_id))
+        || (require_direct && linked_previous_state_id(history, state) != Some(previous_state_id))
     {
         return None;
     }
@@ -1898,26 +2133,30 @@ pub(crate) fn bind_scope_histories(
     let candidates = scopes
         .iter()
         .filter_map(|scope| {
-            let (Some(state_id), Some(previous_state_id)) =
-                (scope.history_state_id, scope.previous_history_state_id)
-            else {
-                return None;
-            };
-            let direct = histories
-                .iter()
-                .filter(|history| {
-                    history_state_pair(history, state_id, previous_state_id, true).is_some()
-                })
-                .collect::<Vec<_>>();
-            let candidates = if direct.is_empty() {
-                histories
+            let state_id = scope.history_state_id?;
+            let candidates = if let Some(previous_state_id) = scope.previous_history_state_id {
+                let direct = histories
                     .iter()
                     .filter(|history| {
-                        history_state_pair(history, state_id, previous_state_id, false).is_some()
+                        history_state_pair(history, state_id, previous_state_id, true).is_some()
                     })
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>();
+                if direct.is_empty() {
+                    histories
+                        .iter()
+                        .filter(|history| {
+                            history_state_pair(history, state_id, previous_state_id, false)
+                                .is_some()
+                        })
+                        .collect::<Vec<_>>()
+                } else {
+                    direct
+                }
             } else {
-                direct
+                histories
+                    .iter()
+                    .filter(|history| unique_history_state_in(history, state_id))
+                    .collect::<Vec<_>>()
             };
             (!candidates.is_empty()).then_some((scope, candidates))
         })
@@ -1959,17 +2198,15 @@ pub(crate) fn bind_scope_histories(
             resolved.insert(scope.id.clone(), history_id.to_owned());
         }
     }
-    let mut groups = HashMap::<(&str, i64, i64), Vec<usize>>::new();
+    let mut groups = HashMap::<(&str, i64, Option<i64>), Vec<usize>>::new();
     for (index, (scope, _)) in candidates.iter().enumerate() {
-        let (Some(stream), Some(state_id), Some(previous_state_id)) = (
-            crate::ids::native_stream(&scope.id),
-            scope.history_state_id,
-            scope.previous_history_state_id,
-        ) else {
+        let (Some(stream), Some(state_id)) =
+            (crate::ids::native_stream(&scope.id), scope.history_state_id)
+        else {
             continue;
         };
         groups
-            .entry((stream, state_id, previous_state_id))
+            .entry((stream, state_id, scope.previous_history_state_id))
             .or_default()
             .push(index);
     }
@@ -2035,18 +2272,43 @@ fn history_state_reaches(
         if !visited.insert(current.state_id) {
             return false;
         }
-        let Some(previous) = current
-            .transition
-            .as_ref()
-            .and_then(|transition| transition.previous_state_id)
-            .and_then(|state_id| states.get(&state_id))
-            .and_then(|state| *state)
-        else {
+        let Some(previous_state_id) = linked_previous_state_id(history, current) else {
+            return false;
+        };
+        let Some(previous) = states.get(&previous_state_id).and_then(|state| *state) else {
             return false;
         };
         current = previous;
     }
     true
+}
+
+/// Return the state ID reached by a delta state's `next` link.
+///
+/// The derived transition carries the same predecessor after complete
+/// historical topology projection. Before that projection, the raw chain is
+/// still sufficient to bind Design feature state identities. Reject a
+/// disagreement instead of allowing either representation to hide a corrupt
+/// history graph.
+fn linked_previous_state_id(history: &AsmHistory, state: &AsmDeltaState) -> Option<i64> {
+    let linked = state.next_ref.and_then(|node_index| {
+        let mut states = history
+            .states
+            .iter()
+            .filter(|candidate| candidate.node_index == node_index);
+        let previous = states.next()?;
+        states.next().is_none().then_some(previous.state_id)
+    });
+    let derived = state
+        .transition
+        .as_ref()
+        .and_then(|transition| transition.previous_state_id);
+    match (derived, linked) {
+        (Some(derived), Some(linked)) if derived != linked => None,
+        (Some(derived), _) => Some(derived),
+        (None, Some(linked)) => Some(linked),
+        (None, None) => None,
+    }
 }
 
 fn history_state_index(history: &AsmHistory) -> HashMap<i64, Option<&AsmDeltaState>> {
@@ -2088,8 +2350,10 @@ pub(crate) fn bind_face_operand_history_candidates(
         if matching_scopes.next().is_some() {
             continue;
         }
-        let (Some(state_id), Some(previous_state_id)) =
-            (scope.history_state_id, scope.previous_history_state_id)
+        let Some(state_id) = scope.history_state_id else {
+            continue;
+        };
+        let Some(previous_state_id) = effective_scope_previous_history_state_id(scope, histories)
         else {
             continue;
         };
@@ -2107,10 +2371,9 @@ pub(crate) fn bind_face_operand_history_candidates(
         else {
             continue;
         };
-        operand.preceding_candidate_faces = faces_in_topology(
-            crate::design::face_resolve::face_operand_candidates(operand),
-            topology,
-        );
+        let history_candidates =
+            crate::design::face_resolve::historical_face_operand_candidates(operand);
+        operand.preceding_candidate_faces = faces_in_topology(&history_candidates, topology);
         operand.changed_candidate_faces = operand
             .preceding_candidate_faces
             .iter()
@@ -2118,7 +2381,7 @@ pub(crate) fn bind_face_operand_history_candidates(
             .cloned()
             .collect();
         operand.historical_support_contexts = historical_face_support_contexts(
-            crate::design::face_resolve::face_operand_candidates(operand),
+            &history_candidates,
             histories,
             topology,
             &changed_faces,
@@ -3252,28 +3515,13 @@ pub(crate) fn bind_edge_operand_history_candidates(
         if matching_scopes.next().is_some() {
             continue;
         }
-        let (Some(state_id), Some(previous_state_id)) =
-            (scope.history_state_id, scope.previous_history_state_id)
+        let Some(state_id) = scope.history_state_id else {
+            bind_active_edge_operand_for_scope(operand, scope, &terminal_topologies);
+            continue;
+        };
+        let Some(previous_state_id) = effective_scope_previous_history_state_id(scope, histories)
         else {
-            bind_active_edge_operand_candidates(operand, &terminal_topologies);
-            if crate::design::design_feature_family(&scope.kind)
-                == Some(crate::design::DesignFeatureFamily::Revolve)
-            {
-                let topology = operand.recipe_state_id.and_then(|state_id| {
-                    terminal_topologies
-                        .iter()
-                        .find(|(candidate, _)| *candidate == state_id)
-                        .map(|(_, topology)| *topology)
-                });
-                if let Some((origin, direction)) = operand
-                    .resolved_edge_slot
-                    .zip(topology)
-                    .and_then(|(edge, topology)| historical_edge_axis(edge, topology))
-                {
-                    operand.resolved_axis_origin = Some(origin);
-                    operand.resolved_axis_direction = Some(direction);
-                }
-            }
+            bind_active_edge_operand_for_scope(operand, scope, &terminal_topologies);
             continue;
         };
         let Some((_, state, previous)) = bound_history_state_pair(
@@ -3476,6 +3724,32 @@ fn historical_edge_axis(
     let first = axes.next()?;
     axes.all(|axis| same_axis_line(first, axis))
         .then_some(first)
+}
+
+fn bind_active_edge_operand_for_scope(
+    operand: &mut crate::records::DesignEdgeOperand,
+    scope: &crate::records::DesignParameterScope,
+    terminal_topologies: &[(i64, &AsmHistoricalTopology)],
+) {
+    bind_active_edge_operand_candidates(operand, terminal_topologies);
+    if crate::design::design_feature_family(&scope.kind)
+        == Some(crate::design::DesignFeatureFamily::Revolve)
+    {
+        let topology = operand.recipe_state_id.and_then(|state_id| {
+            terminal_topologies
+                .iter()
+                .find(|(candidate, _)| *candidate == state_id)
+                .map(|(_, topology)| *topology)
+        });
+        if let Some((origin, direction)) = operand
+            .resolved_edge_slot
+            .zip(topology)
+            .and_then(|(edge, topology)| historical_edge_axis(edge, topology))
+        {
+            operand.resolved_axis_origin = Some(origin);
+            operand.resolved_axis_direction = Some(direction);
+        }
+    }
 }
 
 fn bind_active_edge_operand_candidates(
@@ -5842,6 +6116,125 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
 #[cfg(test)]
 mod tests {
     #[test]
+    fn hem_bend_carriers_prove_directional_gap_forms() {
+        use crate::history_records::AsmHistoricalCylinder;
+        use cadmpeg_ir::math::{Point3, Vector3};
+
+        let cylinder = |radius| AsmHistoricalCylinder {
+            surface: 1,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 1.0, 0.0),
+            radius,
+        };
+        let flat_inner = cylinder(0.01);
+        let flat_outer = cylinder(2.51);
+        assert_eq!(
+            super::hem_gap_length_form(&[&flat_inner, &flat_outer]),
+            Some(super::HemGapLengthForm::Flat)
+        );
+
+        let open_inner = cylinder(1.25);
+        let open_outer = cylinder(3.75);
+        assert_eq!(
+            super::hem_gap_length_form(&[&open_inner, &open_outer]),
+            Some(super::HemGapLengthForm::Open)
+        );
+
+        assert_eq!(super::hem_gap_length_form(&[&flat_inner]), None);
+    }
+
+    #[test]
+    fn hem_carrier_offsets_prove_fold_direction() {
+        use crate::history_records::{
+            AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCylinder,
+            AsmHistoricalEntityDelta, AsmHistoricalPlane, AsmHistoricalRelation,
+            AsmHistoricalTopology, AsmHistoricalTopologyDelta, AsmHistoricalTransition,
+        };
+        use cadmpeg_ir::features::SheetMetalHemDirection;
+        use cadmpeg_ir::math::{Point3, Vector3};
+
+        let previous = AsmHistoricalTopology {
+            coedge_topology: vec![AsmHistoricalCoedge {
+                coedge: 6,
+                owner_loop: 5,
+                edge: 7,
+                next: 6,
+                previous: 6,
+                radial_next: 6,
+            }],
+            loop_coedges: vec![AsmHistoricalRelation {
+                owner_ref: 5,
+                member_refs: vec![6],
+            }],
+            face_loops: vec![AsmHistoricalRelation {
+                owner_ref: 4,
+                member_refs: vec![5],
+            }],
+            face_surfaces: vec![AsmHistoricalCarrierBinding {
+                entity: 4,
+                carrier: 11,
+            }],
+            surface_planes: vec![AsmHistoricalPlane {
+                surface: 11,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(1.0, 0.0, 0.0),
+            }],
+            ..Default::default()
+        };
+        let transition = AsmHistoricalTransition {
+            previous_state_id: Some(1),
+            records: Default::default(),
+            topology: AsmHistoricalTopologyDelta {
+                surfaces: AsmHistoricalEntityDelta {
+                    inserted: vec![12, 13],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        };
+        let cylinder = |origin| AsmHistoricalCylinder {
+            surface: 12,
+            origin,
+            axis: Vector3::new(0.0, 1.0, 0.0),
+            radius: 1.0,
+        };
+        let forward_first = cylinder(Point3::new(1.0, 0.0, 0.0));
+        let forward_second = cylinder(Point3::new(2.0, 0.0, 0.0));
+        assert_eq!(
+            super::hem_direction_from_transition(
+                7,
+                &[&forward_first, &forward_second],
+                &previous,
+                &transition,
+            ),
+            Some(SheetMetalHemDirection::Forward)
+        );
+
+        let reverse_first = cylinder(Point3::new(-1.0, 0.0, 0.0));
+        let reverse_second = cylinder(Point3::new(-2.0, 0.0, 0.0));
+        assert_eq!(
+            super::hem_direction_from_transition(
+                7,
+                &[&reverse_first, &reverse_second],
+                &previous,
+                &transition,
+            ),
+            Some(SheetMetalHemDirection::Reverse)
+        );
+
+        let zero_offset = cylinder(Point3::new(0.0, 0.0, 0.0));
+        assert_eq!(
+            super::hem_direction_from_transition(
+                7,
+                &[&zero_offset, &forward_second],
+                &previous,
+                &transition,
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         use cadmpeg_ir::ids::{BodyId, FaceId, RegionId, ShellId};
         use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
@@ -6244,6 +6637,80 @@ mod tests {
         let (resolved, _, _) = unique_history_state_pair(&histories, 23, 11)
             .expect("direct transition takes precedence over a reachable pair");
         assert_eq!(resolved.id, "direct");
+    }
+
+    #[test]
+    fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
+        let state = |state_id, node_index, previous_ref, next_ref| AsmDeltaState {
+            id: format!("history:state-{state_id}"),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref,
+            next_ref,
+            node_index,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            entity_versions: Vec::new(),
+            record_table_complete: false,
+            topology: None,
+            transition: None,
+        };
+        let history = AsmHistory {
+            id: "history".into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
+            states: vec![
+                state(10, 0, None, Some(2)),
+                state(6, 2, Some(0), Some(3)),
+                state(4, 3, Some(2), Some(1)),
+                state(2, 1, Some(3), None),
+            ],
+        };
+        let histories = [history];
+        let (resolved, current, previous) =
+            unique_history_state_pair(&histories, 10, 6).expect("raw direct state pair");
+        assert_eq!(resolved.id, "history");
+        assert_eq!(current.state_id, 10);
+        assert_eq!(previous.state_id, 6);
+        let (_, current, previous) =
+            unique_history_state_pair(&histories, 10, 4).expect("raw reachable state pair");
+        assert_eq!(current.state_id, 10);
+        assert_eq!(previous.state_id, 4);
+        let mut omitted_predecessor =
+            crate::records::DesignParameterScope::empty("f3d:native:scope#0", "Fillet", 0);
+        omitted_predecessor.history_state_id = Some(10);
+        assert_eq!(
+            effective_scope_previous_history_state_id(&omitted_predecessor, &histories),
+            Some(6)
+        );
+
+        let mut root =
+            crate::records::DesignParameterScope::empty("f3d:native:scope#1", "BaseFlange", 1);
+        root.history_state_id = Some(4);
+        let mut successor =
+            crate::records::DesignParameterScope::empty("f3d:native:scope#2", "EdgeFlange", 2);
+        successor.history_state_id = Some(10);
+        successor.previous_history_state_id = Some(6);
+        let bindings = bind_scope_histories(&[root, successor], &[], &histories);
+        assert_eq!(bindings.len(), 2);
+        assert_eq!(bindings["f3d:native:scope#1"], "history");
+        assert_eq!(bindings["f3d:native:scope#2"], "history");
+
+        let mut inconsistent = histories[0].clone();
+        inconsistent.states[0].transition = Some(AsmHistoricalTransition {
+            previous_state_id: Some(4),
+            records: Default::default(),
+            topology: Default::default(),
+        });
+        assert!(unique_history_state_pair(&[inconsistent], 10, 6).is_none());
     }
 
     use crate::history_records::{

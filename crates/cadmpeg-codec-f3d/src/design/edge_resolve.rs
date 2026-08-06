@@ -425,6 +425,148 @@ pub(crate) fn resolved_edge_group(
     }
 }
 
+pub(crate) fn resolved_hem_edge_group(
+    group: &DesignConstructionOperandGroup,
+    groups: &[DesignConstructionOperandGroup],
+    operands: &[DesignEdgeOperand],
+    identity_operands: &[DesignEdgeIdentityOperand],
+    previous_state_id: Option<i64>,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+) -> cadmpeg_ir::features::EdgeSelection {
+    use cadmpeg_ir::features::EdgeSelection;
+
+    let selection = resolved_edge_group(
+        group,
+        groups,
+        operands,
+        identity_operands,
+        previous_state_id,
+        feature_id,
+        None,
+    );
+    if !matches!(selection, EdgeSelection::Native(_)) {
+        return selection;
+    }
+    let Some(previous_state_id) = previous_state_id else {
+        return selection;
+    };
+    let [member] = group.members.as_slice() else {
+        return selection;
+    };
+    let matching_operands = operands
+        .iter()
+        .filter(|operand| {
+            native_stream(&operand.id) == native_stream(&group.id)
+                && operand.scope_record_index == group.scope_record_index
+                && operand.record_index == *member
+        })
+        .collect::<Vec<_>>();
+    let [operand] = matching_operands.as_slice() else {
+        return selection;
+    };
+    let Some(edge) = hem_transition_edge_slot(operand) else {
+        return selection;
+    };
+    let feature_key = feature_id
+        .0
+        .split_once('#')
+        .map_or(feature_id.0.as_str(), |(_, key)| key);
+    EdgeSelection::Historical {
+        state: feature_input_topology_id(feature_id, previous_state_id),
+        edges: vec![ids::history_input_edge_id(
+            &ids::history_input_prefix(feature_key, previous_state_id),
+            edge,
+        )],
+        native: group.id.clone(),
+    }
+}
+
+/// Return the one historical edge a single-member Hem operand identifies.
+///
+/// A directly resolved operand is preferred. The transition proof is the
+/// fallback used by the compact recipe form, where the operand carries only
+/// the changed support boundaries and the selectorless edge context.
+pub(crate) fn resolved_hem_edge_slot(
+    operand: &DesignEdgeOperand,
+    previous_state_id: Option<i64>,
+) -> Option<i64> {
+    let mut direct = operand.resolved_edge_slot.into_iter().collect::<Vec<_>>();
+    direct.sort_unstable();
+    direct.dedup();
+    if let [edge] = direct.as_slice() {
+        return Some(*edge);
+    }
+    previous_state_id.and_then(|_| hem_transition_edge_slot(operand))
+}
+
+fn hem_transition_edge_slot(operand: &DesignEdgeOperand) -> Option<i64> {
+    let reference_contexts = operand.recipe_reference_contexts.as_slice();
+    let empty_contexts = reference_contexts
+        .iter()
+        .filter(|context| context.changed_reference_edge_slots.is_empty())
+        .collect::<Vec<_>>();
+    let [empty_context] = empty_contexts.as_slice() else {
+        return None;
+    };
+    if !empty_context.result_faces.is_empty()
+        || !empty_context.preceding_faces.is_empty()
+        || !empty_context.preceding_support_face_slots.is_empty()
+        || reference_contexts.iter().any(|context| {
+            !context.changed_reference_edge_slots.is_empty()
+                && (context.result_faces.is_empty()
+                    || context.preceding_support_face_slots.is_empty())
+        })
+    {
+        return None;
+    }
+    unique_hem_transition_edge_candidate(
+        &operand.changed_boundary_edge_slots,
+        reference_contexts
+            .iter()
+            .map(|context| context.changed_reference_edge_slots.as_slice()),
+    )
+}
+
+pub(crate) fn unique_hem_transition_edge_candidate<'a>(
+    changed_boundary_edges: &[i64],
+    reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
+) -> Option<i64> {
+    let reference_edge_sets = reference_edge_sets.into_iter().collect::<Vec<_>>();
+    if reference_edge_sets.is_empty()
+        || reference_edge_sets
+            .iter()
+            .filter(|edges| edges.is_empty())
+            .count()
+            != 1
+    {
+        return None;
+    }
+    let mut support_edges = reference_edge_sets
+        .iter()
+        .flat_map(|edges| edges.iter().copied())
+        .collect::<Vec<_>>();
+    support_edges.sort_unstable();
+    support_edges.dedup();
+    if support_edges.is_empty()
+        || support_edges
+            .iter()
+            .any(|edge| !changed_boundary_edges.contains(edge))
+    {
+        return None;
+    }
+    let mut candidates = changed_boundary_edges
+        .iter()
+        .copied()
+        .filter(|edge| !support_edges.contains(edge))
+        .collect::<Vec<_>>();
+    candidates.sort_unstable();
+    candidates.dedup();
+    match candidates.as_slice() {
+        [edge] => Some(*edge),
+        _ => None,
+    }
+}
+
 pub(crate) fn partial_historical_edge_selection<'a>(
     members: impl IntoIterator<Item = (&'a str, Option<i64>)>,
     previous_state_id: i64,
@@ -1476,7 +1618,10 @@ pub(crate) fn project_fixed_fillet(
 
 #[cfg(test)]
 mod radius_identity_tests {
-    use super::{project_fixed_fillet, radius_edge_identity_group_candidates, resolved_edge_group};
+    use super::{
+        project_fixed_fillet, radius_edge_identity_group_candidates, resolved_edge_group,
+        unique_hem_transition_edge_candidate,
+    };
     use crate::records::{
         DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignParameterScope,
     };
@@ -1672,5 +1817,52 @@ mod radius_identity_tests {
             ),
             cadmpeg_ir::features::EdgeSelection::Native(_)
         ));
+    }
+
+    #[test]
+    fn hem_transition_edge_is_the_unique_non_support_boundary() {
+        let support = [[167], [106], [110]];
+        assert_eq!(
+            unique_hem_transition_edge_candidate(
+                &[63, 106, 110, 167],
+                [
+                    &[][..],
+                    support[0].as_slice(),
+                    support[1].as_slice(),
+                    support[2].as_slice()
+                ]
+            ),
+            Some(63)
+        );
+        assert_eq!(
+            unique_hem_transition_edge_candidate(
+                &[63, 106, 110, 167],
+                [
+                    &[][..],
+                    &[63][..],
+                    support[1].as_slice(),
+                    support[0].as_slice()
+                ]
+            ),
+            Some(110)
+        );
+        assert_eq!(
+            unique_hem_transition_edge_candidate(
+                &[63, 106, 110, 167],
+                [
+                    support[0].as_slice(),
+                    support[1].as_slice(),
+                    support[2].as_slice()
+                ]
+            ),
+            None
+        );
+        assert_eq!(
+            unique_hem_transition_edge_candidate(
+                &[63, 106, 110, 167],
+                [&[][..], &[106, 111][..], support[1].as_slice()]
+            ),
+            None
+        );
     }
 }

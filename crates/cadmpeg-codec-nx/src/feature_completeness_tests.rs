@@ -1654,7 +1654,9 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     ir.model.features[0].definition = FeatureDefinition::Draft {
         faces: cadmpeg_ir::features::FaceSelection::Unresolved,
         neutral_plane: cadmpeg_ir::features::FaceSelection::Unresolved,
+        parting_tool: None,
         pull_direction: Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
+        pull_plane: None,
         angle: Some(cadmpeg_ir::features::Angle(0.1)),
         outward: Some(false),
     };
@@ -1670,7 +1672,9 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         neutral_plane: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId(
             "test:face#neutral".into(),
         )]),
+        parting_tool: None,
         pull_direction,
+        pull_plane: None,
         angle,
         outward,
     };
@@ -1825,7 +1829,9 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         FeatureDefinition::Draft {
             faces: cadmpeg_ir::features::FaceSelection::Unresolved,
             neutral_plane: cadmpeg_ir::features::FaceSelection::Unresolved,
+            parting_tool: None,
             pull_direction: Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)),
+            pull_plane: None,
             angle: Some(cadmpeg_ir::features::Angle(0.1)),
             outward: Some(false),
         }

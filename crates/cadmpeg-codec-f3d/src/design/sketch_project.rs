@@ -20,6 +20,28 @@ use crate::records::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
+fn sketch_text_horizontal_alignment(
+    code: Option<u32>,
+) -> Option<cadmpeg_ir::sketches::SketchTextHorizontalAlignment> {
+    code.map(|code| match code {
+        1 => cadmpeg_ir::sketches::SketchTextHorizontalAlignment::Left,
+        2 => cadmpeg_ir::sketches::SketchTextHorizontalAlignment::Right,
+        3 => cadmpeg_ir::sketches::SketchTextHorizontalAlignment::Center,
+        code => cadmpeg_ir::sketches::SketchTextHorizontalAlignment::Native(code),
+    })
+}
+
+fn sketch_text_vertical_alignment(
+    code: Option<u32>,
+) -> Option<cadmpeg_ir::sketches::SketchTextVerticalAlignment> {
+    code.map(|code| match code {
+        1 => cadmpeg_ir::sketches::SketchTextVerticalAlignment::Top,
+        2 => cadmpeg_ir::sketches::SketchTextVerticalAlignment::Bottom,
+        3 => cadmpeg_ir::sketches::SketchTextVerticalAlignment::Middle,
+        code => cadmpeg_ir::sketches::SketchTextVerticalAlignment::Native(code),
+    })
+}
+
 /// Project placed Design sketches and their exact planar point/curve records.
 pub fn project_sketch_design(
     placements: &[DesignSketchPlacement],
@@ -218,6 +240,8 @@ pub fn project_sketch_design(
                 width_factor: text.width_factor.filter(|factor| *factor > 0.0),
                 anchor: text.anchor,
                 rotation: text.rotation.map(cadmpeg_ir::features::Angle),
+                horizontal_alignment: sketch_text_horizontal_alignment(text.horizontal_alignment),
+                vertical_alignment: sketch_text_vertical_alignment(text.vertical_alignment),
             },
         })
     }));
@@ -765,4 +789,47 @@ pub fn project_spatial_sketch_constraints(
         .collect::<Vec<_>>();
     constraints.sort_by_key(|constraint| constraint.id.clone());
     constraints
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{sketch_text_horizontal_alignment, sketch_text_vertical_alignment};
+    use cadmpeg_ir::sketches::{
+        SketchTextHorizontalAlignment as Horizontal, SketchTextVerticalAlignment as Vertical,
+    };
+
+    #[test]
+    fn sketch_text_alignment_ordinals_project_to_named_positions() {
+        assert_eq!(
+            sketch_text_horizontal_alignment(Some(1)),
+            Some(Horizontal::Left)
+        );
+        assert_eq!(
+            sketch_text_horizontal_alignment(Some(2)),
+            Some(Horizontal::Right)
+        );
+        assert_eq!(
+            sketch_text_horizontal_alignment(Some(3)),
+            Some(Horizontal::Center)
+        );
+        assert_eq!(
+            sketch_text_horizontal_alignment(Some(99)),
+            Some(Horizontal::Native(99))
+        );
+        assert_eq!(sketch_text_vertical_alignment(Some(1)), Some(Vertical::Top));
+        assert_eq!(
+            sketch_text_vertical_alignment(Some(2)),
+            Some(Vertical::Bottom)
+        );
+        assert_eq!(
+            sketch_text_vertical_alignment(Some(3)),
+            Some(Vertical::Middle)
+        );
+        assert_eq!(
+            sketch_text_vertical_alignment(Some(99)),
+            Some(Vertical::Native(99))
+        );
+        assert_eq!(sketch_text_horizontal_alignment(None), None);
+        assert_eq!(sketch_text_vertical_alignment(None), None);
+    }
 }

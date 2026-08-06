@@ -26,7 +26,7 @@ use crate::subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
     SubdVertexTag,
 };
-use crate::tessellation::TessellationChannel;
+use crate::tessellation::{TessellationChannel, TessellationChannelDomain};
 use crate::topology::Color;
 use crate::unknown::{NativeUnknownRecord, UnknownRecord};
 use crate::validate::validate;
@@ -1401,7 +1401,15 @@ fn tessellation_counts_must_be_consistent() {
         triangles: vec![[0, 1, 2]],
         strip_lengths: vec![4],
         normals: vec![Vector3::new(0.0, 0.0, 1.0); 2],
-        channels: Vec::new(),
+        channels: vec![TessellationChannel {
+            domain: TessellationChannelDomain::Corner,
+            item_size: 1,
+            kind: 0,
+            flags: 0,
+            count: 1,
+            data: vec![0],
+            indices: vec![0, 1, 0],
+        }],
     });
     ir.model.tessellations.push(Tessellation {
         id: "synthetic:test:tessellation#invalid-strips".into(),
@@ -1441,6 +1449,9 @@ fn tessellation_counts_must_be_consistent() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid tessellation deflection")));
+    assert!(report.findings.iter().any(|finding| finding
+        .message
+        .contains("invalid tessellation channel indices")));
 }
 
 #[test]
@@ -2887,6 +2898,25 @@ fn periodic_curve_parameter_domain_is_checked() {
 }
 
 #[test]
+fn carrierless_edge_range_requires_finite_values_but_not_ordering() {
+    let mut ir = unit_cube();
+    ir.model.edges[0].curve = None;
+    ir.model.edges[0].param_range = Some([1.0, 0.0]);
+    let report = validate(&ir, Vec::new());
+    assert!(!report.findings.iter().any(|finding| {
+        finding.check == Check::ParameterDomain
+            && finding.entity.as_deref() == Some(ir.model.edges[0].id.0.as_str())
+    }));
+
+    ir.model.edges[0].param_range = Some([f64::NAN, 0.0]);
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::ParameterDomain
+            && finding.entity.as_deref() == Some(ir.model.edges[0].id.0.as_str())
+    }));
+}
+
+#[test]
 fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
     let nurbs = crate::geometry::NurbsCurve {
         degree: 1,
@@ -2969,11 +2999,13 @@ fn byte_payloads_use_nonempty_base64_and_reject_invalid_text() {
     );
     assert_base64_round_trip_and_rejection(
         &TessellationChannel {
+            domain: TessellationChannelDomain::default(),
             item_size: 3,
             kind: 0,
             flags: 0,
             count: 1,
             data: vec![1, 2, 3],
+            indices: Vec::new(),
         },
         "data",
     );
@@ -5264,7 +5296,9 @@ fn feature_operation_geometry_is_validated() {
         FeatureDefinition::Draft {
             faces: FaceSelection::Unresolved,
             neutral_plane: FaceSelection::Unresolved,
+            parting_tool: None,
             pull_direction: Some(Vector3::new(0.0, 0.0, 1.0)),
+            pull_plane: None,
             angle: Some(crate::features::Angle(std::f64::consts::FRAC_PI_2)),
             outward: Some(false),
         },
@@ -5586,6 +5620,62 @@ fn feature_operation_geometry_is_validated() {
     for message in expected {
         assert!(findings.iter().any(|finding| finding.message == message));
     }
+}
+
+#[test]
+fn full_round_fillet_keeps_automatic_side_semantics() {
+    use crate::features::{
+        FaceSelection, Feature, FeatureDefinition, FeatureId, FullRoundFilletGroup,
+        FullRoundSideSelection,
+    };
+
+    let mut ir = unit_cube();
+    let center = ir.model.faces[0].id.clone();
+    let feature_index = ir.model.features.len();
+    let definition = FeatureDefinition::FullRoundFillet {
+        groups: vec![FullRoundFilletGroup {
+            center_faces: FaceSelection::Faces(vec![center.clone()]),
+            side_one_faces: FullRoundSideSelection::Automatic,
+            side_two_faces: FullRoundSideSelection::Automatic,
+        }],
+    };
+    assert_eq!(
+        serde_json::from_value::<FeatureDefinition>(serde_json::to_value(&definition).unwrap())
+            .unwrap(),
+        definition
+    );
+    ir.model.features.push(Feature {
+        id: FeatureId("synthetic:test:feature#full-round".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: Some("Fillet".into()),
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition,
+        native_ref: None,
+    });
+    assert!(!validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some("synthetic:test:feature#full-round")
+            && finding.message == "full-round fillet face sets are invalid"
+    }));
+
+    if let FeatureDefinition::FullRoundFillet { groups } =
+        &mut ir.model.features[feature_index].definition
+    {
+        groups[0].side_one_faces =
+            FullRoundSideSelection::Explicit(FaceSelection::Faces(vec![center]));
+    } else {
+        unreachable!("test feature is a full-round fillet");
+    }
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some("synthetic:test:feature#full-round")
+            && finding.message == "full-round fillet face sets are invalid"
+    }));
 }
 
 #[test]

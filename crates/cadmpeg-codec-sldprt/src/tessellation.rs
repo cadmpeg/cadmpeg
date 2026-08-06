@@ -167,11 +167,13 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
             return None;
         }
         channels.push(TessellationChannel {
+            domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
             item_size: item_size as u32,
             kind,
             flags,
             count: count as u32,
             data: bytes[data..end].to_vec(),
+            indices: Vec::new(),
         });
         if index == 0 && item_size == 4 && kind == 8 {
             strips = (0..count)

@@ -6,9 +6,9 @@ use crate::design::edge_resolve::feature_input_topology_id;
 use crate::design::feature_project::design_angle_unit;
 use crate::ids::{self, native_stream, neutral_feature_id};
 use crate::records::{
-    DesignConstructionOperandGroup, DesignExtrudeFaceRole, DesignFaceOperand, DesignParameter,
-    DesignParameterScope, DesignSketchPlacement, SketchCurveGeometry, SketchCurveIdentity,
-    SketchPoint,
+    DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignExtrudeFaceRole,
+    DesignFaceOperand, DesignParameter, DesignParameterScope, DesignSketchPlacement,
+    SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
 };
 use cadmpeg_core::le::f64_at;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -34,6 +34,44 @@ pub(crate) fn resolved_face_group(
         for face in operand_faces {
             if !faces.contains(&face) {
                 faces.push(face);
+            }
+        }
+    }
+    (!faces.is_empty()).then(|| cadmpeg_ir::features::FaceSelection::Resolved {
+        faces,
+        native: group.id.clone(),
+    })
+}
+
+/// Resolve the active faces carried by an Extrude target-shape body recipe.
+///
+/// The native target is a whole-body recipe rather than a face recipe. Its
+/// persistent Design references still identify the active boundary faces that
+/// define the target shape, so retain that exact set alongside the native
+/// group identity.
+pub(crate) fn resolved_body_recipe_shape(
+    group: &DesignConstructionOperandGroup,
+    operands: &[DesignBodyRecipeOperand],
+) -> Option<cadmpeg_ir::features::FaceSelection> {
+    let stream = native_stream(&group.id)?;
+    let mut faces = Vec::new();
+    for (ordinal, record_index) in group.members.iter().enumerate() {
+        let ordinal = u32::try_from(ordinal).ok()?;
+        let mut matches = operands.iter().filter(|operand| {
+            native_stream(&operand.id) == Some(stream)
+                && operand.scope_record_index == group.scope_record_index
+                && operand.owner.group() == Some((group.record_index, ordinal))
+                && operand.record_index == *record_index
+        });
+        let operand = matches.next()?;
+        if matches.next().is_some() || operand.references.is_empty() {
+            return None;
+        }
+        for reference in &operand.references {
+            for face in &reference.candidate_faces {
+                if !faces.contains(face) {
+                    faces.push(face.clone());
+                }
             }
         }
     }
@@ -134,6 +172,19 @@ fn resolved_face_operand(operand: &DesignFaceOperand) -> Option<Vec<cadmpeg_ir::
     if !operand.alternate_selector_candidate_faces.is_empty() {
         return Some(candidates.to_vec());
     }
+    if operand.recipe_kind == crate::records::ConstructionRecipeKind::Face {
+        let mut referenced = Vec::new();
+        for reference in &operand.recipe_references {
+            for face in &reference.candidate_faces {
+                if !referenced.contains(face) {
+                    referenced.push(face.clone());
+                }
+            }
+        }
+        if !referenced.is_empty() {
+            return Some(referenced);
+        }
+    }
     if !operand.unreferenced_candidate_faces.is_empty()
         && complete_counted_face_recipe(operand).is_some()
     {
@@ -170,7 +221,7 @@ pub(crate) fn resolve_face_operand_history_candidates(operand: &DesignFaceOperan
             face
         }
     };
-    if !face_operand_candidates(operand).contains(direct) {
+    if !historical_face_operand_candidates(operand).contains(direct) {
         return None;
     }
     direct.0.rsplit_once('#')?.1.parse().ok()
@@ -357,6 +408,34 @@ pub(crate) fn face_operand_candidates(operand: &DesignFaceOperand) -> &[cadmpeg_
     } else {
         &operand.unreferenced_candidate_faces
     }
+}
+
+/// Return the active face identities that can participate in historical
+/// resolution. A single-face recipe names its selected face in the recipe
+/// reference even when the broader persistent-tag set also contains faces
+/// excluded from the operand's unreferenced candidate lane.
+pub(crate) fn historical_face_operand_candidates(
+    operand: &DesignFaceOperand,
+) -> Vec<cadmpeg_ir::ids::FaceId> {
+    if operand.recipe_kind == crate::records::ConstructionRecipeKind::Face {
+        let mut referenced = operand
+            .recipe_references
+            .iter()
+            .flat_map(|reference| {
+                reference
+                    .candidate_faces
+                    .iter()
+                    .chain(&reference.alternate_selector_faces)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        referenced.sort_by(|left, right| left.0.cmp(&right.0));
+        referenced.dedup();
+        if !referenced.is_empty() {
+            return referenced;
+        }
+    }
+    face_operand_candidates(operand).to_vec()
 }
 
 /// Resolve selected-face Extrude starts from exact sketch-plane coincidence.

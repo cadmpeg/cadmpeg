@@ -142,6 +142,21 @@ pub(crate) fn neutral_component_occurrence_id(guid: &str) -> cadmpeg_ir::ids::Oc
     ))
 }
 
+/// Neutral occurrence identity for an external component-insert scope whose
+/// target document is not present in the container.
+pub(crate) fn neutral_component_insert_occurrence_id(
+    scope: &DesignParameterScope,
+) -> cadmpeg_ir::ids::OccurrenceId {
+    let stream = identity_key_component(native_stream(&scope.id).unwrap_or(DEFAULT_STREAM));
+    cadmpeg_ir::ids::OccurrenceId(format!(
+        "f3d:model:occurrence#component-insert-{}:{}{}:{}",
+        stream.len(),
+        stream,
+        scope.feature_ordinal,
+        scope.record_index,
+    ))
+}
+
 /// Neutral assembly-joint key projected from one Design parameter scope.
 pub(crate) fn neutral_assembly_joint_id(
     scope: &crate::records::DesignParameterScope,

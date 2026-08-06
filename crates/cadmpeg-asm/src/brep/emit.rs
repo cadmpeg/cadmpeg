@@ -4073,6 +4073,15 @@ pub(crate) fn emit_attributes(
             {
                 Some(AttributeTarget::Shell(ShellId(id(format, index))))
             }
+            // ASM-227 names a region's topological owner `lump`, while
+            // ASM-231 names the same record `region`. The neutral model has
+            // no region-level attribute target, so retain these attributes on
+            // their owning body after the region graph has been emitted.
+            "region" | "lump" => out
+                .regions
+                .iter()
+                .find(|entity| entity.id.0 == id(format, index))
+                .map(|entity| AttributeTarget::Body(entity.body.clone())),
             "face" if kept_faces.contains(&index) => {
                 Some(AttributeTarget::Face(FaceId(id(format, index))))
             }

@@ -11225,7 +11225,9 @@ pub(crate) fn draft_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::Draft {
         faces,
         neutral_plane,
+        parting_tool,
         pull_direction,
+        pull_plane,
         angle,
         outward,
     } = &feature.definition
@@ -11233,8 +11235,14 @@ pub(crate) fn draft_definition_is_incomplete(feature: &Feature) -> bool {
         return true;
     };
     face_selection_is_incomplete(faces)
-        || face_selection_is_incomplete(neutral_plane)
+        || parting_tool.as_ref().map_or_else(
+            || face_selection_is_incomplete(neutral_plane),
+            face_selection_is_incomplete,
+        )
         || pull_direction.is_none_or(|direction| !valid_feature_direction(direction))
+        || pull_plane
+            .as_ref()
+            .is_some_and(|plane| plane.as_str().is_empty())
         || angle.is_none_or(|angle| !valid_draft_angle(angle))
         || outward.is_none()
 }

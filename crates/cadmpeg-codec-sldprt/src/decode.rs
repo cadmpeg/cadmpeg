@@ -280,7 +280,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     use cadmpeg_ir::features::{
         BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent,
         FaceSelection, FeatureDefinition, FeatureSourceContent, PathRef, ProfileRef, RadiusSpec,
-        RevolveExtent, Termination,
+        RevolveExtent, SplitFaceTool, Termination,
     };
     use cadmpeg_ir::sketches::{SketchGeometry, SpatialSketchGeometry};
 
@@ -1031,6 +1031,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             | FeatureDefinition::Helix { .. } => false,
             FeatureDefinition::BaseFeature { bodies }
             | FeatureDefinition::InsertBodies { bodies } => incomplete_body_selection(bodies),
+            FeatureDefinition::MeshImport { .. } => false,
             FeatureDefinition::InsertComponent { occurrence } => !ir
                 .model
                 .occurrences
@@ -1273,12 +1274,39 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::SheetMetalEdgeFlange { edges, .. } => {
                 incomplete_edge_selection(edges)
             }
+            FeatureDefinition::SheetMetalHem { .. } => true,
             FeatureDefinition::Fillet { groups } => {
                 groups.is_empty()
                     || groups.iter().any(|group| {
                         incomplete_edge_selection(&group.edges)
                             || matches!(group.radius, RadiusSpec::Unresolved { .. })
                             || matches!(group.radius, RadiusSpec::Variable { ref points } if points.is_empty())
+                    })
+            }
+            FeatureDefinition::FullRoundFillet { groups } => {
+                groups.is_empty()
+                    || groups.iter().any(|group| {
+                        incomplete_face_selection(&group.center_faces)
+                            || matches!(
+                                group.side_one_faces,
+                                cadmpeg_ir::features::FullRoundSideSelection::Unresolved
+                            )
+                            || matches!(
+                                group.side_two_faces,
+                                cadmpeg_ir::features::FullRoundSideSelection::Unresolved
+                            )
+                            || matches!(
+                                group.side_one_faces,
+                                cadmpeg_ir::features::FullRoundSideSelection::Explicit(
+                                    ref selection
+                                ) if incomplete_face_selection(selection)
+                            )
+                            || matches!(
+                                group.side_two_faces,
+                                cadmpeg_ir::features::FullRoundSideSelection::Explicit(
+                                    ref selection
+                                ) if incomplete_face_selection(selection)
+                            )
                     })
             }
             FeatureDefinition::Chamfer { groups, .. } => groups.is_empty() || groups.iter().any(|group| {
@@ -1408,12 +1436,19 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,
+                parting_tool,
+                pull_plane,
                 pull_direction,
                 angle,
                 outward,
             } => {
-                incomplete_face_selection(faces)
-                    || incomplete_face_selection(neutral_plane)
+                parting_tool.is_some()
+                    || pull_plane.is_some()
+                    || incomplete_face_selection(faces)
+                    || parting_tool.as_ref().map_or_else(
+                        || incomplete_face_selection(neutral_plane),
+                        incomplete_face_selection,
+                    )
                     || pull_direction.is_none()
                     || angle.is_none()
                     || outward.is_none()
@@ -1446,7 +1481,11 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 incomplete_body_selection(targets) || incomplete_face_selection(tools)
             }
             FeatureDefinition::SplitFace { targets, tool } => {
-                incomplete_face_selection(targets) || incomplete_path(tool)
+                incomplete_face_selection(targets)
+                    || match tool {
+                        SplitFaceTool::Path(path) => incomplete_path(path),
+                        SplitFaceTool::Plane { .. } => false,
+                    }
             }
             FeatureDefinition::SewBodies {
                 bodies,
@@ -4890,6 +4929,7 @@ mod design_loss_tests {
                 boundary: cadmpeg_ir::features::SurfaceBoundary::Path(path.clone()),
                 support_faces: face.clone(),
                 continuity: None,
+                boundary_continuities: Vec::new(),
                 merge_result: Some(false),
             },
             FeatureDefinition::TrimSurface {
@@ -4900,7 +4940,9 @@ mod design_loss_tests {
             FeatureDefinition::Draft {
                 faces: face.clone(),
                 neutral_plane: face.clone(),
+                parting_tool: None,
                 pull_direction: None,
+                pull_plane: None,
                 angle: None,
                 outward: None,
             },
@@ -5021,6 +5063,7 @@ mod design_loss_tests {
                     )),
                     support_faces: FaceSelection::Faces(Vec::new()),
                     continuity: Some(SurfaceContinuity::Contact),
+                    boundary_continuities: Vec::new(),
                     merge_result: Some(false),
                 },
             ),

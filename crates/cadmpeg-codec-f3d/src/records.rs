@@ -808,13 +808,71 @@ pub enum DesignCoilSectionPlacement {
     Inside,
     /// Section centered on the reference trajectory.
     Center,
+    /// Section outside the reference trajectory.
+    Outside,
 }
 
-/// Exact fixed-form construction data of a solid primitive scope.
+/// Exact construction data of a solid primitive scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "primitive")]
 pub enum DesignSolidPrimitive {
+    /// Axis-aligned box defined by five owned dimensions and offsets.
+    Box {
+        /// Length along the source x-axis in source centimetres.
+        length: f64,
+        /// Referenced length owner.
+        length_record_index: u32,
+        /// Byte offset of the evaluated length.
+        length_offset: u64,
+        /// Width along the source y-axis in source centimetres.
+        width: f64,
+        /// Referenced width owner.
+        width_record_index: u32,
+        /// Byte offset of the evaluated width.
+        width_offset: u64,
+        /// Height along the source z-axis in source centimetres.
+        height: f64,
+        /// Referenced height owner.
+        height_record_index: u32,
+        /// Byte offset of the evaluated height.
+        height_offset: u64,
+        /// Translation along the source x-axis in source centimetres.
+        offset_x: f64,
+        /// Referenced x-offset owner.
+        offset_x_record_index: u32,
+        /// Byte offset of the evaluated x offset.
+        offset_x_offset: u64,
+        /// Translation along the source y-axis in source centimetres.
+        offset_y: f64,
+        /// Referenced y-offset owner.
+        offset_y_record_index: u32,
+        /// Byte offset of the evaluated y offset.
+        offset_y_offset: u64,
+        /// Result Boolean operation.
+        operation: DesignExtrudeOperation,
+        /// Byte offset of the operation enum.
+        operation_offset: u64,
+    },
+    /// Circular cylinder defined by height and diameter owners.
+    Cylinder {
+        /// Axial height in source centimetres.
+        height: f64,
+        /// Referenced height owner.
+        height_record_index: u32,
+        /// Byte offset of the evaluated height.
+        height_offset: u64,
+        /// Circular diameter in source centimetres.
+        diameter: f64,
+        /// Referenced diameter owner.
+        diameter_record_index: u32,
+        /// Byte offset of the evaluated diameter.
+        diameter_offset: u64,
+        /// Result Boolean operation.
+        operation: DesignExtrudeOperation,
+        /// Byte offset of the operation enum.
+        operation_offset: u64,
+    },
     /// Sphere defined by a placement frame and diameter.
     Sphere {
         /// Row-major local-to-model placement frame.
@@ -1163,6 +1221,9 @@ pub struct DesignComponentInsertConstruction {
     pub relation_record_index: u32,
     /// Grouped occurrence carrier named by the relation record.
     pub carrier_record_index: u32,
+    /// Eight-byte occurrence identity carried by the scope prologue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub occurrence_identity: Option<u64>,
     /// Occurrence-role GUID joining the carrier to the external-reference table.
     pub neutron_role: String,
     /// Byte offset of the occurrence-role string payload.
@@ -1478,25 +1539,28 @@ pub struct DesignParameterScope {
     /// Coil driving-dimension mode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_extent: Option<DesignCoilExtent>,
-    /// Byte offset of the Coil mode enum.
+    /// Byte offset of the Coil mode enum, when the form stores one.
+    ///
+    /// A form that derives its mode from its owned parameter source kinds has
+    /// no fixed selector and leaves this offset absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_extent_offset: Option<u64>,
     /// Generated Coil section family.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_section: Option<DesignCoilSection>,
-    /// Byte offset of the Coil section enum.
+    /// Byte offset of the Coil section enum, when the form stores one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_section_offset: Option<u64>,
     /// Radial placement of the generated Coil section.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_section_placement: Option<DesignCoilSectionPlacement>,
-    /// Byte offset of the Coil section-placement enum.
+    /// Byte offset of the Coil section-placement enum, when the form stores one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_section_placement_offset: Option<u64>,
     /// Whether Coil angular travel is clockwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_clockwise: Option<bool>,
-    /// Byte offset of the Coil direction enum.
+    /// Byte offset of the Coil direction enum, when the form stores one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_clockwise_offset: Option<u64>,
     /// One-based ordinal among scopes of the same feature family.
@@ -1724,6 +1788,37 @@ pub struct DesignSurfaceExtendOperation {
     pub tolerance_offset: u64,
 }
 
+/// Source selection form named by a `SurfaceOffset` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum DesignSurfaceOffsetSupport {
+    /// A boundary carrier followed by edge recipes.
+    BoundaryCarrier {
+        /// Source boundary-mode enum.
+        boundary_mode: u32,
+        /// Byte offset of `boundary_mode`.
+        boundary_mode_offset: u64,
+        /// Indexed boundary-carrier record.
+        boundary_record_index: u32,
+        /// Additional indexed reference carried by the boundary tail.
+        boundary_reference_record_index: u32,
+        /// Byte offset of `boundary_reference_record_index`'s marked reference.
+        boundary_reference_offset: u64,
+        /// Ordered edge-recipe records contained by the boundary carrier.
+        edge_record_indices: Vec<u32>,
+        /// Positive modelling tolerance in source centimetres.
+        tolerance: f64,
+        /// Byte offset of `tolerance`.
+        tolerance_offset: u64,
+    },
+    /// Counted role-0x41 groups containing bounded-face recipes.
+    FaceGroups {
+        /// Ordered construction-group records named by the scope.
+        group_record_indices: Vec<u32>,
+    },
+}
+
 /// Fixed construction records named by a `SurfaceOffset` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1734,22 +1829,8 @@ pub struct DesignSurfaceOffsetOperation {
     pub distance_offset: u64,
     /// Indexed scalar record carrying `distance`.
     pub distance_record_index: u32,
-    /// Source boundary-mode enum.
-    pub boundary_mode: u32,
-    /// Byte offset of `boundary_mode`.
-    pub boundary_mode_offset: u64,
-    /// Indexed boundary-carrier record.
-    pub boundary_record_index: u32,
-    /// Additional indexed reference carried by the boundary tail.
-    pub boundary_reference_record_index: u32,
-    /// Byte offset of `boundary_reference_record_index`'s marked reference.
-    pub boundary_reference_offset: u64,
-    /// Ordered edge-recipe records contained by the boundary carrier.
-    pub edge_record_indices: Vec<u32>,
-    /// Positive modelling tolerance in source centimetres.
-    pub tolerance: f64,
-    /// Byte offset of `tolerance`.
-    pub tolerance_offset: u64,
+    /// Exact source selection form.
+    pub support: DesignSurfaceOffsetSupport,
 }
 
 /// Direction law encoded by a `SurfaceRuled` operation.
@@ -2071,6 +2152,27 @@ impl DesignParameterScope {
     }
 }
 
+/// Height extent law carried by a sheet-metal `EdgeFlange` scope.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum DesignEdgeFlangeHeightExtent {
+    /// The flange height is a direct distance from the selected sheet datum.
+    #[default]
+    Distance,
+    /// The flange height is measured from a selected construction entity.
+    ToObject {
+        /// Role-`0x21` construction-operand group containing the target.
+        target_group_record_index: u32,
+        /// Entity-selection operand carried by the target group.
+        target_operand_record_index: u32,
+        /// Parameter owner carrying the signed target offset.
+        offset_owner_record_index: u32,
+        /// Two marked references inserted in the fixed operation section.
+        reference_record_indices: [u32; 2],
+    },
+}
+
 /// Fixed construction carried by a sheet-metal `EdgeFlange` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2087,6 +2189,9 @@ pub struct DesignEdgeFlangeOperation {
     pub aggregate_operand_record_indices: Vec<u32>,
     /// Height parameter-owner record.
     pub height_owner_record_index: u32,
+    /// Height extent law and, for a to-object form, its target records.
+    #[serde(default)]
+    pub height_extent: DesignEdgeFlangeHeightExtent,
     /// Angle parameter-owner record.
     pub angle_owner_record_index: u32,
     /// Width-distance parameter-owner records the edge-width mode adds, in source order.
@@ -2097,7 +2202,7 @@ pub struct DesignEdgeFlangeOperation {
     pub bend_radius: f64,
     /// Byte offset of `bend_radius`.
     pub bend_radius_offset: u64,
-    /// Uninterpreted side-reference discriminator (DR-09).
+    /// Uninterpreted side-reference discriminator.
     pub reference_side_code: u32,
     /// Face pair the flange height is measured from.
     pub height_datum: DesignSheetMetalHeightDatum,
@@ -2120,7 +2225,38 @@ impl DesignEdgeFlangeOperation {
     }
 }
 
-/// Fixed construction carried by a sheet-metal `Hem` scope.
+/// Parameter-owner layout carried by a sheet-metal `Hem` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DesignHemParameterOwners {
+    /// Flat and open forms own a gap and a length.
+    GapLength {
+        /// Gap parameter-owner record.
+        gap_owner_record_index: u32,
+        /// Length parameter-owner record.
+        length_owner_record_index: u32,
+    },
+    /// Rolled form owns a radius and an angle.
+    RadiusAngle {
+        /// Radius parameter-owner record.
+        radius_owner_record_index: u32,
+        /// Angle parameter-owner record.
+        angle_owner_record_index: u32,
+    },
+    /// Teardrop form owns a gap, a length, and a radius.
+    GapLengthRadius {
+        /// Gap parameter-owner record.
+        gap_owner_record_index: u32,
+        /// Length parameter-owner record.
+        length_owner_record_index: u32,
+        /// Radius parameter-owner record.
+        radius_owner_record_index: u32,
+    },
+}
+
+/// Fixed operation section and parameter-owner layout carried by a sheet-metal
+/// `Hem` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignHemOperation {
@@ -2134,10 +2270,8 @@ pub struct DesignHemOperation {
     pub aggregate_group_record_index: u32,
     /// Recipe-backed role-`0x43` operand record.
     pub aggregate_operand_record_index: u32,
-    /// Gap parameter-owner record.
-    pub gap_owner_record_index: u32,
-    /// Length parameter-owner record.
-    pub length_owner_record_index: u32,
+    /// Parameter-owner layout selected by the owned source kinds.
+    pub parameter_owners: DesignHemParameterOwners,
     /// Indexed operation-settings record.
     pub settings_record_index: u32,
     /// Positive rule-derived inside bend radius in centimetres.
@@ -4058,16 +4192,26 @@ pub struct SketchText {
     /// variant, so the colour stays on the native record.
     pub color: Color,
     /// Text anchor point in the sketch frame in millimetres. The `txt_tag`
-    /// identity form stores it directly; the `textex_tag` form stores it as the
-    /// last column of its placement transform. Path text stores neither.
+    /// identity form stores it directly; the legacy `textex_tag` form stores
+    /// it as the last column of its placement transform. Indexed Design
+    /// `textex_tag` records carry no neutral anchor. Path text stores neither.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub anchor: Option<Point2>,
     /// Rotation of the text about its anchor in radians. The `txt_tag` identity
-    /// form stores the angle directly after the property block. Frame text in the
-    /// `textex_tag` form derives it from the placement transform's 2×2 basis;
-    /// path text stores none.
+    /// form stores the angle directly after the property block. The legacy
+    /// frame form of `textex_tag` derives it from the placement transform's
+    /// 2×2 basis. Indexed Design `textex_tag` records carry no neutral
+    /// rotation; path text stores none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rotation: Option<f64>,
+    /// Horizontal alignment enum carried by the `textex_tag` class. The
+    /// `txt_tag` class stores no alignment enum.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub horizontal_alignment: Option<u32>,
+    /// Vertical alignment enum carried by the `textex_tag` class. The
+    /// `txt_tag` class stores no alignment enum.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vertical_alignment: Option<u32>,
     /// Parameter record driving the height, absent when the record omits the
     /// member or writes it null.
     #[serde(default, skip_serializing_if = "Option::is_none")]

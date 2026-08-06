@@ -438,6 +438,11 @@ pub enum FeatureDefinition {
         /// Bodies copied into the parametric timeline when the session closed.
         bodies: BodySelection,
     },
+    /// Mesh geometry imported into the parametric timeline.
+    MeshImport {
+        /// Tessellation identities supplied by the mesh-body records.
+        tessellations: Vec<String>,
+    },
     /// Independent bodies introduced by a copy-and-paste operation.
     InsertBodies {
         /// Newly created body copies in source order.
@@ -970,7 +975,7 @@ pub enum FeatureDefinition {
         /// Edges the flange is grown from.
         edges: EdgeSelection,
         /// Height of the flange wall.
-        height: Length,
+        height: SheetMetalFlangeHeight,
         /// Angle between the flange wall and its source face.
         angle: Angle,
         /// Face pair the height is measured from.
@@ -982,10 +987,26 @@ pub enum FeatureDefinition {
         /// Inside radius of the bend joining the flange to its source face.
         bend_radius: Length,
     },
+    /// Sheet-metal hem grown from one or more selected edges.
+    SheetMetalHem {
+        /// Edges the hem is grown from.
+        edges: EdgeSelection,
+        /// Dimensional owner layout carried by the source hem.
+        form: SheetMetalHemForm,
+        /// Direction of the hem fold, when the source carries a proven value.
+        direction: SheetMetalHemDirection,
+        /// Inside radius of the bend joining the hem to its source face.
+        bend_radius: Length,
+    },
     /// Edge fillet.
     Fillet {
         /// Ordered edge groups and their radius laws.
         groups: Vec<FilletGroup>,
+    },
+    /// Full-round fillet built from a center-face selection and two side-face sets.
+    FullRoundFillet {
+        /// Ordered full-round face groups.
+        groups: Vec<FullRoundFilletGroup>,
     },
     /// Blend constructed between two face sets.
     FaceBlend {
@@ -1142,6 +1163,10 @@ pub enum FeatureDefinition {
         /// Continuity imposed against the support faces, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         continuity: Option<SurfaceContinuity>,
+        /// Continuity imposed by each boundary component, in source order,
+        /// when the operation carries component-specific conditions.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        boundary_continuities: Vec<SurfaceContinuity>,
         /// Whether the generated patch is merged into adjacent surface bodies,
         /// when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1191,8 +1216,18 @@ pub enum FeatureDefinition {
         faces: FaceSelection,
         /// Neutral plane that remains fixed during the operation.
         neutral_plane: FaceSelection,
+        /// Parting-tool faces used by a parting-line draft.
+        ///
+        /// A parting-line draft has this field set and leaves `neutral_plane`
+        /// unresolved. A neutral-plane draft leaves this field absent and
+        /// resolves `neutral_plane` instead.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parting_tool: Option<FaceSelection>,
         /// Pull direction used to measure the draft angle.
         pull_direction: Option<Vector3>,
+        /// Datum-plane feature supplying the parting-line pull direction.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pull_plane: Option<FeatureId>,
         /// Signed draft angle.
         angle: Option<Angle>,
         /// Whether material is added away from the pull direction.
@@ -1250,8 +1285,8 @@ pub enum FeatureDefinition {
     SplitFace {
         /// Faces partitioned by the operation.
         targets: FaceSelection,
-        /// Sketch curves projected onto the target faces.
-        tool: PathRef,
+        /// Geometry or datum plane that partitions the target faces.
+        tool: SplitFaceTool,
     },
     /// Deletes bodies directly or retains only the selected bodies.
     DeleteBody {
@@ -1421,6 +1456,7 @@ impl FeatureDefinition {
             Self::Rib { .. } => Some("rib"),
             Self::Chamfer { .. } => Some("chamfer"),
             Self::Fillet { .. } => Some("fillet"),
+            Self::FullRoundFillet { .. } => Some("fillet"),
             Self::FaceBlend { .. } => Some("face blend"),
             Self::SewBodies { .. } => Some("sew bodies"),
             Self::TrimBodies { .. } => Some("trim bodies"),
@@ -2102,6 +2138,93 @@ pub enum SheetMetalBendPosition {
     Adjacent,
     /// The bend is tangent to the side reference plane.
     TangentToSide,
+}
+
+/// Dimensional owner layout carried by a sheet-metal hem.
+///
+/// The source uses one owner layout for flat and open hems. A resolved
+/// transition projects that layout to [`Flat`] or [`Open`]; [`GapLength`]
+/// retains the dimensional owners when the transition does not prove either
+/// semantic form.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum SheetMetalHemForm {
+    /// Flat hem with its developed length.
+    Flat {
+        /// Developed length of the hem.
+        length: Length,
+    },
+    /// Open hem with a gap and a developed length.
+    Open {
+        /// Gap between the folded wall and its source.
+        gap: Length,
+        /// Developed length of the hem.
+        length: Length,
+    },
+    /// Unresolved flat-or-open form with a gap and a length owner.
+    GapLength {
+        /// Gap between the folded wall and its source.
+        gap: Length,
+        /// Developed length of the hem.
+        length: Length,
+    },
+    /// Rolled source form with radius and included-angle owners.
+    Rolled {
+        /// Rolled section radius.
+        radius: Length,
+        /// Included angle of the rolled section.
+        angle: Angle,
+    },
+    /// Teardrop source form with gap, length, and radius owners.
+    Teardrop {
+        /// Gap between the folded wall and its source.
+        gap: Length,
+        /// Developed length of the hem.
+        length: Length,
+        /// Teardrop section radius.
+        radius: Length,
+    },
+}
+
+/// Direction of a sheet-metal hem fold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum SheetMetalHemDirection {
+    /// Fold in the source operation's forward direction.
+    Forward,
+    /// Fold opposite the source operation's forward direction.
+    Reverse,
+    /// Source direction carrier is not resolved.
+    Unresolved,
+}
+
+/// Construction feature used as the reference for a sheet-metal flange height.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum SheetMetalFlangeHeightTarget {
+    /// A neutral construction feature in the same design history.
+    Feature(FeatureId),
+    /// A source selection whose neutral construction identity is not resolved.
+    Native(String),
+}
+
+/// Height law for a sheet-metal edge flange.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum SheetMetalFlangeHeight {
+    /// Fixed distance from the operation's height datum.
+    Distance(Length),
+    /// Signed offset from a selected construction entity.
+    ToObject {
+        /// Construction entity that supplies the height reference.
+        target: SheetMetalFlangeHeightTarget,
+        /// Signed distance from the target entity.
+        offset: Length,
+    },
 }
 
 /// Extent of a sheet-metal flange along its selected edge.
@@ -3289,6 +3412,20 @@ pub enum PathRef {
     },
 }
 
+/// Geometry used to partition faces in a `SplitFace` operation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum SplitFaceTool {
+    /// Sketch or model-space path projected onto the target faces.
+    Path(PathRef),
+    /// Datum-plane feature extended through the target faces.
+    Plane {
+        /// Earlier datum-plane feature supplying the splitting plane.
+        plane: FeatureId,
+    },
+}
+
 /// Radius assignment along filleted edges.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3335,6 +3472,31 @@ pub struct FilletGroup {
     /// Dimensionless tangency weight, when specified.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tangency_weight: Option<f64>,
+}
+
+/// One full-round fillet face-set group.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct FullRoundFilletGroup {
+    /// Center face retained by the full-round construction.
+    pub center_faces: FaceSelection,
+    /// Faces on the first side of the center-face set.
+    pub side_one_faces: FullRoundSideSelection,
+    /// Faces on the second side of the center-face set.
+    pub side_two_faces: FullRoundSideSelection,
+}
+
+/// One side of a full-round fillet.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum FullRoundSideSelection {
+    /// The kernel infers this side from the center-face selection.
+    Automatic,
+    /// Explicit side-face selection.
+    Explicit(FaceSelection),
+    /// A side-face selection exists but cannot be resolved.
+    Unresolved,
 }
 
 /// One independently dimensioned group of chamfered edges.

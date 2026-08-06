@@ -3,6 +3,9 @@
 
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded, take_reference};
 use crate::container::{role, ContainerScan};
+use crate::design::decode::operands::{
+    parse_construction_operand_group, ConstructionOperandGroupParse,
+};
 use crate::design::decode::sketch::{
     next_indexed_record_offset, valid_sketch_transform, IndexedRecordOffsets,
 };
@@ -15,17 +18,19 @@ use crate::records::{
     DesignCoilSectionPlacement, DesignCombineOperation, DesignComponentInsertConstruction,
     DesignComponentOccurrence, DesignComponentPatternOccurrences, DesignCopyPasteBodiesOperation,
     DesignCopyPasteComponentOperation, DesignDirectFaceOperation, DesignDraftOperation,
-    DesignEdgeFlangeOperation, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation,
-    DesignExtrudePrologue, DesignExtrudePrologueReference, DesignExtrudeStart,
-    DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeDistance,
-    DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletGroup,
-    DesignFixedFilletParameters, DesignHemOperation, DesignMirrorConstruction, DesignMoveOperation,
-    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
-    DesignRectangularPatternConstruction, DesignRectangularPatternInstances,
+    DesignEdgeFlangeHeightExtent, DesignEdgeFlangeOperation, DesignEntityHeader,
+    DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue,
+    DesignExtrudePrologueReference, DesignExtrudeStart, DesignFixedChamferDistance,
+    DesignFixedChamferParameters, DesignFixedExtrudeDistance, DesignFixedExtrudeParameters,
+    DesignFixedExtrudeScalar, DesignFixedFilletGroup, DesignFixedFilletParameters,
+    DesignHemOperation, DesignHemParameterOwners, DesignMirrorConstruction, DesignMoveOperation,
+    DesignParameter, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
+    DesignRecordHeader, DesignRectangularPatternConstruction, DesignRectangularPatternInstances,
     DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignRuledSurfaceOperation,
     DesignScaleOperation, DesignSheetMetalHeightDatum, DesignSolidPrimitive,
     DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
-    DesignSurfaceStitchOperation, DesignThreadConstruction, DesignWorkAxisConstruction,
+    DesignSurfaceOffsetSupport, DesignSurfaceStitchOperation, DesignThreadConstruction,
+    DesignWorkAxisConstruction,
 };
 use cadmpeg_core::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
 use cadmpeg_core::CodecError;
@@ -37,6 +42,7 @@ pub fn decode_parameter_scopes(
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
     types: &[crate::records::DesignType],
+    parameters: &[DesignParameter],
     parameter_owners: &[crate::records::DesignParameterOwner],
     component_occurrences: &[DesignComponentOccurrence],
 ) -> Result<Vec<DesignParameterScope>, CodecError> {
@@ -57,6 +63,7 @@ pub fn decode_parameter_scopes(
                 continue;
             };
             scope.id = ids::native_design_parameter_scope_id(&entry.name, scope.byte_offset);
+            bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
             if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sketch) {
                 let start = usize::try_from(scope.byte_offset).ok();
                 let end = usize::try_from(scope.paired_byte_offset).ok();
@@ -120,7 +127,8 @@ pub fn decode_parameter_scopes(
                 scope.work_point_reference_type = Some(frame.reference_type);
                 scope.work_point_input_record_indices = frame.input_record_indices;
             }
-            scope.solid_primitive = exact_solid_primitive(bytes, &records, &scope);
+            scope.solid_primitive =
+                exact_solid_primitive(bytes, &records, &scope, parameter_owners);
             scope.direct_face_operation = exact_direct_face_operation(bytes, &records, &scope);
             scope.move_operation = exact_move_operation(bytes, &records, &scope);
             scope.scale_operation = exact_scale_operation(bytes, &scope);
@@ -137,7 +145,8 @@ pub fn decode_parameter_scopes(
                 exact_path_feature_construction(bytes, &records, &scope, parameter_owners);
             scope.combine_operation = exact_combine_operation(bytes, &records, &scope);
             scope.thread_construction = exact_thread_construction(bytes, &scope);
-            scope.draft_operation = exact_draft_operation(bytes, &records, &scope);
+            scope.draft_operation =
+                exact_draft_operation_with_owners(bytes, &records, &scope, parameter_owners);
             scope.circular_pattern_construction = exact_circular_pattern_construction_with_owners(
                 bytes,
                 &records,
@@ -389,6 +398,9 @@ pub(crate) fn exact_surface_offset_operation(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignSurfaceOffsetOperation> {
+    if let Some(operation) = exact_surface_offset_face_groups(bytes, records, scope) {
+        return Some(operation);
+    }
     let operation = exact_surface_boundary_operation(
         bytes,
         records,
@@ -400,15 +412,114 @@ pub(crate) fn exact_surface_offset_operation(
         distance: operation.distance,
         distance_offset: operation.distance_offset,
         distance_record_index: operation.distance_record_index,
-        boundary_mode: operation.mode,
-        boundary_mode_offset: operation.mode_offset,
-        boundary_record_index: operation.boundary_record_index,
-        boundary_reference_record_index: operation.boundary_reference_record_index,
-        boundary_reference_offset: operation.boundary_reference_offset,
-        edge_record_indices: operation.edge_record_indices,
-        tolerance: operation.tolerance,
-        tolerance_offset: operation.tolerance_offset,
+        support: DesignSurfaceOffsetSupport::BoundaryCarrier {
+            boundary_mode: operation.mode,
+            boundary_mode_offset: operation.mode_offset,
+            boundary_record_index: operation.boundary_record_index,
+            boundary_reference_record_index: operation.boundary_reference_record_index,
+            boundary_reference_offset: operation.boundary_reference_offset,
+            edge_record_indices: operation.edge_record_indices,
+            tolerance: operation.tolerance,
+            tolerance_offset: operation.tolerance_offset,
+        },
     })
+}
+
+fn exact_surface_offset_face_groups(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Option<DesignSurfaceOffsetOperation> {
+    if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::SurfaceOffset) {
+        return None;
+    }
+    let [distance_record_index, support_references @ ..] = scope.reference_members.as_slice()
+    else {
+        return None;
+    };
+    if support_references.is_empty() {
+        return None;
+    }
+    let scalar = exact_fixed_scalar(bytes, records, *distance_record_index)?;
+    if scalar.owner_record_index != Some(scope.record_index) || scalar.ordinal != 0 {
+        return None;
+    }
+
+    let mut group_record_indices = Vec::new();
+    let mut covered_references = HashSet::new();
+    for (scope_reference_ordinal, record_index) in
+        scope.reference_members.iter().copied().enumerate().skip(1)
+    {
+        let group = exact_construction_operand_group(
+            bytes,
+            records,
+            scope,
+            u32::try_from(scope_reference_ordinal).ok()?,
+            record_index,
+        );
+        let Some(group) = group else {
+            continue;
+        };
+        if group.role != 0x0000_0041_0000_0000
+            || group.frame.opaque_index != 252
+            || group.members.is_empty()
+            || !covered_references.insert(group.record_index)
+        {
+            return None;
+        }
+        for member in &group.members {
+            if *member == *distance_record_index
+                || !support_references.contains(member)
+                || !covered_references.insert(*member)
+            {
+                return None;
+            }
+        }
+        group_record_indices.push(group.record_index);
+    }
+    if group_record_indices.is_empty() || covered_references.len() != support_references.len() {
+        return None;
+    }
+
+    Some(DesignSurfaceOffsetOperation {
+        distance: scalar.value,
+        distance_offset: scalar.value_offset,
+        distance_record_index: *distance_record_index,
+        support: DesignSurfaceOffsetSupport::FaceGroups {
+            group_record_indices,
+        },
+    })
+}
+
+fn exact_construction_operand_group(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    scope_reference_ordinal: u32,
+    record_index: u32,
+) -> Option<crate::records::DesignConstructionOperandGroup> {
+    let mut candidates = Vec::new();
+    for (start, _) in records.frames(record_index) {
+        let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
+        if after_tag != start + 7 {
+            continue;
+        }
+        let header = DesignRecordHeader {
+            id: String::new(),
+            record_index,
+            class_tag: class_tag.clone(),
+            byte_offset: u64::try_from(start).ok()?,
+        };
+        if let ConstructionOperandGroupParse::Complete(group) =
+            parse_construction_operand_group(bytes, scope, scope_reference_ordinal, &header)
+        {
+            candidates.push(*group);
+        }
+    }
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
 }
 
 #[derive(Clone)]
@@ -636,79 +747,135 @@ pub(crate) fn exact_component_insert_construction(
     if scope.kind != "Component Insert" || scope.reference_members.len() != 1 {
         return None;
     }
-    let transform_at = match (scope.frame_length, scope.paired_class_tag.as_str()) {
-        (399, "259")
-            if bytes.get(start + 11..start + 20)? == [0; 9]
-                && bytes.get(start + 20..start + 25)? == [1, 0, 0, 0, 0]
-                && bytes.get(start + 33..start + 37)? == [0; 4]
-                && bytes.get(start + 37) == Some(&1)
-                && u32_at(bytes, start + 38)? == relation_record_index
-                && bytes.get(start + 42..start + 50)? == [0, 0, 0, 0, 0, 0, 1, 0] =>
-        {
-            start + 50
-        }
-        (381, "261")
-            if bytes.get(start + 11..start + 20)? == [0; 9]
-                && bytes.get(start + 20..start + 25)? == [1, 0, 0, 0, 0]
-                && bytes.get(start + 33..start + 37)? == [0; 4]
-                && bytes.get(start + 37) == Some(&1)
-                && u32_at(bytes, start + 38)? == relation_record_index
-                && bytes.get(start + 42..start + 49)? == [0, 0, 0, 0, 0, 0, 1] =>
-        {
-            start + 49
-        }
-        (395, "258")
-            if bytes.get(start + 11..start + 21)? == [0; 10]
-                && bytes.get(start + 29..start + 33)? == [0; 4]
-                && bytes.get(start + 33) == Some(&1)
-                && u32_at(bytes, start + 34)? == relation_record_index
-                && bytes.get(start + 38..start + 46)? == [0, 0, 0, 0, 0, 0, 1, 0] =>
-        {
-            start + 46
-        }
-        _ => return None,
-    };
+    let (transform_at, occurrence_identity) =
+        match (scope.frame_length, scope.paired_class_tag.as_str()) {
+            (399, "259")
+                if bytes.get(start + 11..start + 20)? == [0; 9]
+                    && bytes.get(start + 20..start + 25)? == [1, 0, 0, 0, 0]
+                    && bytes.get(start + 33..start + 37)? == [0; 4]
+                    && bytes.get(start + 37) == Some(&1)
+                    && u32_at(bytes, start + 38)? == relation_record_index
+                    && bytes.get(start + 42..start + 50)? == [0, 0, 0, 0, 0, 0, 1, 0] =>
+            {
+                (start + 50, read_u64(bytes, start + 25)?)
+            }
+            (381, "261")
+                if bytes.get(start + 11..start + 20)? == [0; 9]
+                    && bytes.get(start + 20..start + 25)? == [1, 0, 0, 0, 0]
+                    && bytes.get(start + 33..start + 37)? == [0; 4]
+                    && bytes.get(start + 37) == Some(&1)
+                    && u32_at(bytes, start + 38)? == relation_record_index
+                    && bytes.get(start + 42..start + 49)? == [0, 0, 0, 0, 0, 0, 1] =>
+            {
+                (start + 49, read_u64(bytes, start + 25)?)
+            }
+            (395, "258")
+                if bytes.get(start + 11..start + 21)? == [0; 10]
+                    && bytes.get(start + 29..start + 33)? == [0; 4]
+                    && bytes.get(start + 33) == Some(&1)
+                    && u32_at(bytes, start + 34)? == relation_record_index
+                    && bytes.get(start + 38..start + 46)? == [0, 0, 0, 0, 0, 0, 1, 0] =>
+            {
+                (start + 46, read_u64(bytes, start + 21)?)
+            }
+            (404, _)
+                if bytes.get(start + 11..start + 20)? == [0; 9]
+                    && bytes.get(start + 20..start + 25)? == [1, 0, 0, 0, 0]
+                    && bytes.get(start + 25..start + 29)? == [0; 4]
+                    && bytes.get(start + 37..start + 41)? == [0; 4]
+                    && bytes.get(start + 41) == Some(&1)
+                    && u32_at(bytes, start + 42)? == relation_record_index
+                    && bytes.get(start + 46..start + 52)? == [0; 6]
+                    && bytes.get(start + 52..start + 54)? == [1, 0] =>
+            {
+                (start + 54, read_u64(bytes, start + 29)?)
+            }
+            _ => return None,
+        };
     let transform = rigid_transform_at(bytes, transform_at)?;
     let relation_at = records.first_at_or_after(0, relation_record_index)?;
-    if relation_at >= start
-        || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 57
-        || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
-        || bytes.get(relation_at + 21) != Some(&1)
-        || bytes.get(relation_at + 26..relation_at + 34)? != [0; 8]
-        || bytes.get(relation_at + 34) != Some(&1)
-        || bytes.get(relation_at + 39..relation_at + 46)? != [0; 7]
-        || bytes.get(relation_at + 46) != Some(&1)
-        || u32_at(bytes, relation_at + 47)? != scope.record_index
-        || bytes.get(relation_at + 51..relation_at + 57)? != [0; 6]
-    {
-        return None;
-    }
-    let carrier_record_index = u32_at(bytes, relation_at + 22)?;
-    let carrier_at = unique_indexed_record_before(records, carrier_record_index, relation_at)?;
-    let mut placements = Vec::new();
-    for at in carrier_at + 11..relation_at {
-        let Some((role, after_role)) = lp_utf16_bounded(bytes, at, 1..=256) else {
-            continue;
-        };
-        if !crate::bytes::is_guid_relaxed(&role)
-            || bytes.get(after_role..after_role + 2) != Some(&[0, 0])
+    let (carrier_record_index, placements) = if scope.frame_length == 404 {
+        if relation_at >= start
+            || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 58
+            || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
+            || bytes.get(relation_at + 21) != Some(&1)
+            || bytes.get(relation_at + 26..relation_at + 32)? != [0; 6]
+            || bytes.get(relation_at + 32..relation_at + 35)? != [1, 0, 0]
+            || bytes.get(relation_at + 35) != Some(&1)
+            || bytes.get(relation_at + 40..relation_at + 47)? != [0; 7]
+            || bytes.get(relation_at + 47) != Some(&1)
+            || u32_at(bytes, relation_at + 48)? != scope.record_index
+            || bytes.get(relation_at + 52..relation_at + 58)? != [0; 6]
         {
-            continue;
+            return None;
         }
-        let transform_at = after_role.checked_add(2)?;
-        if rigid_transform_at(bytes, transform_at) == Some(transform) {
-            placements.push((role, at + 4, transform_at));
+        let carrier_record_index = u32_at(bytes, relation_at + 22)?;
+        let mut placements = Vec::new();
+        for &carrier_at in records
+            .offsets(carrier_record_index)
+            .iter()
+            .filter(|at| **at < relation_at)
+        {
+            for at in carrier_at + 11..relation_at {
+                let Some((role, after_role)) = lp_utf16_bounded(bytes, at, 36..=36) else {
+                    continue;
+                };
+                if !crate::bytes::is_guid_relaxed(&role)
+                    || bytes.get(after_role..after_role + 12)
+                        != Some(&[0, 1, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+                {
+                    continue;
+                }
+                for transform_at in carrier_at + 11..at {
+                    if rigid_transform_at(bytes, transform_at) == Some(transform) {
+                        placements.push((role.clone(), at + 4, transform_at));
+                    }
+                }
+            }
         }
-    }
-    if scope.frame_length == 381 {
-        placements.extend(legacy_component_insert_placements(
-            bytes,
-            carrier_at,
-            relation_at,
-            carrier_record_index,
-            transform,
-        ));
-    }
+        (carrier_record_index, placements)
+    } else {
+        if relation_at >= start
+            || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 57
+            || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
+            || bytes.get(relation_at + 21) != Some(&1)
+            || bytes.get(relation_at + 26..relation_at + 34)? != [0; 8]
+            || bytes.get(relation_at + 34) != Some(&1)
+            || bytes.get(relation_at + 39..relation_at + 46)? != [0; 7]
+            || bytes.get(relation_at + 46) != Some(&1)
+            || u32_at(bytes, relation_at + 47)? != scope.record_index
+            || bytes.get(relation_at + 51..relation_at + 57)? != [0; 6]
+        {
+            return None;
+        }
+        let carrier_record_index = u32_at(bytes, relation_at + 22)?;
+        let carrier_at = unique_indexed_record_before(records, carrier_record_index, relation_at)?;
+        let mut placements = Vec::new();
+        for at in carrier_at + 11..relation_at {
+            let Some((role, after_role)) = lp_utf16_bounded(bytes, at, 1..=256) else {
+                continue;
+            };
+            if !crate::bytes::is_guid_relaxed(&role)
+                || bytes.get(after_role..after_role + 2) != Some(&[0, 0])
+            {
+                continue;
+            }
+            let transform_at = after_role.checked_add(2)?;
+            if rigid_transform_at(bytes, transform_at) == Some(transform) {
+                placements.push((role, at + 4, transform_at));
+            }
+        }
+        if scope.frame_length == 381 {
+            placements.extend(legacy_component_insert_placements(
+                bytes,
+                carrier_at,
+                relation_at,
+                carrier_record_index,
+                transform,
+            ));
+        }
+        (carrier_record_index, placements)
+    };
     let [(neutron_role, neutron_role_offset, carrier_transform_offset)] = placements.as_slice()
     else {
         return None;
@@ -716,6 +883,7 @@ pub(crate) fn exact_component_insert_construction(
     Some(DesignComponentInsertConstruction {
         relation_record_index,
         carrier_record_index,
+        occurrence_identity: Some(occurrence_identity),
         neutron_role: neutron_role.clone(),
         neutron_role_offset: u64::try_from(*neutron_role_offset).ok()?,
         transform,
@@ -2223,17 +2391,30 @@ pub(crate) fn exact_solid_primitive(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignSolidPrimitive> {
-    if !matches!(scope.kind.as_str(), "SpherePrimitive" | "TorusPrimitive") {
-        return None;
-    }
     let start = usize::try_from(scope.byte_offset).ok()?;
-    let operation_offset = start.checked_add(25)?;
-    let operation = match u32_at(bytes, operation_offset)? {
-        1 => DesignExtrudeOperation::Join,
-        2 => DesignExtrudeOperation::Cut,
-        3 => DesignExtrudeOperation::Intersect,
-        4 => DesignExtrudeOperation::NewBody,
+    let (operation, operation_offset) = match scope.kind.as_str() {
+        "SpherePrimitive" | "TorusPrimitive" => {
+            let operation_offset = start.checked_add(25)?;
+            (
+                primitive_operation(bytes, operation_offset)?,
+                operation_offset,
+            )
+        }
+        "BoxPrimitive" | "CylinderPrimitive" => {
+            if bytes.get(start + 11..start + 20)? != [0; 9]
+                || bytes.get(start + 24) != Some(&0)
+                || bytes.get(start + 25) != Some(&1)
+            {
+                return None;
+            }
+            let operation_offset = start.checked_add(20)?;
+            (
+                primitive_operation(bytes, operation_offset)?,
+                operation_offset,
+            )
+        }
         _ => return None,
     };
     let matrix = |relative_offset: usize| {
@@ -2298,8 +2479,100 @@ pub(crate) fn exact_solid_primitive(
                 operation_offset: operation_offset as u64,
             })
         }
+        "BoxPrimitive" => {
+            if scope.frame_length < 78 || scope.reference_members.len() < 5 {
+                return None;
+            }
+            let owners = exact_owned_primitive_parameters(scope, parameter_owners, 5)?;
+            let [length, width, height, offset_x, offset_y] = owners.as_slice() else {
+                return None;
+            };
+            (length.evaluated_value > 0.0
+                && width.evaluated_value > 0.0
+                && height.evaluated_value > 0.0)
+                .then_some(DesignSolidPrimitive::Box {
+                    length: length.evaluated_value,
+                    length_record_index: length.record_index,
+                    length_offset: length.evaluated_value_offset,
+                    width: width.evaluated_value,
+                    width_record_index: width.record_index,
+                    width_offset: width.evaluated_value_offset,
+                    height: height.evaluated_value,
+                    height_record_index: height.record_index,
+                    height_offset: height.evaluated_value_offset,
+                    offset_x: offset_x.evaluated_value,
+                    offset_x_record_index: offset_x.record_index,
+                    offset_x_offset: offset_x.evaluated_value_offset,
+                    offset_y: offset_y.evaluated_value,
+                    offset_y_record_index: offset_y.record_index,
+                    offset_y_offset: offset_y.evaluated_value_offset,
+                    operation,
+                    operation_offset: operation_offset as u64,
+                })
+        }
+        "CylinderPrimitive" => {
+            if scope.frame_length < 78 || scope.reference_members.len() < 2 {
+                return None;
+            }
+            let owners = exact_owned_primitive_parameters(scope, parameter_owners, 2)?;
+            let [height, diameter] = owners.as_slice() else {
+                return None;
+            };
+            (height.evaluated_value > 0.0 && diameter.evaluated_value > 0.0).then_some(
+                DesignSolidPrimitive::Cylinder {
+                    height: height.evaluated_value,
+                    height_record_index: height.record_index,
+                    height_offset: height.evaluated_value_offset,
+                    diameter: diameter.evaluated_value,
+                    diameter_record_index: diameter.record_index,
+                    diameter_offset: diameter.evaluated_value_offset,
+                    operation,
+                    operation_offset: operation_offset as u64,
+                },
+            )
+        }
         _ => None,
     }
+}
+
+fn primitive_operation(bytes: &[u8], offset: usize) -> Option<DesignExtrudeOperation> {
+    match u32_at(bytes, offset)? {
+        1 => Some(DesignExtrudeOperation::Join),
+        2 => Some(DesignExtrudeOperation::Cut),
+        3 => Some(DesignExtrudeOperation::Intersect),
+        4 => Some(DesignExtrudeOperation::NewBody),
+        _ => None,
+    }
+}
+
+fn exact_owned_primitive_parameters<'a>(
+    scope: &DesignParameterScope,
+    parameter_owners: &'a [DesignParameterOwner],
+    count: usize,
+) -> Option<Vec<&'a DesignParameterOwner>> {
+    let stream = native_stream(&scope.id)?;
+    let mut owners = parameter_owners
+        .iter()
+        .filter(|owner| {
+            owner.scope_record_index == scope.record_index
+                && native_stream(&owner.id) == Some(stream)
+                && scope.reference_members.contains(&owner.record_index)
+                && owner.evaluated_value.is_finite()
+        })
+        .collect::<Vec<_>>();
+    owners.sort_by_key(|owner| owner.local_ordinal);
+    if owners.len() != count
+        || owners
+            .windows(2)
+            .any(|pair| pair[0].local_ordinal == pair[1].local_ordinal)
+        || owners
+            .iter()
+            .enumerate()
+            .any(|(ordinal, owner)| owner.local_ordinal != ordinal as u32)
+    {
+        return None;
+    }
+    Some(owners)
 }
 
 fn exact_primitive_diameter(
@@ -3377,11 +3650,11 @@ struct PointDataLevel {
 /// Read the base class level of the point-data class at `start` under one
 /// record version.
 ///
-/// The level closes with a counted reference run whose arity `reference_type`
-/// fixes: `7` and `18` take two references and every other rule takes one. A
-/// version whose member sequence has desynchronized reads a `reference_type`
-/// and a count that do not agree, so the arity settles the frame and bounds the
-/// cursor at the same time.
+/// The level closes with a counted reference run. The serialized count is the
+/// only framing authority for that run: `reference_type` selects the
+/// construction rule, but its rule-specific arity is not encoded in the class
+/// member order. The count is bounded by the frame before allocation and each
+/// marked reference must resolve to a record index.
 fn point_data_level(
     bytes: &[u8],
     start: usize,
@@ -3404,16 +3677,12 @@ fn point_data_level(
     if version >= 3 {
         cursor = cursor.checked_add(24)?;
     }
-    let arity = if matches!(reference_type, 7 | 18) {
-        2
-    } else {
-        1
-    };
-    if u32_at(body, cursor)? != arity {
+    let arity = usize::try_from(u32_at(body, cursor)?).ok()?;
+    cursor = cursor.checked_add(4)?;
+    if arity == 0 || arity > end.checked_sub(cursor)? {
         return None;
     }
-    cursor = cursor.checked_add(4)?;
-    let mut input_record_indices = Vec::with_capacity(arity as usize);
+    let mut input_record_indices = Vec::with_capacity(arity);
     for _ in 0..arity {
         let reference = take_reference(body, &mut cursor)?;
         input_record_indices.push(u32::try_from(reference.target?).ok()?);
@@ -3642,10 +3911,11 @@ fn combine_operation_identity_role(
     Some(CombineOperandRole::Tool)
 }
 
-pub(crate) fn exact_draft_operation(
+pub(crate) fn exact_draft_operation_with_owners(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignDraftOperation> {
     // The frame is variable-length and carries six or more references, so no
     // frame length or reference count identifies the record. The ordered
@@ -3659,34 +3929,55 @@ pub(crate) fn exact_draft_operation(
     {
         return None;
     }
+    let scope_stream = native_stream(&scope.id);
     let mut lanes = scope
         .reference_members
         .iter()
         .filter_map(|record_index| {
-            let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
-            (scalar.owner_record_index == Some(scope.record_index))
-                .then_some((*record_index, scalar))
+            if let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index) {
+                return (scalar.owner_record_index == Some(scope.record_index)).then_some((
+                    *record_index,
+                    u32::from(scalar.ordinal),
+                    scalar.value,
+                    scalar.value_offset,
+                ));
+            }
+            let owners = parameter_owners
+                .iter()
+                .filter(|owner| {
+                    owner.record_index == *record_index
+                        && owner.scope_record_index == scope.record_index
+                        && scope_stream
+                            .is_none_or(|stream| native_stream(&owner.id) == Some(stream))
+                        && owner.evaluated_value.is_finite()
+                })
+                .collect::<Vec<_>>();
+            let [owner] = owners.as_slice() else {
+                return None;
+            };
+            Some((
+                *record_index,
+                owner.local_ordinal,
+                owner.evaluated_value,
+                owner.evaluated_value_offset,
+            ))
         })
         .collect::<Vec<_>>();
-    lanes.sort_by_key(|(_, scalar)| scalar.ordinal);
-    let [(angle_record_index, angle), (opposite_angle_record_index, opposite)] = lanes.as_slice()
+    lanes.sort_by_key(|(_, ordinal, _, _)| *ordinal);
+    let [(angle_record_index, angle_ordinal, angle, angle_offset), (opposite_angle_record_index, opposite_ordinal, opposite, opposite_offset)] =
+        lanes.as_slice()
     else {
         return None;
     };
-    if angle.ordinal != 0
-        || opposite.ordinal != 1
-        || !angle.value.is_finite()
-        || angle.value == 0.0
-        || opposite.value != 0.0
-    {
+    if *angle_ordinal != 0 || *opposite_ordinal != 1 || !angle.is_finite() || *opposite != 0.0 {
         return None;
     }
     Some(DesignDraftOperation {
-        angle: angle.value,
+        angle: *angle,
         angle_record_index: *angle_record_index,
-        angle_offset: angle.value_offset,
+        angle_offset: *angle_offset,
         opposite_angle_record_index: *opposite_angle_record_index,
-        opposite_angle_offset: opposite.value_offset,
+        opposite_angle_offset: *opposite_offset,
     })
 }
 
@@ -3726,10 +4017,13 @@ pub(crate) fn parameter_scope_candidate_headers(
 }
 
 pub(crate) fn parameter_scope_tail_length_is_valid(kind: &str, tail_length: usize) -> bool {
-    if kind == "CopyPasteBodies" {
-        tail_length == 110
-    } else {
-        matches!(tail_length, 72 | 76 | 77 | 78 | 87)
+    if (80..=590).contains(&tail_length) && tail_length.is_multiple_of(2) {
+        return true;
+    }
+    match kind {
+        "CopyPasteBodies" => tail_length == 110,
+        "CoilPrimitive" => matches!(tail_length, 72 | 76 | 77 | 78 | 87 | 88),
+        _ => matches!(tail_length, 72 | 76 | 77 | 78 | 87),
     }
 }
 
@@ -3737,8 +4031,20 @@ pub(crate) fn parameter_scope_previous_history_offset(
     kind: &str,
     tail_length: usize,
 ) -> Option<usize> {
+    parameter_scope_previous_history_offset_for_form(kind, tail_length, false)
+}
+
+fn parameter_scope_previous_history_offset_for_form(
+    kind: &str,
+    tail_length: usize,
+    named_tail: bool,
+) -> Option<usize> {
+    if named_tail {
+        return None;
+    }
     match (kind, tail_length) {
         ("CopyPasteBodies", 110) => Some(53),
+        ("CoilPrimitive", 88) => None,
         (_, 72 | 76) => Some(30),
         (_, 77 | 78) => Some(31),
         (_, 87) => Some(41),
@@ -3756,7 +4062,17 @@ pub(crate) fn parse_parameter_scope(
     let (paired_class_tag, _) =
         lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let mut candidates = Vec::new();
-    for tail_length in [72, 76, 77, 78, 87, 110] {
+    let mut tail_candidates = vec![
+        (72, false),
+        (76, false),
+        (77, false),
+        (78, false),
+        (87, false),
+        (88, false),
+        (110, false),
+    ];
+    tail_candidates.extend((0..=256).map(|label_code_units| (78 + label_code_units * 2, true)));
+    for (tail_length, named_tail) in tail_candidates {
         let Some(end) = paired_at.checked_sub(tail_length) else {
             continue;
         };
@@ -3765,15 +4081,23 @@ pub(crate) fn parse_parameter_scope(
             let Some((kind, decoded_end)) = lp_utf16_bounded(bytes, at, 1..=256) else {
                 continue;
             };
+            let named_tail_valid = !named_tail
+                || named_parameter_scope_tail_is_valid(bytes, decoded_end, paired_at, tail_length)
+                    .is_some_and(|valid| valid);
             if decoded_end == end
-                && parameter_scope_tail_length_is_valid(&kind, tail_length)
+                && (parameter_scope_tail_length_is_valid(&kind, tail_length)
+                    || named_tail && tail_length == 78)
                 && kind.chars().all(|character| !character.is_control())
+                && named_tail_valid
             {
-                candidates.push((at, end, tail_length, kind));
+                candidates.push((at, end, tail_length, kind, named_tail));
             }
         }
     }
-    let [(kind_at, kind_end, tail_length, kind)] = candidates.as_slice() else {
+    if candidates.iter().filter(|candidate| candidate.4).count() == 1 {
+        candidates.retain(|candidate| candidate.4);
+    }
+    let [(kind_at, kind_end, tail_length, kind, named_tail)] = candidates.as_slice() else {
         return None;
     };
     let kind_end = *kind_end;
@@ -3788,11 +4112,15 @@ pub(crate) fn parse_parameter_scope(
         state_id => Some(i64::from(state_id)),
     };
     let previous_history_state_id_offset =
-        kind_end.checked_add(parameter_scope_previous_history_offset(kind, *tail_length)?)?;
-    let previous_history_state_id = match u32_at(bytes, previous_history_state_id_offset)? {
-        u32::MAX => None,
-        state_id => Some(i64::from(state_id)),
-    };
+        match parameter_scope_previous_history_offset_for_form(kind, *tail_length, *named_tail) {
+            Some(offset) => Some(kind_end.checked_add(offset)?),
+            None => None,
+        };
+    let previous_history_state_id =
+        previous_history_state_id_offset.and_then(|offset| match u32_at(bytes, offset)? {
+            u32::MAX => None,
+            state_id => Some(i64::from(state_id)),
+        });
     let mut reference_tables = Vec::new();
     for count_at in start + 11..reference_table_end {
         let count = usize::try_from(u32_at(bytes, count_at)?).ok()?;
@@ -3886,61 +4214,22 @@ pub(crate) fn parse_parameter_scope(
         coil_clockwise,
         coil_clockwise_offset,
     ) = if family == Some(DesignFeatureFamily::Coil) {
-        let operation_offset = start.checked_add(20)?;
-        let operation = match (kind.as_str(), u32_at(bytes, operation_offset)?) {
-            ("SpirePrimitive", 1) => DesignExtrudeOperation::Join,
-            ("SpirePrimitive", 2) => DesignExtrudeOperation::Cut,
-            ("SpirePrimitive", 3) => DesignExtrudeOperation::Intersect,
-            ("SpirePrimitive", 4) | ("CoilPrimitive", 1) => DesignExtrudeOperation::NewBody,
-            _ => return None,
-        };
-        let clockwise_offset = start.checked_add(24)?;
-        let clockwise = match bytes.get(clockwise_offset)? {
-            0 => false,
-            1 => true,
-            _ => return None,
-        };
-        let structural_constant = match kind.as_str() {
-            "SpirePrimitive" => 2,
-            "CoilPrimitive" => 4,
-            _ => return None,
-        };
-        if u32_at(bytes, start.checked_add(26)?)? != structural_constant {
-            return None;
-        }
-        let extent_offset = start.checked_add(30)?;
-        let extent = match u32_at(bytes, extent_offset)? {
-            1 => DesignCoilExtent::RevolutionsHeight,
-            2 => DesignCoilExtent::RevolutionsPitch,
-            3 => DesignCoilExtent::HeightPitch,
-            4 => DesignCoilExtent::Spiral,
-            _ => return None,
-        };
-        let section_offset = start.checked_add(92)?;
-        let section = match (kind.as_str(), u32_at(bytes, section_offset)?) {
-            ("SpirePrimitive", 0) => DesignCoilSection::Circular,
-            ("SpirePrimitive", 1) => DesignCoilSection::Square,
-            ("SpirePrimitive", 2) | ("CoilPrimitive", 1) => DesignCoilSection::ExternalTriangle,
-            ("SpirePrimitive", 3) | ("CoilPrimitive", 2) => DesignCoilSection::InternalTriangle,
-            _ => return None,
-        };
-        let section_placement_offset = start.checked_add(107)?;
-        let section_placement = match (kind.as_str(), u32_at(bytes, section_placement_offset)?) {
-            ("SpirePrimitive", 4) | ("CoilPrimitive", 3) => DesignCoilSectionPlacement::Inside,
-            ("CoilPrimitive", 1) => DesignCoilSectionPlacement::Center,
-            _ => return None,
-        };
-        (
-            Some(operation),
-            Some(operation_offset as u64),
-            Some(extent),
-            Some(extent_offset as u64),
-            Some(section),
-            Some(section_offset as u64),
-            Some(section_placement),
-            Some(section_placement_offset as u64),
-            Some(clockwise),
-            Some(clockwise_offset as u64),
+        exact_coil_discriminators(bytes, start, paired_at, kind, reference_members).map_or(
+            (None, None, None, None, None, None, None, None, None, None),
+            |fields| {
+                (
+                    Some(fields.operation),
+                    Some(fields.operation_offset),
+                    fields.extent,
+                    fields.extent_offset,
+                    Some(fields.section),
+                    fields.section_offset,
+                    Some(fields.section_placement),
+                    fields.section_placement_offset,
+                    Some(fields.clockwise),
+                    fields.clockwise_offset,
+                )
+            },
         )
     } else {
         (None, None, None, None, None, None, None, None, None, None)
@@ -3969,7 +4258,9 @@ pub(crate) fn parse_parameter_scope(
         history_state_id,
         history_state_id_offset: u64::try_from(history_state_id_offset).ok()?,
         previous_history_state_id,
-        previous_history_state_id_offset: u64::try_from(previous_history_state_id_offset).ok()?,
+        previous_history_state_id_offset: previous_history_state_id_offset
+            .and_then(|offset| u64::try_from(offset).ok())
+            .unwrap_or_default(),
         reference_count_offset: u64::try_from(*reference_count_at).ok()?,
         reference_members: reference_members.clone(),
         reference_member_offsets: reference_member_offsets.clone(),
@@ -4023,6 +4314,266 @@ pub(crate) fn parse_parameter_scope(
         paired_class_tag,
         paired_byte_offset: paired_at as u64,
     })
+}
+
+fn named_parameter_scope_tail_is_valid(
+    bytes: &[u8],
+    kind_end: usize,
+    paired_at: usize,
+    tail_length: usize,
+) -> Option<bool> {
+    let label_at = kind_end.checked_add(8)?;
+    let (label, label_end) = lp_utf16_bounded(bytes, label_at, 0..=256)?;
+    let label_code_units = label.encode_utf16().count();
+    if tail_length != 78usize.checked_add(label_code_units.checked_mul(2)?)?
+        || label_end.checked_add(7)? != kind_end.checked_add(19 + label_code_units * 2)?
+        || label.chars().any(char::is_control)
+    {
+        return Some(false);
+    }
+    let marker = kind_end.checked_add(19 + label_code_units.checked_mul(2)?)?;
+    if marker.checked_add(59)? != paired_at || bytes.get(label_end..marker)? != [0; 7] {
+        return Some(false);
+    }
+    Some(
+        bytes.get(kind_end + 4..kind_end + 8)? == [0; 4]
+            && bytes.get(marker) == Some(&1)
+            && bytes.get(marker + 1).is_some_and(|field_id| *field_id != 0)
+            && read_u64(bytes, marker + 2)? == 1
+            && bytes.get(marker + 10..marker + 12)? == [0; 2]
+            && u32_at(bytes, marker + 12)? > 0
+            && u32_at(bytes, marker + 16)? == 0xfc
+            && f64_at(bytes, marker + 20)?.is_finite()
+            && u32_at(bytes, marker + 28)? == 0xfc
+            && bytes.get(marker + 32) == Some(&1)
+            && bytes
+                .get(marker + 33)
+                .is_some_and(|field_id| *field_id != 0)
+            && read_u64(bytes, marker + 34)? == 1
+            && bytes.get(marker + 42..marker + 46)? == [0, 1, 0, 0]
+            && bytes.get(marker + 46) == Some(&1)
+            && bytes
+                .get(marker + 47)
+                .is_some_and(|field_id| *field_id != 0)
+            && read_u64(bytes, marker + 48)? == 1
+            && bytes.get(marker + 56..marker + 59)? == [0; 3],
+    )
+}
+
+/// Decode the fixed discriminator block of the closed Coil scope forms.
+///
+/// A scope whose envelope is valid but whose Coil dialect is not recognized
+/// still belongs in the native arena. Returning `None` here leaves its
+/// family-local fields unset without discarding the ordered references and
+/// byte span that preserve the unsupported form.
+struct CoilDiscriminators {
+    operation: DesignExtrudeOperation,
+    operation_offset: u64,
+    extent: Option<DesignCoilExtent>,
+    extent_offset: Option<u64>,
+    section: DesignCoilSection,
+    section_offset: Option<u64>,
+    section_placement: DesignCoilSectionPlacement,
+    section_placement_offset: Option<u64>,
+    clockwise: bool,
+    clockwise_offset: Option<u64>,
+}
+
+fn exact_coil_discriminators(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    kind: &str,
+    reference_members: &[u32],
+) -> Option<CoilDiscriminators> {
+    if let Some(fields) =
+        exact_long_coil_discriminators(bytes, start, paired_at, kind, reference_members)
+    {
+        return Some(fields);
+    }
+    let operation_offset = start.checked_add(20)?;
+    let operation = match (kind, u32_at(bytes, operation_offset)?) {
+        ("SpirePrimitive", 1) => DesignExtrudeOperation::Join,
+        ("SpirePrimitive", 2) => DesignExtrudeOperation::Cut,
+        ("SpirePrimitive", 3) => DesignExtrudeOperation::Intersect,
+        ("SpirePrimitive", 4) | ("CoilPrimitive", 1) => DesignExtrudeOperation::NewBody,
+        _ => return None,
+    };
+    let clockwise_offset = start.checked_add(24)?;
+    let clockwise = match bytes.get(clockwise_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let structural_constant = match kind {
+        "SpirePrimitive" => 2,
+        "CoilPrimitive" => 4,
+        _ => return None,
+    };
+    if u32_at(bytes, start.checked_add(26)?)? != structural_constant {
+        return None;
+    }
+    let extent_offset = start.checked_add(30)?;
+    let extent = match u32_at(bytes, extent_offset)? {
+        1 => DesignCoilExtent::RevolutionsHeight,
+        2 => DesignCoilExtent::RevolutionsPitch,
+        3 => DesignCoilExtent::HeightPitch,
+        4 => DesignCoilExtent::Spiral,
+        _ => return None,
+    };
+    let section_offset = start.checked_add(92)?;
+    let section_placement_offset = start.checked_add(107)?;
+    let (section, section_placement) = match kind {
+        "SpirePrimitive" => (
+            match u32_at(bytes, section_offset)? {
+                0 => DesignCoilSection::Circular,
+                1 => DesignCoilSection::Square,
+                2 => DesignCoilSection::ExternalTriangle,
+                3 => DesignCoilSection::InternalTriangle,
+                _ => return None,
+            },
+            match u32_at(bytes, section_placement_offset)? {
+                4 => DesignCoilSectionPlacement::Inside,
+                _ => return None,
+            },
+        ),
+        // The compact Coil dialect stores the two discriminators in the
+        // opposite lanes from SpirePrimitive: position at offset 92 and
+        // section shape at offset 107.
+        "CoilPrimitive" => (
+            match u32_at(bytes, section_placement_offset)? {
+                1 => DesignCoilSection::Circular,
+                2 => DesignCoilSection::Square,
+                3 => DesignCoilSection::ExternalTriangle,
+                4 => DesignCoilSection::InternalTriangle,
+                _ => return None,
+            },
+            match u32_at(bytes, section_offset)? {
+                1 => DesignCoilSectionPlacement::Inside,
+                2 => DesignCoilSectionPlacement::Center,
+                3 => DesignCoilSectionPlacement::Outside,
+                _ => return None,
+            },
+        ),
+        _ => return None,
+    };
+    Some(CoilDiscriminators {
+        operation,
+        operation_offset: operation_offset as u64,
+        extent: Some(extent),
+        extent_offset: Some(extent_offset as u64),
+        section,
+        section_offset: Some(section_offset as u64),
+        section_placement,
+        section_placement_offset: Some(section_placement_offset as u64),
+        clockwise,
+        clockwise_offset: Some(clockwise_offset as u64),
+    })
+}
+
+fn exact_long_coil_discriminators(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    kind: &str,
+    reference_members: &[u32],
+) -> Option<CoilDiscriminators> {
+    if kind != "CoilPrimitive" || reference_members.len() != 10 {
+        return None;
+    }
+    let frame_length = paired_at.checked_sub(start)?;
+    if !matches!(frame_length, 450 | 578)
+        || bytes.get(start.checked_add(11)?..start.checked_add(22)?)? != [0; 11]
+        || u32_at(bytes, start.checked_add(26)?)? != 1
+        || marked_record_reference(bytes, start.checked_add(30)?)? != *reference_members.get(4)?
+        || marked_record_reference(bytes, start.checked_add(41)?)? != *reference_members.get(8)?
+    {
+        return None;
+    }
+    let operation_value = u32_at(bytes, start.checked_add(22)?)?;
+    let operation = match (frame_length, operation_value) {
+        (450, 1) => DesignExtrudeOperation::Join,
+        (450, 2) => DesignExtrudeOperation::Cut,
+        (450, 3) => DesignExtrudeOperation::Intersect,
+        (578, 2) if exact_long_coil_matrix(bytes, start) => DesignExtrudeOperation::NewBody,
+        _ => return None,
+    };
+    Some(CoilDiscriminators {
+        operation,
+        operation_offset: u64::try_from(start.checked_add(22)?).ok()?,
+        // The long form has no extent selector. Its exact owned parameter set
+        // supplies the mode after the scope is parsed.
+        extent: None,
+        extent_offset: None,
+        // The long form fixes these settings in its dialect envelope.
+        section: DesignCoilSection::Circular,
+        section_offset: None,
+        section_placement: DesignCoilSectionPlacement::Inside,
+        section_placement_offset: None,
+        clockwise: false,
+        clockwise_offset: None,
+    })
+}
+
+fn exact_long_coil_matrix(bytes: &[u8], start: usize) -> bool {
+    let Some(values) = f64s_at(bytes, start.saturating_add(77), 16) else {
+        return false;
+    };
+    values.iter().all(|value| value.is_finite())
+        && values[12..15].iter().all(|value| *value == 0.0)
+        && values[15] == 1.0
+}
+
+fn bind_coil_extent_from_parameters(
+    scope: &mut DesignParameterScope,
+    parameters: &[DesignParameter],
+    parameter_owners: &[crate::records::DesignParameterOwner],
+) {
+    if scope.kind != "CoilPrimitive" || scope.coil_extent.is_some() {
+        return;
+    }
+    let Some(stream) = native_stream(&scope.id) else {
+        return;
+    };
+    let mut owned_kinds = parameter_owners
+        .iter()
+        .filter(|owner| {
+            native_stream(&owner.id) == Some(stream)
+                && owner.scope_record_index == scope.record_index
+        })
+        .filter_map(|owner| {
+            parameters
+                .iter()
+                .find(|parameter| {
+                    native_stream(&parameter.id) == Some(stream)
+                        && parameter.record_index == owner.parameter_record_index
+                })
+                .map(|parameter| (owner.local_ordinal, parameter.source_kind.as_str()))
+        })
+        .collect::<Vec<_>>();
+    owned_kinds.sort_unstable_by_key(|(ordinal, _)| *ordinal);
+    let owned_kinds = owned_kinds
+        .into_iter()
+        .map(|(_, source_kind)| source_kind)
+        .collect::<Vec<_>>();
+    let extent = match owned_kinds.as_slice() {
+        ["Diameter", "SectionSize", "TaperAngle", "Revolutions", "Height"]
+        | ["Diameter", "SectionSize", "TaperAngle", "Height", "Revolutions"] => {
+            Some(DesignCoilExtent::RevolutionsHeight)
+        }
+        ["Diameter", "SectionSize", "TaperAngle", "Revolutions", "Pitch"]
+        | ["Diameter", "SectionSize", "TaperAngle", "Pitch", "Revolutions"] => {
+            Some(DesignCoilExtent::RevolutionsPitch)
+        }
+        ["Diameter", "SectionSize", "TaperAngle", "Height", "Pitch"]
+        | ["Diameter", "SectionSize", "TaperAngle", "Pitch", "Height"] => {
+            Some(DesignCoilExtent::HeightPitch)
+        }
+        ["Diameter", "SectionSize", "Revolutions", "Pitch"]
+        | ["Diameter", "SectionSize", "Pitch", "Revolutions"] => Some(DesignCoilExtent::Spiral),
+        _ => None,
+    };
+    scope.coil_extent = extent;
 }
 
 fn exact_extrude_prologue(
@@ -4526,15 +5077,18 @@ pub(crate) fn exact_edge_flange_operation(
     // evaluated and a frame that reads under either one is refused as ambiguous.
     let mut resolved = None;
     for header_shift in SHEET_METAL_HEADER_SHIFTS {
-        let Some(candidate) =
-            edge_flange_operation_at(bytes, start, paired_at, references, header_shift)
-        else {
-            continue;
-        };
-        if resolved.is_some() {
-            return None;
+        for candidate in [
+            edge_flange_operation_at(bytes, start, paired_at, references, header_shift),
+            edge_flange_to_object_operation_at(bytes, start, paired_at, references, header_shift),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if resolved.is_some() {
+                return None;
+            }
+            resolved = Some(candidate);
         }
-        resolved = Some(candidate);
     }
     resolved
 }
@@ -4636,8 +5190,140 @@ fn edge_flange_operation_at(
         aggregate_group_record_index,
         aggregate_operand_record_indices,
         height_owner_record_index,
+        height_extent: DesignEdgeFlangeHeightExtent::Distance,
         angle_owner_record_index,
         width_distance_owner_record_indices,
+        settings_record_index,
+        bend_radius,
+        bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
+        reference_side_code,
+        height_datum,
+        bend_position,
+    })
+}
+
+/// Read the single-edge `EdgeFlange` form whose height is measured from a
+/// selected construction entity.
+fn edge_flange_to_object_operation_at(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    references: &[u32],
+    header_shift: usize,
+) -> Option<DesignEdgeFlangeOperation> {
+    // This form has one target group and one target entity-selection operand in
+    // addition to the distance form's roles. The two marked references between
+    // the target group and the aggregate group are fixed-frame references, not
+    // entries in the scope's ordered reference table, and are retained as
+    // native references for rewrite.
+    if references.len() != 11 {
+        return None;
+    }
+    let common = start.checked_add(85)?.checked_add(header_shift)?;
+    let bend_position = DesignBendPosition::from_code(u32_at(bytes, common)?);
+    if u32_at(bytes, common.checked_add(4)?)? != 1 {
+        return None;
+    }
+    let mut unclaimed = references.to_vec();
+    let claim = |index: u32, pool: &mut Vec<u32>| -> Option<u32> {
+        let at = pool.iter().position(|entry| *entry == index)?;
+        pool.remove(at);
+        Some(index)
+    };
+    let mut cursor = common.checked_add(8)?;
+    let edge_wrapper_record_indices = vec![claim(
+        marked_record_reference(bytes, cursor)?,
+        &mut unclaimed,
+    )?];
+    cursor = cursor.checked_add(11)?;
+    let settings_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
+    cursor = cursor.checked_add(11)?;
+    let height_datum = DesignSheetMetalHeightDatum::from_code(u32_at(bytes, cursor)?);
+    cursor = cursor.checked_add(4)?;
+    let angle_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
+    cursor = cursor.checked_add(11)?;
+    let height_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
+    cursor = cursor.checked_add(11)?;
+    let reference_side_code = u32_at(bytes, cursor)?;
+    let bend_radius_offset = cursor.checked_add(15)?;
+    let bend_radius = f64_at(bytes, bend_radius_offset)?;
+    if !bend_radius.is_finite() || bend_radius <= 0.0 {
+        return None;
+    }
+    let result_count = u32_at(bytes, bend_radius_offset.checked_add(14)?)?;
+    if result_count != 1
+        || bytes.get(bend_radius_offset.checked_add(18)?..bend_radius_offset.checked_add(22)?)?
+            != [0; 4]
+    {
+        return None;
+    }
+    if bytes.get(common.checked_add(89)?..common.checked_add(94)?)? != [0; 5] {
+        return None;
+    }
+    let target_group_record_index = claim(
+        marked_record_reference(bytes, common.checked_add(94)?)?,
+        &mut unclaimed,
+    )?;
+    if u32_at(bytes, common.checked_add(105)?)? != 2 {
+        return None;
+    }
+    let reference_record_indices = [
+        marked_record_reference(bytes, common.checked_add(109)?)?,
+        marked_record_reference(bytes, common.checked_add(124)?)?,
+    ];
+    if reference_record_indices[0] == reference_record_indices[1]
+        || reference_record_indices
+            .iter()
+            .any(|record_index| references.contains(record_index))
+        || u32_at(bytes, common.checked_add(120)?)? != 1
+        || bytes.get(common.checked_add(135)?..common.checked_add(139)?)? != [0; 4]
+        || u32_at(bytes, common.checked_add(139)?)? != 1
+        || bytes.get(common.checked_add(154)?..common.checked_add(166)?)? != [0; 12]
+        || u32_at(bytes, common.checked_add(166)?)? != 1
+    {
+        return None;
+    }
+    let aggregate_group_record_index = claim(
+        marked_record_reference(bytes, common.checked_add(143)?)?,
+        &mut unclaimed,
+    )?;
+    let edge_group_record_index = claim(
+        marked_record_reference(bytes, common.checked_add(170)?)?,
+        &mut unclaimed,
+    )?;
+    let target_operand_record_index =
+        claim(target_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    let aggregate_operand_record_indices = vec![claim(
+        aggregate_group_record_index.checked_add(3)?,
+        &mut unclaimed,
+    )?];
+    let edge_group_record_indices = vec![edge_group_record_index];
+    let edge_operand_record_indices = vec![claim(
+        edge_group_record_index.checked_add(3)?,
+        &mut unclaimed,
+    )?];
+    let [offset_owner_record_index] = unclaimed.as_slice() else {
+        return None;
+    };
+    let expected_length = 576usize.checked_add(header_shift)?;
+    if paired_at.checked_sub(start)? != expected_length {
+        return None;
+    }
+    Some(DesignEdgeFlangeOperation {
+        edge_wrapper_record_indices,
+        edge_group_record_indices,
+        edge_operand_record_indices,
+        aggregate_group_record_index,
+        aggregate_operand_record_indices,
+        height_owner_record_index,
+        height_extent: DesignEdgeFlangeHeightExtent::ToObject {
+            target_group_record_index,
+            target_operand_record_index,
+            offset_owner_record_index: *offset_owner_record_index,
+            reference_record_indices,
+        },
+        angle_owner_record_index,
+        width_distance_owner_record_indices: Vec::new(),
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
@@ -4657,26 +5343,31 @@ pub(crate) fn exact_hem_operation(
     // evaluated and a frame that reads under either one is refused as ambiguous.
     let mut resolved = None;
     for header_shift in SHEET_METAL_HEADER_SHIFTS {
-        let Some(candidate) = hem_operation_at(bytes, start, paired_at, references, header_shift)
-        else {
-            continue;
-        };
-        if resolved.is_some() {
-            return None;
+        for candidate in [
+            hem_gap_length_operation_at(bytes, start, paired_at, references, header_shift),
+            hem_radius_angle_operation_at(bytes, start, paired_at, references, header_shift),
+            hem_gap_length_radius_operation_at(bytes, start, paired_at, references, header_shift),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if resolved.is_some() {
+                return None;
+            }
+            resolved = Some(candidate);
         }
-        resolved = Some(candidate);
     }
     resolved
 }
 
-/// Read the two-owner `Hem` fixed operation section for one candidate header
+/// Read the gap-and-length `Hem` fixed operation section for one candidate header
 /// shift and refuse the candidate unless every slot agrees.
 ///
 /// The ordered reference table is in record-index order, so every role is taken
 /// from the marked slot that names it and each group's operand is the record
 /// three after that group. The rolled and teardrop forms place their owner
-/// references at other offsets and are refused.
-fn hem_operation_at(
+/// references at other offsets and are handled by their corresponding readers.
+fn hem_gap_length_operation_at(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
@@ -4708,8 +5399,7 @@ fn hem_operation_at(
 
     let edge_wrapper_record_index = slot(8, &mut unclaimed)?;
     let settings_record_index = slot(19, &mut unclaimed)?;
-    // The two owners are the form's inputs in local-ordinal order. Both
-    // readable two-owner forms own the gap and the length in that order.
+    // The two owners are the form's inputs in local-ordinal order.
     let gap_owner_record_index = slot(42, &mut unclaimed)?;
     let length_owner_record_index = slot(53, &mut unclaimed)?;
 
@@ -4734,8 +5424,157 @@ fn hem_operation_at(
         edge_operand_record_index,
         aggregate_group_record_index,
         aggregate_operand_record_index,
-        gap_owner_record_index,
-        length_owner_record_index,
+        parameter_owners: DesignHemParameterOwners::GapLength {
+            gap_owner_record_index,
+            length_owner_record_index,
+        },
+        settings_record_index,
+        bend_radius,
+        bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
+        form_code: u32_at(bytes, common)?,
+        direction_code: u32_at(bytes, common.checked_add(30)?)?,
+        direction_reversal_byte: *bytes.get(common.checked_add(34)?)?,
+        reference_side_code: u32_at(bytes, common.checked_add(36)?)?,
+    })
+}
+
+/// Read the rolled `Hem` fixed operation section for one candidate header
+/// shift and refuse the candidate unless every slot agrees.
+///
+/// Rolled forms keep the two-owner frame length, but their owner slots are at
+/// offsets `41` and `54` instead of `42` and `53`. The source parameter kinds
+/// assign those slots to radius and angle; the fixed frame only proves their
+/// record identities.
+fn hem_radius_angle_operation_at(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    references: &[u32],
+    header_shift: usize,
+) -> Option<DesignHemOperation> {
+    if references.len() != 8
+        || paired_at.checked_sub(start)? != 494usize.checked_add(header_shift)?
+    {
+        return None;
+    }
+    let common = start.checked_add(85)?.checked_add(header_shift)?;
+    if u32_at(bytes, common.checked_add(4)?)? != 1 {
+        return None;
+    }
+
+    let mut unclaimed = references.to_vec();
+    let claim = |index: u32, pool: &mut Vec<u32>| -> Option<u32> {
+        let at = pool.iter().position(|entry| *entry == index)?;
+        pool.remove(at);
+        Some(index)
+    };
+    let slot = |offset: usize, pool: &mut Vec<u32>| -> Option<u32> {
+        claim(
+            marked_record_reference(bytes, common.checked_add(offset)?)?,
+            pool,
+        )
+    };
+
+    let edge_wrapper_record_index = slot(8, &mut unclaimed)?;
+    let settings_record_index = slot(19, &mut unclaimed)?;
+    let angle_owner_record_index = slot(41, &mut unclaimed)?;
+    let radius_owner_record_index = slot(54, &mut unclaimed)?;
+    let bend_radius_offset = common.checked_add(71)?;
+    let bend_radius = f64_at(bytes, bend_radius_offset)?;
+    if !bend_radius.is_finite() || bend_radius <= 0.0 {
+        return None;
+    }
+    let aggregate_group_record_index = slot(108, &mut unclaimed)?;
+    let edge_group_record_index = slot(135, &mut unclaimed)?;
+    let aggregate_operand_record_index =
+        claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    let edge_operand_record_index = claim(edge_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    if !unclaimed.is_empty() {
+        return None;
+    }
+
+    Some(DesignHemOperation {
+        edge_wrapper_record_index,
+        edge_group_record_index,
+        edge_operand_record_index,
+        aggregate_group_record_index,
+        aggregate_operand_record_index,
+        parameter_owners: DesignHemParameterOwners::RadiusAngle {
+            radius_owner_record_index,
+            angle_owner_record_index,
+        },
+        settings_record_index,
+        bend_radius,
+        bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
+        form_code: u32_at(bytes, common)?,
+        direction_code: u32_at(bytes, common.checked_add(30)?)?,
+        direction_reversal_byte: *bytes.get(common.checked_add(34)?)?,
+        reference_side_code: u32_at(bytes, common.checked_add(36)?)?,
+    })
+}
+
+/// Read the teardrop `Hem` fixed operation section for one candidate header
+/// shift and refuse the candidate unless every slot agrees.
+fn hem_gap_length_radius_operation_at(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    references: &[u32],
+    header_shift: usize,
+) -> Option<DesignHemOperation> {
+    if references.len() != 9
+        || paired_at.checked_sub(start)? != 515usize.checked_add(header_shift)?
+    {
+        return None;
+    }
+    let common = start.checked_add(85)?.checked_add(header_shift)?;
+    if u32_at(bytes, common.checked_add(4)?)? != 1 {
+        return None;
+    }
+
+    let mut unclaimed = references.to_vec();
+    let claim = |index: u32, pool: &mut Vec<u32>| -> Option<u32> {
+        let at = pool.iter().position(|entry| *entry == index)?;
+        pool.remove(at);
+        Some(index)
+    };
+    let slot = |offset: usize, pool: &mut Vec<u32>| -> Option<u32> {
+        claim(
+            marked_record_reference(bytes, common.checked_add(offset)?)?,
+            pool,
+        )
+    };
+
+    let edge_wrapper_record_index = slot(8, &mut unclaimed)?;
+    let settings_record_index = slot(19, &mut unclaimed)?;
+    let gap_owner_record_index = slot(42, &mut unclaimed)?;
+    let length_owner_record_index = slot(53, &mut unclaimed)?;
+    let radius_owner_record_index = slot(64, &mut unclaimed)?;
+    let bend_radius_offset = common.checked_add(81)?;
+    let bend_radius = f64_at(bytes, bend_radius_offset)?;
+    if !bend_radius.is_finite() || bend_radius <= 0.0 {
+        return None;
+    }
+    let aggregate_group_record_index = slot(118, &mut unclaimed)?;
+    let edge_group_record_index = slot(145, &mut unclaimed)?;
+    let aggregate_operand_record_index =
+        claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    let edge_operand_record_index = claim(edge_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    if !unclaimed.is_empty() {
+        return None;
+    }
+
+    Some(DesignHemOperation {
+        edge_wrapper_record_index,
+        edge_group_record_index,
+        edge_operand_record_index,
+        aggregate_group_record_index,
+        aggregate_operand_record_index,
+        parameter_owners: DesignHemParameterOwners::GapLengthRadius {
+            gap_owner_record_index,
+            length_owner_record_index,
+            radius_owner_record_index,
+        },
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
@@ -5108,23 +5947,18 @@ mod tests {
     }
 
     #[test]
-    fn work_point_rejects_an_input_run_the_reference_type_does_not_name() {
-        // `18` takes two base-level inputs. A frame that stores one has been
-        // read under the wrong member sequence and names no coordinate.
+    fn work_point_uses_the_serialized_input_count_for_every_rule() {
+        // The input count is a member of the point-data level. It frames the
+        // run independently of the rule selector, including three-input
+        // constructions.
         let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 18, 1);
 
-        assert_eq!(
-            exact_work_point_position(
-                &bytes,
-                &IndexedRecordOffsets::build(&bytes),
-                &scope,
-                &HashMap::new()
-            ),
-            None
-        );
-
-        let (bytes, scope, position_at) =
-            work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 18, 2);
+        let records = IndexedRecordOffsets::build(&bytes);
+        let frame = exact_work_point_position(&bytes, &records, &scope, &HashMap::new())
+            .expect("work point frame");
+        assert_eq!(frame.input_record_indices, [70]);
+        assert_eq!(frame.reference_type, 18);
+        let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 14, 2);
         let frame = exact_work_point_position(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
@@ -5132,8 +5966,26 @@ mod tests {
             &HashMap::new(),
         )
         .expect("work point frame");
-        assert_eq!(frame.position_offset, position_at as u64);
-        assert_eq!(frame.reference_type, 18);
+        assert_eq!(frame.input_record_indices, [70, 71]);
+
+        let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 8, 3);
+        let frame = exact_work_point_position(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &HashMap::new(),
+        )
+        .expect("work point frame");
+        assert_eq!(frame.input_record_indices, [70, 71, 72]);
+
+        let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 18, 2);
+        let frame = exact_work_point_position(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &HashMap::new(),
+        )
+        .expect("work point frame");
         assert_eq!(frame.input_record_indices, [70, 71]);
     }
 }
