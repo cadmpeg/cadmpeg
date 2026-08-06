@@ -2605,6 +2605,50 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn offset_plane_face_reference_accepts_the_serialized_signed_side() {
+        let surface = Surface {
+            id: cadmpeg_ir::ids::SurfaceId("surface".into()),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, -5.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        };
+        let face = Face {
+            id: cadmpeg_ir::ids::FaceId("face".into()),
+            shell: cadmpeg_ir::ids::ShellId("shell".into()),
+            surface: surface.id.clone(),
+            sense: cadmpeg_ir::topology::Sense::Forward,
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: None,
+        };
+        let surfaces = HashMap::from([(&surface.id, &surface)]);
+        let mut selection = FaceSelection::Native("component-path".into());
+        let mut origin = Point3::new(0.0, 0.0, 5.0);
+
+        resolve_offset_plane_face_selection(
+            &mut selection,
+            &mut origin,
+            Vector3::new(0.0, 0.0, 1.0),
+            Length(5.0),
+            std::slice::from_ref(&face),
+            &surfaces,
+        );
+
+        assert_eq!(origin, Point3::new(0.0, 0.0, -5.0));
+        assert_eq!(
+            selection,
+            FaceSelection::Resolved {
+                faces: vec![face.id],
+                native: "component-path".into(),
+            }
+        );
+    }
+
+    #[test]
     fn offset_plane_frame_does_not_bind_a_later_builtin_principal_plane() {
         let mut offset = feature("sldprt:history:feature#0:0", None, 0);
         offset.input_class = Some("moRefPlane_c".into());
@@ -5953,9 +5997,16 @@ pub fn bind_topology_selections(
                         normal,
                         ..
                     }),
-                ..
+                distance,
             } => {
-                resolve_planar_face_selection(reference, *origin, *normal, faces, &surfaces_by_id);
+                resolve_offset_plane_face_selection(
+                    reference,
+                    origin,
+                    *normal,
+                    *distance,
+                    faces,
+                    &surfaces_by_id,
+                );
             }
             FeatureDefinition::DatumOffsetPlane {
                 reference,
@@ -6220,6 +6271,34 @@ fn resolve_planar_face_selection(
         (None, [face]) => FaceSelection::Faces(vec![face.clone()]),
         _ => return,
     };
+}
+
+fn resolve_offset_plane_face_selection(
+    selection: &mut FaceSelection,
+    origin: &mut Point3,
+    normal: Vector3,
+    distance: Length,
+    faces: &[Face],
+    surfaces: &HashMap<&cadmpeg_ir::ids::SurfaceId, &Surface>,
+) {
+    let native = matches!(selection, FaceSelection::Native(_));
+    resolve_planar_face_selection(selection, *origin, normal, faces, surfaces);
+    if !native || !matches!(selection, FaceSelection::Native(_)) {
+        return;
+    }
+    let signed_distance = distance.0;
+    if !signed_distance.is_finite() || signed_distance.abs() <= f64::EPSILON {
+        return;
+    }
+    let alternate_origin = Point3::new(
+        origin.x - normal.x * signed_distance * 2.0,
+        origin.y - normal.y * signed_distance * 2.0,
+        origin.z - normal.z * signed_distance * 2.0,
+    );
+    resolve_planar_face_selection(selection, alternate_origin, normal, faces, surfaces);
+    if !matches!(selection, FaceSelection::Native(_)) {
+        *origin = alternate_origin;
+    }
 }
 
 fn resolve_profile_ref(
