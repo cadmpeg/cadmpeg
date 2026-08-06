@@ -11,15 +11,16 @@
 
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
-    AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalEntityDelta,
-    AsmHistoricalOptionalCarrierBinding, AsmHistoricalPlane, AsmHistoricalPoint,
-    AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
+    AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCylinder, AsmHistoricalEdge,
+    AsmHistoricalEntityDelta, AsmHistoricalOptionalCarrierBinding, AsmHistoricalPlane,
+    AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
     AsmHistoricalTransition, AsmHistory, AsmHistoryRecord,
 };
 use crate::records::{
     AsmHistoricalEntityKind, DesignEdgeIdentityOperand, DesignExtrudeSelectionMember,
 };
 use cadmpeg_core::le::int_at;
+use cadmpeg_ir::math::Vector3;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";
@@ -1853,6 +1854,220 @@ pub(crate) fn unique_history_state_pair(
         .filter_map(|history| history_state_pair(history, state_id, previous_state_id, false));
     let pair = matches.next()?;
     matches.next().is_none().then_some(pair)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HemGapLengthForm {
+    Flat,
+    Open,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HemGeometrySemantics {
+    pub direction: Option<cadmpeg_ir::features::SheetMetalHemDirection>,
+    pub gap_length_form: Option<HemGapLengthForm>,
+}
+
+/// Resolve Hem semantics from the bend carriers in the owning history
+/// transition. The source operation's fixed fields do not carry these
+/// meanings; the selected edge and the inserted coaxial cylinders do.
+pub(crate) fn hem_geometry_semantics(
+    scope: &crate::records::DesignParameterScope,
+    edge_slot: i64,
+    histories: &[AsmHistory],
+) -> HemGeometrySemantics {
+    let unresolved = HemGeometrySemantics {
+        direction: None,
+        gap_length_form: None,
+    };
+    let (Some(state_id), Some(previous_state_id)) = (
+        scope.history_state_id,
+        effective_scope_previous_history_state_id(scope, histories),
+    ) else {
+        return unresolved;
+    };
+    let Some((_, state, previous)) =
+        unique_history_state_pair(histories, state_id, previous_state_id)
+    else {
+        return unresolved;
+    };
+    let (Some(previous_topology), Some(transition)) =
+        (previous.topology.as_ref(), state.transition.as_ref())
+    else {
+        return unresolved;
+    };
+    let Some(cylinders) = hem_inserted_cylinders(state, previous_topology, transition, edge_slot)
+    else {
+        return unresolved;
+    };
+    HemGeometrySemantics {
+        direction: hem_direction_from_transition(
+            edge_slot,
+            &cylinders,
+            previous_topology,
+            transition,
+        ),
+        gap_length_form: hem_gap_length_form(&cylinders),
+    }
+}
+
+fn hem_inserted_cylinders<'a>(
+    state: &'a AsmDeltaState,
+    previous: &AsmHistoricalTopology,
+    transition: &AsmHistoricalTransition,
+    edge_slot: i64,
+) -> Option<Vec<&'a AsmHistoricalCylinder>> {
+    let topology = state.topology.as_ref()?;
+    let inserted_surfaces = &transition.topology.surfaces.inserted;
+    let cylinders = topology
+        .surface_cylinders
+        .iter()
+        .filter(|cylinder| inserted_surfaces.contains(&cylinder.surface))
+        .collect::<Vec<_>>();
+    if cylinders.is_empty() {
+        return Some(Vec::new());
+    }
+    let edge_direction = historical_edge_axis(edge_slot, previous).map(|(_, direction)| direction);
+    Some(
+        cylinders
+            .into_iter()
+            .filter(|cylinder| {
+                edge_direction.is_none_or(|direction| parallel_directions(direction, cylinder.axis))
+            })
+            .collect(),
+    )
+}
+
+fn hem_gap_length_form(cylinders: &[&AsmHistoricalCylinder]) -> Option<HemGapLengthForm> {
+    let [first, second] = cylinders else {
+        return None;
+    };
+    if !same_axis_line((first.origin, first.axis), (second.origin, second.axis)) {
+        return None;
+    }
+    let [inner, outer] = if first.radius <= second.radius {
+        [first.radius, second.radius]
+    } else {
+        [second.radius, first.radius]
+    };
+    if !inner.is_finite() || !outer.is_finite() || inner < 0.0 || outer <= inner {
+        return None;
+    }
+    let thickness = outer - inner;
+    let tolerance = 1.0e-7 * (1.0 + outer.abs() + inner.abs());
+    if (2.0 * inner - thickness).abs() <= tolerance {
+        Some(HemGapLengthForm::Open)
+    } else if 2.0 * inner < thickness - tolerance {
+        Some(HemGapLengthForm::Flat)
+    } else {
+        None
+    }
+}
+
+fn hem_direction_from_transition(
+    edge_slot: i64,
+    cylinders: &[&AsmHistoricalCylinder],
+    previous: &AsmHistoricalTopology,
+    transition: &AsmHistoricalTransition,
+) -> Option<cadmpeg_ir::features::SheetMetalHemDirection> {
+    if cylinders.is_empty() {
+        return None;
+    }
+    let incident_faces = historical_edge_context(edge_slot, previous)
+        .incident_loops
+        .into_iter()
+        .map(|context| context.face_slot)
+        .collect::<BTreeSet<_>>();
+    let mut candidates = Vec::new();
+    for face in incident_faces {
+        if transition.topology.faces.deleted.contains(&face) {
+            continue;
+        }
+        let mut bindings = previous
+            .face_surfaces
+            .iter()
+            .filter(|binding| binding.entity == face);
+        let Some(binding) = bindings.next() else {
+            continue;
+        };
+        if bindings.next().is_some() {
+            continue;
+        }
+        let mut planes = previous
+            .surface_planes
+            .iter()
+            .filter(|plane| plane.surface == binding.carrier);
+        let Some(plane) = planes.next() else {
+            continue;
+        };
+        if planes.next().is_some() {
+            continue;
+        }
+        let Some(normal) = unit_vector(plane.normal) else {
+            continue;
+        };
+        let offsets = cylinders
+            .iter()
+            .map(|cylinder| {
+                let offset = Vector3::new(
+                    cylinder.origin.x - plane.origin.x,
+                    cylinder.origin.y - plane.origin.y,
+                    cylinder.origin.z - plane.origin.z,
+                );
+                normal.x * offset.x + normal.y * offset.y + normal.z * offset.z
+            })
+            .collect::<Vec<_>>();
+        let Some(first) = offsets.first().copied() else {
+            continue;
+        };
+        if !first.is_finite() {
+            continue;
+        }
+        let sign_tolerance = 1.0e-7
+            * (1.0
+                + plane.origin.x.abs()
+                + plane.origin.y.abs()
+                + plane.origin.z.abs()
+                + cylinders.iter().fold(0.0_f64, |scale, cylinder| {
+                    scale
+                        .max(cylinder.origin.x.abs())
+                        .max(cylinder.origin.y.abs())
+                        .max(cylinder.origin.z.abs())
+                }));
+        if first.abs() <= sign_tolerance
+            || offsets.iter().any(|offset| {
+                !offset.is_finite()
+                    || offset.abs() <= sign_tolerance
+                    || offset.is_sign_positive() != first.is_sign_positive()
+            })
+        {
+            continue;
+        }
+        candidates.push(first.is_sign_positive());
+    }
+    let [positive] = candidates.as_slice() else {
+        return None;
+    };
+    Some(if *positive {
+        cadmpeg_ir::features::SheetMetalHemDirection::Forward
+    } else {
+        cadmpeg_ir::features::SheetMetalHemDirection::Reverse
+    })
+}
+
+fn unit_vector(vector: cadmpeg_ir::math::Vector3) -> Option<cadmpeg_ir::math::Vector3> {
+    let length = (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).sqrt();
+    (length.is_finite() && length > 0.0).then(|| {
+        cadmpeg_ir::math::Vector3::new(vector.x / length, vector.y / length, vector.z / length)
+    })
+}
+
+fn parallel_directions(left: cadmpeg_ir::math::Vector3, right: cadmpeg_ir::math::Vector3) -> bool {
+    let (Some(left), Some(right)) = (unit_vector(left), unit_vector(right)) else {
+        return false;
+    };
+    let dot = left.x * right.x + left.y * right.y + left.z * right.z;
+    dot.is_finite() && (dot.abs() - 1.0).abs() <= 1.0e-7
 }
 
 fn history_state_pair(
@@ -5900,6 +6115,34 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn hem_bend_carriers_prove_directional_gap_forms() {
+        use crate::history_records::AsmHistoricalCylinder;
+        use cadmpeg_ir::math::{Point3, Vector3};
+
+        let cylinder = |radius| AsmHistoricalCylinder {
+            surface: 1,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 1.0, 0.0),
+            radius,
+        };
+        let flat_inner = cylinder(0.01);
+        let flat_outer = cylinder(2.51);
+        assert_eq!(
+            super::hem_gap_length_form(&[&flat_inner, &flat_outer]),
+            Some(super::HemGapLengthForm::Flat)
+        );
+
+        let open_inner = cylinder(1.25);
+        let open_outer = cylinder(3.75);
+        assert_eq!(
+            super::hem_gap_length_form(&[&open_inner, &open_outer]),
+            Some(super::HemGapLengthForm::Open)
+        );
+
+        assert_eq!(super::hem_gap_length_form(&[&flat_inner]), None);
+    }
+
     #[test]
     fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         use cadmpeg_ir::ids::{BodyId, FaceId, RegionId, ShellId};

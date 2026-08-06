@@ -464,31 +464,7 @@ pub(crate) fn resolved_hem_edge_group(
     let [operand] = matching_operands.as_slice() else {
         return selection;
     };
-    let reference_contexts = operand.recipe_reference_contexts.as_slice();
-    let empty_contexts = reference_contexts
-        .iter()
-        .filter(|context| context.changed_reference_edge_slots.is_empty())
-        .collect::<Vec<_>>();
-    let [empty_context] = empty_contexts.as_slice() else {
-        return selection;
-    };
-    if !empty_context.result_faces.is_empty()
-        || !empty_context.preceding_faces.is_empty()
-        || !empty_context.preceding_support_face_slots.is_empty()
-        || reference_contexts.iter().any(|context| {
-            !context.changed_reference_edge_slots.is_empty()
-                && (context.result_faces.is_empty()
-                    || context.preceding_support_face_slots.is_empty())
-        })
-    {
-        return selection;
-    }
-    let Some(edge) = unique_hem_transition_edge_candidate(
-        &operand.changed_boundary_edge_slots,
-        reference_contexts
-            .iter()
-            .map(|context| context.changed_reference_edge_slots.as_slice()),
-    ) else {
+    let Some(edge) = hem_transition_edge_slot(operand) else {
         return selection;
     };
     let feature_key = feature_id
@@ -503,6 +479,52 @@ pub(crate) fn resolved_hem_edge_group(
         )],
         native: group.id.clone(),
     }
+}
+
+/// Return the one historical edge a single-member Hem operand identifies.
+///
+/// A directly resolved operand is preferred. The transition proof is the
+/// fallback used by the compact recipe form, where the operand carries only
+/// the changed support boundaries and the selectorless edge context.
+pub(crate) fn resolved_hem_edge_slot(
+    operand: &DesignEdgeOperand,
+    previous_state_id: Option<i64>,
+) -> Option<i64> {
+    let mut direct = operand.resolved_edge_slot.into_iter().collect::<Vec<_>>();
+    direct.sort_unstable();
+    direct.dedup();
+    if let [edge] = direct.as_slice() {
+        return Some(*edge);
+    }
+    previous_state_id.and_then(|_| hem_transition_edge_slot(operand))
+}
+
+fn hem_transition_edge_slot(operand: &DesignEdgeOperand) -> Option<i64> {
+    let reference_contexts = operand.recipe_reference_contexts.as_slice();
+    let empty_contexts = reference_contexts
+        .iter()
+        .filter(|context| context.changed_reference_edge_slots.is_empty())
+        .collect::<Vec<_>>();
+    let [empty_context] = empty_contexts.as_slice() else {
+        return None;
+    };
+    if !empty_context.result_faces.is_empty()
+        || !empty_context.preceding_faces.is_empty()
+        || !empty_context.preceding_support_face_slots.is_empty()
+        || reference_contexts.iter().any(|context| {
+            !context.changed_reference_edge_slots.is_empty()
+                && (context.result_faces.is_empty()
+                    || context.preceding_support_face_slots.is_empty())
+        })
+    {
+        return None;
+    }
+    unique_hem_transition_edge_candidate(
+        &operand.changed_boundary_edge_slots,
+        reference_contexts
+            .iter()
+            .map(|context| context.changed_reference_edge_slots.as_slice()),
+    )
 }
 
 pub(crate) fn unique_hem_transition_edge_candidate<'a>(

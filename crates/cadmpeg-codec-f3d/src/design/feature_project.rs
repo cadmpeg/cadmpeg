@@ -2404,10 +2404,9 @@ pub(crate) fn project_edge_flange(
 /// Project a sheet-metal `Hem` scope onto its neutral operation.
 ///
 /// The owner layout distinguishes the rolled and teardrop forms from the
-/// shared gap-and-length layout. The source fields currently retained by the
-/// native decoder do not distinguish flat from open or carry a proven fold
-/// direction, so those distinctions remain explicit in the neutral form and
-/// completeness report rather than being inferred from parameter values.
+/// shared gap-and-length layout. Fold direction is recovered from the signed
+/// placement of the inserted bend carriers against the preceding source face;
+/// an incomplete transition keeps it unresolved.
 pub(crate) fn project_hem(
     scope: &DesignParameterScope,
     inputs: &ProjectInputs<'_>,
@@ -2423,6 +2422,7 @@ pub(crate) fn project_hem(
         construction_groups: groups,
         edge_operands,
         edge_identity_operands,
+        histories,
         ..
     } = inputs;
     let operation = scope.hem_operation.as_ref()?;
@@ -2504,14 +2504,34 @@ pub(crate) fn project_hem(
         groups,
         edge_operands,
         edge_identity_operands,
-        scope.previous_history_state_id,
+        crate::history::effective_scope_previous_history_state_id(scope, histories),
         &neutral_feature_id(scope),
     );
+
+    let edge_slot = edge_operands
+        .iter()
+        .filter(|operand| {
+            native_stream(&operand.id) == native_stream(&edge_group.id)
+                && operand.scope_record_index == edge_group.scope_record_index
+                && operand.record_index == operation.edge_operand_record_index
+        })
+        .collect::<Vec<_>>();
+    let direction = match edge_slot.as_slice() {
+        [operand] => crate::design::edge_resolve::resolved_hem_edge_slot(
+            operand,
+            crate::history::effective_scope_previous_history_state_id(scope, histories),
+        )
+        .and_then(|edge_slot| {
+            crate::history::hem_geometry_semantics(scope, edge_slot, histories).direction
+        })
+        .unwrap_or(SheetMetalHemDirection::Unresolved),
+        _ => SheetMetalHemDirection::Unresolved,
+    };
 
     Some(FeatureDefinition::SheetMetalHem {
         edges,
         form,
-        direction: SheetMetalHemDirection::Unresolved,
+        direction,
         bend_radius: Length(operation.bend_radius * 10.0),
     })
 }
