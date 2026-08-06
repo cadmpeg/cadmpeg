@@ -1320,6 +1320,19 @@ fn project_fillet_arm(
 ) -> cadmpeg_ir::features::FeatureDefinition {
     use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FilletGroup, RadiusSpec};
 
+    if parameters.is_empty() {
+        if let Some(definition) = project_full_round_fillet(
+            scope,
+            inputs.construction_groups,
+            inputs.face_operands,
+            inputs.owners,
+            inputs.fillet_radius_groups,
+            inputs.histories,
+        ) {
+            return definition;
+        }
+    }
+
     let &ProjectInputs {
         native,
         construction_groups,
@@ -1525,6 +1538,77 @@ fn project_fillet_arm(
             }
         }
     }
+}
+
+/// Project Fusion's role-`0x4` full-round face construction.
+///
+/// This form has no radius parameter. Its one compact member identifies the
+/// center face; the trailing true flag requests automatic inference of both
+/// side-face sets. A role-`0x4` group with any other shape remains available to
+/// the regular feature projectors.
+fn project_full_round_fillet(
+    scope: &DesignParameterScope,
+    construction_groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
+    owners: &[DesignParameterOwner],
+    fillet_radius_groups: &[DesignFilletRadiusGroup],
+    histories: &[crate::history_records::AsmHistory],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    let stream = native_stream(&scope.id)?;
+    if owners.iter().any(|owner| {
+        native_stream(&owner.id) == Some(stream) && owner.scope_record_index == scope.record_index
+    }) || fillet_radius_groups.iter().any(|assignment| {
+        native_stream(&assignment.id) == Some(stream)
+            && assignment.scope_record_index == scope.record_index
+    }) {
+        return None;
+    }
+    let mut groups = construction_groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
+    });
+    let group = groups.next()?;
+    if groups.next().is_some()
+        || group.role != ROLE_0X4
+        || group.members.len() != 1
+        || group.frame.trailing_record_indices.len() != 1
+        || group.frame.trailing_flags.len() != 1
+        || group.frame.trailing_record_indices[0] != group.frame.trailing_flags[0].record_index
+        || !group.frame.trailing_flags[0].value
+        || group.frame.variant
+    {
+        return None;
+    }
+    let [member] = group.members.as_slice() else {
+        return None;
+    };
+    let mut operands = face_operands.iter().filter(|operand| {
+        native_stream(&operand.id) == Some(stream)
+            && operand.scope_record_index == scope.record_index
+            && operand.group_record_index == Some(group.record_index)
+            && operand.group_member_ordinal == Some(0)
+            && operand.record_index == *member
+    });
+    let operand = operands.next()?;
+    if operands.next().is_some() {
+        return None;
+    }
+    if operand.recipe_kind != ConstructionRecipeKind::BoundedFace {
+        return None;
+    }
+    if operand.resolved_face_slots.is_empty() {
+        return None;
+    }
+    let center_faces = project_face_selection(scope, group, face_operands, histories);
+    if matches!(center_faces, cadmpeg_ir::features::FaceSelection::Native(_)) {
+        return None;
+    }
+    Some(cadmpeg_ir::features::FeatureDefinition::FullRoundFillet {
+        groups: vec![cadmpeg_ir::features::FullRoundFilletGroup {
+            center_faces,
+            side_one_faces: cadmpeg_ir::features::FullRoundSideSelection::Automatic,
+            side_two_faces: cadmpeg_ir::features::FullRoundSideSelection::Automatic,
+        }],
+    })
 }
 
 fn design_body_selection<T>(

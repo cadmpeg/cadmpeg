@@ -998,6 +998,11 @@ pub enum FeatureDefinition {
         /// Ordered edge groups and their radius laws.
         groups: Vec<FilletGroup>,
     },
+    /// Full-round fillet built from a center-face selection and two side-face sets.
+    FullRoundFillet {
+        /// Ordered full-round face groups.
+        groups: Vec<FullRoundFilletGroup>,
+    },
     /// Blend constructed between two face sets.
     FaceBlend {
         /// First support-face set.
@@ -1446,6 +1451,7 @@ impl FeatureDefinition {
             Self::Rib { .. } => Some("rib"),
             Self::Chamfer { .. } => Some("chamfer"),
             Self::Fillet { .. } => Some("fillet"),
+            Self::FullRoundFillet { .. } => Some("fillet"),
             Self::FaceBlend { .. } => Some("face blend"),
             Self::SewBodies { .. } => Some("sew bodies"),
             Self::TrimBodies { .. } => Some("trim bodies"),
@@ -3448,6 +3454,31 @@ pub struct FilletGroup {
     /// Dimensionless tangency weight, when specified.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tangency_weight: Option<f64>,
+}
+
+/// One full-round fillet face-set group.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct FullRoundFilletGroup {
+    /// Center face retained by the full-round construction.
+    pub center_faces: FaceSelection,
+    /// Faces on the first side of the center-face set.
+    pub side_one_faces: FullRoundSideSelection,
+    /// Faces on the second side of the center-face set.
+    pub side_two_faces: FullRoundSideSelection,
+}
+
+/// One side of a full-round fillet.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum FullRoundSideSelection {
+    /// The kernel infers this side from the center-face selection.
+    Automatic,
+    /// Explicit side-face selection.
+    Explicit(FaceSelection),
+    /// A side-face selection exists but cannot be resolved.
+    Unresolved,
 }
 
 /// One independently dimensioned group of chamfered edges.

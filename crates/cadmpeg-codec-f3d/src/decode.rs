@@ -358,6 +358,30 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                     ),
                 }
         }
+        FeatureDefinition::FullRoundFillet { groups } => {
+            groups.is_empty()
+                || groups.iter().any(|group| {
+                    !face_selection_is_resolved(&group.center_faces)
+                        || matches!(
+                            group.side_one_faces,
+                            cadmpeg_ir::features::FullRoundSideSelection::Unresolved
+                        )
+                        || matches!(
+                            group.side_two_faces,
+                            cadmpeg_ir::features::FullRoundSideSelection::Unresolved
+                        )
+                        || matches!(
+                            group.side_one_faces,
+                            cadmpeg_ir::features::FullRoundSideSelection::Explicit(ref selection)
+                                if !face_selection_is_resolved(selection)
+                        )
+                        || matches!(
+                            group.side_two_faces,
+                            cadmpeg_ir::features::FullRoundSideSelection::Explicit(ref selection)
+                                if !face_selection_is_resolved(selection)
+                        )
+                })
+        }
         _ => false,
     }
 }
@@ -866,6 +890,18 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             FeatureDefinition::Fillet { groups } => {
                 for group in groups {
                     edge_selection(&group.edges);
+                }
+            }
+            FeatureDefinition::FullRoundFillet { groups } => {
+                for group in groups {
+                    face_selection(&group.center_faces);
+                    for side in [&group.side_one_faces, &group.side_two_faces] {
+                        if let cadmpeg_ir::features::FullRoundSideSelection::Explicit(selection) =
+                            side
+                        {
+                            face_selection(selection);
+                        }
+                    }
                 }
             }
             FeatureDefinition::Chamfer { groups, .. } => {
@@ -3994,6 +4030,48 @@ mod tests {
         assert!(!feature_definition_is_incomplete(&native("Canvas")));
         assert!(!feature_definition_is_incomplete(&native("Decal")));
         assert!(feature_definition_is_incomplete(&native("Fillet")));
+    }
+
+    #[test]
+    fn full_round_fillet_with_automatic_sides_is_complete() {
+        use cadmpeg_ir::features::{
+            FaceSelection, Feature, FeatureDefinition, FeatureId, FullRoundFilletGroup,
+            FullRoundSideSelection,
+        };
+
+        let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+        ir.model.features.push(Feature {
+            id: FeatureId("feature:full-round".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: Some("Fillet".into()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::FullRoundFillet {
+                groups: vec![FullRoundFilletGroup {
+                    center_faces: FaceSelection::Resolved {
+                        faces: vec!["face:center".into()],
+                        native: "native:center-group".into(),
+                    },
+                    side_one_faces: FullRoundSideSelection::Automatic,
+                    side_two_faces: FullRoundSideSelection::Automatic,
+                }],
+            },
+            native_ref: None,
+        });
+
+        assert!(!feature_definition_is_incomplete(
+            &ir.model.features[0].definition
+        ));
+        assert_eq!(
+            design_projection_gaps(&ir, &F3dNative::default()).incomplete_features,
+            0
+        );
     }
 
     #[test]

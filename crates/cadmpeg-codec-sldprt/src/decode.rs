@@ -1282,6 +1282,32 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                             || matches!(group.radius, RadiusSpec::Variable { ref points } if points.is_empty())
                     })
             }
+            FeatureDefinition::FullRoundFillet { groups } => {
+                groups.is_empty()
+                    || groups.iter().any(|group| {
+                        incomplete_face_selection(&group.center_faces)
+                            || matches!(
+                                group.side_one_faces,
+                                cadmpeg_ir::features::FullRoundSideSelection::Unresolved
+                            )
+                            || matches!(
+                                group.side_two_faces,
+                                cadmpeg_ir::features::FullRoundSideSelection::Unresolved
+                            )
+                            || matches!(
+                                group.side_one_faces,
+                                cadmpeg_ir::features::FullRoundSideSelection::Explicit(
+                                    ref selection
+                                ) if incomplete_face_selection(selection)
+                            )
+                            || matches!(
+                                group.side_two_faces,
+                                cadmpeg_ir::features::FullRoundSideSelection::Explicit(
+                                    ref selection
+                                ) if incomplete_face_selection(selection)
+                            )
+                    })
+            }
             FeatureDefinition::Chamfer { groups, .. } => groups.is_empty() || groups.iter().any(|group| {
                 incomplete_edge_selection(&group.edges) || matches!(group.spec, ChamferSpec::Unresolved { .. })
             }),

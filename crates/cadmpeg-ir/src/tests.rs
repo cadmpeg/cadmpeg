@@ -5610,6 +5610,62 @@ fn feature_operation_geometry_is_validated() {
 }
 
 #[test]
+fn full_round_fillet_keeps_automatic_side_semantics() {
+    use crate::features::{
+        FaceSelection, Feature, FeatureDefinition, FeatureId, FullRoundFilletGroup,
+        FullRoundSideSelection,
+    };
+
+    let mut ir = unit_cube();
+    let center = ir.model.faces[0].id.clone();
+    let feature_index = ir.model.features.len();
+    let definition = FeatureDefinition::FullRoundFillet {
+        groups: vec![FullRoundFilletGroup {
+            center_faces: FaceSelection::Faces(vec![center.clone()]),
+            side_one_faces: FullRoundSideSelection::Automatic,
+            side_two_faces: FullRoundSideSelection::Automatic,
+        }],
+    };
+    assert_eq!(
+        serde_json::from_value::<FeatureDefinition>(serde_json::to_value(&definition).unwrap())
+            .unwrap(),
+        definition
+    );
+    ir.model.features.push(Feature {
+        id: FeatureId("synthetic:test:feature#full-round".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: Some("Fillet".into()),
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition,
+        native_ref: None,
+    });
+    assert!(!validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some("synthetic:test:feature#full-round")
+            && finding.message == "full-round fillet face sets are invalid"
+    }));
+
+    if let FeatureDefinition::FullRoundFillet { groups } =
+        &mut ir.model.features[feature_index].definition
+    {
+        groups[0].side_one_faces =
+            FullRoundSideSelection::Explicit(FaceSelection::Faces(vec![center]));
+    } else {
+        unreachable!("test feature is a full-round fillet");
+    }
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some("synthetic:test:feature#full-round")
+            && finding.message == "full-round fillet face sets are invalid"
+    }));
+}
+
+#[test]
 fn flex_modes_round_trip_and_validate() {
     use crate::features::{Angle, Feature, FeatureDefinition, FeatureId, FlexMode, Length};
 

@@ -2583,6 +2583,42 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     feature_geometry_error(findings, feature, "face blend radius is invalid");
                 }
             }
+            FeatureDefinition::FullRoundFillet { groups } => {
+                let valid = !groups.is_empty()
+                    && groups.iter().all(|group| {
+                        face_selections.push(&group.center_faces);
+                        let side_one = match &group.side_one_faces {
+                            crate::features::FullRoundSideSelection::Explicit(selection) => {
+                                face_selections.push(selection);
+                                Some(selection)
+                            }
+                            crate::features::FullRoundSideSelection::Automatic
+                            | crate::features::FullRoundSideSelection::Unresolved => None,
+                        };
+                        let side_two = match &group.side_two_faces {
+                            crate::features::FullRoundSideSelection::Explicit(selection) => {
+                                face_selections.push(selection);
+                                Some(selection)
+                            }
+                            crate::features::FullRoundSideSelection::Automatic
+                            | crate::features::FullRoundSideSelection::Unresolved => None,
+                        };
+                        !side_one.is_some_and(|selection| {
+                            face_selections_overlap(&group.center_faces, selection)
+                        }) && !side_two.is_some_and(|selection| {
+                            face_selections_overlap(&group.center_faces, selection)
+                        }) && !side_one
+                            .zip(side_two)
+                            .is_some_and(|(first, second)| face_selections_overlap(first, second))
+                    });
+                if !valid {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "full-round fillet face sets are invalid",
+                    );
+                }
+            }
             FeatureDefinition::SewBodies {
                 bodies,
                 gap_tolerance,

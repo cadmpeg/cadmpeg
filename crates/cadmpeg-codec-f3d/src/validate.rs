@@ -3006,6 +3006,63 @@ fn validate_fillet_operand_groups<'a>(
                     })
                 })
         });
+        let full_round_group_shape = is_fillet
+            && group.role == 0x0000_0004_0000_0000
+            && scope.is_some_and(|scope| {
+                native
+                    .design_construction_operand_groups
+                    .iter()
+                    .filter(|candidate| {
+                        design_stream(&candidate.id) == native_stream
+                            && candidate.scope_record_index == scope.record_index
+                    })
+                    .count()
+                    == 1
+                    && group.members.len() == 1
+                    && native.design_edge_operands.iter().all(|operand| {
+                        design_stream(&operand.id) != native_stream
+                            || operand.scope_record_index != scope.record_index
+                            || operand.record_index != group.members[0]
+                    })
+                    && native.design_face_operands.iter().any(|operand| {
+                        design_stream(&operand.id) == native_stream
+                            && operand.scope_record_index == scope.record_index
+                            && operand.group_record_index == Some(group.record_index)
+                            && operand.group_member_ordinal == Some(0)
+                            && operand.record_index == group.members[0]
+                            && operand.recipe_kind == records::ConstructionRecipeKind::BoundedFace
+                    })
+            });
+        let valid_full_round_group = full_round_group_shape
+            && !fillet_radius_group_records.contains(&(native_stream, group.record_index))
+            && native.design_parameter_owners.iter().all(|owner| {
+                design_stream(&owner.id) != native_stream
+                    || owner.scope_record_index != group.scope_record_index
+            })
+            && !group.frame.variant
+            && group.frame.trailing_record_indices.len() == 1
+            && group.frame.trailing_flags.len() == 1
+            && group.frame.trailing_record_indices[0] == group.frame.trailing_flags[0].record_index
+            && group.frame.trailing_flags[0].value
+            && native.design_face_operands.iter().any(|operand| {
+                design_stream(&operand.id) == native_stream
+                    && operand.scope_record_index == group.scope_record_index
+                    && operand.group_record_index == Some(group.record_index)
+                    && operand.group_member_ordinal == Some(0)
+                    && operand.record_index == group.members[0]
+                    && !operand.resolved_face_slots.is_empty()
+            });
+        if full_round_group_shape {
+            if !valid_full_round_group {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: "Fusion Design Fillet full-round face group is invalid".into(),
+                    entity: Some(group.id.clone()),
+                });
+            }
+            continue;
+        }
         let has_fixed_assignment = scope
             .and_then(|scope| {
                 scope
