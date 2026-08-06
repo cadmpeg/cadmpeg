@@ -3181,10 +3181,9 @@ fn work_point_direct_record_carries_model_space_position() {
 }
 
 #[test]
-fn work_point_reference_type_fixes_the_counted_input_arity() {
-    // A `refType` of `18` takes two inputs; every other rule takes one. A count
-    // that contradicts the rule means the version being read has desynchronized
-    // the members, so no coordinate is named.
+fn work_point_input_count_frames_the_rule_inputs() {
+    // The counted input run is framed by its serialized count. The rule
+    // selector is retained independently and does not impose a fixed arity.
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"427");
@@ -3246,7 +3245,10 @@ fn work_point_reference_type_fixes_the_counted_input_arity() {
 
     bytes[count_at..count_at + 4].copy_from_slice(&1u32.to_le_bytes());
     let records = IndexedRecordOffsets::build(&bytes);
-    assert!(exact_work_point_position(&bytes, &records, &scope, &HashMap::new()).is_none());
+    let frame = exact_work_point_position(&bytes, &records, &scope, &HashMap::new())
+        .expect("work point frame");
+    assert_eq!(frame.reference_type, 18);
+    assert_eq!(frame.input_record_indices, [56]);
 
     // A rule above the values the shipped range check admitted still names a
     // coordinate when its input arity agrees.

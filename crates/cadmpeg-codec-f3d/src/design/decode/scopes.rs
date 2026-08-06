@@ -3380,11 +3380,11 @@ struct PointDataLevel {
 /// Read the base class level of the point-data class at `start` under one
 /// record version.
 ///
-/// The level closes with a counted reference run whose arity `reference_type`
-/// fixes: `7` and `18` take two references and every other rule takes one. A
-/// version whose member sequence has desynchronized reads a `reference_type`
-/// and a count that do not agree, so the arity settles the frame and bounds the
-/// cursor at the same time.
+/// The level closes with a counted reference run. The serialized count is the
+/// only framing authority for that run: `reference_type` selects the
+/// construction rule, but its rule-specific arity is not encoded in the class
+/// member order. The count is bounded by the frame before allocation and each
+/// marked reference must resolve to a record index.
 fn point_data_level(
     bytes: &[u8],
     start: usize,
@@ -3407,16 +3407,12 @@ fn point_data_level(
     if version >= 3 {
         cursor = cursor.checked_add(24)?;
     }
-    let arity = if matches!(reference_type, 7 | 18) {
-        2
-    } else {
-        1
-    };
-    if u32_at(body, cursor)? != arity {
+    let arity = usize::try_from(u32_at(body, cursor)?).ok()?;
+    cursor = cursor.checked_add(4)?;
+    if arity == 0 || arity > end.checked_sub(cursor)? {
         return None;
     }
-    cursor = cursor.checked_add(4)?;
-    let mut input_record_indices = Vec::with_capacity(arity as usize);
+    let mut input_record_indices = Vec::with_capacity(arity);
     for _ in 0..arity {
         let reference = take_reference(body, &mut cursor)?;
         input_record_indices.push(u32::try_from(reference.target?).ok()?);
@@ -5576,23 +5572,18 @@ mod tests {
     }
 
     #[test]
-    fn work_point_rejects_an_input_run_the_reference_type_does_not_name() {
-        // `18` takes two base-level inputs. A frame that stores one has been
-        // read under the wrong member sequence and names no coordinate.
+    fn work_point_uses_the_serialized_input_count_for_every_rule() {
+        // The input count is a member of the point-data level. It frames the
+        // run independently of the rule selector, including three-input
+        // constructions.
         let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 18, 1);
 
-        assert_eq!(
-            exact_work_point_position(
-                &bytes,
-                &IndexedRecordOffsets::build(&bytes),
-                &scope,
-                &HashMap::new()
-            ),
-            None
-        );
-
-        let (bytes, scope, position_at) =
-            work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 18, 2);
+        let records = IndexedRecordOffsets::build(&bytes);
+        let frame = exact_work_point_position(&bytes, &records, &scope, &HashMap::new())
+            .expect("work point frame");
+        assert_eq!(frame.input_record_indices, [70]);
+        assert_eq!(frame.reference_type, 18);
+        let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 14, 2);
         let frame = exact_work_point_position(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
@@ -5600,8 +5591,26 @@ mod tests {
             &HashMap::new(),
         )
         .expect("work point frame");
-        assert_eq!(frame.position_offset, position_at as u64);
-        assert_eq!(frame.reference_type, 18);
+        assert_eq!(frame.input_record_indices, [70, 71]);
+
+        let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 8, 3);
+        let frame = exact_work_point_position(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &HashMap::new(),
+        )
+        .expect("work point frame");
+        assert_eq!(frame.input_record_indices, [70, 71, 72]);
+
+        let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 18, 2);
+        let frame = exact_work_point_position(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &HashMap::new(),
+        )
+        .expect("work point frame");
         assert_eq!(frame.input_record_indices, [70, 71]);
     }
 }

@@ -60,7 +60,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 **Question.** What construction does each `refType` value of the point-data class select?
 
-**Known.** `f3d.md` §3.1 "A direct `WorkPoint` scope" gives the member order, the version gates, and the input count each `refType` implies. The stored `point3d` is the solved position for every value, so a reader needs no join to place the point.
+**Known.** `f3d.md` §3.1 "A direct `WorkPoint` scope" gives the member order, the version gates, and the counted input-reference run. The stored `point3d` is the solved position for every value, so a reader needs no join to place the point. The decoder retains the `refType`, the serialized input count, and every input reference without assigning a rule-specific meaning.
 
 **Need.** A writer must emit the `refType` that matches the inputs it writes, and a neutral model that edits an input must know which rule re-solves the point.
 
